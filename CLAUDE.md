@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. The goal is a simpler, more maintainable, end-to-end tested agent with clear architecture.
 
-**Status:** Phase 1 substantially complete. Core display system working.
+**Status:** Phase 1 complete. Now implementing session logging system.
 
 ---
 
@@ -1153,15 +1153,315 @@ refactor: Simplify skill registry
 
 ---
 
+## Current Work: Session Logging System
+
+**Goal**: Structured logging for context management, debugging, and future session replay/compaction.
+
+### Directory Structure
+
+```
+.nexus3/logs/                              # Gitignored
+└── 2024-01-07_143052_a1b2c3/              # Session: timestamp + 6-char ID
+    ├── session.db                          # SQLite - source of truth
+    ├── context.md                          # Human-readable context view
+    ├── verbose.md                          # Thinking, timing, metadata (optional)
+    ├── raw.jsonl                           # Raw API JSON (optional)
+    ├── temp/                               # Working files (future)
+    └── subagent_d4e5f6/                    # Nested subagent session
+        ├── session.db
+        ├── context.md
+        └── ...
+```
+
+### Log Streams (Independent, Non-Exclusive)
+
+| Stream | File | Format | Enabled | Contains |
+|--------|------|--------|---------|----------|
+| context | `session.db` + `context.md` | SQLite + MD | Always | Messages, tool calls in context |
+| verbose | `verbose.md` | Markdown | `--verbose` | Thinking traces, timing, token counts |
+| raw | `raw.jsonl` | JSON Lines | `--raw-log` | Raw API request/response bodies |
+
+### SQLite Schema (`session.db`)
+
+```sql
+-- Core message storage
+CREATE TABLE messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    role TEXT NOT NULL,                    -- system, user, assistant, tool
+    content TEXT NOT NULL,
+    name TEXT,                             -- tool name (for tool role)
+    tool_call_id TEXT,                     -- for tool results
+    tool_calls TEXT,                       -- JSON: assistant's tool calls
+    tokens INTEGER,                        -- estimated token count
+    timestamp REAL NOT NULL,
+    in_context BOOLEAN DEFAULT 1,          -- still in active context?
+    summary_of TEXT                        -- comma-separated IDs if summary
+);
+
+-- Session metadata
+CREATE TABLE metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+-- Keys: model, system_prompt, created_at, parent_session, etc.
+
+-- Future: tool execution details, thinking traces, etc.
+CREATE TABLE events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER,                    -- related message (optional)
+    event_type TEXT NOT NULL,              -- thinking, tool_start, tool_end, etc.
+    data TEXT,                             -- JSON payload
+    timestamp REAL NOT NULL,
+    FOREIGN KEY (message_id) REFERENCES messages(id)
+);
+```
+
+### Architecture
+
+```
+nexus3/
+├── session/
+│   ├── session.py              # Session coordinator (existing)
+│   ├── logging.py              # SessionLogger - main logging interface
+│   ├── storage.py              # SQLite operations, schema management
+│   ├── markdown.py             # Markdown generation from DB
+│   └── types.py                # LogLevel enum, LogConfig dataclass
+```
+
+### Key Interfaces
+
+```python
+# session/types.py
+from enum import Flag, auto
+from dataclasses import dataclass
+from pathlib import Path
+
+class LogStream(Flag):
+    """Log streams - can be combined with |"""
+    NONE = 0
+    CONTEXT = auto()    # Always on in practice
+    VERBOSE = auto()    # --verbose
+    RAW = auto()        # --raw-log
+    ALL = CONTEXT | VERBOSE | RAW
+
+@dataclass
+class LogConfig:
+    base_dir: Path              # .nexus3/logs
+    streams: LogStream          # Which streams to write
+    parent_session: str | None  # For subagent nesting
+
+@dataclass
+class SessionInfo:
+    session_id: str             # e.g., "2024-01-07_143052_a1b2c3"
+    session_dir: Path           # Full path to session folder
+    parent_id: str | None       # Parent session if subagent
+```
+
+```python
+# session/logging.py
+class SessionLogger:
+    """Central logging interface for a session."""
+
+    def __init__(self, config: LogConfig):
+        self.config = config
+        self.info = self._create_session()
+        self.storage = SessionStorage(self.info.session_dir / "session.db")
+        self._md_writer = MarkdownWriter(self.info.session_dir)
+
+    # === Message Logging (always goes to context) ===
+
+    def log_system(self, content: str) -> int:
+        """Log system prompt. Returns message ID."""
+
+    def log_user(self, content: str) -> int:
+        """Log user message. Returns message ID."""
+
+    def log_assistant(
+        self,
+        content: str,
+        tool_calls: list[ToolCall] | None = None,
+        thinking: str | None = None,      # For verbose stream
+        tokens: int | None = None,
+    ) -> int:
+        """Log assistant response. Returns message ID."""
+
+    def log_tool_result(
+        self,
+        tool_call_id: str,
+        name: str,
+        result: ToolResult,
+    ) -> int:
+        """Log tool execution result. Returns message ID."""
+
+    # === Verbose Stream ===
+
+    def log_thinking(self, content: str, message_id: int | None = None):
+        """Log thinking trace (verbose only)."""
+
+    def log_timing(self, operation: str, duration_ms: float):
+        """Log timing info (verbose only)."""
+
+    # === Raw Stream ===
+
+    def log_raw_request(self, endpoint: str, payload: dict):
+        """Log raw API request (raw only)."""
+
+    def log_raw_response(self, status: int, body: dict):
+        """Log raw API response (raw only)."""
+
+    # === Context Management ===
+
+    def get_context_messages(self) -> list[Message]:
+        """Get all messages currently in context window."""
+
+    def get_token_count(self) -> int:
+        """Get total tokens in current context."""
+
+    def mark_compacted(self, message_ids: list[int], summary_id: int):
+        """Mark messages as compacted, replaced by summary."""
+
+    # === Subagent Support ===
+
+    def create_child_logger(self, name: str = None) -> "SessionLogger":
+        """Create a nested logger for a subagent."""
+```
+
+```python
+# session/storage.py
+class SessionStorage:
+    """SQLite operations for session data."""
+
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        self._ensure_schema()
+
+    def insert_message(self, role: str, content: str, **kwargs) -> int:
+        """Insert message, return ID."""
+
+    def get_messages(self, in_context_only: bool = True) -> list[dict]:
+        """Get messages, optionally filtered to context window."""
+
+    def update_context_status(self, message_ids: list[int], in_context: bool):
+        """Batch update in_context flag."""
+
+    def get_metadata(self, key: str) -> str | None:
+        """Get metadata value."""
+
+    def set_metadata(self, key: str, value: str):
+        """Set metadata value."""
+
+    def insert_event(self, event_type: str, data: dict, message_id: int = None):
+        """Insert event for verbose logging."""
+```
+
+```python
+# session/markdown.py
+class MarkdownWriter:
+    """Generates human-readable markdown from session data."""
+
+    def __init__(self, session_dir: Path):
+        self.context_path = session_dir / "context.md"
+        self.verbose_path = session_dir / "verbose.md"
+
+    def append_message(self, role: str, content: str, **kwargs):
+        """Append message to context.md."""
+
+    def append_thinking(self, content: str, timestamp: float):
+        """Append thinking trace to verbose.md."""
+
+    def append_tool_call(
+        self,
+        name: str,
+        arguments: dict,
+        result: str,
+        duration_ms: float | None = None,
+    ):
+        """Append tool call to context.md (and verbose.md with timing)."""
+```
+
+### Configuration
+
+```python
+# config/schema.py - add to existing Config
+@dataclass
+class LoggingConfig:
+    base_dir: str = ".nexus3/logs"    # Relative to cwd or absolute
+    context_always: bool = True        # Context stream always on
+    verbose: bool = False              # --verbose flag
+    raw: bool = False                  # --raw-log flag
+```
+
+### CLI Integration
+
+```bash
+# Default: context logging only
+python -m nexus3
+
+# With verbose (thinking, timing)
+python -m nexus3 --verbose
+
+# With raw API logging
+python -m nexus3 --raw-log
+
+# Both
+python -m nexus3 --verbose --raw-log
+```
+
+### Implementation Order
+
+| Step | Task | Notes |
+|------|------|-------|
+| 1 | `session/types.py` | LogStream, LogConfig, SessionInfo |
+| 2 | `session/storage.py` | SQLite wrapper, schema creation |
+| 3 | `session/markdown.py` | Markdown file writers |
+| 4 | `session/logging.py` | SessionLogger main class |
+| 5 | Update `.gitignore` | Add `.nexus3/logs/` |
+| 6 | Integrate with `cli/repl.py` | Create logger, pass to session |
+| 7 | Update `Session` class | Accept logger, call log methods |
+| 8 | CLI flags | `--verbose`, `--raw-log` |
+| 9 | Tests | Unit tests for storage, logging |
+
+### Scaffolding Notes
+
+**Extensibility points built in:**
+- `LogStream` is a Flag enum - easy to add new streams
+- `events` table for future event types (tool progress, errors, etc.)
+- `metadata` table for arbitrary session metadata
+- `create_child_logger()` ready for subagent nesting
+- Token counting placeholder (actual counting comes later)
+- Compaction interface ready (implementation comes with context management)
+
+**Not hardcoded:**
+- Log directory path (configurable)
+- Session ID format (generated by helper function)
+- Stream enable/disable (flags, not booleans)
+- Markdown format (separate writer class)
+
+### Acceptance Criteria
+
+- [ ] Each REPL session creates a new session folder
+- [ ] `session.db` contains all messages with correct schema
+- [ ] `context.md` is human-readable, updated in real-time
+- [ ] `--verbose` enables `verbose.md` with thinking traces
+- [ ] `--raw-log` enables `raw.jsonl` with API payloads
+- [ ] Subagent sessions nest correctly (manual test for now)
+- [ ] `get_context_messages()` returns messages for API calls
+- [ ] Old sessions preserved, new session each run
+
+---
+
 ## Next Steps
 
 1. ~~**Initialize repo**: `git init`, `.gitignore`, `pyproject.toml`~~ ✅
 2. ~~**Phase 0 implementation**: Core types, config, provider, session, CLI~~ ✅
 3. ~~**First E2E test**: Message in, streamed response out~~ ✅
-4. **Phase 1 implementation**: Display system foundation
-   - DisplayManager with Rich.Live
-   - Status line, spinner, stream renderer
-   - ESC cancellation
-   - Thinking trace capture
-5. **Phase 2 implementation**: Core skills with progress display
-6. **Phase 3 implementation**: Full productivity skills + token tracking
+4. ~~**Phase 1 implementation**: Display system foundation~~ ✅
+   - ~~Rich.Live streaming with animated spinner~~
+   - ~~ESC cancellation~~
+   - ~~Persistent toolbar status bar~~
+5. **Phase 1.5: Session Logging** ← Current
+   - SQLite-backed context storage
+   - Markdown human-readable logs
+   - Verbose and raw log streams
+6. **Phase 2 implementation**: Core skills with progress display
+7. **Phase 3 implementation**: Full productivity skills + token tracking
