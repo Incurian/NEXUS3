@@ -6,7 +6,60 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. The goal is a simpler, more maintainable, end-to-end tested agent with clear architecture.
 
-**Status:** Phase 0 complete. Basic streaming chat working.
+**Status:** Phase 1 in progress. Building display system foundation.
+
+---
+
+## Current Phase: Phase 1 - Display & Interaction
+
+**Goal**: Build the Rich-based display foundation BEFORE adding skills, so we don't have to retrofit UI later.
+
+### Why This Phase Exists
+NEXUS2 lesson learned: We tried to add spinners, status indicators, and cancellation at the end. It required restructuring everything. By building the display foundation first, all subsequent features (skills, subagents, workflows) get proper UI "for free".
+
+### Current Tasks
+
+| Task | Status | Notes |
+|------|--------|-------|
+| Replace simple print with Rich.Live | 🔲 | Foundation for all dynamic display |
+| DisplayManager component | 🔲 | Centralized display state management |
+| Status line (thinking/responding/idle) | 🔲 | Shows current activity state |
+| Spinner during API wait | 🔲 | Visual feedback before first token |
+| ESC key cancellation | 🔲 | Cancel stream or operation mid-flight |
+| Thinking trace capture | 🔲 | Provider-level: extract `<thinking>` blocks |
+| Themed thinking display | 🔲 | Muted/gray/italic for reasoning traces |
+| Async task wrapper | 🔲 | Cancellable task management |
+| E2E test: cancel mid-stream | 🔲 | Verify ESC works |
+
+### Architecture Decisions for This Phase
+
+```
+nexus3/
+├── display/                 # NEW: Display system
+│   ├── __init__.py
+│   ├── manager.py          # DisplayManager - owns Rich.Live context
+│   ├── status.py           # StatusLine component
+│   ├── spinner.py          # Spinner component
+│   ├── stream.py           # StreamRenderer for token output
+│   └── theme.py            # Colors, styles for thinking/response/error
+└── cli/
+    ├── repl.py             # Uses DisplayManager
+    └── keys.py             # NEW: Key bindings (ESC handling)
+```
+
+### Acceptance Criteria
+- [ ] Spinner shows while waiting for first token
+- [ ] Status line shows "Thinking..." → "Responding..." → idle
+- [ ] Thinking traces render in muted gray, collapsible
+- [ ] ESC cancels current stream, returns to prompt cleanly
+- [ ] All display updates are flicker-free (Rich.Live)
+- [ ] Foundation extensible for tool progress, subagent panels (Phase 2+)
+
+### Blocked By
+- Nothing (builds on Phase 0)
+
+### Blocks
+- Phase 2 (Core Skills) - needs progress display for tool calls
 
 ---
 
@@ -31,21 +84,29 @@ nexus3/
 │   ├── errors.py       # Typed exception hierarchy
 │   └── encoding.py     # UTF-8 constants and helpers
 ├── config/             # Simple JSON config
-│   ├── schema.py       # Pydantic or attrs for validation
+│   ├── schema.py       # Pydantic validation
 │   └── loader.py       # Fail-fast loading
 ├── provider/           # LLM providers (async-first)
 │   ├── base.py         # AsyncProvider protocol
 │   └── openrouter.py   # Primary provider
+├── display/            # Rich-based display system (Phase 1)
+│   ├── manager.py      # DisplayManager - owns Rich.Live context
+│   ├── status.py       # StatusLine component
+│   ├── spinner.py      # Spinner component
+│   ├── stream.py       # StreamRenderer for token output
+│   ├── thinking.py     # ThinkingRenderer for reasoning traces
+│   └── theme.py        # Colors, styles, theming
 ├── session/            # Chat session (thin coordinator)
 │   └── session.py      # <200 lines, async
-├── skill/              # Tool system
+├── skill/              # Tool system (Phase 2+)
 │   ├── base.py         # Minimal Skill interface
 │   ├── registry.py     # Thread-safe registry
 │   └── builtin/        # Start with 4-6 skills
 ├── cli/                # User interface
 │   ├── repl.py         # Async REPL with prompt-toolkit
-│   └── output.py       # Rich-based output
-└── subagent/           # Unified subagent system (Phase 3+)
+│   ├── keys.py         # Key bindings (ESC, etc.)
+│   └── output.py       # Legacy output (deprecated after Phase 1)
+└── subagent/           # Unified subagent system (Phase 4+)
     ├── pool.py         # Connection pooling, process reuse
     ├── process.py      # Cross-platform process management
     └── workflow.py     # DAG executor
@@ -68,27 +129,44 @@ nexus3/
 
 **No skills, no subagents, no history - just clean async chat**
 
-### Phase 1: Core Skills
-**Goal**: Read/write files, run commands
+### Phase 1: Display & Interaction Foundation 🔄
+**Goal**: Build Rich UI foundation BEFORE skills to avoid painful retrofitting
+
+- [ ] DisplayManager with Rich.Live context
+- [ ] StatusLine component (thinking/responding/tool_calling/idle)
+- [ ] Spinner during API wait (before first token)
+- [ ] StreamRenderer for flicker-free token output
+- [ ] ThinkingRenderer for reasoning traces (muted theme)
+- [ ] ESC key cancellation (cancel stream mid-flight)
+- [ ] Async task wrapper for cancellable operations
+- [ ] Provider-level thinking trace extraction
+- [ ] End-to-end test: ESC cancels stream cleanly
+
+**Extensibility hooks for**: tool progress, subagent panels, token tracking
+
+### Phase 2: Core Skills
+**Goal**: Read/write files, run commands with proper UI
 
 - [ ] Skill interface (minimal: name, description, parameters, execute)
 - [ ] SkillRegistry (thread-safe)
 - [ ] 4 essential skills: `read_file`, `write_file`, `list_dir`, `run_command`
 - [ ] Tool calling flow in Session
+- [ ] Tool progress display (uses DisplayManager)
 - [ ] Sandbox for path validation
 - [ ] Simple approval (allow/deny per skill)
 - [ ] End-to-end test: "read this file" -> file contents
 
-### Phase 2: Full Productivity Skills
-**Goal**: Git, search, editing
+### Phase 3: Full Productivity Skills
+**Goal**: Git, search, editing + token tracking
 
 - [ ] `edit_file`, `glob`, `grep`, `git_status`, `git_diff`, `git_log`
 - [ ] File operation skills: `delete_file`, `copy_path`, `move_path`, `make_dir`
 - [ ] Message history with persistence
 - [ ] Context management (system prompt, environment)
+- [ ] Token tracking display (context budget)
 - [ ] End-to-end test: multi-turn conversation with tool use
 
-### Phase 3: Subagents - One-Shot Reading
+### Phase 4: Subagents - One-Shot Reading
 **Goal**: Spawn subagent that can read, return result
 
 - [ ] SubagentPool (connection pooling, process reuse)
@@ -96,9 +174,10 @@ nexus3/
 - [ ] Cross-platform process management
 - [ ] Clean termination (taskkill /T on Windows, killpg on Unix)
 - [ ] Result return via stdout (simple JSON)
+- [ ] Subagent status in DisplayManager
 - [ ] End-to-end test: spawn agent -> read file -> get result
 
-### Phase 4: Subagents - Writing
+### Phase 5: Subagents - Writing
 **Goal**: Subagents can write files within sandbox
 
 - [ ] 3-level permissions: YOLO > TRUSTED > SANDBOXED
@@ -106,25 +185,27 @@ nexus3/
 - [ ] Subagent can use edit_file, write_file within its sandbox
 - [ ] End-to-end test: spawn agent -> edit file -> verify changes
 
-### Phase 5: Nested Subagents
+### Phase 6: Nested Subagents
 **Goal**: Subagents can spawn their own subagents
 
 - [ ] Permission inheritance (child < parent)
 - [ ] Depth limiting (max 3 levels)
 - [ ] Process tree tracking
 - [ ] Clean cascade termination
+- [ ] Subagent tree visualization
 - [ ] End-to-end test: agent -> spawns agent -> spawns agent -> completes
 
-### Phase 6: Coordination
+### Phase 7: Coordination
 **Goal**: Multi-agent workflows with shared state
 
 - [ ] Blackboard (shared KV store)
 - [ ] DAG workflow executor (single unified system)
 - [ ] `orchestrate_workflow` skill
 - [ ] Task cancellation that propagates
+- [ ] Workflow progress panel
 - [ ] End-to-end test: 3 agents coordinate via blackboard
 
-### Phase 7: Watchable Terminals (Optional)
+### Phase 8: Watchable Terminals (Optional)
 **Goal**: Spawn agents in visible terminal panes
 
 - [ ] Log streaming to files (always on)
@@ -371,6 +452,97 @@ class Skill(Protocol):
 
 ---
 
+## Display System Architecture (Phase 1)
+
+The display system is built to be **extensible from day one**. All dynamic terminal output goes through the DisplayManager, which owns the Rich.Live context.
+
+### Core Components
+
+```python
+# nexus3/display/manager.py
+class DisplayManager:
+    """Central coordinator for all terminal display.
+
+    Owns the Rich.Live context. All components render through this.
+    Designed for extensibility: new panels can be added without
+    restructuring existing code.
+    """
+    def __init__(self):
+        self.status = StatusLine()
+        self.spinner = Spinner()
+        self.stream = StreamRenderer()
+        self.thinking = ThinkingRenderer()
+        # Future: self.tools = ToolProgressPanel()
+        # Future: self.agents = SubagentPanel()
+        # Future: self.tokens = TokenTracker()
+
+    async def run(self, task: Callable) -> Any:
+        """Run a task with live display updates."""
+        ...
+
+    def set_status(self, status: Status) -> None:
+        """Update status line (thinking/responding/etc)."""
+        ...
+```
+
+### Status States
+
+```python
+class Status(Enum):
+    IDLE = "idle"              # Waiting for input
+    THINKING = "thinking"      # Waiting for first token
+    RESPONDING = "responding"  # Streaming response
+    TOOL_CALLING = "calling"   # Executing tool (Phase 2+)
+    CANCELLED = "cancelled"    # User pressed ESC
+```
+
+### Extensibility Pattern
+
+New display components follow this pattern:
+
+```python
+class NewPanel(Protocol):
+    def render(self) -> RenderableType:
+        """Return Rich renderable for current state."""
+        ...
+
+    def update(self, data: Any) -> None:
+        """Update internal state (called from async context)."""
+        ...
+```
+
+DisplayManager composes all panels into a single Rich.Live layout:
+
+```
+┌─────────────────────────────────────────────┐
+│ Status: Responding...            [spinner]  │  <- StatusLine
+├─────────────────────────────────────────────┤
+│ <thinking>                                  │  <- ThinkingRenderer
+│ Let me analyze this step by step...         │     (collapsible, muted)
+│ </thinking>                                 │
+├─────────────────────────────────────────────┤
+│ Here's the answer to your question...       │  <- StreamRenderer
+│ The solution involves three steps:          │     (main content)
+│ 1. First, we need to...█                    │
+├─────────────────────────────────────────────┤
+│ [Future: Tool progress, subagent status]    │  <- Extensibility slots
+└─────────────────────────────────────────────┘
+```
+
+### Cancellation Flow
+
+```python
+# ESC key triggers cancellation
+async def handle_esc():
+    display.set_status(Status.CANCELLED)
+    current_task.cancel()  # asyncio.Task.cancel()
+    # Task handles CancelledError gracefully
+    # Provider stream is aborted
+    # Display returns to IDLE
+```
+
+---
+
 ## Permission System
 
 Three hierarchical levels, each can only spawn agents at lower levels:
@@ -504,12 +676,13 @@ tests/
 | Phase | Required E2E Tests |
 |-------|-------------------|
 | 0 | Chat sends message, receives streamed response |
-| 1 | Tool call executes read_file, returns content |
-| 2 | Multi-turn with tool use, history persists |
-| 3 | Subagent spawns, reads file, returns result |
-| 4 | Subagent writes file within sandbox |
-| 5 | Nested spawn completes without orphans |
-| 6 | Workflow DAG executes in correct order |
+| 1 | ESC cancels stream, status transitions correctly, spinner shows |
+| 2 | Tool call executes read_file, returns content with progress |
+| 3 | Multi-turn with tool use, history persists, token tracking |
+| 4 | Subagent spawns, reads file, returns result |
+| 5 | Subagent writes file within sandbox |
+| 6 | Nested spawn completes without orphans |
+| 7 | Workflow DAG executes in correct order |
 
 ### Development Setup
 
@@ -669,5 +842,10 @@ refactor: Simplify skill registry
 1. ~~**Initialize repo**: `git init`, `.gitignore`, `pyproject.toml`~~ ✅
 2. ~~**Phase 0 implementation**: Core types, config, provider, session, CLI~~ ✅
 3. ~~**First E2E test**: Message in, streamed response out~~ ✅
-4. **Phase 1 implementation**: Skill interface, registry, 4 essential skills
-5. **Manual testing**: Verify streaming chat works with real API
+4. **Phase 1 implementation**: Display system foundation
+   - DisplayManager with Rich.Live
+   - Status line, spinner, stream renderer
+   - ESC cancellation
+   - Thinking trace capture
+5. **Phase 2 implementation**: Core skills with progress display
+6. **Phase 3 implementation**: Full productivity skills + token tracking
