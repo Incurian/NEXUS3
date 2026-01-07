@@ -12,54 +12,425 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ## Current Phase: Phase 1 - Display & Interaction
 
-**Goal**: Build the Rich-based display foundation BEFORE adding skills, so we don't have to retrofit UI later.
+**Goal**: Build the display foundation BEFORE adding skills, so we don't have to retrofit UI later.
 
 ### Why This Phase Exists
 NEXUS2 lesson learned: We tried to add spinners, status indicators, and cancellation at the end. It required restructuring everything. By building the display foundation first, all subsequent features (skills, subagents, workflows) get proper UI "for free".
 
-### Current Tasks
+---
 
-| Task | Status | Notes |
-|------|--------|-------|
-| Replace simple print with Rich.Live | 🔲 | Foundation for all dynamic display |
-| DisplayManager component | 🔲 | Centralized display state management |
-| Status line (thinking/responding/idle) | 🔲 | Shows current activity state |
-| Spinner during API wait | 🔲 | Visual feedback before first token |
-| ESC key cancellation | 🔲 | Cancel stream or operation mid-flight |
-| Thinking trace capture | 🔲 | Provider-level: extract `<thinking>` blocks |
-| Themed thinking display | 🔲 | Muted/gray/italic for reasoning traces |
-| Async task wrapper | 🔲 | Cancellable task management |
-| E2E test: cancel mid-stream | 🔲 | Verify ESC works |
+### Display Architecture: Inline + Summary Bar
 
-### Architecture Decisions for This Phase
+**Core principle**: Most output is normal terminal printing (robust, scrolls naturally). Only the summary bar uses Rich.Live (small, contained region).
+
+```
+┌─ SCROLLING CONTENT (normal print) ─────────────────────────┐
+│                                                             │
+│ User: Analyze this codebase                                 │
+│                                                             │
+│ ● Thinking... (collapsed, or full trace if expanded)       │
+│                                                             │
+│ I'll analyze the codebase structure. Let me read some files.│
+│                                                             │
+│   ● read_file: src/main.py                                 │
+│   [file contents printed here]                              │
+│   ● read_file: complete                                    │
+│                                                             │
+│   ○ grep: "TODO" (pending)                                 │
+│   ● grep: running...                                       │
+│   [grep results here]                                       │
+│   ● grep: complete                                         │
+│                                                             │
+│ Based on my analysis...                                     │
+│                                                             │
+├─ SUMMARY BAR (Rich.Live, bottom-anchored) ─────────────────┤
+│ ● responding | ● 1 active ○ 2 pending ● 3 done | ESC cancel│
+├─────────────────────────────────────────────────────────────┤
+│ > user input (prompt-toolkit)                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Status Indicators ("Gumballs")
+
+Static colored indicators - no animation complexity:
+
+```python
+● (cyan)    = in_progress / active
+● (green)   = complete / success
+● (red)     = error / failed
+● (yellow)  = warning / cancelled
+○ (dim)     = pending / queued
+```
+
+These print inline with content using Rich markup: `[cyan]●[/] Thinking...`
+
+### Component Breakdown
 
 ```
 nexus3/
-├── display/                 # NEW: Display system
+├── display/
 │   ├── __init__.py
-│   ├── manager.py          # DisplayManager - owns Rich.Live context
-│   ├── status.py           # StatusLine component
-│   ├── spinner.py          # Spinner component
-│   ├── stream.py           # StreamRenderer for token output
-│   └── theme.py            # Colors, styles for thinking/response/error
-└── cli/
-    ├── repl.py             # Uses DisplayManager
-    └── keys.py             # NEW: Key bindings (ESC handling)
+│   ├── manager.py       # DisplayManager - coordinates everything
+│   ├── console.py       # Shared Rich Console instance
+│   ├── printer.py       # Inline printing with gumballs
+│   ├── summary.py       # Summary bar (Rich.Live region)
+│   ├── segments.py      # Pluggable summary bar segments
+│   └── theme.py         # Colors, styles, gumball characters
+├── cli/
+│   ├── repl.py          # REPL loop, uses DisplayManager
+│   └── keys.py          # ESC handling, key bindings
+└── core/
+    └── cancel.py        # CancellationToken for async tasks
 ```
 
+---
+
+### Detailed Component Design
+
+#### 1. DisplayManager (`display/manager.py`)
+
+Central coordinator. Owns the Rich.Live context for summary bar.
+
+```python
+class DisplayManager:
+    def __init__(self, console: Console, config: DisplayConfig):
+        self.console = console
+        self.printer = InlinePrinter(console)
+        self.summary = SummaryBar(console)
+        self._cancel_token: CancellationToken | None = None
+
+    async def run_with_display(self, coro: Coroutine) -> Any:
+        """Run coroutine with live summary bar updates."""
+        self._cancel_token = CancellationToken()
+        try:
+            with self.summary.live():  # Rich.Live context
+                return await coro
+        finally:
+            self._cancel_token = None
+
+    def cancel(self) -> None:
+        """Called when ESC pressed."""
+        if self._cancel_token:
+            self._cancel_token.cancel()
+
+    # Inline printing (scrolls)
+    def print(self, *args, **kwargs): ...
+    def print_thinking(self, content: str, collapsed: bool = True): ...
+    def print_status(self, indicator: str, message: str): ...
+
+    # Summary bar updates
+    def set_activity(self, activity: Activity): ...
+    def add_task(self, task_id: str, label: str): ...
+    def complete_task(self, task_id: str, success: bool): ...
+```
+
+#### 2. InlinePrinter (`display/printer.py`)
+
+Handles all scrolling content output.
+
+```python
+class InlinePrinter:
+    def __init__(self, console: Console, theme: Theme):
+        self.console = console
+        self.theme = theme
+
+    def gumball(self, status: Status) -> str:
+        """Return colored gumball character."""
+        return self.theme.gumballs[status]
+
+    def print(self, content: str, style: str | None = None):
+        """Print content (scrolls)."""
+        self.console.print(content, style=style)
+
+    def print_thinking(self, content: str, collapsed: bool):
+        """Print thinking trace inline."""
+        if collapsed:
+            self.print(f"{self.gumball(Status.ACTIVE)} Thinking...",
+                      style=self.theme.thinking_collapsed)
+        else:
+            self.print(f"{self.gumball(Status.ACTIVE)} <thinking>",
+                      style=self.theme.thinking)
+            self.print(content, style=self.theme.thinking)
+            self.print("</thinking>", style=self.theme.thinking)
+
+    def print_task_start(self, task_type: str, label: str):
+        """Print task starting (e.g., '  ● read_file: src/main.py')."""
+        self.print(f"  {self.gumball(Status.ACTIVE)} {task_type}: {label}")
+
+    def print_task_end(self, task_type: str, success: bool):
+        """Print task completion."""
+        status = Status.COMPLETE if success else Status.ERROR
+        self.print(f"  {self.gumball(status)} {task_type}: {'complete' if success else 'failed'}")
+```
+
+#### 3. SummaryBar (`display/summary.py`)
+
+The only Rich.Live component. Renders segments.
+
+```python
+class SummaryBar:
+    def __init__(self, console: Console):
+        self.console = console
+        self.segments: list[SummarySegment] = []
+        self._live: Live | None = None
+
+    def register_segment(self, segment: SummarySegment, position: int = -1):
+        """Register a segment to display in the bar."""
+        if position < 0:
+            self.segments.append(segment)
+        else:
+            self.segments.insert(position, segment)
+
+    @contextmanager
+    def live(self):
+        """Context manager for Rich.Live."""
+        self._live = Live(
+            self._render(),
+            console=self.console,
+            refresh_per_second=4,
+            transient=True,  # Don't leave artifacts
+        )
+        with self._live:
+            yield
+
+    def refresh(self):
+        """Update the live display."""
+        if self._live:
+            self._live.update(self._render())
+
+    def _render(self) -> RenderableType:
+        """Compose all segments into a single line."""
+        parts = [seg.render() for seg in self.segments if seg.visible]
+        return Text(" | ").join(parts)
+```
+
+#### 4. Pluggable Segments (`display/segments.py`)
+
+Each segment is independent, easy to add new ones.
+
+```python
+class SummarySegment(Protocol):
+    @property
+    def visible(self) -> bool: ...
+    def render(self) -> RenderableType: ...
+
+class ActivitySegment:
+    """Shows current activity with spinner: ⠋ responding, ⠙ thinking, etc."""
+    SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"  # Braille spinner
+
+    def __init__(self, theme: Theme):
+        self.theme = theme
+        self.activity: Activity = Activity.IDLE
+        self._frame = 0
+
+    @property
+    def visible(self) -> bool:
+        return self.activity != Activity.IDLE
+
+    def render(self) -> Text:
+        # Animated spinner (Rich.Live refreshes this)
+        spinner = self.SPINNER_FRAMES[self._frame % len(self.SPINNER_FRAMES)]
+        self._frame += 1
+        return Text(f"{spinner} {self.activity.value}", style="cyan")
+
+class TaskCountSegment:
+    """Shows task counts: ● 2 active ○ 1 pending ● 5 done"""
+    def __init__(self, theme: Theme):
+        self.theme = theme
+        self.active = 0
+        self.pending = 0
+        self.done = 0
+
+    @property
+    def visible(self) -> bool:
+        return self.active + self.pending + self.done > 0
+
+    def render(self) -> Text:
+        parts = []
+        if self.active:
+            parts.append(f"{self.theme.gumballs[Status.ACTIVE]} {self.active} active")
+        if self.pending:
+            parts.append(f"{self.theme.gumballs[Status.PENDING]} {self.pending} pending")
+        if self.done:
+            parts.append(f"{self.theme.gumballs[Status.COMPLETE]} {self.done} done")
+        return Text(" ".join(parts))
+
+class CancelHintSegment:
+    """Shows 'ESC to cancel' when activity is happening."""
+    def __init__(self):
+        self.show = False
+
+    @property
+    def visible(self) -> bool:
+        return self.show
+
+    def render(self) -> Text:
+        return Text("ESC cancel", style="dim")
+
+# Future segments (Phase 2+):
+# - TokenCountSegment: "1.2k / 8k tokens"
+# - SubagentSegment: "● agent:analyzer ● agent:fixer"
+# - WorkflowSegment: "Step 2/5: analyzing"
+```
+
+#### 5. Theme (`display/theme.py`)
+
+All visual styling in one place.
+
+```python
+@dataclass
+class Theme:
+    # Gumball characters and colors
+    gumballs: dict[Status, str] = field(default_factory=lambda: {
+        Status.ACTIVE: "[cyan]●[/]",
+        Status.PENDING: "[dim]○[/]",
+        Status.COMPLETE: "[green]●[/]",
+        Status.ERROR: "[red]●[/]",
+        Status.CANCELLED: "[yellow]●[/]",
+    })
+
+    # Text styles
+    thinking: str = "dim italic"
+    thinking_collapsed: str = "dim"
+    response: str = ""
+    error: str = "red"
+    user_prompt: str = "bold"
+
+    # Summary bar
+    summary_separator: str = " | "
+    summary_style: str = "on #1a1a1a"  # Subtle background
+
+# Allow user customization via config
+def load_theme(config: dict | None = None) -> Theme:
+    theme = Theme()
+    if config:
+        # Override from config
+        ...
+    return theme
+```
+
+#### 6. Cancellation (`core/cancel.py`)
+
+Clean async cancellation support.
+
+```python
+class CancellationToken:
+    def __init__(self):
+        self._cancelled = False
+        self._callbacks: list[Callable] = []
+
+    @property
+    def is_cancelled(self) -> bool:
+        return self._cancelled
+
+    def cancel(self) -> None:
+        self._cancelled = True
+        for cb in self._callbacks:
+            cb()
+
+    def on_cancel(self, callback: Callable) -> None:
+        self._callbacks.append(callback)
+        if self._cancelled:
+            callback()
+
+    def raise_if_cancelled(self) -> None:
+        if self._cancelled:
+            raise CancelledError("Operation cancelled by user")
+```
+
+#### 7. ESC Key Handling (`cli/keys.py`)
+
+Integrate with prompt-toolkit for ESC detection.
+
+```python
+async def handle_keys(display: DisplayManager, input_task: asyncio.Task):
+    """Monitor for ESC key during operations."""
+    # When not at prompt (during streaming/tool execution),
+    # ESC should cancel the current operation.
+    #
+    # Implementation options:
+    # 1. Raw terminal input monitoring
+    # 2. prompt-toolkit key bindings
+    # 3. Signal handling (less portable)
+    ...
+```
+
+---
+
+### Integration with REPL
+
+```python
+# cli/repl.py
+async def run_repl():
+    config = load_config()
+    provider = OpenRouterProvider(config.provider)
+    session = Session(provider)
+    display = DisplayManager(Console(), DisplayConfig())
+
+    # Register summary bar segments
+    display.summary.register_segment(ActivitySegment(display.theme))
+    display.summary.register_segment(TaskCountSegment(display.theme))
+    display.summary.register_segment(CancelHintSegment())
+
+    print_info("NEXUS3 v0.1.0")
+
+    while True:
+        try:
+            user_input = await prompt_async("> ")
+            if user_input.strip() == "/quit":
+                break
+
+            async def process():
+                display.set_activity(Activity.THINKING)
+                async for chunk in session.send(user_input):
+                    if display.cancel_token.is_cancelled:
+                        break
+                    # Handle thinking vs response chunks
+                    display.print_streaming(chunk)
+                display.set_activity(Activity.IDLE)
+
+            await display.run_with_display(process())
+
+        except CancelledError:
+            display.print_status(Status.CANCELLED, "Cancelled")
+        except KeyboardInterrupt:
+            break
+```
+
+---
+
+### Implementation Order
+
+| Step | Task | Notes |
+|------|------|-------|
+| 1 | `display/theme.py` | Gumballs, styles - no deps |
+| 2 | `display/console.py` | Shared Console instance |
+| 3 | `display/printer.py` | Inline printing with gumballs |
+| 4 | `display/segments.py` | ActivitySegment, TaskCountSegment |
+| 5 | `display/summary.py` | SummaryBar with Rich.Live |
+| 6 | `core/cancel.py` | CancellationToken |
+| 7 | `display/manager.py` | DisplayManager coordinating all |
+| 8 | `cli/keys.py` | ESC handling |
+| 9 | Update `cli/repl.py` | Integrate DisplayManager |
+| 10 | Provider thinking extraction | Parse `<thinking>` from stream |
+| 11 | Tests | Unit + integration |
+
 ### Acceptance Criteria
-- [ ] Spinner shows while waiting for first token
-- [ ] Status line shows "Thinking..." → "Responding..." → idle
-- [ ] Thinking traces render in muted gray, collapsible
-- [ ] ESC cancels current stream, returns to prompt cleanly
-- [ ] All display updates are flicker-free (Rich.Live)
-- [ ] Foundation extensible for tool progress, subagent panels (Phase 2+)
+
+- [ ] Inline gumballs show task status (active/complete/error)
+- [ ] Summary bar shows activity state and task counts
+- [ ] Summary bar is configurable (segments can be added/removed)
+- [ ] ESC cancels current stream/operation cleanly
+- [ ] Thinking traces display collapsed by default ("Thinking...")
+- [ ] Thinking traces can be expanded (show full content, muted theme)
+- [ ] Normal terminal scrolling preserved (not fighting Rich.Live)
+- [ ] Clean handoff between Rich.Live (summary) and prompt-toolkit (input)
 
 ### Blocked By
 - Nothing (builds on Phase 0)
 
 ### Blocks
-- Phase 2 (Core Skills) - needs progress display for tool calls
+- Phase 2 (Core Skills) - needs display integration for tool progress
 
 ---
 
@@ -452,94 +823,31 @@ class Skill(Protocol):
 
 ---
 
-## Display System Architecture (Phase 1)
+## Display System Summary
 
-The display system is built to be **extensible from day one**. All dynamic terminal output goes through the DisplayManager, which owns the Rich.Live context.
+> **Detailed design**: See "Current Phase: Phase 1" section at top of this file.
 
-### Core Components
+**Architecture**: Inline + Summary Bar
+- **Inline content**: Normal `print()`, scrolls naturally, uses gumballs for status
+- **Summary bar**: Single Rich.Live region at bottom, above prompt
+- **Input**: prompt-toolkit at absolute bottom
 
-```python
-# nexus3/display/manager.py
-class DisplayManager:
-    """Central coordinator for all terminal display.
+**Key Components**:
+- `DisplayManager` - Coordinates printing and summary bar
+- `InlinePrinter` - Gumball-based status printing
+- `SummaryBar` - Pluggable segments (activity, task counts, hints)
+- `CancellationToken` - Clean async cancellation
 
-    Owns the Rich.Live context. All components render through this.
-    Designed for extensibility: new panels can be added without
-    restructuring existing code.
-    """
-    def __init__(self):
-        self.status = StatusLine()
-        self.spinner = Spinner()
-        self.stream = StreamRenderer()
-        self.thinking = ThinkingRenderer()
-        # Future: self.tools = ToolProgressPanel()
-        # Future: self.agents = SubagentPanel()
-        # Future: self.tokens = TokenTracker()
-
-    async def run(self, task: Callable) -> Any:
-        """Run a task with live display updates."""
-        ...
-
-    def set_status(self, status: Status) -> None:
-        """Update status line (thinking/responding/etc)."""
-        ...
+**Gumballs** (static colored indicators):
+```
+● cyan   = active/in-progress
+● green  = complete/success
+● red    = error/failed
+● yellow = cancelled/warning
+○ dim    = pending/queued
 ```
 
-### Status States
-
-```python
-class Status(Enum):
-    IDLE = "idle"              # Waiting for input
-    THINKING = "thinking"      # Waiting for first token
-    RESPONDING = "responding"  # Streaming response
-    TOOL_CALLING = "calling"   # Executing tool (Phase 2+)
-    CANCELLED = "cancelled"    # User pressed ESC
-```
-
-### Extensibility Pattern
-
-New display components follow this pattern:
-
-```python
-class NewPanel(Protocol):
-    def render(self) -> RenderableType:
-        """Return Rich renderable for current state."""
-        ...
-
-    def update(self, data: Any) -> None:
-        """Update internal state (called from async context)."""
-        ...
-```
-
-DisplayManager composes all panels into a single Rich.Live layout:
-
-```
-┌─────────────────────────────────────────────┐
-│ Status: Responding...            [spinner]  │  <- StatusLine
-├─────────────────────────────────────────────┤
-│ <thinking>                                  │  <- ThinkingRenderer
-│ Let me analyze this step by step...         │     (collapsible, muted)
-│ </thinking>                                 │
-├─────────────────────────────────────────────┤
-│ Here's the answer to your question...       │  <- StreamRenderer
-│ The solution involves three steps:          │     (main content)
-│ 1. First, we need to...█                    │
-├─────────────────────────────────────────────┤
-│ [Future: Tool progress, subagent status]    │  <- Extensibility slots
-└─────────────────────────────────────────────┘
-```
-
-### Cancellation Flow
-
-```python
-# ESC key triggers cancellation
-async def handle_esc():
-    display.set_status(Status.CANCELLED)
-    current_task.cancel()  # asyncio.Task.cancel()
-    # Task handles CancelledError gracefully
-    # Provider stream is aborted
-    # Display returns to IDLE
-```
+**Extensibility**: New summary bar segments implement `SummarySegment` protocol and register with `SummaryBar.register_segment()`
 
 ---
 
