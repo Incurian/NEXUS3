@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. The goal is a simpler, more maintainable, end-to-end tested agent with clear architecture.
 
-**Status:** Pre-development planning complete. Ready for Phase 0 implementation.
+**Status:** Phase 0 complete. Basic streaming chat working.
 
 ---
 
@@ -55,16 +55,16 @@ nexus3/
 
 ## Development Phases
 
-### Phase 0: MVP - Just Chat in CLI
+### Phase 0: MVP - Just Chat in CLI ✅
 **Goal**: Single-turn chat, no tools, solid foundation
 
-- [ ] Core types: Message, Role, ToolResult (frozen dataclasses)
-- [ ] Config loader with validation (fail-fast, Pydantic)
-- [ ] AsyncProvider protocol + OpenRouter implementation
-- [ ] Async Session with streaming
-- [ ] Async REPL with prompt-toolkit + Rich
-- [ ] UTF-8 encoding everywhere (explicit, consistent)
-- [ ] End-to-end test: type message -> get streamed response
+- [x] Core types: Message, Role, ToolResult (frozen dataclasses)
+- [x] Config loader with validation (fail-fast, Pydantic)
+- [x] AsyncProvider protocol + OpenRouter implementation
+- [x] Async Session with streaming
+- [x] Async REPL with prompt-toolkit + Rich
+- [x] UTF-8 encoding everywhere (explicit, consistent)
+- [x] End-to-end test: type message -> get streamed response
 
 **No skills, no subagents, no history - just clean async chat**
 
@@ -511,9 +511,37 @@ tests/
 | 5 | Nested spawn completes without orphans |
 | 6 | Workflow DAG executes in correct order |
 
+### Development Setup
+
+This project uses **uv** for Python version management and package installation.
+
+```bash
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create venv with Python 3.11
+uv python install 3.11
+uv venv --python 3.11 .venv
+
+# Activate venv
+source .venv/bin/activate
+
+# Install package with dev dependencies
+uv pip install -e ".[dev]"
+```
+
+**Python invocation:** Always use the venv Python:
+```bash
+source .venv/bin/activate
+python -m nexus3  # Run the CLI
+```
+
 ### Running Tests
 
 ```bash
+# Activate venv first
+source .venv/bin/activate
+
 # All tests
 pytest tests/ -v
 
@@ -522,6 +550,10 @@ pytest tests/integration/ -v
 
 # With coverage
 pytest tests/ --cov=nexus3 --cov-report=term-missing
+
+# Linting and type checking
+ruff check nexus3/
+mypy nexus3/
 ```
 
 ---
@@ -634,7 +666,8 @@ refactor: Simplify skill registry
 
 ## Next Steps
 
-1. **Initialize repo**: `git init`, `.gitignore`, `pyproject.toml`
-2. **Phase 0 implementation**: Core types, config, provider, session, CLI
-3. **First E2E test**: Message in, streamed response out
-4. **Update this file** with learnings from Phase 0
+1. ~~**Initialize repo**: `git init`, `.gitignore`, `pyproject.toml`~~ ✅
+2. ~~**Phase 0 implementation**: Core types, config, provider, session, CLI~~ ✅
+3. ~~**First E2E test**: Message in, streamed response out~~ ✅
+4. **Phase 1 implementation**: Skill interface, registry, 4 essential skills
+5. **Manual testing**: Verify streaming chat works with real API
