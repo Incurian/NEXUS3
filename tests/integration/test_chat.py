@@ -27,10 +27,11 @@ class MockProvider:
         """Initialize the mock provider.
 
         Args:
-            stream_chunks: List of chunks to yield in stream(). Defaults to ["Hello", " ", "world", "!"].
-            complete_content: Content to return in complete(). Defaults to "Hello world!".
+            stream_chunks: List of chunks to yield. Defaults to ["Hello", " ", "world", "!"].
+            complete_content: Content to return. Defaults to "Hello world!".
         """
-        self.stream_chunks = stream_chunks if stream_chunks is not None else ["Hello", " ", "world", "!"]
+        default_chunks = ["Hello", " ", "world", "!"]
+        self.stream_chunks = stream_chunks if stream_chunks is not None else default_chunks
         self.complete_content = complete_content
         self.last_messages: list[Message] | None = None
         self.stream_call_count = 0

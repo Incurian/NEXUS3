@@ -5,10 +5,11 @@ import asyncio
 from prompt_toolkit import PromptSession
 from prompt_toolkit.patch_stdout import patch_stdout
 
-from nexus3.cli.output import console, print_error, print_info, print_streaming
+from nexus3.cli.keys import KeyMonitor
 from nexus3.config.loader import load_config
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
+from nexus3.display import Activity, DisplayManager
 from nexus3.provider.openrouter import OpenRouterProvider
 from nexus3.session.session import Session
 
@@ -22,27 +23,30 @@ async def run_repl() -> None:
     Loads configuration, creates provider and session, then enters an
     interactive loop reading user input and streaming responses.
     """
+    # Create display manager
+    display = DisplayManager()
+
     # Load configuration
     try:
         config = load_config()
     except NexusError as e:
-        print_error(e.message)
+        display.print_error(e.message)
         return
 
     # Create provider
     try:
         provider = OpenRouterProvider(config.provider)
     except NexusError as e:
-        print_error(e.message)
+        display.print_error(e.message)
         return
 
     # Create session
     session = Session(provider)
 
     # Print welcome message
-    console.print("[bold]NEXUS3 v0.1.0[/bold]")
-    print_info("Type /quit to exit.")
-    console.print()
+    display.print("[bold]NEXUS3 v0.1.0[/bold]")
+    display.print("Type /quit to exit.", style="dim")
+    display.print("")
 
     # Create prompt session for async input
     prompt_session: PromptSession[str] = PromptSession()
@@ -60,25 +64,52 @@ async def run_repl() -> None:
 
             # Handle /quit command
             if user_input.strip().lower() == "/quit":
-                print_info("Goodbye!")
+                display.print("Goodbye!", style="dim")
                 break
 
             # Send to session and stream response
             try:
-                await print_streaming(session.send(user_input))
+                async with display.live_session():
+                    # Monitor for ESC key to cancel
+                    async with KeyMonitor(on_escape=display.cancel):
+                        display.set_activity(Activity.THINKING)
+
+                        first_chunk = True
+                        async for chunk in session.send(user_input):
+                            # Check for cancellation
+                            if display.is_cancelled:
+                                display.print_cancelled()
+                                break
+
+                            # Switch to responding after first chunk
+                            if first_chunk:
+                                display.set_activity(Activity.RESPONDING)
+                                first_chunk = False
+
+                            display.print_streaming(chunk)
+
+                        # Finish the response line
+                        if not display.is_cancelled:
+                            display.finish_streaming()
+
+                        display.set_activity(Activity.IDLE)
+
             except NexusError as e:
-                print_error(e.message)
+                display.print_error(e.message)
+
+            # Add spacing after response
+            display.print("")
 
         except KeyboardInterrupt:
             # Handle Ctrl+C gracefully
-            console.print()
-            print_info("Use /quit to exit.")
+            display.print("")
+            display.print("Use /quit to exit.", style="dim")
             continue
 
         except EOFError:
             # Handle Ctrl+D
-            console.print()
-            print_info("Goodbye!")
+            display.print("")
+            display.print("Goodbye!", style="dim")
             break
 
 

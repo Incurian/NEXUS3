@@ -1,7 +1,8 @@
 """Unit tests for nexus3.core.types module."""
 
-import pytest
 from dataclasses import FrozenInstanceError
+
+import pytest
 
 from nexus3.core.types import Message, Role, ToolCall, ToolResult
 
