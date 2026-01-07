@@ -17,6 +17,8 @@ class SummaryBar:
     This is the only Rich.Live component - it renders registered segments
     and refreshes automatically to animate spinners.
 
+    Implements __rich__ so Live can auto-refresh and animate the spinner.
+
     Example:
         bar = SummaryBar(console, theme)
         bar.register_segment(ActivitySegment(theme))
@@ -32,6 +34,10 @@ class SummaryBar:
         self.theme = theme
         self.segments: list[SummarySegment] = []
         self._live: Live | None = None
+
+    def __rich__(self) -> RenderableType:
+        """Make SummaryBar a Rich renderable for auto-refresh."""
+        return self._render()
 
     def register_segment(self, segment: SummarySegment, position: int = -1) -> None:
         """Register a segment to display in the bar.
@@ -56,16 +62,27 @@ class SummaryBar:
 
         While in this context, the summary bar refreshes automatically.
         """
-        self._live = Live(
-            self._render(),
-            console=self.console,
-            refresh_per_second=4,  # 4Hz for smooth spinner animation
-            transient=True,        # Don't leave artifacts when done
-        )
+        self.start()
         try:
-            with self._live:
-                yield
+            yield
         finally:
+            self.stop()
+
+    def start(self) -> None:
+        """Start the live display (begin spinner animation)."""
+        if self._live is None:
+            self._live = Live(
+                self,  # Pass self - __rich__ will be called on each refresh
+                console=self.console,
+                refresh_per_second=8,  # 8Hz for smooth spinner animation
+                transient=True,        # Don't leave artifacts when done
+            )
+            self._live.start()
+
+    def stop(self) -> None:
+        """Stop the live display (end spinner animation)."""
+        if self._live is not None:
+            self._live.stop()
             self._live = None
 
     def refresh(self) -> None:

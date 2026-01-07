@@ -53,6 +53,10 @@ class TestActivityEnum:
         """Activity enum should have IDLE value."""
         assert Activity.IDLE.value == "idle"
 
+    def test_activity_has_waiting(self) -> None:
+        """Activity enum should have WAITING value."""
+        assert Activity.WAITING.value == "waiting"
+
     def test_activity_has_thinking(self) -> None:
         """Activity enum should have THINKING value."""
         assert Activity.THINKING.value == "thinking"
@@ -66,8 +70,8 @@ class TestActivityEnum:
         assert Activity.TOOL_CALLING.value == "tool_calling"
 
     def test_activity_has_expected_count(self) -> None:
-        """Activity enum should have exactly 4 values."""
-        assert len(Activity) == 4
+        """Activity enum should have exactly 5 values."""
+        assert len(Activity) == 5
 
 
 class TestTheme:

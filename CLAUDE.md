@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. The goal is a simpler, more maintainable, end-to-end tested agent with clear architecture.
 
-**Status:** Phase 1 in progress. Building display system foundation.
+**Status:** Phase 1 substantially complete. Core display system working.
 
 ---
 
@@ -14,55 +14,63 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 **Goal**: Build the display foundation BEFORE adding skills, so we don't have to retrofit UI later.
 
-### Why This Phase Exists
-NEXUS2 lesson learned: We tried to add spinners, status indicators, and cancellation at the end. It required restructuring everything. By building the display foundation first, all subsequent features (skills, subagents, workflows) get proper UI "for free".
+### What's Working (Phase 1)
+- ✅ Rich.Live streaming display with animated spinner during responses
+- ✅ Response text accumulates in real-time
+- ✅ Activity phases: WAITING → RESPONDING (THINKING reserved for trace detection)
+- ✅ ESC cancellation with HTTP request cancellation
+- ✅ Slash command handler (/quit, /exit, /q)
+- ✅ Persistent status bar using prompt_toolkit bottom_toolbar (no scrollback pollution)
+- ✅ Clean visual separation between exchanges
+- ✅ 140 tests passing
+
+### Known Limitations
+- No conversation history - each message is single-turn (history planned for Phase 2)
+- No animation during input (prompt_toolkit limitation) - animation only during streaming
+
+### Next Up
+- Logging modes (for debugging and thinking trace capture)
+
+### Deferred
+- Thinking trace detection (parse `<thinking>` tags) - after logging
+- Type while agent active - requires Textual or custom input handling
 
 ---
 
-### Display Architecture: Inline + Summary Bar
+### Display Architecture: Two-System Handoff
 
-**Core principle**: Most output is normal terminal printing (robust, scrolls naturally). Only the summary bar uses Rich.Live (small, contained region).
+**Key insight**: prompt_toolkit and Rich.Live can't both control the terminal simultaneously. Solution: clean handoff between them.
 
 ```
-┌─ SCROLLING CONTENT (normal print) ─────────────────────────┐
+During Input (prompt_toolkit):
+┌─────────────────────────────────────────────────────────────┐
+│ Previous response...                                        │
 │                                                             │
-│ User: Analyze this codebase                                 │
-│                                                             │
-│ ● Thinking... (collapsed, or full trace if expanded)       │
-│                                                             │
-│ I'll analyze the codebase structure. Let me read some files.│
-│                                                             │
-│   ● read_file: src/main.py                                 │
-│   [file contents printed here]                              │
-│   ● read_file: complete                                    │
-│                                                             │
-│   ○ grep: "TODO" (pending)                                 │
-│   ● grep: running...                                       │
-│   [grep results here]                                       │
-│   ● grep: complete                                         │
-│                                                             │
-│ Based on my analysis...                                     │
-│                                                             │
-├─ SUMMARY BAR (Rich.Live, bottom-anchored) ─────────────────┤
-│ ● responding | ● 1 active ○ 2 pending ● 3 done | ESC cancel│
-├─────────────────────────────────────────────────────────────┤
-│ > user input (prompt-toolkit)                               │
+│ >                                   <- prompt               │
+│ ■ ● ready                           <- toolbar (virtual)    │
+└─────────────────────────────────────────────────────────────┘
+
+During Streaming (Rich.Live):
+┌─────────────────────────────────────────────────────────────┐
+│ Response text grows here...                                 │
+│ ⠋ Responding...                     <- activity status     │
+│ ⠋ ● active | ESC cancel             <- status bar          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
+Key files:
+- `display/streaming.py` - StreamingDisplay class (implements `__rich__`)
+- `cli/repl.py` - Main REPL loop with toolbar + Rich.Live handoff
+
 ### Status Indicators ("Gumballs")
 
-Static colored indicators - no animation complexity:
-
-```python
-● (cyan)    = in_progress / active
-● (green)   = complete / success
-● (red)     = error / failed
-● (yellow)  = warning / cancelled
-○ (dim)     = pending / queued
 ```
-
-These print inline with content using Rich markup: `[cyan]●[/] Thinking...`
+● (cyan)    = active (during streaming)
+● (green)   = ready (during input)
+● (red)     = error
+● (yellow)  = cancelled
+■ (dim)     = placeholder (no spinner during input)
+```
 
 ### Component Breakdown
 

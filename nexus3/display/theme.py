@@ -16,8 +16,9 @@ class Status(Enum):
 class Activity(Enum):
     """Current activity states for the summary bar."""
     IDLE = "idle"
-    THINKING = "thinking"
-    RESPONDING = "responding"
+    WAITING = "waiting"      # Waiting for first byte from API
+    THINKING = "thinking"    # Model is reasoning (detected via tags)
+    RESPONDING = "responding"  # Model is generating response
     TOOL_CALLING = "tool_calling"
 
 

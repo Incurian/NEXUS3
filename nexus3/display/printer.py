@@ -1,5 +1,7 @@
 """Inline printing with gumball status indicators."""
 
+import sys
+
 from rich.console import Console
 
 from nexus3.display.theme import Status, Theme
@@ -9,7 +11,8 @@ class InlinePrinter:
     """Handles all scrolling content output with gumball indicators.
 
     All output from this class scrolls normally in the terminal.
-    Uses Rich Console for styled output.
+    Uses Rich Console for styled output, except streaming which
+    uses raw stdout to avoid conflicts with Rich.Live.
     """
 
     def __init__(self, console: Console, theme: Theme) -> None:
@@ -86,10 +89,12 @@ class InlinePrinter:
     def print_streaming_chunk(self, chunk: str) -> None:
         """Print a streaming chunk without newline.
 
-        Used for streaming response tokens.
+        Uses raw stdout to avoid conflicts with Rich.Live.
         """
-        self.console.print(chunk, end="")
+        sys.stdout.write(chunk)
+        sys.stdout.flush()
 
     def finish_streaming(self) -> None:
         """Finish streaming output (print newline)."""
-        self.console.print()
+        sys.stdout.write("\n")
+        sys.stdout.flush()

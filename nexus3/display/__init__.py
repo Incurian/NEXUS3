@@ -12,6 +12,7 @@ from nexus3.display.segments import (
     SummarySegment,
     TaskCountSegment,
 )
+from nexus3.display.streaming import StreamingDisplay
 from nexus3.display.summary import SummaryBar
 from nexus3.display.theme import Activity, Status, Theme, load_theme
 
@@ -23,6 +24,8 @@ __all__ = [
     "DisplayManager",
     # Printer
     "InlinePrinter",
+    # Streaming
+    "StreamingDisplay",
     # Segments
     "ActivitySegment",
     "CancelHintSegment",

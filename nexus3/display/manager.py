@@ -78,17 +78,28 @@ class DisplayManager:
         """Context manager for a live display session.
 
         While in this context:
-        - Summary bar is live (refreshes automatically)
+        - Summary bar can be started/stopped for spinner animation
         - Cancellation token is active
         - ESC hint is shown when activity is non-idle
+
+        Note: Call stop_live() before streaming to avoid conflicts with Rich.Live.
+        The summary bar will be stopped automatically when context exits.
         """
         self._cancel_token = CancellationToken()
         try:
-            with self.summary.live():
-                yield
+            self.summary.start()
+            yield
         finally:
+            self.summary.stop()
             self._cancel_token = None
             self._cancel_hint.show = False
+
+    def stop_live(self) -> None:
+        """Stop the live display (call before streaming).
+
+        This stops the Rich.Live spinner so streaming output isn't corrupted.
+        """
+        self.summary.stop()
 
     # === Activity Management ===
 
