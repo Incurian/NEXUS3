@@ -1,6 +1,8 @@
 """Async REPL with prompt-toolkit for NEXUS3."""
 
+import argparse
 import asyncio
+from pathlib import Path
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
@@ -15,17 +17,51 @@ from nexus3.core.errors import NexusError
 from nexus3.display import Activity, StreamingDisplay, get_console
 from nexus3.display.theme import load_theme
 from nexus3.provider.openrouter import OpenRouterProvider
-from nexus3.session.session import Session
+from nexus3.session import LogConfig, LogStream, Session, SessionLogger
 
 # Configure UTF-8 at module load
 configure_stdio()
 
 
-async def run_repl() -> None:
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        prog="nexus3",
+        description="AI-powered CLI agent framework",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose logging (thinking traces, timing)",
+    )
+    parser.add_argument(
+        "--raw-log",
+        action="store_true",
+        help="Enable raw API JSON logging",
+    )
+    parser.add_argument(
+        "--log-dir",
+        type=Path,
+        default=Path(".nexus3/logs"),
+        help="Directory for session logs (default: .nexus3/logs)",
+    )
+    return parser.parse_args()
+
+
+async def run_repl(
+    verbose: bool = False,
+    raw_log: bool = False,
+    log_dir: Path | None = None,
+) -> None:
     """Run the async REPL loop.
 
     Loads configuration, creates provider and session, then enters an
     interactive loop reading user input and streaming responses.
+
+    Args:
+        verbose: Enable verbose logging stream.
+        raw_log: Enable raw API logging stream.
+        log_dir: Directory for session logs.
     """
     console = get_console()
     theme = load_theme()
@@ -44,11 +80,26 @@ async def run_repl() -> None:
         console.print(f"[red]Error:[/] {e.message}")
         return
 
-    # Create session
-    session = Session(provider)
+    # Configure logging streams
+    streams = LogStream.CONTEXT  # Always on
+    if verbose:
+        streams |= LogStream.VERBOSE
+    if raw_log:
+        streams |= LogStream.RAW
+
+    # Create session logger
+    log_config = LogConfig(
+        base_dir=log_dir or Path(".nexus3/logs"),
+        streams=streams,
+    )
+    logger = SessionLogger(log_config)
+
+    # Create session with logger
+    session = Session(provider, logger=logger)
 
     # Print welcome message
     console.print("[bold]NEXUS3 v0.1.0[/bold]")
+    console.print(f"Session: {logger.session_dir}", style="dim")
     console.print("Commands: /quit | ESC to cancel", style="dim")
     console.print("")
 
@@ -167,11 +218,19 @@ async def run_repl() -> None:
             console.print("Goodbye!", style="dim")
             break
 
+    # Clean up logger
+    logger.close()
+
 
 def main() -> None:
     """Entry point for the NEXUS3 CLI."""
+    args = parse_args()
     try:
-        asyncio.run(run_repl())
+        asyncio.run(run_repl(
+            verbose=args.verbose,
+            raw_log=args.raw_log,
+            log_dir=args.log_dir,
+        ))
     except KeyboardInterrupt:
         # Handle Ctrl+C during startup
         pass

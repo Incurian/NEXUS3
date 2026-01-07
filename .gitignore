@@ -38,3 +38,6 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# NEXUS3 session logs
+.nexus3/logs/
