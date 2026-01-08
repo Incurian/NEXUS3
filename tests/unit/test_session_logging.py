@@ -96,7 +96,7 @@ class TestLogConfig:
         """LogConfig has expected defaults."""
         config = LogConfig()
         assert config.base_dir == Path(".nexus3/logs")
-        assert config.streams == LogStream.CONTEXT
+        assert config.streams == LogStream.ALL  # All streams on by default
         assert config.parent_session is None
 
     def test_custom_base_dir(self, tmp_path):
@@ -131,11 +131,11 @@ class TestSessionInfo:
     """Tests for SessionInfo dataclass."""
 
     def test_create_generates_valid_session_id(self, tmp_path):
-        """SessionInfo.create() generates ID with timestamp and hex suffix."""
+        """SessionInfo.create() generates ID with timestamp, mode, and hex suffix."""
         info = SessionInfo.create(base_dir=tmp_path)
 
-        # Session ID format: YYYY-MM-DD_HHMMSS_xxxxxx
-        pattern = r"^\d{4}-\d{2}-\d{2}_\d{6}_[a-f0-9]{6}$"
+        # Session ID format: YYYY-MM-DD_HHMMSS_MODE_xxxxxx
+        pattern = r"^\d{4}-\d{2}-\d{2}_\d{6}_[a-z]+_[a-f0-9]{6}$"
         assert re.match(pattern, info.session_id), f"Invalid ID format: {info.session_id}"
 
     def test_create_generates_unique_ids(self, tmp_path):

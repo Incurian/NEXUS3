@@ -40,4 +40,7 @@ htmlcov/
 Thumbs.db
 
 # NEXUS3 session logs
-.nexus3/logs/
+.nexus3/
+
+# Claude Code plans (keep skills, ignore plans)
+.claude/plans/

@@ -1,13 +1,18 @@
 """Session logging interface."""
 
+from __future__ import annotations
+
 from pathlib import Path
 from time import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nexus3.core.types import Message, Role, ToolCall, ToolResult
 from nexus3.session.markdown import MarkdownWriter, RawWriter
 from nexus3.session.storage import SessionStorage
 from nexus3.session.types import LogConfig, LogStream, SessionInfo
+
+if TYPE_CHECKING:
+    from nexus3.core.interfaces import RawLogCallback
 
 
 class SessionLogger:
@@ -26,6 +31,7 @@ class SessionLogger:
         self.info = SessionInfo.create(
             base_dir=config.base_dir,
             parent_id=config.parent_session,
+            mode=config.mode,
         )
 
         # Ensure session directory exists
@@ -272,7 +278,7 @@ class SessionLogger:
 
     # === Subagent Support ===
 
-    def create_child_logger(self, name: str | None = None) -> "SessionLogger":
+    def create_child_logger(self, name: str | None = None) -> SessionLogger:
         """Create a nested logger for a subagent."""
         child_config = LogConfig(
             base_dir=self.info.session_dir,
@@ -281,8 +287,63 @@ class SessionLogger:
         )
         return SessionLogger(child_config)
 
+    # === Raw Log Callback ===
+
+    def get_raw_log_callback(self) -> RawLogCallback | None:
+        """Get a callback for raw API logging, if RAW stream is enabled.
+
+        Returns:
+            A RawLogCallback adapter if RAW logging is enabled, None otherwise.
+        """
+        if not self._has_stream(LogStream.RAW):
+            return None
+        return RawLogCallbackAdapter(self)
+
     # === Lifecycle ===
 
     def close(self) -> None:
         """Close the logger and release resources."""
         self.storage.close()
+
+
+class RawLogCallbackAdapter:
+    """Adapter that bridges SessionLogger to the RawLogCallback protocol.
+
+    This class implements the RawLogCallback protocol by delegating to
+    SessionLogger methods. It allows the provider to log raw API data
+    without knowing about the logging implementation.
+    """
+
+    def __init__(self, logger: SessionLogger) -> None:
+        """Initialize the adapter.
+
+        Args:
+            logger: The SessionLogger to delegate to.
+        """
+        self._logger = logger
+
+    def on_request(self, endpoint: str, payload: dict[str, Any]) -> None:
+        """Log a raw API request.
+
+        Args:
+            endpoint: The API endpoint URL.
+            payload: The request body.
+        """
+        self._logger.log_raw_request(endpoint, payload)
+
+    def on_response(self, status: int, body: dict[str, Any]) -> None:
+        """Log a raw API response.
+
+        Args:
+            status: The HTTP status code.
+            body: The response body.
+        """
+        self._logger.log_raw_response(status, body)
+
+    def on_chunk(self, chunk: dict[str, Any]) -> None:
+        """Log a raw streaming chunk.
+
+        Args:
+            chunk: The parsed SSE chunk.
+        """
+        self._logger.log_raw_chunk(chunk)

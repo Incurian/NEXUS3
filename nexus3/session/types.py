@@ -26,8 +26,9 @@ class LogConfig:
     """Configuration for session logging."""
 
     base_dir: Path = field(default_factory=lambda: Path(".nexus3/logs"))
-    streams: LogStream = LogStream.CONTEXT
+    streams: LogStream = LogStream.ALL  # All streams on by default for now
     parent_session: str | None = None
+    mode: str = "repl"  # "repl" or "serve" - shown in log folder name
 
     def __post_init__(self) -> None:
         """Ensure base_dir is a Path."""
@@ -49,11 +50,12 @@ class SessionInfo:
         cls,
         base_dir: Path,
         parent_id: str | None = None,
+        mode: str = "repl",
     ) -> "SessionInfo":
         """Create a new session with generated ID.
 
-        Session ID format: YYYY-MM-DD_HHMMSS_xxxxxx
-        Where xxxxxx is a 6-character hex string for uniqueness.
+        Session ID format: YYYY-MM-DD_HHMMSS_MODE_xxxxxx
+        Where MODE is 'repl' or 'serve' and xxxxxx is a 6-character hex string.
 
         For subagent sessions (parent_id is set), base_dir should be the
         parent's session_dir, and the subagent folder is created directly
@@ -62,7 +64,7 @@ class SessionInfo:
         now = datetime.now()
         timestamp = now.strftime("%Y-%m-%d_%H%M%S")
         suffix = token_hex(3)  # 6 hex chars
-        session_id = f"{timestamp}_{suffix}"
+        session_id = f"{timestamp}_{mode}_{suffix}"
 
         if parent_id:
             # Subagent: base_dir IS the parent session dir, create subagent folder

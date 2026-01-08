@@ -67,3 +67,71 @@ class ToolResult:
     def success(self) -> bool:
         """Return True if the tool execution succeeded (no error)."""
         return not self.error
+
+
+# --- Streaming Types ---
+# These types are yielded by provider.stream() to communicate content,
+# tool calls, and completion status.
+
+
+@dataclass(frozen=True)
+class StreamEvent:
+    """Base class for all streaming events."""
+
+    pass
+
+
+@dataclass(frozen=True)
+class ContentDelta(StreamEvent):
+    """A chunk of content text from the stream.
+
+    Attributes:
+        text: The text content to display.
+    """
+
+    text: str
+
+
+@dataclass(frozen=True)
+class ReasoningDelta(StreamEvent):
+    """A chunk of reasoning/thinking content from the stream.
+
+    Yielded when the model is in "thinking" mode. The text is the reasoning
+    content, which may be displayed differently (muted) or hidden entirely.
+
+    Attributes:
+        text: The reasoning text.
+    """
+
+    text: str
+
+
+@dataclass(frozen=True)
+class ToolCallStarted(StreamEvent):
+    """Notification that a tool call has been detected in the stream.
+
+    Yielded once per tool call when we first see it, allowing
+    display to show "calling read_file..." immediately.
+
+    Attributes:
+        index: The index of this tool call (for multiple calls).
+        id: The unique ID of this tool call.
+        name: The name of the tool being called.
+    """
+
+    index: int
+    id: str
+    name: str
+
+
+@dataclass(frozen=True)
+class StreamComplete(StreamEvent):
+    """Signals the stream has ended.
+
+    Contains the final accumulated Message with all content and tool_calls.
+
+    Attributes:
+        message: The complete Message with content and any tool_calls.
+    """
+
+    message: "Message"

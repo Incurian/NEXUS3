@@ -9,7 +9,14 @@ from typing import Any
 
 import pytest
 
-from nexus3.core.types import Message, Role
+from nexus3.context import ContextConfig, ContextManager
+from nexus3.core.types import (
+    ContentDelta,
+    Message,
+    Role,
+    StreamComplete,
+    StreamEvent,
+)
 from nexus3.session.session import Session
 
 
@@ -41,20 +48,28 @@ class MockProvider:
         self,
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
-    ) -> AsyncIterator[str]:
-        """Yield predefined chunks for testing.
+    ) -> AsyncIterator[StreamEvent]:
+        """Yield predefined chunks as StreamEvents for testing.
 
         Args:
             messages: The conversation messages (stored for test assertions).
             tools: Optional tool definitions (ignored in mock).
 
         Yields:
-            Predefined string chunks.
+            StreamEvent objects (ContentDelta and StreamComplete).
         """
         self.last_messages = messages
         self.stream_call_count += 1
+
+        # Yield content chunks
         for chunk in self.stream_chunks:
-            yield chunk
+            yield ContentDelta(text=chunk)
+
+        # Yield final StreamComplete with the full message
+        full_content = "".join(self.stream_chunks)
+        yield StreamComplete(
+            message=Message(role=Role.ASSISTANT, content=full_content)
+        )
 
     async def complete(
         self,
@@ -105,9 +120,11 @@ class TestSessionStreaming:
 
     @pytest.mark.asyncio
     async def test_send_includes_system_prompt(self) -> None:
-        """Test that send() includes system prompt when configured."""
+        """Test that send() includes system prompt when configured via ContextManager."""
         provider = MockProvider()
-        session = Session(provider, system_prompt="You are a helpful assistant.")
+        context = ContextManager(config=ContextConfig())
+        context.set_system_prompt("You are a helpful assistant.")
+        session = Session(provider, context=context)
 
         # Consume the generator to trigger the call
         _ = [chunk async for chunk in session.send("Hello")]
@@ -125,9 +142,10 @@ class TestSessionStreaming:
 
     @pytest.mark.asyncio
     async def test_send_without_system_prompt(self) -> None:
-        """Test that send() works correctly without a system prompt."""
+        """Test that send() works correctly without a system prompt (single-turn mode)."""
         provider = MockProvider()
-        session = Session(provider, system_prompt=None)
+        # No context = single-turn mode (backwards compatible)
+        session = Session(provider)
 
         # Consume the generator to trigger the call
         _ = [chunk async for chunk in session.send("Hi there")]

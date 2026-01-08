@@ -4,16 +4,30 @@ This module implements the AsyncProvider protocol for OpenRouter's API,
 which is compatible with the OpenAI chat completions format.
 """
 
+from __future__ import annotations
+
 import json
 import os
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from nexus3.config.schema import ProviderConfig
 from nexus3.core.errors import ProviderError
-from nexus3.core.types import Message, Role, ToolCall
+from nexus3.core.types import (
+    ContentDelta,
+    Message,
+    ReasoningDelta,
+    Role,
+    StreamComplete,
+    StreamEvent,
+    ToolCall,
+    ToolCallStarted,
+)
+
+if TYPE_CHECKING:
+    from nexus3.core.interfaces import RawLogCallback
 
 # Default timeout for API requests (30 seconds)
 DEFAULT_TIMEOUT = 30.0
@@ -40,11 +54,16 @@ class OpenRouterProvider:
             print(chunk, end="")
     """
 
-    def __init__(self, config: ProviderConfig) -> None:
+    def __init__(
+        self,
+        config: ProviderConfig,
+        raw_log: RawLogCallback | None = None,
+    ) -> None:
         """Initialize the OpenRouter provider.
 
         Args:
             config: Provider configuration including API key env var and model.
+            raw_log: Optional callback for raw API logging.
 
         Raises:
             ProviderError: If the API key environment variable is not set.
@@ -53,6 +72,18 @@ class OpenRouterProvider:
         self._api_key = self._get_api_key()
         self._base_url = config.base_url.rstrip("/")
         self._model = config.model
+        self._raw_log = raw_log
+
+    def set_raw_log_callback(self, callback: RawLogCallback | None) -> None:
+        """Set or clear the raw logging callback.
+
+        This allows setting the callback after construction, which is useful
+        when the logger isn't available at provider creation time.
+
+        Args:
+            callback: The callback to set, or None to disable raw logging.
+        """
+        self._raw_log = callback
 
     def _get_api_key(self) -> str:
         """Get the API key from the environment variable.
@@ -186,6 +217,10 @@ class OpenRouterProvider:
         url = f"{self._base_url}/chat/completions"
         body = self._build_request_body(messages, tools, stream=False)
 
+        # Log raw request if callback is set
+        if self._raw_log:
+            self._raw_log.on_request(url, body)
+
         try:
             async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
                 response = await client.post(
@@ -207,6 +242,10 @@ class OpenRouterProvider:
                     )
 
                 data = response.json()
+
+                # Log raw response if callback is set
+                if self._raw_log:
+                    self._raw_log.on_response(response.status_code, data)
 
         except httpx.ConnectError as e:
             raise ProviderError(f"Failed to connect to API: {e}") from e
@@ -239,26 +278,28 @@ class OpenRouterProvider:
         self,
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
-    ) -> AsyncIterator[str]:
-        """Stream response tokens from a completion.
+    ) -> AsyncIterator[StreamEvent]:
+        """Stream response with content and tool call detection.
 
         Args:
             messages: The conversation history as a list of Messages.
             tools: Optional list of tool definitions in OpenAI function format.
 
         Yields:
-            String chunks of the response as they arrive.
+            StreamEvent subclasses:
+            - ContentDelta: text content chunks (display immediately)
+            - ToolCallStarted: notification when a tool call is detected
+            - StreamComplete: final event with complete Message (content + tool_calls)
 
         Raises:
             ProviderError: If the API request fails.
-
-        Note:
-            When tools are provided and the model decides to call a tool,
-            the stream may end early and the caller should use complete()
-            to get the full tool call information.
         """
         url = f"{self._base_url}/chat/completions"
         body = self._build_request_body(messages, tools, stream=True)
+
+        # Log raw request if callback is set
+        if self._raw_log:
+            self._raw_log.on_request(url, body)
 
         try:
             async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
@@ -282,9 +323,9 @@ class OpenRouterProvider:
                             f"API request failed with status {response.status_code}: {error_msg}"
                         )
 
-                    # Process SSE stream
-                    async for chunk in self._parse_sse_stream(response):
-                        yield chunk
+                    # Process SSE stream with tool call accumulation
+                    async for event in self._parse_sse_stream_with_tools(response):
+                        yield event
 
         except httpx.ConnectError as e:
             raise ProviderError(f"Failed to connect to API: {e}") from e
@@ -293,15 +334,22 @@ class OpenRouterProvider:
         except httpx.HTTPError as e:
             raise ProviderError(f"HTTP error occurred: {e}") from e
 
-    async def _parse_sse_stream(self, response: httpx.Response) -> AsyncIterator[str]:
-        """Parse Server-Sent Events stream from the response.
+    async def _parse_sse_stream_with_tools(
+        self, response: httpx.Response
+    ) -> AsyncIterator[StreamEvent]:
+        """Parse SSE stream, yielding events and accumulating tool calls.
 
         Args:
             response: The httpx Response object with streaming content.
 
         Yields:
-            Content delta strings from each SSE event.
+            StreamEvent subclasses for content, tool calls, and completion.
         """
+        # Accumulators
+        accumulated_content = ""
+        tool_calls_by_index: dict[int, dict[str, str]] = {}
+        seen_tool_indices: set[int] = set()
+
         buffer = ""
 
         async for chunk in response.aiter_text():
@@ -322,17 +370,31 @@ class OpenRouterProvider:
 
                     # Check for stream end marker
                     if data == "[DONE]":
+                        # Build final message and yield StreamComplete
+                        yield self._build_stream_complete(
+                            accumulated_content, tool_calls_by_index
+                        )
                         return
 
                     # Parse JSON data
                     try:
                         event_data = json.loads(data)
-                        choices = event_data.get("choices", [])
-                        if choices:
-                            delta = choices[0].get("delta", {})
-                            content = delta.get("content")
-                            if content:
-                                yield content
+
+                        # Log raw chunk if callback is set
+                        if self._raw_log:
+                            self._raw_log.on_chunk(event_data)
+
+                        # Process the event
+                        async for event in self._process_stream_event(
+                            event_data,
+                            accumulated_content,
+                            tool_calls_by_index,
+                            seen_tool_indices,
+                        ):
+                            if isinstance(event, ContentDelta):
+                                accumulated_content += event.text
+                            yield event
+
                     except json.JSONDecodeError:
                         # Skip malformed JSON in stream
                         continue
@@ -343,11 +405,126 @@ class OpenRouterProvider:
             if line.startswith("data: ") and line[6:] != "[DONE]":
                 try:
                     event_data = json.loads(line[6:])
-                    choices = event_data.get("choices", [])
-                    if choices:
-                        delta = choices[0].get("delta", {})
-                        content = delta.get("content")
-                        if content:
-                            yield content
+
+                    # Log raw chunk if callback is set
+                    if self._raw_log:
+                        self._raw_log.on_chunk(event_data)
+
+                    async for event in self._process_stream_event(
+                        event_data,
+                        accumulated_content,
+                        tool_calls_by_index,
+                        seen_tool_indices,
+                    ):
+                        if isinstance(event, ContentDelta):
+                            accumulated_content += event.text
+                        yield event
+
                 except json.JSONDecodeError:
                     pass
+
+        # If we get here without [DONE], still yield StreamComplete
+        yield self._build_stream_complete(accumulated_content, tool_calls_by_index)
+
+    async def _process_stream_event(
+        self,
+        event_data: dict[str, Any],
+        accumulated_content: str,
+        tool_calls_by_index: dict[int, dict[str, str]],
+        seen_tool_indices: set[int],
+    ) -> AsyncIterator[StreamEvent]:
+        """Process a single SSE event, yielding appropriate StreamEvents.
+
+        Args:
+            event_data: Parsed JSON from SSE event.
+            accumulated_content: Running content accumulator (for reference).
+            tool_calls_by_index: Tool call accumulator dict.
+            seen_tool_indices: Set of tool indices we've already notified about.
+
+        Yields:
+            ContentDelta for content, ToolCallStarted for new tool calls.
+        """
+        choices = event_data.get("choices", [])
+        if not choices:
+            return
+
+        delta = choices[0].get("delta", {})
+
+        # Handle reasoning delta (Grok/xAI models)
+        reasoning = delta.get("reasoning")
+        if reasoning:
+            yield ReasoningDelta(text=reasoning)
+
+        # Handle content delta
+        content = delta.get("content")
+        if content:
+            yield ContentDelta(text=content)
+
+        # Handle tool call deltas
+        tc_deltas = delta.get("tool_calls", [])
+        for tc_delta in tc_deltas:
+            index = tc_delta.get("index", 0)
+
+            # Initialize accumulator for new tool call
+            if index not in tool_calls_by_index:
+                tool_calls_by_index[index] = {"id": "", "name": "", "arguments": ""}
+
+            acc = tool_calls_by_index[index]
+
+            # Accumulate fields (they come incrementally)
+            if tc_delta.get("id"):
+                acc["id"] += tc_delta["id"]
+
+            func = tc_delta.get("function", {})
+            if func.get("name"):
+                acc["name"] += func["name"]
+            if func.get("arguments"):
+                acc["arguments"] += func["arguments"]
+
+            # Yield ToolCallStarted once per tool call (when we first have id and name)
+            if index not in seen_tool_indices and acc["id"] and acc["name"]:
+                seen_tool_indices.add(index)
+                yield ToolCallStarted(
+                    index=index,
+                    id=acc["id"],
+                    name=acc["name"],
+                )
+
+    def _build_stream_complete(
+        self,
+        content: str,
+        tool_calls_by_index: dict[int, dict[str, str]],
+    ) -> StreamComplete:
+        """Build the final StreamComplete event.
+
+        Args:
+            content: Accumulated content string.
+            tool_calls_by_index: Accumulated tool calls.
+
+        Returns:
+            StreamComplete with the final Message.
+        """
+        # Parse accumulated tool calls
+        tool_calls: list[ToolCall] = []
+        for index in sorted(tool_calls_by_index.keys()):
+            tc = tool_calls_by_index[index]
+            try:
+                arguments = json.loads(tc["arguments"]) if tc["arguments"] else {}
+            except json.JSONDecodeError:
+                arguments = {}
+
+            tool_calls.append(
+                ToolCall(
+                    id=tc["id"],
+                    name=tc["name"],
+                    arguments=arguments,
+                )
+            )
+
+        message = Message(
+            role=Role.ASSISTANT,
+            content=content,
+            tool_calls=tuple(tool_calls),
+        )
+
+        return StreamComplete(message=message)

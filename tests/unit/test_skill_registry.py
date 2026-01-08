@@ -1,0 +1,352 @@
+"""Unit tests for the skill system: ServiceContainer, SkillRegistry, and EchoSkill."""
+
+import pytest
+
+from nexus3.core.types import ToolResult
+from nexus3.skill import ServiceContainer, SkillRegistry
+from nexus3.skill.builtin.echo import EchoSkill, echo_skill_factory
+
+
+class TestServiceContainer:
+    """Tests for ServiceContainer."""
+
+    def test_register_and_get_service(self):
+        """Services can be registered and retrieved."""
+        container = ServiceContainer()
+        container.register("my_service", "service_value")
+
+        result = container.get("my_service")
+        assert result == "service_value"
+
+    def test_get_nonexistent_returns_none(self):
+        """get() returns None for unregistered services."""
+        container = ServiceContainer()
+
+        result = container.get("nonexistent")
+        assert result is None
+
+    def test_has_service(self):
+        """has() returns True for registered services, False otherwise."""
+        container = ServiceContainer()
+        container.register("exists", "value")
+
+        assert container.has("exists") is True
+        assert container.has("does_not_exist") is False
+
+    def test_require_returns_registered_service(self):
+        """require() returns the service when registered."""
+        container = ServiceContainer()
+        container.register("required_service", "important_value")
+
+        result = container.require("required_service")
+        assert result == "important_value"
+
+    def test_require_raises_on_missing(self):
+        """require() raises KeyError for unregistered services."""
+        container = ServiceContainer()
+
+        with pytest.raises(KeyError) as exc_info:
+            container.require("missing_service")
+
+        assert "missing_service" in str(exc_info.value)
+
+    def test_unregister_removes_service(self):
+        """unregister() removes the service and returns it."""
+        container = ServiceContainer()
+        container.register("temp", "temp_value")
+
+        result = container.unregister("temp")
+        assert result == "temp_value"
+        assert container.has("temp") is False
+
+    def test_unregister_nonexistent_returns_none(self):
+        """unregister() returns None for unregistered services."""
+        container = ServiceContainer()
+
+        result = container.unregister("nonexistent")
+        assert result is None
+
+    def test_clear_removes_all_services(self):
+        """clear() removes all registered services."""
+        container = ServiceContainer()
+        container.register("a", 1)
+        container.register("b", 2)
+
+        container.clear()
+        assert container.has("a") is False
+        assert container.has("b") is False
+        assert container.names() == []
+
+    def test_names_returns_registered_names(self):
+        """names() returns a list of all registered service names."""
+        container = ServiceContainer()
+        container.register("alpha", 1)
+        container.register("beta", 2)
+
+        names = container.names()
+        assert set(names) == {"alpha", "beta"}
+
+    def test_register_overwrites_existing(self):
+        """Registering the same name overwrites the previous service."""
+        container = ServiceContainer()
+        container.register("key", "original")
+        container.register("key", "updated")
+
+        assert container.get("key") == "updated"
+
+
+class TestSkillRegistry:
+    """Tests for SkillRegistry."""
+
+    def test_register_and_get_skill(self):
+        """Skills can be registered and retrieved."""
+        registry = SkillRegistry()
+        registry.register("echo", echo_skill_factory)
+
+        skill = registry.get("echo")
+        assert skill is not None
+        assert skill.name == "echo"
+
+    def test_get_unknown_skill_returns_none(self):
+        """get() returns None for unregistered skills."""
+        registry = SkillRegistry()
+
+        result = registry.get("nonexistent_skill")
+        assert result is None
+
+    def test_get_definitions_format(self):
+        """get_definitions() returns OpenAI-format tool definitions."""
+        registry = SkillRegistry()
+        registry.register("echo", echo_skill_factory)
+
+        definitions = registry.get_definitions()
+
+        assert len(definitions) == 1
+        definition = definitions[0]
+
+        # Check top-level structure
+        assert definition["type"] == "function"
+        assert "function" in definition
+
+        # Check function details
+        func = definition["function"]
+        assert func["name"] == "echo"
+        assert "description" in func
+        assert "parameters" in func
+
+        # Check parameters structure
+        params = func["parameters"]
+        assert params["type"] == "object"
+        assert "message" in params["properties"]
+        assert "message" in params["required"]
+
+    def test_lazy_instantiation(self):
+        """Skill factory is called only once (lazy, cached)."""
+        call_count = []
+
+        def counting_factory(services: ServiceContainer) -> EchoSkill:
+            call_count.append(1)
+            return EchoSkill()
+
+        registry = SkillRegistry()
+        registry.register("echo", counting_factory)
+
+        # Factory not called yet
+        assert len(call_count) == 0
+
+        # First get() calls factory
+        skill1 = registry.get("echo")
+        assert len(call_count) == 1
+        assert skill1 is not None
+
+        # Second get() returns cached instance
+        skill2 = registry.get("echo")
+        assert len(call_count) == 1  # Still 1, not called again
+        assert skill2 is skill1  # Same instance
+
+    def test_names_property(self):
+        """names property returns list of registered skill names."""
+        registry = SkillRegistry()
+
+        assert registry.names == []
+
+        registry.register("echo", echo_skill_factory)
+        registry.register("other", echo_skill_factory)
+
+        assert set(registry.names) == {"echo", "other"}
+
+    def test_services_property(self):
+        """services property returns the ServiceContainer."""
+        services = ServiceContainer()
+        services.register("test", "value")
+        registry = SkillRegistry(services)
+
+        assert registry.services is services
+        assert registry.services.get("test") == "value"
+
+    def test_creates_default_services_if_none_provided(self):
+        """SkillRegistry creates a ServiceContainer if none provided."""
+        registry = SkillRegistry()
+
+        assert registry.services is not None
+        assert isinstance(registry.services, ServiceContainer)
+
+    def test_reregister_clears_cached_instance(self):
+        """Re-registering a skill clears the cached instance."""
+        call_count = []
+
+        def factory_v1(services: ServiceContainer) -> EchoSkill:
+            call_count.append("v1")
+            return EchoSkill()
+
+        def factory_v2(services: ServiceContainer) -> EchoSkill:
+            call_count.append("v2")
+            return EchoSkill()
+
+        registry = SkillRegistry()
+        registry.register("echo", factory_v1)
+        skill1 = registry.get("echo")
+        assert call_count == ["v1"]
+
+        # Re-register with new factory
+        registry.register("echo", factory_v2)
+        skill2 = registry.get("echo")
+        assert call_count == ["v1", "v2"]
+        assert skill2 is not skill1
+
+    def test_factory_receives_services(self):
+        """Skill factory receives the ServiceContainer."""
+        received_services = []
+
+        def capturing_factory(services: ServiceContainer) -> EchoSkill:
+            received_services.append(services)
+            return EchoSkill()
+
+        services = ServiceContainer()
+        services.register("custom", "data")
+        registry = SkillRegistry(services)
+        registry.register("echo", capturing_factory)
+
+        registry.get("echo")
+
+        assert len(received_services) == 1
+        assert received_services[0] is services
+        assert received_services[0].get("custom") == "data"
+
+    def test_get_definitions_with_multiple_skills(self):
+        """get_definitions() returns definitions for all skills."""
+
+        def other_skill_factory(services: ServiceContainer):
+            # Create a simple mock skill
+            class OtherSkill:
+                @property
+                def name(self) -> str:
+                    return "other"
+
+                @property
+                def description(self) -> str:
+                    return "Another test skill"
+
+                @property
+                def parameters(self) -> dict:
+                    return {"type": "object", "properties": {}}
+
+                async def execute(self, **kwargs):
+                    return ToolResult(output="other")
+
+            return OtherSkill()
+
+        registry = SkillRegistry()
+        registry.register("echo", echo_skill_factory)
+        registry.register("other", other_skill_factory)
+
+        definitions = registry.get_definitions()
+
+        assert len(definitions) == 2
+        names = {d["function"]["name"] for d in definitions}
+        assert names == {"echo", "other"}
+
+
+class TestEchoSkill:
+    """Tests for EchoSkill."""
+
+    def test_echo_skill_properties(self):
+        """EchoSkill has correct name, description, and parameters."""
+        skill = EchoSkill()
+
+        assert skill.name == "echo"
+        assert "echo" in skill.description.lower()
+
+        params = skill.parameters
+        assert params["type"] == "object"
+        assert "message" in params["properties"]
+        assert params["properties"]["message"]["type"] == "string"
+        assert "message" in params["required"]
+
+    @pytest.mark.asyncio
+    async def test_echo_skill_execute(self):
+        """EchoSkill.execute() echoes the message back."""
+        skill = EchoSkill()
+
+        result = await skill.execute(message="Hello, world!")
+
+        assert isinstance(result, ToolResult)
+        assert result.success is True
+        assert result.output == "Hello, world!"
+        assert result.error == ""
+
+    @pytest.mark.asyncio
+    async def test_echo_skill_execute_empty_message(self):
+        """EchoSkill.execute() handles empty message."""
+        skill = EchoSkill()
+
+        result = await skill.execute(message="")
+
+        assert result.success is True
+        assert result.output == ""
+
+    @pytest.mark.asyncio
+    async def test_echo_skill_execute_default_message(self):
+        """EchoSkill.execute() uses empty string as default message."""
+        skill = EchoSkill()
+
+        result = await skill.execute()
+
+        assert result.success is True
+        assert result.output == ""
+
+    @pytest.mark.asyncio
+    async def test_echo_skill_execute_ignores_extra_kwargs(self):
+        """EchoSkill.execute() ignores extra keyword arguments."""
+        skill = EchoSkill()
+
+        result = await skill.execute(message="test", extra_arg="ignored")
+
+        assert result.success is True
+        assert result.output == "test"
+
+
+class TestEchoSkillFactory:
+    """Tests for echo_skill_factory."""
+
+    def test_factory_returns_echo_skill(self):
+        """echo_skill_factory() returns an EchoSkill instance."""
+        services = ServiceContainer()
+
+        skill = echo_skill_factory(services)
+
+        assert isinstance(skill, EchoSkill)
+        assert skill.name == "echo"
+
+    def test_factory_ignores_services(self):
+        """echo_skill_factory() doesn't require any services."""
+        # Empty services should work fine
+        services = ServiceContainer()
+        skill = echo_skill_factory(services)
+        assert skill is not None
+
+        # Services with data should also work
+        services_with_data = ServiceContainer()
+        services_with_data.register("some_service", "value")
+        skill2 = echo_skill_factory(services_with_data)
+        assert skill2 is not None
