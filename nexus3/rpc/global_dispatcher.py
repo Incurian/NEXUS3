@@ -29,6 +29,7 @@ from nexus3.rpc.types import Request, Response
 if TYPE_CHECKING:
     from nexus3.rpc.pool import AgentPool
 
+from nexus3.core.permissions import PermissionDelta
 from nexus3.rpc.pool import AgentConfig
 
 # Type alias for handler functions
@@ -146,6 +147,8 @@ class GlobalDispatcher:
             params: Optional parameters:
                 - agent_id: Optional[str] - ID for the agent (auto-generated if omitted)
                 - system_prompt: Optional[str] - System prompt override for this agent
+                - preset: Optional[str] - Permission preset (yolo, trusted, sandboxed, worker)
+                - disable_tools: Optional[list[str]] - Tools to disable for the agent
 
         Returns:
             Dict containing:
@@ -153,10 +156,13 @@ class GlobalDispatcher:
                 - url: str - The URL to use for agent-specific RPC calls
 
         Raises:
-            InvalidParamsError: If agent_id is provided but already exists.
+            InvalidParamsError: If agent_id is provided but already exists,
+                or if parameter types are invalid.
         """
         agent_id = params.get("agent_id")
         system_prompt = params.get("system_prompt")
+        preset = params.get("preset")
+        disable_tools = params.get("disable_tools")
 
         # Validate agent_id if provided
         if agent_id is not None and not isinstance(agent_id, str):
@@ -170,8 +176,42 @@ class GlobalDispatcher:
                 f"system_prompt must be string, got: {type(system_prompt).__name__}"
             )
 
+        # Validate preset if provided
+        if preset is not None:
+            if not isinstance(preset, str):
+                raise InvalidParamsError(
+                    f"preset must be string, got: {type(preset).__name__}"
+                )
+            valid_presets = {"yolo", "trusted", "sandboxed", "worker"}
+            if preset not in valid_presets:
+                raise InvalidParamsError(
+                    f"Invalid preset: {preset}. Valid: {sorted(valid_presets)}"
+                )
+
+        # Validate disable_tools if provided
+        if disable_tools is not None:
+            if not isinstance(disable_tools, list):
+                raise InvalidParamsError(
+                    f"disable_tools must be array, got: {type(disable_tools).__name__}"
+                )
+            for i, tool in enumerate(disable_tools):
+                if not isinstance(tool, str):
+                    raise InvalidParamsError(
+                        f"disable_tools[{i}] must be string, got: {type(tool).__name__}"
+                    )
+
+        # Build delta from disable_tools
+        delta: PermissionDelta | None = None
+        if disable_tools:
+            delta = PermissionDelta(disable_tools=disable_tools)
+
         # Create the agent through the pool
-        config = AgentConfig(agent_id=agent_id, system_prompt=system_prompt)
+        config = AgentConfig(
+            agent_id=agent_id,
+            system_prompt=system_prompt,
+            preset=preset,
+            delta=delta,
+        )
         agent = await self._pool.create(agent_id=agent_id, config=config)
 
         return {

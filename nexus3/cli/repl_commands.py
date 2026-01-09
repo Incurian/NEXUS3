@@ -26,11 +26,16 @@ from typing import TYPE_CHECKING
 
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands.protocol import CommandContext, CommandOutput, CommandResult
-from nexus3.core.permissions import PermissionLevel
+from nexus3.core.permissions import (
+    AgentPermissions,
+    ToolPermission,
+    get_builtin_presets,
+    resolve_preset,
+)
 from nexus3.rpc.pool import is_temp_agent
 
 if TYPE_CHECKING:
-    pass
+    from nexus3.rpc.pool import Agent
 
 
 # Help text for REPL commands
@@ -62,7 +67,11 @@ Session Management:
 
 Configuration:
   /cwd [path]         Show or change working directory
-  /permissions [lvl]  Show or set permission level (yolo/trusted/sandboxed)
+  /permissions        Show current permissions
+  /permissions <preset>  Change to preset (yolo/trusted/sandboxed/worker)
+  /permissions --disable <tool>  Disable a tool
+  /permissions --enable <tool>   Re-enable a tool
+  /permissions --list-tools      List tool enable/disable status
   /prompt [file]      Show or set system prompt
 
 REPL Control:
@@ -304,21 +313,23 @@ async def cmd_cwd(
 
 async def cmd_permissions(
     ctx: CommandContext,
-    level: str | None = None,
+    args: str | None = None,
 ) -> CommandOutput:
-    """Show or set permission level for current agent.
+    """Show or modify permission level for current agent.
 
-    Permission levels:
-    - yolo: Full access, no confirmations
-    - trusted: Confirmations for destructive actions (default)
-    - sandboxed: Limited paths, restricted network
+    Usage:
+        /permissions              Show current permissions
+        /permissions trusted      Change to 'trusted' preset
+        /permissions --disable write_file  Disable a tool
+        /permissions --enable write_file   Re-enable a tool
+        /permissions --list-tools          List tool enable/disable status
 
     Args:
         ctx: Command context with pool access.
-        level: New permission level, or None to show current.
+        args: Optional arguments string.
 
     Returns:
-        CommandOutput with current/new permission level.
+        CommandOutput with current/modified permissions.
     """
     if ctx.current_agent_id is None:
         return CommandOutput.error("No current agent")
@@ -327,31 +338,188 @@ async def cmd_permissions(
     if agent is None:
         return CommandOutput.error(f"Agent not found: {ctx.current_agent_id}")
 
-    if level is None:
-        # Show current permission level
-        # TODO: Agent doesn't track permission yet, return placeholder
+    # Get current permissions
+    perms: AgentPermissions | None = agent.services.get("permissions")
+
+    if not args or not args.strip():
+        # Show current permissions
+        return _format_permissions(perms, agent)
+
+    parts = args.strip().split()
+    cmd = parts[0].lower()
+
+    if cmd == "--list-tools":
+        return _list_tool_permissions(perms)
+    elif cmd == "--disable" and len(parts) > 1:
+        tool_name = parts[1]
+        return await _disable_tool(agent, perms, tool_name)
+    elif cmd == "--enable" and len(parts) > 1:
+        tool_name = parts[1]
+        return await _enable_tool(agent, perms, tool_name)
+    elif cmd.startswith("--"):
+        return CommandOutput.error(f"Unknown flag: {cmd}")
+    else:
+        # Change preset
+        return await _change_preset(agent, perms, cmd)
+
+
+def _format_permissions(
+    perms: AgentPermissions | None,
+    agent: Agent,
+) -> CommandOutput:
+    """Format current permissions for display."""
+    if perms is None:
         return CommandOutput.success(
-            message="Permission level: trusted (default)",
-            data={"permission": "trusted"},
+            message="Permissions: unrestricted (no policy set)",
+            data={"preset": None, "level": None},
         )
 
-    # Validate and set new permission level
-    level_lower = level.lower()
-    try:
-        # Validate via enum
-        PermissionLevel(level_lower)
-    except ValueError:
-        valid = [pl.value for pl in PermissionLevel]
-        return CommandOutput.error(
-            f"Invalid permission level: {level}. "
-            f"Valid levels: {', '.join(valid)}"
-        )
+    lines = [
+        f"Preset: {perms.base_preset}",
+        f"Level: {perms.effective_policy.level.value}",
+    ]
 
-    # TODO: Actually set permission on agent when agent supports it
+    # Path info
+    if perms.effective_policy.allowed_paths is None:
+        lines.append("Paths: unrestricted")
+    else:
+        paths_str = ", ".join(str(p) for p in perms.effective_policy.allowed_paths)
+        lines.append(f"Allowed paths: {paths_str}")
+
+    if perms.effective_policy.blocked_paths:
+        blocked_str = ", ".join(str(p) for p in perms.effective_policy.blocked_paths)
+        lines.append(f"Blocked paths: {blocked_str}")
+
+    # Ceiling info
+    if perms.ceiling:
+        lines.append(f"Ceiling: {perms.ceiling.base_preset} (from parent)")
+
+    # Disabled tools
+    disabled = [name for name, tp in perms.tool_permissions.items() if not tp.enabled]
+    if disabled:
+        lines.append(f"Disabled tools: {', '.join(disabled)}")
+
     return CommandOutput.success(
-        message=f"Permission level set to: {level_lower}",
-        data={"permission": level_lower},
+        message="\n".join(lines),
+        data={
+            "preset": perms.base_preset,
+            "level": perms.effective_policy.level.value,
+            "disabled_tools": disabled,
+        },
     )
+
+
+def _list_tool_permissions(perms: AgentPermissions | None) -> CommandOutput:
+    """List tool permissions status."""
+    if perms is None:
+        return CommandOutput.success(message="All tools enabled (no restrictions)")
+
+    lines = ["Tool permissions:"]
+    for name, tp in sorted(perms.tool_permissions.items()):
+        status = "enabled" if tp.enabled else "disabled"
+        lines.append(f"  {name}: {status}")
+
+    if not perms.tool_permissions:
+        lines.append("  (no tool-specific permissions set)")
+
+    return CommandOutput.success(message="\n".join(lines))
+
+
+async def _disable_tool(
+    agent: Agent,
+    perms: AgentPermissions | None,
+    tool_name: str,
+) -> CommandOutput:
+    """Disable a tool for this agent."""
+    if perms is None:
+        return CommandOutput.error("Cannot modify permissions: no policy set")
+
+    # Check ceiling - can always disable (more restrictive than ceiling)
+    # No check needed here, disabling is always allowed
+
+    # Apply change
+    if tool_name in perms.tool_permissions:
+        perms.tool_permissions[tool_name].enabled = False
+    else:
+        perms.tool_permissions[tool_name] = ToolPermission(enabled=False)
+
+    return CommandOutput.success(
+        message=f"Disabled tool: {tool_name}",
+        data={"tool": tool_name, "enabled": False},
+    )
+
+
+async def _enable_tool(
+    agent: Agent,
+    perms: AgentPermissions | None,
+    tool_name: str,
+) -> CommandOutput:
+    """Enable a tool for this agent."""
+    if perms is None:
+        return CommandOutput.error("Cannot modify permissions: no policy set")
+
+    # Check ceiling - can't enable if ceiling disabled it
+    if perms.ceiling:
+        ceiling_perm = perms.ceiling.tool_permissions.get(tool_name)
+        if ceiling_perm and not ceiling_perm.enabled:
+            return CommandOutput.error(
+                f"Cannot enable '{tool_name}': disabled by parent ceiling"
+            )
+
+    # Apply change
+    if tool_name in perms.tool_permissions:
+        perms.tool_permissions[tool_name].enabled = True
+    else:
+        perms.tool_permissions[tool_name] = ToolPermission(enabled=True)
+
+    return CommandOutput.success(
+        message=f"Enabled tool: {tool_name}",
+        data={"tool": tool_name, "enabled": True},
+    )
+
+
+async def _change_preset(
+    agent: Agent,
+    perms: AgentPermissions | None,
+    preset_name: str,
+) -> CommandOutput:
+    """Change agent to a new preset."""
+    builtin = get_builtin_presets()
+
+    if preset_name not in builtin:
+        valid = ", ".join(builtin.keys())
+        return CommandOutput.error(
+            f"Unknown preset: {preset_name}. Valid: {valid}"
+        )
+
+    # Check ceiling
+    if perms and perms.ceiling:
+        try:
+            new_perms = resolve_preset(preset_name)
+            if not perms.ceiling.can_grant(new_perms):
+                return CommandOutput.error(
+                    f"Cannot change to '{preset_name}': exceeds ceiling "
+                    f"(parent: {perms.ceiling.base_preset})"
+                )
+        except ValueError as e:
+            return CommandOutput.error(str(e))
+
+    # Apply change
+    try:
+        new_perms = resolve_preset(preset_name)
+        if perms:
+            new_perms.ceiling = perms.ceiling
+            new_perms.parent_agent_id = perms.parent_agent_id
+
+        agent.services.register("permissions", new_perms)
+        agent.services.register("allowed_paths", new_perms.effective_policy.allowed_paths)
+
+        return CommandOutput.success(
+            message=f"Changed to preset: {preset_name}",
+            data={"preset": preset_name},
+        )
+    except ValueError as e:
+        return CommandOutput.error(str(e))
 
 
 async def cmd_prompt(

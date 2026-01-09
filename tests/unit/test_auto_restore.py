@@ -72,6 +72,8 @@ def create_saved_session(
         system_prompt_path=None,
         working_directory="/tmp",
         permission_level="trusted",
+        permission_preset="trusted",
+        disabled_tools=[],
         token_usage={"total": 100, "system": 50, "messages": 50},
         provenance="user",
     )

@@ -41,6 +41,11 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from nexus3.context import ContextConfig, ContextManager
+from nexus3.core.permissions import (
+    AgentPermissions,
+    PermissionDelta,
+    resolve_preset,
+)
 from nexus3.rpc.dispatcher import Dispatcher
 from nexus3.session import LogConfig, LogStream, Session, SessionLogger
 from nexus3.session.persistence import SavedSession, deserialize_messages
@@ -129,9 +134,13 @@ class AgentConfig:
         agent_id: Unique identifier for the agent. Auto-generated if None.
         system_prompt: Override the default system prompt. If None, uses
             the prompt_loader to load personal + project prompts.
+        preset: Permission preset name (e.g., "yolo", "trusted", "sandboxed").
+            If None, uses default_preset from config.
+        delta: Permission delta to apply to the base preset.
+        parent_permissions: Parent agent's permissions for ceiling enforcement.
+            Used when an agent spawns a subagent.
 
     Future extensions:
-        - permission_level: YOLO | TRUSTED | SANDBOXED
         - working_dir: Restrict file operations to this directory
         - max_tokens: Override context window size
         - tools: Override available tools
@@ -139,6 +148,9 @@ class AgentConfig:
 
     agent_id: str | None = None
     system_prompt: str | None = None
+    preset: str | None = None
+    delta: PermissionDelta | None = None
+    parent_permissions: AgentPermissions | None = None
 
 
 @dataclass
@@ -297,8 +309,32 @@ class AgentPool:
             from nexus3.skill.builtin import register_builtin_skills
 
             services = ServiceContainer()
-            # Register allowed_paths for sandbox validation (None = unrestricted)
-            services.register("allowed_paths", None)
+
+            # Resolve permissions from preset
+            preset_name = effective_config.preset or self._shared.config.permissions.default_preset
+            try:
+                permissions = resolve_preset(preset_name)
+            except ValueError:
+                # Fall back to trusted if preset not found
+                permissions = resolve_preset("trusted")
+
+            # Apply delta if provided
+            if effective_config.delta:
+                permissions = permissions.apply_delta(effective_config.delta)
+
+            # Enforce ceiling if spawned by another agent
+            if effective_config.parent_permissions is not None:
+                if not effective_config.parent_permissions.can_grant(permissions):
+                    raise PermissionError(
+                        f"Requested permissions '{preset_name}' exceed parent ceiling"
+                    )
+                permissions.ceiling = effective_config.parent_permissions
+                permissions.parent_agent_id = effective_config.parent_permissions.base_preset
+
+            # Register permissions and allowed_paths
+            services.register("permissions", permissions)
+            services.register("allowed_paths", permissions.effective_policy.allowed_paths)
+
             registry = SkillRegistry(services)
             register_builtin_skills(registry)
 
@@ -370,6 +406,9 @@ class AgentPool:
         effective_config = AgentConfig(
             agent_id=temp_id,
             system_prompt=effective_config.system_prompt,
+            preset=effective_config.preset,
+            delta=effective_config.delta,
+            parent_permissions=effective_config.parent_permissions,
         )
         return await self.create(config=effective_config)
 
@@ -453,8 +492,28 @@ class AgentPool:
             from nexus3.skill.builtin import register_builtin_skills
 
             services = ServiceContainer()
-            # Register allowed_paths for sandbox validation (None = unrestricted)
-            services.register("allowed_paths", None)
+
+            # Resolve permissions from saved session or fall back to default
+            preset_name = (
+                saved.permission_preset
+                if saved.permission_preset
+                else self._shared.config.permissions.default_preset
+            )
+            try:
+                permissions = resolve_preset(preset_name)
+            except ValueError:
+                # Fall back to trusted if preset not found
+                permissions = resolve_preset("trusted")
+
+            # Apply disabled_tools from saved session
+            if saved.disabled_tools:
+                delta = PermissionDelta(disable_tools=saved.disabled_tools)
+                permissions = permissions.apply_delta(delta)
+
+            # Register permissions and allowed_paths
+            services.register("permissions", permissions)
+            services.register("allowed_paths", permissions.effective_policy.allowed_paths)
+
             registry = SkillRegistry(services)
             register_builtin_skills(registry)
 

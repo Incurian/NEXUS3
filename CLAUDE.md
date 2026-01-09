@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. The goal is a simpler, more maintainable, end-to-end tested agent with clear architecture.
 
-**Status:** Phase 7 complete. 834 tests pass. Security, async, and data integrity fixes done.
+**Status:** Phase 8 complete. 966 tests pass. Full permission system with presets, per-tool config, and inheritance.
 
 ---
 
@@ -22,6 +22,8 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 | **4 - Multi-Agent** | AgentPool, GlobalDispatcher, path-based routing, `--connect` mode, NexusClient |
 | **5R - Security** | API key auth, server detection, path sandbox (infra), URL validator (infra), JSON injection fix, provider retry |
 | **6 - Sessions** | Persistence, lobby mode, whisper mode, unified commands, agent naming, auto-restore, permission types |
+| **7 - Integration** | Sandbox → file skills, URL validation → nexus skills, async I/O, skill timeout, concurrency limit, truncation fix |
+| **8 - Permissions** | Permission presets (yolo/trusted/sandboxed/worker), per-tool config, deltas, ceiling inheritance, confirmation prompts |
 
 ---
 
@@ -518,7 +520,7 @@ async def destroy(self, agent_id: str) -> bool:
 |------|-------|
 | Message GC | Prune messages after truncation (max_messages config) |
 | Log multiplexer | contextvars for multi-agent raw log callbacks |
-| Permission enforcement | Skills check PermissionPolicy before executing |
+| ~~Permission enforcement~~ | ✅ Done in Phase 8 |
 | verbose/raw_log CLI | Wire to LogStream flags |
 | More tools | bash, web_fetch, etc. |
 
@@ -541,6 +543,95 @@ All Phase 7 items completed 2026-01-09:
 **New config options:**
 - `skill_timeout: float = 30.0` (seconds, 0 = no timeout)
 - `max_concurrent_tools: int = 10`
+
+---
+
+## Phase 8: Permission System - COMPLETE (2026-01-09)
+
+### Overview
+
+Full permission system with presets, per-tool configuration, and inheritance.
+
+### Core Types (`core/permissions.py`)
+
+| Type | Purpose |
+|------|---------|
+| `ToolPermission` | Per-tool config: enabled, allowed_paths, timeout |
+| `PermissionPreset` | Named config: level, paths, network, tool_permissions |
+| `PermissionDelta` | Changes to apply: disable/enable tools, path overrides |
+| `AgentPermissions` | Runtime state with `can_grant()` and `apply_delta()` |
+
+### Built-in Presets
+
+| Preset | Level | Description |
+|--------|-------|-------------|
+| `yolo` | YOLO | Full access, no confirmations |
+| `trusted` | TRUSTED | Confirmations for destructive actions (default) |
+| `sandboxed` | SANDBOXED | Limited to CWD, no network, nexus tools disabled |
+| `worker` | SANDBOXED | Minimal: no write_file, no agent management |
+
+### Key Features
+
+1. **Per-tool configuration**: Enable/disable tools, per-tool paths, per-tool timeouts
+2. **Permission presets**: Named configurations loaded from config or built-in
+3. **Deltas**: Spawn agents with modifications (e.g., "trusted but disable write_file")
+4. **Ceiling inheritance**: Subagents cannot exceed parent permissions
+5. **Runtime modification**: `/permissions` command to change settings mid-session
+6. **Confirmation prompts**: TRUSTED mode prompts for destructive actions in REPL
+
+### Config Schema (`config/schema.py`)
+
+```json
+{
+  "permissions": {
+    "default_preset": "trusted",
+    "presets": {
+      "dev": {
+        "extends": "trusted",
+        "allowed_paths": ["/home/user/projects"],
+        "tool_permissions": {"nexus_shutdown": {"enabled": false}}
+      }
+    },
+    "destructive_tools": ["write_file", "nexus_destroy", "nexus_shutdown"]
+  }
+}
+```
+
+### Enforcement Points
+
+1. **Session._execute_single_tool()**: Checks tool enabled, confirmation, per-tool timeout
+2. **AgentPool.create()**: Resolves preset, applies delta, enforces ceiling
+3. **nexus_create skill**: Validates ceiling before RPC call
+
+### CLI Commands
+
+```bash
+/permissions              # Show current permissions
+/permissions trusted      # Change preset (within ceiling)
+/permissions --disable write_file   # Disable a tool
+/permissions --enable write_file    # Re-enable (if ceiling allows)
+/permissions --list-tools           # List tool status
+
+/agent worker-1 --sandboxed         # Create with preset
+```
+
+### Files Modified
+
+| Category | Files |
+|----------|-------|
+| Core Types | `core/permissions.py` |
+| Config | `config/schema.py` |
+| Enforcement | `session/session.py`, `rpc/pool.py` |
+| CLI | `cli/repl.py`, `cli/repl_commands.py` |
+| Skills | `skill/builtin/nexus_create.py` |
+| Persistence | `session/persistence.py` |
+| Client | `client.py`, `rpc/global_dispatcher.py` |
+
+### Tests Added
+
+- `test_permission_presets.py` - 74 tests for types and logic
+- `test_permission_enforcement.py` - 18 tests for Session enforcement
+- `test_permission_inheritance.py` - 32 tests for ceiling logic
 
 ---
 

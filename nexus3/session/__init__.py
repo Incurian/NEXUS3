@@ -10,7 +10,7 @@ from nexus3.session.persistence import (
     serialize_messages,
     serialize_session,
 )
-from nexus3.session.session import Session
+from nexus3.session.session import ConfirmationCallback, Session
 from nexus3.session.session_manager import (
     SessionManager,
     SessionManagerError,
@@ -21,6 +21,7 @@ from nexus3.session.types import LogConfig, LogStream, SessionInfo
 
 __all__ = [
     "Session",
+    "ConfirmationCallback",
     "SessionLogger",
     "SessionStorage",
     "SessionMarkers",

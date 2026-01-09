@@ -40,6 +40,19 @@ from nexus3.commands.protocol import CommandContext, CommandResult
 # -----------------------------------------------------------------------------
 
 
+class MockServices:
+    """Mock ServiceContainer for testing REPL commands."""
+
+    def __init__(self):
+        self._services: dict[str, Any] = {}
+
+    def get(self, name: str) -> Any:
+        return self._services.get(name)
+
+    def register(self, name: str, value: Any) -> None:
+        self._services[name] = value
+
+
 class MockAgent:
     """Mock Agent for testing REPL commands."""
 
@@ -59,6 +72,9 @@ class MockAgent:
         # Mock dispatcher
         self.dispatcher = MagicMock()
         self.dispatcher.should_shutdown = False
+
+        # Mock services
+        self.services = MockServices()
 
 
 class MockAgentPool:
@@ -440,63 +456,190 @@ class TestCmdCwd:
 
 
 class TestCmdPermissions:
-    """Tests for /permissions [level] - permission management."""
+    """Tests for /permissions command - permission management."""
 
     @pytest.mark.asyncio
-    async def test_show_current_permission(self, ctx_with_agent: CommandContext):
-        """Shows current permission level with no args."""
-        output = await cmd_permissions(ctx_with_agent, level=None)
+    async def test_show_current_no_permissions_set(self, ctx_with_agent: CommandContext):
+        """Shows 'unrestricted' when no permissions are set."""
+        output = await cmd_permissions(ctx_with_agent, args=None)
 
         assert output.result == CommandResult.SUCCESS
-        assert "trusted" in output.message.lower() or "permission" in output.message.lower()
+        assert "unrestricted" in output.message.lower()
+        assert output.data["preset"] is None
 
     @pytest.mark.asyncio
-    async def test_set_yolo_permission(self, ctx_with_agent: CommandContext):
-        """Sets permission to yolo."""
-        output = await cmd_permissions(ctx_with_agent, level="yolo")
+    async def test_show_current_with_permissions(
+        self, mock_pool: MockAgentPool, mock_session_manager: MockSessionManager
+    ):
+        """Shows current permission preset when permissions are set."""
+        from nexus3.core.permissions import resolve_preset
+
+        agent = mock_pool.add_agent("main")
+        perms = resolve_preset("trusted")
+        agent.services.register("permissions", perms)
+
+        ctx = CommandContext(
+            pool=mock_pool,
+            session_manager=mock_session_manager,
+            current_agent_id="main",
+            is_repl=True,
+        )
+        output = await cmd_permissions(ctx, args=None)
 
         assert output.result == CommandResult.SUCCESS
-        assert output.data["permission"] == "yolo"
+        assert "trusted" in output.message.lower()
+        assert output.data["preset"] == "trusted"
 
     @pytest.mark.asyncio
-    async def test_set_trusted_permission(self, ctx_with_agent: CommandContext):
-        """Sets permission to trusted."""
-        output = await cmd_permissions(ctx_with_agent, level="trusted")
+    async def test_change_to_yolo_preset(self, ctx_with_agent: CommandContext):
+        """Changes permission preset to yolo."""
+        output = await cmd_permissions(ctx_with_agent, args="yolo")
 
         assert output.result == CommandResult.SUCCESS
-        assert output.data["permission"] == "trusted"
+        assert output.data["preset"] == "yolo"
 
     @pytest.mark.asyncio
-    async def test_set_sandboxed_permission(self, ctx_with_agent: CommandContext):
-        """Sets permission to sandboxed."""
-        output = await cmd_permissions(ctx_with_agent, level="sandboxed")
+    async def test_change_to_trusted_preset(self, ctx_with_agent: CommandContext):
+        """Changes permission preset to trusted."""
+        output = await cmd_permissions(ctx_with_agent, args="trusted")
 
         assert output.result == CommandResult.SUCCESS
-        assert output.data["permission"] == "sandboxed"
+        assert output.data["preset"] == "trusted"
 
     @pytest.mark.asyncio
-    async def test_invalid_permission_level(self, ctx_with_agent: CommandContext):
-        """Error for invalid permission level."""
-        output = await cmd_permissions(ctx_with_agent, level="invalid")
+    async def test_change_to_sandboxed_preset(self, ctx_with_agent: CommandContext):
+        """Changes permission preset to sandboxed."""
+        output = await cmd_permissions(ctx_with_agent, args="sandboxed")
+
+        assert output.result == CommandResult.SUCCESS
+        assert output.data["preset"] == "sandboxed"
+
+    @pytest.mark.asyncio
+    async def test_change_to_worker_preset(self, ctx_with_agent: CommandContext):
+        """Changes permission preset to worker."""
+        output = await cmd_permissions(ctx_with_agent, args="worker")
+
+        assert output.result == CommandResult.SUCCESS
+        assert output.data["preset"] == "worker"
+
+    @pytest.mark.asyncio
+    async def test_invalid_preset_name(self, ctx_with_agent: CommandContext):
+        """Error for invalid preset name."""
+        output = await cmd_permissions(ctx_with_agent, args="invalid")
 
         assert output.result == CommandResult.ERROR
-        assert "Invalid permission level" in output.message
+        assert "Unknown preset" in output.message
 
     @pytest.mark.asyncio
-    async def test_permission_case_insensitive(self, ctx_with_agent: CommandContext):
-        """Permission level is case-insensitive."""
-        output = await cmd_permissions(ctx_with_agent, level="YOLO")
+    async def test_preset_case_insensitive(self, ctx_with_agent: CommandContext):
+        """Preset name is case-insensitive."""
+        output = await cmd_permissions(ctx_with_agent, args="YOLO")
 
         assert output.result == CommandResult.SUCCESS
-        assert output.data["permission"] == "yolo"
+        assert output.data["preset"] == "yolo"
 
     @pytest.mark.asyncio
     async def test_no_current_agent(self, ctx: CommandContext):
         """Error when no current agent."""
-        output = await cmd_permissions(ctx, level=None)
+        output = await cmd_permissions(ctx, args=None)
 
         assert output.result == CommandResult.ERROR
         assert "No current agent" in output.message
+
+    @pytest.mark.asyncio
+    async def test_disable_tool(
+        self, mock_pool: MockAgentPool, mock_session_manager: MockSessionManager
+    ):
+        """Can disable a tool."""
+        from nexus3.core.permissions import resolve_preset
+
+        agent = mock_pool.add_agent("main")
+        perms = resolve_preset("trusted")
+        agent.services.register("permissions", perms)
+
+        ctx = CommandContext(
+            pool=mock_pool,
+            session_manager=mock_session_manager,
+            current_agent_id="main",
+            is_repl=True,
+        )
+        output = await cmd_permissions(ctx, args="--disable write_file")
+
+        assert output.result == CommandResult.SUCCESS
+        assert "Disabled" in output.message
+        assert output.data["tool"] == "write_file"
+        assert output.data["enabled"] is False
+
+    @pytest.mark.asyncio
+    async def test_enable_tool(
+        self, mock_pool: MockAgentPool, mock_session_manager: MockSessionManager
+    ):
+        """Can enable a tool."""
+        from nexus3.core.permissions import ToolPermission, resolve_preset
+
+        agent = mock_pool.add_agent("main")
+        perms = resolve_preset("trusted")
+        perms.tool_permissions["write_file"] = ToolPermission(enabled=False)
+        agent.services.register("permissions", perms)
+
+        ctx = CommandContext(
+            pool=mock_pool,
+            session_manager=mock_session_manager,
+            current_agent_id="main",
+            is_repl=True,
+        )
+        output = await cmd_permissions(ctx, args="--enable write_file")
+
+        assert output.result == CommandResult.SUCCESS
+        assert "Enabled" in output.message
+        assert output.data["tool"] == "write_file"
+        assert output.data["enabled"] is True
+
+    @pytest.mark.asyncio
+    async def test_list_tools(
+        self, mock_pool: MockAgentPool, mock_session_manager: MockSessionManager
+    ):
+        """Can list tool permissions."""
+        from nexus3.core.permissions import ToolPermission, resolve_preset
+
+        agent = mock_pool.add_agent("main")
+        perms = resolve_preset("sandboxed")  # Has some disabled tools by default
+        agent.services.register("permissions", perms)
+
+        ctx = CommandContext(
+            pool=mock_pool,
+            session_manager=mock_session_manager,
+            current_agent_id="main",
+            is_repl=True,
+        )
+        output = await cmd_permissions(ctx, args="--list-tools")
+
+        assert output.result == CommandResult.SUCCESS
+        assert "Tool permissions:" in output.message
+
+    @pytest.mark.asyncio
+    async def test_list_tools_no_permissions(self, ctx_with_agent: CommandContext):
+        """List tools shows 'no restrictions' when permissions not set."""
+        output = await cmd_permissions(ctx_with_agent, args="--list-tools")
+
+        assert output.result == CommandResult.SUCCESS
+        assert "no restrictions" in output.message.lower()
+
+    @pytest.mark.asyncio
+    async def test_disable_tool_no_permissions(self, ctx_with_agent: CommandContext):
+        """Error when trying to disable tool without permissions set."""
+        output = await cmd_permissions(ctx_with_agent, args="--disable write_file")
+
+        assert output.result == CommandResult.ERROR
+        assert "no policy set" in output.message.lower()
+
+    @pytest.mark.asyncio
+    async def test_unknown_flag(self, ctx_with_agent: CommandContext):
+        """Error for unknown flag."""
+        output = await cmd_permissions(ctx_with_agent, args="--unknown")
+
+        assert output.result == CommandResult.ERROR
+        assert "Unknown flag" in output.message
 
 
 # -----------------------------------------------------------------------------

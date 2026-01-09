@@ -43,6 +43,7 @@ from nexus3.config.loader import load_config
 from nexus3.context import PromptLoader
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
+from nexus3.core.types import ToolCall
 from nexus3.display import Activity, StreamingDisplay, get_console
 from nexus3.display.streaming import ToolState
 from nexus3.display.theme import load_theme
@@ -51,7 +52,7 @@ from nexus3.rpc.auth import ServerKeyManager
 from nexus3.rpc.detection import DetectionResult, detect_server
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
 from nexus3.rpc.http import DEFAULT_PORT, run_http_server
-from nexus3.rpc.pool import AgentPool, SharedComponents, generate_temp_id
+from nexus3.rpc.pool import AgentConfig, AgentPool, SharedComponents, generate_temp_id
 from nexus3.session import LogStream, SessionManager
 from nexus3.session.persistence import (
     SavedSession,
@@ -64,6 +65,42 @@ configure_stdio()
 
 # Load .env file if present
 load_dotenv()
+
+
+async def confirm_tool_action(tool_call: ToolCall) -> bool:
+    """Prompt user for confirmation of destructive action.
+
+    This callback is invoked by Session when a tool requires user confirmation
+    (based on permission level). It prompts in the console and waits for y/n.
+
+    Args:
+        tool_call: The tool call requiring confirmation.
+
+    Returns:
+        True if user confirms, False otherwise.
+    """
+    console = get_console()
+
+    # Format the confirmation message based on tool type
+    tool_name = tool_call.name
+    args_preview = ""
+
+    if tool_name == "write_file":
+        path = tool_call.arguments.get("path", "unknown")
+        args_preview = f" to {path}"
+    elif tool_name == "nexus_destroy":
+        agent_id = tool_call.arguments.get("agent_id", "unknown")
+        args_preview = f" agent {agent_id}"
+    elif tool_name == "nexus_shutdown":
+        args_preview = " the server"
+
+    console.print(f"[yellow]Confirm {tool_name}{args_preview}?[/] ", end="")
+
+    try:
+        response = console.input("[y/n]: ").strip().lower()
+        return response in ("y", "yes")
+    except (EOFError, KeyboardInterrupt):
+        return False
 
 
 def parse_args() -> argparse.Namespace:
@@ -410,18 +447,45 @@ async def run_repl(
                 await pool.destroy(agent_name)
                 return
 
+    # Wire up confirmation callback for main agent
+    main_agent.session.on_confirm = confirm_tool_action
+
+    # Helper to get permission data from an agent
+    def get_permission_data(agent: object) -> tuple[str, str | None, list[str]]:
+        """Extract permission info from agent for serialization.
+
+        Returns:
+            Tuple of (permission_level, permission_preset, disabled_tools)
+        """
+        perms = agent.services.get("permissions")  # type: ignore[union-attr]
+        if perms:
+            level = perms.effective_policy.level.value
+            preset = perms.base_preset
+            disabled = [
+                name for name, tp in perms.tool_permissions.items()
+                if not tp.enabled
+            ]
+        else:
+            level = "trusted"
+            preset = None
+            disabled = []
+        return level, preset, disabled
+
     # Update last-session immediately after startup (so resume works after quit)
     try:
+        perm_level, perm_preset, disabled_tools = get_permission_data(main_agent)
         startup_saved = serialize_session(
             agent_id=agent_name,
             messages=main_agent.context.messages,
             system_prompt=main_agent.context.system_prompt or "",
             system_prompt_path=None,
             working_directory=".",
-            permission_level="trusted",
+            permission_level=perm_level,
             token_usage=main_agent.context.get_token_usage(),
             provenance="user",
             created_at=main_agent.created_at,
+            permission_preset=perm_preset,
+            disabled_tools=disabled_tools,
         )
         session_manager.save_last_session(startup_saved, agent_name)
     except Exception:
@@ -446,16 +510,19 @@ async def run_repl(
         try:
             agent = pool.get(agent_id)
             if agent:
+                perm_level, perm_preset, disabled_tools = get_permission_data(agent)
                 saved = serialize_session(
                     agent_id=agent_id,
                     messages=agent.context.messages,
                     system_prompt=agent.context.system_prompt or "",
                     system_prompt_path=None,
                     working_directory=".",
-                    permission_level="trusted",
+                    permission_level=perm_level,
                     token_usage=agent.context.get_token_usage(),
                     provenance="user",
                     created_at=agent.created_at,
+                    permission_preset=perm_preset,
+                    disabled_tools=disabled_tools,
                 )
                 session_manager.save_last_session(saved, agent_id)
         except Exception:
@@ -745,6 +812,7 @@ async def run_repl(
                             session.on_batch_progress = on_batch_progress
                             session.on_batch_halt = on_batch_halt
                             session.on_batch_complete = on_batch_complete
+                            session.on_confirm = confirm_tool_action
                             # Update last session on switch
                             save_as_last_session(current_agent_id)
                             if not was_whisper:
@@ -774,14 +842,21 @@ async def run_repl(
 
                             if confirm == "y":
                                 agent_name_to_restore = output.data["agent_name"]
+                                permission_to_use = output.data.get("permission")
                                 try:
                                     # Load saved session and restore
                                     saved = session_manager.load_session(agent_name_to_restore)
-                                    # Create agent
-                                    await pool.create(agent_id=agent_name_to_restore)
+                                    # Create agent with permission preset
+                                    agent_config = AgentConfig(preset=permission_to_use)
+                                    await pool.create(
+                                        agent_id=agent_name_to_restore,
+                                        config=agent_config,
+                                    )
                                     # Restore messages to context
                                     new_agent = pool.get(agent_name_to_restore)
                                     if new_agent:
+                                        # Wire up confirmation callback
+                                        new_agent.session.on_confirm = confirm_tool_action
                                         restored_msgs = deserialize_messages(saved.messages)
                                         for msg in restored_msgs:
                                             new_agent.context._messages.append(msg)
@@ -821,8 +896,16 @@ async def run_repl(
 
                             if confirm == "y":
                                 agent_name_to_create = output.data["agent_name"]
+                                permission_to_use = output.data.get("permission")
                                 try:
-                                    await pool.create(agent_id=agent_name_to_create)
+                                    # Create agent with permission preset
+                                    agent_config = AgentConfig(preset=permission_to_use)
+                                    new_agent = await pool.create(
+                                        agent_id=agent_name_to_create,
+                                        config=agent_config,
+                                    )
+                                    # Wire up confirmation callback
+                                    new_agent.session.on_confirm = confirm_tool_action
                                     console.print(
                                         f"Created agent: {agent_name_to_create}",
                                         style="dim green",
@@ -830,24 +913,22 @@ async def run_repl(
 
                                     if action == "prompt_create":
                                         # Switch to the new agent
-                                        new_agent = pool.get(agent_name_to_create)
-                                        if new_agent:
-                                            current_agent_id = agent_name_to_create
-                                            session = new_agent.session
-                                            logger = new_agent.logger
-                                            session.on_tool_call = on_tool_call
-                                            session.on_reasoning = on_reasoning
-                                            session.on_batch_start = on_batch_start
-                                            session.on_tool_active = on_tool_active
-                                            session.on_batch_progress = on_batch_progress
-                                            session.on_batch_halt = on_batch_halt
-                                            session.on_batch_complete = on_batch_complete
-                                            # Update last session on create+switch
-                                            save_as_last_session(current_agent_id)
-                                            console.print(
-                                                f"Switched to: {agent_name_to_create}",
-                                                style="dim cyan",
-                                            )
+                                        current_agent_id = agent_name_to_create
+                                        session = new_agent.session
+                                        logger = new_agent.logger
+                                        session.on_tool_call = on_tool_call
+                                        session.on_reasoning = on_reasoning
+                                        session.on_batch_start = on_batch_start
+                                        session.on_tool_active = on_tool_active
+                                        session.on_batch_progress = on_batch_progress
+                                        session.on_batch_halt = on_batch_halt
+                                        session.on_batch_complete = on_batch_complete
+                                        # Update last session on create+switch
+                                        save_as_last_session(current_agent_id)
+                                        console.print(
+                                            f"Switched to: {agent_name_to_create}",
+                                            style="dim cyan",
+                                        )
                                     else:  # prompt_create_whisper
                                         whisper.enter(
                                             agent_name_to_create, current_agent_id
@@ -978,16 +1059,21 @@ async def run_repl(
                 # Get current agent for saving
                 save_agent = pool.get(current_agent_id)
                 if save_agent:
+                    perm_level, perm_preset, disabled_tools = get_permission_data(
+                        save_agent
+                    )
                     saved = serialize_session(
                         agent_id=current_agent_id,
                         messages=save_agent.context.messages,
                         system_prompt=save_agent.context.system_prompt or "",
                         system_prompt_path=None,
                         working_directory=".",
-                        permission_level="trusted",
+                        permission_level=perm_level,
                         token_usage=save_agent.context.get_token_usage(),
                         provenance="user",
                         created_at=save_agent.created_at,
+                        permission_preset=perm_preset,
+                        disabled_tools=disabled_tools,
                     )
                     session_manager.save_last_session(saved, current_agent_id)
             except Exception as e:

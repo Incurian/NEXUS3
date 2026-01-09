@@ -217,7 +217,12 @@ class NexusClient:
         result = self._check(response)
         return cast(list[str], result.get("agents", []))
 
-    async def create_agent(self, agent_id: str) -> dict[str, Any]:
+    async def create_agent(
+        self,
+        agent_id: str,
+        preset: str | None = None,
+        disable_tools: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Create a new agent on the server.
 
         Note: This should be called on the root URL (e.g., http://localhost:8765),
@@ -225,11 +230,18 @@ class NexusClient:
 
         Args:
             agent_id: The ID for the new agent.
+            preset: Permission preset (yolo, trusted, sandboxed, worker).
+            disable_tools: List of tool names to disable for the agent.
 
         Returns:
             Creation result with agent_id.
         """
-        response = await self._call("create_agent", {"agent_id": agent_id})
+        params: dict[str, Any] = {"agent_id": agent_id}
+        if preset is not None:
+            params["preset"] = preset
+        if disable_tools is not None:
+            params["disable_tools"] = disable_tools
+        response = await self._call("create_agent", params)
         return cast(dict[str, Any], self._check(response))
 
     async def destroy_agent(self, agent_id: str) -> dict[str, Any]:

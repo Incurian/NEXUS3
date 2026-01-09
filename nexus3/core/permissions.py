@@ -8,8 +8,23 @@ Three permission levels are supported:
 
 The PermissionPolicy class provides methods to check if specific actions
 are allowed based on the permission level and configured path restrictions.
+
+Additional types for the extended permission system:
+- ToolPermission: Per-tool permission configuration
+- PermissionPreset: Named permission configuration preset
+- PermissionDelta: Changes to apply to a base preset
+- AgentPermissions: Runtime permission state for an agent
+
+Built-in presets available via get_builtin_presets():
+- yolo: Full access, no confirmations
+- trusted: Confirmations for destructive actions (default)
+- sandboxed: Limited to CWD, no network
+- worker: Minimal permissions for background workers
 """
 
+from __future__ import annotations
+
+import copy
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -273,3 +288,241 @@ class PermissionPolicy:
             blocked_str = ", ".join(str(p) for p in self.blocked_paths)
             path_info += f", blocked_paths=[{blocked_str}]"
         return f"PermissionPolicy(level={self.level.value}{path_info})"
+
+
+@dataclass
+class ToolPermission:
+    """Per-tool permission configuration."""
+
+    enabled: bool = True
+    allowed_paths: list[Path] | None = None  # None = inherit from preset
+    timeout: float | None = None  # None = use default
+    requires_confirmation: bool | None = None  # None = use policy default
+
+
+@dataclass
+class PermissionPreset:
+    """Named permission configuration preset."""
+
+    name: str
+    level: PermissionLevel
+    description: str = ""
+    allowed_paths: list[Path] | None = None  # None = unrestricted
+    blocked_paths: list[Path] = field(default_factory=list)
+    network_access: bool = True
+    tool_permissions: dict[str, ToolPermission] = field(default_factory=dict)
+    default_tool_timeout: float = 30.0
+
+
+@dataclass
+class PermissionDelta:
+    """Changes to apply to a base preset."""
+
+    disable_tools: list[str] = field(default_factory=list)
+    enable_tools: list[str] = field(default_factory=list)
+    allowed_paths: list[Path] | None = None  # Replaces base if set
+    add_blocked_paths: list[Path] = field(default_factory=list)
+    network_access: bool | None = None
+    tool_overrides: dict[str, ToolPermission] = field(default_factory=dict)
+
+
+@dataclass
+class AgentPermissions:
+    """Runtime permission state for an agent."""
+
+    base_preset: str
+    effective_policy: PermissionPolicy
+    tool_permissions: dict[str, ToolPermission] = field(default_factory=dict)
+    ceiling: AgentPermissions | None = None
+    parent_agent_id: str | None = None
+
+    def can_grant(self, requested: AgentPermissions) -> bool:
+        """Check if this agent can grant requested permissions to subagent.
+
+        Subagent permissions must be equal or more restrictive:
+        - Can't have more permissive level (YOLO > TRUSTED > SANDBOXED)
+        - Can't enable tools this agent has disabled
+        - Can't access paths this agent can't access
+
+        Args:
+            requested: The permissions requested for the subagent.
+
+        Returns:
+            True if this agent can grant the requested permissions.
+        """
+        # Level ordering: SANDBOXED < TRUSTED < YOLO
+        level_order = {
+            PermissionLevel.SANDBOXED: 0,
+            PermissionLevel.TRUSTED: 1,
+            PermissionLevel.YOLO: 2,
+        }
+
+        # Requested level can't exceed our level
+        if level_order[requested.effective_policy.level] > level_order[self.effective_policy.level]:
+            return False
+
+        # Check tool permissions - requested can't enable what we disabled
+        for tool_name, our_perm in self.tool_permissions.items():
+            if not our_perm.enabled:
+                their_perm = requested.tool_permissions.get(tool_name)
+                if their_perm is None or their_perm.enabled:
+                    return False
+
+        # Check path permissions
+        if self.effective_policy.allowed_paths is not None:
+            # We have path restrictions
+            if requested.effective_policy.allowed_paths is None:
+                # They want unrestricted - not allowed
+                return False
+            # Check each of their paths is within our allowed paths
+            for their_path in requested.effective_policy.allowed_paths:
+                if not self.effective_policy._is_path_allowed(their_path):
+                    return False
+
+        return True
+
+    def apply_delta(self, delta: PermissionDelta) -> AgentPermissions:
+        """Apply a delta and return new permissions.
+
+        Creates a new AgentPermissions with delta applied.
+        Does NOT check ceiling - caller should verify with can_grant().
+
+        Args:
+            delta: The permission changes to apply.
+
+        Returns:
+            New AgentPermissions with delta applied.
+        """
+        # Start with copies of current state
+        new_tool_perms = copy.deepcopy(self.tool_permissions)
+        new_allowed = (
+            list(delta.allowed_paths) if delta.allowed_paths is not None
+            else (list(self.effective_policy.allowed_paths) if self.effective_policy.allowed_paths else None)
+        )
+        new_blocked = list(self.effective_policy.blocked_paths) + list(delta.add_blocked_paths)
+        new_network = delta.network_access if delta.network_access is not None else self.effective_policy.level != PermissionLevel.SANDBOXED
+
+        # Apply tool disables
+        for tool_name in delta.disable_tools:
+            if tool_name in new_tool_perms:
+                new_tool_perms[tool_name].enabled = False
+            else:
+                new_tool_perms[tool_name] = ToolPermission(enabled=False)
+
+        # Apply tool enables
+        for tool_name in delta.enable_tools:
+            if tool_name in new_tool_perms:
+                new_tool_perms[tool_name].enabled = True
+            else:
+                new_tool_perms[tool_name] = ToolPermission(enabled=True)
+
+        # Apply tool overrides
+        for tool_name, override in delta.tool_overrides.items():
+            new_tool_perms[tool_name] = override
+
+        # Create new policy
+        new_policy = PermissionPolicy(
+            level=self.effective_policy.level,
+            allowed_paths=new_allowed,
+            blocked_paths=new_blocked,
+        )
+
+        return AgentPermissions(
+            base_preset=self.base_preset,
+            effective_policy=new_policy,
+            tool_permissions=new_tool_perms,
+            ceiling=self.ceiling,
+            parent_agent_id=self.parent_agent_id,
+        )
+
+
+# Built-in permission presets
+def _create_builtin_presets() -> dict[str, PermissionPreset]:
+    """Create built-in presets. Function to avoid Path.cwd() at import time."""
+    return {
+        "yolo": PermissionPreset(
+            name="yolo",
+            level=PermissionLevel.YOLO,
+            description="Full access, no confirmations",
+        ),
+        "trusted": PermissionPreset(
+            name="trusted",
+            level=PermissionLevel.TRUSTED,
+            description="Confirmations for destructive actions (default)",
+        ),
+        "sandboxed": PermissionPreset(
+            name="sandboxed",
+            level=PermissionLevel.SANDBOXED,
+            description="Limited to CWD, no network",
+            network_access=False,
+            tool_permissions={
+                "nexus_send": ToolPermission(enabled=False),
+                "nexus_create": ToolPermission(enabled=False),
+                "nexus_shutdown": ToolPermission(enabled=False),
+            },
+        ),
+        "worker": PermissionPreset(
+            name="worker",
+            level=PermissionLevel.SANDBOXED,
+            description="Minimal permissions for background workers",
+            network_access=False,
+            tool_permissions={
+                "write_file": ToolPermission(enabled=False),
+                "nexus_create": ToolPermission(enabled=False),
+                "nexus_destroy": ToolPermission(enabled=False),
+                "nexus_shutdown": ToolPermission(enabled=False),
+            },
+        ),
+    }
+
+
+def get_builtin_presets() -> dict[str, PermissionPreset]:
+    """Get built-in permission presets."""
+    return _create_builtin_presets()
+
+
+def resolve_preset(
+    preset_name: str,
+    custom_presets: dict[str, PermissionPreset] | None = None,
+) -> AgentPermissions:
+    """Resolve a preset name to AgentPermissions.
+
+    Args:
+        preset_name: Name of preset to resolve.
+        custom_presets: Optional custom presets from config.
+
+    Returns:
+        AgentPermissions based on the preset.
+
+    Raises:
+        ValueError: If preset not found.
+    """
+    # Check custom presets first
+    if custom_presets and preset_name in custom_presets:
+        preset = custom_presets[preset_name]
+    else:
+        builtin = get_builtin_presets()
+        if preset_name not in builtin:
+            valid = list(builtin.keys())
+            if custom_presets:
+                valid.extend(custom_presets.keys())
+            raise ValueError(f"Unknown preset: {preset_name}. Valid: {valid}")
+        preset = builtin[preset_name]
+
+    # Create policy from preset
+    allowed_paths = preset.allowed_paths
+    if allowed_paths is None and preset.level == PermissionLevel.SANDBOXED:
+        # Sandboxed defaults to CWD
+        allowed_paths = [Path.cwd()]
+
+    policy = PermissionPolicy(
+        level=preset.level,
+        allowed_paths=allowed_paths,
+        blocked_paths=list(preset.blocked_paths),
+    )
+
+    return AgentPermissions(
+        base_preset=preset_name,
+        effective_policy=policy,
+        tool_permissions=dict(preset.tool_permissions),
+    )

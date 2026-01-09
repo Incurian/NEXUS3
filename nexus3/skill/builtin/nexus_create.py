@@ -4,6 +4,11 @@ import json
 from typing import Any
 
 from nexus3.client import ClientError, NexusClient
+from nexus3.core.permissions import (
+    AgentPermissions,
+    get_builtin_presets,
+    resolve_preset,
+)
 from nexus3.core.types import ToolResult
 from nexus3.core.url_validator import UrlSecurityError, validate_url
 from nexus3.rpc.auth import discover_api_key
@@ -38,14 +43,24 @@ class NexusCreateSkill:
             "properties": {
                 "agent_id": {
                     "type": "string",
-                    "description": "ID for the new agent (e.g., 'worker-1')"
+                    "description": "ID for the new agent (e.g., 'worker-1')",
+                },
+                "preset": {
+                    "type": "string",
+                    "description": "Permission preset: yolo, trusted, sandboxed, or worker",
+                    "enum": ["yolo", "trusted", "sandboxed", "worker"],
+                },
+                "disable_tools": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of tool names to disable for the new agent",
                 },
                 "port": {
                     "type": "integer",
-                    "description": "Server port (default: 8765)"
-                }
+                    "description": "Server port (default: 8765)",
+                },
             },
-            "required": ["agent_id"]
+            "required": ["agent_id"],
         }
 
     def _get_port(self, port: int | None) -> int:
@@ -67,13 +82,17 @@ class NexusCreateSkill:
     async def execute(
         self,
         agent_id: str = "",
+        preset: str | None = None,
+        disable_tools: list[str] | None = None,
         port: int | None = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> ToolResult:
         """Create a new agent on the Nexus server.
 
         Args:
             agent_id: ID for the new agent
+            preset: Permission preset (yolo, trusted, sandboxed, worker)
+            disable_tools: List of tool names to disable
             port: Optional server port (default: 8765)
 
         Returns:
@@ -81,6 +100,22 @@ class NexusCreateSkill:
         """
         if not agent_id:
             return ToolResult(error="No agent_id provided")
+
+        # Get parent permissions to enforce ceiling
+        parent_perms: AgentPermissions | None = self._services.get("permissions")
+
+        # Validate ceiling if parent has permissions and preset is specified
+        if parent_perms and preset:
+            builtin = get_builtin_presets()
+            if preset in builtin:
+                try:
+                    requested = resolve_preset(preset)
+                    if not parent_perms.can_grant(requested):
+                        return ToolResult(
+                            error=f"Cannot create agent with '{preset}' preset: exceeds permission ceiling"
+                        )
+                except ValueError as e:
+                    return ToolResult(error=f"Invalid preset: {e}")
 
         actual_port = self._get_port(port)
         url = f"http://127.0.0.1:{actual_port}"
@@ -93,7 +128,11 @@ class NexusCreateSkill:
 
         try:
             async with NexusClient(validated_url, api_key=api_key) as client:
-                result = await client.create_agent(agent_id)
+                result = await client.create_agent(
+                    agent_id,
+                    preset=preset,
+                    disable_tools=disable_tools,
+                )
                 return ToolResult(output=json.dumps(result))
         except ClientError as e:
             return ToolResult(error=str(e))

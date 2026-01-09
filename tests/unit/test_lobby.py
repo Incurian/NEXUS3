@@ -164,6 +164,8 @@ class TestShowLobby:
             system_prompt_path=None,
             working_directory="/tmp",
             permission_level="trusted",
+            permission_preset="trusted",
+            disabled_tools=[],
             token_usage={"total": 50},
             provenance="user",
         )
@@ -350,6 +352,8 @@ class TestShowSessionList:
             system_prompt_path=None,
             working_directory="/",
             permission_level="yolo",
+            permission_preset="yolo",
+            disabled_tools=[],
             token_usage={},
             provenance="user",
         )
@@ -373,6 +377,8 @@ class TestShowSessionList:
             system_prompt_path=None,
             working_directory="/",
             permission_level="yolo",
+            permission_preset="yolo",
+            disabled_tools=[],
             token_usage={},
             provenance="user",
         )
@@ -396,6 +402,8 @@ class TestShowSessionList:
             system_prompt_path=None,
             working_directory="/",
             permission_level="yolo",
+            permission_preset="yolo",
+            disabled_tools=[],
             token_usage={},
             provenance="user",
         )
@@ -419,6 +427,8 @@ class TestShowSessionList:
             system_prompt_path=None,
             working_directory="/",
             permission_level="yolo",
+            permission_preset="yolo",
+            disabled_tools=[],
             token_usage={},
             provenance="user",
         )
@@ -431,6 +441,8 @@ class TestShowSessionList:
             system_prompt_path=None,
             working_directory="/",
             permission_level="yolo",
+            permission_preset="yolo",
+            disabled_tools=[],
             token_usage={},
             provenance="user",
         )
@@ -456,6 +468,8 @@ class TestShowSessionList:
             system_prompt_path=None,
             working_directory="/",
             permission_level="yolo",
+            permission_preset="yolo",
+            disabled_tools=[],
             token_usage={},
             provenance="user",
         )
@@ -479,6 +493,8 @@ class TestShowSessionList:
             system_prompt_path=None,
             working_directory="/",
             permission_level="yolo",
+            permission_preset="yolo",
+            disabled_tools=[],
             token_usage={},
             provenance="user",
         )
@@ -502,6 +518,8 @@ class TestShowSessionList:
             system_prompt_path=None,
             working_directory="/",
             permission_level="yolo",
+            permission_preset="yolo",
+            disabled_tools=[],
             token_usage={},
             provenance="user",
         )
@@ -529,6 +547,8 @@ class TestShowSessionList:
             system_prompt_path=None,
             working_directory="/",
             permission_level="yolo",
+            permission_preset="yolo",
+            disabled_tools=[],
             token_usage={},
             provenance="user",
         )
@@ -578,6 +598,8 @@ class TestLobbyIntegration:
             system_prompt_path=None,
             working_directory="/projects/x",
             permission_level="trusted",
+            permission_preset="trusted",
+            disabled_tools=[],
             token_usage={"total": 100},
             provenance="user",
         )
@@ -613,6 +635,8 @@ class TestLobbyIntegration:
             system_prompt_path=None,
             working_directory="/",
             permission_level="yolo",
+            permission_preset="yolo",
+            disabled_tools=[],
             token_usage={},
             provenance="user",
         )
@@ -625,6 +649,8 @@ class TestLobbyIntegration:
             system_prompt_path=None,
             working_directory="/",
             permission_level="yolo",
+            permission_preset="yolo",
+            disabled_tools=[],
             token_usage={},
             provenance="user",
         )
@@ -656,6 +682,8 @@ class TestLobbyIntegration:
             system_prompt_path=None,
             working_directory="/",
             permission_level="yolo",
+            permission_preset="yolo",
+            disabled_tools=[],
             token_usage={},
             provenance="user",
         )

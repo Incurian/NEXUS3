@@ -1,16 +1,18 @@
 """Chat session coordinator for NEXUS3."""
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Awaitable
 from typing import TYPE_CHECKING
 
 from nexus3.core.interfaces import AsyncProvider
+from nexus3.core.permissions import AgentPermissions
 from nexus3.core.types import (
     ContentDelta,
     Message,
     ReasoningDelta,
     Role,
     StreamComplete,
+    ToolCall,
     ToolCallStarted,
     ToolResult,
 )
@@ -18,9 +20,12 @@ from nexus3.core.types import (
 if TYPE_CHECKING:
     from nexus3.context.manager import ContextManager
     from nexus3.core.cancel import CancellationToken
-    from nexus3.core.types import ToolCall
     from nexus3.session.logging import SessionLogger
     from nexus3.skill.registry import SkillRegistry
+    from nexus3.skill.services import ServiceContainer
+
+# Confirmation callback type
+ConfirmationCallback = Callable[["ToolCall"], Awaitable[bool]]
 
 
 # Callback types for notifications
@@ -61,6 +66,8 @@ class Session:
         max_tool_iterations: int = 10,
         skill_timeout: float = 30.0,
         max_concurrent_tools: int = 10,
+        services: "ServiceContainer | None" = None,
+        on_confirm: ConfirmationCallback | None = None,
     ) -> None:
         """Initialize a new session.
 
@@ -91,6 +98,10 @@ class Session:
                           0 means no timeout. Default is 30.0.
             max_concurrent_tools: Maximum number of tools to execute in parallel.
                                  Default is 10.
+            services: Optional ServiceContainer for accessing shared services
+                     like permissions.
+            on_confirm: Optional callback for requesting user confirmation on
+                       destructive actions. Returns True if confirmed.
         """
         self.provider = provider
         self.context = context
@@ -107,6 +118,8 @@ class Session:
         self.max_tool_iterations = max_tool_iterations
         self.skill_timeout = skill_timeout
         self._tool_semaphore = asyncio.Semaphore(max_concurrent_tools)
+        self._services = services
+        self.on_confirm = on_confirm
 
         # Track cancelled tool calls to report on next send()
         self._pending_cancelled_tools: list[tuple[str, str]] = []  # [(tool_id, tool_name), ...]
@@ -132,6 +145,19 @@ class Session:
             self.context.add_tool_result(tool_id, tool_name, cancelled_result)
 
         self._pending_cancelled_tools.clear()
+
+    async def _request_confirmation(self, tool_call: "ToolCall") -> bool:
+        """Request user confirmation for destructive action.
+
+        Args:
+            tool_call: The tool call requiring confirmation.
+
+        Returns:
+            True if confirmed, False if denied.
+        """
+        if self.on_confirm is None:
+            return True  # Auto-approve in non-interactive contexts
+        return await self.on_confirm(tool_call)
 
     async def send(
         self,
@@ -348,7 +374,7 @@ class Session:
         yield "[Max tool iterations reached]"
 
     async def _execute_single_tool(self, tool_call: "ToolCall") -> ToolResult:
-        """Execute a single tool call.
+        """Execute a single tool call with permission checks.
 
         Args:
             tool_call: The tool call to execute.
@@ -356,6 +382,32 @@ class Session:
         Returns:
             The tool result.
         """
+        # Get permissions from services
+        permissions: AgentPermissions | None = None
+        if self._services:
+            permissions = self._services.get("permissions")
+
+        # Default timeout
+        effective_timeout = self.skill_timeout
+
+        if permissions:
+            tool_perm = permissions.tool_permissions.get(tool_call.name)
+
+            # Check if tool is enabled
+            if tool_perm and not tool_perm.enabled:
+                return ToolResult(error=f"Tool '{tool_call.name}' is disabled by permissions")
+
+            # Check if confirmation required
+            if permissions.effective_policy.requires_confirmation(tool_call.name):
+                confirmed = await self._request_confirmation(tool_call)
+                if not confirmed:
+                    return ToolResult(error="Action cancelled by user")
+
+            # Get per-tool timeout
+            if tool_perm and tool_perm.timeout is not None:
+                effective_timeout = tool_perm.timeout
+
+        # Get the skill
         skill = self.registry.get(tool_call.name) if self.registry else None
         if not skill:
             return ToolResult(error=f"Unknown skill: {tool_call.name}")
@@ -364,16 +416,16 @@ class Session:
         args = {k: v for k, v in tool_call.arguments.items() if not k.startswith("_")}
 
         try:
-            if self.skill_timeout > 0:
+            if effective_timeout > 0:
                 result = await asyncio.wait_for(
                     skill.execute(**args),
-                    timeout=self.skill_timeout,
+                    timeout=effective_timeout,
                 )
             else:
                 result = await skill.execute(**args)
             return result
         except asyncio.TimeoutError:
-            return ToolResult(error=f"Skill '{tool_call.name}' timed out after {self.skill_timeout}s")
+            return ToolResult(error=f"Skill '{tool_call.name}' timed out after {effective_timeout}s")
         except Exception as e:
             return ToolResult(error=f"Skill execution error: {e}")
 

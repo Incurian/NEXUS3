@@ -6,7 +6,7 @@ structure.
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -32,6 +32,8 @@ class SavedSession:
         permission_level: "yolo" | "trusted" | "sandboxed".
         token_usage: Token usage breakdown.
         provenance: "user" or parent agent_id that spawned this agent.
+        permission_preset: Permission preset name (e.g., "yolo", "trusted", "sandboxed").
+        disabled_tools: List of tool names that are disabled for this agent.
         schema_version: Schema version for migrations.
     """
 
@@ -45,6 +47,9 @@ class SavedSession:
     permission_level: str
     token_usage: dict[str, int]
     provenance: str
+    # New fields with defaults for backwards compatibility
+    permission_preset: str | None = None
+    disabled_tools: list[str] = field(default_factory=list)
     schema_version: int = SESSION_SCHEMA_VERSION
 
     def to_json(self) -> str:
@@ -63,6 +68,8 @@ class SavedSession:
             "system_prompt_path": self.system_prompt_path,
             "working_directory": self.working_directory,
             "permission_level": self.permission_level,
+            "permission_preset": self.permission_preset,
+            "disabled_tools": self.disabled_tools,
             "token_usage": self.token_usage,
             "provenance": self.provenance,
         }
@@ -85,6 +92,8 @@ class SavedSession:
             system_prompt_path=data.get("system_prompt_path"),
             working_directory=data["working_directory"],
             permission_level=data["permission_level"],
+            permission_preset=data.get("permission_preset"),
+            disabled_tools=data.get("disabled_tools", []),
             token_usage=data.get("token_usage", {}),
             provenance=data.get("provenance", "user"),
             schema_version=data.get("schema_version", 1),
@@ -223,6 +232,8 @@ def serialize_session(
     token_usage: dict[str, int],
     provenance: str = "user",
     created_at: datetime | None = None,
+    permission_preset: str | None = None,
+    disabled_tools: list[str] | None = None,
 ) -> SavedSession:
     """Create a SavedSession from runtime state.
 
@@ -236,6 +247,8 @@ def serialize_session(
         token_usage: Token usage breakdown.
         provenance: "user" or parent agent_id.
         created_at: When the session was created (default: now).
+        permission_preset: Permission preset name (e.g., "yolo", "trusted", "sandboxed").
+        disabled_tools: List of tool names that are disabled for this agent.
 
     Returns:
         SavedSession ready for disk storage.
@@ -252,4 +265,6 @@ def serialize_session(
         permission_level=permission_level,
         token_usage=token_usage,
         provenance=provenance,
+        permission_preset=permission_preset,
+        disabled_tools=disabled_tools or [],
     )

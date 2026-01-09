@@ -247,12 +247,16 @@ class TestSavedSession:
             system_prompt_path="/path/to/prompt.md",
             working_directory="/home/user/project",
             permission_level="trusted",
+            permission_preset="trusted",
+            disabled_tools=[],
             token_usage={"total": 100, "messages": 50},
             provenance="user",
         )
 
         assert session.agent_id == "test-agent"
         assert session.permission_level == "trusted"
+        assert session.permission_preset == "trusted"
+        assert session.disabled_tools == []
         assert session.schema_version == 1
 
     def test_to_json(self):
@@ -267,6 +271,8 @@ class TestSavedSession:
             system_prompt_path=None,
             working_directory="/tmp",
             permission_level="sandboxed",
+            permission_preset="sandboxed",
+            disabled_tools=["write_file"],
             token_usage={},
             provenance="parent-agent",
         )
@@ -275,6 +281,8 @@ class TestSavedSession:
 
         assert data["agent_id"] == "json-test"
         assert data["permission_level"] == "sandboxed"
+        assert data["permission_preset"] == "sandboxed"
+        assert data["disabled_tools"] == ["write_file"]
         assert data["provenance"] == "parent-agent"
         assert "2025-01-15" in data["created_at"]
 
@@ -314,6 +322,8 @@ class TestSavedSession:
             system_prompt_path="/prompts/test.md",
             working_directory="/projects/nexus",
             permission_level="trusted",
+            permission_preset="trusted",
+            disabled_tools=["nexus_shutdown"],
             token_usage={"system": 20, "messages": 80, "total": 100},
             provenance="spawner-agent",
         )
@@ -324,6 +334,8 @@ class TestSavedSession:
         assert restored.created_at == original.created_at
         assert restored.messages == original.messages
         assert restored.token_usage == original.token_usage
+        assert restored.permission_preset == original.permission_preset
+        assert restored.disabled_tools == original.disabled_tools
 
 
 class TestSerializeSession:
@@ -401,6 +413,8 @@ class TestSessionManager:
             system_prompt_path=None,
             working_directory="/tmp",
             permission_level="trusted",
+            permission_preset="trusted",
+            disabled_tools=[],
             token_usage={"total": 50},
             provenance="user",
         )
@@ -456,6 +470,8 @@ class TestSessionManager:
             system_prompt_path=None,
             working_directory="/",
             permission_level="yolo",
+            permission_preset="yolo",
+            disabled_tools=[],
             token_usage={},
             provenance="user",
         )
@@ -468,6 +484,8 @@ class TestSessionManager:
             system_prompt_path=None,
             working_directory="/",
             permission_level="yolo",
+            permission_preset="yolo",
+            disabled_tools=[],
             token_usage={},
             provenance="user",
         )
@@ -545,6 +563,8 @@ class TestSessionManager:
             system_prompt_path=None,
             working_directory="/",
             permission_level="yolo",
+            permission_preset="yolo",
+            disabled_tools=[],
             token_usage={},
             provenance="user",
         )
