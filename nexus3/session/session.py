@@ -1,5 +1,6 @@
 """Chat session coordinator for NEXUS3."""
 
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from typing import TYPE_CHECKING
 
@@ -58,6 +59,8 @@ class Session:
         on_batch_halt: BatchHaltCallback | None = None,
         on_batch_complete: BatchCompleteCallback | None = None,
         max_tool_iterations: int = 10,
+        skill_timeout: float = 30.0,
+        max_concurrent_tools: int = 10,
     ) -> None:
         """Initialize a new session.
 
@@ -84,6 +87,10 @@ class Session:
             on_batch_complete: Optional callback when all tools in batch are done.
             max_tool_iterations: Maximum iterations of the tool execution loop.
                                Prevents infinite loops. Default is 10.
+            skill_timeout: Timeout in seconds for skill execution.
+                          0 means no timeout. Default is 30.0.
+            max_concurrent_tools: Maximum number of tools to execute in parallel.
+                                 Default is 10.
         """
         self.provider = provider
         self.context = context
@@ -98,6 +105,8 @@ class Session:
         self.on_batch_halt = on_batch_halt
         self.on_batch_complete = on_batch_complete
         self.max_tool_iterations = max_tool_iterations
+        self.skill_timeout = skill_timeout
+        self._tool_semaphore = asyncio.Semaphore(max_concurrent_tools)
 
         # Track cancelled tool calls to report on next send()
         self._pending_cancelled_tools: list[tuple[str, str]] = []  # [(tool_id, tool_name), ...]
@@ -355,7 +364,16 @@ class Session:
         args = {k: v for k, v in tool_call.arguments.items() if not k.startswith("_")}
 
         try:
-            return await skill.execute(**args)
+            if self.skill_timeout > 0:
+                result = await asyncio.wait_for(
+                    skill.execute(**args),
+                    timeout=self.skill_timeout,
+                )
+            else:
+                result = await skill.execute(**args)
+            return result
+        except asyncio.TimeoutError:
+            return ToolResult(error=f"Skill '{tool_call.name}' timed out after {self.skill_timeout}s")
         except Exception as e:
             return ToolResult(error=f"Skill execution error: {e}")
 
@@ -364,16 +382,17 @@ class Session:
     ) -> list[ToolResult]:
         """Execute multiple tool calls in parallel.
 
+        Uses a semaphore to limit concurrency to max_concurrent_tools.
+
         Args:
             tool_calls: The tool calls to execute.
 
         Returns:
             List of tool results in the same order as tool_calls.
         """
-        import asyncio
-
         async def execute_one(tc: "ToolCall") -> ToolResult:
-            return await self._execute_single_tool(tc)
+            async with self._tool_semaphore:
+                return await self._execute_single_tool(tc)
 
         results = await asyncio.gather(
             *[execute_one(tc) for tc in tool_calls],

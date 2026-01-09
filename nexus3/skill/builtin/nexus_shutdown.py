@@ -5,6 +5,7 @@ from typing import Any
 
 from nexus3.client import ClientError, NexusClient
 from nexus3.core.types import ToolResult
+from nexus3.core.url_validator import UrlSecurityError, validate_url
 from nexus3.rpc.auth import discover_api_key
 from nexus3.skill.services import ServiceContainer
 
@@ -77,7 +78,12 @@ class NexusShutdownSkill:
         api_key = self._get_api_key(actual_port)
 
         try:
-            async with NexusClient(url, api_key=api_key) as client:
+            validated_url = validate_url(url, allow_localhost=True)
+        except UrlSecurityError as e:
+            return ToolResult(error=f"URL validation failed: {e}")
+
+        try:
+            async with NexusClient(validated_url, api_key=api_key) as client:
                 result = await client.shutdown_server()
                 return ToolResult(output=json.dumps(result))
         except ClientError as e:

@@ -126,6 +126,9 @@ class TestAgentConfig:
 def create_mock_shared_components(tmp_path: Path) -> SharedComponents:
     """Create SharedComponents with mocks for testing."""
     mock_config = MagicMock()
+    # Provide concrete values for skill timeout and concurrency limit
+    mock_config.skill_timeout = 30.0
+    mock_config.max_concurrent_tools = 10
     mock_provider = MagicMock()
 
     # Mock prompt_loader.load() to return a LoadedPrompt-like object

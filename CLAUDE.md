@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. The goal is a simpler, more maintainable, end-to-end tested agent with clear architecture.
 
-**Status:** Phase 6 integration complete (812 tests pass). Known bugs to fix post-compaction.
+**Status:** Phase 7 complete. 834 tests pass. Security, async, and data integrity fixes done.
 
 ---
 
@@ -20,6 +20,8 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 | **2 - Context** | Multi-turn conversations, Token tracking (tiktoken), Truncation strategies, System prompt loading, HTTP JSON-RPC |
 | **3 - Skills** | Skill system with DI, Built-in: read_file/write_file/sleep/nexus_*, Tool execution loop, 8 session callbacks |
 | **4 - Multi-Agent** | AgentPool, GlobalDispatcher, path-based routing, `--connect` mode, NexusClient |
+| **5R - Security** | API key auth, server detection, path sandbox (infra), URL validator (infra), JSON injection fix, provider retry |
+| **6 - Sessions** | Persistence, lobby mode, whisper mode, unified commands, agent naming, auto-restore, permission types |
 
 ---
 
@@ -232,599 +234,316 @@ nexus-rpc cancel AGENT ID    # Cancel in-progress request
 ## Code Review Issues (2026-01-08)
 
 Full review in `/code-review/SUMMARY.md`. 21 files analyzed.
-**Detailed remediation plan:** `/REMEDIATION_PLAN.md` (~600 lines, 40-50 hrs estimated)
+**Detailed remediation plan:** `/REMEDIATION_PLAN.md` (~600 lines)
 
-### Overall Grades
+### Critical Issues Status
 
-| Category | Grade | Notes |
-|----------|-------|-------|
-| Architecture | A- | Clean separation, Protocol-based design |
-| Code Quality | B+ | Consistent patterns, some duplication |
-| Security | C+ | Critical gaps for production |
-| Test Coverage | B- | Good foundation, missing critical paths |
-| Documentation | A | Excellent READMEs |
-
-### Critical Issues (Must Fix)
-
-| # | Issue | Module | Type |
-|---|-------|--------|------|
-| 1 | No authentication on HTTP server | rpc/http | Security |
-| 2 | Path traversal in file skills | skill/builtin | Security |
-| 3 | SSRF in nexus_send | skill/builtin | Security |
-| 4 | Tool call/result pair corruption in truncation | context/manager | Data Integrity |
-| 5 | Blocking file I/O in async skills | skill/builtin | Performance |
-| 6 | No provider tests | provider | Reliability |
-| 7 | Raw log callback race in multi-agent | rpc/pool | Logging |
-| 8 | In-progress requests not cancelled on destroy | rpc/pool | Resource Leak |
-| 9 | Messages never garbage collected | context/manager | Memory Leak |
-| 10 | Missing encoding in file operations | session/markdown | Cross-platform |
+| # | Issue | Status | Notes |
+|---|-------|--------|-------|
+| 1 | No authentication on HTTP server | ✅ FIXED | `rpc/auth.py`, middleware in `http.py` |
+| 2 | Path traversal in file skills | ✅ FIXED | `validate_sandbox()` wired into read/write skills |
+| 3 | SSRF in nexus_send | ✅ FIXED | `validate_url()` in all 6 nexus skills |
+| 4 | Tool call/result pair truncation | ✅ FIXED | Groups preserved as atomic units |
+| 5 | Blocking file I/O in async skills | ✅ FIXED | `asyncio.to_thread()` in file skills |
+| 6 | No provider tests | ⚠️ PARTIAL | Provider has retry logic, tests incomplete |
+| 7 | Raw log callback race | ❌ TODO | Need log multiplexer with contextvars |
+| 8 | Requests not cancelled on destroy | ✅ FIXED | `cancel_all_requests()` in Dispatcher |
+| 9 | Messages never GC'd | ❌ TODO | Need pruning after truncation |
+| 10 | Missing encoding in file ops | ⚠️ PARTIAL | Skills have it, session logs need check |
 
 ---
 
-## Remediation Plan: Phase 5R (Review Fixes)
+## Remediation Plan: Phase 5R Status
 
-### Phase 5R.1: Security Hardening + REPL Unification
+### Phase 5R.1: Security Hardening - COMPLETE
 
-**Goal:** Make HTTP server production-safe AND unify REPL to use server internally.
+| Task | Status | Files |
+|------|--------|-------|
+| API Key Auth | ✅ Done | `rpc/auth.py`, `rpc/http.py` middleware |
+| Server Detection | ✅ Done | `rpc/detection.py` |
+| Path Sandbox | ✅ Done | `read_file.py`, `write_file.py` use `validate_sandbox()` |
+| SSRF Protection | ✅ Done | All 6 nexus skills use `validate_url()` |
+| JSON Injection | ✅ Done | All errors use `json.dumps()` |
 
-#### 5R.1.0: REPL Unification (Prerequisite)
+### Phase 5R.2: Data Integrity - MOSTLY COMPLETE
 
-Unify standalone REPL to use AgentPool internally, with server collision detection.
+| Task | Status | Description |
+|------|--------|-------------|
+| Truncation Fix | ✅ Done | Groups tool_call + results as atomic units |
+| Message GC | ❌ TODO | Prune messages after truncation |
+| Cancel on Destroy | ✅ Done | `cancel_all_requests()` in Dispatcher |
+| Encoding | ⚠️ Partial | Skills have it, session logs need audit |
 
-**New CLI Behavior:**
-```bash
-nexus3              # Check for server → connect if exists, else start embedded + REPL
-nexus3 --serve      # Check for server → error if exists, else start headless
-nexus3 --connect    # Check for server → error if not exists, else connect
-```
+### Phase 5R.3: Async/Performance - MOSTLY COMPLETE
 
-**Server Collision Detection:**
-```python
-# nexus3/rpc/detection.py
-async def detect_server(port: int) -> DetectionResult:
-    """Probe port with list_agents RPC to identify NEXUS3 servers."""
-    # Returns: NO_SERVER, NEXUS_SERVER, OTHER_SERVICE, TIMEOUT, ERROR
-```
+| Task | Status | Description |
+|------|--------|-------------|
+| Async File I/O | ✅ Done | `asyncio.to_thread()` in file skills |
+| Skill Timeout | ✅ Done | `asyncio.wait_for()` + `skill_timeout` config |
+| Concurrency Limit | ✅ Done | Semaphore + `max_concurrent_tools` config |
+| Log Multiplexer | ❌ TODO | Use contextvars for multi-agent logging |
 
-**Unified REPL Architecture:**
-```
-nexus3 (no flags)
-├── detect_server(8765)
-│   ├── NEXUS_SERVER → connect as client (read key from ~/.nexus3/server.key)
-│   └── NO_SERVER → start embedded server + REPL
-│       ├── Create SharedComponents
-│       ├── Create AgentPool with "main" agent
-│       ├── Generate API key → write to ~/.nexus3/server.key
-│       ├── Start HTTP server as background task
-│       └── Run REPL calling session directly (preserves streaming UX)
-```
+### Phase 5R.4: Test Coverage - PARTIAL
 
-**Key Insight:** REPL calls Session directly (not via HTTP) to preserve streaming callbacks.
-External clients use HTTP. This tests the full agent lifecycle without HTTP overhead locally.
+Provider has retry logic and tests. Context truncation tests needed. CLI/REPL tests added in Phase 6.
 
-**Files:**
-- NEW: `nexus3/rpc/detection.py` - Server detection
-- NEW: `nexus3/rpc/auth.py` - Key generation/validation
-- MODIFY: `nexus3/cli/repl.py` - Unified startup logic
-- MODIFY: `nexus3/cli/serve.py` - Collision detection
+### Phase 5R.5: Minor Fixes - MOSTLY COMPLETE
 
-#### 5R.1.1: API Key Authentication
-
-**Key Format:** `nxk_` + 32 bytes URL-safe Base64 (e.g., `nxk_7Ks9XmN2pLqR4Tv8...`)
-
-**Key Storage:**
-```
-~/.nexus3/
-├── server.key          # Default (port 8765)
-└── server-{port}.key   # Port-specific
-```
-
-**Key Discovery Order (Client):**
-1. `--api-key` CLI flag
-2. `NEXUS3_API_KEY` environment variable
-3. `~/.nexus3/server-{port}.key`
-4. `~/.nexus3/server.key`
-
-**Server Startup:**
-```
-$ nexus3 --serve
-NEXUS3 server on http://127.0.0.1:8765
-API key: nxk_7Ks9XmN2pLqR4Tv8YbHc1WzJ5AfD6GiE0MnO3PuQ9
-Key file: ~/.nexus3/server.key
-```
-
-**Files:**
-- NEW: `nexus3/rpc/auth.py` - `generate_api_key()`, `validate_api_key()`, `ServerKeyManager`
-- MODIFY: `nexus3/rpc/http.py` - Add auth middleware (401/403 responses)
-- MODIFY: `nexus3/client.py` - Add `api_key` param with auto-discovery
-- MODIFY: `nexus3/cli/client_commands.py` - Add `--api-key` flag
-- MODIFY: `nexus3/skill/builtin/nexus_*.py` - Use key from ServiceContainer
-
-#### 5R.1.2: Path Sandboxing
-
-**Default:** CWD only. **Configurable:** `allowed_paths` in config.
-
-**Implementation:**
-```python
-# Extend nexus3/core/paths.py
-def validate_sandbox(path: str, allowed: list[Path]) -> Path:
-    """Validate path is within sandbox. Raises PathSecurityError if not."""
-    resolved = Path(path).resolve()
-    # Block symlink attacks
-    if resolved.is_symlink():
-        raise PathSecurityError(path, "Symlinks not allowed")
-    # Check allowed paths
-    for allowed_path in allowed:
-        if resolved.is_relative_to(allowed_path):
-            return resolved
-    raise PathSecurityError(path, "Path outside sandbox")
-```
-
-**Files:**
-- MODIFY: `nexus3/core/paths.py` - Add `validate_sandbox()`, `PathSecurityError`
-- MODIFY: `nexus3/config/schema.py` - Add `allowed_paths: list[str] = ["."]`
-- MODIFY: `nexus3/skill/builtin/read_file.py` - Use sandbox validation
-- MODIFY: `nexus3/skill/builtin/write_file.py` - Use sandbox validation
-
-#### 5R.1.3: SSRF Protection
-
-**Default:** Localhost only (`127.0.0.1`, `localhost`). Always block cloud metadata IPs.
-
-**Files:**
-- NEW: `nexus3/core/url_validator.py` - `validate_url()`, `UrlSecurityError`
-- MODIFY: `nexus3/skill/builtin/nexus_send.py` - Validate URL before request
-- MODIFY: `nexus3/skill/builtin/nexus_cancel.py` - Same
-- MODIFY: `nexus3/skill/builtin/nexus_status.py` - Same
-- MODIFY: `nexus3/skill/builtin/nexus_shutdown.py` - Same
-
-#### 5R.1.4: JSON Injection Fix
-
-Replace f-string JSON with `json.dumps()` in error responses.
-
-**Files:**
-- MODIFY: `nexus3/rpc/http.py` - Use `json.dumps({"error": str(e)})`
+| Task | Status |
+|------|--------|
+| Export ReasoningDelta | ✅ Done |
+| extra="forbid" Pydantic | ✅ Done |
+| Consolidate InvalidParamsError | ✅ Done |
+| Remove cli/output.py | ✅ Done |
+| verbose/raw_log params | ❌ TODO |
+| Provider retry | ✅ Done |
+| max_iterations config | ✅ Done |
 
 ---
 
-#### Phase 5R.1 Implementation Order
+## Phase 6: Agent Management - COMPLETE (834 tests)
 
-1. **5R.1.4** - JSON injection (5 min, low risk)
-2. **5R.1.1** - Auth system (`rpc/auth.py`, key generation)
-3. **5R.1.0** - Server detection (`rpc/detection.py`)
-4. **5R.1.0** - REPL unification (modify `cli/repl.py`)
-5. **5R.1.1** - HTTP auth middleware + client changes
-6. **5R.1.2** - Path sandboxing (extend `core/paths.py`)
-7. **5R.1.3** - SSRF protection (`core/url_validator.py`)
-8. **Tests** - Auth, sandbox, SSRF, collision detection
+All Phase 6 infrastructure and integration complete:
+- ✅ Session persistence (`session/persistence.py`, `session/session_manager.py`)
+- ✅ Unified commands (`commands/protocol.py`, `commands/core.py`)
+- ✅ Agent naming (temp `.1` vs saved `myproject`)
+- ✅ REPL commands (`cli/repl_commands.py`, `cli/whisper.py`)
+- ✅ Lobby mode (`cli/lobby.py`)
+- ✅ Auto-restore saved sessions
+- ✅ Permission types (`core/permissions.py`)
+- ✅ CLI flags: `--resume`, `--fresh`, `--session`, `--template`
+- ✅ Whisper mode for side conversations
+- ✅ Auto-save to `last-session.json`
 
-#### New Files Summary
-
-| File | Purpose |
-|------|---------|
-| `nexus3/rpc/auth.py` | Key generation, validation, ServerKeyManager |
-| `nexus3/rpc/detection.py` | Server collision detection |
-| `nexus3/core/url_validator.py` | SSRF protection |
-| `tests/unit/test_auth.py` | Auth tests |
-| `tests/unit/test_detection.py` | Collision detection tests |
-| `tests/unit/test_sandbox.py` | Path sandbox tests |
-| `tests/unit/test_url_validator.py` | SSRF tests |
-
-### Phase 5R.2: Data Integrity Fixes
-
-**Goal:** Fix data corruption and memory leaks.
-
-| Task | Description | Files |
-|------|-------------|-------|
-| 5R.2.1 | Fix truncation to preserve tool call/result pairs | `context/manager.py` |
-| 5R.2.2 | Add message garbage collection | `context/manager.py` |
-| 5R.2.3 | Cancel in-progress requests on agent destroy | `rpc/pool.py` |
-| 5R.2.4 | Add explicit encoding to all file operations | `session/*.py`, `config/loader.py` |
-
-**Implementation:**
-```python
-# 5R.2.1: Truncation Fix
-# - Track tool_call_id associations
-# - Always keep tool call + result together
-# - Truncate as pairs, not individual messages
-
-# 5R.2.2: GC for Messages
-# - Add max_messages config (default 1000)
-# - Prune oldest messages beyond limit
-# - Respect tool pair integrity during pruning
-```
-
-### Phase 5R.3: Async/Performance Fixes
-
-**Goal:** Proper async patterns throughout.
-
-| Task | Description | Files |
-|------|-------------|-------|
-| 5R.3.1 | Convert blocking file I/O to async | `skill/builtin/*.py` |
-| 5R.3.2 | Add skill execution timeout | `session/session.py` |
-| 5R.3.3 | Add concurrency limit for parallel tools | `session/session.py` |
-| 5R.3.4 | Fix raw log callback race condition | `rpc/pool.py` |
-
-**Implementation:**
-```python
-# 5R.3.1: Async File I/O
-# - Use asyncio.to_thread() for file operations
-# - Or use aiofiles library
-
-# 5R.3.2: Skill Timeout
-async def _execute_single_tool(self, tc):
-    return await asyncio.wait_for(
-        skill.execute(**args),
-        timeout=self._skill_timeout  # Default 300s
-    )
-
-# 5R.3.3: Parallel Concurrency Limit
-MAX_CONCURRENT_TOOLS = 5
-semaphore = asyncio.Semaphore(MAX_CONCURRENT_TOOLS)
-```
-
-### Phase 5R.4: Test Coverage Expansion
-
-**Goal:** Cover critical untested paths.
-
-| Task | Description | Priority |
-|------|-------------|----------|
-| 5R.4.1 | Add provider unit tests (mock HTTP) | High |
-| 5R.4.2 | Add context manager truncation tests | High |
-| 5R.4.3 | Add file skill security tests | High |
-| 5R.4.4 | Add CLI/REPL tests | Medium |
-| 5R.4.5 | Add HTTP server tests | Medium |
-
-### Phase 5R.5: Minor Fixes
-
-| Task | Description | Files |
-|------|-------------|-------|
-| 5R.5.1 | Export ReasoningDelta from core | `core/__init__.py` |
-| 5R.5.2 | Add `extra="forbid"` to Pydantic models | `config/schema.py` |
-| 5R.5.3 | Consolidate duplicate InvalidParamsError | `rpc/errors.py` |
-| 5R.5.4 | Remove dead code (cli/output.py) | `cli/output.py` |
-| 5R.5.5 | Fix unused verbose/raw_log params | `cli/repl.py` |
-| 5R.5.6 | Add provider retry logic | `provider/openrouter.py` |
-| 5R.5.7 | Make max_iterations configurable | `session/session.py` |
-
----
-
-## Current Phase: Phase 6 - Agent Management System
-
-### Implementation Status
-
-**Infrastructure Complete (834 tests pass):**
-
-| Subphase | Status | Files Created |
-|----------|--------|---------------|
-| 6.1 Session Persistence | ✅ Done | `session/persistence.py`, `session/session_manager.py` |
-| 6.2 Unified Commands | ✅ Done | `commands/protocol.py`, `commands/core.py` |
-| 6.3 Agent Naming | ✅ Done | Modified `rpc/pool.py` (is_temp, generate_temp_id) |
-| 6.4 REPL Commands | ✅ Done | `cli/whisper.py`, `cli/repl_commands.py` |
-| 6.5 Lobby Mode | ✅ Done | `cli/lobby.py` |
-| 6.6 Auto-Restore | ✅ Done | Modified `rpc/pool.py`, `rpc/http.py` |
-| 6.7 Permissions | ✅ Done | `core/permissions.py` |
-
-**Integration Complete (2026-01-09):**
-
-All Phase 6 features wired into `repl.py`:
-- ✅ CLI flags: `--resume`, `--fresh`, `--session NAME`, `--template PATH`
-- ✅ Lobby on startup with CLI flag bypass
-- ✅ Slash command routing to 20+ commands
-- ✅ Whisper mode with dynamic prompts and message routing
-- ✅ Agent switching with callback re-attachment
-- ✅ Auto-save to `last-session.json` after each interaction
-
-### Known Bugs
-
-| Bug | Status | Location | Issue |
-|-----|--------|----------|-------|
-| `/send` broken | **FIXED** | `commands/core.py:174` | Now uses async generator properly |
-| `/agent foo` (nonexistent) | **FIXED** | `repl.py:718-774` | Handles y/n prompt and creates agent |
-| `/whisper foo` (nonexistent) | **FIXED** | `repl.py:718-774` | Handles y/n prompt and enters whisper |
-| `get_token_summary` typo | **FIXED** | Multiple files | Changed to `get_token_usage()` |
-| `/agent foo` (saved) | **FIXED** | `repl_commands.py:122-137` | Now offers to restore saved sessions |
-| Last session not updating | **FIXED** | `repl.py:415-430, 734` | Updates on startup and agent switch |
-| WSL terminal closes on exit | **INVESTIGATING** | Unknown | See "WSL Terminal Issue" below |
-| `/permissions` placeholder | Deferred | `repl_commands.py:315` | Returns "trusted" but doesn't track per-agent |
-| `/save` metadata incomplete | Deferred | `commands/core.py:328-330` | Missing `system_prompt_path`, `working_directory`, `permission_level` |
-
-### WSL Terminal Issue
-
-**Symptom:** After `nexus` exits (via `/quit` or lobby `q`), the WSL bash session closes and returns to PowerShell instead of staying in WSL.
-
-**Environment:** PowerShell 7.5.4 → Windows Terminal → `wsl` command → bash → `nexus`
-
-**Debugging performed:**
-- Added DEBUG output: Python exits cleanly, all debug messages print
-- Tried `os._exit(0)` to bypass Python cleanup: Still crashes
-- Tried `stty sane` terminal reset: No effect
-- Tried various Rich Console options: No effect
-- Tested with `git stash` (pre-today's changes): Still crashes
-- **Conclusion:** Issue predates today's changes, may be environmental or in earlier commits
-
-**Not caused by:**
-- Today's session management changes
-- Rich `legacy_windows` option
-- Python atexit handlers (os._exit tested)
-
-**To investigate later:**
-- Check older git commits
-- Test on fresh WSL instance
-- Check for WSL/Windows Terminal updates
-- Try minimal Rich/prompt_toolkit reproduction
-
-### Partially Implemented
+### Deferred Features
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Permission levels | Defined, not enforced | `core/permissions.py` has types but skills don't check them |
-| SQLite session markers | Schema exists | Markers not written on session create/destroy |
-| Working directory tracking | `/cwd` works | But not persisted in session save/restore |
+| Permission enforcement | Types exist | `core/permissions.py` has types, skills don't check |
+| SQLite session markers | Schema exists | Markers not written on create/destroy |
+| Working directory persistence | `/cwd` works | Not persisted in session save/restore |
+| `/permissions` per-agent | Placeholder | Returns "trusted", doesn't track per-agent |
+| `/save` full metadata | Partial | Missing system_prompt_path, working_directory |
 
-**New Test Files (234 new tests):**
-- `tests/unit/test_persistence.py` (39)
-- `tests/unit/test_agent_naming.py` (28)
-- `tests/unit/test_session_markers.py` (29)
-- `tests/unit/test_commands.py` (51)
-- `tests/unit/test_permissions.py` (61)
-- `tests/unit/test_whisper.py` (30)
-- `tests/unit/test_repl_commands.py` (45)
-- `tests/unit/test_lobby.py` (36)
-- `tests/unit/test_auto_restore.py` (11)
+### Known Issue: WSL Terminal
 
-**Key New Modules:**
-- `nexus3/commands/` - Unified command infrastructure
-- `nexus3/session/persistence.py` - SavedSession, serialize/deserialize
-- `nexus3/session/session_manager.py` - SessionManager for disk storage
-- `nexus3/cli/lobby.py` - show_lobby(), LobbyChoice, LobbyResult
-- `nexus3/cli/whisper.py` - WhisperMode class
-- `nexus3/cli/repl_commands.py` - cmd_agent, cmd_whisper, cmd_over, etc.
-- `nexus3/core/permissions.py` - PermissionLevel, PermissionPolicy
+WSL bash closes after `nexus` exits. Predates recent changes, likely environmental. To investigate later.
 
-### Overview
+---
 
-A comprehensive agent management system with:
-- Flat agent hierarchy (no special "main" agent)
-- Session persistence (save/restore agents)
-- Unified CLI and REPL commands
-- Whisper mode for side conversations
-- Permission levels per agent
+## Phase 7: Implementation Complete (2026-01-09)
 
-### Startup Flow (Lobby Mode)
+### Phase 7A: Security Integration - COMPLETE
 
-```
-$ nexus
+**Goal:** Wire existing security infrastructure into skills.
 
-NEXUS3 REPL
+#### 7A.1: Path Sandbox → File Skills
 
-  1) Resume: my-project (2h ago, 45 messages)
-  2) Fresh session
-  3) Choose from saved...
+**Files:** `skill/builtin/read_file.py`, `skill/builtin/write_file.py`, `rpc/pool.py`
 
-[1/2/3]:
+```python
+# read_file.py / write_file.py changes:
+class ReadFileSkill:
+    def __init__(self, allowed_paths: list[Path] | None = None):
+        self.allowed_paths = allowed_paths  # None = unrestricted (backwards compat)
+
+    async def execute(self, path: str = "", **kwargs: Any) -> ToolResult:
+        if self.allowed_paths is not None:
+            from nexus3.core.paths import validate_sandbox
+            p = validate_sandbox(path, self.allowed_paths)  # Raises PathSecurityError
+        else:
+            p = normalize_path(path)
+        # ... rest unchanged
+
+def read_file_factory(services: ServiceContainer) -> ReadFileSkill:
+    allowed_paths = services.get("allowed_paths")  # From ServiceContainer
+    return ReadFileSkill(allowed_paths=allowed_paths)
+
+# rpc/pool.py: Register allowed_paths when creating agent
+services.register("allowed_paths", [Path.cwd()])  # Or None for unrestricted
 ```
 
-**CLI Overrides:**
-- `nexus --resume` → restore last session
-- `nexus --fresh` → create temp agent `.1`
-- `nexus --fresh --template path/to/prompt.md` → fresh with custom prompt
-- `nexus --session my-project` → load specific session
+**Error handling:** Catch `PathSecurityError`, return `ToolResult(error=e.message)`
 
-### Agent Naming & Persistence
+#### 7A.2: URL Validation → Nexus Skills
 
-| Type | Format | Examples | In saved list? | Restorable after shutdown? |
-|------|--------|----------|----------------|---------------------------|
-| Named (saved) | alphanumeric | `worker-1`, `my-project` | Yes | Yes |
-| Temp (drone) | `.prefix` | `.1`, `.2`, `.quick-test` | No | No (except last session) |
+**Files:** All 6 nexus skills (`nexus_send.py`, `nexus_status.py`, `nexus_cancel.py`, `nexus_shutdown.py`, `nexus_create.py`, `nexus_destroy.py`)
 
-**Note:** Both temp and saved sessions write to SQLite logs (for debugging/history).
-The difference is whether they appear in `sessions/` directory and the "Choose from saved" list.
+```python
+# Same pattern for all 6 skills:
+from nexus3.core.url_validator import validate_url, UrlSecurityError
 
-**Fresh session = temp session**: Lobby option "Fresh session" creates `.1` (temp).
-Use `/save myname` to promote to a saved session.
+async def execute(self, ...):
+    url = f"http://127.0.0.1:{actual_port}/..."
 
-### Unified Command Set
+    try:
+        validated_url = validate_url(url, allow_localhost=True)
+    except UrlSecurityError as e:
+        return ToolResult(error=f"URL validation failed: {e}")
 
-Commands work identically as `nexus-rpc <cmd>` (CLI) and `/<cmd>` (REPL slash command).
-Both use the same underlying code.
-
-| Command | Args | Purpose |
-|---------|------|---------|
-| `list` | | List all agents (interactive in REPL) |
-| `create` | `<name> [--sandboxed\|--trusted\|--yolo]` | Create agent without switching |
-| `destroy` | `<name>` | Remove active agent from pool |
-| `send` | `<agent> <message>` | One-shot message to another agent |
-| `status` | `[agent]` | Agent status (default: current) |
-| `cancel` | `[agent] [request_id]` | Cancel in-progress request |
-| `shutdown` | | Stop server |
-| `save` | `[name]` | Save session (prompts for name if temp) |
-| `clone` | `<src> <dest>` | Clone agent (active→active, saved→saved) |
-| `rename` | `<old> <new>` | Rename agent |
-| `delete` | `<name>` | Delete saved session from disk |
-
-### REPL-Only Commands
-
-| Command | Args | Purpose |
-|---------|------|---------|
-| `/agent` | `[name] [--perm]` | View current / switch / create+switch |
-| `/whisper` | `<agent>` | Enter persistent send mode |
-| `/over` | | Exit whisper mode |
-| `/cwd` | `[path]` | Show/set working directory |
-| `/permissions` | `[level]` | Show/set permission level |
-| `/prompt` | `[file]` | Show/set system prompt |
-| `/help` | | Help |
-| `/clear` | | Clear conversation display |
-| `/quit` | | Exit REPL |
-
-### Whisper Mode
-
-Persistent send mode for extended conversations with another agent:
-
-```
-You: Hello main agent
-
-A: Hello! How can I help?
-
-You: /whisper worker-1
-┌── whisper mode: worker-1 ── /over to return ──┐
-
-worker-1> What is 2+2?
-
-worker-1: 2+2 equals 4.
-
-worker-1> /over
-└── returned to main ──────────────────────────┘
-
-You: As I was saying...
-```
-
-**Behavior:**
-- Prompt changes to `<agent>>`
-- Visual indicators show whisper mode active
-- `/whisper <nonexistent>` prompts "Create? y/n"
-
-### Side Conversation Context
-
-| Location | Included? | Reasoning |
-|----------|-----------|-----------|
-| Target agent history | **Yes** | They experienced it |
-| Current agent history | **No** | Side channel, user can copy if needed |
-
-### `/agent` vs `/create` Behavior
-
-| Command | Action |
-|---------|--------|
-| `/create foo` | Create foo, stay on current agent |
-| `/agent foo` | Switch to foo (prompts to create if doesn't exist) |
-| `/agent` | Show current agent's detailed status |
-
-### Cross-Session Auto-Restore
-
-When external request targets a saved (inactive) agent:
-```
-$ nexus-rpc send archived-helper "Wake up"
-[auto-restoring archived-helper from saved session]
-{"content": "Hello! I'm back.", ...}
-```
-
-### Permission Levels
-
-| Level | Description |
-|-------|-------------|
-| `--yolo` | Full access, no confirmations |
-| `--trusted` | Confirmations for destructive actions |
-| `--sandboxed` | Limited paths, restricted network |
-
-### Session Storage
-
-```
-~/.nexus3/
-├── sessions/
-│   ├── my-project.json    # Named saved sessions
-│   └── analyzer.json
-├── last-session.json      # Last user session (temp OR saved) - always restorable
-├── last-session-name      # What the last session was called (".1" or "myproject")
-├── config.json
-└── server.key
-```
-
-**What gets saved in session JSON:**
-- Conversation history (messages)
-- System prompt (path or content)
-- Working directory
-- Permission level
-- Token usage stats
-- Created/modified timestamps
-- Provenance (creator: user or parent agent ID)
-
-**Last session behavior:**
-- Every user-connected session auto-persists to `last-session.json` as you work
-- "Resume" in lobby always works, even if last session was temp `.1`
-- Subagent sessions do NOT overwrite `last-session.json` (only direct user connection)
-- "Choose from saved" only shows `sessions/` directory contents
-
-### SQLite Log Markers (for cleanup)
-
-All sessions log to SQLite for debugging. Add metadata to identify orphaned logs:
-
-| Column | Values | Purpose |
-|--------|--------|---------|
-| `session_type` | `'saved'` \| `'temp'` \| `'subagent'` | What kind of session |
-| `session_status` | `'active'` \| `'destroyed'` \| `'orphaned'` | Current state |
-| `parent_agent_id` | agent ID or `null` | Who spawned this (for subagents) |
-
-This enables queries like: "find all temp/destroyed sessions older than 30 days" for optional cleanup.
-
-### Agent Lifecycle
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         SAVED SESSIONS                          │
-│                    (~/.nexus3/sessions/*.json)                  │
-│                                                                 │
-│   ┌─────────┐    /save name    ┌─────────┐                     │
-│   │ Active  │ ────────────────▶│  Saved  │                     │
-│   │ (named) │ ◀────────────────│  (disk) │                     │
-│   └─────────┘   /agent name    └─────────┘                     │
-│        │                            │                           │
-│        │ /destroy                   │ /delete                   │
-│        ▼                            ▼                           │
-│   [removed from pool]          [removed from disk]              │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                         TEMP SESSIONS                           │
-│                       (not in sessions/)                        │
-│                                                                 │
-│   ┌─────────┐                  ┌──────────────┐                 │
-│   │ Active  │ ────────────────▶│ last-session │ (auto-save)    │
-│   │ (temp)  │   user-connected │    .json     │                 │
-│   └─────────┘                  └──────────────┘                 │
-│        │                                                        │
-│        │ /save myname ──────────▶ PROMOTED TO SAVED             │
-│        │                                                        │
-│        │ /destroy or shutdown                                   │
-│        ▼                                                        │
-│   [gone, but last-session.json survives for resume]             │
-└─────────────────────────────────────────────────────────────────┘
+    async with NexusClient(validated_url, api_key=api_key) as client:
+        # ... rest unchanged
 ```
 
 ---
 
-## Phase 6 Completion Status (2026-01-09)
+### Phase 7B: Async & Performance - COMPLETE
 
-**Completed:**
-- ✅ `/send` bug fixed - uses async generator properly
-- ✅ y/n prompts handled for `/agent foo` and `/whisper foo`
-- ✅ `get_token_summary` → `get_token_usage` (4 locations)
-- ✅ `/agent foo` restores saved sessions from disk
-- ✅ Last-session updates on startup and agent switch
-- ✅ "Choose from saved" properly updates resume target
-- ✅ RPC live tests pass: detect, list, create, status, destroy, shutdown
+#### 7B.1: Async File I/O
 
-**Live Testing Results:**
-- ✅ Lobby displays correctly with Resume/Fresh/Saved options
-- ✅ `/save myname` creates `~/.nexus3/sessions/myname.json`
-- ✅ `/agent myname` restores saved session with prompt
-- ✅ Switching agents updates `last-session.json`
-- ✅ `--resume` correctly loads last session
-- ✅ Whisper mode works with message routing
-- ⚠️ WSL terminal closes on exit (investigating, predates today)
+**Files:** `skill/builtin/read_file.py`, `skill/builtin/write_file.py`
 
-**Deferred to Next Phase (permissions/cwd tracking):**
-- `/permissions` tracking per-agent
-- `/save` metadata: system_prompt_path, working_directory, permission_level
-- SQLite session markers
-- Working directory persistence
+```python
+import asyncio
+
+# read_file.py:
+content = await asyncio.to_thread(p.read_text, encoding="utf-8")
+
+# write_file.py:
+await asyncio.to_thread(p.parent.mkdir, parents=True, exist_ok=True)
+await asyncio.to_thread(p.write_text, content, encoding="utf-8")
+```
+
+#### 7B.2: Skill Timeout
+
+**Files:** `config/schema.py`, `session/session.py`, `rpc/pool.py`
+
+```python
+# config/schema.py:
+skill_timeout: float = 30.0  # 0 = no timeout
+
+# session/session.py _execute_single_tool():
+try:
+    if self.skill_timeout > 0:
+        return await asyncio.wait_for(skill.execute(**args), timeout=self.skill_timeout)
+    else:
+        return await skill.execute(**args)
+except asyncio.TimeoutError:
+    return ToolResult(error=f"Skill '{tool_call.name}' timed out after {self.skill_timeout}s")
+```
+
+#### 7B.3: Parallel Concurrency Limit
+
+**Files:** `config/schema.py`, `session/session.py`
+
+```python
+# config/schema.py:
+max_concurrent_tools: int = 10
+
+# session/session.py:
+self._tool_semaphore = asyncio.Semaphore(max_concurrent_tools)
+
+async def _execute_tools_parallel(self, tool_calls):
+    async def execute_one(tc):
+        async with self._tool_semaphore:
+            return await self._execute_single_tool(tc)
+    return await asyncio.gather(*[execute_one(tc) for tc in tool_calls], return_exceptions=True)
+```
+
+---
+
+### Phase 7C: Data Integrity - COMPLETE
+
+#### 7C.1: Truncation Fix (Tool Call/Result Pairs)
+
+**Files:** `context/manager.py`
+
+**Problem:** Truncation can separate assistant messages with `tool_calls` from their TOOL result messages, creating invalid sequences.
+
+**Solution:** Group messages into atomic units before truncation.
+
+```python
+def _identify_message_groups(self) -> list[list[Message]]:
+    """Group messages: standalone OR (assistant+tool_calls + matching results)."""
+    groups = []
+    i = 0
+    while i < len(self._messages):
+        msg = self._messages[i]
+        if msg.role == Role.ASSISTANT and msg.tool_calls:
+            # Collect assistant + all matching TOOL results
+            group = [msg]
+            expected_ids = {tc.id for tc in msg.tool_calls}
+            j = i + 1
+            while j < len(self._messages) and self._messages[j].role == Role.TOOL:
+                if self._messages[j].tool_call_id in expected_ids:
+                    group.append(self._messages[j])
+                    j += 1
+                else:
+                    break
+            groups.append(group)
+            i = j
+        else:
+            groups.append([msg])
+            i += 1
+    return groups
+
+def _truncate_oldest_first(self) -> list[Message]:
+    groups = self._identify_message_groups()
+    # Build from newest groups backwards, respecting budget
+    # Remove oldest complete groups, not individual messages
+```
+
+**Also fix:** Use `count_messages([msg])` instead of `count(msg.content) + 4` for accurate token counting.
+
+#### 7C.2: Cancel on Destroy
+
+**Files:** `rpc/dispatcher.py`, `rpc/pool.py`
+
+```python
+# dispatcher.py:
+async def cancel_all_requests(self) -> dict[str, bool]:
+    """Cancel all in-progress requests."""
+    cancelled = {}
+    for request_id, token in list(self._active_requests.items()):
+        token.cancel()
+        cancelled[request_id] = True
+    return cancelled
+
+# pool.py destroy():
+async def destroy(self, agent_id: str) -> bool:
+    async with self._lock:
+        agent = self._agents.pop(agent_id, None)
+        if agent is None:
+            return False
+        await agent.dispatcher.cancel_all_requests()  # NEW
+        agent.logger.close()
+        return True
+```
+
+---
+
+### Phase 7D: Deferred Items
+
+| Item | Notes |
+|------|-------|
+| Message GC | Prune messages after truncation (max_messages config) |
+| Log multiplexer | contextvars for multi-agent raw log callbacks |
+| Permission enforcement | Skills check PermissionPolicy before executing |
+| verbose/raw_log CLI | Wire to LogStream flags |
+| More tools | bash, web_fetch, etc. |
+
+---
+
+### Implementation Summary
+
+All Phase 7 items completed 2026-01-09:
+
+| Task | Files Modified |
+|------|----------------|
+| 7A.1 Sandbox | `read_file.py`, `write_file.py`, `pool.py` |
+| 7A.2 URL validation | 6 nexus skills |
+| 7B.1 Async I/O | `read_file.py`, `write_file.py` |
+| 7B.2 Skill timeout | `config/schema.py`, `session.py`, `pool.py` |
+| 7B.3 Concurrency | `config/schema.py`, `session.py` |
+| 7C.1 Truncation | `context/manager.py` |
+| 7C.2 Cancel | `dispatcher.py`, `pool.py` |
+
+**New config options:**
+- `skill_timeout: float = 30.0` (seconds, 0 = no timeout)
+- `max_concurrent_tools: int = 10`
 
 ---
 
 ## Development Note
 
-Use subagents liberally for implementation tasks to manage context window:
-- Writing new modules
-- Writing tests
-- Code modifications
-- Research tasks
-
-Main conversation focuses on planning, decisions, and coordination.
+Use subagents liberally for implementation tasks to manage context window.

@@ -242,10 +242,63 @@ class ContextManager:
             # Default: oldest_first
             return self._truncate_oldest_first()
 
-    def _truncate_oldest_first(self) -> list[Message]:
-        """Remove oldest messages until under budget.
+    def _identify_message_groups(self) -> list[list[Message]]:
+        """Group messages into atomic units for truncation.
 
-        Always keeps at least the most recent message.
+        Groups:
+        - Standalone USER/SYSTEM message
+        - Standalone ASSISTANT without tool_calls
+        - ASSISTANT with tool_calls + all corresponding TOOL results (atomic)
+
+        Returns:
+            List of message groups. Each group must be kept or removed together.
+        """
+        groups: list[list[Message]] = []
+        i = 0
+
+        while i < len(self._messages):
+            msg = self._messages[i]
+
+            if msg.role == Role.ASSISTANT and msg.tool_calls:
+                # Tool call group: assistant + matching results
+                group = [msg]
+                expected_ids = {tc.id for tc in msg.tool_calls}
+                j = i + 1
+                while j < len(self._messages) and self._messages[j].role == Role.TOOL:
+                    tool_msg = self._messages[j]
+                    if tool_msg.tool_call_id in expected_ids:
+                        group.append(tool_msg)
+                        j += 1
+                    else:
+                        break
+                groups.append(group)
+                i = j
+            else:
+                # Standalone message
+                groups.append([msg])
+                i += 1
+
+        return groups
+
+    def _count_group_tokens(self, group: list[Message]) -> int:
+        """Count tokens for a message group."""
+        total = 0
+        for msg in group:
+            # Use count_messages for accurate token counting including tool_calls
+            total += self._counter.count_messages([msg])
+        return total
+
+    def _flatten_groups(self, groups: list[list[Message]]) -> list[Message]:
+        """Flatten list of groups into single message list."""
+        result: list[Message] = []
+        for group in groups:
+            result.extend(group)
+        return result
+
+    def _truncate_oldest_first(self) -> list[Message]:
+        """Remove oldest message groups until under budget.
+
+        Preserves tool call/result pairs as atomic units.
         """
         available = self.config.max_tokens - self.config.reserve_tokens
         system_tokens = self._counter.count(self._system_prompt)
@@ -253,28 +306,38 @@ class ContextManager:
         budget_for_messages = available - system_tokens - tools_tokens
 
         if budget_for_messages <= 0:
-            # System + tools alone exceed budget, return only most recent
-            return self._messages[-1:] if self._messages else []
+            # Return most recent group only
+            groups = self._identify_message_groups()
+            if groups:
+                return groups[-1]
+            return []
 
-        # Build from newest, stop when over budget
-        result: list[Message] = []
+        groups = self._identify_message_groups()
+
+        # Build from newest groups backwards
+        result_groups: list[list[Message]] = []
         total = 0
 
-        for msg in reversed(self._messages):
-            msg_tokens = self._counter.count(msg.content) + 4  # overhead
-            if total + msg_tokens > budget_for_messages and result:
-                break  # Over budget, but keep at least one
-            result.insert(0, msg)
-            total += msg_tokens
+        for group in reversed(groups):
+            group_tokens = self._count_group_tokens(group)
+            if total + group_tokens > budget_for_messages and result_groups:
+                break
+            result_groups.insert(0, group)
+            total += group_tokens
 
-        return result
+        return self._flatten_groups(result_groups)
 
     def _truncate_middle_out(self) -> list[Message]:
-        """Keep first and last messages, remove middle.
+        """Keep first and last groups, remove middle groups.
 
-        Preserves initial context and recent conversation.
+        Preserves tool call/result pairs as atomic units.
         """
         if len(self._messages) <= 2:
+            return self._messages.copy()
+
+        groups = self._identify_message_groups()
+
+        if len(groups) <= 2:
             return self._messages.copy()
 
         available = self.config.max_tokens - self.config.reserve_tokens
@@ -283,29 +346,27 @@ class ContextManager:
         budget_for_messages = available - system_tokens - tools_tokens
 
         if budget_for_messages <= 0:
-            return self._messages[-1:] if self._messages else []
+            return groups[-1] if groups else []
 
-        # Always keep first and last
-        first = self._messages[0]
-        last = self._messages[-1]
-        first_tokens = self._counter.count(first.content) + 4
-        last_tokens = self._counter.count(last.content) + 4
+        first_group = groups[0]
+        last_group = groups[-1]
+        first_tokens = self._count_group_tokens(first_group)
+        last_tokens = self._count_group_tokens(last_group)
 
         remaining_budget = budget_for_messages - first_tokens - last_tokens
 
         if remaining_budget <= 0:
-            # Can only fit first and last
-            return [first, last]
+            return self._flatten_groups([first_group, last_group])
 
-        # Add messages from the end (before last) until budget exhausted
-        middle_messages: list[Message] = []
+        # Add groups from end (before last) until budget exhausted
+        middle_groups: list[list[Message]] = []
         total = 0
 
-        for msg in reversed(self._messages[1:-1]):
-            msg_tokens = self._counter.count(msg.content) + 4
-            if total + msg_tokens > remaining_budget:
+        for group in reversed(groups[1:-1]):
+            group_tokens = self._count_group_tokens(group)
+            if total + group_tokens > remaining_budget:
                 break
-            middle_messages.insert(0, msg)
-            total += msg_tokens
+            middle_groups.insert(0, group)
+            total += group_tokens
 
-        return [first] + middle_messages + [last]
+        return self._flatten_groups([first_group] + middle_groups + [last_group])

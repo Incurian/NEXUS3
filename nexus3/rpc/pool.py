@@ -297,6 +297,8 @@ class AgentPool:
             from nexus3.skill.builtin import register_builtin_skills
 
             services = ServiceContainer()
+            # Register allowed_paths for sandbox validation (None = unrestricted)
+            services.register("allowed_paths", None)
             registry = SkillRegistry(services)
             register_builtin_skills(registry)
 
@@ -309,6 +311,8 @@ class AgentPool:
                 context=context,
                 logger=logger,
                 registry=registry,
+                skill_timeout=self._shared.config.skill_timeout,
+                max_concurrent_tools=self._shared.config.max_concurrent_tools,
             )
 
             # Create dispatcher with context for token info
@@ -449,6 +453,8 @@ class AgentPool:
             from nexus3.skill.builtin import register_builtin_skills
 
             services = ServiceContainer()
+            # Register allowed_paths for sandbox validation (None = unrestricted)
+            services.register("allowed_paths", None)
             registry = SkillRegistry(services)
             register_builtin_skills(registry)
 
@@ -461,6 +467,8 @@ class AgentPool:
                 context=context,
                 logger=logger,
                 registry=registry,
+                skill_timeout=self._shared.config.skill_timeout,
+                max_concurrent_tools=self._shared.config.max_concurrent_tools,
             )
 
             # Create dispatcher with context for token info
@@ -488,7 +496,8 @@ class AgentPool:
 
         This method:
         1. Removes the agent from the pool
-        2. Closes the agent's logger (flushes buffers, closes DB)
+        2. Cancels all in-progress requests
+        3. Closes the agent's logger (flushes buffers, closes DB)
 
         The agent's log directory is preserved for debugging/auditing.
 
@@ -502,6 +511,9 @@ class AgentPool:
             agent = self._agents.pop(agent_id, None)
             if agent is None:
                 return False
+
+            # Cancel all in-progress requests before cleanup
+            await agent.dispatcher.cancel_all_requests()
 
             # Clean up logger (closes DB connection, flushes files)
             agent.logger.close()

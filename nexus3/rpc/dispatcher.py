@@ -238,6 +238,21 @@ class Dispatcher:
             return {"cancelled": True, "request_id": request_id}
         return {"cancelled": False, "request_id": request_id, "reason": "not_found_or_completed"}
 
+    async def cancel_all_requests(self) -> dict[str, bool]:
+        """Cancel all in-progress requests.
+
+        This is called during agent destruction to gracefully cancel
+        any in-flight operations. Uses cooperative cancellation via tokens.
+
+        Returns:
+            Dict mapping request_id -> True for all cancelled requests.
+        """
+        cancelled = {}
+        for request_id, token in list(self._active_requests.items()):
+            token.cancel()
+            cancelled[request_id] = True
+        return cancelled
+
 
 class InvalidParamsError(NexusError):
     """Raised when method parameters are invalid."""

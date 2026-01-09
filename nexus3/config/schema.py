@@ -23,3 +23,5 @@ class Config(BaseModel):
     stream_output: bool = True
     max_tool_iterations: int = 10  # Maximum iterations of the tool execution loop
     default_permission_level: str = "trusted"  # yolo, trusted, or sandboxed
+    skill_timeout: float = 30.0  # Seconds, 0 = no timeout
+    max_concurrent_tools: int = 10  # Max parallel tool executions
