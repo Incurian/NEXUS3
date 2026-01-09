@@ -92,6 +92,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Auto-reload on code changes (requires watchfiles, serve mode only)",
     )
+    parser.add_argument(
+        "--connect",
+        metavar="URL",
+        nargs="?",
+        const="http://localhost:8765",
+        help="Connect to a Nexus server as client (default: http://localhost:8765)",
+    )
+    parser.add_argument(
+        "--agent",
+        default="main",
+        help="Agent ID to connect to (default: main, requires --connect)",
+    )
     return parser.parse_args()
 
 
@@ -418,6 +430,83 @@ async def run_repl(
     logger.close()
 
 
+async def run_repl_client(url: str, agent_id: str) -> None:
+    """Run REPL as client to a remote Nexus server.
+
+    Args:
+        url: Base URL of the server (e.g., http://localhost:8765)
+        agent_id: ID of the agent to connect to
+    """
+    from nexus3.client import ClientError, NexusClient
+
+    console = get_console()
+
+    # Build agent URL
+    agent_url = f"{url.rstrip('/')}/agent/{agent_id}"
+
+    console.print("[bold]NEXUS3 Client[/]")
+    console.print(f"Connecting to {agent_url}...")
+
+    # Simple prompt session (no bottom toolbar for simplicity)
+    prompt_session: PromptSession[str] = PromptSession()
+
+    async with NexusClient(agent_url, timeout=300.0) as client:
+        # Test connection
+        try:
+            status = await client.get_tokens()
+            console.print(f"Connected. Tokens: {status.get('total', 0)}/{status.get('budget', 0)}")
+        except ClientError as e:
+            console.print(f"[red]Connection failed:[/] {e}")
+            return
+
+        console.print("Commands: /quit | /status")
+        console.print("")
+
+        while True:
+            try:
+                user_input = await prompt_session.prompt_async("> ")
+
+                if not user_input.strip():
+                    continue
+
+                # Handle local commands
+                if user_input.strip() in ("/quit", "/q", "/exit"):
+                    console.print("Disconnecting.", style="dim")
+                    break
+
+                if user_input.strip() == "/status":
+                    try:
+                        tokens = await client.get_tokens()
+                        context = await client.get_context()
+                        console.print(f"Tokens: {tokens}")
+                        console.print(f"Context: {context}")
+                    except ClientError as e:
+                        console.print(f"[red]Error:[/] {e}")
+                    continue
+
+                # Send message to agent
+                console.print("")  # Visual separation
+                try:
+                    result = await client.send(user_input)
+                    if "content" in result:
+                        console.print(result["content"])
+                    elif "cancelled" in result:
+                        console.print("[yellow]Request was cancelled[/]")
+                    console.print("")  # Visual separation
+                except ClientError as e:
+                    console.print(f"[red]Error:[/] {e}")
+                    console.print("")
+
+            except KeyboardInterrupt:
+                console.print("")
+                console.print("Use /quit to exit.", style="dim")
+                continue
+            except EOFError:
+                console.print("")
+                console.print("Disconnecting.", style="dim")
+                break
+
+
 def main() -> None:
     """Entry point for the NEXUS3 CLI."""
     args = parse_args()
@@ -445,6 +534,11 @@ def main() -> None:
                 print(f"Unknown command: {args.command}")
                 exit_code = 1
             raise SystemExit(exit_code)
+
+        # Handle connect mode (REPL as client)
+        if args.connect is not None:
+            asyncio.run(run_repl_client(args.connect, args.agent))
+            return
 
         # Handle serve mode
         if args.serve is not None:

@@ -84,7 +84,7 @@ class AsyncProvider(Protocol):
     ) -> AsyncIterator[StreamEvent]: ...
 ```
 
-The `stream()` method yields `StreamEvent` objects instead of raw strings.
+Note: `stream()` is a regular method (not `async def`) that returns an `AsyncIterator`. The caller uses `async for` to consume the iterator. This pattern avoids requiring `async with` on the generator.
 
 #### `RawLogCallback`
 
@@ -129,13 +129,13 @@ All exceptions store the message in a `.message` attribute.
 
 ### `paths.py` - Path Normalization
 
-Cross-platform path handling utilities:
+Cross-platform path handling utilities (not exported via `__init__.py`, import directly from `nexus3.core.paths`):
 
 | Function | Description |
 |----------|-------------|
-| `normalize_path(path: str) -> Path` | Normalize path: Windows backslashes to forward slashes, tilde expansion |
+| `normalize_path(path: str) -> Path` | Normalize path: Windows backslashes to forward slashes, tilde expansion. Returns empty path as `.` |
 | `normalize_path_str(path: str) -> str` | Same as above but returns string |
-| `display_path(path: str \| Path) -> str` | Format path for display (relative if under cwd, or with ~ for home) |
+| `display_path(path: str \| Path) -> str` | Format path for display (relative if under cwd, or with `~` for home) |
 
 ## Data Flow
 
@@ -233,7 +233,8 @@ async for event in provider.stream(messages, tools):
 ### Implementing a Provider
 
 ```python
-from nexus3.core import AsyncProvider, Message, Role, ContentDelta, StreamComplete
+from collections.abc import AsyncIterator
+from nexus3.core import AsyncProvider, Message, Role, StreamEvent, ContentDelta, StreamComplete
 
 class MyProvider:
     async def complete(self, messages: list[Message], tools=None) -> Message:
@@ -241,12 +242,19 @@ class MyProvider:
         response = await self._call_api(messages, tools)
         return Message(role=Role.ASSISTANT, content=response)
 
-    def stream(self, messages: list[Message], tools=None):
-        # Note: stream() is a regular method returning an async iterator
-        async def _stream():
+    def stream(
+        self, messages: list[Message], tools=None
+    ) -> AsyncIterator[StreamEvent]:
+        # stream() is a regular method that returns an async iterator.
+        # The inner async generator does the actual work.
+        async def _stream() -> AsyncIterator[StreamEvent]:
+            full_content = ""
             async for chunk in self._stream_api(messages, tools):
+                full_content += chunk
                 yield ContentDelta(text=chunk)
-            yield StreamComplete(message=Message(role=Role.ASSISTANT, content=...))
+            yield StreamComplete(
+                message=Message(role=Role.ASSISTANT, content=full_content)
+            )
         return _stream()
 ```
 

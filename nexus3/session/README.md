@@ -47,9 +47,9 @@ class Session:
     def __init__(
         self,
         provider: AsyncProvider,
-        context: ContextManager | None = None,
-        logger: SessionLogger | None = None,
-        registry: SkillRegistry | None = None,
+        context: "ContextManager | None" = None,
+        logger: "SessionLogger | None" = None,
+        registry: "SkillRegistry | None" = None,
         on_tool_call: ToolCallCallback | None = None,
         on_tool_complete: ToolCompleteCallback | None = None,
         on_reasoning: ReasoningCallback | None = None,
@@ -61,7 +61,8 @@ class Session:
     ) -> None: ...
 
     async def send(
-        self, user_input: str, use_tools: bool = False
+        self, user_input: str, use_tools: bool = False,
+        cancel_token: CancellationToken | None = None
     ) -> AsyncIterator[str]: ...
 
     def add_cancelled_tools(
@@ -74,6 +75,23 @@ class Session:
 1. **Multi-turn streaming (with ContextManager, no tools)** - Messages streamed, history persists
 2. **Multi-turn with tools (with ContextManager + SkillRegistry)** - Streaming tool execution loop
 3. **Single-turn (no ContextManager)** - Each `send()` is independent, backwards compatible
+
+### Cancellation Support
+
+The `send()` method accepts an optional `CancellationToken` parameter for cooperative cancellation. When the token is cancelled (e.g., user presses ESC), the streaming loop exits gracefully.
+
+```python
+from nexus3.core.cancel import CancellationToken
+
+token = CancellationToken()
+
+# In UI code, when ESC pressed:
+token.cancel()
+
+# Streaming will exit at next checkpoint
+async for chunk in session.send("Hello", cancel_token=token):
+    print(chunk)
+```
 
 ### Cancelled Tool Handling
 
@@ -145,6 +163,84 @@ for _ in range(max_iterations):  # max_iterations = 10
 - Internal arguments (prefixed with `_`) stripped before skill execution
 - Sequential mode halts on error, adds "halted" results for remaining tools
 
+## Multi-Agent Architecture
+
+The Session module is a key component of NEXUS3's multi-agent architecture. In multi-agent scenarios, each agent gets its own independent Session and SessionLogger.
+
+### Integration with AgentPool
+
+The `AgentPool` (in `nexus3/rpc/pool.py`) manages multiple agent instances. When creating an agent, the pool:
+
+1. Creates a new `SessionLogger` with its own log directory under `base_log_dir/agent_id`
+2. Creates a new `ContextManager` with fresh conversation history
+3. Creates a new `Session` with the shared provider but isolated context and registry
+4. Creates a `Dispatcher` for JSON-RPC request handling
+
+```python
+# From AgentPool.create():
+log_config = LogConfig(
+    base_dir=agent_log_dir,
+    streams=LogStream.ALL,
+    mode="agent",
+)
+logger = SessionLogger(log_config)
+
+context = ContextManager(
+    config=ContextConfig(),
+    logger=logger,
+)
+context.set_system_prompt(system_prompt)
+
+session = Session(
+    provider,  # Shared provider (connection pooling)
+    context=context,  # Agent's own context
+    logger=logger,  # Agent's own logger
+    registry=registry,  # Agent's own skill registry
+)
+```
+
+### Agent Structure
+
+Each `Agent` instance contains:
+
+| Component | Description |
+|-----------|-------------|
+| `agent_id` | Unique identifier for the agent |
+| `logger` | `SessionLogger` - writes to agent's own log directory |
+| `context` | `ContextManager` - agent's isolated conversation history |
+| `services` | `ServiceContainer` - dependency injection for skills |
+| `registry` | `SkillRegistry` - agent's available tools |
+| `session` | `Session` - coordinator for LLM interactions |
+| `dispatcher` | `Dispatcher` - handles JSON-RPC requests |
+
+### Shared vs. Isolated Resources
+
+| Resource | Shared/Isolated | Reason |
+|----------|-----------------|--------|
+| `AsyncProvider` | Shared | Connection pooling, expensive to create |
+| `PromptLoader` | Shared | Reads same config files |
+| `Session` | Isolated | Each agent needs independent state |
+| `ContextManager` | Isolated | Each agent has own conversation |
+| `SessionLogger` | Isolated | Each agent has own logs |
+| `SkillRegistry` | Isolated | Agents may have different tools |
+
+### Subagent Logging
+
+The `SessionLogger.create_child_logger()` method creates nested loggers for subagent sessions:
+
+```python
+# Parent logger
+parent_logger = SessionLogger(LogConfig())
+
+# Create child for subagent
+child_logger = parent_logger.create_child_logger()
+
+# Child session folder is nested under parent:
+# parent_session_dir/subagent_xxxxxx/
+```
+
+For multi-agent pools managed by `AgentPool`, each agent gets a top-level log directory under `base_log_dir/agent_id` rather than nested subdirectories.
+
 ## Logging System
 
 ### Log Streams
@@ -172,7 +268,7 @@ Three independent, non-exclusive streams controlled by `LogStream` flags:
         └── ...
 ```
 
-Session ID format: `YYYY-MM-DD_HHMMSS_MODE_xxxxxx` where MODE is `repl` or `serve`.
+Session ID format: `YYYY-MM-DD_HHMMSS_MODE_xxxxxx` where MODE is `repl`, `serve`, or `agent`.
 
 ### SQLite Schema
 
@@ -336,6 +432,7 @@ User Input
 **Internal (nexus3):**
 - `core.types` - Message, Role, ToolCall, ToolResult, ContentDelta, ReasoningDelta, ToolCallStarted, StreamComplete
 - `core.interfaces` - AsyncProvider, RawLogCallback protocols
+- `core.cancel` - CancellationToken for cooperative cancellation
 - `context.manager` - ContextManager (optional, TYPE_CHECKING only)
 - `skill.registry` - SkillRegistry (optional, TYPE_CHECKING only)
 
@@ -375,7 +472,7 @@ from nexus3.session import Session, SessionLogger, LogConfig
 
 # Create logger and context
 logger = SessionLogger(LogConfig())
-context = ContextManager(ContextConfig(), token_counter, logger)
+context = ContextManager(ContextConfig(), logger)
 
 # Create session with context
 session = Session(provider, context=context)
@@ -397,7 +494,7 @@ from nexus3.skill import SkillRegistry
 
 # Create components
 logger = SessionLogger(LogConfig())
-context = ContextManager(ContextConfig(), token_counter, logger)
+context = ContextManager(ContextConfig(), logger)
 registry = SkillRegistry()
 
 # Register skills
@@ -443,7 +540,7 @@ from nexus3.session import LogConfig, LogStream
 config = LogConfig(
     base_dir=Path(".nexus3/logs"),
     streams=LogStream.CONTEXT | LogStream.VERBOSE | LogStream.RAW,
-    mode="repl",  # or "serve"
+    mode="repl",  # or "serve" or "agent"
 )
 logger = SessionLogger(config)
 
@@ -491,4 +588,20 @@ session.add_cancelled_tools(cancelled_tools)
 async for chunk in session.send("What happened?"):
     print(chunk)
 # The LLM sees: "Cancelled by user: tool execution was interrupted"
+```
+
+### Using Cancellation Token
+
+```python
+from nexus3.core.cancel import CancellationToken
+
+token = CancellationToken()
+
+# Start streaming in background task
+async def stream_response():
+    async for chunk in session.send("Write a long essay", cancel_token=token):
+        print(chunk, end="")
+
+# When user presses ESC:
+token.cancel()  # Stream will exit at next checkpoint
 ```

@@ -40,6 +40,63 @@ This module manages the conversation context window for LLM API calls:
 
 Manages conversation history and builds message lists for API calls.
 
+### Creation Patterns
+
+ContextManager is created in two main ways:
+
+**1. REPL Mode (Interactive CLI)**
+
+In `nexus3/cli/repl.py`, a single ContextManager is created for the session:
+
+```python
+from nexus3.context import ContextManager, ContextConfig, PromptLoader
+
+# Load system prompt
+prompt_loader = PromptLoader()
+loaded_prompt = prompt_loader.load()  # is_repl=True by default
+
+# Create context manager
+context = ContextManager(
+    config=ContextConfig(),
+    logger=logger,  # SessionLogger for logging
+)
+context.set_system_prompt(loaded_prompt.content)
+
+# Inject tool definitions
+context.set_tool_definitions(registry.get_definitions())
+
+# Create session with context
+session = Session(provider, context=context, logger=logger, registry=registry)
+```
+
+**2. Per-Agent in AgentPool (HTTP Server Mode)**
+
+In `nexus3/rpc/pool.py`, each agent gets its own ContextManager with isolated state:
+
+```python
+# In AgentPool.create():
+# Determine system prompt (can be overridden per-agent)
+if agent_config.system_prompt is not None:
+    system_prompt = agent_config.system_prompt
+else:
+    loaded_prompt = shared.prompt_loader.load(is_repl=False)
+    system_prompt = loaded_prompt.content
+
+# Create context manager for this agent
+context = ContextManager(
+    config=ContextConfig(),
+    logger=logger,  # Agent's own SessionLogger
+)
+context.set_system_prompt(system_prompt)
+
+# Inject tool definitions
+context.set_tool_definitions(registry.get_definitions())
+
+# Context is passed to Session and Dispatcher
+session = Session(provider, context=context, logger=logger, registry=registry)
+dispatcher = Dispatcher(session, context=context)
+```
+
 ### Responsibilities
 
 - Maintains system prompt, tool definitions, and message history
@@ -94,6 +151,28 @@ class ContextConfig:
 |----------|-------------|
 | `system_prompt` | Get current system prompt |
 | `messages` | Get all messages (read-only copy) |
+
+## Integration with AgentPool
+
+The `AgentPool` (in `nexus3/rpc/pool.py`) creates one ContextManager per agent:
+
+```
+AgentPool
+    └── Agent (per agent_id)
+            ├── ContextManager (isolated conversation history)
+            ├── SessionLogger (writes to agent's log directory)
+            ├── SkillRegistry (with ServiceContainer)
+            ├── Session (uses context for multi-turn)
+            └── Dispatcher (uses context for get_tokens/get_context)
+```
+
+**Key points:**
+
+1. **Shared Components**: Provider (for connection pooling), PromptLoader, and base config are shared
+2. **Isolated State**: Each agent has its own ContextManager with independent message history
+3. **System Prompt Override**: Agents can have custom system prompts via `AgentConfig.system_prompt`
+4. **Tool Definitions**: Injected into context from the agent's SkillRegistry
+5. **RPC Methods**: Dispatcher exposes `get_tokens` and `get_context` methods using the agent's ContextManager
 
 ## PromptLoader
 
@@ -349,6 +428,36 @@ context = ContextManager(
 # Messages are automatically logged
 context.set_system_prompt("You are helpful.")  # Logged
 context.add_user_message("Hello!")              # Logged
+```
+
+### With AgentPool (Multi-Agent)
+
+```python
+from nexus3.rpc.pool import AgentPool, SharedComponents, AgentConfig
+
+# Create shared components
+shared = SharedComponents(
+    config=config,
+    provider=provider,
+    prompt_loader=PromptLoader(),
+    base_log_dir=Path(".nexus3/logs"),
+)
+pool = AgentPool(shared)
+
+# Create agent (gets its own ContextManager)
+agent = await pool.create(agent_id="worker-1")
+
+# Access agent's context
+usage = agent.context.get_token_usage()
+messages = agent.context.messages  # Read-only copy
+
+# Create agent with custom system prompt
+custom_agent = await pool.create(
+    config=AgentConfig(
+        agent_id="custom-worker",
+        system_prompt="You are a specialized assistant.",
+    )
+)
 ```
 
 ## Module Exports

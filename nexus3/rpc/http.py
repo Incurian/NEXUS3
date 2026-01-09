@@ -5,9 +5,14 @@ over HTTP POST. It uses only asyncio stdlib - no external dependencies.
 
 Security: The server binds only to localhost (127.0.0.1) and never to 0.0.0.0.
 
+Path-based routing:
+    - POST / or /rpc → GlobalDispatcher (agent management)
+    - POST /agent/{agent_id} → Agent's Dispatcher
+
 Example usage:
-    dispatcher = Dispatcher(session, context)
-    await run_http_server(dispatcher, port=8765)
+    pool = AgentPool()
+    global_dispatcher = GlobalDispatcher(pool)
+    await run_http_server(pool, global_dispatcher, port=8765)
 """
 
 from __future__ import annotations
@@ -26,7 +31,33 @@ from nexus3.rpc.protocol import (
 )
 
 if TYPE_CHECKING:
-    from nexus3.rpc.dispatcher import Dispatcher
+    from typing import Protocol
+
+    class Dispatcher(Protocol):
+        """Protocol for dispatchers that handle JSON-RPC requests."""
+
+        async def dispatch(self, request: "Request") -> "Response | None": ...
+
+    class GlobalDispatcher(Dispatcher, Protocol):
+        """Protocol for the global dispatcher that manages agents."""
+
+        pass
+
+    class AgentPool(Protocol):
+        """Protocol for the agent pool."""
+
+        @property
+        def should_shutdown(self) -> bool: ...
+
+        def get_agent(self, agent_id: str) -> "Agent | None": ...
+
+    class Agent(Protocol):
+        """Protocol for an agent with a dispatcher."""
+
+        @property
+        def dispatcher(self) -> Dispatcher: ...
+
+    from nexus3.rpc.protocol import Request, Response
 
 # Constants
 DEFAULT_PORT = 8765
@@ -189,19 +220,35 @@ async def send_http_response(
     await writer.drain()
 
 
+def _extract_agent_id(path: str) -> str | None:
+    """Extract agent_id from path like /agent/{agent_id}.
+
+    Returns None if path doesn't match the pattern.
+    """
+    if path.startswith("/agent/"):
+        agent_id = path[7:]  # len("/agent/") == 7
+        if agent_id:
+            return agent_id
+    return None
+
+
 async def handle_connection(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
-    dispatcher: Dispatcher,
+    pool: AgentPool,
+    global_dispatcher: GlobalDispatcher,
 ) -> None:
-    """Handle a single HTTP connection.
+    """Handle a single HTTP connection with path-based routing.
 
-    Reads an HTTP request, processes it as JSON-RPC, and sends the response.
+    Routing:
+        - POST / or /rpc → global_dispatcher
+        - POST /agent/{agent_id} → agent's dispatcher
 
     Args:
         reader: The asyncio StreamReader for the connection.
         writer: The asyncio StreamWriter for the connection.
-        dispatcher: The JSON-RPC Dispatcher to handle requests.
+        pool: The AgentPool to look up agents by ID.
+        global_dispatcher: The GlobalDispatcher for / and /rpc paths.
     """
     try:
         # Parse HTTP request
@@ -211,7 +258,7 @@ async def handle_connection(
             await send_http_response(writer, 400, f'{{"error": "{e}"}}')
             return
 
-        # Only accept POST to / or /rpc
+        # Only accept POST
         if http_request.method != "POST":
             await send_http_response(
                 writer,
@@ -220,11 +267,25 @@ async def handle_connection(
             )
             return
 
-        if http_request.path not in ("/", "/rpc"):
+        # Route based on path
+        dispatcher: Dispatcher
+        if http_request.path in ("/", "/rpc"):
+            dispatcher = global_dispatcher
+        elif (agent_id := _extract_agent_id(http_request.path)) is not None:
+            agent = pool.get(agent_id)
+            if agent is None:
+                await send_http_response(
+                    writer,
+                    404,
+                    f'{{"error": "Agent not found: {agent_id}"}}',
+                )
+                return
+            dispatcher = agent.dispatcher
+        else:
             await send_http_response(
                 writer,
                 404,
-                '{"error": "Not found. Use / or /rpc."}',
+                '{"error": "Not found. Use /, /rpc, or /agent/{agent_id}."}',
             )
             return
 
@@ -276,17 +337,23 @@ async def handle_connection(
 
 
 async def run_http_server(
-    dispatcher: Dispatcher,
+    pool: AgentPool,
+    global_dispatcher: GlobalDispatcher,
     port: int = DEFAULT_PORT,
     host: str = BIND_HOST,
 ) -> None:
-    """Run the HTTP server for JSON-RPC requests.
+    """Run the HTTP server for JSON-RPC requests with path-based routing.
 
-    This function runs indefinitely until cancelled or the dispatcher
+    This function runs indefinitely until cancelled or the pool
     signals shutdown.
 
+    Routing:
+        - POST / or /rpc → global_dispatcher
+        - POST /agent/{agent_id} → agent's dispatcher
+
     Args:
-        dispatcher: The JSON-RPC Dispatcher to handle requests.
+        pool: The AgentPool for looking up agents and shutdown signal.
+        global_dispatcher: The GlobalDispatcher for / and /rpc paths.
         port: Port to listen on. Defaults to 8765.
         host: Host to bind to. Defaults to 127.0.0.1 (localhost only).
               SECURITY: Never pass 0.0.0.0 here.
@@ -301,7 +368,7 @@ async def run_http_server(
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
     ) -> None:
-        await handle_connection(reader, writer, dispatcher)
+        await handle_connection(reader, writer, pool, global_dispatcher)
 
     server = await asyncio.start_server(
         client_handler,
@@ -314,7 +381,7 @@ async def run_http_server(
 
     async with server:
         # Check for shutdown periodically
-        while not dispatcher.should_shutdown:
+        while not pool.should_shutdown:
             await asyncio.sleep(0.1)
 
         # Graceful shutdown

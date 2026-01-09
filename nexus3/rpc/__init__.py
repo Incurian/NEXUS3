@@ -11,6 +11,7 @@ Example usage:
 """
 
 from nexus3.rpc.dispatcher import Dispatcher, InvalidParamsError
+from nexus3.rpc.pool import Agent, AgentConfig, AgentPool, SharedComponents
 from nexus3.rpc.http import (
     BIND_HOST,
     DEFAULT_PORT,
@@ -73,4 +74,9 @@ __all__ = [
     "ParseError",
     "InvalidParamsError",
     "HttpParseError",
+    # Agent Pool
+    "Agent",
+    "AgentConfig",
+    "AgentPool",
+    "SharedComponents",
 ]

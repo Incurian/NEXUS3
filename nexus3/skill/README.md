@@ -9,7 +9,7 @@ This module provides the skill/tool infrastructure for NEXUS3:
 - **Skill protocol** for implementing custom tools
 - **SkillRegistry** for managing available skills with lazy instantiation
 - **ServiceContainer** for dependency injection
-- **Built-in skills** for common operations (file I/O, testing)
+- **Built-in skills** for common operations (file I/O, testing, agent control)
 
 Skills are the fundamental unit of capability in NEXUS3. Each skill provides a single, well-defined action that the LLM can invoke via function calling.
 
@@ -186,8 +186,8 @@ Skills for communicating with Nexus agents running in server mode (`--serve`). T
 
 | Skill | Description | Parameters |
 |-------|-------------|------------|
-| `nexus_send` | Send a message to a Nexus agent and receive response | `url` (required), `content` (required), `timeout` (optional) |
-| `nexus_cancel` | Cancel an in-progress request on a Nexus agent | `url` (required) |
+| `nexus_send` | Send a message to a Nexus agent and receive response | `url` (required), `content` (required), `request_id` (optional) |
+| `nexus_cancel` | Cancel an in-progress request on a Nexus agent | `url` (required), `request_id` (required) |
 | `nexus_status` | Get token usage and context info from an agent | `url` (required) |
 | `nexus_shutdown` | Request graceful shutdown of a Nexus agent | `url` (required) |
 
@@ -200,9 +200,38 @@ await nexus_send.execute(url="http://localhost:8765", content="Hello, agent!")
 # Get token/context status
 await nexus_status.execute(url="http://localhost:8765")
 
+# Cancel a request (requires request_id from nexus_send)
+await nexus_cancel.execute(url="http://localhost:8765", request_id="123")
+
 # Gracefully shutdown the agent
 await nexus_shutdown.execute(url="http://localhost:8765")
 ```
+
+### NexusClient
+
+The agent control skills use `NexusClient` (`nexus3/client.py`) internally:
+
+```python
+from nexus3.client import NexusClient, ClientError
+
+async with NexusClient("http://localhost:8765") as client:
+    # Send message
+    result = await client.send("Hello!")  # {"content": "...", ...}
+
+    # Get token usage
+    tokens = await client.get_tokens()
+
+    # Get context info
+    context = await client.get_context()
+
+    # Cancel in-progress request
+    await client.cancel(request_id=123)
+
+    # Request shutdown
+    await client.shutdown()
+```
+
+The client uses `httpx` for HTTP communication and raises `ClientError` on connection failures, timeouts, or RPC errors.
 
 ### Cross-Platform Path Handling
 
@@ -210,6 +239,7 @@ The `read_file` and `write_file` skills use `normalize_path()` from `nexus3.core
 
 - **Backslash normalization**: Windows-style paths (`C:\Users\foo`) converted to forward slashes
 - **Home directory expansion**: Paths starting with `~` expanded via `Path.expanduser()`
+- **Absolute resolution**: Relative paths resolved to absolute
 
 ```python
 # All of these work on any platform:
@@ -230,6 +260,35 @@ register_builtin_skills(registry)
 
 # Now registry has: read_file, write_file, sleep, nexus_send, nexus_cancel, nexus_status, nexus_shutdown
 ```
+
+## Multi-Agent Integration
+
+In the multi-agent architecture (`nexus3/rpc/pool.py`), each agent in an `AgentPool` gets its own:
+
+- **ServiceContainer** - For agent-specific service injection
+- **SkillRegistry** - With its own skill instance cache
+
+This isolation ensures agents don't share mutable state while still sharing expensive resources (like the LLM provider).
+
+```python
+# From AgentPool.create():
+services = ServiceContainer()
+registry = SkillRegistry(services)
+register_builtin_skills(registry)
+
+# Each Agent dataclass contains:
+agent = Agent(
+    agent_id="worker-1",
+    services=services,      # Per-agent ServiceContainer
+    registry=registry,      # Per-agent SkillRegistry
+    # ... other components
+)
+```
+
+This design allows:
+- **Service isolation**: Each agent can have different services registered
+- **Future permissions**: Different agents could have different skill sets based on permission level
+- **State isolation**: Skill instances are cached per-agent, not globally
 
 ## Execution Modes
 
@@ -373,6 +432,10 @@ except SkillNotFoundError as e:
 - `NexusError` - Base exception class
 - `normalize_path` - Cross-platform path handling (used by file skills)
 
+**From `nexus3.client`:**
+- `NexusClient` - HTTP client for agent control skills
+- `ClientError` - Exception for client-side errors
+
 ## Module Exports
 
 From `nexus3.skill`:
@@ -394,5 +457,12 @@ SkillError, SkillNotFoundError, SkillExecutionError
 From `nexus3.skill.builtin`:
 
 ```python
+# Registration helper
 register_builtin_skills
+
+# Individual factories (for custom registration)
+nexus_send_factory
+nexus_cancel_factory
+nexus_status_factory
+nexus_shutdown_factory
 ```
