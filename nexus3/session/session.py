@@ -25,7 +25,8 @@ if TYPE_CHECKING:
 # Callback types for notifications
 ToolCallCallback = Callable[[str, str], None]  # (tool_name, tool_id) -> None
 ToolCompleteCallback = Callable[[str, str, bool], None]  # (tool_name, tool_id, success) -> None
-ReasoningCallback = Callable[[bool], None]  # (is_reasoning) -> None - True when starts, False when ends
+# (is_reasoning) -> None - True when starts, False when ends
+ReasoningCallback = Callable[[bool], None]
 
 # New batch-aware callback types
 BatchStartCallback = Callable[["tuple[ToolCall, ...]"], None]  # All tools in batch
@@ -56,6 +57,7 @@ class Session:
         on_batch_progress: BatchProgressCallback | None = None,
         on_batch_halt: BatchHaltCallback | None = None,
         on_batch_complete: BatchCompleteCallback | None = None,
+        max_tool_iterations: int = 10,
     ) -> None:
         """Initialize a new session.
 
@@ -80,6 +82,8 @@ class Session:
             on_batch_halt: Optional callback when sequential batch halts on error.
                           Called to mark remaining tools as halted.
             on_batch_complete: Optional callback when all tools in batch are done.
+            max_tool_iterations: Maximum iterations of the tool execution loop.
+                               Prevents infinite loops. Default is 10.
         """
         self.provider = provider
         self.context = context
@@ -93,6 +97,7 @@ class Session:
         self.on_batch_progress = on_batch_progress
         self.on_batch_halt = on_batch_halt
         self.on_batch_complete = on_batch_complete
+        self.max_tool_iterations = max_tool_iterations
 
         # Track cancelled tool calls to report on next send()
         self._pending_cancelled_tools: list[tuple[str, str]] = []  # [(tool_id, tool_name), ...]
@@ -208,10 +213,7 @@ class Session:
         Yields:
             String chunks of the assistant's response.
         """
-
-        max_iterations = 10  # Prevent infinite loops
-
-        for _ in range(max_iterations):
+        for _ in range(self.max_tool_iterations):
             messages = self.context.build_messages()
             tools = self.registry.get_definitions() if self.registry else None
 
@@ -279,7 +281,7 @@ class Session:
                         for tc in final_message.tool_calls:
                             self.on_tool_active(tc.name, tc.id)
                     results = await self._execute_tools_parallel(final_message.tool_calls)
-                    for tc, result in zip(final_message.tool_calls, results):
+                    for tc, result in zip(final_message.tool_calls, results, strict=True):
                         self.context.add_tool_result(tc.id, tc.name, result)
                         batch_results.append((tc, result))
                         # Progress callback for each completed tool

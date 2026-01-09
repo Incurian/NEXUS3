@@ -46,6 +46,14 @@ class SessionLogger:
         if self.info.parent_id:
             self.storage.set_metadata("parent_id", self.info.parent_id)
 
+        # Initialize session markers for cleanup tracking
+        # Determine session type: subagent if parent_id set, else from config
+        session_type = "subagent" if config.parent_session else config.session_type
+        self.storage.init_session_markers(
+            session_type=session_type,
+            parent_agent_id=config.parent_session,
+        )
+
         # Initialize markdown writer
         verbose_enabled = LogStream.VERBOSE in config.streams
         self._md_writer = MarkdownWriter(
@@ -298,6 +306,24 @@ class SessionLogger:
         if not self._has_stream(LogStream.RAW):
             return None
         return RawLogCallbackAdapter(self)
+
+    # === Session Markers ===
+
+    def update_session_status(self, status: str) -> None:
+        """Update session status for cleanup tracking.
+
+        Args:
+            status: 'active' | 'destroyed' | 'orphaned'
+        """
+        self.storage.update_session_metadata(session_status=status)
+
+    def mark_session_destroyed(self) -> None:
+        """Mark session as destroyed for cleanup tracking."""
+        self.storage.mark_session_destroyed()
+
+    def mark_session_saved(self) -> None:
+        """Mark session as saved (will not be auto-cleaned)."""
+        self.storage.update_session_metadata(session_type="saved")
 
     # === Lifecycle ===
 

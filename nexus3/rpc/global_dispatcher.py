@@ -6,6 +6,7 @@ on the AgentPool rather than individual agent sessions:
 - create_agent: Create a new agent instance
 - destroy_agent: Destroy an existing agent
 - list_agents: List all active agents
+- shutdown_server: Signal the server to shut down
 
 These methods are typically called before routing to agent-specific
 dispatchers, or when the request doesn't target a specific agent.
@@ -15,6 +16,7 @@ from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 
 from nexus3.core.errors import NexusError
+from nexus3.rpc.dispatcher import InvalidParamsError
 from nexus3.rpc.protocol import (
     INTERNAL_ERROR,
     INVALID_PARAMS,
@@ -31,10 +33,6 @@ from nexus3.rpc.pool import AgentConfig
 
 # Type alias for handler functions
 Handler = Callable[[dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
-
-
-class InvalidParamsError(NexusError):
-    """Raised when method parameters are invalid."""
 
 
 class GlobalDispatcher:
@@ -68,10 +66,12 @@ class GlobalDispatcher:
             pool: The AgentPool instance for managing agents.
         """
         self._pool = pool
+        self._shutdown_requested = False
         self._handlers: dict[str, Handler] = {
             "create_agent": self._handle_create_agent,
             "destroy_agent": self._handle_destroy_agent,
             "list_agents": self._handle_list_agents,
+            "shutdown_server": self._handle_shutdown_server,
         }
 
     def handles(self, method: str) -> bool:
@@ -233,3 +233,33 @@ class GlobalDispatcher:
         agents = self._pool.list()
 
         return {"agents": agents}
+
+    async def _handle_shutdown_server(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Signal the server to shut down.
+
+        Sets a flag that the HTTP server loop can check to initiate
+        a graceful shutdown. The actual shutdown is handled by the
+        server, not this dispatcher.
+
+        Args:
+            params: Ignored (no parameters required).
+
+        Returns:
+            Dict containing:
+                - success: bool - Always True
+                - message: str - Confirmation message
+        """
+        self._shutdown_requested = True
+        return {
+            "success": True,
+            "message": "Server shutting down",
+        }
+
+    @property
+    def shutdown_requested(self) -> bool:
+        """Check if server shutdown has been requested.
+
+        Returns:
+            True if shutdown_server method has been called, False otherwise.
+        """
+        return self._shutdown_requested

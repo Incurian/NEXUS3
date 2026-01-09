@@ -10,8 +10,15 @@ Example usage:
         -d '{"jsonrpc":"2.0","method":"send","params":{"content":"Hi"},"id":1}'
 """
 
+from nexus3.rpc.auth import (
+    API_KEY_PREFIX,
+    ServerKeyManager,
+    discover_api_key,
+    generate_api_key,
+    validate_api_key,
+)
+from nexus3.rpc.detection import DetectionResult, detect_server, wait_for_server
 from nexus3.rpc.dispatcher import Dispatcher, InvalidParamsError
-from nexus3.rpc.pool import Agent, AgentConfig, AgentPool, SharedComponents
 from nexus3.rpc.http import (
     BIND_HOST,
     DEFAULT_PORT,
@@ -23,6 +30,7 @@ from nexus3.rpc.http import (
     run_http_server,
     send_http_response,
 )
+from nexus3.rpc.pool import Agent, AgentConfig, AgentPool, SharedComponents
 from nexus3.rpc.protocol import (
     INTERNAL_ERROR,
     INVALID_PARAMS,
@@ -79,4 +87,14 @@ __all__ = [
     "AgentConfig",
     "AgentPool",
     "SharedComponents",
+    # Authentication
+    "API_KEY_PREFIX",
+    "generate_api_key",
+    "validate_api_key",
+    "ServerKeyManager",
+    "discover_api_key",
+    # Detection
+    "DetectionResult",
+    "detect_server",
+    "wait_for_server",
 ]

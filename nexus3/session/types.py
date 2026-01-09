@@ -29,6 +29,7 @@ class LogConfig:
     streams: LogStream = LogStream.ALL  # All streams on by default for now
     parent_session: str | None = None
     mode: str = "repl"  # "repl" or "serve" - shown in log folder name
+    session_type: str = "temp"  # 'saved' | 'temp' | 'subagent' - for cleanup
 
     def __post_init__(self) -> None:
         """Ensure base_dir is a Path."""

@@ -43,12 +43,56 @@ from uuid import uuid4
 from nexus3.context import ContextConfig, ContextManager
 from nexus3.rpc.dispatcher import Dispatcher
 from nexus3.session import LogConfig, LogStream, Session, SessionLogger
+from nexus3.session.persistence import SavedSession, deserialize_messages
 from nexus3.skill import ServiceContainer, SkillRegistry
 
 if TYPE_CHECKING:
     from nexus3.config.schema import Config
     from nexus3.context.prompt_loader import PromptLoader
     from nexus3.core.interfaces import AsyncProvider
+
+
+# === Agent Naming Helpers ===
+
+
+def is_temp_agent(agent_id: str) -> bool:
+    """Return True if agent_id starts with '.' (temp/drone).
+
+    Temp agents:
+    - Don't appear in "saved sessions" list
+    - Use format like .1, .2, .quick-test
+    - Can be promoted to named via /save command
+
+    Named agents:
+    - Appear in saved sessions list
+    - Use alphanumeric format like worker-1, my-project
+    - Restorable after shutdown
+
+    Args:
+        agent_id: The agent identifier to check.
+
+    Returns:
+        True if the agent_id indicates a temp agent, False otherwise.
+    """
+    return agent_id.startswith(".")
+
+
+def generate_temp_id(existing_ids: set[str]) -> str:
+    """Generate next temp agent ID like .1, .2, etc.
+
+    Finds the lowest available numeric temp ID that is not
+    already in use.
+
+    Args:
+        existing_ids: Set of agent IDs already in use.
+
+    Returns:
+        A temp agent ID string like ".1", ".2", etc.
+    """
+    i = 1
+    while f".{i}" in existing_ids:
+        i += 1
+    return f".{i}"
 
 
 @dataclass(frozen=True)
@@ -64,12 +108,14 @@ class SharedComponents:
         provider: The LLM provider (shared for connection pooling).
         prompt_loader: Loader for system prompts (personal + project).
         base_log_dir: Base directory for agent logs. Each agent gets a subdirectory.
+        log_streams: Log streams to enable (defaults to ALL for backwards compatibility).
     """
 
     config: Config
     provider: AsyncProvider
     prompt_loader: PromptLoader
     base_log_dir: Path
+    log_streams: LogStream = LogStream.ALL
 
 
 @dataclass
@@ -217,7 +263,7 @@ class AgentPool:
             # Create session logger
             log_config = LogConfig(
                 base_dir=agent_log_dir,
-                streams=LogStream.ALL,
+                streams=self._shared.log_streams,
                 mode="agent",
             )
             logger = SessionLogger(log_config)
@@ -284,6 +330,159 @@ class AgentPool:
 
             return agent
 
+    async def create_temp(self, config: AgentConfig | None = None) -> Agent:
+        """Create a new temp agent with auto-generated ID.
+
+        Temp agents use IDs starting with '.' (e.g., .1, .2, .3).
+        This method finds the next available numeric temp ID and creates
+        an agent with that ID.
+
+        Temp agents:
+        - Don't appear in "saved sessions" list
+        - Can be promoted to named via /save command
+        - Are useful for one-off tasks and quick experiments
+
+        Args:
+            config: Additional configuration options. The agent_id field
+                is ignored (auto-generated).
+
+        Returns:
+            The newly created Agent instance with a temp ID.
+
+        Example:
+            agent = await pool.create_temp()
+            print(agent.agent_id)  # ".1"
+
+            agent2 = await pool.create_temp()
+            print(agent2.agent_id)  # ".2"
+        """
+        # Generate temp ID (needs lock to avoid race)
+        async with self._lock:
+            temp_id = generate_temp_id(set(self._agents.keys()))
+
+        # Create agent with the temp ID
+        effective_config = config or AgentConfig()
+        # Override any agent_id in config with the temp ID
+        effective_config = AgentConfig(
+            agent_id=temp_id,
+            system_prompt=effective_config.system_prompt,
+        )
+        return await self.create(config=effective_config)
+
+    def is_temp(self, agent_id: str) -> bool:
+        """Check if an agent ID represents a temp agent.
+
+        This is a convenience method on the pool that delegates to
+        the module-level is_temp_agent() function.
+
+        Args:
+            agent_id: The agent ID to check.
+
+        Returns:
+            True if the agent_id starts with '.', False otherwise.
+        """
+        return is_temp_agent(agent_id)
+
+    async def restore_from_saved(self, saved: SavedSession) -> Agent:
+        """Restore an agent from a saved session.
+
+        Creates a new agent with the saved session's state, including
+        conversation history, system prompt, and other configuration.
+        This is used for cross-session auto-restore when external requests
+        target inactive saved sessions.
+
+        Args:
+            saved: The SavedSession containing the agent's persisted state.
+
+        Returns:
+            The restored Agent instance with full conversation history.
+
+        Raises:
+            ValueError: If an agent with the saved session's ID already exists.
+
+        Example:
+            saved = session_manager.load_session("archived-helper")
+            agent = await pool.restore_from_saved(saved)
+            # Agent now has its full conversation history restored
+        """
+        async with self._lock:
+            agent_id = saved.agent_id
+
+            # Check for duplicate
+            if agent_id in self._agents:
+                raise ValueError(f"Agent already exists: {agent_id}")
+
+            # Create agent log directory
+            agent_log_dir = self._shared.base_log_dir / agent_id
+
+            # Create session logger
+            log_config = LogConfig(
+                base_dir=agent_log_dir,
+                streams=self._shared.log_streams,
+                mode="agent",
+            )
+            logger = SessionLogger(log_config)
+
+            # Wire up raw logging callback to provider if supported
+            raw_callback = logger.get_raw_log_callback()
+            if raw_callback is not None:
+                provider = self._shared.provider
+                if hasattr(provider, "set_raw_log_callback"):
+                    provider.set_raw_log_callback(raw_callback)
+
+            # Use system prompt from saved session
+            system_prompt = saved.system_prompt
+
+            # Create context manager
+            context = ContextManager(
+                config=ContextConfig(),
+                logger=logger,
+            )
+            context.set_system_prompt(system_prompt)
+
+            # Restore conversation history from saved session
+            messages = deserialize_messages(saved.messages)
+            for msg in messages:
+                context._messages.append(msg)
+
+            # Create skill registry with services
+            from nexus3.skill.builtin import register_builtin_skills
+
+            services = ServiceContainer()
+            registry = SkillRegistry(services)
+            register_builtin_skills(registry)
+
+            # Inject tool definitions into context
+            context.set_tool_definitions(registry.get_definitions())
+
+            # Create session with context
+            session = Session(
+                self._shared.provider,
+                context=context,
+                logger=logger,
+                registry=registry,
+            )
+
+            # Create dispatcher with context for token info
+            dispatcher = Dispatcher(session, context=context)
+
+            # Create agent instance with saved creation time if available
+            agent = Agent(
+                agent_id=agent_id,
+                logger=logger,
+                context=context,
+                services=services,
+                registry=registry,
+                session=session,
+                dispatcher=dispatcher,
+                created_at=saved.created_at,
+            )
+
+            # Store in pool
+            self._agents[agent_id] = agent
+
+            return agent
+
     async def destroy(self, agent_id: str) -> bool:
         """Destroy an agent and clean up its resources.
 
@@ -330,6 +529,7 @@ class AgentPool:
         Returns:
             List of dicts with keys:
             - agent_id: The agent's unique identifier
+            - is_temp: True if this is a temp agent (starts with '.')
             - created_at: ISO format timestamp of creation
             - message_count: Number of messages in context
             - should_shutdown: Whether the agent's dispatcher wants shutdown
@@ -338,6 +538,7 @@ class AgentPool:
         for agent in self._agents.values():
             result.append({
                 "agent_id": agent.agent_id,
+                "is_temp": is_temp_agent(agent.agent_id),
                 "created_at": agent.created_at.isoformat(),
                 "message_count": len(agent.context.messages),
                 "should_shutdown": agent.dispatcher.should_shutdown,

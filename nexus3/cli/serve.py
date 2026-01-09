@@ -19,11 +19,13 @@ Example:
     # Create an agent
     curl -X POST http://localhost:8765 \\
         -H "Content-Type: application/json" \\
+        -H "Authorization: Bearer nxk_..." \\
         -d '{"jsonrpc":"2.0","method":"create_agent","params":{},"id":1}'
 
     # Send a message to the agent
     curl -X POST http://localhost:8765/agent/{agent_id} \\
         -H "Content-Type: application/json" \\
+        -H "Authorization: Bearer nxk_..." \\
         -d '{"jsonrpc":"2.0","method":"send","params":{"content":"Hi"},"id":2}'
 """
 
@@ -36,9 +38,12 @@ from nexus3.context import PromptLoader
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
 from nexus3.provider.openrouter import OpenRouterProvider
+from nexus3.rpc.auth import ServerKeyManager
+from nexus3.rpc.detection import DetectionResult, detect_server
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
 from nexus3.rpc.http import DEFAULT_PORT, run_http_server
 from nexus3.rpc.pool import AgentPool, SharedComponents
+from nexus3.session import LogStream, SessionManager
 
 # Configure UTF-8 at module load
 configure_stdio()
@@ -60,12 +65,25 @@ async def run_serve(
     via the GlobalDispatcher at / or /rpc, while agent-specific
     requests go to /agent/{agent_id}.
 
+    Before starting, detects if a server is already running on the port.
+    If so, exits with an error message.
+
     Args:
         port: Port to listen on (default: 8765).
         verbose: Enable verbose logging stream.
         raw_log: Enable raw API logging stream.
         log_dir: Directory for session logs.
     """
+    # Check for existing server on the port
+    detection_result = await detect_server(port)
+    if detection_result == DetectionResult.NEXUS_SERVER:
+        print(f"Error: NEXUS3 server already running on port {port}")
+        print(f"Use 'nexus3 --connect http://localhost:{port}' to connect to it")
+        return
+    elif detection_result == DetectionResult.OTHER_SERVICE:
+        print(f"Error: Port {port} is already in use by another service")
+        return
+
     # Load configuration
     try:
         config = load_config()
@@ -86,12 +104,20 @@ async def run_serve(
     # Base log directory
     base_log_dir = log_dir or Path(".nexus3/logs")
 
+    # Configure logging streams based on CLI flags
+    log_streams = LogStream.CONTEXT  # Always on for basic functionality
+    if verbose:
+        log_streams |= LogStream.VERBOSE
+    if raw_log:
+        log_streams |= LogStream.RAW
+
     # Create shared components
     shared = SharedComponents(
         config=config,
         provider=provider,
         prompt_loader=prompt_loader,
         base_log_dir=base_log_dir,
+        log_streams=log_streams,
     )
 
     # Create agent pool
@@ -100,17 +126,32 @@ async def run_serve(
     # Create global dispatcher for agent management
     global_dispatcher = GlobalDispatcher(pool)
 
+    # Generate and save API key
+    key_manager = ServerKeyManager(port=port)
+    api_key = key_manager.generate_and_save()
+
+    # Create session manager for auto-restore of saved sessions
+    session_manager = SessionManager()
+
     # Print startup info
     print("NEXUS3 Multi-Agent HTTP Server")
     print(f"Logs: {base_log_dir}")
     print(f"Listening on http://localhost:{port}")
+    print(f"API key: {api_key}")
+    print(f"Key file: {key_manager.key_path}")
     print("Press Ctrl+C to stop")
     print("")
 
     # Run the HTTP server
     try:
-        await run_http_server(pool, global_dispatcher, port)
+        await run_http_server(
+            pool, global_dispatcher, port, api_key=api_key,
+            session_manager=session_manager
+        )
     finally:
+        # Clean up API key file
+        key_manager.delete()
+
         # Cleanup all agents
         for agent_info in pool.list():
             await pool.destroy(agent_info["agent_id"])

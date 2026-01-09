@@ -5,11 +5,22 @@ from typing import Any
 
 from nexus3.client import ClientError, NexusClient
 from nexus3.core.types import ToolResult
+from nexus3.rpc.auth import discover_api_key
 from nexus3.skill.services import ServiceContainer
+
+DEFAULT_PORT = 8765
 
 
 class NexusCancelSkill:
     """Skill that cancels an in-progress request on a Nexus agent."""
+
+    def __init__(self, services: ServiceContainer) -> None:
+        """Initialize the skill with service container.
+
+        Args:
+            services: ServiceContainer for accessing shared services like api_key.
+        """
+        self._services = services
 
     @property
     def name(self) -> str:
@@ -24,37 +35,66 @@ class NexusCancelSkill:
         return {
             "type": "object",
             "properties": {
-                "url": {
+                "agent_id": {
                     "type": "string",
-                    "description": "Agent URL (e.g., http://127.0.0.1:8765)",
+                    "description": "ID of the agent (e.g., 'worker-1')"
                 },
                 "request_id": {
                     "type": "string",
-                    "description": "Request ID to cancel",
+                    "description": "Request ID to cancel"
                 },
+                "port": {
+                    "type": "integer",
+                    "description": "Server port (default: 8765)"
+                }
             },
-            "required": ["url", "request_id"],
+            "required": ["agent_id", "request_id"]
         }
 
+    def _get_port(self, port: int | None) -> int:
+        """Get the port to use, checking ServiceContainer first."""
+        if port is not None:
+            return port
+        svc_port: int | None = self._services.get("port")
+        if svc_port is not None:
+            return svc_port
+        return DEFAULT_PORT
+
+    def _get_api_key(self, port: int) -> str | None:
+        """Get API key from ServiceContainer or auto-discover."""
+        api_key: str | None = self._services.get("api_key")
+        if api_key:
+            return api_key
+        return discover_api_key(port=port)
+
     async def execute(
-        self, url: str = "", request_id: str = "", **kwargs: Any
+        self,
+        agent_id: str = "",
+        request_id: str = "",
+        port: int | None = None,
+        **kwargs: Any
     ) -> ToolResult:
         """Cancel an in-progress request on a Nexus agent.
 
         Args:
-            url: The agent URL
+            agent_id: ID of the agent
             request_id: The request ID to cancel
+            port: Optional server port (default: 8765)
 
         Returns:
             ToolResult with cancellation result or error
         """
-        if not url:
-            return ToolResult(error="No URL provided")
+        if not agent_id:
+            return ToolResult(error="No agent_id provided")
         if not request_id:
             return ToolResult(error="No request_id provided")
 
+        actual_port = self._get_port(port)
+        url = f"http://127.0.0.1:{actual_port}/agent/{agent_id}"
+        api_key = self._get_api_key(actual_port)
+
         try:
-            async with NexusClient(url) as client:
+            async with NexusClient(url, api_key=api_key) as client:
                 result = await client.cancel(int(request_id))
                 return ToolResult(output=json.dumps(result))
         except ClientError as e:
@@ -65,9 +105,9 @@ def nexus_cancel_factory(services: ServiceContainer) -> NexusCancelSkill:
     """Factory function for NexusCancelSkill.
 
     Args:
-        services: ServiceContainer (unused, but required by factory protocol)
+        services: ServiceContainer for accessing shared services.
 
     Returns:
         New NexusCancelSkill instance
     """
-    return NexusCancelSkill()
+    return NexusCancelSkill(services)

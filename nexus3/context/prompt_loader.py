@@ -39,7 +39,7 @@ def get_system_info(is_repl: bool = True) -> str:
 
     if system == "Linux" and "microsoft" in release.lower():
         # Running in WSL
-        parts.append(f"Operating system: Linux (WSL2 on Windows)")
+        parts.append("Operating system: Linux (WSL2 on Windows)")
         parts.append(f"Kernel: {release}")
     elif system == "Linux":
         # Native Linux

@@ -3,24 +3,35 @@
 This module provides a minimal HTTP server that accepts JSON-RPC 2.0 requests
 over HTTP POST. It uses only asyncio stdlib - no external dependencies.
 
-Security: The server binds only to localhost (127.0.0.1) and never to 0.0.0.0.
+Security:
+    - The server binds only to localhost (127.0.0.1) and never to 0.0.0.0.
+    - API key authentication via Authorization: Bearer <key> header.
 
 Path-based routing:
     - POST / or /rpc → GlobalDispatcher (agent management)
     - POST /agent/{agent_id} → Agent's Dispatcher
 
+Cross-Session Auto-Restore:
+    When a request targets an agent_id that is not in the active pool but
+    exists as a saved session, the server automatically restores the session.
+
 Example usage:
     pool = AgentPool()
     global_dispatcher = GlobalDispatcher(pool)
-    await run_http_server(pool, global_dispatcher, port=8765)
+    session_manager = SessionManager()
+    api_key = generate_api_key()
+    await run_http_server(pool, global_dispatcher, port=8765, api_key=api_key,
+                          session_manager=session_manager)
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from nexus3.rpc.auth import validate_api_key
 from nexus3.rpc.protocol import (
     INTERNAL_ERROR,
     PARSE_ERROR,
@@ -33,10 +44,12 @@ from nexus3.rpc.protocol import (
 if TYPE_CHECKING:
     from typing import Protocol
 
+    from nexus3.session.persistence import SavedSession
+
     class Dispatcher(Protocol):
         """Protocol for dispatchers that handle JSON-RPC requests."""
 
-        async def dispatch(self, request: "Request") -> "Response | None": ...
+        async def dispatch(self, request: Request) -> Response | None: ...
 
     class GlobalDispatcher(Dispatcher, Protocol):
         """Protocol for the global dispatcher that manages agents."""
@@ -49,13 +62,22 @@ if TYPE_CHECKING:
         @property
         def should_shutdown(self) -> bool: ...
 
-        def get_agent(self, agent_id: str) -> "Agent | None": ...
+        def get(self, agent_id: str) -> Agent | None: ...
+
+        async def restore_from_saved(self, saved: SavedSession) -> Agent: ...
 
     class Agent(Protocol):
         """Protocol for an agent with a dispatcher."""
 
         @property
         def dispatcher(self) -> Dispatcher: ...
+
+    class SessionManager(Protocol):
+        """Protocol for the session manager."""
+
+        def session_exists(self, name: str) -> bool: ...
+
+        def load_session(self, name: str) -> SavedSession: ...
 
     from nexus3.rpc.protocol import Request, Response
 
@@ -199,6 +221,8 @@ async def send_http_response(
     status_messages = {
         200: "OK",
         400: "Bad Request",
+        401: "Unauthorized",
+        403: "Forbidden",
         404: "Not Found",
         405: "Method Not Allowed",
         500: "Internal Server Error",
@@ -232,11 +256,28 @@ def _extract_agent_id(path: str) -> str | None:
     return None
 
 
+def _extract_bearer_token(headers: dict[str, str]) -> str | None:
+    """Extract Bearer token from Authorization header.
+
+    Args:
+        headers: Dict of lowercase header names to values.
+
+    Returns:
+        The token if present and valid format, None otherwise.
+    """
+    auth_header = headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header[7:]  # len("Bearer ") == 7
+    return None
+
+
 async def handle_connection(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
     pool: AgentPool,
     global_dispatcher: GlobalDispatcher,
+    api_key: str | None = None,
+    session_manager: SessionManager | None = None,
 ) -> None:
     """Handle a single HTTP connection with path-based routing.
 
@@ -244,18 +285,26 @@ async def handle_connection(
         - POST / or /rpc → global_dispatcher
         - POST /agent/{agent_id} → agent's dispatcher
 
+    Cross-Session Auto-Restore:
+        When a request targets an agent_id that is not in the active pool but
+        exists as a saved session (via session_manager), the session is
+        automatically restored before processing the request.
+
     Args:
         reader: The asyncio StreamReader for the connection.
         writer: The asyncio StreamWriter for the connection.
         pool: The AgentPool to look up agents by ID.
         global_dispatcher: The GlobalDispatcher for / and /rpc paths.
+        api_key: Optional API key for authentication. If provided, requests
+                 must include Authorization: Bearer <key> header.
+        session_manager: Optional SessionManager for auto-restoring saved sessions.
     """
     try:
         # Parse HTTP request
         try:
             http_request = await read_http_request(reader)
         except HttpParseError as e:
-            await send_http_response(writer, 400, f'{{"error": "{e}"}}')
+            await send_http_response(writer, 400, json.dumps({"error": str(e)}))
             return
 
         # Only accept POST
@@ -263,9 +312,27 @@ async def handle_connection(
             await send_http_response(
                 writer,
                 405,
-                '{"error": "Method not allowed. Use POST."}',
+                json.dumps({"error": "Method not allowed. Use POST."}),
             )
             return
+
+        # Check authentication if api_key is configured
+        if api_key:
+            provided_token = _extract_bearer_token(http_request.headers)
+            if not provided_token:
+                await send_http_response(
+                    writer,
+                    401,
+                    json.dumps({"error": "Authorization header required"}),
+                )
+                return
+            if not validate_api_key(provided_token, api_key):
+                await send_http_response(
+                    writer,
+                    403,
+                    json.dumps({"error": "Invalid API key"}),
+                )
+                return
 
         # Route based on path
         dispatcher: Dispatcher
@@ -274,18 +341,33 @@ async def handle_connection(
         elif (agent_id := _extract_agent_id(http_request.path)) is not None:
             agent = pool.get(agent_id)
             if agent is None:
-                await send_http_response(
-                    writer,
-                    404,
-                    f'{{"error": "Agent not found: {agent_id}"}}',
-                )
-                return
+                # Agent not in active pool - try auto-restore from saved session
+                if session_manager is not None and session_manager.session_exists(agent_id):
+                    try:
+                        # Log the auto-restore event
+                        print(f"[auto-restoring {agent_id} from saved session]")
+                        saved = session_manager.load_session(agent_id)
+                        agent = await pool.restore_from_saved(saved)
+                    except Exception as e:
+                        await send_http_response(
+                            writer,
+                            500,
+                            json.dumps({"error": f"Failed to restore session: {e}"}),
+                        )
+                        return
+                else:
+                    await send_http_response(
+                        writer,
+                        404,
+                        json.dumps({"error": f"Agent not found: {agent_id}"}),
+                    )
+                    return
             dispatcher = agent.dispatcher
         else:
             await send_http_response(
                 writer,
                 404,
-                '{"error": "Not found. Use /, /rpc, or /agent/{agent_id}."}',
+                json.dumps({"error": "Not found. Use /, /rpc, or /agent/{agent_id}."}),
             )
             return
 
@@ -323,7 +405,7 @@ async def handle_connection(
             await send_http_response(
                 writer,
                 500,
-                f'{{"error": "Server error: {type(e).__name__}"}}',
+                json.dumps({"error": f"Server error: {type(e).__name__}"}),
             )
         except Exception:
             pass  # Connection may be broken
@@ -341,6 +423,8 @@ async def run_http_server(
     global_dispatcher: GlobalDispatcher,
     port: int = DEFAULT_PORT,
     host: str = BIND_HOST,
+    api_key: str | None = None,
+    session_manager: SessionManager | None = None,
 ) -> None:
     """Run the HTTP server for JSON-RPC requests with path-based routing.
 
@@ -351,12 +435,22 @@ async def run_http_server(
         - POST / or /rpc → global_dispatcher
         - POST /agent/{agent_id} → agent's dispatcher
 
+    Cross-Session Auto-Restore:
+        When a request targets an agent_id that is not in the active pool but
+        exists as a saved session (via session_manager), the session is
+        automatically restored before processing the request.
+
     Args:
         pool: The AgentPool for looking up agents and shutdown signal.
         global_dispatcher: The GlobalDispatcher for / and /rpc paths.
         port: Port to listen on. Defaults to 8765.
         host: Host to bind to. Defaults to 127.0.0.1 (localhost only).
               SECURITY: Never pass 0.0.0.0 here.
+        api_key: Optional API key for authentication. If provided, all requests
+                 must include Authorization: Bearer <key> header.
+        session_manager: Optional SessionManager for auto-restoring saved sessions.
+                        When provided, requests to inactive but saved agents will
+                        trigger automatic session restoration.
     """
     # Security: Force localhost binding
     if host not in ("127.0.0.1", "localhost", "::1"):
@@ -368,7 +462,9 @@ async def run_http_server(
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
     ) -> None:
-        await handle_connection(reader, writer, pool, global_dispatcher)
+        await handle_connection(
+            reader, writer, pool, global_dispatcher, api_key, session_manager
+        )
 
     server = await asyncio.start_server(
         client_handler,
@@ -381,7 +477,8 @@ async def run_http_server(
 
     async with server:
         # Check for shutdown periodically
-        while not pool.should_shutdown:
+        # Exit if: all agents want shutdown OR explicit shutdown_server was called
+        while not pool.should_shutdown and not global_dispatcher.shutdown_requested:
             await asyncio.sleep(0.1)
 
         # Graceful shutdown

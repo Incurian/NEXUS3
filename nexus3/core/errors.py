@@ -15,3 +15,12 @@ class ConfigError(NexusError):
 
 class ProviderError(NexusError):
     """Raised for LLM provider issues (API errors, network issues, auth failure)."""
+
+
+class PathSecurityError(NexusError):
+    """Raised when a path violates security sandbox constraints."""
+
+    def __init__(self, path: str, reason: str) -> None:
+        self.path = path
+        self.reason = reason
+        super().__init__(f"Path security violation for '{path}': {reason}")

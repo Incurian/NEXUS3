@@ -6,8 +6,10 @@ which is compatible with the OpenAI chat completions format.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import random
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
@@ -31,6 +33,11 @@ if TYPE_CHECKING:
 
 # Default timeout for API requests (30 seconds)
 DEFAULT_TIMEOUT = 30.0
+
+# Retry configuration
+MAX_RETRIES = 3
+MAX_RETRY_DELAY = 10.0  # Maximum delay between retries in seconds
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 class OpenRouterProvider:
@@ -108,6 +115,30 @@ class OpenRouterProvider:
             "Content-Type": "application/json",
             "HTTP-Referer": "https://github.com/nexus3",  # Required by OpenRouter
         }
+
+    def _calculate_retry_delay(self, attempt: int) -> float:
+        """Calculate delay for retry with exponential backoff and jitter.
+
+        Args:
+            attempt: The current attempt number (0-indexed).
+
+        Returns:
+            Delay in seconds before next retry.
+        """
+        # Exponential backoff: 2^attempt + random jitter (0-1s)
+        delay = 2**attempt + random.uniform(0, 1)
+        return min(delay, MAX_RETRY_DELAY)
+
+    def _is_retryable_error(self, status_code: int) -> bool:
+        """Check if an HTTP status code indicates a retryable error.
+
+        Args:
+            status_code: The HTTP status code from the response.
+
+        Returns:
+            True if the request should be retried, False otherwise.
+        """
+        return status_code in RETRYABLE_STATUS_CODES
 
     def _message_to_dict(self, message: Message) -> dict[str, Any]:
         """Convert a Message to OpenAI-format dict.
@@ -212,7 +243,7 @@ class OpenRouterProvider:
             The assistant's response as a Message, potentially including tool_calls.
 
         Raises:
-            ProviderError: If the API request fails.
+            ProviderError: If the API request fails after all retries.
         """
         url = f"{self._base_url}/chat/completions"
         body = self._build_request_body(messages, tools, stream=False)
@@ -221,38 +252,77 @@ class OpenRouterProvider:
         if self._raw_log:
             self._raw_log.on_request(url, body)
 
-        try:
-            async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-                response = await client.post(
-                    url,
-                    headers=self._build_headers(),
-                    json=body,
-                )
+        last_error: Exception | None = None
 
-                if response.status_code == 401:
-                    raise ProviderError("Authentication failed. Check your API key.")
-
-                if response.status_code == 429:
-                    raise ProviderError("Rate limit exceeded. Please wait and try again.")
-
-                if response.status_code >= 400:
-                    error_detail = response.text
-                    raise ProviderError(
-                        f"API request failed with status {response.status_code}: {error_detail}"
+        for attempt in range(MAX_RETRIES):
+            try:
+                async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+                    response = await client.post(
+                        url,
+                        headers=self._build_headers(),
+                        json=body,
                     )
 
-                data = response.json()
+                    # Non-retryable client errors - fail immediately
+                    if response.status_code == 401:
+                        raise ProviderError("Authentication failed. Check your API key.")
 
-                # Log raw response if callback is set
-                if self._raw_log:
-                    self._raw_log.on_response(response.status_code, data)
+                    if response.status_code == 403:
+                        raise ProviderError("Access forbidden. Check your API permissions.")
 
-        except httpx.ConnectError as e:
-            raise ProviderError(f"Failed to connect to API: {e}") from e
-        except httpx.TimeoutException as e:
-            raise ProviderError(f"API request timed out: {e}") from e
-        except httpx.HTTPError as e:
-            raise ProviderError(f"HTTP error occurred: {e}") from e
+                    if response.status_code == 404:
+                        raise ProviderError("API endpoint not found. Check your configuration.")
+
+                    # Retryable server errors - retry with backoff
+                    if self._is_retryable_error(response.status_code):
+                        error_detail = response.text
+                        last_error = ProviderError(
+                            f"API request failed with status {response.status_code}: {error_detail}"
+                        )
+                        if attempt < MAX_RETRIES - 1:
+                            delay = self._calculate_retry_delay(attempt)
+                            await asyncio.sleep(delay)
+                            continue
+                        raise last_error
+
+                    # Other client errors (400, etc.) - fail immediately
+                    if response.status_code >= 400:
+                        error_detail = response.text
+                        raise ProviderError(
+                            f"API request failed with status {response.status_code}: {error_detail}"
+                        )
+
+                    data = response.json()
+
+                    # Log raw response if callback is set
+                    if self._raw_log:
+                        self._raw_log.on_response(response.status_code, data)
+
+                    # Success - break out of retry loop
+                    break
+
+            except (httpx.ConnectError, httpx.TimeoutException) as e:
+                # Network errors are retryable
+                last_error = e
+                if attempt < MAX_RETRIES - 1:
+                    delay = self._calculate_retry_delay(attempt)
+                    await asyncio.sleep(delay)
+                    continue
+                # Final attempt failed
+                if isinstance(e, httpx.ConnectError):
+                    raise ProviderError(
+                        f"Failed to connect to API after {MAX_RETRIES} attempts: {e}"
+                    ) from e
+                raise ProviderError(
+                    f"API request timed out after {MAX_RETRIES} attempts: {e}"
+                ) from e
+            except httpx.HTTPError as e:
+                # Other HTTP errors - don't retry
+                raise ProviderError(f"HTTP error occurred: {e}") from e
+        else:
+            # This shouldn't be reached, but handle it just in case
+            if last_error:
+                raise ProviderError(f"Request failed after {MAX_RETRIES} attempts") from last_error
 
         # Parse the response
         try:
@@ -292,7 +362,7 @@ class OpenRouterProvider:
             - StreamComplete: final event with complete Message (content + tool_calls)
 
         Raises:
-            ProviderError: If the API request fails.
+            ProviderError: If the API request fails after all retries.
         """
         url = f"{self._base_url}/chat/completions"
         body = self._build_request_body(messages, tools, stream=True)
@@ -301,38 +371,76 @@ class OpenRouterProvider:
         if self._raw_log:
             self._raw_log.on_request(url, body)
 
-        try:
-            async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
-                async with client.stream(
-                    "POST",
-                    url,
-                    headers=self._build_headers(),
-                    json=body,
-                ) as response:
-                    if response.status_code == 401:
-                        raise ProviderError("Authentication failed. Check your API key.")
+        last_error: Exception | None = None
 
-                    if response.status_code == 429:
-                        raise ProviderError("Rate limit exceeded. Please wait and try again.")
+        for attempt in range(MAX_RETRIES):
+            try:
+                async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+                    async with client.stream(
+                        "POST",
+                        url,
+                        headers=self._build_headers(),
+                        json=body,
+                    ) as response:
+                        # Non-retryable client errors - fail immediately
+                        if response.status_code == 401:
+                            raise ProviderError("Authentication failed. Check your API key.")
 
-                    if response.status_code >= 400:
-                        # Read the error body
-                        error_body = await response.aread()
-                        error_msg = error_body.decode()
-                        raise ProviderError(
-                            f"API request failed with status {response.status_code}: {error_msg}"
-                        )
+                        if response.status_code == 403:
+                            raise ProviderError("Access forbidden. Check your API permissions.")
 
-                    # Process SSE stream with tool call accumulation
-                    async for event in self._parse_sse_stream_with_tools(response):
-                        yield event
+                        if response.status_code == 404:
+                            raise ProviderError("API endpoint not found. Check your configuration.")
 
-        except httpx.ConnectError as e:
-            raise ProviderError(f"Failed to connect to API: {e}") from e
-        except httpx.TimeoutException as e:
-            raise ProviderError(f"API request timed out: {e}") from e
-        except httpx.HTTPError as e:
-            raise ProviderError(f"HTTP error occurred: {e}") from e
+                        # Retryable server errors - retry with backoff
+                        if self._is_retryable_error(response.status_code):
+                            error_body = await response.aread()
+                            error_msg = error_body.decode()
+                            last_error = ProviderError(
+                                f"API request failed ({response.status_code}): {error_msg}"
+                            )
+                            if attempt < MAX_RETRIES - 1:
+                                delay = self._calculate_retry_delay(attempt)
+                                await asyncio.sleep(delay)
+                                continue
+                            raise last_error
+
+                        # Other client errors (400, etc.) - fail immediately
+                        if response.status_code >= 400:
+                            error_body = await response.aread()
+                            error_msg = error_body.decode()
+                            raise ProviderError(
+                                f"API request failed ({response.status_code}): {error_msg}"
+                            )
+
+                        # Success - process SSE stream with tool call accumulation
+                        # Note: Once we start yielding, we cannot retry
+                        async for event in self._parse_sse_stream_with_tools(response):
+                            yield event
+                        return  # Successful completion
+
+            except (httpx.ConnectError, httpx.TimeoutException) as e:
+                # Network errors are retryable
+                last_error = e
+                if attempt < MAX_RETRIES - 1:
+                    delay = self._calculate_retry_delay(attempt)
+                    await asyncio.sleep(delay)
+                    continue
+                # Final attempt failed
+                if isinstance(e, httpx.ConnectError):
+                    raise ProviderError(
+                        f"Failed to connect to API after {MAX_RETRIES} attempts: {e}"
+                    ) from e
+                raise ProviderError(
+                    f"API request timed out after {MAX_RETRIES} attempts: {e}"
+                ) from e
+            except httpx.HTTPError as e:
+                # Other HTTP errors - don't retry
+                raise ProviderError(f"HTTP error occurred: {e}") from e
+
+        # This shouldn't be reached, but handle it just in case
+        if last_error:
+            raise ProviderError(f"Request failed after {MAX_RETRIES} attempts") from last_error
 
     async def _parse_sse_stream_with_tools(
         self, response: httpx.Response

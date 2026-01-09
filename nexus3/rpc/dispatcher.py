@@ -65,6 +65,14 @@ class Dispatcher:
         """Return True if shutdown has been requested."""
         return self._should_shutdown
 
+    def request_shutdown(self) -> None:
+        """Request shutdown of the dispatcher.
+
+        Sets the should_shutdown flag to True, which signals the server
+        to gracefully shut down.
+        """
+        self._should_shutdown = True
+
     async def dispatch(self, request: Request) -> Response | None:
         """Dispatch a request to the appropriate handler.
 

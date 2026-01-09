@@ -1,7 +1,7 @@
 """Streaming display using Rich.Live for all output."""
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 from rich.console import Group, RenderableType
@@ -170,7 +170,8 @@ class StreamingDisplay:
             return "Executing tools..."
 
         active = [t for t in self._tools.values() if t.state == ToolState.ACTIVE]
-        complete = sum(1 for t in self._tools.values() if t.state in (ToolState.SUCCESS, ToolState.ERROR))
+        done_states = (ToolState.SUCCESS, ToolState.ERROR)
+        complete = sum(1 for t in self._tools.values() if t.state in done_states)
         pending = sum(1 for t in self._tools.values() if t.state == ToolState.PENDING)
 
         parts = []
@@ -205,7 +206,9 @@ class StreamingDisplay:
         self.activity = activity
         if activity == Activity.IDLE:
             self._frame = 0
-        elif activity in (Activity.WAITING, Activity.RESPONDING, Activity.THINKING, Activity.TOOL_CALLING):
+        elif activity in (
+            Activity.WAITING, Activity.RESPONDING, Activity.THINKING, Activity.TOOL_CALLING
+        ):
             if self._activity_start_time == 0:
                 self._activity_start_time = time.time()
 

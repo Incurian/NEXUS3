@@ -1,10 +1,12 @@
 """Async HTTP client for communicating with Nexus JSON-RPC servers."""
 
 from typing import Any, cast
+from urllib.parse import urlparse
 
 import httpx
 
 from nexus3.core.errors import NexusError
+from nexus3.rpc.auth import discover_api_key
 from nexus3.rpc.protocol import parse_response, serialize_request
 from nexus3.rpc.types import Request, Response
 
@@ -17,26 +19,60 @@ class NexusClient:
     """Async HTTP client for Nexus JSON-RPC servers.
 
     Usage:
-        async with NexusClient() as client:
+        async with NexusClient(api_key="nxk_...") as client:
             result = await client.send("Hello!")
             print(result)
+
+        # Or with auto-discovery:
+        async with NexusClient.with_auto_auth() as client:
+            result = await client.send("Hello!")
     """
 
     def __init__(
         self,
         url: str = "http://127.0.0.1:8765",
         timeout: float = 60.0,
+        api_key: str | None = None,
     ) -> None:
         """Initialize the client.
 
         Args:
             url: Base URL of the JSON-RPC server.
             timeout: Request timeout in seconds.
+            api_key: Optional API key for authentication. If provided,
+                     adds Authorization: Bearer <key> header to all requests.
         """
         self._url = url
         self._timeout = timeout
+        self._api_key = api_key
         self._client: httpx.AsyncClient | None = None
         self._request_id = 0
+
+    @classmethod
+    def with_auto_auth(
+        cls,
+        url: str = "http://127.0.0.1:8765",
+        timeout: float = 60.0,
+    ) -> "NexusClient":
+        """Create a client with auto-discovered API key.
+
+        Attempts to discover the API key from:
+        1. NEXUS3_API_KEY environment variable
+        2. ~/.nexus3/server-{port}.key (port-specific)
+        3. ~/.nexus3/server.key (default)
+
+        Args:
+            url: Base URL of the JSON-RPC server.
+            timeout: Request timeout in seconds.
+
+        Returns:
+            NexusClient configured with discovered API key (or None if not found).
+        """
+        # Extract port from URL for key discovery
+        parsed = urlparse(url)
+        port = parsed.port or 8765
+        api_key = discover_api_key(port=port)
+        return cls(url=url, timeout=timeout, api_key=api_key)
 
     async def __aenter__(self) -> "NexusClient":
         """Enter async context, create httpx client."""
@@ -77,11 +113,16 @@ class NexusClient:
             id=self._next_id(),
         )
 
+        # Build headers with optional auth
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+
         try:
             response = await self._client.post(
                 self._url,
                 content=serialize_request(request),
-                headers={"Content-Type": "application/json"},
+                headers=headers,
             )
             return parse_response(response.text)
         except httpx.ConnectError as e:
@@ -159,4 +200,62 @@ class NexusClient:
             Shutdown acknowledgment.
         """
         response = await self._call("shutdown")
+        return cast(dict[str, Any], self._check(response))
+
+    # Global methods (called on root endpoint, not agent-specific)
+
+    async def list_agents(self) -> list[str]:
+        """List all agents on the server.
+
+        Note: This should be called on the root URL (e.g., http://localhost:8765),
+        not an agent-specific URL.
+
+        Returns:
+            List of agent IDs.
+        """
+        response = await self._call("list_agents")
+        result = self._check(response)
+        return cast(list[str], result.get("agents", []))
+
+    async def create_agent(self, agent_id: str) -> dict[str, Any]:
+        """Create a new agent on the server.
+
+        Note: This should be called on the root URL (e.g., http://localhost:8765),
+        not an agent-specific URL.
+
+        Args:
+            agent_id: The ID for the new agent.
+
+        Returns:
+            Creation result with agent_id.
+        """
+        response = await self._call("create_agent", {"agent_id": agent_id})
+        return cast(dict[str, Any], self._check(response))
+
+    async def destroy_agent(self, agent_id: str) -> dict[str, Any]:
+        """Destroy an agent on the server.
+
+        Note: This should be called on the root URL (e.g., http://localhost:8765),
+        not an agent-specific URL.
+
+        Args:
+            agent_id: The ID of the agent to destroy.
+
+        Returns:
+            Destruction result.
+        """
+        response = await self._call("destroy_agent", {"agent_id": agent_id})
+        return cast(dict[str, Any], self._check(response))
+
+    async def shutdown_server(self) -> dict[str, Any]:
+        """Request graceful shutdown of the entire server.
+
+        Note: This should be called on the root URL (e.g., http://localhost:8765),
+        not an agent-specific URL. This shuts down the entire server, not just
+        an individual agent.
+
+        Returns:
+            Shutdown acknowledgment with success status.
+        """
+        response = await self._call("shutdown_server")
         return cast(dict[str, Any], self._check(response))

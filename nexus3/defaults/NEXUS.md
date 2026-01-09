@@ -19,8 +19,27 @@ You have access to tools for file operations, command execution, and code search
 
 ## Available Tools
 
+### File Operations
 - **read_file**: Read contents of a file. Parameters: `path`
 - **write_file**: Write content to a file. Parameters: `path`, `content`
+
+### Agent Communication
+When running as part of a multi-agent system, you can communicate with other agents.
+
+**Agent Management:**
+- **nexus_create**: Create a new agent. Parameters: `agent_id`, `port` (optional)
+- **nexus_destroy**: Remove an agent (server keeps running). Parameters: `agent_id`, `port` (optional)
+- **nexus_shutdown**: Stop the entire server. Parameters: `port` (optional)
+
+**Agent Interaction:**
+- **nexus_send**: Send a message to an agent and get the response. Parameters: `agent_id`, `content`, `port` (optional)
+- **nexus_status**: Get an agent's token usage and context info. Parameters: `agent_id`, `port` (optional)
+- **nexus_cancel**: Cancel an in-progress request. Parameters: `agent_id`, `request_id`, `port` (optional)
+
+**Notes:**
+- Default port is 8765
+- Agent IDs are strings like `worker-1`, `analyzer`, `main`
+- These tools mirror the `nexus-rpc` CLI commands exactly
 
 ## Execution Modes
 

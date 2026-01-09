@@ -5,11 +5,22 @@ from typing import Any
 
 from nexus3.client import ClientError, NexusClient
 from nexus3.core.types import ToolResult
+from nexus3.rpc.auth import discover_api_key
 from nexus3.skill.services import ServiceContainer
+
+DEFAULT_PORT = 8765
 
 
 class NexusSendSkill:
     """Skill that sends a message to a Nexus agent and returns the response."""
+
+    def __init__(self, services: ServiceContainer) -> None:
+        """Initialize the skill with service container.
+
+        Args:
+            services: ServiceContainer for accessing shared services like api_key.
+        """
+        self._services = services
 
     @property
     def name(self) -> str:
@@ -24,43 +35,67 @@ class NexusSendSkill:
         return {
             "type": "object",
             "properties": {
-                "url": {
+                "agent_id": {
                     "type": "string",
-                    "description": "Agent URL (e.g., http://localhost:8765)"
+                    "description": "ID of the agent to send to (e.g., 'worker-1')"
                 },
                 "content": {
                     "type": "string",
                     "description": "Message to send"
                 },
-                "request_id": {
-                    "type": "string",
-                    "description": "Optional ID for cancellation support"
+                "port": {
+                    "type": "integer",
+                    "description": "Server port (default: 8765)"
                 }
             },
-            "required": ["url", "content"]
+            "required": ["agent_id", "content"]
         }
 
+    def _get_port(self, port: int | None) -> int:
+        """Get the port to use, checking ServiceContainer first."""
+        if port is not None:
+            return port
+        svc_port: int | None = self._services.get("port")
+        if svc_port is not None:
+            return svc_port
+        return DEFAULT_PORT
+
+    def _get_api_key(self, port: int) -> str | None:
+        """Get API key from ServiceContainer or auto-discover."""
+        api_key: str | None = self._services.get("api_key")
+        if api_key:
+            return api_key
+        return discover_api_key(port=port)
+
     async def execute(
-        self, url: str = "", content: str = "", request_id: str = "", **kwargs: Any
+        self,
+        agent_id: str = "",
+        content: str = "",
+        port: int | None = None,
+        **kwargs: Any
     ) -> ToolResult:
         """Send a message to a Nexus agent.
 
         Args:
-            url: The agent URL to connect to
+            agent_id: ID of the agent to send to
             content: The message to send
-            request_id: Optional request ID for cancellation
+            port: Optional server port (default: 8765)
 
         Returns:
             ToolResult with response JSON in output, or error message in error
         """
-        if not url:
-            return ToolResult(error="No url provided")
+        if not agent_id:
+            return ToolResult(error="No agent_id provided")
         if not content:
             return ToolResult(error="No content provided")
 
+        actual_port = self._get_port(port)
+        url = f"http://127.0.0.1:{actual_port}/agent/{agent_id}"
+        api_key = self._get_api_key(actual_port)
+
         try:
-            async with NexusClient(url) as client:
-                result = await client.send(content, int(request_id) if request_id else None)
+            async with NexusClient(url, api_key=api_key) as client:
+                result = await client.send(content)
                 return ToolResult(output=json.dumps(result))
         except ClientError as e:
             return ToolResult(error=str(e))
@@ -70,9 +105,9 @@ def nexus_send_factory(services: ServiceContainer) -> NexusSendSkill:
     """Factory function for NexusSendSkill.
 
     Args:
-        services: ServiceContainer (unused, but required by factory protocol)
+        services: ServiceContainer for accessing shared services.
 
     Returns:
         New NexusSendSkill instance
     """
-    return NexusSendSkill()
+    return NexusSendSkill(services)

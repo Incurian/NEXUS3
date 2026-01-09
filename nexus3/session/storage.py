@@ -8,7 +8,7 @@ from time import time
 from typing import Any
 
 # Schema version for future migrations
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 -- Schema version tracking
@@ -36,6 +36,16 @@ CREATE TABLE IF NOT EXISTS metadata (
     value TEXT
 );
 
+-- Session markers for cleanup (Phase 6)
+CREATE TABLE IF NOT EXISTS session_markers (
+    id INTEGER PRIMARY KEY CHECK (id = 1),  -- Singleton row
+    session_type TEXT NOT NULL DEFAULT 'temp',  -- 'saved' | 'temp' | 'subagent'
+    session_status TEXT NOT NULL DEFAULT 'active',  -- 'active' | 'destroyed' | 'orphaned'
+    parent_agent_id TEXT,  -- Who spawned this agent (nullable)
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
 -- Events for verbose logging (thinking, timing, etc.)
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,7 +61,31 @@ CREATE INDEX IF NOT EXISTS idx_messages_in_context ON messages(in_context);
 CREATE INDEX IF NOT EXISTS idx_messages_role ON messages(role);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type);
 CREATE INDEX IF NOT EXISTS idx_events_message ON events(message_id);
+CREATE INDEX IF NOT EXISTS idx_session_markers_status ON session_markers(session_status);
+CREATE INDEX IF NOT EXISTS idx_session_markers_type ON session_markers(session_type);
 """
+
+
+@dataclass
+class SessionMarkers:
+    """Session markers for cleanup tracking."""
+
+    session_type: str  # 'saved' | 'temp' | 'subagent'
+    session_status: str  # 'active' | 'destroyed' | 'orphaned'
+    parent_agent_id: str | None
+    created_at: float
+    updated_at: float
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> "SessionMarkers":
+        """Create from database row."""
+        return cls(
+            session_type=row["session_type"],
+            session_status=row["session_status"],
+            parent_agent_id=row["parent_agent_id"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
 
 
 @dataclass
@@ -169,12 +203,44 @@ class SessionStorage:
                 self._migrate(row[0], SCHEMA_VERSION)
 
     def _migrate(self, from_version: int, to_version: int) -> None:
-        """Run migrations between versions.
+        """Run migrations between versions."""
+        conn = self._get_conn()
 
-        Placeholder for future schema migrations.
-        """
-        # No migrations yet
-        pass
+        if from_version < 2 <= to_version:
+            # Migration 1 -> 2: Add session_markers table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS session_markers (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    session_type TEXT NOT NULL DEFAULT 'temp',
+                    session_status TEXT NOT NULL DEFAULT 'active',
+                    parent_agent_id TEXT,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_session_markers_status "
+                "ON session_markers(session_status)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_session_markers_type "
+                "ON session_markers(session_type)"
+            )
+
+            # Initialize with defaults if not exists (for existing DBs)
+            ts = time()
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO session_markers
+                (id, session_type, session_status, parent_agent_id, created_at, updated_at)
+                VALUES (1, 'temp', 'active', NULL, ?, ?)
+                """,
+                (ts, ts),
+            )
+
+            # Update schema version
+            conn.execute("UPDATE schema_version SET version = ?", (2,))
+            conn.commit()
 
     def close(self) -> None:
         """Close the database connection."""
@@ -355,3 +421,110 @@ class SessionStorage:
         )
 
         return [EventRow.from_row(row) for row in cursor.fetchall()]
+
+    # === Session Marker Operations ===
+
+    def init_session_markers(
+        self,
+        session_type: str = "temp",
+        parent_agent_id: str | None = None,
+    ) -> None:
+        """Initialize session markers for a new session.
+
+        Args:
+            session_type: 'saved' | 'temp' | 'subagent'
+            parent_agent_id: ID of parent agent (for subagents)
+        """
+        conn = self._get_conn()
+        ts = time()
+
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO session_markers
+            (id, session_type, session_status, parent_agent_id, created_at, updated_at)
+            VALUES (1, ?, 'active', ?, ?, ?)
+            """,
+            (session_type, parent_agent_id, ts, ts),
+        )
+        conn.commit()
+
+    def get_session_markers(self) -> SessionMarkers | None:
+        """Get current session markers.
+
+        Returns:
+            SessionMarkers if set, None otherwise.
+        """
+        conn = self._get_conn()
+        cursor = conn.execute("SELECT * FROM session_markers WHERE id = 1")
+        row = cursor.fetchone()
+        return SessionMarkers.from_row(row) if row else None
+
+    def update_session_metadata(
+        self,
+        session_type: str | None = None,
+        session_status: str | None = None,
+        parent_agent_id: str | None = None,
+    ) -> None:
+        """Update session metadata fields.
+
+        Only updates fields that are provided (not None).
+
+        Args:
+            session_type: 'saved' | 'temp' | 'subagent'
+            session_status: 'active' | 'destroyed' | 'orphaned'
+            parent_agent_id: ID of parent agent
+        """
+        conn = self._get_conn()
+        ts = time()
+
+        updates = ["updated_at = ?"]
+        params: list[Any] = [ts]
+
+        if session_type is not None:
+            updates.append("session_type = ?")
+            params.append(session_type)
+
+        if session_status is not None:
+            updates.append("session_status = ?")
+            params.append(session_status)
+
+        if parent_agent_id is not None:
+            updates.append("parent_agent_id = ?")
+            params.append(parent_agent_id)
+
+        set_clause = ", ".join(updates)
+        conn.execute(
+            f"UPDATE session_markers SET {set_clause} WHERE id = 1",
+            params,
+        )
+        conn.commit()
+
+    def mark_session_destroyed(self) -> None:
+        """Mark session as destroyed for cleanup tracking."""
+        self.update_session_metadata(session_status="destroyed")
+
+    def get_orphaned_sessions(self, older_than_days: int = 7) -> list[SessionMarkers]:
+        """Get sessions that are orphaned and older than specified days.
+
+        This is a placeholder for future cleanup functionality.
+        In practice, this would scan multiple session databases.
+
+        Args:
+            older_than_days: Only return sessions older than this many days.
+
+        Returns:
+            List of orphaned session markers.
+        """
+        conn = self._get_conn()
+        cutoff = time() - (older_than_days * 24 * 60 * 60)
+
+        cursor = conn.execute(
+            """
+            SELECT * FROM session_markers
+            WHERE session_status = 'orphaned'
+            AND updated_at < ?
+            """,
+            (cutoff,),
+        )
+
+        return [SessionMarkers.from_row(row) for row in cursor.fetchall()]

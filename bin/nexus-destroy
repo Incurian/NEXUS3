@@ -1,0 +1,4 @@
+#!/bin/bash
+export NEXUS_QUIET=1
+source /home/inc/repos/NEXUS3/nexus-aliases.sh
+nexus-destroy "$@"
