@@ -44,14 +44,19 @@ class PermissionLevel(Enum):
 
 
 # Actions considered destructive (require confirmation in TRUSTED mode)
+# Includes both action categories and specific tool names
 DESTRUCTIVE_ACTIONS = frozenset({
     "delete",
     "remove",
     "overwrite",
-    "write",  # Writing to existing files
+    "write",
     "execute",
     "run_command",
     "shutdown",
+    # Specific tool names
+    "write_file",
+    "nexus_destroy",
+    "nexus_shutdown",
 })
 
 # Actions always allowed without confirmation in TRUSTED mode
