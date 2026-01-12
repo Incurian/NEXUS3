@@ -35,7 +35,47 @@ from nexus3.core.permissions import (
 from nexus3.rpc.pool import is_temp_agent
 
 if TYPE_CHECKING:
-    from nexus3.rpc.pool import Agent
+    from nexus3.rpc.pool import Agent, SharedComponents
+    from nexus3.mcp.registry import MCPServerRegistry
+
+
+def _refresh_agent_tools(
+    agent: "Agent",
+    mcp_registry: "MCPServerRegistry",
+    shared: "SharedComponents",
+) -> None:
+    """Refresh an agent's tool definitions after MCP connection changes.
+
+    Rebuilds the tool definitions list to include/exclude MCP tools
+    based on current MCP registry state and agent permissions.
+    """
+    from nexus3.mcp.permissions import can_use_mcp
+
+    permissions = agent.services.get("permissions")
+    if permissions is None:
+        return
+
+    # Get base tools from skill registry
+    tool_defs = agent.registry.get_definitions_for_permissions(permissions)
+
+    # Add MCP tools if agent has permission
+    if can_use_mcp(permissions):
+        for mcp_skill in mcp_registry.get_all_skills():
+            # Check if MCP tool is disabled in permissions
+            tool_perm = permissions.tool_permissions.get(mcp_skill.name)
+            if tool_perm is not None and not tool_perm.enabled:
+                continue
+            tool_defs.append({
+                "type": "function",
+                "function": {
+                    "name": mcp_skill.name,
+                    "description": mcp_skill.description,
+                    "parameters": mcp_skill.parameters,
+                },
+            })
+
+    # Update context with new definitions
+    agent.context.set_tool_definitions(tool_defs)
 
 
 # Help text for REPL commands
@@ -930,6 +970,13 @@ async def cmd_mcp(
             # For now, default to per-tool confirmation
             server = await registry.connect(reg_cfg, allow_all=False)
             tool_names = [s.original_name for s in server.skills]
+
+            # Refresh tool definitions for current agent to include new MCP tools
+            if ctx.current_agent_id:
+                agent = ctx.pool.get(ctx.current_agent_id)
+                if agent:
+                    _refresh_agent_tools(agent, registry, shared)
+
             return CommandOutput.success(
                 message=f"Connected to '{name}'\n"
                         f"Tools available: {', '.join(tool_names)}",
@@ -951,6 +998,13 @@ async def cmd_mcp(
             return CommandOutput.error(f"Not connected to '{name}'")
 
         await registry.disconnect(name)
+
+        # Refresh tool definitions to remove disconnected MCP tools
+        if ctx.current_agent_id:
+            agent = ctx.pool.get(ctx.current_agent_id)
+            if agent:
+                _refresh_agent_tools(agent, registry, shared)
+
         return CommandOutput.success(message=f"Disconnected from '{name}'")
 
     elif subcmd == "tools":
