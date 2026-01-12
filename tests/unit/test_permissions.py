@@ -8,6 +8,7 @@ from nexus3.core.permissions import (
     DESTRUCTIVE_ACTIONS,
     NETWORK_ACTIONS,
     SAFE_ACTIONS,
+    SANDBOXED_DISABLED_TOOLS,
     PermissionLevel,
     PermissionPolicy,
 )
@@ -230,10 +231,22 @@ class TestPermissionPolicyPathAccess:
         assert policy.can_read_path(dir2 / "file.txt")
         assert not policy.can_read_path(tmp_path / "file.txt")
 
-    def test_empty_allowed_paths_blocks_all(self, tmp_path):
-        """Empty allowed_paths list blocks all paths."""
+    def test_empty_allowed_paths_blocks_read_but_not_write_for_trusted(self, tmp_path):
+        """Empty allowed_paths blocks read but not write for TRUSTED (uses confirmation instead)."""
         policy = PermissionPolicy(
             level=PermissionLevel.TRUSTED,
+            allowed_paths=[],
+        )
+
+        # TRUSTED with empty allowed_paths blocks read
+        assert not policy.can_read_path(tmp_path / "file.txt")
+        # But allows write (confirmation handles write restrictions for TRUSTED)
+        assert policy.can_write_path(tmp_path / "file.txt")
+
+    def test_empty_allowed_paths_blocks_all_for_sandboxed(self, tmp_path):
+        """Empty allowed_paths list blocks all paths for SANDBOXED."""
+        policy = PermissionPolicy(
+            level=PermissionLevel.SANDBOXED,
             allowed_paths=[],
         )
 
@@ -302,12 +315,13 @@ class TestPermissionPolicyConfirmation:
         for action in SAFE_ACTIONS:
             assert policy.requires_confirmation(action) is False
 
-    def test_sandboxed_requires_confirmation_for_other_actions(self):
-        """SANDBOXED level requires confirmation for non-safe actions."""
+    def test_sandboxed_never_requires_confirmation(self):
+        """SANDBOXED level never requires confirmation (enforces sandbox instead)."""
         policy = PermissionPolicy.from_level("sandboxed")
 
+        # SANDBOXED mode doesn't use confirmation - it just enforces the sandbox
         for action in DESTRUCTIVE_ACTIONS:
-            assert policy.requires_confirmation(action) is True
+            assert policy.requires_confirmation(action) is False
 
     def test_requires_confirmation_case_insensitive(self):
         """requires_confirmation is case-insensitive."""
@@ -337,21 +351,21 @@ class TestPermissionPolicyAllowsAction:
         assert policy.allows_action("http_request") is True
         assert policy.allows_action("anything") is True
 
-    def test_sandboxed_blocks_network_actions(self):
-        """SANDBOXED level blocks network actions."""
+    def test_sandboxed_blocks_disabled_tools(self):
+        """SANDBOXED level blocks execution and agent management tools."""
         policy = PermissionPolicy.from_level("sandboxed")
 
-        for action in NETWORK_ACTIONS:
+        for action in SANDBOXED_DISABLED_TOOLS:
             assert policy.allows_action(action) is False
 
-    def test_sandboxed_allows_non_network_actions(self):
-        """SANDBOXED level allows non-network actions."""
+    def test_sandboxed_allows_non_disabled_actions(self):
+        """SANDBOXED level allows actions not in SANDBOXED_DISABLED_TOOLS."""
         policy = PermissionPolicy.from_level("sandboxed")
 
         for action in SAFE_ACTIONS:
             assert policy.allows_action(action) is True
 
-        # Destructive actions are allowed but require confirmation
+        # Write/delete actions are allowed in sandbox (but limited to sandbox paths)
         assert policy.allows_action("delete") is True
         assert policy.allows_action("write") is True
 
@@ -359,9 +373,10 @@ class TestPermissionPolicyAllowsAction:
         """allows_action is case-insensitive."""
         policy = PermissionPolicy.from_level("sandboxed")
 
-        assert policy.allows_action("HTTP_REQUEST") is False
-        assert policy.allows_action("Http_Request") is False
-        assert policy.allows_action("http_request") is False
+        # bash is in SANDBOXED_DISABLED_TOOLS
+        assert policy.allows_action("BASH") is False
+        assert policy.allows_action("Bash") is False
+        assert policy.allows_action("bash") is False
 
 
 class TestPermissionPolicyStr:

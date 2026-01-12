@@ -23,6 +23,7 @@ from nexus3.cli.repl_commands import (
     HELP_TEXT,
     cmd_agent,
     cmd_clear,
+    cmd_compact,
     cmd_cwd,
     cmd_help,
     cmd_over,
@@ -75,6 +76,10 @@ class MockAgent:
 
         # Mock services
         self.services = MockServices()
+
+        # Mock registry for permission-based tool filtering
+        self.registry = MagicMock()
+        self.registry.get_definitions_for_permissions.return_value = []
 
 
 class MockAgentPool:
@@ -515,12 +520,13 @@ class TestCmdPermissions:
         assert output.data["preset"] == "sandboxed"
 
     @pytest.mark.asyncio
-    async def test_change_to_worker_preset(self, ctx_with_agent: CommandContext):
-        """Changes permission preset to worker."""
+    async def test_change_to_worker_preset_backwards_compat(self, ctx_with_agent: CommandContext):
+        """Worker preset maps to sandboxed for backwards compatibility."""
         output = await cmd_permissions(ctx_with_agent, args="worker")
 
         assert output.result == CommandResult.SUCCESS
-        assert output.data["preset"] == "worker"
+        # Worker is mapped to sandboxed for backwards compatibility
+        assert output.data["preset"] == "sandboxed"
 
     @pytest.mark.asyncio
     async def test_invalid_preset_name(self, ctx_with_agent: CommandContext):
@@ -782,6 +788,171 @@ class TestCmdQuit:
         output = await cmd_quit(ctx)
 
         assert output.result == CommandResult.QUIT
+
+
+# -----------------------------------------------------------------------------
+# cmd_compact Tests
+# -----------------------------------------------------------------------------
+
+
+class TestCmdCompact:
+    """Tests for /compact - force context compaction."""
+
+    @pytest.mark.asyncio
+    async def test_no_current_agent(self, ctx: CommandContext):
+        """Error when no current agent."""
+        ctx_no_agent = CommandContext(
+            pool=ctx.pool,
+            session_manager=ctx.session_manager,
+            current_agent_id=None,
+            is_repl=True,
+        )
+        output = await cmd_compact(ctx_no_agent)
+
+        assert output.result == CommandResult.ERROR
+        assert "No current agent" in output.message
+
+    @pytest.mark.asyncio
+    async def test_agent_not_found(
+        self, mock_pool: MockAgentPool, mock_session_manager: MockSessionManager
+    ):
+        """Error when agent not found in pool."""
+        ctx = CommandContext(
+            pool=mock_pool,
+            session_manager=mock_session_manager,
+            current_agent_id="nonexistent",
+            is_repl=True,
+        )
+        output = await cmd_compact(ctx)
+
+        assert output.result == CommandResult.ERROR
+        assert "Agent not found" in output.message
+
+    @pytest.mark.asyncio
+    async def test_no_context(
+        self, mock_pool: MockAgentPool, mock_session_manager: MockSessionManager
+    ):
+        """Error when session has no context."""
+        agent = mock_pool.add_agent("main")
+        agent.session.context = None
+
+        ctx = CommandContext(
+            pool=mock_pool,
+            session_manager=mock_session_manager,
+            current_agent_id="main",
+            is_repl=True,
+        )
+        output = await cmd_compact(ctx)
+
+        assert output.result == CommandResult.ERROR
+        assert "No context available" in output.message
+
+    @pytest.mark.asyncio
+    async def test_insufficient_messages(
+        self, mock_pool: MockAgentPool, mock_session_manager: MockSessionManager
+    ):
+        """Returns not enough messages when context has fewer than 2 messages."""
+        agent = mock_pool.add_agent("main")
+        agent.session.context = MagicMock()
+        agent.session.context.messages = [MagicMock()]  # Only 1 message
+
+        ctx = CommandContext(
+            pool=mock_pool,
+            session_manager=mock_session_manager,
+            current_agent_id="main",
+            is_repl=True,
+        )
+        output = await cmd_compact(ctx)
+
+        assert output.result == CommandResult.SUCCESS
+        assert "Not enough context" in output.message
+        assert output.data["compacted"] is False
+        assert output.data["reason"] == "insufficient_messages"
+
+    @pytest.mark.asyncio
+    async def test_nothing_to_compact(
+        self, mock_pool: MockAgentPool, mock_session_manager: MockSessionManager
+    ):
+        """Returns nothing to compact when compact returns None."""
+        agent = mock_pool.add_agent("main")
+        agent.session.context = MagicMock()
+        agent.session.context.messages = [MagicMock(), MagicMock()]
+        agent.session.compact = MagicMock(return_value=None)
+
+        # Make compact an async mock
+        async def mock_compact(force: bool = False):
+            return None
+        agent.session.compact = mock_compact
+
+        ctx = CommandContext(
+            pool=mock_pool,
+            session_manager=mock_session_manager,
+            current_agent_id="main",
+            is_repl=True,
+        )
+        output = await cmd_compact(ctx)
+
+        assert output.result == CommandResult.SUCCESS
+        assert "Nothing to compact" in output.message
+        assert output.data["compacted"] is False
+
+    @pytest.mark.asyncio
+    async def test_successful_compaction(
+        self, mock_pool: MockAgentPool, mock_session_manager: MockSessionManager
+    ):
+        """Returns success with token counts when compaction succeeds."""
+        agent = mock_pool.add_agent("main")
+        agent.session.context = MagicMock()
+        agent.session.context.messages = [MagicMock(), MagicMock(), MagicMock()]
+
+        # Mock CompactionResult
+        mock_result = MagicMock()
+        mock_result.original_token_count = 5000
+        mock_result.new_token_count = 1000
+
+        async def mock_compact(force: bool = False):
+            return mock_result
+        agent.session.compact = mock_compact
+
+        ctx = CommandContext(
+            pool=mock_pool,
+            session_manager=mock_session_manager,
+            current_agent_id="main",
+            is_repl=True,
+        )
+        output = await cmd_compact(ctx)
+
+        assert output.result == CommandResult.SUCCESS
+        assert "5000" in output.message
+        assert "1000" in output.message
+        assert output.data["compacted"] is True
+        assert output.data["original_tokens"] == 5000
+        assert output.data["new_tokens"] == 1000
+
+    @pytest.mark.asyncio
+    async def test_compaction_error(
+        self, mock_pool: MockAgentPool, mock_session_manager: MockSessionManager
+    ):
+        """Returns error when compaction raises exception."""
+        agent = mock_pool.add_agent("main")
+        agent.session.context = MagicMock()
+        agent.session.context.messages = [MagicMock(), MagicMock()]
+
+        async def mock_compact(force: bool = False):
+            raise RuntimeError("Test error")
+        agent.session.compact = mock_compact
+
+        ctx = CommandContext(
+            pool=mock_pool,
+            session_manager=mock_session_manager,
+            current_agent_id="main",
+            is_repl=True,
+        )
+        output = await cmd_compact(ctx)
+
+        assert output.result == CommandResult.ERROR
+        assert "Compaction failed" in output.message
+        assert "Test error" in output.message
 
 
 # -----------------------------------------------------------------------------

@@ -310,34 +310,26 @@ async def handle_connection(
         try:
             http_request = await read_http_request(reader)
         except HttpParseError as e:
-            await send_http_response(writer, 400, json.dumps({"error": str(e)}))
+            error_response = make_error_response(None, PARSE_ERROR, str(e))
+            await send_http_response(writer, 400, serialize_response(error_response))
             return
 
         # Only accept POST
         if http_request.method != "POST":
-            await send_http_response(
-                writer,
-                405,
-                json.dumps({"error": "Method not allowed. Use POST."}),
-            )
+            error_response = make_error_response(None, -32600, "Method not allowed. Use POST.")
+            await send_http_response(writer, 405, serialize_response(error_response))
             return
 
         # Check authentication if api_key is configured
         if api_key:
             provided_token = _extract_bearer_token(http_request.headers)
             if not provided_token:
-                await send_http_response(
-                    writer,
-                    401,
-                    json.dumps({"error": "Authorization header required"}),
-                )
+                error_response = make_error_response(None, -32600, "Authorization header required")
+                await send_http_response(writer, 401, serialize_response(error_response))
                 return
             if not validate_api_key(provided_token, api_key):
-                await send_http_response(
-                    writer,
-                    403,
-                    json.dumps({"error": "Invalid API key"}),
-                )
+                error_response = make_error_response(None, -32600, "Invalid API key")
+                await send_http_response(writer, 403, serialize_response(error_response))
                 return
 
         # Route based on path
@@ -355,26 +347,17 @@ async def handle_connection(
                         saved = session_manager.load_session(agent_id)
                         agent = await pool.restore_from_saved(saved)
                     except Exception as e:
-                        await send_http_response(
-                            writer,
-                            500,
-                            json.dumps({"error": f"Failed to restore session: {e}"}),
-                        )
+                        error_response = make_error_response(None, INTERNAL_ERROR, f"Failed to restore session: {e}")
+                        await send_http_response(writer, 500, serialize_response(error_response))
                         return
                 else:
-                    await send_http_response(
-                        writer,
-                        404,
-                        json.dumps({"error": f"Agent not found: {agent_id}"}),
-                    )
+                    error_response = make_error_response(None, -32602, f"Agent not found: {agent_id}")
+                    await send_http_response(writer, 404, serialize_response(error_response))
                     return
             dispatcher = agent.dispatcher
         else:
-            await send_http_response(
-                writer,
-                404,
-                json.dumps({"error": "Not found. Use /, /rpc, or /agent/{agent_id}."}),
-            )
+            error_response = make_error_response(None, -32602, "Not found. Use /, /rpc, or /agent/{agent_id}.")
+            await send_http_response(writer, 404, serialize_response(error_response))
             return
 
         # Parse JSON-RPC request
@@ -408,11 +391,8 @@ async def handle_connection(
     except Exception as e:
         # Catch-all for any unexpected errors
         try:
-            await send_http_response(
-                writer,
-                500,
-                json.dumps({"error": f"Server error: {type(e).__name__}"}),
-            )
+            error_response = make_error_response(None, INTERNAL_ERROR, f"Server error: {type(e).__name__}")
+            await send_http_response(writer, 500, serialize_response(error_response))
         except Exception:
             pass  # Connection may be broken
 

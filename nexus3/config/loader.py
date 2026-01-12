@@ -8,6 +8,10 @@ from pydantic import ValidationError
 from nexus3.config.schema import Config
 from nexus3.core.errors import ConfigError
 
+# Path to shipped defaults in the install directory
+DEFAULTS_DIR = Path(__file__).parent.parent / "defaults"
+DEFAULT_CONFIG = DEFAULTS_DIR / "config.json"
+
 
 def load_config(path: Path | None = None) -> Config:
     """Load configuration from file with fail-fast behavior.
@@ -23,8 +27,8 @@ def load_config(path: Path | None = None) -> Config:
 
     Search order (when path is None):
         1. .nexus3/config.json (project-local)
-        2. ~/.nexus3/config.json (global)
-        3. Return default Config() if no file found
+        2. ~/.nexus3/config.json (global user)
+        3. <install_dir>/defaults/config.json (shipped defaults)
     """
     if path is not None:
         return _load_from_path(path)
@@ -32,14 +36,15 @@ def load_config(path: Path | None = None) -> Config:
     # Search standard locations
     search_paths = [
         Path.cwd() / ".nexus3" / "config.json",  # Project-local
-        Path.home() / ".nexus3" / "config.json",  # Global
+        Path.home() / ".nexus3" / "config.json",  # Global user
+        DEFAULT_CONFIG,  # Shipped defaults
     ]
 
     for config_path in search_paths:
         if config_path.exists():
             return _load_from_path(config_path)
 
-    # No config file found, return defaults
+    # Fallback to Pydantic defaults if defaults file missing (shouldn't happen)
     return Config()
 
 

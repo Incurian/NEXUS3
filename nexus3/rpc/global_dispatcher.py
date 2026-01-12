@@ -29,7 +29,9 @@ from nexus3.rpc.types import Request, Response
 if TYPE_CHECKING:
     from nexus3.rpc.pool import AgentPool
 
-from nexus3.core.permissions import AgentPermissions, PermissionDelta
+from pathlib import Path
+
+from nexus3.core.permissions import AgentPermissions, PermissionDelta, ToolPermission
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.rpc.pool import AgentConfig
 
@@ -151,6 +153,9 @@ class GlobalDispatcher:
                 - preset: Optional[str] - Permission preset (yolo, trusted, sandboxed, worker)
                 - disable_tools: Optional[list[str]] - Tools to disable for the agent
                 - parent_agent_id: Optional[str] - ID of parent agent for ceiling enforcement
+                - cwd: Optional[str] - Working directory / sandbox root for the agent
+                - allowed_write_paths: Optional[list[str]] - Paths where writes are allowed
+                - model: Optional[str] - Model name/alias to use (from config.models or full ID)
 
         Returns:
             Dict containing:
@@ -167,6 +172,9 @@ class GlobalDispatcher:
         preset = params.get("preset")
         disable_tools = params.get("disable_tools")
         parent_agent_id = params.get("parent_agent_id")
+        cwd_param = params.get("cwd")
+        allowed_write_paths = params.get("allowed_write_paths")
+        model = params.get("model")
 
         # Validate agent_id if provided
         if agent_id is not None:
@@ -210,6 +218,40 @@ class GlobalDispatcher:
                         f"disable_tools[{i}] must be string, got: {type(tool).__name__}"
                     )
 
+        # Validate model if provided
+        if model is not None and not isinstance(model, str):
+            raise InvalidParamsError(
+                f"model must be string, got: {type(model).__name__}"
+            )
+
+        # Validate cwd if provided
+        cwd_path: Path | None = None
+        if cwd_param is not None:
+            if not isinstance(cwd_param, str):
+                raise InvalidParamsError(
+                    f"cwd must be string, got: {type(cwd_param).__name__}"
+                )
+            cwd_path = Path(cwd_param).resolve()
+            if not cwd_path.exists():
+                raise InvalidParamsError(f"cwd does not exist: {cwd_param}")
+            if not cwd_path.is_dir():
+                raise InvalidParamsError(f"cwd is not a directory: {cwd_param}")
+
+        # Validate allowed_write_paths if provided
+        write_paths: list[Path] | None = None
+        if allowed_write_paths is not None:
+            if not isinstance(allowed_write_paths, list):
+                raise InvalidParamsError(
+                    f"allowed_write_paths must be array, got: {type(allowed_write_paths).__name__}"
+                )
+            write_paths = []
+            for i, wp in enumerate(allowed_write_paths):
+                if not isinstance(wp, str):
+                    raise InvalidParamsError(
+                        f"allowed_write_paths[{i}] must be string, got: {type(wp).__name__}"
+                    )
+                write_paths.append(Path(wp).resolve())
+
         # Validate and look up parent_agent_id if provided
         # SECURITY: Look up parent permissions from pool instead of trusting RPC data
         parent_permissions: AgentPermissions | None = None
@@ -227,19 +269,86 @@ class GlobalDispatcher:
                     f"Parent agent '{parent_agent_id}' has no permissions configured"
                 )
 
-        # Build delta from disable_tools
+            # SECURITY: Validate cwd is within parent's allowed paths
+            if cwd_path is not None:
+                parent_allowed = parent_permissions.effective_policy.allowed_paths
+                if parent_allowed is not None:
+                    # Check if cwd is within any of parent's allowed paths
+                    cwd_allowed = False
+                    for allowed in parent_allowed:
+                        try:
+                            cwd_path.relative_to(allowed)
+                            cwd_allowed = True
+                            break
+                        except ValueError:
+                            continue
+                    if not cwd_allowed:
+                        raise InvalidParamsError(
+                            f"cwd '{cwd_path}' is outside parent's allowed paths"
+                        )
+
+            # SECURITY: Validate write paths are within cwd (or parent's paths if no cwd)
+            if write_paths:
+                sandbox_root = cwd_path or Path.cwd()
+                for wp in write_paths:
+                    try:
+                        wp.relative_to(sandbox_root)
+                    except ValueError:
+                        raise InvalidParamsError(
+                            f"allowed_write_path '{wp}' is outside sandbox root '{sandbox_root}'"
+                        )
+
+        # Build delta from parameters (disable_tools and write permissions)
         delta: PermissionDelta | None = None
+        delta_kwargs: dict[str, Any] = {}
+
         if disable_tools:
-            delta = PermissionDelta(disable_tools=disable_tools)
+            delta_kwargs["disable_tools"] = disable_tools
+
+        # Note: cwd is passed to AgentConfig and handled in resolve_preset,
+        # not via delta (because SANDBOXED presets are frozen)
+
+        # Build tool_overrides for write permissions
+        # For sandboxed preset: read-only by default, write only to explicit paths
+        # Note: preset defaults to "sandboxed" for RPC mode if not specified
+        effective_preset = preset or "sandboxed"
+        if effective_preset in ("sandboxed", "worker"):
+            tool_overrides: dict[str, ToolPermission] = {}
+            # If write_paths provided (even empty), use them; otherwise disable writes
+            if write_paths is not None:
+                for tool_name in ("write_file", "edit_file"):
+                    tool_overrides[tool_name] = ToolPermission(
+                        enabled=True,
+                        allowed_paths=write_paths,
+                    )
+            else:
+                # No write paths = read-only (disable write tools)
+                for tool_name in ("write_file", "edit_file"):
+                    tool_overrides[tool_name] = ToolPermission(enabled=False)
+            delta_kwargs["tool_overrides"] = tool_overrides
+        elif write_paths is not None:
+            # For non-sandboxed presets, only apply if explicitly provided
+            tool_overrides = {}
+            for tool_name in ("write_file", "edit_file"):
+                tool_overrides[tool_name] = ToolPermission(
+                    enabled=True,
+                    allowed_paths=write_paths,
+                )
+            delta_kwargs["tool_overrides"] = tool_overrides
+
+        if delta_kwargs:
+            delta = PermissionDelta(**delta_kwargs)
 
         # Create the agent through the pool
         config = AgentConfig(
             agent_id=agent_id,
             system_prompt=system_prompt,
             preset=preset,
+            cwd=cwd_path,  # Pass cwd to AgentConfig for resolve_preset
             delta=delta,
             parent_permissions=parent_permissions,
             parent_agent_id=parent_agent_id,  # Pass actual parent agent ID
+            model=model,  # Model name/alias for this agent
         )
         agent = await self._pool.create(agent_id=agent_id, config=config)
 

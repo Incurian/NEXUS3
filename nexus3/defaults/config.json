@@ -1,0 +1,28 @@
+{
+  "provider": {
+    "type": "openrouter",
+    "api_key_env": "OPENROUTER_API_KEY",
+    "model": "fast",
+    "base_url": "https://openrouter.ai/api/v1",
+    "context_window": 131072,
+    "reasoning": false
+  },
+  "models": {
+    "fast": {
+      "id": "x-ai/grok-4.1-fast",
+      "context_window": 500000
+    }
+  },
+  "stream_output": true,
+  "max_tool_iterations": 10,
+  "default_permission_level": "trusted",
+  "skill_timeout": 120.0,
+  "max_concurrent_tools": 10,
+  "compaction": {
+    "enabled": true,
+    "model": "x-ai/grok-4.1-fast",
+    "summary_budget_ratio": 0.25,
+    "recent_preserve_ratio": 0.25,
+    "trigger_threshold": 0.9
+  }
+}

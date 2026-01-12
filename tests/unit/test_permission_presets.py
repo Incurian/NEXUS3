@@ -219,11 +219,11 @@ class TestAgentPermissionsCanGrant:
     - Cannot access paths parent cannot access
     """
 
-    def test_same_level_grants_same_level(self):
-        """Same level can grant same level."""
+    def test_same_level_cannot_grant_same_level(self):
+        """Same level cannot grant same level (lower only policy)."""
         trusted = resolve_preset("trusted")
         other_trusted = resolve_preset("trusted")
-        assert trusted.can_grant(other_trusted) is True
+        assert trusted.can_grant(other_trusted) is False
 
     def test_yolo_can_grant_trusted(self):
         """YOLO can grant TRUSTED (lower level)."""
@@ -306,36 +306,43 @@ class TestAgentPermissionsCanGrant:
         )
         assert parent.can_grant(child) is False
 
-    def test_can_grant_subset_of_allowed_paths(self, tmp_path):
-        """Can grant if child paths are subset of parent paths."""
+    def test_can_grant_subset_of_allowed_paths(self, tmp_path, monkeypatch):
+        """Can grant if child paths are subset of parent paths in CWD."""
+        # For TRUSTED, path checking uses CWD + allowances, not just allowed_paths
         parent_dir = tmp_path / "project"
         parent_dir.mkdir()
         child_dir = parent_dir / "subdir"
         child_dir.mkdir()
 
+        # Set CWD to parent_dir so paths are within CWD
+        monkeypatch.chdir(parent_dir)
+
         parent_policy = PermissionPolicy(
             level=PermissionLevel.TRUSTED,
-            allowed_paths=[parent_dir],
+            cwd=parent_dir,  # CWD is parent_dir
         )
         parent = AgentPermissions(
             base_preset="trusted",
             effective_policy=parent_policy,
         )
+        # Child with restricted paths within parent's CWD
         child_policy = PermissionPolicy(
-            level=PermissionLevel.TRUSTED,
+            level=PermissionLevel.SANDBOXED,
             allowed_paths=[child_dir],
+            cwd=parent_dir,
         )
         child = AgentPermissions(
-            base_preset="trusted",
+            base_preset="sandboxed",
             effective_policy=child_policy,
         )
         assert parent.can_grant(child) is True
 
     def test_can_grant_more_restricted_tools(self):
-        """Can grant if child has more tool restrictions."""
-        parent_policy = PermissionPolicy(level=PermissionLevel.TRUSTED)
+        """Can grant if child has lower level with more tool restrictions."""
+        # YOLO parent granting TRUSTED child with tool restrictions
+        parent_policy = PermissionPolicy(level=PermissionLevel.YOLO)
         parent = AgentPermissions(
-            base_preset="trusted",
+            base_preset="yolo",
             effective_policy=parent_policy,
             tool_permissions={},  # All tools enabled by default
         )
@@ -347,44 +354,50 @@ class TestAgentPermissionsCanGrant:
         )
         assert parent.can_grant(child) is True
 
-    def test_parent_with_unrestricted_paths_can_grant_restricted(self, tmp_path):
-        """Parent with unrestricted paths can grant child with restrictions."""
-        # Parent has no path restrictions (allowed_paths=None)
-        parent_policy = PermissionPolicy(level=PermissionLevel.TRUSTED)
+    def test_parent_with_unrestricted_paths_can_grant_restricted(self, tmp_path, monkeypatch):
+        """YOLO parent with unrestricted paths can grant SANDBOXED child with restrictions."""
+        # Set CWD to tmp_path so child's paths are within CWD
+        monkeypatch.chdir(tmp_path)
+
+        # YOLO parent has no path restrictions (allowed_paths=None)
+        parent_policy = PermissionPolicy(level=PermissionLevel.YOLO, cwd=tmp_path)
         parent = AgentPermissions(
-            base_preset="trusted",
+            base_preset="yolo",
             effective_policy=parent_policy,
         )
-        # Child has path restrictions
+        # SANDBOXED child has path restrictions within CWD
         child_policy = PermissionPolicy(
-            level=PermissionLevel.TRUSTED,
+            level=PermissionLevel.SANDBOXED,
             allowed_paths=[tmp_path],
+            cwd=tmp_path,
         )
         child = AgentPermissions(
-            base_preset="trusted",
+            base_preset="sandboxed",
             effective_policy=child_policy,
         )
         assert parent.can_grant(child) is True
 
-    def test_restricted_parent_cannot_grant_unrestricted_child(self, tmp_path):
-        """Parent with path restrictions cannot grant child unrestricted access."""
+    def test_yolo_parent_can_grant_trusted_child_unrestricted(self, tmp_path):
+        """YOLO parent can grant TRUSTED child with unrestricted access."""
+        # YOLO parent can grant any lower level
         parent_policy = PermissionPolicy(
-            level=PermissionLevel.TRUSTED,
-            allowed_paths=[tmp_path],
+            level=PermissionLevel.YOLO,
+            allowed_paths=[tmp_path],  # Even with restrictions
         )
         parent = AgentPermissions(
-            base_preset="trusted",
+            base_preset="yolo",
             effective_policy=parent_policy,
         )
         child_policy = PermissionPolicy(
             level=PermissionLevel.TRUSTED,
-            allowed_paths=None,  # Unrestricted
+            allowed_paths=None,  # Unrestricted (uses CWD)
         )
         child = AgentPermissions(
             base_preset="trusted",
             effective_policy=child_policy,
         )
-        assert parent.can_grant(child) is False
+        # YOLO parent can grant TRUSTED child
+        assert parent.can_grant(child) is True
 
 
 class TestAgentPermissionsApplyDelta:
@@ -546,14 +559,13 @@ class TestResolvePreset:
         assert perms.effective_policy.allowed_paths is not None
         assert perms.base_preset == "sandboxed"
 
-    def test_resolve_worker_preset(self):
-        """Resolve 'worker' returns worker-specific permissions."""
+    def test_resolve_worker_preset_backwards_compat(self):
+        """Resolve 'worker' maps to sandboxed for backwards compatibility."""
         perms = resolve_preset("worker")
-        # Worker is a variant of sandboxed with specific restrictions
+        # Worker is mapped to sandboxed for backwards compatibility
         assert perms.effective_policy.level == PermissionLevel.SANDBOXED
-        assert perms.base_preset == "worker"
-        # Worker has write_file disabled
-        assert perms.tool_permissions.get("write_file", ToolPermission()).enabled is False
+        # base_preset is now "sandboxed" due to mapping
+        assert perms.base_preset == "sandboxed"
 
     def test_unknown_preset_raises_valueerror(self):
         """Unknown preset name raises ValueError."""
@@ -595,11 +607,11 @@ class TestResolvePreset:
 class TestGetBuiltinPresets:
     """Tests for get_builtin_presets() function."""
 
-    def test_returns_all_four_presets(self):
-        """Returns all 4 built-in presets."""
+    def test_returns_all_three_presets(self):
+        """Returns all 3 built-in presets (worker was removed)."""
         presets = get_builtin_presets()
-        assert len(presets) == 4
-        assert set(presets.keys()) == {"yolo", "trusted", "sandboxed", "worker"}
+        assert len(presets) == 3
+        assert set(presets.keys()) == {"yolo", "trusted", "sandboxed"}
 
     def test_yolo_preset_has_correct_level(self):
         """YOLO preset has YOLO level."""
@@ -615,11 +627,6 @@ class TestGetBuiltinPresets:
         """SANDBOXED preset has SANDBOXED level."""
         presets = get_builtin_presets()
         assert presets["sandboxed"].level == PermissionLevel.SANDBOXED
-
-    def test_worker_preset_has_correct_level(self):
-        """Worker preset has SANDBOXED level."""
-        presets = get_builtin_presets()
-        assert presets["worker"].level == PermissionLevel.SANDBOXED
 
     def test_presets_have_descriptions(self):
         """All presets have non-empty descriptions."""
@@ -637,11 +644,6 @@ class TestGetBuiltinPresets:
         """Sandboxed preset has network_access disabled."""
         presets = get_builtin_presets()
         assert presets["sandboxed"].network_access is False
-
-    def test_worker_has_network_access_disabled(self):
-        """Worker preset has network_access disabled."""
-        presets = get_builtin_presets()
-        assert presets["worker"].network_access is False
 
     def test_yolo_has_network_access_enabled(self):
         """YOLO preset has network_access enabled."""
@@ -753,14 +755,14 @@ class TestPermissionLevelHierarchy:
         assert trusted.can_grant(yolo) is False
         assert trusted.can_grant(sandboxed) is True
 
-    def test_yolo_can_grant_yolo(self):
-        """YOLO can grant YOLO (same level)."""
+    def test_yolo_cannot_grant_yolo(self):
+        """YOLO cannot grant YOLO (same level - lower only policy)."""
         yolo1 = resolve_preset("yolo")
         yolo2 = resolve_preset("yolo")
-        assert yolo1.can_grant(yolo2) is True
+        assert yolo1.can_grant(yolo2) is False
 
-    def test_sandboxed_can_grant_sandboxed(self):
-        """SANDBOXED can grant SANDBOXED (same level)."""
+    def test_sandboxed_cannot_grant_sandboxed(self):
+        """SANDBOXED cannot grant SANDBOXED (same level - lower only policy)."""
         sandboxed1 = resolve_preset("sandboxed")
         sandboxed2 = resolve_preset("sandboxed")
-        assert sandboxed1.can_grant(sandboxed2) is True
+        assert sandboxed1.can_grant(sandboxed2) is False

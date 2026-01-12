@@ -776,32 +776,32 @@ class TestSandboxedPermissions:
         assert permissions.tool_permissions.get("nexus_shutdown", ToolPermission()).enabled is False
 
     @pytest.mark.asyncio
-    async def test_sandboxed_requires_confirmation_for_write(self) -> None:
-        """SANDBOXED mode should require confirmation for write operations."""
+    async def test_sandboxed_never_requires_confirmation(self) -> None:
+        """SANDBOXED mode never requires confirmation (enforces sandbox instead)."""
         permissions = resolve_preset("sandboxed")
 
-        # SANDBOXED requires confirmation for most non-safe actions
-        assert permissions.effective_policy.requires_confirmation("write") is True
-        assert permissions.effective_policy.requires_confirmation("delete") is True
-
-        # But not for safe actions
+        # SANDBOXED mode doesn't use confirmation - it just enforces the sandbox
+        assert permissions.effective_policy.requires_confirmation("write") is False
+        assert permissions.effective_policy.requires_confirmation("delete") is False
         assert permissions.effective_policy.requires_confirmation("read") is False
 
 
-class TestWorkerPreset:
-    """Tests for the worker permission preset."""
+class TestWorkerPresetBackwardsCompat:
+    """Tests for the worker preset backwards compatibility."""
 
     @pytest.mark.asyncio
-    async def test_worker_has_write_disabled(self) -> None:
-        """Worker preset should have write_file disabled."""
+    async def test_worker_maps_to_sandboxed(self) -> None:
+        """Worker preset should map to sandboxed for backwards compatibility."""
         permissions = resolve_preset("worker")
 
-        assert permissions.tool_permissions.get("write_file", ToolPermission()).enabled is False
+        # Worker now maps to sandboxed
+        assert permissions.base_preset == "sandboxed"
+        assert permissions.effective_policy.level.value == "sandboxed"
 
     @pytest.mark.asyncio
-    async def test_worker_has_management_tools_disabled(self) -> None:
-        """Worker preset should have agent management tools disabled."""
-        permissions = resolve_preset("worker")
+    async def test_sandboxed_has_management_tools_disabled(self) -> None:
+        """Sandboxed preset should have agent management tools disabled."""
+        permissions = resolve_preset("sandboxed")
 
         assert permissions.tool_permissions.get("nexus_create", ToolPermission()).enabled is False
         assert permissions.tool_permissions.get("nexus_destroy", ToolPermission()).enabled is False

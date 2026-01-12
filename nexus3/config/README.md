@@ -26,9 +26,14 @@ Per-tool permission configuration for use in config.json presets:
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | `bool` | `True` | Whether tool is enabled |
-| `allowed_paths` | `list[str] \| None` | `None` | Paths tool can access (None = inherit from preset) |
+| `allowed_paths` | `list[str] \| None` | `None` | Paths tool can access (see semantics below) |
 | `timeout` | `float \| None` | `None` | Tool-specific timeout (None = use global) |
 | `requires_confirmation` | `bool \| None` | `None` | Prompt before execution (None = use preset default) |
+
+**`allowed_paths` semantics:**
+- `null` / omitted: Inherit from preset (default behavior)
+- `[]`: Empty array = tool cannot access ANY paths (deny all)
+- `["path", ...]`: Tool can only access paths within these directories
 
 ### `PermissionPresetConfig` (schema.py)
 
@@ -38,11 +43,16 @@ Custom permission preset configuration:
 |-------|------|---------|-------------|
 | `extends` | `str \| None` | `None` | Base preset to extend (e.g., "trusted") |
 | `description` | `str` | `""` | Human-readable description |
-| `allowed_paths` | `list[str] \| None` | `None` | Paths accessible to tools |
+| `allowed_paths` | `list[str] \| None` | `None` | Paths accessible to tools (see semantics below) |
 | `blocked_paths` | `list[str]` | `[]` | Paths explicitly blocked |
 | `network_access` | `bool \| None` | `None` | Network access (derived from level for built-ins) |
 | `tool_permissions` | `dict[str, ToolPermissionConfig]` | `{}` | Per-tool overrides |
 | `default_tool_timeout` | `float \| None` | `None` | Default timeout for tools |
+
+**`allowed_paths` semantics:**
+- `null` / omitted: Unrestricted access (can access any path)
+- `[]`: Empty array = NO paths allowed (deny all)
+- `["path", ...]`: Only paths within these directories are allowed
 
 ### `PermissionsConfig` (schema.py)
 
@@ -264,8 +274,40 @@ The config schema defines settings for custom presets. Built-in presets are defi
 | Preset | Level | Description |
 |--------|-------|-------------|
 | `yolo` | YOLO | Full access, no confirmations |
-| `trusted` | TRUSTED | Default. Confirmations for destructive actions |
-| `sandboxed` | SANDBOXED | Limited to CWD, no network, nexus tools disabled |
-| `worker` | SANDBOXED | Minimal: no write_file, no agent management |
+| `trusted` | TRUSTED | Default. CWD auto-allowed, prompts for other paths |
+| `sandboxed` | SANDBOXED | Immutable sandbox (CWD), no execution, no agent management |
 
 Custom presets can extend built-ins using the `extends` field.
+
+## `allowed_paths` Semantics Summary
+
+**CRITICAL:** The `allowed_paths` field uses nullable semantics that must be understood:
+
+| JSON Value | Python Value | Meaning |
+|------------|--------------|---------|
+| omitted / `null` | `None` | **Unrestricted** - can access any path |
+| `[]` | `[]` | **Deny all** - NO paths allowed |
+| `["/path", ...]` | `[Path(...)]` | **Restricted** - only within these directories |
+
+This applies to both `PermissionPresetConfig.allowed_paths` and `ToolPermissionConfig.allowed_paths`.
+
+**Example config.json:**
+
+```json
+{
+  "permissions": {
+    "presets": {
+      "project-only": {
+        "extends": "trusted",
+        "allowed_paths": ["/home/user/myproject"]
+      },
+      "read-nothing": {
+        "extends": "sandboxed",
+        "tool_permissions": {
+          "read_file": {"allowed_paths": []}
+        }
+      }
+    }
+  }
+}
+```

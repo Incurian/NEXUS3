@@ -10,6 +10,7 @@ Context management for NEXUS3 conversations: system prompts, message history, to
 | `PromptLoader` with layered config | Complete | Personal + project prompt combination with system info |
 | Token counting (tiktoken default) | Complete | Accurate token counting with fallback |
 | Truncation strategies | Complete | `oldest_first` and `middle_out` with atomic message groups |
+| Compaction | Complete | LLM-based summarization to free context space |
 | Message GC | Not Implemented | Pruning messages after truncation (tracked in CLAUDE.md) |
 
 ## Purpose
@@ -312,6 +313,95 @@ budget_for_messages = available - system_tokens - tools_tokens
 # If budget <= 0, only most recent group is kept
 ```
 
+## Compaction
+
+Compaction uses LLM summarization to reclaim context space while preserving conversation continuity. Unlike truncation (which discards old messages), compaction summarizes them into a condensed form.
+
+### Purpose
+
+When context approaches capacity, compaction:
+1. Identifies older messages to summarize
+2. Preserves recent messages (configurable ratio)
+3. Uses the LLM to generate a summary of older messages
+4. Replaces the conversation history with summary + preserved messages
+5. Optionally reloads the system prompt to pick up NEXUS.md changes
+
+### Key Functions
+
+| Function | Description |
+|----------|-------------|
+| `select_messages_for_compaction(messages, token_counter, budget, ratio)` | Split messages into (to_summarize, to_preserve) |
+| `build_summarize_prompt(messages)` | Build prompt for LLM summarization call |
+| `create_summary_message(summary_text)` | Wrap summary in a USER message with prefix |
+
+### CompactionResult
+
+```python
+@dataclass
+class CompactionResult:
+    summary_message: Message      # The summary as a USER message with prefix
+    preserved_messages: list[Message]  # Recent messages not summarized
+    original_token_count: int     # Tokens before compaction
+    new_token_count: int          # Tokens after compaction
+```
+
+### Message Selection
+
+The `select_messages_for_compaction` function walks backwards from the newest message, keeping recent messages until the preserve budget is exhausted:
+
+```python
+to_summarize, to_preserve = select_messages_for_compaction(
+    messages=context.messages,
+    token_counter=counter,
+    available_budget=6000,      # Budget for messages
+    recent_preserve_ratio=0.25,  # Keep 25% of budget for recent messages
+)
+```
+
+### Summary Format
+
+Summaries are prefixed with a marker explaining their nature:
+
+```
+[CONTEXT SUMMARY]
+The following is a summary of our previous conversation. It was automatically
+generated when the context window needed compaction. Treat this as established
+context - you don't need to re-confirm decisions already made.
+
+---
+[summary content]
+```
+
+### Integration with ContextManager
+
+The `ContextManager.apply_compaction()` method applies compaction results:
+
+```python
+context.apply_compaction(
+    summary_message=result.summary_message,
+    preserved_messages=result.preserved_messages,
+    new_system_prompt=fresh_prompt,  # Optional: reload NEXUS.md
+)
+```
+
+This replaces all messages with `[summary_message] + preserved_messages` and optionally updates the system prompt.
+
+### System Prompt Reloading
+
+Compaction provides an opportunity to reload the system prompt, picking up any changes to NEXUS.md since the session started:
+
+```python
+# Reload system prompt during compaction
+loader = PromptLoader()
+fresh_prompt = loader.load().content
+
+context.apply_compaction(
+    summary_message=summary_msg,
+    preserved_messages=preserved,
+    new_system_prompt=fresh_prompt,  # Pick up NEXUS.md changes
+)
+```
+
 ## Data Flow
 
 ```
@@ -490,12 +580,20 @@ The `__init__.py` exports:
 
 ```python
 __all__ = [
+    # Compaction
+    "CompactionResult",
+    "build_summarize_prompt",
+    "create_summary_message",
+    "select_messages_for_compaction",
+    # Prompt loading
     "LoadedPrompt",
     "PromptLoader",
+    # Token counting
     "TokenCounter",
     "SimpleTokenCounter",
     "TiktokenCounter",
     "get_token_counter",
+    # Context management
     "ContextManager",
     "ContextConfig",
 ]

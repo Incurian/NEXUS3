@@ -39,7 +39,7 @@ async def cmd_list(ctx: CommandContext) -> CommandOutput:
     """List all agents in the pool.
 
     Returns information about all active agents including their ID,
-    type (temp/named), creation time, and message count.
+    type (temp/named), creation time, message count, and child count.
 
     Args:
         ctx: Command context with pool and session_manager.
@@ -56,9 +56,18 @@ async def cmd_list(ctx: CommandContext) -> CommandOutput:
         lines = ["Active agents:"]
         for agent in agents:
             agent_type = "temp" if agent["is_temp"] else "named"
+            child_count = agent.get("child_count", 0)
+            parent_id = agent.get("parent_agent_id")
+
+            # Build info parts
+            info_parts = [f"{agent['message_count']} msgs"]
+            if child_count > 0:
+                info_parts.append(f"{child_count} children")
+            if parent_id:
+                info_parts.append(f"parent: {parent_id}")
+
             lines.append(
-                f"  {agent['agent_id']} ({agent_type}, "
-                f"{agent['message_count']} messages)"
+                f"  {agent['agent_id']} ({agent_type}, {', '.join(info_parts)})"
             )
         message = "\n".join(lines)
 
@@ -216,12 +225,24 @@ async def cmd_status(
     tokens = agent.context.get_token_usage()
     message_count = len(agent.context.messages)
 
+    # Get parent/child info from services (if available)
+    parent_id = None
+    children: list[str] = []
+    if hasattr(agent, "services") and agent.services:
+        from nexus3.core.permissions import AgentPermissions
+        permissions: AgentPermissions | None = agent.services.get("permissions")
+        parent_id = permissions.parent_agent_id if permissions else None
+        child_ids: set[str] | None = agent.services.get("child_agent_ids")
+        children = list(child_ids) if child_ids else []
+
     status_data = {
         "agent_id": effective_id,
         "is_temp": is_temp_agent(effective_id),
         "created_at": agent.created_at.isoformat(),
         "message_count": message_count,
         "tokens": tokens,
+        "parent_agent_id": parent_id,
+        "children": children,
     }
 
     # Format message
@@ -232,6 +253,10 @@ async def cmd_status(
         f"  Messages: {message_count}",
         f"  Tokens: {tokens.get('total', 0)} total",
     ]
+    if parent_id:
+        lines.append(f"  Parent: {parent_id}")
+    if children:
+        lines.append(f"  Children: {', '.join(children)}")
     message = "\n".join(lines)
 
     return CommandOutput.success(message=message, data=status_data)

@@ -10,6 +10,25 @@ from collections.abc import Callable
 # ESC key code
 ESC = "\x1b"
 
+# Shared flag to pause KeyMonitor during confirmation prompts
+# Using a simple mutable container so it's shared across async tasks
+_key_monitor_state = {"paused": False}
+
+
+def pause_key_monitor() -> None:
+    """Pause the KeyMonitor to allow other input operations."""
+    _key_monitor_state["paused"] = True
+
+
+def resume_key_monitor() -> None:
+    """Resume the KeyMonitor after input operations complete."""
+    _key_monitor_state["paused"] = False
+
+
+def is_key_monitor_paused() -> bool:
+    """Check if KeyMonitor is paused."""
+    return _key_monitor_state["paused"]
+
 
 async def monitor_for_escape(
     on_escape: Callable[[], None],
@@ -38,6 +57,16 @@ async def monitor_for_escape(
             tty.setcbreak(sys.stdin.fileno())
 
             while True:
+                # Check if paused (for confirmation prompts)
+                if is_key_monitor_paused():
+                    # Restore terminal while paused so other input can work
+                    termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+                    while is_key_monitor_paused():
+                        await asyncio.sleep(check_interval)
+                    # Re-enable cbreak mode when resumed
+                    tty.setcbreak(sys.stdin.fileno())
+                    continue
+
                 # Check if input is available
                 readable, _, _ = select.select([sys.stdin], [], [], check_interval)
 

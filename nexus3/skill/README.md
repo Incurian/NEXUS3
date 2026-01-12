@@ -594,3 +594,226 @@ nexus_shutdown_factory
 from nexus3.skill.builtin.nexus_create import nexus_create_factory
 from nexus3.skill.builtin.read_file import read_file_factory
 ```
+
+## How to Add a New Skill (Step-by-Step)
+
+This section provides a complete guide to adding a new skill to NEXUS3.
+
+### Step 1: Create the Skill File
+
+Create a new file in `nexus3/skill/builtin/` (e.g., `my_skill.py`):
+
+```python
+"""My custom skill implementation."""
+
+import asyncio
+from pathlib import Path
+from typing import Any
+
+from nexus3.core.paths import normalize_path, validate_sandbox
+from nexus3.core.types import ToolResult
+from nexus3.skill.services import ServiceContainer
+
+
+class MySkill:
+    """A skill that does something useful."""
+
+    def __init__(self, allowed_paths: list[Path] | None = None):
+        """Initialize with optional sandbox paths.
+
+        Args:
+            allowed_paths: If set, operations are restricted to these directories.
+        """
+        self._allowed_paths = allowed_paths
+
+    @property
+    def name(self) -> str:
+        return "my_skill"
+
+    @property
+    def description(self) -> str:
+        return "Does something useful with a file"
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the target file",
+                },
+                "option": {
+                    "type": "boolean",
+                    "description": "Optional flag",
+                    "default": False,
+                },
+            },
+            "required": ["path"],
+        }
+
+    async def execute(self, path: str = "", option: bool = False, **kwargs: Any) -> ToolResult:
+        """Execute the skill.
+
+        Args:
+            path: Target file path.
+            option: Optional flag.
+            **kwargs: Additional arguments (ignored, for forward compat).
+
+        Returns:
+            ToolResult with output or error.
+        """
+        if not path:
+            return ToolResult(error="Path is required")
+
+        try:
+            # Normalize and validate path
+            p = normalize_path(path)
+            if self._allowed_paths is not None:
+                p = validate_sandbox(str(p), self._allowed_paths)
+
+            # Use asyncio.to_thread for blocking I/O
+            result = await asyncio.to_thread(self._do_work, p, option)
+            return ToolResult(output=result)
+
+        except Exception as e:
+            return ToolResult(error=str(e))
+
+    def _do_work(self, path: Path, option: bool) -> str:
+        """Synchronous work (run in thread pool)."""
+        # Your implementation here
+        return f"Processed {path} with option={option}"
+
+
+def my_skill_factory(services: ServiceContainer) -> MySkill:
+    """Factory function for dependency injection.
+
+    Args:
+        services: Service container with shared dependencies.
+
+    Returns:
+        Configured MySkill instance.
+    """
+    allowed_paths: list[Path] | None = services.get("allowed_paths")
+    return MySkill(allowed_paths=allowed_paths)
+```
+
+### Step 2: Register the Skill
+
+Add to `nexus3/skill/builtin/registration.py`:
+
+```python
+from nexus3.skill.builtin.my_skill import my_skill_factory
+
+def register_builtin_skills(registry: SkillRegistry) -> None:
+    # ... existing registrations ...
+    registry.register("my_skill", my_skill_factory)
+```
+
+### Step 3: Configure Permissions (if destructive)
+
+If your skill is destructive (writes files, executes commands, etc.), add it to the destructive tools list in `nexus3/config/schema.py`:
+
+```python
+class PermissionsConfig(BaseModel):
+    destructive_tools: list[str] = [
+        "write_file",
+        "edit_file",
+        "bash",
+        "run_python",
+        "my_skill",  # Add here
+        "nexus_destroy",
+        "nexus_shutdown",
+    ]
+```
+
+This ensures TRUSTED mode prompts for confirmation.
+
+### Step 4: Disable in SANDBOXED (if needed)
+
+If the skill should be disabled in SANDBOXED mode, add it to the sandboxed preset in `nexus3/core/permissions.py`:
+
+```python
+"sandboxed": PermissionPreset(
+    name="sandboxed",
+    level=PermissionLevel.SANDBOXED,
+    tool_permissions={
+        # ... existing ...
+        "my_skill": ToolPermission(enabled=False),
+    },
+),
+```
+
+### Step 5: Add Tests
+
+Create `tests/unit/test_my_skill.py`:
+
+```python
+"""Tests for my_skill."""
+
+import pytest
+from nexus3.skill.builtin.my_skill import MySkill, my_skill_factory
+from nexus3.skill.services import ServiceContainer
+
+
+class TestMySkill:
+    def test_name(self):
+        skill = MySkill()
+        assert skill.name == "my_skill"
+
+    @pytest.mark.asyncio
+    async def test_execute_success(self, tmp_path):
+        skill = MySkill(allowed_paths=[tmp_path])
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("hello")
+
+        result = await skill.execute(path=str(test_file))
+        assert result.output is not None
+        assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_execute_outside_sandbox(self, tmp_path):
+        skill = MySkill(allowed_paths=[tmp_path])
+        result = await skill.execute(path="/etc/passwd")
+        assert result.error is not None
+        assert "sandbox" in result.error.lower() or "security" in result.error.lower()
+
+
+class TestMySkillFactory:
+    def test_factory_with_allowed_paths(self, tmp_path):
+        services = ServiceContainer()
+        services.register("allowed_paths", [tmp_path])
+
+        skill = my_skill_factory(services)
+        assert skill._allowed_paths == [tmp_path]
+
+    def test_factory_without_allowed_paths(self):
+        services = ServiceContainer()
+        skill = my_skill_factory(services)
+        assert skill._allowed_paths is None
+```
+
+### Permission Levels Reference
+
+| Level | Writes | Execution | Agent Mgmt | Confirmation |
+|-------|--------|-----------|------------|--------------|
+| **YOLO** | Anywhere | Yes | Yes | Never |
+| **TRUSTED** | CWD auto-allowed, prompts elsewhere | Prompts always | Yes | Allow once/file/dir |
+| **SANDBOXED** | Within frozen sandbox only | No | No | Never (enforced) |
+
+### Confirmation Flow (TRUSTED Mode)
+
+When a destructive skill is invoked in TRUSTED mode outside the agent's CWD:
+
+1. User sees a prompt with the action details
+2. User chooses:
+   - **Allow once** - Execute this time only
+   - **Allow always for file** - Remember this specific file
+   - **Allow always in directory** - Remember this directory
+   - **Deny** - Cancel the action
+
+For execution tools (bash, run_python):
+   - **Allow always in this directory** - Allow in current working directory
+   - **Allow always (global)** - Allow anywhere
+
+These allowances are stored in `AgentPermissions.session_allowances` and persisted with the session.

@@ -50,10 +50,25 @@ class NexusCreateSkill:
                     "description": "Permission preset: yolo, trusted, sandboxed, or worker",
                     "enum": ["yolo", "trusted", "sandboxed", "worker"],
                 },
+                "cwd": {
+                    "type": "string",
+                    "description": "Working directory / sandbox root for the agent. "
+                    "For sandboxed agents, this is the only path they can access.",
+                },
+                "allowed_write_paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Paths where write_file/edit_file are allowed. "
+                    "Must be within cwd. Defaults to empty (read-only) for sandboxed.",
+                },
                 "disable_tools": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "List of tool names to disable for the new agent",
+                },
+                "model": {
+                    "type": "string",
+                    "description": "Model name/alias to use (e.g., 'fast', 'smart', or full model ID)",
                 },
                 "port": {
                     "type": "integer",
@@ -83,7 +98,10 @@ class NexusCreateSkill:
         self,
         agent_id: str = "",
         preset: str | None = None,
+        cwd: str | None = None,
+        allowed_write_paths: list[str] | None = None,
         disable_tools: list[str] | None = None,
+        model: str | None = None,
         port: int | None = None,
         **kwargs: Any,
     ) -> ToolResult:
@@ -92,7 +110,10 @@ class NexusCreateSkill:
         Args:
             agent_id: ID for the new agent
             preset: Permission preset (yolo, trusted, sandboxed, worker)
+            cwd: Working directory / sandbox root for the agent
+            allowed_write_paths: Paths where writes are allowed (must be within cwd)
             disable_tools: List of tool names to disable
+            model: Model name/alias to use (from config.models or full model ID)
             port: Optional server port (default: 8765)
 
         Returns:
@@ -135,6 +156,9 @@ class NexusCreateSkill:
                     preset=preset,
                     disable_tools=disable_tools,
                     parent_agent_id=parent_agent_id,
+                    cwd=cwd,
+                    allowed_write_paths=allowed_write_paths,
+                    model=model,
                 )
                 return ToolResult(output=json.dumps(result))
         except ClientError as e:

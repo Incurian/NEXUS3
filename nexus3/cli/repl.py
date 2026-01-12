@@ -24,6 +24,7 @@ Architecture in unified mode:
 
 import argparse
 import asyncio
+from contextvars import ContextVar
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -32,12 +33,16 @@ from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.styles import Style
 from rich.live import Live
 
+# Context variable to store the current Live display for pausing during confirmation
+_current_live: ContextVar[Live | None] = ContextVar("_current_live", default=None)
+
 from nexus3.cli import repl_commands
-from nexus3.cli.keys import KeyMonitor
+from nexus3.cli.keys import KeyMonitor, pause_key_monitor, resume_key_monitor
 from nexus3.cli.lobby import LobbyChoice, show_lobby
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands import core as unified_cmd
 from nexus3.commands.protocol import CommandContext, CommandOutput
+from nexus3.core.permissions import ConfirmationResult
 from nexus3.commands.protocol import CommandResult as CmdResult
 from nexus3.config.loader import load_config
 from nexus3.context import PromptLoader
@@ -68,40 +73,159 @@ configure_stdio()
 load_dotenv()
 
 
-async def confirm_tool_action(tool_call: ToolCall) -> bool:
-    """Prompt user for confirmation of destructive action.
+def format_tool_params(arguments: dict, max_length: int = 70) -> str:
+    """Format tool arguments as a truncated string for display.
+
+    Prioritizes path/file arguments (shown first, not truncated individually).
+    Other arguments are truncated if needed.
+
+    Args:
+        arguments: Tool call arguments dictionary.
+        max_length: Maximum length of output string (default 70).
+
+    Returns:
+        Formatted string like 'path=/foo/bar, content="hello..."' truncated to max_length.
+    """
+    if not arguments:
+        return ""
+
+    # Priority keys shown first and not individually truncated
+    priority_keys = ("path", "file", "file_path", "directory", "dir", "cwd", "agent_id")
+    parts = []
+
+    # Add priority arguments first (full value)
+    for key in priority_keys:
+        if key in arguments and arguments[key]:
+            value = str(arguments[key])
+            parts.append(f"{key}={value}")
+
+    # Add remaining arguments (truncated if needed)
+    for key, value in arguments.items():
+        if key in priority_keys or value is None:
+            continue
+        str_val = str(value)
+        # Truncate long non-priority values
+        if len(str_val) > 30:
+            str_val = str_val[:27] + "..."
+        # Quote strings that contain spaces
+        if isinstance(value, str) and " " in str_val:
+            str_val = f'"{str_val}"'
+        parts.append(f"{key}={str_val}")
+
+    result = ", ".join(parts)
+
+    # Truncate overall result (but this should rarely happen with priority keys first)
+    if len(result) > max_length:
+        result = result[: max_length - 3] + "..."
+
+    return result
+
+
+async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> ConfirmationResult:
+    """Prompt user for confirmation of destructive action with allow once/always options.
 
     This callback is invoked by Session when a tool requires user confirmation
-    (based on permission level). It prompts in the console and waits for y/n.
+    (based on permission level). It shows different options based on tool type:
+
+    For write operations (write_file, edit_file):
+        [1] Allow once
+        [2] Allow always for this file
+        [3] Allow always in this directory
+        [4] Deny
+
+    For execution operations (bash, run_python):
+        [1] Allow once
+        [2] Allow always in current directory
+        [3] Allow always (global)
+        [4] Deny
 
     Args:
         tool_call: The tool call requiring confirmation.
+        target_path: The path being accessed (for write ops) or None.
 
     Returns:
-        True if user confirms, False otherwise.
+        ConfirmationResult indicating user's decision.
     """
     console = get_console()
-
-    # Format the confirmation message based on tool type
     tool_name = tool_call.name
-    args_preview = ""
 
-    if tool_name == "write_file":
-        path = tool_call.arguments.get("path", "unknown")
-        args_preview = f" to {path}"
-    elif tool_name == "nexus_destroy":
-        agent_id = tool_call.arguments.get("agent_id", "unknown")
-        args_preview = f" agent {agent_id}"
-    elif tool_name == "nexus_shutdown":
-        args_preview = " the server"
+    # Determine tool type for appropriate prompting
+    is_exec_tool = tool_name in ("bash", "run_python")
+    is_nexus_tool = tool_name.startswith("nexus_")
 
-    console.print(f"[yellow]Confirm {tool_name}{args_preview}?[/] ", end="")
+    # Pause the Live display during confirmation to prevent visual conflicts
+    live = _current_live.get()
+    if live is not None:
+        live.stop()
+
+    # Pause KeyMonitor so it stops consuming stdin and restores terminal mode
+    pause_key_monitor()
+    # Give KeyMonitor time to pause and restore terminal
+    await asyncio.sleep(0.15)
 
     try:
-        response = console.input("[y/n]: ").strip().lower()
-        return response in ("y", "yes")
-    except (EOFError, KeyboardInterrupt):
-        return False
+        # Build description based on tool type
+        if is_exec_tool:
+            cwd = tool_call.arguments.get("cwd", str(Path.cwd()))
+            command = tool_call.arguments.get("command", tool_call.arguments.get("code", ""))
+            preview = command[:50] + "..." if len(command) > 50 else command
+            console.print(f"\n[yellow]Execute {tool_name}?[/]")
+            console.print(f"  [dim]Command:[/] {preview}")
+            console.print(f"  [dim]Directory:[/] {cwd}")
+        elif is_nexus_tool:
+            # Nexus tools use agent_id instead of path
+            agent_id = tool_call.arguments.get("agent_id", "unknown")
+            console.print(f"\n[yellow]Allow {tool_name}?[/]")
+            console.print(f"  [dim]Agent:[/] {agent_id}")
+        else:
+            path_str = str(target_path) if target_path else tool_call.arguments.get("path", "unknown")
+            console.print(f"\n[yellow]Allow {tool_name}?[/]")
+            console.print(f"  [dim]Path:[/] {path_str}")
+
+        # Show options based on tool type
+        console.print()
+        if is_exec_tool:
+            console.print("  [cyan][1][/] Allow once")
+            console.print("  [cyan][2][/] Allow always in this directory")
+            console.print("  [cyan][3][/] Allow always (global)")
+            console.print("  [cyan][4][/] Deny")
+        else:
+            console.print("  [cyan][1][/] Allow once")
+            console.print("  [cyan][2][/] Allow always for this file")
+            console.print("  [cyan][3][/] Allow always in this directory")
+            console.print("  [cyan][4][/] Deny")
+
+        # Use asyncio.to_thread for blocking input to allow event loop to continue
+        def get_input() -> str:
+            try:
+                return console.input("\n[dim]Choice [1-4]:[/] ").strip()
+            except (EOFError, KeyboardInterrupt):
+                return ""
+
+        response = await asyncio.to_thread(get_input)
+
+        if response == "1":
+            return ConfirmationResult.ALLOW_ONCE
+        elif response == "2":
+            if is_exec_tool:
+                return ConfirmationResult.ALLOW_EXEC_CWD
+            else:
+                return ConfirmationResult.ALLOW_FILE
+        elif response == "3":
+            if is_exec_tool:
+                return ConfirmationResult.ALLOW_EXEC_GLOBAL
+            else:
+                return ConfirmationResult.ALLOW_WRITE_DIRECTORY
+        else:
+            return ConfirmationResult.DENY
+
+    finally:
+        # Resume KeyMonitor (restores cbreak mode)
+        resume_key_monitor()
+
+        # Resume Live display after confirmation
+        if live is not None:
+            live.start()
 
 
 def parse_args() -> argparse.Namespace:
@@ -161,6 +285,28 @@ def parse_args() -> argparse.Namespace:
         help="Create an agent (auto-starts server)",
     )
     create_parser.add_argument("agent_id", help="ID for the new agent")
+    create_parser.add_argument(
+        "--preset",
+        choices=["yolo", "trusted", "sandboxed"],
+        default="sandboxed",
+        help="Permission preset (default: sandboxed)"
+    )
+    create_parser.add_argument(
+        "--cwd",
+        help="Working directory / sandbox root for the agent"
+    )
+    create_parser.add_argument(
+        "--write-path",
+        action="append",
+        dest="allowed_write_paths",
+        metavar="PATH",
+        help="Path where writes are allowed (can be repeated)"
+    )
+    create_parser.add_argument(
+        "--model", "-m",
+        metavar="NAME",
+        help="Model name/alias to use (from config.models or full model ID)"
+    )
     add_port_arg(create_parser)
     add_api_key_arg(create_parser)
 
@@ -180,6 +326,12 @@ def parse_args() -> argparse.Namespace:
     )
     send_parser.add_argument("agent_id", help="Agent ID to send to")
     send_parser.add_argument("content", help="Message to send")
+    send_parser.add_argument(
+        "--timeout", "-t",
+        type=float,
+        default=120.0,
+        help="Request timeout in seconds (default: 120)",
+    )
     add_port_arg(send_parser)
     add_api_key_arg(send_parser)
 
@@ -265,6 +417,11 @@ def parse_args() -> argparse.Namespace:
         help="Custom system prompt file for fresh sessions (used with --fresh)",
     )
     parser.add_argument(
+        "--model", "-m",
+        metavar="NAME",
+        help="Model name/alias to use (from config.models or full model ID)",
+    )
+    parser.add_argument(
         "--connect",
         metavar="URL",
         nargs="?",
@@ -289,6 +446,7 @@ async def run_repl(
     fresh: bool = False,
     session_name: str | None = None,
     template: Path | None = None,
+    model: str | None = None,
 ) -> None:
     """Run the async REPL loop in unified mode.
 
@@ -309,6 +467,7 @@ async def run_repl(
         fresh: Start fresh temp session (skip lobby).
         session_name: Load specific saved session by name (skip lobby).
         template: Custom system prompt file for fresh sessions.
+        model: Model name/alias to use (from config.models or full model ID).
     """
     console = get_console()
     theme = load_theme()
@@ -316,8 +475,14 @@ async def run_repl(
     # Check for existing server on the port
     detection_result = await detect_server(port)
     if detection_result == DetectionResult.NEXUS_SERVER:
-        console.print(f"[red]Error:[/] NEXUS3 server already running on port {port}")
-        console.print(f"Use 'nexus3 --connect http://localhost:{port}' to connect to it")
+        # Server already running - auto-connect to it
+        console.print(f"[dim]Server already running on port {port}, connecting...[/]")
+        try:
+            await run_repl_client(f"http://localhost:{port}", "main")
+        except Exception as e:
+            console.print(f"\n[yellow]Tip:[/] If connection failed, try killing the old server:")
+            console.print(f"  [dim]lsof -i :{port} | awk 'NR>1 {{print $2}}' | xargs kill[/]")
+            console.print(f"  [dim]Then run 'nexus' again.[/]")
         return
     elif detection_result == DetectionResult.OTHER_SERVICE:
         console.print(f"[red]Error:[/] Port {port} is already in use by another service")
@@ -331,8 +496,19 @@ async def run_repl(
         return
 
     # Create provider (shared across all agents)
+    # Resolve model alias to actual model ID before creating provider
     try:
-        provider = OpenRouterProvider(config.provider)
+        from nexus3.config.schema import ProviderConfig
+        resolved = config.resolve_model()
+        provider_config = ProviderConfig(
+            type=config.provider.type,
+            api_key_env=config.provider.api_key_env,
+            model=resolved.model_id,  # Use resolved ID, not alias
+            base_url=config.provider.base_url,
+            context_window=resolved.context_window,
+            reasoning=resolved.reasoning,
+        )
+        provider = OpenRouterProvider(provider_config)
     except NexusError as e:
         console.print(f"[red]Error:[/] {e.message}")
         return
@@ -441,8 +617,11 @@ async def run_repl(
     # =========================================================================
     if startup_mode in ("resume", "session") and saved_session is not None:
         main_agent = await pool.restore_from_saved(saved_session)
+        # Note: restored sessions keep their original model, --model flag is ignored
     else:
-        main_agent = await pool.create(agent_id=agent_name)
+        # Create with model if specified
+        agent_config = AgentConfig(model=model) if model else None
+        main_agent = await pool.create(agent_id=agent_name, config=agent_config)
         if template:
             # Load custom prompt from template
             try:
@@ -586,9 +765,9 @@ async def run_repl(
 
         tools = []
         for tc in tool_calls:
-            # Extract path from arguments if available
-            path = tc.arguments.get("path", "") or tc.arguments.get("file", "")
-            tools.append((tc.name, tc.id, path))
+            # Format all parameters (path/file prioritized, others truncated)
+            params = format_tool_params(tc.arguments)
+            tools.append((tc.name, tc.id, params))
         display.start_batch(tools)
 
     def on_tool_active(name: str, tool_id: str) -> None:
@@ -619,9 +798,9 @@ async def run_repl(
                 gumball = "[red]●[/]"
                 suffix = " [red](error)[/]"
 
-            # Tool name with path
-            if tool.path:
-                console.print(f"  {gumball} {tool.name}: {tool.path}{suffix}")
+            # Tool name with params
+            if tool.params:
+                console.print(f"  {gumball} {tool.name}: {tool.params}{suffix}")
             else:
                 console.print(f"  {gumball} {tool.name}{suffix}")
 
@@ -659,10 +838,19 @@ async def run_repl(
     def get_toolbar() -> HTML:
         """Return the bottom toolbar based on current state."""
         square = '<style fg="ansibrightblack">■</style>'
+
+        # Get token usage from current session's context
+        token_info = ""
+        if session.context:
+            usage = session.context.get_token_usage()
+            used = usage["total"]
+            budget = usage["budget"]
+            token_info = f' | <style fg="ansibrightblack">{used:,} / {budget:,}</style>'
+
         if toolbar_has_errors:
-            return HTML(f'{square} <style fg="ansiyellow">● ready (some tasks incomplete)</style>')
+            return HTML(f'{square} <style fg="ansiyellow">● ready (some tasks incomplete)</style>{token_info}')
         else:
-            return HTML(f'{square} <style fg="ansigreen">● ready</style>')
+            return HTML(f'{square} <style fg="ansigreen">● ready</style>{token_info}')
 
     # Style to remove default toolbar highlight
     prompt_style = Style.from_dict({
@@ -711,6 +899,10 @@ async def run_repl(
             return await repl_commands.cmd_permissions(ctx, cmd_args or None)
         elif cmd_name == "prompt":
             return await repl_commands.cmd_prompt(ctx, cmd_args or None)
+        elif cmd_name == "compact":
+            return await repl_commands.cmd_compact(ctx)
+        elif cmd_name == "model":
+            return await repl_commands.cmd_model(ctx, cmd_args or None)
 
         # Unified commands (work in both CLI and REPL)
         elif cmd_name == "list":
@@ -1014,6 +1206,8 @@ async def run_repl(
 
             # Use Live ONLY during streaming (animation works here)
             with Live(display, console=console, refresh_per_second=10, transient=True) as live:
+                # Store live reference for confirmation callback to pause/resume
+                token = _current_live.set(live)
                 try:
                     async with KeyMonitor(on_escape=on_cancel):
                         stream_task = asyncio.create_task(do_stream())
@@ -1031,6 +1225,9 @@ async def run_repl(
                     console.print(f"[red]Error:[/] {e.message}")
                     console.print("")  # Visual separation after error
                     display.mark_error()
+                finally:
+                    # Clear live reference when exiting Live context
+                    _current_live.reset(token)
 
             # Update toolbar error state
             if display.had_errors:
@@ -1138,7 +1335,7 @@ async def run_repl_client(url: str, agent_id: str) -> None:
     # Simple prompt session (no bottom toolbar for simplicity)
     prompt_session: PromptSession[str] = PromptSession()
 
-    async with NexusClient(agent_url, timeout=300.0) as client:
+    async with NexusClient.with_auto_auth(agent_url, timeout=300.0) as client:
         # Test connection
         try:
             status = await client.get_tokens()
@@ -1223,12 +1420,20 @@ def main() -> None:
             elif rpc_cmd == "list":
                 exit_code = asyncio.run(cmd_list(args.port, args.api_key))
             elif rpc_cmd == "create":
-                exit_code = asyncio.run(cmd_create(args.agent_id, args.port, args.api_key))
+                exit_code = asyncio.run(cmd_create(
+                    args.agent_id,
+                    args.port,
+                    args.api_key,
+                    args.preset,
+                    args.cwd,
+                    args.allowed_write_paths,
+                    args.model,
+                ))
             elif rpc_cmd == "destroy":
                 exit_code = asyncio.run(cmd_destroy(args.agent_id, args.port, args.api_key))
             elif rpc_cmd == "send":
                 exit_code = asyncio.run(
-                    cmd_send(args.agent_id, args.content, args.port, args.api_key)
+                    cmd_send(args.agent_id, args.content, args.port, args.api_key, args.timeout)
                 )
             elif rpc_cmd == "cancel":
                 exit_code = asyncio.run(
@@ -1275,6 +1480,7 @@ def main() -> None:
                 fresh=args.fresh,
                 session_name=args.session,
                 template=args.template,
+                model=args.model,
             ))
     except KeyboardInterrupt:
         # Handle Ctrl+C during startup

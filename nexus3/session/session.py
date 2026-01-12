@@ -2,10 +2,17 @@
 
 import asyncio
 from collections.abc import AsyncIterator, Callable, Awaitable
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+from nexus3.context.compaction import (
+    CompactionResult,
+    build_summarize_prompt,
+    create_summary_message,
+    select_messages_for_compaction,
+)
 from nexus3.core.interfaces import AsyncProvider
-from nexus3.core.permissions import AgentPermissions
+from nexus3.core.permissions import AgentPermissions, ConfirmationResult
 from nexus3.core.validation import ValidationError, validate_tool_arguments
 from nexus3.core.types import (
     ContentDelta,
@@ -19,14 +26,16 @@ from nexus3.core.types import (
 )
 
 if TYPE_CHECKING:
+    from nexus3.config.schema import CompactionConfig, Config
     from nexus3.context.manager import ContextManager
+    from nexus3.context.prompt_loader import PromptLoader
     from nexus3.core.cancel import CancellationToken
     from nexus3.session.logging import SessionLogger
     from nexus3.skill.registry import SkillRegistry
     from nexus3.skill.services import ServiceContainer
 
-# Confirmation callback type
-ConfirmationCallback = Callable[["ToolCall"], Awaitable[bool]]
+# Confirmation callback type - returns ConfirmationResult for allow once/always UI
+ConfirmationCallback = Callable[["ToolCall", "Path | None"], Awaitable[ConfirmationResult]]
 
 
 # Callback types for notifications
@@ -69,6 +78,8 @@ class Session:
         max_concurrent_tools: int = 10,
         services: "ServiceContainer | None" = None,
         on_confirm: ConfirmationCallback | None = None,
+        config: "Config | None" = None,
+        prompt_loader: "PromptLoader | None" = None,
     ) -> None:
         """Initialize a new session.
 
@@ -103,6 +114,9 @@ class Session:
                      like permissions.
             on_confirm: Optional callback for requesting user confirmation on
                        destructive actions. Returns True if confirmed.
+            config: Optional Config for compaction settings and other options.
+            prompt_loader: Optional PromptLoader to reload system prompt during
+                          compaction.
         """
         self.provider = provider
         self.context = context
@@ -121,9 +135,14 @@ class Session:
         self._tool_semaphore = asyncio.Semaphore(max_concurrent_tools)
         self._services = services
         self.on_confirm = on_confirm
+        self._config = config
+        self._prompt_loader = prompt_loader
 
         # Track cancelled tool calls to report on next send()
         self._pending_cancelled_tools: list[tuple[str, str]] = []  # [(tool_id, tool_name), ...]
+
+        # Lazy-loaded compaction provider (uses different model if configured)
+        self._compaction_provider: AsyncProvider | None = None
 
     def add_cancelled_tools(self, tools: list[tuple[str, str]]) -> None:
         """Store cancelled tool calls to report on next send().
@@ -147,20 +166,23 @@ class Session:
 
         self._pending_cancelled_tools.clear()
 
-    async def _request_confirmation(self, tool_call: "ToolCall") -> bool:
+    async def _request_confirmation(
+        self, tool_call: "ToolCall", path: Path | None = None
+    ) -> ConfirmationResult:
         """Request user confirmation for destructive action.
 
         Args:
             tool_call: The tool call requiring confirmation.
+            path: Optional path being accessed (for path-based allowances).
 
         Returns:
-            True if confirmed, False if denied.
+            ConfirmationResult indicating user's decision.
         """
         if self.on_confirm is None:
             # No confirmation callback = no way to get user approval
             # Deny by default to enforce TRUSTED semantics in server mode
-            return False
-        return await self.on_confirm(tool_call)
+            return ConfirmationResult.DENY
+        return await self.on_confirm(tool_call, path)
 
     async def send(
         self,
@@ -252,39 +274,56 @@ class Session:
             String chunks of the assistant's response.
         """
         for _ in range(self.max_tool_iterations):
+            # Check for compaction BEFORE build_messages() to avoid truncation
+            if self._should_compact():
+                result = await self.compact(force=False)
+                if result:
+                    saved = result.original_token_count - result.new_token_count
+                    yield f"\n[Context compacted: {saved:,} tokens reclaimed]\n\n"
+
             messages = self.context.build_messages()
-            tools = self.registry.get_definitions() if self.registry else None
+            # Use context's tool definitions (filtered by permissions) rather than registry
+            tools = self.context.get_tool_definitions()
 
             # Stream response, accumulating content and detecting tool calls
             final_message: Message | None = None
             is_reasoning = False  # Track if we're in reasoning mode
+            # Only show reasoning display if reasoning is enabled for this agent's model
+            show_reasoning = False
+            if self._services:
+                from nexus3.config.schema import ResolvedModel
+                resolved_model: ResolvedModel | None = self._services.get("model")
+                if resolved_model:
+                    show_reasoning = resolved_model.reasoning
+            elif self._config:
+                show_reasoning = self._config.provider.reasoning
             async for event in self.provider.stream(messages, tools):
                 if isinstance(event, ReasoningDelta):
-                    # Notify callback when reasoning starts
-                    if not is_reasoning and self.on_reasoning:
+                    # Notify callback when reasoning starts (only if reasoning enabled)
+                    if show_reasoning and not is_reasoning and self.on_reasoning:
                         self.on_reasoning(True)
                     is_reasoning = True
                 elif isinstance(event, ContentDelta):
                     # Notify callback when reasoning ends (transition to content)
-                    if is_reasoning and self.on_reasoning:
+                    if show_reasoning and is_reasoning and self.on_reasoning:
                         self.on_reasoning(False)
-                        is_reasoning = False
+                    is_reasoning = False
                     yield event.text
                     if cancel_token and cancel_token.is_cancelled:
                         return
                 elif isinstance(event, ToolCallStarted):
                     # End reasoning if we were reasoning
-                    if is_reasoning and self.on_reasoning:
+                    if show_reasoning and is_reasoning and self.on_reasoning:
                         self.on_reasoning(False)
-                        is_reasoning = False
+                    is_reasoning = False
                     # Notify callback if set (for display updates)
                     if self.on_tool_call:
                         self.on_tool_call(event.name, event.id)
                 elif isinstance(event, StreamComplete):
                     # End reasoning if stream completes while still reasoning
-                    if is_reasoning and self.on_reasoning:
+                    if show_reasoning and is_reasoning and self.on_reasoning:
                         self.on_reasoning(False)
-                        is_reasoning = False
+                    is_reasoning = False
                     final_message = event.message
 
             if final_message is None:
@@ -371,13 +410,62 @@ class Session:
             else:
                 # No tool calls - this is the final response
                 self.context.add_assistant_message(final_message.content)
+
+                # Check for auto-compaction after response is complete
+                if self._should_compact():
+                    result = await self.compact(force=False)
+                    if result:
+                        saved = result.original_token_count - result.new_token_count
+                        yield f"\n\n[Context compacted: {saved:,} tokens reclaimed]"
+
                 return
 
         # Max iterations reached
         yield "[Max tool iterations reached]"
 
+    def _extract_path_from_tool_call(self, tool_call: "ToolCall") -> Path | None:
+        """Extract the target path from a tool call's arguments.
+
+        Used for path-based permission checks in TRUSTED mode.
+
+        Args:
+            tool_call: The tool call to extract path from.
+
+        Returns:
+            Path if the tool has a path argument, None otherwise.
+        """
+        # Tools that have path arguments
+        path_arg = tool_call.arguments.get("path")
+        if path_arg:
+            return Path(path_arg)
+        return None
+
+    def _extract_exec_cwd_from_tool_call(self, tool_call: "ToolCall") -> Path:
+        """Extract the working directory for execution tools.
+
+        Used for exec permission checks in TRUSTED mode.
+
+        Args:
+            tool_call: The tool call to extract cwd from.
+
+        Returns:
+            The execution working directory (defaults to current cwd).
+        """
+        cwd_arg = tool_call.arguments.get("cwd")
+        if cwd_arg:
+            return Path(cwd_arg)
+        return Path.cwd()
+
     async def _execute_single_tool(self, tool_call: "ToolCall") -> ToolResult:
         """Execute a single tool call with permission checks.
+
+        Permission flow:
+        1. Check if tool is enabled (via tool_permissions)
+        2. For SANDBOXED: Check if action is allowed at all
+        3. For TRUSTED: Check if path is within CWD or write_allowances
+           - If not, request confirmation with allow once/always options
+           - Handle confirmation result (add to allowances if requested)
+        4. Execute the tool
 
         Args:
             tool_call: The tool call to execute.
@@ -400,11 +488,72 @@ class Session:
             if tool_perm and not tool_perm.enabled:
                 return ToolResult(error=f"Tool '{tool_call.name}' is disabled by permissions")
 
-            # Check if confirmation required
-            if permissions.effective_policy.requires_confirmation(tool_call.name):
-                confirmed = await self._request_confirmation(tool_call)
-                if not confirmed:
+            # Check if action is allowed at all (SANDBOXED blocks execution tools)
+            if not permissions.effective_policy.allows_action(tool_call.name):
+                return ToolResult(error=f"Tool '{tool_call.name}' is not allowed in {permissions.effective_policy.level.value} mode")
+
+            # Extract path/cwd for permission checks
+            target_path = self._extract_path_from_tool_call(tool_call)
+            exec_cwd = self._extract_exec_cwd_from_tool_call(tool_call) if tool_call.name in ("bash", "run_python") else None
+
+            # Skip confirmation for nexus_destroy of own child agents
+            skip_confirmation = False
+            if tool_call.name == "nexus_destroy":
+                target_agent_id = tool_call.arguments.get("agent_id")
+                child_ids: set[str] | None = self.services.get("child_agent_ids") if self.services else None
+                if target_agent_id and child_ids and target_agent_id in child_ids:
+                    skip_confirmation = True
+
+            # Check if confirmation required (TRUSTED mode with path/exec outside allowances)
+            if not skip_confirmation and permissions.effective_policy.requires_confirmation(
+                tool_call.name,
+                path=target_path,
+                exec_cwd=exec_cwd,
+                session_allowances=permissions.session_allowances,
+            ):
+                result = await self._request_confirmation(tool_call, target_path)
+
+                if result == ConfirmationResult.DENY:
                     return ToolResult(error="Action cancelled by user")
+
+                # Handle "allow always" responses for write operations
+                if result == ConfirmationResult.ALLOW_FILE and target_path is not None:
+                    permissions.add_file_allowance(target_path)
+                elif result == ConfirmationResult.ALLOW_WRITE_DIRECTORY and target_path is not None:
+                    permissions.add_directory_allowance(target_path.parent)
+
+                # Handle "allow always" responses for execution operations
+                elif result == ConfirmationResult.ALLOW_EXEC_CWD and exec_cwd is not None:
+                    permissions.add_exec_cwd_allowance(tool_call.name, exec_cwd)
+                elif result == ConfirmationResult.ALLOW_EXEC_GLOBAL:
+                    permissions.add_exec_global_allowance(tool_call.name)
+
+                # ALLOW_ONCE just continues without adding to allowances
+
+            # For SANDBOXED: Additional path check (sandbox enforcement)
+            if target_path is not None:
+                if not permissions.effective_policy.can_write_path(target_path):
+                    return ToolResult(
+                        error=f"Path '{target_path}' is outside the allowed sandbox"
+                    )
+
+            # Per-tool path restrictions (for write_file/edit_file with allowed_write_paths)
+            if target_path is not None and tool_perm and tool_perm.allowed_paths is not None:
+                # Check if target path is within any of the per-tool allowed paths
+                path_allowed = False
+                for allowed_path in tool_perm.allowed_paths:
+                    try:
+                        target_path.relative_to(allowed_path)
+                        path_allowed = True
+                        break
+                    except ValueError:
+                        continue
+                if not path_allowed:
+                    allowed_str = ", ".join(str(p) for p in tool_perm.allowed_paths)
+                    return ToolResult(
+                        error=f"Tool '{tool_call.name}' cannot access '{target_path}'. "
+                        f"Allowed paths: [{allowed_str}]"
+                    )
 
             # Get per-tool timeout
             if tool_perm and tool_perm.timeout is not None:
@@ -470,3 +619,145 @@ class Session:
                 final_results.append(r)
 
         return final_results
+
+    # === Context Compaction ===
+
+    def _should_compact(self) -> bool:
+        """Check if context should be compacted based on token threshold.
+
+        Returns:
+            True if compaction should be triggered, False otherwise.
+        """
+        if self._config is None:
+            return False
+
+        compaction_config = self._config.compaction
+        if not compaction_config.enabled:
+            return False
+
+        if self.context is None:
+            return False
+
+        usage = self.context.get_token_usage()
+        threshold = int(usage["available"] * compaction_config.trigger_threshold)
+
+        return usage["total"] > threshold
+
+    async def compact(self, force: bool = False) -> CompactionResult | None:
+        """Compact context by summarizing old messages.
+
+        Args:
+            force: If True, compact even if under threshold
+
+        Returns:
+            CompactionResult if compaction occurred, None otherwise
+        """
+        if not force and not self._should_compact():
+            return None
+
+        if self.context is None:
+            return None
+
+        messages = self.context.messages
+        if len(messages) < 2:
+            return None
+
+        if self._config is None:
+            return None
+
+        usage = self.context.get_token_usage()
+        compaction_config = self._config.compaction
+
+        # Select messages to summarize vs preserve
+        to_summarize, to_preserve = select_messages_for_compaction(
+            messages=messages,
+            token_counter=self.context._counter,
+            available_budget=usage["available"],
+            recent_preserve_ratio=compaction_config.recent_preserve_ratio,
+        )
+
+        if not to_summarize:
+            return None
+
+        # Generate summary via LLM
+        summary_text = await self._generate_summary(to_summarize, compaction_config)
+        summary_message = create_summary_message(summary_text)
+
+        # Reload system prompt fresh (picks up NEXUS.md changes)
+        new_system_prompt = None
+        if self._prompt_loader:
+            loaded = self._prompt_loader.load(is_repl=True)  # TODO: track is_repl
+            new_system_prompt = loaded.content
+
+        # Calculate token counts
+        original_tokens = usage["messages"]
+
+        # Apply to context
+        self.context.apply_compaction(summary_message, to_preserve, new_system_prompt)
+
+        new_usage = self.context.get_token_usage()
+
+        return CompactionResult(
+            summary_message=summary_message,
+            preserved_messages=to_preserve,
+            original_token_count=original_tokens,
+            new_token_count=new_usage["messages"],
+        )
+
+    def _get_compaction_provider(self) -> AsyncProvider:
+        """Get or create the provider for compaction.
+
+        If compaction.model is configured, creates a separate provider with that model.
+        Otherwise uses the main provider.
+
+        Returns:
+            Provider for compaction requests.
+        """
+        if self._compaction_provider is not None:
+            return self._compaction_provider
+
+        if self._config is None:
+            return self.provider
+
+        compaction_model = self._config.compaction.model
+        if compaction_model is None:
+            # No separate model configured, use main provider
+            return self.provider
+
+        # Create a provider with the compaction model
+        from nexus3.config.schema import ProviderConfig
+        from nexus3.provider.openrouter import OpenRouterProvider
+
+        compaction_config = ProviderConfig(
+            type=self._config.provider.type,
+            api_key_env=self._config.provider.api_key_env,
+            model=compaction_model,
+            base_url=self._config.provider.base_url,
+        )
+        self._compaction_provider = OpenRouterProvider(compaction_config)
+        return self._compaction_provider
+
+    async def _generate_summary(
+        self, messages: list[Message], compaction_config: "CompactionConfig"
+    ) -> str:
+        """Generate summary of messages via LLM call.
+
+        Args:
+            messages: Messages to summarize
+            compaction_config: Compaction configuration
+
+        Returns:
+            Summary text
+        """
+        prompt = build_summarize_prompt(messages)
+
+        # Build minimal message for summarization
+        summary_messages = [
+            Message(role=Role.USER, content=prompt)
+        ]
+
+        # Use compaction provider (may be different model than main)
+        provider = self._get_compaction_provider()
+        response = await provider.complete(summary_messages, tools=None)
+
+        return response.content

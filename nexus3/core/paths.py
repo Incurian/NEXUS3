@@ -118,14 +118,19 @@ def validate_sandbox(path: str | Path, allowed_paths: list[Path]) -> Path:
 
     Args:
         path: Path to validate (can be relative or absolute)
-        allowed_paths: List of allowed base directories
+        allowed_paths: List of allowed base directories.
+            IMPORTANT: Empty list [] means NO paths allowed (will always raise).
+            This is distinct from None (which isn't accepted by this function).
+            The caller should handle None (unrestricted) by skipping validation.
 
     Returns:
         Resolved absolute path if valid
 
     Raises:
-        PathSecurityError: If path is outside sandbox or involves symlinks
+        PathSecurityError: If path is outside sandbox, involves symlinks,
+            or allowed_paths is empty (nothing allowed)
     """
+    # [] = nothing allowed, always fails. Caller should skip validation for None.
     if not allowed_paths:
         raise PathSecurityError(str(path), "No allowed paths configured")
 

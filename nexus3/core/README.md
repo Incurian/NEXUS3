@@ -555,6 +555,52 @@ for name, preset in get_builtin_presets().items():
     print(f"{name}: {preset.description}")
 ```
 
+## `allowed_paths` Semantics
+
+**IMPORTANT:** The `allowed_paths` field appears in multiple types and has specific semantics that must be understood:
+
+| Value | Meaning |
+|-------|---------|
+| `None` | **Unrestricted** - can access any path (no validation) |
+| `[]` | **Deny all** - empty list means NO paths allowed |
+| `[Path(...)]` | **Restricted** - only paths within listed directories |
+
+This applies to:
+- `PermissionPolicy.allowed_paths`
+- `ToolPermission.allowed_paths`
+- `PermissionPreset.allowed_paths`
+- `PermissionDelta.allowed_paths`
+- Skill constructors (e.g., `ReadFileSkill`, `WriteFileSkill`)
+
+**Example usage:**
+
+```python
+# Unrestricted access (no sandbox)
+policy = PermissionPolicy(level=PermissionLevel.YOLO, allowed_paths=None)
+
+# Deny all paths (nothing allowed)
+policy = PermissionPolicy(level=PermissionLevel.SANDBOXED, allowed_paths=[])
+
+# Specific paths only
+policy = PermissionPolicy(
+    level=PermissionLevel.SANDBOXED,
+    allowed_paths=[Path("/home/user/project"), Path("/tmp")]
+)
+```
+
+**In skills:**
+
+```python
+# ReadFileSkill with sandbox
+skill = ReadFileSkill(allowed_paths=[Path.cwd()])  # Only CWD
+
+# ReadFileSkill unrestricted
+skill = ReadFileSkill(allowed_paths=None)  # Skip validation entirely
+
+# ReadFileSkill deny all (for testing or disabled scenarios)
+skill = ReadFileSkill(allowed_paths=[])  # Always fails
+```
+
 ## Design Notes
 
 1. **Immutability**: All data classes use `frozen=True` to prevent accidental mutation

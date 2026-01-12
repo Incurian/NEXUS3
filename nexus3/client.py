@@ -7,7 +7,7 @@ import httpx
 
 from nexus3.core.errors import NexusError
 from nexus3.rpc.auth import discover_api_key
-from nexus3.rpc.protocol import parse_response, serialize_request
+from nexus3.rpc.protocol import ParseError, parse_response, serialize_request
 from nexus3.rpc.types import Request, Response
 
 
@@ -129,6 +129,9 @@ class NexusClient:
             raise ClientError(f"Connection failed: {e}") from e
         except httpx.TimeoutException as e:
             raise ClientError(f"Request timed out: {e}") from e
+        except ParseError as e:
+            # Server returned non-JSON-RPC response (likely HTTP error)
+            raise ClientError(f"Invalid server response: {e}") from e
 
     def _check(self, response: Response) -> Any:
         """Extract result from response or raise ClientError on error.
@@ -223,6 +226,9 @@ class NexusClient:
         preset: str | None = None,
         disable_tools: list[str] | None = None,
         parent_agent_id: str | None = None,
+        cwd: str | None = None,
+        allowed_write_paths: list[str] | None = None,
+        model: str | None = None,
     ) -> dict[str, Any]:
         """Create a new agent on the server.
 
@@ -235,6 +241,13 @@ class NexusClient:
             disable_tools: List of tool names to disable for the agent.
             parent_agent_id: ID of the parent agent for ceiling enforcement.
                 Server will look up parent's permissions from the pool.
+            cwd: Working directory / sandbox root for the agent. For SANDBOXED
+                preset, this becomes the only allowed path. Must be within
+                parent's allowed paths.
+            allowed_write_paths: List of paths where write_file/edit_file are
+                allowed. For SANDBOXED agents, defaults to empty (read-only).
+                Must be within cwd and parent's allowed paths.
+            model: Model name/alias to use (from config.models or full model ID).
 
         Returns:
             Creation result with agent_id.
@@ -246,6 +259,12 @@ class NexusClient:
             params["disable_tools"] = disable_tools
         if parent_agent_id is not None:
             params["parent_agent_id"] = parent_agent_id
+        if cwd is not None:
+            params["cwd"] = cwd
+        if allowed_write_paths is not None:
+            params["allowed_write_paths"] = allowed_write_paths
+        if model is not None:
+            params["model"] = model
         response = await self._call("create_agent", params)
         return cast(dict[str, Any], self._check(response))
 

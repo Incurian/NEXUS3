@@ -34,6 +34,7 @@ class SavedSession:
         provenance: "user" or parent agent_id that spawned this agent.
         permission_preset: Permission preset name (e.g., "yolo", "trusted", "sandboxed").
         disabled_tools: List of tool names that are disabled for this agent.
+        session_allowances: Dynamic allowances (write paths, exec permissions) for TRUSTED mode.
         schema_version: Schema version for migrations.
     """
 
@@ -50,6 +51,7 @@ class SavedSession:
     # New fields with defaults for backwards compatibility
     permission_preset: str | None = None
     disabled_tools: list[str] = field(default_factory=list)
+    session_allowances: dict[str, Any] = field(default_factory=dict)
     schema_version: int = SESSION_SCHEMA_VERSION
 
     def to_json(self) -> str:
@@ -70,6 +72,7 @@ class SavedSession:
             "permission_level": self.permission_level,
             "permission_preset": self.permission_preset,
             "disabled_tools": self.disabled_tools,
+            "session_allowances": self.session_allowances,
             "token_usage": self.token_usage,
             "provenance": self.provenance,
         }
@@ -94,6 +97,7 @@ class SavedSession:
             permission_level=data["permission_level"],
             permission_preset=data.get("permission_preset"),
             disabled_tools=data.get("disabled_tools", []),
+            session_allowances=data.get("session_allowances", {}),
             token_usage=data.get("token_usage", {}),
             provenance=data.get("provenance", "user"),
             schema_version=data.get("schema_version", 1),
@@ -234,6 +238,7 @@ def serialize_session(
     created_at: datetime | None = None,
     permission_preset: str | None = None,
     disabled_tools: list[str] | None = None,
+    session_allowances: dict[str, Any] | None = None,
 ) -> SavedSession:
     """Create a SavedSession from runtime state.
 
@@ -249,6 +254,7 @@ def serialize_session(
         created_at: When the session was created (default: now).
         permission_preset: Permission preset name (e.g., "yolo", "trusted", "sandboxed").
         disabled_tools: List of tool names that are disabled for this agent.
+        session_allowances: Dynamic allowances (write paths, exec permissions) for TRUSTED mode.
 
     Returns:
         SavedSession ready for disk storage.
@@ -267,4 +273,5 @@ def serialize_session(
         provenance=provenance,
         permission_preset=permission_preset,
         disabled_tools=disabled_tools or [],
+        session_allowances=session_allowances or {},
     )

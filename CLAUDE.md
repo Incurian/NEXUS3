@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. The goal is a simpler, more maintainable, end-to-end tested agent with clear architecture.
 
-**Status:** Phase 8 complete. 966 tests pass. Full permission system with presets, per-tool config, and inheritance.
+**Status:** Phase 8+ complete. Full permission system with presets, per-tool config, inheritance, and context compaction.
 
 ---
 
@@ -24,6 +24,7 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 | **6 - Sessions** | Persistence, lobby mode, whisper mode, unified commands, agent naming, auto-restore, permission types |
 | **7 - Integration** | Sandbox → file skills, URL validation → nexus skills, async I/O, skill timeout, concurrency limit, truncation fix |
 | **8 - Permissions** | Permission presets (yolo/trusted/sandboxed/worker), per-tool config, deltas, ceiling inheritance, confirmation prompts |
+| **8+ - Compaction** | LLM-based context compaction, system prompt reloading, `/compact` command, configurable thresholds |
 
 ---
 
@@ -242,6 +243,56 @@ nexus-rpc cancel AGENT ID    # Cancel in-progress request
 ./NEXUS.md           # Project system prompt (overrides personal)
 .nexus3/logs/        # Session logs (gitignored)
 ```
+
+### Compaction Config Example
+
+```json
+{
+  "compaction": {
+    "enabled": true,
+    "model": "anthropic/claude-haiku",
+    "summary_budget_ratio": 0.25,
+    "recent_preserve_ratio": 0.25,
+    "trigger_threshold": 0.9
+  }
+}
+```
+
+---
+
+## Context Compaction
+
+Context compaction summarizes old conversation history via LLM to reclaim token space while preserving essential information.
+
+### How It Works
+
+1. **Trigger**: Compaction runs when `used_tokens > trigger_threshold * available_tokens` (default 90%)
+2. **Preserve recent**: The most recent messages (controlled by `recent_preserve_ratio`) are kept verbatim
+3. **Summarize old**: Older messages are sent to a fast model (default: claude-haiku) for summarization
+4. **Budget**: Summary is constrained to `summary_budget_ratio` of available tokens (default 25%)
+5. **System prompt reload**: During compaction, NEXUS.md is re-read, picking up any changes
+
+### Configuration Options (`CompactionConfig`)
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `true` | Enable automatic compaction |
+| `model` | `"anthropic/claude-haiku"` | Model for summarization |
+| `summary_budget_ratio` | `0.25` | Max tokens for summary (fraction of available) |
+| `recent_preserve_ratio` | `0.25` | Recent messages to preserve (fraction of available) |
+| `trigger_threshold` | `0.9` | Trigger when usage exceeds this fraction |
+
+### Commands
+
+```bash
+/compact              # Manual compaction (even if below threshold)
+```
+
+### Key Benefits
+
+- **Longer sessions**: Reclaim space without losing context
+- **System prompt updates**: Changes to NEXUS.md apply on next compaction
+- **Configurable**: Tune thresholds for your use case
 
 ---
 

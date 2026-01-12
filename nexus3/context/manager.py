@@ -156,6 +156,31 @@ class ContextManager:
         """Clear all messages (keeps system prompt and tools)."""
         self._messages.clear()
 
+    def apply_compaction(
+        self,
+        summary_message: Message,
+        preserved_messages: list[Message],
+        new_system_prompt: str | None = None,
+    ) -> None:
+        """Apply compaction result to context.
+
+        Replaces current messages with summary + preserved recent messages.
+        Optionally updates system prompt (for picking up NEXUS.md changes).
+
+        Args:
+            summary_message: The summary as a Message (from compaction module)
+            preserved_messages: Recent messages that were kept
+            new_system_prompt: Optional fresh system prompt to use
+        """
+        # Update system prompt if provided (picks up NEXUS.md changes)
+        if new_system_prompt is not None:
+            self._system_prompt = new_system_prompt
+            if self._logger:
+                self._logger.log_system(new_system_prompt)
+
+        # Replace messages: summary + preserved
+        self._messages = [summary_message] + preserved_messages
+
     # === Context Building ===
 
     def build_messages(self) -> list[Message]:

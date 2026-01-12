@@ -34,6 +34,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from nexus3.config.loader import load_config
+from nexus3.config.schema import ProviderConfig
 from nexus3.context import PromptLoader
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
@@ -79,7 +80,7 @@ async def run_serve(
     detection_result = await detect_server(port)
     if detection_result == DetectionResult.NEXUS_SERVER:
         print(f"Error: NEXUS3 server already running on port {port}")
-        print(f"Use 'nexus3 --connect http://localhost:{port}' to connect to it")
+        print(f"Use 'nexus --connect http://localhost:{port}' to connect to it")
         return
     elif detection_result == DetectionResult.OTHER_SERVICE:
         print(f"Error: Port {port} is already in use by another service")
@@ -93,8 +94,18 @@ async def run_serve(
         return
 
     # Create provider (shared across all agents)
+    # Resolve model alias to actual model ID before creating provider
     try:
-        provider = OpenRouterProvider(config.provider)
+        resolved = config.resolve_model()
+        provider_config = ProviderConfig(
+            type=config.provider.type,
+            api_key_env=config.provider.api_key_env,
+            model=resolved.model_id,  # Use resolved ID, not alias
+            base_url=config.provider.base_url,
+            context_window=resolved.context_window,
+            reasoning=resolved.reasoning,
+        )
+        provider = OpenRouterProvider(provider_config)
     except NexusError as e:
         print(f"Provider error: {e.message}")
         return
@@ -144,7 +155,6 @@ async def run_serve(
     print("NEXUS3 Multi-Agent HTTP Server")
     print(f"Logs: {base_log_dir}")
     print(f"Listening on http://localhost:{port}")
-    print(f"API key: {api_key}")
     print(f"Key file: {key_manager.key_path}")
     print("Press Ctrl+C to stop")
     print("")

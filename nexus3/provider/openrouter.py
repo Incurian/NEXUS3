@@ -206,6 +206,8 @@ class OpenRouterProvider:
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
         stream: bool = False,
+        model_override: str | None = None,
+        reasoning_override: bool | None = None,
     ) -> dict[str, Any]:
         """Build the request body for the API.
 
@@ -213,18 +215,27 @@ class OpenRouterProvider:
             messages: List of Messages in the conversation.
             tools: Optional list of tool definitions.
             stream: Whether to enable streaming.
+            model_override: Optional model ID to use instead of config default.
+            reasoning_override: Optional reasoning setting to use instead of config default.
 
         Returns:
             Request body dict.
         """
+        effective_model = model_override or self._model
+        effective_reasoning = reasoning_override if reasoning_override is not None else self._config.reasoning
+
         body: dict[str, Any] = {
-            "model": self._model,
+            "model": effective_model,
             "messages": [self._message_to_dict(m) for m in messages],
             "stream": stream,
         }
 
         if tools:
             body["tools"] = tools
+
+        # Enable extended thinking/reasoning if configured
+        if effective_reasoning:
+            body["reasoning"] = {"effort": "high"}
 
         return body
 

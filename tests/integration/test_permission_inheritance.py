@@ -54,12 +54,12 @@ def create_mock_shared_components(tmp_path: Path) -> SharedComponents:
     )
 
 
-class TestParentCanCreateChildWithSamePreset:
-    """Parent can create child with same permission preset."""
+class TestParentCannotCreateChildWithSamePreset:
+    """Parent cannot create child with same permission preset (lower only policy)."""
 
     @pytest.mark.asyncio
-    async def test_trusted_parent_creates_trusted_child(self, tmp_path: Path) -> None:
-        """Parent with 'trusted' preset can create child with 'trusted' preset."""
+    async def test_trusted_parent_cannot_create_trusted_child(self, tmp_path: Path) -> None:
+        """Parent with 'trusted' preset cannot create child with 'trusted' preset."""
         shared = create_mock_shared_components(tmp_path)
 
         with patch("nexus3.skill.builtin.register_builtin_skills"):
@@ -71,27 +71,19 @@ class TestParentCanCreateChildWithSamePreset:
             )
             parent_permissions = parent.services.get("permissions")
 
-            # Create child with trusted preset using parent's permissions as ceiling
-            child = await pool.create(
-                config=AgentConfig(
-                    agent_id="child",
-                    preset="trusted",
-                    parent_permissions=parent_permissions,
+            # Attempt to create child with trusted preset should fail
+            with pytest.raises(PermissionError, match="exceeds parent ceiling"):
+                await pool.create(
+                    config=AgentConfig(
+                        agent_id="child",
+                        preset="trusted",
+                        parent_permissions=parent_permissions,
+                    )
                 )
-            )
-
-            # Child should be created successfully
-            assert child.agent_id == "child"
-            assert "child" in pool
-
-            # Verify child has trusted permissions
-            child_permissions = child.services.get("permissions")
-            assert child_permissions.base_preset == "trusted"
-            assert child_permissions.effective_policy.level == PermissionLevel.TRUSTED
 
     @pytest.mark.asyncio
-    async def test_sandboxed_parent_creates_sandboxed_child(self, tmp_path: Path) -> None:
-        """Parent with 'sandboxed' preset can create child with 'sandboxed' preset."""
+    async def test_sandboxed_parent_cannot_create_sandboxed_child(self, tmp_path: Path) -> None:
+        """Parent with 'sandboxed' preset cannot create child with 'sandboxed' preset."""
         shared = create_mock_shared_components(tmp_path)
 
         with patch("nexus3.skill.builtin.register_builtin_skills"):
@@ -103,19 +95,15 @@ class TestParentCanCreateChildWithSamePreset:
             )
             parent_permissions = parent.services.get("permissions")
 
-            # Create child with sandboxed preset
-            child = await pool.create(
-                config=AgentConfig(
-                    agent_id="child",
-                    preset="sandboxed",
-                    parent_permissions=parent_permissions,
+            # Attempt to create child with sandboxed preset should fail
+            with pytest.raises(PermissionError, match="exceeds parent ceiling"):
+                await pool.create(
+                    config=AgentConfig(
+                        agent_id="child",
+                        preset="sandboxed",
+                        parent_permissions=parent_permissions,
+                    )
                 )
-            )
-
-            # Child should be created successfully
-            assert child.agent_id == "child"
-            child_permissions = child.services.get("permissions")
-            assert child_permissions.base_preset == "sandboxed"
 
 
 class TestParentCanCreateChildWithMoreRestrictivePreset:
@@ -179,8 +167,8 @@ class TestParentCanCreateChildWithMoreRestrictivePreset:
             assert child_permissions.base_preset == "trusted"
 
     @pytest.mark.asyncio
-    async def test_trusted_parent_creates_worker_child(self, tmp_path: Path) -> None:
-        """Parent with 'trusted' can create child with 'worker' (sandboxed level)."""
+    async def test_trusted_parent_creates_worker_child_backwards_compat(self, tmp_path: Path) -> None:
+        """Parent with 'trusted' can create child with 'worker' (maps to sandboxed)."""
         shared = create_mock_shared_components(tmp_path)
 
         with patch("nexus3.skill.builtin.register_builtin_skills"):
@@ -192,7 +180,7 @@ class TestParentCanCreateChildWithMoreRestrictivePreset:
             )
             parent_permissions = parent.services.get("permissions")
 
-            # Create child with worker preset (sandboxed level, more restrictive)
+            # Create child with worker preset (now maps to sandboxed for backwards compat)
             child = await pool.create(
                 config=AgentConfig(
                     agent_id="child",
@@ -201,11 +189,11 @@ class TestParentCanCreateChildWithMoreRestrictivePreset:
                 )
             )
 
-            # Child should be created successfully with worker preset
+            # Child should be created successfully with sandboxed preset (worker maps to sandboxed)
             assert child.agent_id == "child"
             child_permissions = child.services.get("permissions")
-            assert child_permissions.base_preset == "worker"
-            # Worker is sandboxed level
+            # Worker now maps to sandboxed
+            assert child_permissions.base_preset == "sandboxed"
             assert child_permissions.effective_policy.level == PermissionLevel.SANDBOXED
 
 
@@ -295,23 +283,23 @@ class TestParentCannotCreateChildWithLessRestrictivePreset:
             assert "child" not in pool
 
     @pytest.mark.asyncio
-    async def test_worker_parent_cannot_create_sandboxed_child(self, tmp_path: Path) -> None:
-        """Worker parent cannot create sandboxed child if sandboxed has more tools enabled."""
-        # Note: Worker and sandboxed are both SANDBOXED level, but have different tool permissions
-        # Worker has write_file disabled, sandboxed doesn't
+    async def test_sandboxed_with_disabled_tool_cannot_create_sandboxed_child(self, tmp_path: Path) -> None:
+        """Sandboxed parent with extra disabled tools cannot create sandboxed child with more tools enabled."""
+        # Parent has write_file disabled, trying to create child with write_file enabled
         shared = create_mock_shared_components(tmp_path)
 
         with patch("nexus3.skill.builtin.register_builtin_skills"):
             pool = AgentPool(shared)
 
-            # Create parent with worker preset (has write_file disabled)
+            # Create parent with sandboxed preset and disable write_file
+            delta = PermissionDelta(disable_tools=["write_file"])
             parent = await pool.create(
-                config=AgentConfig(agent_id="parent", preset="worker")
+                config=AgentConfig(agent_id="parent", preset="sandboxed", delta=delta)
             )
             parent_permissions = parent.services.get("permissions")
 
             # Attempting to create sandboxed child should fail because
-            # sandboxed has write_file enabled but worker parent has it disabled
+            # sandboxed has write_file enabled but parent has it disabled
             with pytest.raises(PermissionError):
                 await pool.create(
                     config=AgentConfig(
@@ -322,12 +310,12 @@ class TestParentCannotCreateChildWithLessRestrictivePreset:
                 )
 
 
-class TestYoloParentCanCreateAnyPreset:
-    """YOLO parent can create children with any preset."""
+class TestYoloParentCanCreateLowerPresets:
+    """YOLO parent can create children with lower presets only."""
 
     @pytest.mark.asyncio
-    async def test_yolo_parent_creates_yolo_child(self, tmp_path: Path) -> None:
-        """YOLO parent can create child with YOLO preset."""
+    async def test_yolo_parent_cannot_create_yolo_child(self, tmp_path: Path) -> None:
+        """YOLO parent cannot create child with YOLO preset (lower only policy)."""
         shared = create_mock_shared_components(tmp_path)
 
         with patch("nexus3.skill.builtin.register_builtin_skills"):
@@ -339,18 +327,15 @@ class TestYoloParentCanCreateAnyPreset:
             )
             parent_permissions = parent.services.get("permissions")
 
-            # Create child with yolo preset
-            child = await pool.create(
-                config=AgentConfig(
-                    agent_id="child",
-                    preset="yolo",
-                    parent_permissions=parent_permissions,
+            # Attempt to create child with yolo preset should fail
+            with pytest.raises(PermissionError, match="exceeds parent ceiling"):
+                await pool.create(
+                    config=AgentConfig(
+                        agent_id="child",
+                        preset="yolo",
+                        parent_permissions=parent_permissions,
+                    )
                 )
-            )
-
-            assert child.agent_id == "child"
-            child_permissions = child.services.get("permissions")
-            assert child_permissions.base_preset == "yolo"
 
     @pytest.mark.asyncio
     async def test_yolo_parent_creates_sandboxed_child(self, tmp_path: Path) -> None:
@@ -380,8 +365,8 @@ class TestYoloParentCanCreateAnyPreset:
             assert child_permissions.base_preset == "sandboxed"
 
     @pytest.mark.asyncio
-    async def test_yolo_parent_creates_worker_child(self, tmp_path: Path) -> None:
-        """YOLO parent can create child with worker preset."""
+    async def test_yolo_parent_creates_worker_child_backwards_compat(self, tmp_path: Path) -> None:
+        """YOLO parent can create child with worker preset (maps to sandboxed)."""
         shared = create_mock_shared_components(tmp_path)
 
         with patch("nexus3.skill.builtin.register_builtin_skills"):
@@ -402,7 +387,8 @@ class TestYoloParentCanCreateAnyPreset:
 
             assert child.agent_id == "child"
             child_permissions = child.services.get("permissions")
-            assert child_permissions.base_preset == "worker"
+            # Worker now maps to sandboxed
+            assert child_permissions.base_preset == "sandboxed"
 
 
 class TestChildInheritsCeilingFromParent:
@@ -488,12 +474,12 @@ class TestDisabledToolsPropagate:
             )
             parent_permissions = parent.services.get("permissions")
 
-            # Create child with delta that disables read_file
+            # Create child with sandboxed (lower than trusted) + delta that disables read_file
             delta = PermissionDelta(disable_tools=["read_file"])
             child = await pool.create(
                 config=AgentConfig(
                     agent_id="child",
-                    preset="trusted",
+                    preset="sandboxed",
                     parent_permissions=parent_permissions,
                     delta=delta,
                 )
@@ -518,12 +504,12 @@ class TestDisabledToolsPropagate:
             )
             parent_permissions = parent.services.get("permissions")
 
-            # Disable multiple tools
-            delta = PermissionDelta(disable_tools=["read_file", "write_file", "sleep"])
+            # Disable multiple tools on sandboxed child (lower than trusted)
+            delta = PermissionDelta(disable_tools=["read_file", "glob", "sleep"])
             child = await pool.create(
                 config=AgentConfig(
                     agent_id="child",
-                    preset="trusted",
+                    preset="sandboxed",
                     parent_permissions=parent_permissions,
                     delta=delta,
                 )
@@ -533,7 +519,7 @@ class TestDisabledToolsPropagate:
 
             # All three tools should be disabled
             assert child_permissions.tool_permissions["read_file"].enabled is False
-            assert child_permissions.tool_permissions["write_file"].enabled is False
+            assert child_permissions.tool_permissions["glob"].enabled is False
             assert child_permissions.tool_permissions["sleep"].enabled is False
 
 
@@ -546,61 +532,64 @@ class TestChildCannotEnableToolsParentDisabled:
         # Use the can_grant logic directly since the pool.create enforcement
         # happens at creation time
 
-        # Parent permissions with write_file disabled
-        parent_permissions = resolve_preset("trusted")
+        # YOLO parent with write_file disabled
+        parent_permissions = resolve_preset("yolo")
         parent_permissions.tool_permissions["write_file"] = ToolPermission(enabled=False)
 
-        # Child permissions attempting to have write_file enabled
+        # TRUSTED child permissions attempting to have write_file enabled
         child_permissions = resolve_preset("trusted")
         # write_file is not in tool_permissions by default (meaning enabled)
 
         # Parent should NOT be able to grant these permissions to child
+        # (even though trusted < yolo) because write_file is disabled
         assert parent_permissions.can_grant(child_permissions) is False
 
     @pytest.mark.asyncio
-    async def test_worker_preset_tools_cannot_be_enabled_by_child(self, tmp_path: Path) -> None:
-        """Worker preset has write_file disabled, child cannot enable it."""
+    async def test_trusted_parent_with_disabled_tools_cannot_be_enabled_by_sandboxed_child(self, tmp_path: Path) -> None:
+        """Trusted parent with disabled tools, sandboxed child cannot enable them."""
         shared = create_mock_shared_components(tmp_path)
 
         with patch("nexus3.skill.builtin.register_builtin_skills"):
             pool = AgentPool(shared)
 
-            # Create parent with worker preset (has write_file disabled)
+            # Create parent with trusted preset with read_file disabled
+            parent_delta = PermissionDelta(disable_tools=["read_file"])
             parent = await pool.create(
-                config=AgentConfig(agent_id="parent", preset="worker")
+                config=AgentConfig(agent_id="parent", preset="trusted", delta=parent_delta)
             )
             parent_permissions = parent.services.get("permissions")
 
-            # Try to create child with delta that enables write_file
-            delta = PermissionDelta(enable_tools=["write_file"])
+            # Try to create sandboxed child with delta that enables read_file
+            child_delta = PermissionDelta(enable_tools=["read_file"])
 
-            # This should fail because worker has write_file disabled
+            # This should fail because parent has read_file disabled
             with pytest.raises(PermissionError):
                 await pool.create(
                     config=AgentConfig(
                         agent_id="child",
-                        preset="worker",
+                        preset="sandboxed",
                         parent_permissions=parent_permissions,
-                        delta=delta,
+                        delta=child_delta,
                     )
                 )
 
     @pytest.mark.asyncio
     async def test_can_grant_checks_tool_permissions(self) -> None:
         """can_grant should return False when child tries to enable parent-disabled tool."""
-        parent = resolve_preset("trusted")
+        # YOLO parent with nexus_create disabled
+        parent = resolve_preset("yolo")
         parent.tool_permissions["nexus_create"] = ToolPermission(enabled=False)
 
-        # Child with nexus_create enabled (not in tool_permissions = enabled by default)
+        # TRUSTED child with nexus_create enabled (not in tool_permissions = enabled by default)
         child = resolve_preset("trusted")
 
-        # can_grant should return False
+        # can_grant should return False (tool restriction)
         assert parent.can_grant(child) is False
 
         # Now disable nexus_create in child too
         child.tool_permissions["nexus_create"] = ToolPermission(enabled=False)
 
-        # Now can_grant should return True
+        # Now can_grant should return True (yolo can grant trusted if tools match)
         assert parent.can_grant(child) is True
 
 
@@ -681,8 +670,8 @@ class TestCeilingCascadesThroughGenerations:
             assert "grandchild" not in pool
 
     @pytest.mark.asyncio
-    async def test_grandchild_can_be_same_or_more_restrictive(self, tmp_path: Path) -> None:
-        """Grandchild can be sandboxed if parent is sandboxed."""
+    async def test_sandboxed_parent_cannot_create_any_child(self, tmp_path: Path) -> None:
+        """Sandboxed parent cannot create any children (lowest level)."""
         shared = create_mock_shared_components(tmp_path)
 
         with patch("nexus3.skill.builtin.register_builtin_skills"):
@@ -704,100 +693,103 @@ class TestCeilingCascadesThroughGenerations:
             )
             parent_permissions = parent.services.get("permissions")
 
-            # Grandchild: sandboxed (same as parent) - should succeed
-            grandchild = await pool.create(
-                config=AgentConfig(
-                    agent_id="grandchild",
-                    preset="sandboxed",
-                    parent_permissions=parent_permissions,
+            # Grandchild: sandboxed (same as parent) - should fail (lower only policy)
+            with pytest.raises(PermissionError, match="exceeds parent ceiling"):
+                await pool.create(
+                    config=AgentConfig(
+                        agent_id="grandchild",
+                        preset="sandboxed",
+                        parent_permissions=parent_permissions,
+                    )
                 )
-            )
 
-            assert grandchild.agent_id == "grandchild"
-            grandchild_permissions = grandchild.services.get("permissions")
-            assert grandchild_permissions.base_preset == "sandboxed"
+            assert "grandchild" not in pool
 
 
 class TestCanGrantLogic:
-    """Direct tests for AgentPermissions.can_grant() logic."""
+    """Direct tests for AgentPermissions.can_grant() logic (lower only policy)."""
 
-    def test_yolo_can_grant_any_level(self) -> None:
-        """YOLO can grant any permission level."""
+    def test_yolo_can_grant_lower_levels_only(self) -> None:
+        """YOLO can grant TRUSTED or SANDBOXED but not YOLO."""
         yolo = resolve_preset("yolo")
         trusted = resolve_preset("trusted")
         sandboxed = resolve_preset("sandboxed")
 
-        assert yolo.can_grant(yolo) is True
+        assert yolo.can_grant(yolo) is False  # Same level not allowed
         assert yolo.can_grant(trusted) is True
         assert yolo.can_grant(sandboxed) is True
 
-    def test_trusted_can_grant_trusted_or_sandboxed(self) -> None:
-        """Trusted can grant trusted or sandboxed."""
+    def test_trusted_can_grant_sandboxed_only(self) -> None:
+        """Trusted can only grant sandboxed (lower only)."""
         trusted = resolve_preset("trusted")
         sandboxed = resolve_preset("sandboxed")
         yolo = resolve_preset("yolo")
 
-        assert trusted.can_grant(trusted) is True
+        assert trusted.can_grant(trusted) is False  # Same level not allowed
         assert trusted.can_grant(sandboxed) is True
         assert trusted.can_grant(yolo) is False
 
-    def test_sandboxed_can_only_grant_sandboxed(self) -> None:
-        """Sandboxed can only grant sandboxed level."""
+    def test_sandboxed_cannot_grant_any(self) -> None:
+        """Sandboxed cannot grant any level (lowest, no lower level exists)."""
         sandboxed = resolve_preset("sandboxed")
         trusted = resolve_preset("trusted")
         yolo = resolve_preset("yolo")
-        worker = resolve_preset("worker")
 
-        assert sandboxed.can_grant(sandboxed) is True
-        # Worker is also sandboxed level, but has different tool permissions
-        # sandboxed has nexus_send disabled, worker doesn't
-        # Actually worker has MORE disabled (including write_file, nexus_destroy)
-        # So sandboxed should be able to grant worker if worker has more restrictions
-        # Let's check the actual presets
+        assert sandboxed.can_grant(sandboxed) is False  # Same level not allowed
         assert sandboxed.can_grant(trusted) is False
         assert sandboxed.can_grant(yolo) is False
 
-    def test_can_grant_checks_path_restrictions(self) -> None:
-        """can_grant should check path restrictions."""
-        # Parent with restricted paths
+    def test_can_grant_checks_path_restrictions(self, tmp_path: Path) -> None:
+        """can_grant should check path restrictions across levels."""
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        subdir = project_dir / "subdir"
+        subdir.mkdir()
+        other_dir = tmp_path / "other"
+        other_dir.mkdir()
+
+        # TRUSTED parent with restricted paths
         parent = AgentPermissions(
-            base_preset="custom",
+            base_preset="trusted",
             effective_policy=PermissionPolicy(
                 level=PermissionLevel.TRUSTED,
-                allowed_paths=[Path("/home/user/project")],
+                allowed_paths=[project_dir],
+                cwd=project_dir,
             ),
         )
 
-        # Child requesting unrestricted paths
+        # SANDBOXED child requesting unrestricted paths
         child_unrestricted = AgentPermissions(
-            base_preset="custom",
+            base_preset="sandboxed",
             effective_policy=PermissionPolicy(
-                level=PermissionLevel.TRUSTED,
+                level=PermissionLevel.SANDBOXED,
                 allowed_paths=None,  # Unrestricted
             ),
         )
 
-        # Parent cannot grant unrestricted paths
+        # TRUSTED parent cannot grant unrestricted to SANDBOXED child
         assert parent.can_grant(child_unrestricted) is False
 
-        # Child requesting subset of parent's paths
+        # SANDBOXED child requesting subset of parent's paths
         child_subset = AgentPermissions(
-            base_preset="custom",
+            base_preset="sandboxed",
             effective_policy=PermissionPolicy(
-                level=PermissionLevel.TRUSTED,
-                allowed_paths=[Path("/home/user/project/subdir")],
+                level=PermissionLevel.SANDBOXED,
+                allowed_paths=[subdir],
+                cwd=project_dir,
             ),
         )
 
-        # Parent can grant subset paths
+        # Parent can grant subset paths (subdir is within project_dir)
         assert parent.can_grant(child_subset) is True
 
         # Child requesting paths outside parent's scope
         child_outside = AgentPermissions(
-            base_preset="custom",
+            base_preset="sandboxed",
             effective_policy=PermissionPolicy(
-                level=PermissionLevel.TRUSTED,
-                allowed_paths=[Path("/home/other")],
+                level=PermissionLevel.SANDBOXED,
+                allowed_paths=[other_dir],
+                cwd=other_dir,
             ),
         )
 
@@ -820,8 +812,9 @@ class TestPermissionDeltaApplication:
 
     def test_apply_delta_enables_tools(self) -> None:
         """apply_delta should enable specified tools."""
-        permissions = resolve_preset("worker")
-        # Worker has write_file disabled by default
+        # Create sandboxed with write_file disabled
+        permissions = resolve_preset("sandboxed")
+        permissions.tool_permissions["write_file"] = ToolPermission(enabled=False)
 
         delta = PermissionDelta(enable_tools=["write_file"])
         new_permissions = permissions.apply_delta(delta)
@@ -838,14 +831,30 @@ class TestPermissionDeltaApplication:
         assert Path("/secret") in new_permissions.effective_policy.blocked_paths
 
     def test_apply_delta_replaces_allowed_paths(self) -> None:
-        """apply_delta with allowed_paths replaces base paths."""
-        permissions = resolve_preset("sandboxed")
-        # Sandboxed defaults to CWD
+        """apply_delta with allowed_paths replaces base paths for TRUSTED (not frozen)."""
+        # Use TRUSTED which is not frozen (SANDBOXED is frozen)
+        permissions = resolve_preset("trusted")
+
+        # Set some initial paths
+        permissions.effective_policy.allowed_paths = [Path("/home/user/original")]
 
         delta = PermissionDelta(allowed_paths=[Path("/home/user/specific")])
         new_permissions = permissions.apply_delta(delta)
 
         assert new_permissions.effective_policy.allowed_paths == [Path("/home/user/specific")]
+
+    def test_apply_delta_cannot_modify_sandboxed_paths(self) -> None:
+        """apply_delta cannot modify paths on SANDBOXED (frozen) permissions."""
+        permissions = resolve_preset("sandboxed")
+        # Sandboxed is frozen, so allowed_paths cannot be modified
+
+        delta = PermissionDelta(allowed_paths=[Path("/home/user/specific")])
+
+        # This should raise PermissionError
+        with pytest.raises(PermissionError) as exc_info:
+            permissions.apply_delta(delta)
+
+        assert "frozen" in str(exc_info.value).lower()
 
 
 class TestNoParentPermissionsIsUnrestricted:

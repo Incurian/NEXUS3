@@ -6,6 +6,12 @@ It also provides token counting functionality with pluggable backends and
 context management for conversation state and token budgets.
 """
 
+from nexus3.context.compaction import (
+    CompactionResult,
+    build_summarize_prompt,
+    create_summary_message,
+    select_messages_for_compaction,
+)
 from nexus3.context.manager import ContextConfig, ContextManager
 from nexus3.context.prompt_loader import LoadedPrompt, PromptLoader
 from nexus3.context.token_counter import (
@@ -16,6 +22,10 @@ from nexus3.context.token_counter import (
 )
 
 __all__ = [
+    "CompactionResult",
+    "build_summarize_prompt",
+    "create_summary_message",
+    "select_messages_for_compaction",
     "LoadedPrompt",
     "PromptLoader",
     "TokenCounter",

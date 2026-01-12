@@ -24,9 +24,12 @@ class ReadFileSkill:
         """Initialize ReadFileSkill.
 
         Args:
-            allowed_paths: List of allowed directories. If None, no sandbox
-                validation is performed (unrestricted access).
+            allowed_paths: List of allowed directories for path validation.
+                - None: No sandbox validation (unrestricted access)
+                - []: Empty list means NO paths allowed (all reads denied)
+                - [Path(...)]: Only allow reads within these directories
         """
+        # None = unrestricted, [] = deny all, [paths...] = only within these
         self._allowed_paths = allowed_paths
 
     @property

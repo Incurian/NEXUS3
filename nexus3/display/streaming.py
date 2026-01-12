@@ -26,7 +26,7 @@ class ToolStatus:
     name: str
     tool_id: str
     state: ToolState = ToolState.PENDING
-    path: str = ""  # Primary argument (e.g., file path)
+    params: str = ""  # Formatted parameters (truncated)
     error: str = ""  # Error message if failed
     start_time: float = 0.0  # When tool started executing
 
@@ -140,10 +140,10 @@ class StreamingDisplay:
         elif tool.state == ToolState.CANCELLED:
             line.append("  ● ", style="bright_yellow")
 
-        # Tool name and path
+        # Tool name and params
         line.append(tool.name, style="bold" if tool.state == ToolState.ACTIVE else "")
-        if tool.path:
-            line.append(f": {tool.path}", style="dim")
+        if tool.params:
+            line.append(f": {tool.params}", style="dim")
 
         # Duration for active tools > 3s
         if tool.state == ToolState.ACTIVE and tool.start_time > 0:
@@ -323,15 +323,15 @@ class StreamingDisplay:
         """Initialize batch with all tools as pending.
 
         Args:
-            tools: List of (name, tool_id, path) tuples.
+            tools: List of (name, tool_id, params) tuples.
         """
         self._tools.clear()
-        for name, tool_id, path in tools:
+        for name, tool_id, params in tools:
             self._tools[tool_id] = ToolStatus(
                 name=name,
                 tool_id=tool_id,
                 state=ToolState.PENDING,
-                path=path,
+                params=params,
             )
         self.activity = Activity.TOOL_CALLING
 

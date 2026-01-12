@@ -99,6 +99,7 @@ async def cmd_send(
     content: str,
     port: int = DEFAULT_PORT,
     api_key: str | None = None,
+    timeout: float = 120.0,
 ) -> int:
     """Send a message to a Nexus agent.
 
@@ -108,6 +109,7 @@ async def cmd_send(
         port: Server port (default 8765).
         api_key: Optional API key. If not provided, auto-discovers from
                  environment or key files.
+        timeout: Request timeout in seconds (default 120).
 
     Returns:
         Exit code: 0 on success, 1 on error.
@@ -121,7 +123,7 @@ async def cmd_send(
     url = f"http://127.0.0.1:{port}/agent/{agent_id}"
     key = _get_api_key(port, api_key)
     try:
-        async with NexusClient(url, api_key=key) as client:
+        async with NexusClient(url, api_key=key, timeout=timeout) as client:
             result = await client.send(content)
             _print_json(result)
             return 0
@@ -309,6 +311,10 @@ async def cmd_create(
     agent_id: str,
     port: int = DEFAULT_PORT,
     api_key: str | None = None,
+    preset: str = "sandboxed",
+    cwd: str | None = None,
+    allowed_write_paths: list[str] | None = None,
+    model: str | None = None,
 ) -> int:
     """Create a new agent on the server.
 
@@ -318,6 +324,10 @@ async def cmd_create(
         agent_id: ID for the new agent.
         port: Server port (default 8765).
         api_key: Optional API key.
+        preset: Permission preset (default: sandboxed for RPC mode).
+        cwd: Working directory / sandbox root for the agent.
+        allowed_write_paths: Paths where write_file/edit_file are allowed.
+        model: Model name/alias to use (from config.models or full model ID).
 
     Returns:
         Exit code: 0 on success, 1 on error.
@@ -329,7 +339,13 @@ async def cmd_create(
     key = _get_api_key(port, api_key)
     try:
         async with NexusClient(url, api_key=key) as client:
-            result = await client.create_agent(agent_id)
+            result = await client.create_agent(
+                agent_id,
+                preset=preset,
+                cwd=cwd,
+                allowed_write_paths=allowed_write_paths,
+                model=model,
+            )
             _print_json(result)
             return 0
     except ClientError as e:

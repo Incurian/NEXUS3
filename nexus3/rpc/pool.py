@@ -147,24 +147,26 @@ class AgentConfig:
             the prompt_loader to load personal + project prompts.
         preset: Permission preset name (e.g., "yolo", "trusted", "sandboxed").
             If None, uses default_preset from config.
+        cwd: Working directory / sandbox root. For SANDBOXED preset, this is
+            the only path the agent can access. Must be within parent's allowed
+            paths if parent_permissions is set.
         delta: Permission delta to apply to the base preset.
         parent_permissions: Parent agent's permissions for ceiling enforcement.
             Used when an agent spawns a subagent.
         parent_agent_id: ID of the parent agent that created this agent.
             Used for tracking agent lineage in permission inheritance.
-
-    Future extensions:
-        - working_dir: Restrict file operations to this directory
-        - max_tokens: Override context window size
-        - tools: Override available tools
+        model: Model name/alias to use. If None, uses provider default.
+            Can be an alias defined in config.models or a full model ID.
     """
 
     agent_id: str | None = None
     system_prompt: str | None = None
     preset: str | None = None
+    cwd: Path | None = None
     delta: PermissionDelta | None = None
     parent_permissions: AgentPermissions | None = None
     parent_agent_id: str | None = None
+    model: str | None = None
 
 
 @dataclass
@@ -322,9 +324,15 @@ class AgentPool:
                 loaded_prompt = self._shared.prompt_loader.load(is_repl=False)
                 system_prompt = loaded_prompt.content
 
-            # Create context manager
+            # Resolve model name/alias to full settings
+            resolved_model = self._shared.config.resolve_model(effective_config.model)
+
+            # Create context manager with model's context window
+            context_config = ContextConfig(
+                max_tokens=resolved_model.context_window,
+            )
             context = ContextManager(
-                config=ContextConfig(),
+                config=context_config,
                 logger=logger,
             )
             context.set_system_prompt(system_prompt)
@@ -338,10 +346,18 @@ class AgentPool:
             # Resolve permissions from preset (using custom presets from config if available)
             preset_name = effective_config.preset or self._shared.config.permissions.default_preset
             try:
-                permissions = resolve_preset(preset_name, self._shared.custom_presets)
+                permissions = resolve_preset(
+                    preset_name,
+                    self._shared.custom_presets,
+                    cwd=effective_config.cwd,
+                )
             except ValueError:
                 # Fall back to trusted if preset not found
-                permissions = resolve_preset("trusted", self._shared.custom_presets)
+                permissions = resolve_preset(
+                    "trusted",
+                    self._shared.custom_presets,
+                    cwd=effective_config.cwd,
+                )
 
             # SECURITY: Check ceiling BEFORE applying delta
             # This ensures the base preset is allowed, then we check the delta result
@@ -376,10 +392,11 @@ class AgentPool:
                 permissions.parent_agent_id = effective_config.parent_agent_id
                 permissions.depth = effective_config.parent_permissions.depth + 1
 
-            # Register agent_id, permissions, and allowed_paths
+            # Register agent_id, permissions, allowed_paths, and model
             services.register("agent_id", effective_id)
             services.register("permissions", permissions)
             services.register("allowed_paths", permissions.effective_policy.allowed_paths)
+            services.register("model", resolved_model)  # ResolvedModel for model hotswapping
 
             registry = SkillRegistry(services)
             register_builtin_skills(registry)
@@ -397,6 +414,8 @@ class AgentPool:
                 skill_timeout=self._shared.config.skill_timeout,
                 max_concurrent_tools=self._shared.config.max_concurrent_tools,
                 services=services,
+                config=self._shared.config,
+                prompt_loader=self._shared.prompt_loader,
             )
 
             # Create dispatcher with context for token info and log multiplexer
@@ -420,6 +439,14 @@ class AgentPool:
 
             # Store in pool
             self._agents[effective_id] = agent
+
+            # Track child in parent agent's services (for permission-free destroy)
+            if effective_config.parent_agent_id is not None:
+                parent = self._agents.get(effective_config.parent_agent_id)
+                if parent:
+                    child_ids: set[str] = parent.services.get("child_agent_ids") or set()
+                    child_ids.add(effective_id)
+                    parent.services.register("child_agent_ids", child_ids)
 
             return agent
 
@@ -528,9 +555,12 @@ class AgentPool:
             # Use system prompt from saved session
             system_prompt = saved.system_prompt
 
-            # Create context manager
+            # Create context manager with configured context window
+            context_config = ContextConfig(
+                max_tokens=self._shared.config.provider.context_window,
+            )
             context = ContextManager(
-                config=ContextConfig(),
+                config=context_config,
                 logger=logger,
             )
             context.set_system_prompt(system_prompt)
@@ -583,6 +613,8 @@ class AgentPool:
                 skill_timeout=self._shared.config.skill_timeout,
                 max_concurrent_tools=self._shared.config.max_concurrent_tools,
                 services=services,
+                config=self._shared.config,
+                prompt_loader=self._shared.prompt_loader,
             )
 
             # Create dispatcher with context for token info and log multiplexer
@@ -617,6 +649,7 @@ class AgentPool:
         1. Removes the agent from the pool
         2. Cancels all in-progress requests
         3. Closes the agent's logger (flushes buffers, closes DB)
+        4. Removes from parent's child tracking (if applicable)
 
         The agent's log directory is preserved for debugging/auditing.
 
@@ -630,6 +663,15 @@ class AgentPool:
             agent = self._agents.pop(agent_id, None)
             if agent is None:
                 return False
+
+            # Remove from parent's child tracking
+            permissions: AgentPermissions | None = agent.services.get("permissions")
+            if permissions and permissions.parent_agent_id:
+                parent = self._agents.get(permissions.parent_agent_id)
+                if parent:
+                    child_ids: set[str] | None = parent.services.get("child_agent_ids")
+                    if child_ids and agent_id in child_ids:
+                        child_ids.discard(agent_id)
 
             # Cancel all in-progress requests before cleanup
             await agent.dispatcher.cancel_all_requests()
@@ -653,6 +695,21 @@ class AgentPool:
         """
         return self._agents.get(agent_id)
 
+    def get_children(self, agent_id: str) -> list[str]:
+        """Get IDs of all child agents of a given agent.
+
+        Args:
+            agent_id: The ID of the parent agent.
+
+        Returns:
+            List of child agent IDs (may be empty).
+        """
+        agent = self._agents.get(agent_id)
+        if agent is None:
+            return []
+        child_ids: set[str] | None = agent.services.get("child_agent_ids")
+        return list(child_ids) if child_ids else []
+
     def list(self) -> list[dict[str, Any]]:
         """List all agents with basic info.
 
@@ -667,15 +724,21 @@ class AgentPool:
             - created_at: ISO format timestamp of creation
             - message_count: Number of messages in context
             - should_shutdown: Whether the agent's dispatcher wants shutdown
+            - parent_agent_id: ID of parent agent (None if root)
+            - child_count: Number of active child agents
         """
         result: list[dict[str, Any]] = []
         for agent in self._agents.values():
+            permissions: AgentPermissions | None = agent.services.get("permissions")
+            child_ids: set[str] | None = agent.services.get("child_agent_ids")
             result.append({
                 "agent_id": agent.agent_id,
                 "is_temp": is_temp_agent(agent.agent_id),
                 "created_at": agent.created_at.isoformat(),
                 "message_count": len(agent.context.messages),
                 "should_shutdown": agent.dispatcher.should_shutdown,
+                "parent_agent_id": permissions.parent_agent_id if permissions else None,
+                "child_count": len(child_ids) if child_ids else 0,
             })
         return result
 

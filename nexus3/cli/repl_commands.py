@@ -67,12 +67,15 @@ Session Management:
 
 Configuration:
   /cwd [path]         Show or change working directory
+  /model              Show current model
+  /model <name>       Switch to model (alias or full ID)
   /permissions        Show current permissions
-  /permissions <preset>  Change to preset (yolo/trusted/sandboxed/worker)
+  /permissions <preset>  Change to preset (yolo/trusted/sandboxed)
   /permissions --disable <tool>  Disable a tool
   /permissions --enable <tool>   Re-enable a tool
   /permissions --list-tools      List tool enable/disable status
   /prompt [file]      Show or set system prompt
+  /compact            Force context compaction/summarization
 
 REPL Control:
   /help               Show this help message
@@ -122,8 +125,7 @@ async def cmd_agent(
             permission = "trusted"
         elif part_lower in ("--sandboxed", "-s"):
             permission = "sandboxed"
-        elif part_lower in ("--worker", "-w"):
-            permission = "worker"
+        # Note: "worker" preset was removed; use "sandboxed" with tool deltas instead
 
     # Check if agent exists in pool (active)
     if agent_name in ctx.pool:
@@ -446,6 +448,11 @@ async def _disable_tool(
     else:
         perms.tool_permissions[tool_name] = ToolPermission(enabled=False)
 
+    # Resync tool definitions so LLM no longer sees disabled tool
+    agent.context.set_tool_definitions(
+        agent.registry.get_definitions_for_permissions(perms)
+    )
+
     return CommandOutput.success(
         message=f"Disabled tool: {tool_name}",
         data={"tool": tool_name, "enabled": False},
@@ -475,6 +482,11 @@ async def _enable_tool(
     else:
         perms.tool_permissions[tool_name] = ToolPermission(enabled=True)
 
+    # Resync tool definitions so LLM sees newly enabled tool
+    agent.context.set_tool_definitions(
+        agent.registry.get_definitions_for_permissions(perms)
+    )
+
     return CommandOutput.success(
         message=f"Enabled tool: {tool_name}",
         data={"tool": tool_name, "enabled": True},
@@ -490,6 +502,11 @@ async def _change_preset(
     """Change agent to a new preset."""
     from nexus3.core.permissions import PermissionPreset
 
+    # Handle legacy "worker" preset by mapping to sandboxed
+    original_preset_name = preset_name
+    if preset_name == "worker":
+        preset_name = "sandboxed"
+
     builtin = get_builtin_presets()
     all_presets = dict(builtin)
     if custom_presets:
@@ -498,7 +515,7 @@ async def _change_preset(
     if preset_name not in all_presets:
         valid = ", ".join(all_presets.keys())
         return CommandOutput.error(
-            f"Unknown preset: {preset_name}. Valid: {valid}"
+            f"Unknown preset: {original_preset_name}. Valid: {valid}"
         )
 
     # Check ceiling
@@ -522,6 +539,11 @@ async def _change_preset(
 
         agent.services.register("permissions", new_perms)
         agent.services.register("allowed_paths", new_perms.effective_policy.allowed_paths)
+
+        # Resync tool definitions for new preset's permissions
+        agent.context.set_tool_definitions(
+            agent.registry.get_definitions_for_permissions(new_perms)
+        )
 
         return CommandOutput.success(
             message=f"Changed to preset: {preset_name}",
@@ -628,3 +650,158 @@ async def cmd_quit(ctx: CommandContext) -> CommandOutput:
         CommandOutput with QUIT result.
     """
     return CommandOutput.quit()
+
+
+async def cmd_compact(ctx: CommandContext) -> CommandOutput:
+    """Force context compaction/summarization.
+
+    Compacts the conversation context by summarizing older messages,
+    freeing up token budget for new interactions.
+
+    Args:
+        ctx: Command context with pool access.
+
+    Returns:
+        CommandOutput with compaction result.
+    """
+    if ctx.current_agent_id is None:
+        return CommandOutput.error("No current agent")
+
+    agent = ctx.pool.get(ctx.current_agent_id)
+    if agent is None:
+        return CommandOutput.error(f"Agent not found: {ctx.current_agent_id}")
+
+    session = agent.session
+
+    if session.context is None:
+        return CommandOutput.error("No context available")
+
+    messages = session.context.messages
+    if len(messages) < 2:
+        return CommandOutput.success(
+            message="Not enough context to compact",
+            data={"compacted": False, "reason": "insufficient_messages"},
+        )
+
+    try:
+        result = await session.compact(force=True)
+        if result is None:
+            return CommandOutput.success(
+                message="Nothing to compact",
+                data={"compacted": False, "reason": "nothing_to_compact"},
+            )
+        else:
+            return CommandOutput.success(
+                message=f"Compacted: {result.original_token_count} -> {result.new_token_count} tokens",
+                data={
+                    "compacted": True,
+                    "original_tokens": result.original_token_count,
+                    "new_tokens": result.new_token_count,
+                },
+            )
+    except Exception as e:
+        return CommandOutput.error(f"Compaction failed: {e}")
+
+
+async def cmd_model(
+    ctx: CommandContext,
+    name: str | None = None,
+) -> CommandOutput:
+    """Show or switch the current agent's model.
+
+    If current context exceeds the new model's context window, prompts
+    for action: truncate, compact, or cancel.
+
+    Args:
+        ctx: Command context with pool access.
+        name: Model name/alias, or None to show current model.
+
+    Returns:
+        CommandOutput with model info or switch result.
+    """
+    if ctx.current_agent_id is None:
+        return CommandOutput.error("No current agent")
+
+    agent = ctx.pool.get(ctx.current_agent_id)
+    if agent is None:
+        return CommandOutput.error(f"Agent not found: {ctx.current_agent_id}")
+
+    # Get config for model resolution
+    config = getattr(getattr(ctx.pool, "_shared", None), "config", None)
+    if config is None:
+        return CommandOutput.error("Config not available")
+
+    from nexus3.config.schema import ResolvedModel
+
+    # Get current model from agent services
+    current_model: ResolvedModel | None = agent.services.get("model")
+
+    if name is None:
+        # Show current model
+        if current_model is None:
+            return CommandOutput.success(
+                message=f"Model: {config.provider.model} (default)",
+                data={
+                    "model_id": config.provider.model,
+                    "context_window": config.provider.context_window,
+                    "alias": None,
+                },
+            )
+        else:
+            alias_info = f" (alias: {current_model.alias})" if current_model.alias else ""
+            return CommandOutput.success(
+                message=f"Model: {current_model.model_id}{alias_info}\n"
+                        f"Context window: {current_model.context_window:,} tokens\n"
+                        f"Reasoning: {'enabled' if current_model.reasoning else 'disabled'}",
+                data={
+                    "model_id": current_model.model_id,
+                    "context_window": current_model.context_window,
+                    "reasoning": current_model.reasoning,
+                    "alias": current_model.alias,
+                },
+            )
+
+    # Resolve new model
+    try:
+        new_model = config.resolve_model(name)
+    except Exception as e:
+        return CommandOutput.error(f"Failed to resolve model '{name}': {e}")
+
+    # Get current token usage
+    usage = agent.context.get_token_usage()
+    current_tokens = usage.get("total", 0)
+
+    # Check if context exceeds new model's capacity
+    if current_tokens > new_model.context_window:
+        # Context too large for new model - return error with guidance
+        # (actual prompting for action is handled in REPL)
+        return CommandOutput.error(
+            f"Current context ({current_tokens:,} tokens) exceeds "
+            f"{name}'s capacity ({new_model.context_window:,} tokens).\n"
+            f"Use /compact first to reduce context, or start a fresh session.",
+            data={
+                "action_required": "reduce_context",
+                "current_tokens": current_tokens,
+                "new_capacity": new_model.context_window,
+                "overage": current_tokens - new_model.context_window,
+            },
+        )
+
+    # Update model in agent services
+    agent.services.register("model", new_model)
+
+    # Update context manager's max_tokens
+    if hasattr(agent.context, "_config"):
+        agent.context._config.max_tokens = new_model.context_window
+
+    alias_info = f" (alias: {new_model.alias})" if new_model.alias else ""
+    return CommandOutput.success(
+        message=f"Switched to model: {new_model.model_id}{alias_info}\n"
+                f"Context window: {new_model.context_window:,} tokens",
+        data={
+            "model_id": new_model.model_id,
+            "context_window": new_model.context_window,
+            "reasoning": new_model.reasoning,
+            "alias": new_model.alias,
+        },
+    )
