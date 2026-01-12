@@ -231,16 +231,26 @@ class ContextManager:
     # === Truncation ===
 
     def _get_context_messages(self) -> list[Message]:
-        """Get messages that fit in context, with truncation if needed."""
+        """Get messages that fit in context, with truncation if needed.
+
+        When truncation occurs, _messages is updated to match what's sent.
+        This keeps in-memory state synchronized with context - we only track
+        what the LLM actually sees.
+        """
         if not self.is_over_budget():
             return self._messages.copy()
 
         # Apply truncation strategy
         if self.config.truncation_strategy == "middle_out":
-            return self._truncate_middle_out()
+            truncated = self._truncate_middle_out()
         else:
             # Default: oldest_first
-            return self._truncate_oldest_first()
+            truncated = self._truncate_oldest_first()
+
+        # Sync _messages with what we're sending - don't keep orphaned messages
+        self._messages = truncated
+
+        return truncated
 
     def _identify_message_groups(self) -> list[list[Message]]:
         """Group messages into atomic units for truncation.

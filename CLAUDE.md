@@ -262,7 +262,7 @@ Full review in `/code-review/SUMMARY.md`. 21 files analyzed.
 | 6 | No provider tests | ⚠️ PARTIAL | Provider has retry logic, tests incomplete |
 | 7 | Raw log callback race | ✅ FIXED | `rpc/log_multiplexer.py` with contextvars |
 | 8 | Requests not cancelled on destroy | ✅ FIXED | `cancel_all_requests()` in Dispatcher |
-| 9 | Messages never GC'd | ❌ TODO | Need pruning after truncation |
+| 9 | Messages never GC'd | ✅ FIXED | `_messages` syncs with context after truncation |
 | 10 | Missing encoding in file ops | ⚠️ PARTIAL | Skills have it, session logs need check |
 
 ---
@@ -284,7 +284,7 @@ Full review in `/code-review/SUMMARY.md`. 21 files analyzed.
 | Task | Status | Description |
 |------|--------|-------------|
 | Truncation Fix | ✅ Done | Groups tool_call + results as atomic units |
-| Message GC | ❌ TODO | Prune messages after truncation |
+| Message GC | ✅ Done | `_messages` syncs with context after truncation |
 | Cancel on Destroy | ✅ Done | `cancel_all_requests()` in Dispatcher |
 | Encoding | ⚠️ Partial | Skills have it, session logs need audit |
 
@@ -530,7 +530,7 @@ async def destroy(self, agent_id: str) -> bool:
 
 | Item | Notes |
 |------|-------|
-| Message GC | Prune messages after truncation (max_messages config) |
+| ~~Message GC~~ | ✅ Done - `_messages` syncs with context after truncation |
 | ~~Log multiplexer~~ | ✅ Done - `rpc/log_multiplexer.py` with contextvars |
 | ~~Permission enforcement~~ | ✅ Done in Phase 8 |
 | verbose/raw_log CLI | Wire to LogStream flags |

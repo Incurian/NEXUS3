@@ -503,12 +503,24 @@ __all__ = [
 
 Note: `FilePromptSource`, `PromptSource`, and `get_system_info` are available via direct import from `nexus3.context.prompt_loader`.
 
-## Not Yet Implemented
+## Context Synchronization
 
-### Message GC (Garbage Collection)
+When truncation occurs, `_messages` is automatically synchronized with what's sent to the API:
 
-Message garbage collection (pruning messages after truncation) is tracked as a TODO in CLAUDE.md.
+```python
+def _get_context_messages(self) -> list[Message]:
+    if not self.is_over_budget():
+        return self._messages.copy()
 
-**Current behavior:** Messages are truncated from the context returned by `build_messages()`, but the original `_messages` list is never pruned. Over very long sessions, this could lead to unbounded memory growth.
+    # Apply truncation
+    truncated = self._truncate_oldest_first()  # or middle_out
 
-**Potential solution:** Add a `max_messages` config option and prune `_messages` after truncation.
+    # Sync _messages with what we're sending
+    self._messages = truncated
+
+    return truncated
+```
+
+**Behavior:** The in-memory `_messages` list always reflects what the LLM actually sees. Orphaned messages (those truncated out of context) are discarded. The SQLite log retains the complete history for auditing.
+
+**Design principle:** Think in terms of context, not memory. What's in `_messages` equals what's in the LLM's context window.
