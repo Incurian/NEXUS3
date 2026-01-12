@@ -19,6 +19,7 @@ from nexus3.rpc.auth import (
 )
 from nexus3.rpc.detection import DetectionResult, detect_server, wait_for_server
 from nexus3.rpc.dispatcher import Dispatcher, InvalidParamsError
+from nexus3.rpc.log_multiplexer import LogMultiplexer
 from nexus3.rpc.http import (
     BIND_HOST,
     DEFAULT_PORT,
@@ -78,6 +79,8 @@ __all__ = [
     "SERVER_ERROR",
     # Dispatcher
     "Dispatcher",
+    # Log Multiplexer
+    "LogMultiplexer",
     # Exceptions
     "ParseError",
     "InvalidParamsError",

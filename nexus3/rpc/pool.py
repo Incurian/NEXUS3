@@ -50,6 +50,7 @@ from nexus3.core.permissions import (
     resolve_preset,
 )
 from nexus3.rpc.dispatcher import Dispatcher
+from nexus3.rpc.log_multiplexer import LogMultiplexer
 from nexus3.session import LogConfig, LogStream, Session, SessionLogger
 from nexus3.session.persistence import SavedSession, deserialize_messages
 from nexus3.skill import ServiceContainer, SkillRegistry
@@ -247,6 +248,20 @@ class AgentPool:
         self._agents: dict[str, Agent] = {}
         self._lock = asyncio.Lock()
 
+        # Create log multiplexer for multi-agent raw log routing
+        # This routes raw API logs to the correct agent based on async context
+        self._log_multiplexer = LogMultiplexer()
+
+        # Set the multiplexer on the provider once (if provider supports it)
+        provider = self._shared.provider
+        if hasattr(provider, "set_raw_log_callback"):
+            provider.set_raw_log_callback(self._log_multiplexer)
+
+    @property
+    def log_multiplexer(self) -> LogMultiplexer:
+        """Get the log multiplexer for setting agent context in dispatchers."""
+        return self._log_multiplexer
+
     async def create(
         self,
         agent_id: str | None = None,
@@ -293,14 +308,11 @@ class AgentPool:
             )
             logger = SessionLogger(log_config)
 
-            # Wire up raw logging callback to provider if supported
-            # Note: AsyncProvider protocol doesn't require set_raw_log_callback,
-            # but concrete implementations like OpenRouterProvider support it.
+            # Register raw logging callback with the multiplexer
+            # The multiplexer routes logs to correct agent based on async context
             raw_callback = logger.get_raw_log_callback()
             if raw_callback is not None:
-                provider = self._shared.provider
-                if hasattr(provider, "set_raw_log_callback"):
-                    provider.set_raw_log_callback(raw_callback)
+                self._log_multiplexer.register(effective_id, raw_callback)
 
             # Determine system prompt
             if effective_config.system_prompt is not None:
@@ -387,8 +399,13 @@ class AgentPool:
                 services=services,
             )
 
-            # Create dispatcher with context for token info
-            dispatcher = Dispatcher(session, context=context)
+            # Create dispatcher with context for token info and log multiplexer
+            dispatcher = Dispatcher(
+                session,
+                context=context,
+                agent_id=effective_id,
+                log_multiplexer=self._log_multiplexer,
+            )
 
             # Create agent instance
             agent = Agent(
@@ -503,12 +520,10 @@ class AgentPool:
             )
             logger = SessionLogger(log_config)
 
-            # Wire up raw logging callback to provider if supported
+            # Register raw logging callback with the multiplexer
             raw_callback = logger.get_raw_log_callback()
             if raw_callback is not None:
-                provider = self._shared.provider
-                if hasattr(provider, "set_raw_log_callback"):
-                    provider.set_raw_log_callback(raw_callback)
+                self._log_multiplexer.register(agent_id, raw_callback)
 
             # Use system prompt from saved session
             system_prompt = saved.system_prompt
@@ -570,8 +585,13 @@ class AgentPool:
                 services=services,
             )
 
-            # Create dispatcher with context for token info
-            dispatcher = Dispatcher(session, context=context)
+            # Create dispatcher with context for token info and log multiplexer
+            dispatcher = Dispatcher(
+                session,
+                context=context,
+                agent_id=agent_id,
+                log_multiplexer=self._log_multiplexer,
+            )
 
             # Create agent instance with saved creation time if available
             agent = Agent(
@@ -613,6 +633,9 @@ class AgentPool:
 
             # Cancel all in-progress requests before cleanup
             await agent.dispatcher.cancel_all_requests()
+
+            # Unregister from log multiplexer
+            self._log_multiplexer.unregister(agent_id)
 
             # Clean up logger (closes DB connection, flushes files)
             agent.logger.close()

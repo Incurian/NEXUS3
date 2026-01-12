@@ -76,6 +76,7 @@ HTTP POST --> read_http_request() --> Path Router --> dispatch()
 | `detection.py` | Server detection and wait utilities |
 | `dispatcher.py` | Per-agent method dispatcher (send/cancel/shutdown) |
 | `global_dispatcher.py` | Global method dispatcher (create/destroy/list agents) |
+| `log_multiplexer.py` | Contextvars-based routing for multi-agent raw logs |
 | `pool.py` | AgentPool, Agent, SharedComponents, AgentConfig |
 | `http.py` | HTTP server with path-based routing |
 | `__init__.py` | Public exports |
@@ -209,6 +210,56 @@ Sends a `list_agents` JSON-RPC request to fingerprint the server:
 - HTTP 401/403 (auth error) -> `NEXUS_SERVER` (auth-protected)
 - Connection refused -> `NO_SERVER`
 - Invalid/non-JSON-RPC response -> `OTHER_SERVICE`
+
+---
+
+## Log Multiplexer (log_multiplexer.py)
+
+Routes raw API log callbacks to the correct agent based on async context. Solves the race condition where multiple agents sharing a provider would overwrite each other's log callbacks.
+
+### The Problem
+
+Multiple agents share a single `AsyncProvider` instance (for connection pooling), but each agent has its own `SessionLogger`. Without multiplexing:
+
+```
+T1: Create Agent A -> provider._raw_log = callback_A
+T2: Create Agent B -> provider._raw_log = callback_B  # Overwrites A!
+T3: Agent A sends request -> logs go to B's logger (wrong!)
+```
+
+### The Solution
+
+Use Python's `contextvars` to track the current agent per async task:
+
+```python
+from nexus3.rpc.log_multiplexer import LogMultiplexer
+
+# In AgentPool.__init__:
+multiplexer = LogMultiplexer()
+provider.set_raw_log_callback(multiplexer)  # Set once
+
+# When creating agent:
+multiplexer.register(agent_id, callback)
+
+# In Dispatcher._handle_send:
+with multiplexer.agent_context(agent_id):
+    async for chunk in session.send(content):
+        # Logs automatically route to correct agent
+        ...
+```
+
+### Key Methods
+
+| Method | Description |
+|--------|-------------|
+| `register(agent_id, callback)` | Register an agent's raw log callback |
+| `unregister(agent_id)` | Remove an agent's callback (on destroy) |
+| `agent_context(agent_id)` | Context manager to set current agent for routing |
+| `on_request/on_response/on_chunk` | RawLogCallback protocol - forwards to current agent |
+
+### Thread Safety
+
+`contextvars` automatically isolates state per async task. No locks needed - each concurrent request has its own context that persists through `await` points.
 
 ---
 
@@ -1038,6 +1089,9 @@ PARSE_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR, 
 
 # Dispatcher
 Dispatcher
+
+# Log Multiplexer
+LogMultiplexer
 
 # Agent Pool
 Agent, AgentConfig, AgentPool, SharedComponents

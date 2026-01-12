@@ -1,5 +1,7 @@
 """JSON-RPC method dispatcher for NEXUS3 headless mode."""
 
+from __future__ import annotations
+
 import asyncio
 import secrets
 from collections.abc import Callable, Coroutine
@@ -19,6 +21,7 @@ from nexus3.session import Session
 
 if TYPE_CHECKING:
     from nexus3.context.manager import ContextManager
+    from nexus3.rpc.log_multiplexer import LogMultiplexer
 
 # Type alias for handler functions
 Handler = Callable[[dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
@@ -37,16 +40,22 @@ class Dispatcher:
     def __init__(
         self,
         session: Session,
-        context: "ContextManager | None" = None,
+        context: ContextManager | None = None,
+        agent_id: str | None = None,
+        log_multiplexer: LogMultiplexer | None = None,
     ) -> None:
         """Initialize the dispatcher.
 
         Args:
             session: The Session instance to use for LLM interactions.
             context: Optional ContextManager for token/context info.
+            agent_id: The agent's ID for log routing (required if log_multiplexer provided).
+            log_multiplexer: Optional multiplexer for routing raw logs to correct agent.
         """
         self._session = session
         self._context = context
+        self._agent_id = agent_id
+        self._log_multiplexer = log_multiplexer
         self._should_shutdown = False
         self._active_requests: dict[str, CancellationToken] = {}
         self._handlers: dict[str, Handler] = {
@@ -154,10 +163,17 @@ class Dispatcher:
 
         try:
             # Accumulate all chunks (non-streaming)
+            # Wrap in agent context for correct log routing
             chunks: list[str] = []
-            async for chunk in self._session.send(content, cancel_token=token):
-                token.raise_if_cancelled()
-                chunks.append(chunk)
+            if self._log_multiplexer and self._agent_id:
+                with self._log_multiplexer.agent_context(self._agent_id):
+                    async for chunk in self._session.send(content, cancel_token=token):
+                        token.raise_if_cancelled()
+                        chunks.append(chunk)
+            else:
+                async for chunk in self._session.send(content, cancel_token=token):
+                    token.raise_if_cancelled()
+                    chunks.append(chunk)
 
             return {"content": "".join(chunks), "request_id": request_id}
         except asyncio.CancelledError:

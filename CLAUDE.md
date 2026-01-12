@@ -260,7 +260,7 @@ Full review in `/code-review/SUMMARY.md`. 21 files analyzed.
 | 4 | Tool call/result pair truncation | ✅ FIXED | Groups preserved as atomic units |
 | 5 | Blocking file I/O in async skills | ✅ FIXED | `asyncio.to_thread()` in file skills |
 | 6 | No provider tests | ⚠️ PARTIAL | Provider has retry logic, tests incomplete |
-| 7 | Raw log callback race | ❌ TODO | Need log multiplexer with contextvars |
+| 7 | Raw log callback race | ✅ FIXED | `rpc/log_multiplexer.py` with contextvars |
 | 8 | Requests not cancelled on destroy | ✅ FIXED | `cancel_all_requests()` in Dispatcher |
 | 9 | Messages never GC'd | ❌ TODO | Need pruning after truncation |
 | 10 | Missing encoding in file ops | ⚠️ PARTIAL | Skills have it, session logs need check |
@@ -295,7 +295,7 @@ Full review in `/code-review/SUMMARY.md`. 21 files analyzed.
 | Async File I/O | ✅ Done | `asyncio.to_thread()` in file skills |
 | Skill Timeout | ✅ Done | `asyncio.wait_for()` + `skill_timeout` config |
 | Concurrency Limit | ✅ Done | Semaphore + `max_concurrent_tools` config |
-| Log Multiplexer | ❌ TODO | Use contextvars for multi-agent logging |
+| Log Multiplexer | ✅ Done | `rpc/log_multiplexer.py` with contextvars |
 
 ### Phase 5R.4: Test Coverage - PARTIAL
 
@@ -531,7 +531,7 @@ async def destroy(self, agent_id: str) -> bool:
 | Item | Notes |
 |------|-------|
 | Message GC | Prune messages after truncation (max_messages config) |
-| Log multiplexer | contextvars for multi-agent raw log callbacks |
+| ~~Log multiplexer~~ | ✅ Done - `rpc/log_multiplexer.py` with contextvars |
 | ~~Permission enforcement~~ | ✅ Done in Phase 8 |
 | verbose/raw_log CLI | Wire to LogStream flags |
 | More tools | bash, web_fetch, etc. |
