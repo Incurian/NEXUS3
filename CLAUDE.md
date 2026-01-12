@@ -67,6 +67,8 @@ nexus3 --serve
 ```bash
 # Global methods (POST /)
 {"method": "create_agent", "params": {"agent_id": "worker-1"}}
+{"method": "create_agent", "params": {"agent_id": "worker-1", "preset": "sandboxed"}}
+{"method": "create_agent", "params": {"agent_id": "worker-1", "preset": "trusted", "disable_tools": ["write_file"]}}
 {"method": "list_agents"}
 {"method": "destroy_agent", "params": {"agent_id": "worker-1"}}
 
@@ -116,14 +118,14 @@ nexus-rpc shutdown
 | `read_file` | `path` | Read file contents |
 | `write_file` | `path`, `content` | Write/create files |
 | `sleep` | `seconds` | Pause execution (for testing) |
-| `nexus_create` | `agent_id`, `port`? | Create a new agent |
+| `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `port`? | Create a new agent with permissions |
 | `nexus_destroy` | `agent_id`, `port`? | Remove an agent (server keeps running) |
 | `nexus_send` | `agent_id`, `content`, `port`? | Send message to an agent |
 | `nexus_status` | `agent_id`, `port`? | Get agent tokens + context |
 | `nexus_cancel` | `agent_id`, `request_id`, `port`? | Cancel in-progress request |
 | `nexus_shutdown` | `port`? | Shutdown the entire server |
 
-*Note: `port` defaults to 8765. Skills mirror `nexus-rpc` CLI commands exactly.*
+*Note: `port` defaults to 8765. `preset` can be yolo/trusted/sandboxed/worker. Skills mirror `nexus-rpc` CLI commands.*
 
 ---
 
