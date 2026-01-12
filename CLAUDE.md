@@ -10,6 +10,35 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ---
 
+## DOGFOODING: Use NEXUS3 Subagents
+
+**IMPORTANT:** When working on this codebase, use NEXUS3 subagents for research and exploration tasks instead of Claude Code's built-in Task tool. This is dogfooding - we use our own product.
+
+```bash
+# Start server if not running
+nexus-rpc detect || nexus --serve &
+
+# Create a subagent for research
+nexus-rpc create researcher
+
+# Send research tasks
+nexus-rpc send researcher "Look at nexus3/rpc/ and summarize the JSON-RPC types"
+
+# Check status
+nexus-rpc status researcher
+
+# Clean up when done
+nexus-rpc destroy researcher
+```
+
+**Guidelines:**
+- Use subagents widely for reading/research tasks
+- If subagents write code, verify their work until confident in their ability
+- Note any errors subagents make so we can fix issues on our end
+- Subagents help manage context window and provide real-world testing
+
+---
+
 ## Phases Complete
 
 | Phase | Features |

@@ -1,0 +1,228 @@
+"""MCP client implementation.
+
+The MCPClient handles the MCP protocol lifecycle:
+1. Connect to server via transport
+2. Perform initialization handshake
+3. Discover available tools
+4. Execute tool calls
+5. Clean shutdown
+
+Usage:
+    transport = StdioTransport(["python", "-m", "some_server"])
+    async with MCPClient(transport) as client:
+        tools = await client.list_tools()
+        result = await client.call_tool("echo", {"message": "hello"})
+"""
+
+from typing import Any
+
+from nexus3.core.errors import NexusError
+from nexus3.mcp.protocol import (
+    PROTOCOL_VERSION,
+    MCPClientInfo,
+    MCPServerInfo,
+    MCPTool,
+    MCPToolResult,
+)
+from nexus3.mcp.transport import MCPTransport
+
+
+class MCPError(NexusError):
+    """Error from MCP protocol or server.
+
+    Attributes:
+        code: JSON-RPC error code (if from server).
+        message: Human-readable error message.
+    """
+
+    def __init__(self, message: str, code: int | None = None):
+        super().__init__(message)
+        self.code = code
+
+
+class MCPClient:
+    """Client for connecting to MCP servers.
+
+    Handles the MCP protocol lifecycle including initialization,
+    tool discovery, and tool invocation.
+
+    Attributes:
+        server_info: Information about the connected server.
+        tools: List of available tools after list_tools() is called.
+    """
+
+    def __init__(
+        self,
+        transport: MCPTransport,
+        client_info: MCPClientInfo | None = None,
+    ):
+        """Initialize MCP client.
+
+        Args:
+            transport: Transport layer for communication.
+            client_info: Client identification (defaults to nexus3).
+        """
+        self._transport = transport
+        self._client_info = client_info or MCPClientInfo()
+        self._request_id = 0
+        self._server_info: MCPServerInfo | None = None
+        self._tools: list[MCPTool] = []
+        self._initialized = False
+
+    async def connect(self) -> None:
+        """Connect to the server and perform initialization handshake.
+
+        Call this directly when not using the context manager pattern.
+        """
+        await self._transport.connect()
+        await self._initialize()
+
+    async def close(self) -> None:
+        """Close the connection to the server.
+
+        Call this directly when not using the context manager pattern.
+        """
+        await self._transport.close()
+        self._initialized = False
+
+    async def __aenter__(self) -> "MCPClient":
+        """Connect and initialize."""
+        await self.connect()
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        """Close connection."""
+        await self.close()
+
+    async def _initialize(self) -> None:
+        """Perform MCP initialization handshake.
+
+        Sends initialize request, waits for response, then sends
+        initialized notification.
+        """
+        # Send initialize request
+        response = await self._call(
+            "initialize",
+            {
+                "protocolVersion": PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": self._client_info.to_dict(),
+            },
+        )
+
+        # Parse server info
+        self._server_info = MCPServerInfo.from_dict(response)
+
+        # Send initialized notification (no response expected)
+        await self._notify("notifications/initialized", {})
+
+        self._initialized = True
+
+    async def _call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Make JSON-RPC call and wait for response.
+
+        Args:
+            method: RPC method name.
+            params: Method parameters.
+
+        Returns:
+            The 'result' field from the response.
+
+        Raises:
+            MCPError: If the server returns an error.
+        """
+        self._request_id += 1
+        request = {
+            "jsonrpc": "2.0",
+            "id": self._request_id,
+            "method": method,
+            "params": params,
+        }
+
+        await self._transport.send(request)
+        response = await self._transport.receive()
+
+        # Handle error response
+        if "error" in response:
+            error = response["error"]
+            raise MCPError(
+                message=error.get("message", "Unknown error"),
+                code=error.get("code"),
+            )
+
+        return response.get("result", {})
+
+    async def _notify(self, method: str, params: dict[str, Any]) -> None:
+        """Send notification (no response expected).
+
+        Args:
+            method: Notification method name.
+            params: Notification parameters.
+        """
+        notification = {
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params,
+        }
+        await self._transport.send(notification)
+
+    async def list_tools(self) -> list[MCPTool]:
+        """Discover available tools from server.
+
+        Fetches and caches the list of tools the server provides.
+
+        Returns:
+            List of available tools.
+
+        Raises:
+            MCPError: If the server returns an error.
+        """
+        result = await self._call("tools/list", {})
+
+        self._tools = [
+            MCPTool.from_dict(t) for t in result.get("tools", [])
+        ]
+
+        return self._tools
+
+    async def call_tool(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+    ) -> MCPToolResult:
+        """Invoke a tool on the server.
+
+        Args:
+            name: Name of the tool to invoke.
+            arguments: Tool arguments (empty dict if None).
+
+        Returns:
+            The tool result.
+
+        Raises:
+            MCPError: If the server returns an error.
+        """
+        result = await self._call(
+            "tools/call",
+            {
+                "name": name,
+                "arguments": arguments or {},
+            },
+        )
+
+        return MCPToolResult.from_dict(result)
+
+    @property
+    def server_info(self) -> MCPServerInfo | None:
+        """Get server information (available after initialization)."""
+        return self._server_info
+
+    @property
+    def tools(self) -> list[MCPTool]:
+        """Get cached tools (call list_tools() first)."""
+        return self._tools
+
+    @property
+    def is_initialized(self) -> bool:
+        """Check if client has completed initialization."""
+        return self._initialized

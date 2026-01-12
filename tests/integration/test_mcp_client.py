@@ -1,0 +1,243 @@
+"""Integration tests for MCP client with test server."""
+
+import pytest
+
+from nexus3.mcp import (
+    MCPClient,
+    MCPServerConfig,
+    MCPServerRegistry,
+    MCPSkillAdapter,
+    MCPTool,
+    MCPToolResult,
+)
+from nexus3.mcp.transport import StdioTransport
+
+
+@pytest.fixture
+async def mcp_client():
+    """Create MCP client connected to test server."""
+    transport = StdioTransport(["python3", "-m", "nexus3.mcp.test_server"])
+    async with MCPClient(transport) as client:
+        yield client
+
+
+class TestMCPClientIntegration:
+    """Test MCP client with actual test server."""
+
+    @pytest.mark.asyncio
+    async def test_initialization(self, mcp_client: MCPClient) -> None:
+        """Test client initializes and gets server info."""
+        assert mcp_client.is_initialized
+        assert mcp_client.server_info is not None
+        assert mcp_client.server_info.name == "nexus3-test-server"
+        assert mcp_client.server_info.version == "1.0.0"
+
+    @pytest.mark.asyncio
+    async def test_list_tools(self, mcp_client: MCPClient) -> None:
+        """Test discovering tools from server."""
+        tools = await mcp_client.list_tools()
+
+        assert len(tools) == 3
+
+        tool_names = {t.name for t in tools}
+        assert tool_names == {"echo", "get_time", "add"}
+
+        # Check echo tool schema
+        echo_tool = next(t for t in tools if t.name == "echo")
+        assert echo_tool.description == "Echo back the input message"
+        assert "message" in echo_tool.input_schema.get("properties", {})
+
+    @pytest.mark.asyncio
+    async def test_call_echo(self, mcp_client: MCPClient) -> None:
+        """Test calling echo tool."""
+        result = await mcp_client.call_tool("echo", {"message": "hello world"})
+
+        assert isinstance(result, MCPToolResult)
+        assert not result.is_error
+        assert result.to_text() == "hello world"
+
+    @pytest.mark.asyncio
+    async def test_call_add(self, mcp_client: MCPClient) -> None:
+        """Test calling add tool."""
+        result = await mcp_client.call_tool("add", {"a": 10, "b": 32})
+
+        assert not result.is_error
+        assert result.to_text() == "42"
+
+    @pytest.mark.asyncio
+    async def test_call_get_time(self, mcp_client: MCPClient) -> None:
+        """Test calling get_time tool."""
+        result = await mcp_client.call_tool("get_time", {})
+
+        assert not result.is_error
+        # Should be an ISO timestamp
+        text = result.to_text()
+        assert "T" in text  # ISO format has T between date and time
+
+    @pytest.mark.asyncio
+    async def test_call_unknown_tool(self, mcp_client: MCPClient) -> None:
+        """Test calling unknown tool returns error."""
+        from nexus3.mcp import MCPError
+
+        with pytest.raises(MCPError) as exc_info:
+            await mcp_client.call_tool("nonexistent", {})
+
+        assert exc_info.value.code == -32601
+        assert "Unknown tool" in exc_info.value.message
+
+
+class TestStdioTransport:
+    """Test StdioTransport directly."""
+
+    @pytest.mark.asyncio
+    async def test_transport_connect_disconnect(self) -> None:
+        """Test transport connection lifecycle."""
+        transport = StdioTransport(["python3", "-m", "nexus3.mcp.test_server"])
+
+        await transport.connect()
+        assert transport.is_connected
+
+        await transport.close()
+        assert not transport.is_connected
+
+    @pytest.mark.asyncio
+    async def test_transport_command_not_found(self) -> None:
+        """Test transport handles missing command."""
+        from nexus3.mcp.transport import MCPTransportError
+
+        transport = StdioTransport(["nonexistent_command_xyz"])
+
+        with pytest.raises(MCPTransportError) as exc_info:
+            await transport.connect()
+
+        assert "not found" in exc_info.value.message
+
+
+class TestMCPServerRegistry:
+    """Test MCP server registry."""
+
+    @pytest.mark.asyncio
+    async def test_connect_and_disconnect(self) -> None:
+        """Test connecting and disconnecting servers."""
+        registry = MCPServerRegistry()
+
+        config = MCPServerConfig(
+            name="test",
+            command=["python3", "-m", "nexus3.mcp.test_server"],
+        )
+
+        # Connect
+        server = await registry.connect(config)
+        assert server.config.name == "test"
+        assert server.client.is_initialized
+        assert len(server.skills) == 3
+        assert len(registry) == 1
+
+        # Disconnect
+        result = await registry.disconnect("test")
+        assert result is True
+        assert len(registry) == 0
+
+        # Disconnect non-existent
+        result = await registry.disconnect("test")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_get_all_skills(self) -> None:
+        """Test getting all skills from registry."""
+        registry = MCPServerRegistry()
+
+        config = MCPServerConfig(
+            name="test",
+            command=["python3", "-m", "nexus3.mcp.test_server"],
+        )
+
+        await registry.connect(config)
+        skills = registry.get_all_skills()
+
+        assert len(skills) == 3
+        skill_names = {s.name for s in skills}
+        assert skill_names == {"mcp_test_echo", "mcp_test_get_time", "mcp_test_add"}
+
+        await registry.close_all()
+
+    @pytest.mark.asyncio
+    async def test_is_tool_allowed(self) -> None:
+        """Test tool allowance checking."""
+        registry = MCPServerRegistry()
+
+        config = MCPServerConfig(
+            name="allowed",
+            command=["python3", "-m", "nexus3.mcp.test_server"],
+        )
+
+        # Connect with allow_all=True
+        await registry.connect(config, allow_all=True)
+
+        assert registry.is_tool_allowed("mcp_allowed_echo") is True
+        assert registry.is_tool_allowed("mcp_allowed_add") is True
+        assert registry.is_tool_allowed("mcp_other_echo") is False
+        assert registry.is_tool_allowed("read_file") is False
+
+        await registry.close_all()
+
+    @pytest.mark.asyncio
+    async def test_close_all(self) -> None:
+        """Test closing all servers."""
+        registry = MCPServerRegistry()
+
+        config = MCPServerConfig(
+            name="test",
+            command=["python3", "-m", "nexus3.mcp.test_server"],
+        )
+
+        await registry.connect(config)
+        assert len(registry) == 1
+
+        await registry.close_all()
+        assert len(registry) == 0
+
+
+class TestMCPSkillAdapter:
+    """Test MCP skill adapter."""
+
+    @pytest.mark.asyncio
+    async def test_skill_properties(self) -> None:
+        """Test skill adapter exposes correct properties."""
+        registry = MCPServerRegistry()
+
+        config = MCPServerConfig(
+            name="test",
+            command=["python3", "-m", "nexus3.mcp.test_server"],
+        )
+
+        server = await registry.connect(config)
+        echo_skill = next(s for s in server.skills if s.original_name == "echo")
+
+        assert echo_skill.name == "mcp_test_echo"
+        assert echo_skill.server_name == "test"
+        assert echo_skill.original_name == "echo"
+        assert echo_skill.description == "Echo back the input message"
+        assert "message" in echo_skill.parameters.get("properties", {})
+
+        await registry.close_all()
+
+    @pytest.mark.asyncio
+    async def test_skill_execute(self) -> None:
+        """Test skill adapter executes tool."""
+        registry = MCPServerRegistry()
+
+        config = MCPServerConfig(
+            name="test",
+            command=["python3", "-m", "nexus3.mcp.test_server"],
+        )
+
+        server = await registry.connect(config)
+        add_skill = next(s for s in server.skills if s.original_name == "add")
+
+        result = await add_skill.execute(a=5, b=7)
+
+        assert result.success
+        assert result.output == "12"
+
+        await registry.close_all()

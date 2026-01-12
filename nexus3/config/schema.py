@@ -140,6 +140,45 @@ class CompactionConfig(BaseModel):
     """Compact when context exceeds this ratio of available budget."""
 
 
+class MCPServerConfig(BaseModel):
+    """Configuration for an MCP server.
+
+    MCP (Model Context Protocol) servers provide additional tools that
+    agents can use. Each server is configured with either a command
+    (for stdio transport) or URL (for HTTP transport).
+
+    Example in config.json:
+        "mcp_servers": [
+            {
+                "name": "test",
+                "command": ["python", "-m", "nexus3.mcp.test_server"]
+            },
+            {
+                "name": "postgres",
+                "command": ["npx", "-y", "@anthropic/mcp-server-postgres"],
+                "env": {"DATABASE_URL": "postgresql://localhost/mydb"}
+            }
+        ]
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    """Friendly name for the server (used in skill prefixes)."""
+
+    command: list[str] | None = None
+    """Command to launch server (for stdio transport)."""
+
+    url: str | None = None
+    """URL for HTTP transport (not yet implemented)."""
+
+    env: dict[str, str] | None = None
+    """Environment variables for subprocess."""
+
+    enabled: bool = True
+    """Whether this server is enabled."""
+
+
 class ResolvedModel:
     """Result of resolving a model name/alias.
 
@@ -175,6 +214,8 @@ class Config(BaseModel):
     max_concurrent_tools: int = 10  # Max parallel tool executions
     permissions: PermissionsConfig = PermissionsConfig()  # Permission system config
     compaction: CompactionConfig = CompactionConfig()  # Context compaction config
+    mcp_servers: list[MCPServerConfig] = []
+    """MCP server configurations for external tool providers."""
 
     def resolve_model(self, name_or_id: str | None = None) -> ResolvedModel:
         """Resolve a model name/alias to full model settings.
