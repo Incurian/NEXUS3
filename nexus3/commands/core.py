@@ -81,13 +81,13 @@ async def cmd_create(
     Args:
         ctx: Command context with pool and session_manager.
         name: Name for the new agent.
-        permission: Permission level ("sandboxed", "trusted", "yolo").
+        permission: Permission level ("sandboxed", "trusted", "yolo", "worker").
 
     Returns:
         CommandOutput with created agent info in data field.
     """
     # Validate permission level
-    valid_permissions = {"sandboxed", "trusted", "yolo"}
+    valid_permissions = {"sandboxed", "trusted", "yolo", "worker"}
     if permission not in valid_permissions:
         return CommandOutput.error(
             f"Invalid permission level: {permission}. "

@@ -31,15 +31,15 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ```
 nexus3/
-├── core/           # Types (Message, ToolCall, ToolResult), interfaces, errors, encoding
-├── config/         # Pydantic schema, fail-fast loader
-├── provider/       # AsyncProvider protocol, OpenRouter implementation
-├── context/        # ContextManager, PromptLoader, TokenCounter, truncation
-├── session/        # Session coordinator, SessionLogger, SQLite storage
+├── core/           # Types, interfaces, errors, encoding, paths, URL validation, permissions
+├── config/         # Pydantic schema, permission config, fail-fast loader
+├── provider/       # AsyncProvider protocol, OpenRouter implementation, retry logic
+├── context/        # ContextManager, PromptLoader, TokenCounter, atomic truncation
+├── session/        # Session coordinator, persistence, SessionManager, SQLite logging
 ├── skill/          # Skill protocol, SkillRegistry, ServiceContainer, builtin skills
-├── display/        # StreamingDisplay, theme, console
-├── cli/            # REPL, HTTP server, client commands, client mode
-├── rpc/            # JSON-RPC protocol, Dispatcher, GlobalDispatcher, AgentPool
+├── display/        # DisplayManager, StreamingDisplay, InlinePrinter, SummaryBar, theme
+├── cli/            # Unified REPL, lobby, whisper, HTTP server, client commands
+├── rpc/            # JSON-RPC protocol, Dispatcher, GlobalDispatcher, AgentPool, auth
 └── client.py       # NexusClient for agent-to-agent communication
 ```
 
@@ -71,6 +71,7 @@ nexus3 --serve
 {"method": "create_agent", "params": {"agent_id": "worker-1", "preset": "trusted", "disable_tools": ["write_file"]}}
 {"method": "list_agents"}
 {"method": "destroy_agent", "params": {"agent_id": "worker-1"}}
+{"method": "shutdown_server"}
 
 # Agent methods (POST /agent/{id})
 {"method": "send", "params": {"content": "Hello"}}
@@ -94,8 +95,12 @@ nexus3 --serve
 ## CLI Modes
 
 ```bash
-# Standalone REPL (auto-starts embedded server)
-nexus
+# Unified REPL (auto-starts embedded server)
+nexus                    # Default: lobby mode for session selection
+nexus --fresh            # Skip lobby, start new temp session
+nexus --resume           # Resume last session
+nexus --session NAME     # Load specific saved session
+nexus --template PATH    # Use custom system prompt
 
 # HTTP server (headless multi-agent)
 nexus --serve [PORT]
@@ -117,7 +122,7 @@ nexus-rpc shutdown
 |-------|------------|-------------|
 | `read_file` | `path` | Read file contents |
 | `write_file` | `path`, `content` | Write/create files |
-| `sleep` | `seconds` | Pause execution (for testing) |
+| `sleep` | `seconds`, `label`? | Pause execution (for testing) |
 | `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `port`? | Create a new agent with permissions |
 | `nexus_destroy` | `agent_id`, `port`? | Remove an agent (server keeps running) |
 | `nexus_send` | `agent_id`, `content`, `port`? | Send message to an agent |
@@ -170,6 +175,7 @@ class Skill(Protocol):
 
 # AsyncProvider Protocol
 class AsyncProvider(Protocol):
+    async def complete(self, messages, tools) -> Message: ...
     def stream(self, messages, tools) -> AsyncIterator[StreamEvent]: ...
 ```
 
@@ -213,6 +219,7 @@ nexus-rpc cancel AGENT ID    # Cancel in-progress request
 - `nexus-rpc list` and `nexus-rpc create` auto-start a server if none running
 - `nexus-rpc send/status/destroy/shutdown` require server to be running
 - All commands use `--port N` to specify non-default port (default: 8765)
+- All commands support `--api-key KEY` for explicit authentication (auto-discovered by default)
 
 **User preference:** Commands should be simple and clean. Avoid:
 - Sourcing virtualenvs manually
@@ -227,7 +234,10 @@ nexus-rpc cancel AGENT ID    # Cancel in-progress request
 ```
 ~/.nexus3/
 ├── config.json      # Global config
-└── NEXUS.md         # Personal system prompt
+├── NEXUS.md         # Personal system prompt
+├── server.key       # Auto-generated API key (port-specific keys: server-{port}.key)
+├── sessions/        # Saved session files (JSON)
+└── last-session.json  # Auto-saved for --resume
 
 ./NEXUS.md           # Project system prompt (overrides personal)
 .nexus3/logs/        # Session logs (gitignored)
@@ -319,14 +329,14 @@ All Phase 6 infrastructure and integration complete:
 - ✅ Whisper mode for side conversations
 - ✅ Auto-save to `last-session.json`
 
-### Deferred Features
+### Deferred Features (Updated)
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Permission enforcement | Types exist | `core/permissions.py` has types, skills don't check |
-| SQLite session markers | Schema exists | Markers not written on create/destroy |
+| Permission enforcement | ✅ Done | Completed in Phase 8: `Session._execute_single_tool()` |
+| SQLite session markers | ✅ Done | `init_session_markers()` called in SessionLogger |
 | Working directory persistence | `/cwd` works | Not persisted in session save/restore |
-| `/permissions` per-agent | Placeholder | Returns "trusted", doesn't track per-agent |
+| `/permissions` per-agent | ✅ Done | Full implementation in Phase 8: `--disable`, `--enable`, `--list-tools` |
 | `/save` full metadata | Partial | Missing system_prompt_path, working_directory |
 
 ### Known Issue: WSL Terminal

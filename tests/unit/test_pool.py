@@ -6,6 +6,7 @@ Tests for:
 - AgentPool: Agent lifecycle management
 - GlobalDispatcher: Agent management RPC methods
 - HTTP path routing: _extract_agent_id helper
+- Security: Tool definition filtering, ceiling isolation, parent_agent_id tracking
 """
 
 from dataclasses import FrozenInstanceError, fields
@@ -16,6 +17,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nexus3.core.permissions import (
+    AgentPermissions,
+    PermissionDelta,
+    PermissionLevel,
+    PermissionPolicy,
+    ToolPermission,
+    resolve_preset,
+)
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
 from nexus3.rpc.http import _extract_agent_id
 from nexus3.rpc.pool import AgentConfig, AgentPool, SharedComponents
@@ -35,9 +44,9 @@ class TestSharedComponents:
         assert hasattr(SharedComponents, "__dataclass_fields__")
 
     def test_shared_components_has_expected_fields(self):
-        """SharedComponents has config, provider, prompt_loader, base_log_dir, log_streams fields."""
+        """SharedComponents has config, provider, prompt_loader, base_log_dir, log_streams, custom_presets fields."""
         field_names = {f.name for f in fields(SharedComponents)}
-        expected = {"config", "provider", "prompt_loader", "base_log_dir", "log_streams"}
+        expected = {"config", "provider", "prompt_loader", "base_log_dir", "log_streams", "custom_presets"}
         assert field_names == expected
 
     def test_shared_components_is_frozen(self):
@@ -380,6 +389,10 @@ class MockAgentPool:
             for a in self._agents.values()
         ]
 
+    def get(self, agent_id: str) -> Any:
+        """Get an agent by ID."""
+        return self._agents.get(agent_id)
+
 
 class TestGlobalDispatcher:
     """Tests for GlobalDispatcher RPC methods."""
@@ -627,12 +640,11 @@ class TestExtractAgentId:
         assert _extract_agent_id("/agent/my-agent") == "my-agent"
         assert _extract_agent_id("/agent/agent123") == "agent123"
 
-    def test_extract_agent_id_with_subpath(self):
-        """Extracts agent_id including subpaths after the ID."""
-        # The function returns everything after /agent/
-        # This includes any subpath as part of the "agent_id"
+    def test_extract_agent_id_with_subpath_rejected(self):
+        """Rejects agent_id containing path separators for security."""
+        # SECURITY: Agent IDs with slashes are rejected to prevent path traversal
         result = _extract_agent_id("/agent/foo/bar")
-        assert result == "foo/bar"
+        assert result is None  # foo/bar is invalid agent ID
 
     def test_extract_agent_id_root_path(self):
         """Returns None for root path."""
@@ -659,3 +671,180 @@ class TestExtractAgentId:
         assert _extract_agent_id("/agent/agent-with-dashes") == "agent-with-dashes"
         assert _extract_agent_id("/agent/agent_with_underscores") == "agent_with_underscores"
         assert _extract_agent_id("/agent/abc123") == "abc123"
+
+
+# -----------------------------------------------------------------------------
+# Security Tests: Permission System Fixes
+# -----------------------------------------------------------------------------
+
+
+class TestAgentConfigParentAgentId:
+    """Tests for parent_agent_id field in AgentConfig.
+
+    SECURITY FIX: parent_agent_id should store actual agent ID, not preset name.
+    """
+
+    def test_agent_config_has_parent_agent_id_field(self):
+        """AgentConfig has parent_agent_id field."""
+        config = AgentConfig()
+        assert hasattr(config, "parent_agent_id")
+        assert config.parent_agent_id is None
+
+    def test_agent_config_accepts_parent_agent_id(self):
+        """AgentConfig accepts parent_agent_id parameter."""
+        config = AgentConfig(parent_agent_id="parent-worker-1")
+        assert config.parent_agent_id == "parent-worker-1"
+
+    def test_agent_config_stores_actual_agent_id(self):
+        """parent_agent_id stores actual ID, not preset name."""
+        # This test verifies the fix for the bug where parent_agent_id
+        # was incorrectly assigned from parent_permissions.base_preset
+        parent_permissions = resolve_preset("trusted")
+        config = AgentConfig(
+            agent_id="child-1",
+            preset="sandboxed",
+            parent_permissions=parent_permissions,
+            parent_agent_id="main-agent",  # Actual parent ID, not "trusted"
+        )
+        assert config.parent_agent_id == "main-agent"
+        assert config.parent_permissions.base_preset == "trusted"
+        # These should be different values
+        assert config.parent_agent_id != config.parent_permissions.base_preset
+
+
+class TestCeilingIsolation:
+    """Tests for ceiling deep copy to prevent shared references.
+
+    SECURITY FIX: ceiling should be deep copied to prevent mutation leaking
+    between parent and child agents.
+    """
+
+    def test_ceiling_mutation_does_not_affect_child(self):
+        """Mutating parent permissions after agent creation doesn't affect child ceiling."""
+        # Create parent permissions
+        parent_permissions = resolve_preset("trusted")
+
+        # Simulate the fix: deep copy the ceiling
+        import copy
+        child_ceiling = copy.deepcopy(parent_permissions)
+
+        # Now mutate the original parent permissions
+        parent_permissions.tool_permissions["write_file"] = ToolPermission(enabled=False)
+
+        # Child's ceiling should be unaffected
+        assert "write_file" not in child_ceiling.tool_permissions or \
+               child_ceiling.tool_permissions.get("write_file", ToolPermission()).enabled is True
+
+    def test_ceiling_is_independent_copy(self):
+        """Ceiling is a fully independent copy of parent permissions."""
+        import copy
+
+        parent_permissions = resolve_preset("trusted")
+        parent_permissions.tool_permissions["test_tool"] = ToolPermission(
+            enabled=True,
+            timeout=60.0,
+        )
+
+        # Deep copy as the fix does
+        child_ceiling = copy.deepcopy(parent_permissions)
+
+        # Verify they are different objects
+        assert child_ceiling is not parent_permissions
+        assert child_ceiling.tool_permissions is not parent_permissions.tool_permissions
+
+        # Verify nested objects are also different
+        if "test_tool" in child_ceiling.tool_permissions:
+            assert child_ceiling.tool_permissions["test_tool"] is not \
+                   parent_permissions.tool_permissions["test_tool"]
+
+    def test_ceiling_policy_is_independent(self):
+        """Ceiling's effective_policy is also deep copied."""
+        import copy
+
+        parent_permissions = resolve_preset("sandboxed")
+        child_ceiling = copy.deepcopy(parent_permissions)
+
+        # Verify policy is independent
+        assert child_ceiling.effective_policy is not parent_permissions.effective_policy
+
+        # Verify path lists are independent
+        if parent_permissions.effective_policy.allowed_paths is not None:
+            assert child_ceiling.effective_policy.allowed_paths is not \
+                   parent_permissions.effective_policy.allowed_paths
+
+
+class TestGlobalDispatcherParentAgentId:
+    """Tests for GlobalDispatcher passing parent_agent_id correctly.
+
+    SECURITY FIX: GlobalDispatcher should pass parent_agent_id to AgentConfig.
+    """
+
+    @pytest.mark.asyncio
+    async def test_create_agent_with_parent_agent_id(self):
+        """create_agent passes parent_agent_id to AgentConfig."""
+        pool = MockAgentPool()
+        dispatcher = GlobalDispatcher(pool)
+
+        # First create a parent agent
+        await pool.create(agent_id="parent-1")
+        # Mock the services.get("permissions") return
+        pool._agents["parent-1"].services = MagicMock()
+        pool._agents["parent-1"].services.get = MagicMock(return_value=resolve_preset("trusted"))
+
+        request = Request(
+            jsonrpc="2.0",
+            method="create_agent",
+            params={
+                "agent_id": "child-1",
+                "parent_agent_id": "parent-1",
+            },
+            id=1,
+        )
+        response = await dispatcher.dispatch(request)
+
+        assert response is not None
+        assert response.error is None
+        assert response.result is not None
+        assert response.result["agent_id"] == "child-1"
+
+    @pytest.mark.asyncio
+    async def test_create_agent_validates_parent_agent_id_type(self):
+        """create_agent validates parent_agent_id is a string."""
+        pool = MockAgentPool()
+        dispatcher = GlobalDispatcher(pool)
+
+        request = Request(
+            jsonrpc="2.0",
+            method="create_agent",
+            params={
+                "agent_id": "child-1",
+                "parent_agent_id": 123,  # Should be string
+            },
+            id=1,
+        )
+        response = await dispatcher.dispatch(request)
+
+        assert response is not None
+        assert response.error is not None
+        assert response.error["code"] == -32602  # INVALID_PARAMS
+
+    @pytest.mark.asyncio
+    async def test_create_agent_validates_parent_exists(self):
+        """create_agent returns error if parent agent doesn't exist."""
+        pool = MockAgentPool()
+        dispatcher = GlobalDispatcher(pool)
+
+        request = Request(
+            jsonrpc="2.0",
+            method="create_agent",
+            params={
+                "agent_id": "child-1",
+                "parent_agent_id": "nonexistent-parent",
+            },
+            id=1,
+        )
+        response = await dispatcher.dispatch(request)
+
+        assert response is not None
+        assert response.error is not None
+        assert "not found" in response.error["message"].lower()

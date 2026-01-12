@@ -122,6 +122,8 @@ async def cmd_agent(
             permission = "trusted"
         elif part_lower in ("--sandboxed", "-s"):
             permission = "sandboxed"
+        elif part_lower in ("--worker", "-w"):
+            permission = "worker"
 
     # Check if agent exists in pool (active)
     if agent_name in ctx.pool:
@@ -359,8 +361,9 @@ async def cmd_permissions(
     elif cmd.startswith("--"):
         return CommandOutput.error(f"Unknown flag: {cmd}")
     else:
-        # Change preset
-        return await _change_preset(agent, perms, cmd)
+        # Change preset (pass custom presets from pool if available)
+        custom_presets = getattr(getattr(ctx.pool, "_shared", None), "custom_presets", None)
+        return await _change_preset(agent, perms, cmd, custom_presets)
 
 
 def _format_permissions(
@@ -482,12 +485,18 @@ async def _change_preset(
     agent: Agent,
     perms: AgentPermissions | None,
     preset_name: str,
+    custom_presets: dict | None = None,
 ) -> CommandOutput:
     """Change agent to a new preset."""
-    builtin = get_builtin_presets()
+    from nexus3.core.permissions import PermissionPreset
 
-    if preset_name not in builtin:
-        valid = ", ".join(builtin.keys())
+    builtin = get_builtin_presets()
+    all_presets = dict(builtin)
+    if custom_presets:
+        all_presets.update(custom_presets)
+
+    if preset_name not in all_presets:
+        valid = ", ".join(all_presets.keys())
         return CommandOutput.error(
             f"Unknown preset: {preset_name}. Valid: {valid}"
         )
@@ -495,7 +504,7 @@ async def _change_preset(
     # Check ceiling
     if perms and perms.ceiling:
         try:
-            new_perms = resolve_preset(preset_name)
+            new_perms = resolve_preset(preset_name, custom_presets)
             if not perms.ceiling.can_grant(new_perms):
                 return CommandOutput.error(
                     f"Cannot change to '{preset_name}': exceeds ceiling "
@@ -506,7 +515,7 @@ async def _change_preset(
 
     # Apply change
     try:
-        new_perms = resolve_preset(preset_name)
+        new_perms = resolve_preset(preset_name, custom_presets)
         if perms:
             new_perms.ceiling = perms.ceiling
             new_perms.parent_agent_id = perms.parent_agent_id

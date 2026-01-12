@@ -294,6 +294,24 @@ class PermissionPolicy:
             path_info += f", blocked_paths=[{blocked_str}]"
         return f"PermissionPolicy(level={self.level.value}{path_info})"
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dict for RPC transport."""
+        result: dict[str, Any] = {"level": self.level.value}
+        if self.allowed_paths is not None:
+            result["allowed_paths"] = [str(p) for p in self.allowed_paths]
+        if self.blocked_paths:
+            result["blocked_paths"] = [str(p) for p in self.blocked_paths]
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PermissionPolicy:
+        """Deserialize from dict."""
+        return cls(
+            level=PermissionLevel(data["level"]),
+            allowed_paths=[Path(p) for p in data["allowed_paths"]] if data.get("allowed_paths") else None,
+            blocked_paths=[Path(p) for p in data.get("blocked_paths", [])],
+        )
+
 
 @dataclass
 class ToolPermission:
@@ -303,6 +321,27 @@ class ToolPermission:
     allowed_paths: list[Path] | None = None  # None = inherit from preset
     timeout: float | None = None  # None = use default
     requires_confirmation: bool | None = None  # None = use policy default
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dict for RPC transport."""
+        result: dict[str, Any] = {"enabled": self.enabled}
+        if self.allowed_paths is not None:
+            result["allowed_paths"] = [str(p) for p in self.allowed_paths]
+        if self.timeout is not None:
+            result["timeout"] = self.timeout
+        if self.requires_confirmation is not None:
+            result["requires_confirmation"] = self.requires_confirmation
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ToolPermission:
+        """Deserialize from dict."""
+        return cls(
+            enabled=data.get("enabled", True),
+            allowed_paths=[Path(p) for p in data["allowed_paths"]] if data.get("allowed_paths") else None,
+            timeout=data.get("timeout"),
+            requires_confirmation=data.get("requires_confirmation"),
+        )
 
 
 @dataclass
@@ -327,8 +366,8 @@ class PermissionDelta:
     enable_tools: list[str] = field(default_factory=list)
     allowed_paths: list[Path] | None = None  # Replaces base if set
     add_blocked_paths: list[Path] = field(default_factory=list)
-    network_access: bool | None = None
     tool_overrides: dict[str, ToolPermission] = field(default_factory=dict)
+    # Note: network_access is controlled by permission level (SANDBOXED = no network)
 
 
 @dataclass
@@ -340,6 +379,7 @@ class AgentPermissions:
     tool_permissions: dict[str, ToolPermission] = field(default_factory=dict)
     ceiling: AgentPermissions | None = None
     parent_agent_id: str | None = None
+    depth: int = 0  # 0 = root agent, 1 = child, 2 = grandchild, etc.
 
     def can_grant(self, requested: AgentPermissions) -> bool:
         """Check if this agent can grant requested permissions to subagent.
@@ -400,12 +440,17 @@ class AgentPermissions:
         """
         # Start with copies of current state
         new_tool_perms = copy.deepcopy(self.tool_permissions)
-        new_allowed = (
-            list(delta.allowed_paths) if delta.allowed_paths is not None
-            else (list(self.effective_policy.allowed_paths) if self.effective_policy.allowed_paths else None)
-        )
-        new_blocked = list(self.effective_policy.blocked_paths) + list(delta.add_blocked_paths)
-        new_network = delta.network_access if delta.network_access is not None else self.effective_policy.level != PermissionLevel.SANDBOXED
+        # Preserve empty list [] as empty (restricted to nothing), don't convert to None (unrestricted)
+        # Use deepcopy for consistency with the rest of the permission system,
+        # even though Path objects are immutable
+        if delta.allowed_paths is not None:
+            new_allowed = copy.deepcopy(delta.allowed_paths)
+        elif self.effective_policy.allowed_paths is not None:
+            new_allowed = copy.deepcopy(self.effective_policy.allowed_paths)
+        else:
+            new_allowed = None
+        new_blocked = copy.deepcopy(self.effective_policy.blocked_paths) + copy.deepcopy(delta.add_blocked_paths)
+        # Note: network_access is derived from level, not stored separately
 
         # Apply tool disables
         for tool_name in delta.disable_tools:
@@ -421,9 +466,9 @@ class AgentPermissions:
             else:
                 new_tool_perms[tool_name] = ToolPermission(enabled=True)
 
-        # Apply tool overrides
+        # Apply tool overrides (deep copy to avoid sharing between agents)
         for tool_name, override in delta.tool_overrides.items():
-            new_tool_perms[tool_name] = override
+            new_tool_perms[tool_name] = copy.deepcopy(override)
 
         # Create new policy
         new_policy = PermissionPolicy(
@@ -438,6 +483,45 @@ class AgentPermissions:
             tool_permissions=new_tool_perms,
             ceiling=self.ceiling,
             parent_agent_id=self.parent_agent_id,
+            depth=self.depth,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dict for RPC transport.
+
+        Used when passing parent permissions for ceiling enforcement
+        in create_agent RPC calls.
+        """
+        result: dict[str, Any] = {
+            "base_preset": self.base_preset,
+            "effective_policy": self.effective_policy.to_dict(),
+            "tool_permissions": {
+                name: perm.to_dict() for name, perm in self.tool_permissions.items()
+            },
+            "depth": self.depth,
+        }
+        if self.parent_agent_id is not None:
+            result["parent_agent_id"] = self.parent_agent_id
+        # Note: ceiling is not serialized to avoid circular references
+        # The receiving end will set this agent as the ceiling
+        return result
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AgentPermissions:
+        """Deserialize from dict.
+
+        Creates an AgentPermissions from RPC data.
+        """
+        return cls(
+            base_preset=data["base_preset"],
+            effective_policy=PermissionPolicy.from_dict(data["effective_policy"]),
+            tool_permissions={
+                name: ToolPermission.from_dict(perm)
+                for name, perm in data.get("tool_permissions", {}).items()
+            },
+            ceiling=None,  # Not serialized; caller sets if needed
+            parent_agent_id=data.get("parent_agent_id"),
+            depth=data.get("depth", 0),
         )
 
 
@@ -463,6 +547,7 @@ def _create_builtin_presets() -> dict[str, PermissionPreset]:
             tool_permissions={
                 "nexus_send": ToolPermission(enabled=False),
                 "nexus_create": ToolPermission(enabled=False),
+                "nexus_destroy": ToolPermission(enabled=False),
                 "nexus_shutdown": ToolPermission(enabled=False),
             },
         ),
@@ -526,8 +611,95 @@ def resolve_preset(
         blocked_paths=list(preset.blocked_paths),
     )
 
+    # Deep copy tool_permissions to prevent cross-agent mutation
     return AgentPermissions(
         base_preset=preset_name,
         effective_policy=policy,
-        tool_permissions=dict(preset.tool_permissions),
+        tool_permissions=copy.deepcopy(preset.tool_permissions),
     )
+
+
+def load_custom_presets_from_config(
+    config_presets: dict[str, Any],
+) -> dict[str, PermissionPreset]:
+    """Convert config presets to PermissionPreset objects.
+
+    This function converts permission presets from the config.json format
+    to runtime PermissionPreset objects that can be used with resolve_preset().
+
+    Args:
+        config_presets: Dict from config.permissions.presets
+            Each value should have: extends?, description?, allowed_paths?, blocked_paths?,
+            tool_permissions?, default_tool_timeout?
+
+    Returns:
+        Dict mapping preset names to PermissionPreset objects.
+    """
+    if not config_presets:
+        return {}
+
+    builtin = get_builtin_presets()
+    custom: dict[str, PermissionPreset] = {}
+
+    for preset_name, preset_config in config_presets.items():
+        # Get base preset to extend
+        extends = preset_config.get("extends")
+        if extends:
+            # Must extend a builtin or already-processed custom preset
+            if extends in builtin:
+                base = builtin[extends]
+            elif extends in custom:
+                base = custom[extends]
+            else:
+                raise ValueError(f"Preset '{preset_name}' extends unknown preset '{extends}'")
+            level = base.level
+            base_allowed_paths = base.allowed_paths
+            base_blocked_paths = list(base.blocked_paths)
+            base_tool_perms = copy.deepcopy(base.tool_permissions)
+            base_timeout = base.default_tool_timeout
+        else:
+            # Default to trusted if not extending
+            level = PermissionLevel.TRUSTED
+            base_allowed_paths = None
+            base_blocked_paths = []
+            base_tool_perms = {}
+            base_timeout = 30.0
+
+        # Override with config values
+        description = preset_config.get("description", "")
+
+        # Handle allowed_paths
+        allowed_paths_config = preset_config.get("allowed_paths")
+        if allowed_paths_config is not None:
+            allowed_paths = [Path(p) for p in allowed_paths_config]
+        else:
+            allowed_paths = base_allowed_paths
+
+        # Handle blocked_paths (append to base)
+        blocked_paths_config = preset_config.get("blocked_paths", [])
+        blocked_paths = base_blocked_paths + [Path(p) for p in blocked_paths_config]
+
+        # Handle tool_permissions (merge with base, deep copy to isolate)
+        tool_perms = copy.deepcopy(base_tool_perms)
+        for tool_name, tool_config in preset_config.get("tool_permissions", {}).items():
+            tool_perms[tool_name] = ToolPermission(
+                enabled=tool_config.get("enabled", True),
+                allowed_paths=[Path(p) for p in tool_config.get("allowed_paths", [])] if tool_config.get("allowed_paths") else None,
+                timeout=tool_config.get("timeout"),
+                requires_confirmation=tool_config.get("requires_confirmation"),
+            )
+
+        # Handle timeout
+        timeout = preset_config.get("default_tool_timeout", base_timeout)
+
+        custom[preset_name] = PermissionPreset(
+            name=preset_name,
+            level=level,
+            description=description,
+            allowed_paths=allowed_paths,
+            blocked_paths=blocked_paths,
+            tool_permissions=tool_perms,
+            default_tool_timeout=timeout,
+        )
+
+    return custom

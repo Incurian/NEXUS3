@@ -208,15 +208,13 @@ class TestValidateUrlEdgeCases:
             result = validate_url("http://localhost:8080", allow_localhost=True)
             assert result == "http://localhost:8080"
 
-    def test_dns_resolution_failure_for_localhost_blocked_when_disallowed(self):
-        """DNS failure for 'localhost' still blocked when localhost disallowed."""
-        with patch("socket.gethostbyname") as mock_dns:
-            mock_dns.side_effect = socket.gaierror(8, "Name or service not known")
+    def test_localhost_blocked_when_disallowed(self):
+        """'localhost' is blocked when allow_localhost=False even if it resolves."""
+        # With getaddrinfo, localhost resolves to 127.0.0.1, which gets blocked
+        with pytest.raises(UrlSecurityError) as exc_info:
+            validate_url("http://localhost:8080", allow_localhost=False)
 
-            with pytest.raises(UrlSecurityError) as exc_info:
-                validate_url("http://localhost:8080", allow_localhost=False)
-
-            assert "failed to resolve" in exc_info.value.reason.lower()
+        assert "localhost not allowed" in exc_info.value.reason.lower()
 
     def test_blocks_link_local_range(self):
         """Link-local addresses (169.254.x.x) are blocked."""
@@ -227,16 +225,20 @@ class TestValidateUrlEdgeCases:
 
     def test_allows_external_url_mocked(self):
         """External URLs are allowed when DNS resolves to public IP."""
-        with patch("socket.gethostbyname") as mock_dns:
-            mock_dns.return_value = "93.184.216.34"  # example.com's IP
+        # getaddrinfo returns list of (family, type, proto, canonname, sockaddr)
+        # sockaddr is (ip, port) for IPv4
+        mock_result = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 80))]
+        with patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = mock_result
 
             result = validate_url("http://example.com")
             assert result == "http://example.com"
 
     def test_blocks_internal_hostname_resolving_to_private(self):
         """Hostname resolving to private IP is blocked."""
-        with patch("socket.gethostbyname") as mock_dns:
-            mock_dns.return_value = "10.0.0.50"  # Private IP
+        mock_result = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("10.0.0.50", 80))]
+        with patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = mock_result
 
             with pytest.raises(UrlSecurityError) as exc_info:
                 validate_url("http://internal-service.corp")
@@ -245,8 +247,9 @@ class TestValidateUrlEdgeCases:
 
     def test_blocks_hostname_resolving_to_metadata(self):
         """Hostname resolving to cloud metadata IP is blocked."""
-        with patch("socket.gethostbyname") as mock_dns:
-            mock_dns.return_value = "169.254.169.254"
+        mock_result = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("169.254.169.254", 80))]
+        with patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = mock_result
 
             with pytest.raises(UrlSecurityError) as exc_info:
                 validate_url("http://metadata.google.internal")
@@ -275,3 +278,128 @@ class TestValidateUrlIpv6:
 
             with pytest.raises(UrlSecurityError):
                 validate_url("http://[::1]:8080", allow_localhost=False)
+
+
+class TestDnsRebindingProtection:
+    """Tests for DNS rebinding attack prevention."""
+
+    def test_blocks_if_any_address_is_private(self):
+        """If DNS returns multiple addresses and ANY is private, block."""
+        # Simulate DNS returning public IP first, then private IP
+        mock_result = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 80)),  # Public
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("10.0.0.50", 80)),      # Private
+        ]
+        with patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = mock_result
+
+            with pytest.raises(UrlSecurityError) as exc_info:
+                validate_url("http://rebinding-attack.example.com")
+
+            assert "blocked range" in exc_info.value.reason.lower()
+
+    def test_blocks_if_any_address_is_cloud_metadata(self):
+        """If DNS returns cloud metadata IP as any address, block."""
+        mock_result = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),         # Public
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("169.254.169.254", 80)), # Metadata
+        ]
+        with patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = mock_result
+
+            with pytest.raises(UrlSecurityError) as exc_info:
+                validate_url("http://sneaky.example.com")
+
+            assert "cloud metadata" in exc_info.value.reason.lower()
+
+    def test_blocks_if_any_ipv6_address_is_private(self):
+        """If DNS returns IPv6 private address among others, block."""
+        mock_result = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 80)),  # Public IPv4
+            (socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("fc00::1", 80, 0, 0)), # Private IPv6
+        ]
+        with patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = mock_result
+
+            with pytest.raises(UrlSecurityError) as exc_info:
+                validate_url("http://dual-stack.example.com")
+
+            assert "blocked range" in exc_info.value.reason.lower()
+
+    def test_allows_when_all_addresses_public(self):
+        """If all DNS addresses are public, allow."""
+        mock_result = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 80)),  # Public
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.35", 80)),  # Public
+            (socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("2606:2800:220:1:248:1893:25c8:1946", 80, 0, 0)),  # Public IPv6
+        ]
+        with patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = mock_result
+
+            result = validate_url("http://example.com")
+            assert result == "http://example.com"
+
+    def test_blocks_localhost_in_multi_address_when_disallowed(self):
+        """If DNS returns localhost among others and localhost not allowed, block."""
+        mock_result = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 80)),  # Public
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 80)),      # Localhost
+        ]
+        with patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = mock_result
+
+            with pytest.raises(UrlSecurityError) as exc_info:
+                validate_url("http://tricky.example.com", allow_localhost=False)
+
+            assert "localhost" in exc_info.value.reason.lower()
+
+
+class TestMulticastBlocking:
+    """Tests for multicast address blocking."""
+
+    def test_blocks_ipv4_multicast_224_x(self):
+        """IPv4 multicast address 224.x.x.x is blocked."""
+        mock_result = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("224.0.0.1", 80))]
+        with patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = mock_result
+
+            with pytest.raises(UrlSecurityError) as exc_info:
+                validate_url("http://multicast.example.com")
+
+            assert "blocked range" in exc_info.value.reason.lower()
+
+    def test_blocks_ipv4_multicast_239_x(self):
+        """IPv4 multicast address 239.x.x.x is blocked."""
+        mock_result = [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("239.255.255.250", 80))]
+        with patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = mock_result
+
+            with pytest.raises(UrlSecurityError) as exc_info:
+                validate_url("http://ssdp.example.com")
+
+            assert "blocked range" in exc_info.value.reason.lower()
+
+    def test_blocks_ipv6_multicast(self):
+        """IPv6 multicast address ff00::/8 is blocked."""
+        mock_result = [(socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("ff02::1", 80, 0, 0))]
+        with patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = mock_result
+
+            with pytest.raises(UrlSecurityError) as exc_info:
+                validate_url("http://multicast6.example.com")
+
+            assert "blocked range" in exc_info.value.reason.lower()
+
+    def test_blocks_multicast_among_other_addresses(self):
+        """If DNS returns multicast among other addresses, block."""
+        mock_result = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 80)),  # Public
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("224.0.0.251", 80)),    # mDNS multicast
+        ]
+        with patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = mock_result
+
+            with pytest.raises(UrlSecurityError) as exc_info:
+                validate_url("http://mdns.example.com")
+
+            assert "blocked range" in exc_info.value.reason.lower()

@@ -37,6 +37,7 @@ from nexus3.config.loader import load_config
 from nexus3.context import PromptLoader
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
+from nexus3.core.permissions import load_custom_presets_from_config
 from nexus3.provider.openrouter import OpenRouterProvider
 from nexus3.rpc.auth import ServerKeyManager
 from nexus3.rpc.detection import DetectionResult, detect_server
@@ -111,6 +112,11 @@ async def run_serve(
     if raw_log:
         log_streams |= LogStream.RAW
 
+    # Load custom presets from config
+    custom_presets = load_custom_presets_from_config(
+        {k: v.model_dump() for k, v in config.permissions.presets.items()}
+    )
+
     # Create shared components
     shared = SharedComponents(
         config=config,
@@ -118,6 +124,7 @@ async def run_serve(
         prompt_loader=prompt_loader,
         base_log_dir=base_log_dir,
         log_streams=log_streams,
+        custom_presets=custom_presets,
     )
 
     # Create agent pool

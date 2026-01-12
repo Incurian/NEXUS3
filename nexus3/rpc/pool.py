@@ -34,6 +34,7 @@ Example:
 from __future__ import annotations
 
 import asyncio
+import copy
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -44,6 +45,8 @@ from nexus3.context import ContextConfig, ContextManager
 from nexus3.core.permissions import (
     AgentPermissions,
     PermissionDelta,
+    PermissionPreset,
+    load_custom_presets_from_config,
     resolve_preset,
 )
 from nexus3.rpc.dispatcher import Dispatcher
@@ -55,6 +58,11 @@ if TYPE_CHECKING:
     from nexus3.config.schema import Config
     from nexus3.context.prompt_loader import PromptLoader
     from nexus3.core.interfaces import AsyncProvider
+
+
+# Maximum nesting depth for agent creation
+# 0 = root, 1 = child, 2 = grandchild, etc.
+MAX_AGENT_DEPTH = 5
 
 
 # === Agent Naming Helpers ===
@@ -114,6 +122,7 @@ class SharedComponents:
         prompt_loader: Loader for system prompts (personal + project).
         base_log_dir: Base directory for agent logs. Each agent gets a subdirectory.
         log_streams: Log streams to enable (defaults to ALL for backwards compatibility).
+        custom_presets: Custom permission presets loaded from config.
     """
 
     config: Config
@@ -121,6 +130,7 @@ class SharedComponents:
     prompt_loader: PromptLoader
     base_log_dir: Path
     log_streams: LogStream = LogStream.ALL
+    custom_presets: dict[str, PermissionPreset] = field(default_factory=dict)
 
 
 @dataclass
@@ -139,6 +149,8 @@ class AgentConfig:
         delta: Permission delta to apply to the base preset.
         parent_permissions: Parent agent's permissions for ceiling enforcement.
             Used when an agent spawns a subagent.
+        parent_agent_id: ID of the parent agent that created this agent.
+            Used for tracking agent lineage in permission inheritance.
 
     Future extensions:
         - working_dir: Restrict file operations to this directory
@@ -151,6 +163,7 @@ class AgentConfig:
     preset: str | None = None
     delta: PermissionDelta | None = None
     parent_permissions: AgentPermissions | None = None
+    parent_agent_id: str | None = None
 
 
 @dataclass
@@ -310,38 +323,60 @@ class AgentPool:
 
             services = ServiceContainer()
 
-            # Resolve permissions from preset
+            # Resolve permissions from preset (using custom presets from config if available)
             preset_name = effective_config.preset or self._shared.config.permissions.default_preset
             try:
-                permissions = resolve_preset(preset_name)
+                permissions = resolve_preset(preset_name, self._shared.custom_presets)
             except ValueError:
                 # Fall back to trusted if preset not found
-                permissions = resolve_preset("trusted")
+                permissions = resolve_preset("trusted", self._shared.custom_presets)
+
+            # SECURITY: Check ceiling BEFORE applying delta
+            # This ensures the base preset is allowed, then we check the delta result
+            if effective_config.parent_permissions is not None:
+                # Check recursion depth limit
+                if effective_config.parent_permissions.depth >= MAX_AGENT_DEPTH:
+                    raise PermissionError(
+                        f"Cannot create agent: max nesting depth ({MAX_AGENT_DEPTH}) exceeded"
+                    )
+                # First check: base preset must be allowed
+                if not effective_config.parent_permissions.can_grant(permissions):
+                    raise PermissionError(
+                        f"Requested preset '{preset_name}' exceeds parent ceiling"
+                    )
 
             # Apply delta if provided
             if effective_config.delta:
                 permissions = permissions.apply_delta(effective_config.delta)
+                # Second check: delta result must also be allowed
+                if effective_config.parent_permissions is not None:
+                    if not effective_config.parent_permissions.can_grant(permissions):
+                        raise PermissionError(
+                            "Permission delta would exceed parent ceiling"
+                        )
 
-            # Enforce ceiling if spawned by another agent
+            # Set ceiling reference and depth after all checks pass
+            # SECURITY FIX: Use deepcopy to prevent shared references
+            # If parent permissions are mutated later, child's ceiling shouldn't change
             if effective_config.parent_permissions is not None:
-                if not effective_config.parent_permissions.can_grant(permissions):
-                    raise PermissionError(
-                        f"Requested permissions '{preset_name}' exceed parent ceiling"
-                    )
-                permissions.ceiling = effective_config.parent_permissions
-                permissions.parent_agent_id = effective_config.parent_permissions.base_preset
+                permissions.ceiling = copy.deepcopy(effective_config.parent_permissions)
+                # SECURITY FIX: Store actual parent agent ID, not preset name
+                permissions.parent_agent_id = effective_config.parent_agent_id
+                permissions.depth = effective_config.parent_permissions.depth + 1
 
-            # Register permissions and allowed_paths
+            # Register agent_id, permissions, and allowed_paths
+            services.register("agent_id", effective_id)
             services.register("permissions", permissions)
             services.register("allowed_paths", permissions.effective_policy.allowed_paths)
 
             registry = SkillRegistry(services)
             register_builtin_skills(registry)
 
-            # Inject tool definitions into context
-            context.set_tool_definitions(registry.get_definitions())
+            # SECURITY FIX: Inject only enabled tool definitions into context
+            # Disabled tools should not be visible to the LLM at all
+            context.set_tool_definitions(registry.get_definitions_for_permissions(permissions))
 
-            # Create session with context
+            # Create session with context and services for permission enforcement
             session = Session(
                 self._shared.provider,
                 context=context,
@@ -349,6 +384,7 @@ class AgentPool:
                 registry=registry,
                 skill_timeout=self._shared.config.skill_timeout,
                 max_concurrent_tools=self._shared.config.max_concurrent_tools,
+                services=services,
             )
 
             # Create dispatcher with context for token info
@@ -409,6 +445,7 @@ class AgentPool:
             preset=effective_config.preset,
             delta=effective_config.delta,
             parent_permissions=effective_config.parent_permissions,
+            parent_agent_id=effective_config.parent_agent_id,
         )
         return await self.create(config=effective_config)
 
@@ -500,27 +537,29 @@ class AgentPool:
                 else self._shared.config.permissions.default_preset
             )
             try:
-                permissions = resolve_preset(preset_name)
+                permissions = resolve_preset(preset_name, self._shared.custom_presets)
             except ValueError:
                 # Fall back to trusted if preset not found
-                permissions = resolve_preset("trusted")
+                permissions = resolve_preset("trusted", self._shared.custom_presets)
 
             # Apply disabled_tools from saved session
             if saved.disabled_tools:
                 delta = PermissionDelta(disable_tools=saved.disabled_tools)
                 permissions = permissions.apply_delta(delta)
 
-            # Register permissions and allowed_paths
+            # Register agent_id, permissions, and allowed_paths
+            services.register("agent_id", agent_id)
             services.register("permissions", permissions)
             services.register("allowed_paths", permissions.effective_policy.allowed_paths)
 
             registry = SkillRegistry(services)
             register_builtin_skills(registry)
 
-            # Inject tool definitions into context
-            context.set_tool_definitions(registry.get_definitions())
+            # SECURITY FIX: Inject only enabled tool definitions into context
+            # Disabled tools should not be visible to the LLM at all
+            context.set_tool_definitions(registry.get_definitions_for_permissions(permissions))
 
-            # Create session with context
+            # Create session with context and services for permission enforcement
             session = Session(
                 self._shared.provider,
                 context=context,
@@ -528,6 +567,7 @@ class AgentPool:
                 registry=registry,
                 skill_timeout=self._shared.config.skill_timeout,
                 max_concurrent_tools=self._shared.config.max_concurrent_tools,
+                services=services,
             )
 
             # Create dispatcher with context for token info

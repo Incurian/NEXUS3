@@ -205,10 +205,8 @@ class TestPermissionDelta:
         assert len(delta.add_blocked_paths) == 1
         assert delta.tool_overrides["write_file"].requires_confirmation is True
 
-    def test_delta_with_network_access(self):
-        """Delta can override network_access."""
-        delta = PermissionDelta(network_access=False)
-        assert delta.network_access is False
+    # Note: network_access was removed from PermissionDelta
+    # Network access is now derived from permission level (SANDBOXED = no network)
 
 
 class TestAgentPermissionsCanGrant:

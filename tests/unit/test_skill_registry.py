@@ -2,6 +2,12 @@
 
 import pytest
 
+from nexus3.core.permissions import (
+    AgentPermissions,
+    PermissionLevel,
+    PermissionPolicy,
+    ToolPermission,
+)
 from nexus3.core.types import ToolResult
 from nexus3.skill import ServiceContainer, SkillRegistry
 from nexus3.skill.builtin.echo import EchoSkill, echo_skill_factory
@@ -350,3 +356,193 @@ class TestEchoSkillFactory:
         services_with_data.register("some_service", "value")
         skill2 = echo_skill_factory(services_with_data)
         assert skill2 is not None
+
+
+class TestSkillRegistryPermissionFiltering:
+    """Tests for get_definitions_for_permissions() method.
+
+    SECURITY: These tests verify that disabled tools are not exposed to the LLM.
+    """
+
+    def _create_test_skill_factory(self, name: str, desc: str):
+        """Helper to create a test skill factory."""
+        def factory(services: ServiceContainer):
+            class TestSkill:
+                @property
+                def name(self) -> str:
+                    return name
+
+                @property
+                def description(self) -> str:
+                    return desc
+
+                @property
+                def parameters(self) -> dict:
+                    return {"type": "object", "properties": {}}
+
+                async def execute(self, **kwargs):
+                    return ToolResult(output=name)
+
+            return TestSkill()
+        return factory
+
+    def test_all_tools_enabled_by_default(self):
+        """When no tools are disabled, all definitions are returned."""
+        registry = SkillRegistry()
+        registry.register("echo", echo_skill_factory)
+        registry.register("tool1", self._create_test_skill_factory("tool1", "Test tool 1"))
+        registry.register("tool2", self._create_test_skill_factory("tool2", "Test tool 2"))
+
+        # Permissions with no disabled tools
+        policy = PermissionPolicy(level=PermissionLevel.TRUSTED)
+        permissions = AgentPermissions(
+            base_preset="trusted",
+            effective_policy=policy,
+            tool_permissions={},  # All enabled by default
+        )
+
+        definitions = registry.get_definitions_for_permissions(permissions)
+
+        assert len(definitions) == 3
+        names = {d["function"]["name"] for d in definitions}
+        assert names == {"echo", "tool1", "tool2"}
+
+    def test_disabled_tool_not_in_definitions(self):
+        """Disabled tools are excluded from definitions."""
+        registry = SkillRegistry()
+        registry.register("echo", echo_skill_factory)
+        registry.register("write_file", self._create_test_skill_factory("write_file", "Write file"))
+        registry.register("read_file", self._create_test_skill_factory("read_file", "Read file"))
+
+        # Permissions with write_file disabled
+        policy = PermissionPolicy(level=PermissionLevel.TRUSTED)
+        permissions = AgentPermissions(
+            base_preset="trusted",
+            effective_policy=policy,
+            tool_permissions={"write_file": ToolPermission(enabled=False)},
+        )
+
+        definitions = registry.get_definitions_for_permissions(permissions)
+
+        # write_file should be excluded
+        names = {d["function"]["name"] for d in definitions}
+        assert "write_file" not in names
+        assert "echo" in names
+        assert "read_file" in names
+        assert len(definitions) == 2
+
+    def test_multiple_disabled_tools(self):
+        """Multiple disabled tools are all excluded."""
+        registry = SkillRegistry()
+        registry.register("echo", echo_skill_factory)
+        registry.register("nexus_create", self._create_test_skill_factory("nexus_create", "Create agent"))
+        registry.register("nexus_destroy", self._create_test_skill_factory("nexus_destroy", "Destroy agent"))
+        registry.register("nexus_send", self._create_test_skill_factory("nexus_send", "Send message"))
+        registry.register("read_file", self._create_test_skill_factory("read_file", "Read file"))
+
+        # Sandboxed preset typically disables nexus tools
+        policy = PermissionPolicy(level=PermissionLevel.SANDBOXED)
+        permissions = AgentPermissions(
+            base_preset="sandboxed",
+            effective_policy=policy,
+            tool_permissions={
+                "nexus_create": ToolPermission(enabled=False),
+                "nexus_destroy": ToolPermission(enabled=False),
+                "nexus_send": ToolPermission(enabled=False),
+            },
+        )
+
+        definitions = registry.get_definitions_for_permissions(permissions)
+
+        names = {d["function"]["name"] for d in definitions}
+        assert "nexus_create" not in names
+        assert "nexus_destroy" not in names
+        assert "nexus_send" not in names
+        assert "echo" in names
+        assert "read_file" in names
+        assert len(definitions) == 2
+
+    def test_enabled_true_explicitly_is_included(self):
+        """Tools explicitly marked enabled=True are included."""
+        registry = SkillRegistry()
+        registry.register("echo", echo_skill_factory)
+        registry.register("tool1", self._create_test_skill_factory("tool1", "Test tool"))
+
+        policy = PermissionPolicy(level=PermissionLevel.TRUSTED)
+        permissions = AgentPermissions(
+            base_preset="trusted",
+            effective_policy=policy,
+            tool_permissions={"tool1": ToolPermission(enabled=True)},  # Explicitly enabled
+        )
+
+        definitions = registry.get_definitions_for_permissions(permissions)
+
+        names = {d["function"]["name"] for d in definitions}
+        assert "tool1" in names
+        assert "echo" in names
+
+    def test_all_tools_disabled_returns_empty(self):
+        """If all tools are disabled, empty list is returned."""
+        registry = SkillRegistry()
+        registry.register("echo", echo_skill_factory)
+        registry.register("tool1", self._create_test_skill_factory("tool1", "Test tool"))
+
+        policy = PermissionPolicy(level=PermissionLevel.SANDBOXED)
+        permissions = AgentPermissions(
+            base_preset="worker",
+            effective_policy=policy,
+            tool_permissions={
+                "echo": ToolPermission(enabled=False),
+                "tool1": ToolPermission(enabled=False),
+            },
+        )
+
+        definitions = registry.get_definitions_for_permissions(permissions)
+
+        assert definitions == []
+
+    def test_tool_not_in_registry_permissions_ignored(self):
+        """Permissions for tools not in registry are ignored."""
+        registry = SkillRegistry()
+        registry.register("echo", echo_skill_factory)
+
+        # Disable a tool that doesn't exist in registry
+        policy = PermissionPolicy(level=PermissionLevel.TRUSTED)
+        permissions = AgentPermissions(
+            base_preset="trusted",
+            effective_policy=policy,
+            tool_permissions={"nonexistent_tool": ToolPermission(enabled=False)},
+        )
+
+        definitions = registry.get_definitions_for_permissions(permissions)
+
+        # Should just include echo, nonexistent_tool is ignored
+        assert len(definitions) == 1
+        assert definitions[0]["function"]["name"] == "echo"
+
+    def test_sandboxed_agent_cannot_see_nexus_create(self):
+        """SECURITY: Sandboxed agents should not see nexus_create in tool definitions.
+
+        This is the key security test - we want to ensure that agents with
+        restricted permissions cannot even see tools they're not allowed to use.
+        """
+        from nexus3.core.permissions import resolve_preset
+
+        registry = SkillRegistry()
+        registry.register("read_file", self._create_test_skill_factory("read_file", "Read file"))
+        registry.register("write_file", self._create_test_skill_factory("write_file", "Write file"))
+        registry.register("nexus_create", self._create_test_skill_factory("nexus_create", "Create agent"))
+        registry.register("nexus_send", self._create_test_skill_factory("nexus_send", "Send message"))
+
+        # Get sandboxed permissions which has nexus tools disabled
+        permissions = resolve_preset("sandboxed")
+
+        definitions = registry.get_definitions_for_permissions(permissions)
+
+        names = {d["function"]["name"] for d in definitions}
+        # Sandboxed agents should not see nexus_create or nexus_send
+        assert "nexus_create" not in names
+        assert "nexus_send" not in names
+        # But should see file tools
+        assert "read_file" in names
+        assert "write_file" in names

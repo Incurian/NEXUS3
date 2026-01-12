@@ -542,8 +542,8 @@ from nexus3.display import (
     InlinePrinter,
     # Streaming
     StreamingDisplay,
-    # Segments
-    SummarySegment, ActivitySegment, TaskCountSegment, CancelHintSegment,
+    # Segments (concrete implementations, not the Protocol)
+    ActivitySegment, TaskCountSegment, CancelHintSegment, SummarySegment,
     # Summary bar
     SummaryBar,
     # Theme
@@ -551,7 +551,9 @@ from nexus3.display import (
 )
 ```
 
-Note: `ToolState` and `ToolStatus` from `streaming.py` are not exported by default but can be imported directly:
+Note: `SummarySegment` is the Protocol class (from `segments.py`), not a concrete segment.
+
+The following types from `streaming.py` are not exported by default but can be imported directly:
 
 ```python
 from nexus3.display.streaming import ToolState, ToolStatus

@@ -32,6 +32,9 @@ BLOCKED_IP_RANGES = [
     ipaddress.ip_network("::1/128"),  # Loopback
     ipaddress.ip_network("fc00::/7"),  # Unique local
     ipaddress.ip_network("fe80::/10"),  # Link-local
+    # Multicast addresses - should never be used for HTTP requests
+    ipaddress.ip_network("224.0.0.0/4"),  # IPv4 multicast
+    ipaddress.ip_network("ff00::/8"),  # IPv6 multicast
 ]
 
 # Cloud metadata IPs that are NEVER allowed regardless of allow_localhost
@@ -136,22 +139,40 @@ def validate_url(url: str, allow_localhost: bool = True) -> str:
     # Check for special localhost hostnames
     is_localhost_hostname = hostname.lower() in [h.lower() for h in ALLOWED_LOCALHOST]
 
-    # Resolve hostname to IP
+    # Resolve hostname to IP using getaddrinfo (handles both IPv4 and IPv6)
     try:
-        # Try IPv4 first
-        ip_str = socket.gethostbyname(hostname)
-        ip = ipaddress.ip_address(ip_str)
+        # getaddrinfo returns list of (family, type, proto, canonname, sockaddr)
+        # sockaddr is (ip, port) for IPv4 or (ip, port, flow, scope) for IPv6
+        addr_info = socket.getaddrinfo(
+            hostname,
+            parsed.port or 80,
+            type=socket.SOCK_STREAM,
+        )
+        if not addr_info:
+            if is_localhost_hostname and allow_localhost:
+                return url
+            raise UrlSecurityError(url, "no address info found for hostname")
+
+        # SECURITY: Validate ALL returned addresses, not just the first.
+        # This prevents DNS rebinding attacks where one address is public
+        # but another is private (e.g., first lookup returns safe IP,
+        # subsequent lookups return internal IPs).
+        for addr in addr_info:
+            ip_str = addr[4][0]
+            try:
+                ip = ipaddress.ip_address(ip_str)
+            except ValueError:
+                # Skip invalid IP representations (shouldn't happen, but be defensive)
+                continue
+
+            blocked, reason = _is_blocked(ip, allow_localhost)
+            if blocked:
+                raise UrlSecurityError(url, reason)
+
     except socket.gaierror as e:
         # If localhost hostname and allowed, don't fail on resolution
         if is_localhost_hostname and allow_localhost:
             return url
         raise UrlSecurityError(url, f"failed to resolve hostname: {e}") from e
-    except ValueError as e:
-        raise UrlSecurityError(url, f"invalid IP address: {e}") from e
-
-    # Check if blocked
-    blocked, reason = _is_blocked(ip, allow_localhost)
-    if blocked:
-        raise UrlSecurityError(url, reason)
 
     return url

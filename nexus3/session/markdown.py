@@ -1,9 +1,14 @@
 """Markdown file writers for human-readable session logs."""
 
 import json
+import os
+import stat
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+# Secure file permissions: owner read/write only (0o600)
+_SECURE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
 
 
 class MarkdownWriter:
@@ -35,6 +40,8 @@ class MarkdownWriter:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             header = f"# Session Log\n\nStarted: {timestamp}\n\n---\n\n"
             self.context_path.write_text(header)
+            # Set secure permissions (owner read/write only)
+            os.chmod(self.context_path, _SECURE_FILE_MODE)
 
     def _init_verbose_file(self) -> None:
         """Initialize verbose.md with header."""
@@ -42,6 +49,8 @@ class MarkdownWriter:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             header = f"# Verbose Log\n\nStarted: {timestamp}\n\n---\n\n"
             self.verbose_path.write_text(header)
+            # Set secure permissions (owner read/write only)
+            os.chmod(self.verbose_path, _SECURE_FILE_MODE)
 
     def _append(self, path: Path, content: str) -> None:
         """Append content to a file."""
@@ -239,5 +248,9 @@ class RawWriter:
 
     def _append_jsonl(self, entry: dict[str, Any]) -> None:
         """Append a JSON line to the file."""
+        is_new = not self.raw_path.exists()
         with self.raw_path.open("a") as f:
             f.write(json.dumps(entry) + "\n")
+        # Set secure permissions on first write
+        if is_new:
+            os.chmod(self.raw_path, _SECURE_FILE_MODE)

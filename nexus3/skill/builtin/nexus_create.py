@@ -128,10 +128,13 @@ class NexusCreateSkill:
 
         try:
             async with NexusClient(validated_url, api_key=api_key) as client:
+                # Pass parent agent ID for server-side ceiling enforcement lookup
+                parent_agent_id: str | None = self._services.get("agent_id")
                 result = await client.create_agent(
                     agent_id,
                     preset=preset,
                     disable_tools=disable_tools,
+                    parent_agent_id=parent_agent_id,
                 )
                 return ToolResult(output=json.dumps(result))
         except ClientError as e:

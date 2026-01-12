@@ -12,6 +12,7 @@ This module provides the protocol layer for `nexus3 --serve` mode. Instead of in
 - Subagent communication (parent/child agents)
 - Scripted automation pipelines
 - Multi-turn conversations with persistent context per agent
+- Permission-controlled agent hierarchies with ceiling inheritance
 
 ## Architecture
 
@@ -19,32 +20,32 @@ This module provides the protocol layer for `nexus3 --serve` mode. Instead of in
                                     +-----------------+
                                     |  GlobalDispatcher |
                                     |  (create/destroy |
-                                    |   list agents)   |
+                                    |   list/shutdown) |
                                     +-----------------+
                                            ^
                                            | POST / or /rpc
                                            |
 HTTP POST --> read_http_request() --> Path Router --> dispatch()
-                                           |
-                                           | POST /agent/{id}
-                                           v
-                                    +-----------------+
-                                    |   AgentPool     |
-                                    |   .get(id)      |
-                                    +-----------------+
-                                           |
-                                           v
-                                    +-----------------+
-                                    |   Agent         |
-                                    |   .dispatcher   |
-                                    +-----------------+
-                                           |
-                                           v
-                                    +-----------------+
-                                    |   Dispatcher    |
-                                    |   (send/cancel/ |
-                                    |    shutdown)    |
-                                    +-----------------+
+                  |                        |
+                  | API Key Auth           | POST /agent/{id}
+                  |                        v
+                  |                  +-----------------+
+                  |                  |   AgentPool     |
+                  |                  |   .get(id)      |
+                  |                  +-----------------+
+                  |                        |
+                  |                        v
+                  |                  +-----------------+
+                  |                  |   Agent         |
+                  |                  |   .dispatcher   |
+                  |                  +-----------------+
+                  |                        |
+                  |                        v
+                  |                  +-----------------+
+                  |                  |   Dispatcher    |
+                  |                  |   (send/cancel/ |
+                  |                  |    shutdown)    |
+                  |                  +-----------------+
 ```
 
 ### Multi-Agent Architecture
@@ -55,8 +56,8 @@ HTTP POST --> read_http_request() --> Path Router --> dispatch()
 | (any tool)  | ----------------------------------> | create_agent     |
 |             | <---------------------------------- | destroy_agent    |
 |             |                                     | list_agents      |
-+-------------+                                     +-----------------+
-      |
++-------------+                                     | shutdown_server  |
+      |                                             +-----------------+
       |         POST /agent/{id}                    +-----------------+
       | ------------------------------------------> |     Agent       |
       | <------------------------------------------ |   Dispatcher    |
@@ -64,6 +65,22 @@ HTTP POST --> read_http_request() --> Path Router --> dispatch()
       |                                             |  get_tokens/... |
                                                     +-----------------+
 ```
+
+## Module Files
+
+| File | Purpose |
+|------|---------|
+| `types.py` | JSON-RPC 2.0 Request and Response dataclasses |
+| `protocol.py` | Parsing, serialization, error codes |
+| `auth.py` | API key generation, validation, and storage |
+| `detection.py` | Server detection and wait utilities |
+| `dispatcher.py` | Per-agent method dispatcher (send/cancel/shutdown) |
+| `global_dispatcher.py` | Global method dispatcher (create/destroy/list agents) |
+| `pool.py` | AgentPool, Agent, SharedComponents, AgentConfig |
+| `http.py` | HTTP server with path-based routing |
+| `__init__.py` | Public exports |
+
+---
 
 ## Key Types
 
@@ -102,6 +119,99 @@ Parsed HTTP request.
 
 ---
 
+## Authentication (auth.py)
+
+API key authentication for securing the HTTP server.
+
+### Key Format
+
+Keys use the format: `nxk_` + 32 bytes URL-safe Base64 (approximately 47 characters total).
+
+Example: `nxk_7Ks9XmN2pLqR4Tv8YbHcWdFgJkLmNpQrStUvWxYz`
+
+### Key Storage
+
+Keys are stored in `~/.nexus3/`:
+
+| File | Description |
+|------|-------------|
+| `server.key` | Default key (port 8765) |
+| `server-{port}.key` | Port-specific key |
+
+### Functions
+
+| Function | Description |
+|----------|-------------|
+| `generate_api_key()` | Generate a new API key with `nxk_` prefix |
+| `validate_api_key(provided, expected)` | Constant-time comparison (timing-attack safe) |
+| `discover_api_key(port)` | Find API key from env var or key files |
+
+### ServerKeyManager
+
+Manages server API key lifecycle:
+
+```python
+class ServerKeyManager:
+    def __init__(self, port: int = 8765, nexus_dir: Path | None = None): ...
+
+    @property
+    def key_path(self) -> Path: ...
+
+    def generate_and_save(self) -> str: ...  # Creates key with 0o600 permissions
+    def load(self) -> str | None: ...
+    def delete(self) -> None: ...
+```
+
+### Key Discovery Order
+
+The `discover_api_key()` function checks:
+1. `NEXUS3_API_KEY` environment variable
+2. `~/.nexus3/server-{port}.key` (port-specific)
+3. `~/.nexus3/server.key` (default)
+
+---
+
+## Server Detection (detection.py)
+
+Utilities for detecting running NEXUS3 servers.
+
+### DetectionResult Enum
+
+| Value | Description |
+|-------|-------------|
+| `NO_SERVER` | Port is free (connection refused) |
+| `NEXUS_SERVER` | Valid NEXUS3 server detected |
+| `OTHER_SERVICE` | Something else is running (not NEXUS3) |
+| `TIMEOUT` | Connection attempt timed out |
+| `ERROR` | Unexpected error occurred |
+
+### Functions
+
+```python
+async def detect_server(
+    port: int,
+    host: str = "127.0.0.1",
+    timeout: float = 2.0,
+) -> DetectionResult: ...
+
+async def wait_for_server(
+    port: int,
+    host: str = "127.0.0.1",
+    timeout: float = 30.0,
+    poll_interval: float = 0.1,
+) -> bool: ...
+```
+
+### Detection Strategy
+
+Sends a `list_agents` JSON-RPC request to fingerprint the server:
+- Valid JSON-RPC response with `agents` list -> `NEXUS_SERVER`
+- HTTP 401/403 (auth error) -> `NEXUS_SERVER` (auth-protected)
+- Connection refused -> `NO_SERVER`
+- Invalid/non-JSON-RPC response -> `OTHER_SERVICE`
+
+---
+
 ## Agent Pool (pool.py)
 
 The `AgentPool` manages multiple agent instances, each with isolated context, skills, and logging.
@@ -117,6 +227,8 @@ class SharedComponents:
     provider: AsyncProvider     # LLM provider (shared for connection pooling)
     prompt_loader: PromptLoader # Loader for system prompts
     base_log_dir: Path          # Base directory for agent logs
+    log_streams: LogStream = LogStream.ALL  # Enabled log streams
+    custom_presets: dict[str, PermissionPreset] = field(default_factory=dict)
 ```
 
 ### AgentConfig
@@ -126,8 +238,12 @@ Per-agent creation options:
 ```python
 @dataclass
 class AgentConfig:
-    agent_id: str | None = None       # Unique ID (auto-generated if None)
-    system_prompt: str | None = None  # Override default system prompt
+    agent_id: str | None = None           # Unique ID (auto-generated if None)
+    system_prompt: str | None = None      # Override default system prompt
+    preset: str | None = None             # Permission preset name
+    delta: PermissionDelta | None = None  # Permission modifications
+    parent_permissions: AgentPermissions | None = None  # Parent's permissions (ceiling)
+    parent_agent_id: str | None = None    # Parent agent ID for lineage tracking
 ```
 
 ### Agent
@@ -161,11 +277,17 @@ class AgentPool:
         config: AgentConfig | None = None,
     ) -> Agent: ...
 
+    async def create_temp(self, config: AgentConfig | None = None) -> Agent: ...
+
+    async def restore_from_saved(self, saved: SavedSession) -> Agent: ...
+
     async def destroy(self, agent_id: str) -> bool: ...
 
     def get(self, agent_id: str) -> Agent | None: ...
 
     def list(self) -> list[dict[str, Any]]: ...
+
+    def is_temp(self, agent_id: str) -> bool: ...
 
     @property
     def should_shutdown(self) -> bool: ...
@@ -175,17 +297,20 @@ class AgentPool:
     def __contains__(self, agent_id: str) -> bool: ...
 ```
 
-#### Methods
+### Temp Agent Naming
 
-| Method | Parameters | Returns | Description |
-|--------|------------|---------|-------------|
-| `create` | `agent_id?`, `config?` | `Agent` | Create new agent with isolated state |
-| `destroy` | `agent_id` | `bool` | Destroy agent, clean up resources |
-| `get` | `agent_id` | `Agent | None` | Get agent by ID |
-| `list` | (none) | `list[dict]` | List all agents with info |
-| `should_shutdown` | (property) | `bool` | True if all agents want shutdown |
+Agents with IDs starting with `.` (e.g., `.1`, `.2`) are temporary:
+- Don't appear in saved sessions list
+- Can be promoted to named via `/save` command
+- Useful for one-off tasks
 
-#### Agent List Info
+Helper functions:
+```python
+def is_temp_agent(agent_id: str) -> bool: ...
+def generate_temp_id(existing_ids: set[str]) -> str: ...  # Returns ".1", ".2", etc.
+```
+
+### Agent List Info
 
 The `list()` method returns:
 
@@ -193,12 +318,26 @@ The `list()` method returns:
 [
     {
         "agent_id": "worker-1",
+        "is_temp": False,
         "created_at": "2024-01-15T10:30:00",
         "message_count": 5,
         "should_shutdown": False
     },
     ...
 ]
+```
+
+### Permission Enforcement
+
+When creating agents, the pool:
+1. Resolves the permission preset (from config or built-in)
+2. Checks parent ceiling (if `parent_permissions` provided)
+3. Applies delta modifications
+4. Validates result against ceiling
+5. Sets depth counter (max depth: 5)
+
+```python
+MAX_AGENT_DEPTH = 5  # Maximum nesting depth for agent creation
 ```
 
 ---
@@ -213,6 +352,13 @@ Handles agent lifecycle management (non-agent-specific methods).
 GlobalDispatcher(pool: AgentPool)
 ```
 
+### Properties
+
+```python
+@property
+def shutdown_requested(self) -> bool: ...  # True if shutdown_server was called
+```
+
 ### Methods
 
 ```python
@@ -224,30 +370,48 @@ async def dispatch(self, request: Request) -> Response | None: ...
 
 | Method | Params | Returns | Description |
 |--------|--------|---------|-------------|
-| `create_agent` | `{"agent_id?": "...", "system_prompt?": "..."}` | `{"agent_id": "...", "url": "/agent/..."}` | Create a new agent |
-| `destroy_agent` | `{"agent_id": "..."}` | `{"success": true/false, "agent_id": "..."}` | Destroy an existing agent |
+| `create_agent` | `{"agent_id?", "system_prompt?", "preset?", "disable_tools?", "parent_agent_id?"}` | `{"agent_id", "url"}` | Create a new agent |
+| `destroy_agent` | `{"agent_id"}` | `{"success", "agent_id"}` | Destroy an existing agent |
 | `list_agents` | (none) | `{"agents": [...]}` | List all active agents |
+| `shutdown_server` | (none) | `{"success", "message"}` | Signal server shutdown |
 
 #### `create_agent` Details
 
-- `agent_id`: Optional. Auto-generated 8-char hex ID if omitted
-- `system_prompt`: Optional. Override the default system prompt
-- Returns the `agent_id` and `url` for subsequent agent-specific calls
-- Raises `InvalidParamsError` if `agent_id` already exists
+Parameters:
+- `agent_id`: Optional string. Auto-generated 8-char hex ID if omitted. Validated for path safety.
+- `system_prompt`: Optional string. Override the default system prompt.
+- `preset`: Optional string. One of `"yolo"`, `"trusted"`, `"sandboxed"`, `"worker"`.
+- `disable_tools`: Optional list of strings. Tools to disable for this agent.
+- `parent_agent_id`: Optional string. ID of parent agent for permission ceiling enforcement.
+
+Returns `agent_id` and `url` for subsequent agent-specific calls.
+
+Security:
+- Validates `agent_id` format to prevent path traversal
+- Looks up parent permissions from pool (not from RPC data) for ceiling enforcement
+- Enforces permission ceiling inheritance
 
 #### `destroy_agent` Details
 
-- `agent_id`: Required. The ID of the agent to destroy
+- `agent_id`: Required. The ID of the agent to destroy.
+- Cancels all in-progress requests before cleanup
 - Cleans up resources (closes logger, removes from pool)
 - Returns `success: true` if found and destroyed, `false` if not found
 
 #### `list_agents` Details
 
-- Returns list of all active agents with:
-  - `agent_id`: Agent's unique identifier
-  - `created_at`: ISO 8601 timestamp
-  - `message_count`: Number of messages in context
-  - `should_shutdown`: Whether agent wants shutdown
+Returns list of all active agents with:
+- `agent_id`: Agent's unique identifier
+- `is_temp`: True if temp agent (starts with `.`)
+- `created_at`: ISO 8601 timestamp
+- `message_count`: Number of messages in context
+- `should_shutdown`: Whether agent wants shutdown
+
+#### `shutdown_server` Details
+
+- Sets `shutdown_requested` flag
+- HTTP server checks this flag in its main loop
+- Initiates graceful shutdown
 
 ---
 
@@ -274,28 +438,27 @@ Dispatcher(session: Session, context: ContextManager | None = None)
 
 ```python
 @property
-def should_shutdown(self) -> bool
-```
+def should_shutdown(self) -> bool: ...
 
-Returns `True` when `shutdown` method has been called.
+def request_shutdown(self) -> None: ...
+```
 
 ### Methods
 
 ```python
-async def dispatch(request: Request) -> Response | None
+async def dispatch(request: Request) -> Response | None: ...
+async def cancel_all_requests(self) -> dict[str, bool]: ...  # Cancel all in-progress requests
 ```
-
-Routes request to appropriate handler. Returns `None` for notifications.
 
 ### Available RPC Methods
 
 | Method | Params | Returns | Description |
 |--------|--------|---------|-------------|
-| `send` | `{"content": "...", "request_id?": "..."}` | `{"content": "...", "request_id": "..."}` | Send message to LLM |
-| `cancel` | `{"request_id": "..."}` | `{"cancelled": true/false, ...}` | Cancel in-progress request |
+| `send` | `{"content", "request_id?"}` | `{"content", "request_id"}` | Send message to LLM |
+| `cancel` | `{"request_id"}` | `{"cancelled", ...}` | Cancel in-progress request |
 | `shutdown` | (none) | `{"success": true}` | Signal graceful shutdown |
 | `get_tokens` | (none) | Token usage dict | Get context token breakdown |
-| `get_context` | (none) | `{"message_count": N, ...}` | Get context info |
+| `get_context` | (none) | `{"message_count", ...}` | Get context info |
 
 **Note:** `get_tokens` and `get_context` are only available if `context` was provided to the constructor.
 
@@ -304,6 +467,7 @@ Routes request to appropriate handler. Returns `None` for notifications.
 - `content` is required and must be a string
 - `request_id` is optional; if not provided, a unique ID is auto-generated
 - Response includes `request_id` for use with `cancel`
+- If cancelled, returns `{"cancelled": true, "request_id": "..."}`
 
 #### `cancel` Parameter Validation
 
@@ -321,11 +485,18 @@ The dispatcher catches exceptions and converts them to appropriate error respons
 
 Notifications (requests without `id`) never receive error responses.
 
+### InvalidParamsError
+
+```python
+class InvalidParamsError(NexusError):
+    """Raised when method parameters are invalid."""
+```
+
 ---
 
 ## HTTP Server (http.py)
 
-Pure asyncio HTTP server implementation with path-based routing (~390 LOC, no external dependencies).
+Pure asyncio HTTP server implementation with path-based routing (~490 LOC, no external dependencies except httpx for client operations).
 
 ### Key Exports
 
@@ -351,6 +522,10 @@ Pure asyncio HTTP server implementation with path-based routing (~390 LOC, no ex
 
 Other methods or paths return 404/405 errors.
 
+### Cross-Session Auto-Restore
+
+When a request targets an `agent_id` that is not in the active pool but exists as a saved session (via `SessionManager`), the server automatically restores the session before processing the request.
+
 ### Function Signatures
 
 ```python
@@ -359,6 +534,8 @@ async def run_http_server(
     global_dispatcher: GlobalDispatcher,
     port: int = DEFAULT_PORT,
     host: str = BIND_HOST,
+    api_key: str | None = None,
+    session_manager: SessionManager | None = None,
 ) -> None: ...
 
 async def handle_connection(
@@ -366,6 +543,8 @@ async def handle_connection(
     writer: asyncio.StreamWriter,
     pool: AgentPool,
     global_dispatcher: GlobalDispatcher,
+    api_key: str | None = None,
+    session_manager: SessionManager | None = None,
 ) -> None: ...
 
 async def read_http_request(reader: asyncio.StreamReader) -> HttpRequest: ...
@@ -380,11 +559,23 @@ async def send_http_response(
 
 ### Security
 
-- Server binds to localhost only (enforced): `127.0.0.1`, `localhost`, or `::1`
-- Attempting to bind to any other address (e.g., `0.0.0.0`) raises `ValueError`
-- Not exposed to network by default
-- Request body size limited to 1MB (`MAX_BODY_SIZE`) to prevent DoS
-- 30-second timeout on request reading (request line, headers, and body)
+- **Localhost only**: Server binds to `127.0.0.1`, `localhost`, or `::1` only. Attempting to bind to any other address raises `ValueError`.
+- **API key authentication**: When `api_key` is provided, all requests must include `Authorization: Bearer <key>` header.
+- **Request size limit**: Body limited to 1MB (`MAX_BODY_SIZE`) to prevent DoS.
+- **Timeouts**: 30-second timeout on request reading (request line, headers, and body).
+- **Agent ID validation**: Agent IDs in paths are validated to prevent path traversal.
+
+### HTTP Response Codes
+
+| Code | Meaning |
+|------|---------|
+| 200 | OK |
+| 400 | Bad Request (malformed HTTP or JSON-RPC) |
+| 401 | Unauthorized (missing Authorization header) |
+| 403 | Forbidden (invalid API key) |
+| 404 | Not Found (unknown path or agent) |
+| 405 | Method Not Allowed (not POST) |
+| 500 | Internal Server Error |
 
 ---
 
@@ -433,7 +624,7 @@ Standard JSON-RPC 2.0 error codes:
 
 ## Data Flow
 
-### Single-Agent Request (Legacy Pattern)
+### Single-Agent Request
 
 ```
 1. HTTP POST request to localhost:8765/agent/{id}
@@ -442,49 +633,61 @@ Standard JSON-RPC 2.0 error codes:
 2. read_http_request() parses HTTP headers and body
         |
         v
-3. Path router extracts agent_id, looks up Agent in pool
+3. API key validation (if configured)
         |
         v
-4. parse_request() validates JSON and creates Request
+4. Path router extracts agent_id, looks up Agent in pool
         |
         v
-5. Agent.dispatcher.dispatch() looks up handler
+5. (Optional) Auto-restore from saved session if not in pool
         |
         v
-6. Handler executes (e.g., _handle_send calls Session.send)
+6. parse_request() validates JSON and creates Request
         |
         v
-7. Result wrapped in Response via make_success_response()
+7. Agent.dispatcher.dispatch() looks up handler
         |
         v
-8. serialize_response() creates JSON body
+8. Handler executes (e.g., _handle_send calls Session.send)
         |
         v
-9. send_http_response() writes HTTP response
+9. Result wrapped in Response via make_success_response()
+        |
+        v
+10. serialize_response() creates JSON body
+        |
+        v
+11. send_http_response() writes HTTP response
 ```
 
 ### Multi-Agent Lifecycle
 
 ```
-1. POST / with create_agent
+1. POST / with create_agent (+ preset, disable_tools)
         |
         v
-2. GlobalDispatcher creates Agent via AgentPool
+2. GlobalDispatcher validates params and permissions
         |
         v
-3. Returns agent_id and URL (/agent/{id})
+3. AgentPool creates Agent with permission enforcement
         |
         v
-4. Client uses URL for subsequent requests
+4. Returns agent_id and URL (/agent/{id})
         |
         v
-5. POST /agent/{id} with send/cancel/etc.
+5. Client uses URL for subsequent requests
         |
         v
-6. Agent's Dispatcher handles request
+6. POST /agent/{id} with send/cancel/etc.
         |
         v
-7. POST / with destroy_agent to clean up
+7. Agent's Dispatcher handles request
+        |
+        v
+8. POST / with destroy_agent to clean up
+        |
+        v
+9. All in-progress requests cancelled, resources cleaned up
 ```
 
 ---
@@ -497,15 +700,19 @@ Standard JSON-RPC 2.0 error codes:
 |--------|--------|---------|
 | `NexusError` | `nexus3.core.errors` | Base exception class |
 | `CancellationToken` | `nexus3.core.cancel` | Request cancellation |
+| `is_valid_agent_id`, `validate_agent_id`, `ValidationError` | `nexus3.core.validation` | Agent ID validation |
+| `AgentPermissions`, `PermissionDelta`, `PermissionPreset` | `nexus3.core.permissions` | Permission types |
+| `resolve_preset`, `load_custom_presets_from_config` | `nexus3.core.permissions` | Preset resolution |
 | `Session` | `nexus3.session` | LLM session for `send` method |
 | `SessionLogger`, `LogConfig`, `LogStream` | `nexus3.session` | Per-agent logging |
+| `SavedSession`, `deserialize_messages` | `nexus3.session.persistence` | Session restoration |
 | `ContextManager`, `ContextConfig` | `nexus3.context` | Per-agent context |
 | `ServiceContainer`, `SkillRegistry` | `nexus3.skill` | Per-agent skills |
 | `PromptLoader` | `nexus3.context.prompt_loader` | System prompt loading |
 | `Config` | `nexus3.config.schema` | Global configuration |
 | `AsyncProvider` | `nexus3.core.interfaces` | LLM provider protocol |
 
-### External (stdlib only)
+### External
 
 | Module | Purpose |
 |--------|---------|
@@ -514,10 +721,13 @@ Standard JSON-RPC 2.0 error codes:
 | `dataclasses` | Type definitions |
 | `typing` | Type hints |
 | `collections.abc` | Handler type alias |
-| `secrets` | Request ID generation |
+| `secrets` | Request ID and API key generation |
 | `datetime` | Agent creation timestamps |
-| `pathlib` | Log directory paths |
+| `pathlib` | Log directory and key file paths |
 | `uuid` | Agent ID generation |
+| `hmac` | Constant-time key comparison |
+| `os`, `stat` | Key file permissions |
+| `httpx` | HTTP client for server detection |
 
 ---
 
@@ -528,6 +738,7 @@ Standard JSON-RPC 2.0 error codes:
 ```bash
 curl -X POST http://localhost:8765/ \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer nxk_..." \
   -d '{"jsonrpc":"2.0","method":"create_agent","params":{"agent_id":"worker-1"},"id":1}'
 ```
 
@@ -536,11 +747,29 @@ Response:
 {"jsonrpc":"2.0","id":1,"result":{"agent_id":"worker-1","url":"/agent/worker-1"}}
 ```
 
-### Create Agent with Custom System Prompt
+### Create Agent with Permission Preset
 
 ```bash
 curl -X POST http://localhost:8765/ \
-  -d '{"jsonrpc":"2.0","method":"create_agent","params":{"agent_id":"coder","system_prompt":"You are a coding assistant."},"id":1}'
+  -H "Authorization: Bearer nxk_..." \
+  -d '{"jsonrpc":"2.0","method":"create_agent","params":{"agent_id":"sandbox","preset":"sandboxed"},"id":1}'
+```
+
+### Create Agent with Disabled Tools
+
+```bash
+curl -X POST http://localhost:8765/ \
+  -H "Authorization: Bearer nxk_..." \
+  -d '{"jsonrpc":"2.0","method":"create_agent","params":{"agent_id":"readonly","preset":"trusted","disable_tools":["write_file"]},"id":1}'
+```
+
+### Create Subagent with Parent Ceiling
+
+```bash
+# Parent agent "coordinator" creates a child with restricted permissions
+curl -X POST http://localhost:8765/ \
+  -H "Authorization: Bearer nxk_..." \
+  -d '{"jsonrpc":"2.0","method":"create_agent","params":{"agent_id":"worker","preset":"sandboxed","parent_agent_id":"coordinator"},"id":1}'
 ```
 
 ### Send Message to Agent
@@ -548,6 +777,7 @@ curl -X POST http://localhost:8765/ \
 ```bash
 curl -X POST http://localhost:8765/agent/worker-1 \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer nxk_..." \
   -d '{"jsonrpc":"2.0","method":"send","params":{"content":"Hello"},"id":2}'
 ```
 
@@ -560,18 +790,20 @@ Response:
 
 ```bash
 curl -X POST http://localhost:8765/ \
+  -H "Authorization: Bearer nxk_..." \
   -d '{"jsonrpc":"2.0","method":"list_agents","id":3}'
 ```
 
 Response:
 ```json
-{"jsonrpc":"2.0","id":3,"result":{"agents":[{"agent_id":"worker-1","created_at":"2024-01-15T10:30:00","message_count":2,"should_shutdown":false}]}}
+{"jsonrpc":"2.0","id":3,"result":{"agents":[{"agent_id":"worker-1","is_temp":false,"created_at":"2024-01-15T10:30:00","message_count":2,"should_shutdown":false}]}}
 ```
 
 ### Destroy an Agent
 
 ```bash
 curl -X POST http://localhost:8765/ \
+  -H "Authorization: Bearer nxk_..." \
   -d '{"jsonrpc":"2.0","method":"destroy_agent","params":{"agent_id":"worker-1"},"id":4}'
 ```
 
@@ -580,25 +812,42 @@ Response:
 {"jsonrpc":"2.0","id":4,"result":{"success":true,"agent_id":"worker-1"}}
 ```
 
+### Shutdown the Server
+
+```bash
+curl -X POST http://localhost:8765/ \
+  -H "Authorization: Bearer nxk_..." \
+  -d '{"jsonrpc":"2.0","method":"shutdown_server","id":5}'
+```
+
+Response:
+```json
+{"jsonrpc":"2.0","id":5,"result":{"success":true,"message":"Server shutting down"}}
+```
+
 ### Multi-Turn Conversation
 
 ```bash
 # Create agent
 curl -X POST http://localhost:8765/ \
+  -H "Authorization: Bearer nxk_..." \
   -d '{"jsonrpc":"2.0","method":"create_agent","params":{"agent_id":"chat"},"id":1}'
 
 # First message
 curl -X POST http://localhost:8765/agent/chat \
+  -H "Authorization: Bearer nxk_..." \
   -d '{"jsonrpc":"2.0","method":"send","params":{"content":"My name is Alice"},"id":2}'
 # Response: {"jsonrpc":"2.0","id":2,"result":{"content":"Nice to meet you, Alice!","request_id":"..."}}
 
 # Second message (agent remembers context)
 curl -X POST http://localhost:8765/agent/chat \
+  -H "Authorization: Bearer nxk_..." \
   -d '{"jsonrpc":"2.0","method":"send","params":{"content":"What is my name?"},"id":3}'
 # Response: {"jsonrpc":"2.0","id":3,"result":{"content":"Your name is Alice.","request_id":"..."}}
 
 # Clean up
 curl -X POST http://localhost:8765/ \
+  -H "Authorization: Bearer nxk_..." \
   -d '{"jsonrpc":"2.0","method":"destroy_agent","params":{"agent_id":"chat"},"id":4}'
 ```
 
@@ -607,12 +856,14 @@ curl -X POST http://localhost:8765/ \
 **Terminal 1 - Start a long-running request:**
 ```bash
 curl -X POST http://localhost:8765/agent/worker-1 \
+  -H "Authorization: Bearer nxk_..." \
   -d '{"jsonrpc":"2.0","method":"send","params":{"content":"Write a long essay","request_id":"req-1"},"id":1}'
 ```
 
 **Terminal 2 - Cancel the request:**
 ```bash
 curl -X POST http://localhost:8765/agent/worker-1 \
+  -H "Authorization: Bearer nxk_..." \
   -d '{"jsonrpc":"2.0","method":"cancel","params":{"request_id":"req-1"},"id":2}'
 ```
 
@@ -625,6 +876,7 @@ Response:
 
 ```bash
 curl -X POST http://localhost:8765/agent/worker-1 \
+  -H "Authorization: Bearer nxk_..." \
   -d '{"jsonrpc":"2.0","method":"get_tokens","id":5}'
 ```
 
@@ -633,23 +885,35 @@ Response:
 {"jsonrpc":"2.0","id":5,"result":{"system":150,"tools":0,"messages":42,"total":192,"budget":8000,"available":6000}}
 ```
 
-### Shutdown an Agent
-
-```bash
-curl -X POST http://localhost:8765/agent/worker-1 \
-  -d '{"jsonrpc":"2.0","method":"shutdown","id":6}'
-```
-
-Response:
-```json
-{"jsonrpc":"2.0","id":6,"result":{"success":true}}
-```
-
 ### Error Responses
+
+**Missing authorization:**
+```bash
+curl -X POST http://localhost:8765/ \
+  -d '{"jsonrpc":"2.0","method":"list_agents","id":1}'
+```
+
+Response (HTTP 401):
+```json
+{"error": "Authorization header required"}
+```
+
+**Invalid API key:**
+```bash
+curl -X POST http://localhost:8765/ \
+  -H "Authorization: Bearer wrong_key" \
+  -d '{"jsonrpc":"2.0","method":"list_agents","id":1}'
+```
+
+Response (HTTP 403):
+```json
+{"error": "Invalid API key"}
+```
 
 **Agent not found:**
 ```bash
 curl -X POST http://localhost:8765/agent/nonexistent \
+  -H "Authorization: Bearer nxk_..." \
   -d '{"jsonrpc":"2.0","method":"send","params":{"content":"Hi"},"id":1}'
 ```
 
@@ -661,6 +925,7 @@ Response (HTTP 404):
 **Method not found:**
 ```bash
 curl -X POST http://localhost:8765/agent/worker-1 \
+  -H "Authorization: Bearer nxk_..." \
   -d '{"jsonrpc":"2.0","method":"unknown","id":1}'
 ```
 
@@ -669,15 +934,16 @@ Response:
 {"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found: unknown"}}
 ```
 
-**Invalid params:**
+**Permission ceiling exceeded:**
 ```bash
-curl -X POST http://localhost:8765/agent/worker-1 \
-  -d '{"jsonrpc":"2.0","method":"send","params":{},"id":1}'
+curl -X POST http://localhost:8765/ \
+  -H "Authorization: Bearer nxk_..." \
+  -d '{"jsonrpc":"2.0","method":"create_agent","params":{"agent_id":"worker","preset":"yolo","parent_agent_id":"sandboxed-parent"},"id":1}'
 ```
 
 Response:
 ```json
-{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Missing required parameter: content"}}
+{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"Internal error: PermissionError: Requested preset 'yolo' exceeds parent ceiling"}}
 ```
 
 ---
@@ -686,13 +952,10 @@ Response:
 
 ```bash
 # Start HTTP server on default port (8765)
-python -m nexus3 --serve
+nexus --serve
 
 # Start HTTP server on custom port
-python -m nexus3 --serve 9000
-
-# With auto-reload on code changes
-python -m nexus3 --serve --reload
+nexus --serve 9000
 ```
 
 ---
@@ -706,7 +969,7 @@ For Python applications, the `NexusClient` class provides a convenient async int
 ```python
 from nexus3.client import NexusClient
 
-async with NexusClient() as client:
+async with NexusClient(api_key="nxk_...") as client:
     result = await client.send("Hello!")
     print(result["content"])
 ```
@@ -714,13 +977,14 @@ async with NexusClient() as client:
 ### Constructor
 
 ```python
-NexusClient(url: str = "http://127.0.0.1:8765", timeout: float = 60.0)
+NexusClient(url: str = "http://127.0.0.1:8765", timeout: float = 60.0, api_key: str | None = None)
 ```
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `url` | `str` | `"http://127.0.0.1:8765"` | Base URL of the JSON-RPC server |
 | `timeout` | `float` | `60.0` | Request timeout in seconds |
+| `api_key` | `str \| None` | `None` | API key for authentication |
 
 ### Methods
 
@@ -742,7 +1006,7 @@ All methods raise `ClientError` (a `NexusError` subclass) on:
 ```python
 from nexus3.client import NexusClient, ClientError
 
-async with NexusClient() as client:
+async with NexusClient(api_key="nxk_...") as client:
     try:
         result = await client.send("Hello")
     except ClientError as e:
@@ -780,6 +1044,12 @@ Agent, AgentConfig, AgentPool, SharedComponents
 
 # Exceptions
 ParseError, InvalidParamsError, HttpParseError
+
+# Authentication
+API_KEY_PREFIX, generate_api_key, validate_api_key, ServerKeyManager, discover_api_key
+
+# Detection
+DetectionResult, detect_server, wait_for_server
 ```
 
 ---
@@ -790,9 +1060,10 @@ ParseError, InvalidParamsError, HttpParseError
 
 | Method | Description |
 |--------|-------------|
-| `create_agent` | Create a new agent instance |
+| `create_agent` | Create a new agent instance (with optional preset and permissions) |
 | `destroy_agent` | Destroy an agent and clean up |
 | `list_agents` | List all active agents |
+| `shutdown_server` | Signal server to shut down |
 
 ### Agent Methods (POST /agent/{id})
 

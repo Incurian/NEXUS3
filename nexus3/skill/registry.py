@@ -22,11 +22,16 @@ Example:
         result = await skill.execute(message="hello")
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nexus3.skill.base import Skill
 from nexus3.skill.services import ServiceContainer
+
+if TYPE_CHECKING:
+    from nexus3.core.permissions import AgentPermissions
 
 # Factory type: takes ServiceContainer, returns Skill
 SkillFactory = Callable[[ServiceContainer], Skill]
@@ -123,6 +128,43 @@ class SkillRegistry:
         """
         definitions = []
         for name in self._factories:
+            skill = self.get(name)
+            if skill:
+                definitions.append({
+                    "type": "function",
+                    "function": {
+                        "name": skill.name,
+                        "description": skill.description,
+                        "parameters": skill.parameters,
+                    }
+                })
+        return definitions
+
+    def get_definitions_for_permissions(
+        self, permissions: AgentPermissions
+    ) -> list[dict[str, Any]]:
+        """Get tool definitions filtered by agent permissions.
+
+        SECURITY: This method filters out disabled tools so they are not
+        exposed to the LLM. Sandboxed agents should not see tools like
+        nexus_create that they cannot use.
+
+        Args:
+            permissions: The agent's permissions containing tool_permissions
+                with enabled/disabled status for each tool.
+
+        Returns:
+            List of tool definitions for enabled tools only.
+            Disabled tools are completely omitted from the list.
+        """
+        definitions = []
+        for name in self._factories:
+            # Check if tool is disabled in permissions
+            tool_perm = permissions.tool_permissions.get(name)
+            if tool_perm is not None and not tool_perm.enabled:
+                # Tool is explicitly disabled - don't include definition
+                continue
+
             skill = self.get(name)
             if skill:
                 definitions.append({

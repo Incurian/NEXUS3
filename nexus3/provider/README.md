@@ -43,7 +43,8 @@ provider = OpenRouterProvider(config)
 - Full tool call support (send tool definitions, receive tool calls, send tool results)
 - Streaming with typed `StreamEvent` objects
 - Reasoning/thinking delta support (for models like Grok/xAI)
-- Automatic error handling (401, 429, connection errors)
+- Automatic retry with exponential backoff for transient errors
+- Automatic error handling (401, 403, 404, 429, 5xx, connection errors)
 - Optional raw logging callback (can be set after construction)
 
 ## AsyncProvider Protocol
@@ -315,14 +316,41 @@ except ProviderError as e:
     print(f"API error: {e}")
 ```
 
-Error cases handled:
-- Missing API key (checked at construction, raises `ProviderError`)
-- Authentication failure (401)
+### Retry Logic
+
+The provider automatically retries failed requests with exponential backoff:
+
+| Setting | Value |
+|---------|-------|
+| Max retries | 3 attempts |
+| Max delay | 10 seconds |
+| Backoff formula | `2^attempt + random(0-1)` seconds |
+| Retryable status codes | 429, 500, 502, 503, 504 |
+
+**Retryable errors:**
 - Rate limiting (429)
-- Other HTTP errors (4xx, 5xx)
+- Server errors (500, 502, 503, 504)
 - Connection errors (`httpx.ConnectError`)
 - Timeout errors (`httpx.TimeoutException`)
-- Response parsing errors (malformed JSON, missing fields)
+
+**Non-retryable errors (fail immediately):**
+- Authentication failure (401)
+- Access forbidden (403)
+- Endpoint not found (404)
+- Other client errors (4xx)
+- Other HTTP errors
+
+### Error Cases
+
+- Missing API key (checked at construction, raises `ProviderError`)
+- Authentication failure (401) - fails immediately
+- Access forbidden (403) - fails immediately
+- Endpoint not found (404) - fails immediately
+- Rate limiting (429) - retries with backoff
+- Server errors (5xx) - retries with backoff
+- Connection errors (`httpx.ConnectError`) - retries with backoff
+- Timeout errors (`httpx.TimeoutException`) - retries with backoff
+- Response parsing errors (malformed JSON, missing fields) - fails immediately
 
 ## Configuration
 
@@ -336,6 +364,28 @@ Via `ProviderConfig` (Pydantic model):
 | `base_url` | `"https://openrouter.ai/api/v1"` | API base URL |
 
 ## Internal Implementation Details
+
+### Constants
+
+The following constants are defined in `openrouter.py`:
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `DEFAULT_TIMEOUT` | 30.0 | HTTP request timeout in seconds |
+| `MAX_RETRIES` | 3 | Maximum number of retry attempts |
+| `MAX_RETRY_DELAY` | 10.0 | Maximum delay between retries in seconds |
+| `RETRYABLE_STATUS_CODES` | {429, 500, 502, 503, 504} | HTTP status codes that trigger retries |
+
+### Retry Helpers
+
+`_calculate_retry_delay(attempt: int) -> float`:
+- Calculates delay with exponential backoff: `2^attempt + random(0, 1)`
+- Capped at `MAX_RETRY_DELAY` (10 seconds)
+- Provides jitter to avoid thundering herd problems
+
+`_is_retryable_error(status_code: int) -> bool`:
+- Returns `True` if status code is in `RETRYABLE_STATUS_CODES`
+- Used to determine whether to retry or fail immediately
 
 ### Message Conversion
 

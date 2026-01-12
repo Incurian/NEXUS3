@@ -222,6 +222,7 @@ class NexusClient:
         agent_id: str,
         preset: str | None = None,
         disable_tools: list[str] | None = None,
+        parent_agent_id: str | None = None,
     ) -> dict[str, Any]:
         """Create a new agent on the server.
 
@@ -232,6 +233,8 @@ class NexusClient:
             agent_id: The ID for the new agent.
             preset: Permission preset (yolo, trusted, sandboxed, worker).
             disable_tools: List of tool names to disable for the agent.
+            parent_agent_id: ID of the parent agent for ceiling enforcement.
+                Server will look up parent's permissions from the pool.
 
         Returns:
             Creation result with agent_id.
@@ -241,6 +244,8 @@ class NexusClient:
             params["preset"] = preset
         if disable_tools is not None:
             params["disable_tools"] = disable_tools
+        if parent_agent_id is not None:
+            params["parent_agent_id"] = parent_agent_id
         response = await self._call("create_agent", params)
         return cast(dict[str, Any], self._check(response))
 

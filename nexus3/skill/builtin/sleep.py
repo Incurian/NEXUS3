@@ -6,6 +6,9 @@ from typing import Any
 from nexus3.core.types import ToolResult
 from nexus3.skill.services import ServiceContainer
 
+# Maximum allowed sleep duration (1 hour)
+MAX_SLEEP_SECONDS = 3600
+
 
 class SleepSkill:
     """Sleep for a specified duration. Useful for testing parallel execution."""
@@ -25,7 +28,7 @@ class SleepSkill:
             "properties": {
                 "seconds": {
                     "type": "number",
-                    "description": "Number of seconds to sleep",
+                    "description": f"Number of seconds to sleep (max {MAX_SLEEP_SECONDS})",
                 },
                 "label": {
                     "type": "string",
@@ -39,6 +42,13 @@ class SleepSkill:
         self, seconds: float = 1.0, label: str = "", **kwargs: Any
     ) -> ToolResult:
         """Sleep for the specified duration."""
+        if seconds < 0:
+            return ToolResult(error="Sleep duration must be non-negative")
+        if seconds > MAX_SLEEP_SECONDS:
+            return ToolResult(
+                error=f"Sleep duration {seconds}s exceeds maximum ({MAX_SLEEP_SECONDS}s)"
+            )
+
         await asyncio.sleep(seconds)
         if label:
             return ToolResult(output=f"Slept {seconds}s ({label})")

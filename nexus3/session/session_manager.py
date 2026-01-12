@@ -5,9 +5,15 @@ Sessions are stored as JSON files in ~/.nexus3/sessions/.
 """
 
 import json
+import os
+import stat
 from datetime import datetime
 from pathlib import Path
 
+# Secure file permissions: owner read/write only (0o600)
+_SECURE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
+
+from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.session.persistence import SavedSession, SessionSummary
 
 
@@ -54,7 +60,15 @@ class SessionManager:
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
 
     def _session_path(self, name: str) -> Path:
-        """Get path for a session file."""
+        """Get path for a session file.
+
+        SECURITY: Validates name to prevent path traversal attacks.
+        """
+        # Validate name format to prevent path traversal
+        try:
+            validate_agent_id(name)
+        except ValidationError as e:
+            raise SessionManagerError(f"Invalid session name: {e.message}")
         return self.sessions_dir / f"{name}.json"
 
     def _last_session_path(self) -> Path:
@@ -111,6 +125,8 @@ class SessionManager:
         path = self._session_path(saved.agent_id)
         content = saved.to_json()
         path.write_text(content, encoding="utf-8")
+        # Set secure permissions (owner read/write only)
+        os.chmod(path, _SECURE_FILE_MODE)
         return path
 
     def load_session(self, name: str) -> SavedSession:
@@ -126,10 +142,11 @@ class SessionManager:
             SessionNotFoundError: If session does not exist.
         """
         path = self._session_path(name)
-        if not path.exists():
+        # Avoid TOCTOU race: catch FileNotFoundError instead of checking exists()
+        try:
+            content = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
             raise SessionNotFoundError(name)
-
-        content = path.read_text(encoding="utf-8")
         return SavedSession.from_json(content)
 
     def delete_session(self, name: str) -> bool:
@@ -142,10 +159,12 @@ class SessionManager:
             True if deleted, False if session didn't exist.
         """
         path = self._session_path(name)
-        if path.exists():
+        # Avoid TOCTOU race: catch FileNotFoundError instead of checking exists()
+        try:
             path.unlink()
             return True
-        return False
+        except FileNotFoundError:
+            return False
 
     def session_exists(self, name: str) -> bool:
         """Check if a session exists.
@@ -173,10 +192,14 @@ class SessionManager:
         path = self._last_session_path()
         content = saved.to_json()
         path.write_text(content, encoding="utf-8")
+        # Set secure permissions (owner read/write only)
+        os.chmod(path, _SECURE_FILE_MODE)
 
         # Save session name
         name_path = self._last_session_name_path()
         name_path.write_text(name, encoding="utf-8")
+        # Set secure permissions (owner read/write only)
+        os.chmod(name_path, _SECURE_FILE_MODE)
 
     def load_last_session(self) -> tuple[SavedSession, str] | None:
         """Load the last session (for resume).
@@ -187,18 +210,20 @@ class SessionManager:
         path = self._last_session_path()
         name_path = self._last_session_name_path()
 
-        if not path.exists():
-            return None
-
+        # Avoid TOCTOU race: catch FileNotFoundError instead of checking exists()
         try:
             content = path.read_text(encoding="utf-8")
             session = SavedSession.from_json(content)
 
             name = session.agent_id  # Default to agent_id
-            if name_path.exists():
+            try:
                 name = name_path.read_text(encoding="utf-8").strip()
+            except FileNotFoundError:
+                pass  # Use default agent_id
 
             return session, name
+        except FileNotFoundError:
+            return None
         except (json.JSONDecodeError, KeyError, ValueError):
             return None
 
@@ -209,12 +234,13 @@ class SessionManager:
             Session name or None if no last session.
         """
         name_path = self._last_session_name_path()
-        if name_path.exists():
-            try:
-                return name_path.read_text(encoding="utf-8").strip()
-            except OSError:
-                return None
-        return None
+        # Avoid TOCTOU race: catch FileNotFoundError instead of checking exists()
+        try:
+            return name_path.read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            return None
+        except OSError:
+            return None
 
     def clear_last_session(self) -> None:
         """Clear the last session data.
@@ -224,10 +250,15 @@ class SessionManager:
         path = self._last_session_path()
         name_path = self._last_session_name_path()
 
-        if path.exists():
+        # Avoid TOCTOU race: catch FileNotFoundError instead of checking exists()
+        try:
             path.unlink()
-        if name_path.exists():
+        except FileNotFoundError:
+            pass
+        try:
             name_path.unlink()
+        except FileNotFoundError:
+            pass
 
     def rename_session(self, old_name: str, new_name: str) -> Path:
         """Rename a saved session.
@@ -246,19 +277,24 @@ class SessionManager:
         old_path = self._session_path(old_name)
         new_path = self._session_path(new_name)
 
-        if not old_path.exists():
+        # Avoid TOCTOU race: catch FileNotFoundError instead of checking exists()
+        try:
+            content = old_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
             raise SessionNotFoundError(old_name)
 
+        # Check destination doesn't exist (still a minor race, but acceptable for this use case)
         if new_path.exists():
             raise SessionManagerError(f"Session already exists: {new_name}")
 
         # Load, update agent_id, save with new name
-        content = old_path.read_text(encoding="utf-8")
         session = SavedSession.from_json(content)
         session.agent_id = new_name
         session.modified_at = datetime.now()
 
         new_path.write_text(session.to_json(), encoding="utf-8")
+        # Set secure permissions (owner read/write only)
+        os.chmod(new_path, _SECURE_FILE_MODE)
         old_path.unlink()
 
         return new_path
@@ -280,14 +316,17 @@ class SessionManager:
         src_path = self._session_path(src_name)
         dest_path = self._session_path(dest_name)
 
-        if not src_path.exists():
+        # Avoid TOCTOU race: catch FileNotFoundError instead of checking exists()
+        try:
+            content = src_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
             raise SessionNotFoundError(src_name)
 
+        # Check destination doesn't exist (still a minor race, but acceptable for this use case)
         if dest_path.exists():
             raise SessionManagerError(f"Session already exists: {dest_name}")
 
         # Load, update agent_id and timestamps, save with new name
-        content = src_path.read_text(encoding="utf-8")
         session = SavedSession.from_json(content)
         session.agent_id = dest_name
         now = datetime.now()
@@ -295,5 +334,7 @@ class SessionManager:
         session.modified_at = now
 
         dest_path.write_text(session.to_json(), encoding="utf-8")
+        # Set secure permissions (owner read/write only)
+        os.chmod(dest_path, _SECURE_FILE_MODE)
 
         return dest_path

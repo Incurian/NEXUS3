@@ -433,12 +433,16 @@ class TestChildInheritsCeilingFromParent:
 
             child_permissions = child.services.get("permissions")
 
-            # Child's ceiling should be the parent's permissions
-            assert child_permissions.ceiling is parent_permissions
+            # SECURITY FIX: Child's ceiling should be a DEEP COPY of parent's permissions
+            # (not the same object reference) to prevent mutation leaking
+            assert child_permissions.ceiling is not parent_permissions
+            # But should be equivalent values
+            assert child_permissions.ceiling.base_preset == parent_permissions.base_preset
+            assert child_permissions.ceiling.effective_policy.level == parent_permissions.effective_policy.level
 
     @pytest.mark.asyncio
     async def test_child_parent_agent_id_is_set(self, tmp_path: Path) -> None:
-        """Child should have parent_agent_id set."""
+        """Child should have parent_agent_id set to the actual parent agent ID."""
         shared = create_mock_shared_components(tmp_path)
 
         with patch("nexus3.skill.builtin.register_builtin_skills"):
@@ -449,19 +453,22 @@ class TestChildInheritsCeilingFromParent:
             )
             parent_permissions = parent.services.get("permissions")
 
+            # SECURITY FIX: Now we pass parent_agent_id explicitly in the config
+            # This should be the actual parent agent ID, not the preset name
             child = await pool.create(
                 config=AgentConfig(
                     agent_id="child",
                     preset="sandboxed",
                     parent_permissions=parent_permissions,
+                    parent_agent_id="parent",  # Actual parent agent ID
                 )
             )
 
             child_permissions = child.services.get("permissions")
 
-            # Child's parent_agent_id should be set based on parent's base_preset
-            # (as per pool.py implementation)
-            assert child_permissions.parent_agent_id == parent_permissions.base_preset
+            # Child's parent_agent_id should be the actual parent agent ID
+            # (not the parent's base_preset like "trusted")
+            assert child_permissions.parent_agent_id == "parent"
 
 
 class TestDisabledToolsPropagate:

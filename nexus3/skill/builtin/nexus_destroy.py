@@ -6,6 +6,7 @@ from typing import Any
 from nexus3.client import ClientError, NexusClient
 from nexus3.core.types import ToolResult
 from nexus3.core.url_validator import UrlSecurityError, validate_url
+from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.rpc.auth import discover_api_key
 from nexus3.skill.services import ServiceContainer
 
@@ -85,6 +86,11 @@ class NexusDestroySkill:
         """
         if not agent_id:
             return ToolResult(error="No agent_id provided")
+
+        try:
+            validate_agent_id(agent_id)
+        except ValidationError as e:
+            return ToolResult(error=f"Invalid agent_id: {e.message}")
 
         actual_port = self._get_port(port)
         url = f"http://127.0.0.1:{actual_port}"

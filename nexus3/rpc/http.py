@@ -31,6 +31,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from nexus3.core.validation import is_valid_agent_id
 from nexus3.rpc.auth import validate_api_key
 from nexus3.rpc.protocol import (
     INTERNAL_ERROR,
@@ -247,11 +248,12 @@ async def send_http_response(
 def _extract_agent_id(path: str) -> str | None:
     """Extract agent_id from path like /agent/{agent_id}.
 
-    Returns None if path doesn't match the pattern.
+    Returns None if path doesn't match the pattern or agent_id is invalid.
+    SECURITY: Validates agent_id format to prevent path traversal.
     """
     if path.startswith("/agent/"):
         agent_id = path[7:]  # len("/agent/") == 7
-        if agent_id:
+        if agent_id and is_valid_agent_id(agent_id):
             return agent_id
     return None
 
@@ -264,10 +266,14 @@ def _extract_bearer_token(headers: dict[str, str]) -> str | None:
 
     Returns:
         The token if present and valid format, None otherwise.
+
+    SECURITY: Handles case-insensitive "Bearer " prefix and extra whitespace.
     """
     auth_header = headers.get("authorization", "")
-    if auth_header.startswith("Bearer "):
-        return auth_header[7:]  # len("Bearer ") == 7
+    # Case-insensitive check for "bearer " prefix
+    if auth_header.lower().startswith("bearer "):
+        # Strip whitespace from the token (handles "Bearer  token" with extra space)
+        return auth_header[7:].strip()
     return None
 
 

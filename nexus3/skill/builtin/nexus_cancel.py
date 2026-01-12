@@ -6,6 +6,7 @@ from typing import Any
 from nexus3.client import ClientError, NexusClient
 from nexus3.core.types import ToolResult
 from nexus3.core.url_validator import UrlSecurityError, validate_url
+from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.rpc.auth import discover_api_key
 from nexus3.skill.services import ServiceContainer
 
@@ -87,6 +88,12 @@ class NexusCancelSkill:
         """
         if not agent_id:
             return ToolResult(error="No agent_id provided")
+
+        try:
+            validate_agent_id(agent_id)
+        except ValidationError as e:
+            return ToolResult(error=f"Invalid agent_id: {e.message}")
+
         if not request_id:
             return ToolResult(error="No request_id provided")
 
@@ -99,9 +106,17 @@ class NexusCancelSkill:
         except UrlSecurityError as e:
             return ToolResult(error=f"URL validation failed: {e}")
 
+        # Validate request_id format - must be a positive integer
+        try:
+            req_id = int(request_id)
+            if req_id <= 0:
+                return ToolResult(error="Request ID must be a positive integer")
+        except ValueError:
+            return ToolResult(error=f"Invalid request ID format: {request_id}")
+
         try:
             async with NexusClient(validated_url, api_key=api_key) as client:
-                result = await client.cancel(int(request_id))
+                result = await client.cancel(req_id)
                 return ToolResult(output=json.dumps(result))
         except ClientError as e:
             return ToolResult(error=str(e))

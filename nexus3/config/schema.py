@@ -34,6 +34,7 @@ class PermissionPresetConfig(BaseModel):
     description: str = ""
     allowed_paths: list[str] | None = None
     blocked_paths: list[str] = []
+    # network_access is derived from level (SANDBOXED = no network), field kept for documentation
     network_access: bool | None = None
     tool_permissions: dict[str, ToolPermissionConfig] = {}
     default_tool_timeout: float | None = None

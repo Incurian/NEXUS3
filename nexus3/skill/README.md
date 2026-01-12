@@ -105,6 +105,9 @@ if skill:
 # Get OpenAI-format tool definitions for LLM
 tools = registry.get_definitions()
 
+# Get tool definitions filtered by agent permissions
+tools = registry.get_definitions_for_permissions(agent_permissions)
+
 # List registered skill names
 names = registry.names  # ["my_skill", ...]
 
@@ -136,6 +139,18 @@ container = registry.services
 ]
 ```
 
+### Permission-Filtered Definitions
+
+`get_definitions_for_permissions(permissions)` filters out disabled tools so they are not exposed to the LLM. Sandboxed agents will not see tools like `nexus_create` that they cannot use:
+
+```python
+from nexus3.core.permissions import AgentPermissions
+
+# Get tool definitions for agent's permission level
+tools = registry.get_definitions_for_permissions(agent.permissions)
+# Disabled tools are omitted from the list
+```
+
 ## ServiceContainer
 
 Simple dependency injection for skills. Skills can access shared services without tight coupling.
@@ -146,11 +161,12 @@ from nexus3.skill import ServiceContainer
 # Register services at application startup
 services = ServiceContainer()
 services.register("agent_pool", my_agent_pool)
-services.register("sandbox", my_sandbox)
+services.register("allowed_paths", [Path.cwd()])  # For sandbox validation
+services.register("api_key", "secret-key")  # For nexus skills
 
 # In skill factory or initialization
 pool = services.get("agent_pool")  # Returns None if not registered
-sandbox = services.require("sandbox")  # Raises KeyError if not registered
+paths = services.require("allowed_paths")  # Raises KeyError if not registered
 
 # Check if service exists
 if services.has("agent_pool"):
@@ -166,45 +182,115 @@ old_service = services.unregister("agent_pool")
 services.clear()
 ```
 
+### Common Service Names
+
+| Service Name | Type | Used By |
+|--------------|------|---------|
+| `allowed_paths` | `list[Path] \| None` | `read_file`, `write_file` - sandbox validation |
+| `api_key` | `str \| None` | All nexus skills - server authentication |
+| `port` | `int \| None` | All nexus skills - server port (default: 8765) |
+| `agent_id` | `str \| None` | `nexus_create` - parent agent ID for ceiling enforcement |
+| `permissions` | `AgentPermissions \| None` | `nexus_create` - parent permissions for ceiling validation |
+
 ## Built-in Skills
 
 Located in `nexus3/skill/builtin/`. Register with `register_builtin_skills()`:
 
-### Core Skills
+### File Skills
 
-| Skill | Description | Parameters |
-|-------|-------------|------------|
-| `read_file` | Reads file contents as UTF-8 text | `path` (required) |
-| `write_file` | Writes content to file (creates directories) | `path`, `content` (required) |
-| `sleep` | Sleeps for specified duration (testing) | `seconds` (required), `label` (optional) |
+| Skill | Parameters | Description |
+|-------|------------|-------------|
+| `read_file` | `path` (required) | Read file contents as UTF-8 text |
+| `write_file` | `path`, `content` (required) | Write content to file (creates directories) |
 
-**Note**: An `echo` skill class exists in `builtin/echo.py` but is not registered by default. Use `echo_skill_factory` to register it manually if needed.
+**Security Features:**
+- **Path sandbox validation**: When `allowed_paths` is registered in ServiceContainer, paths are validated to ensure they are within allowed directories. Raises `PathSecurityError` for violations.
+- **Async I/O**: File operations use `asyncio.to_thread()` to avoid blocking the event loop.
+- **UTF-8 encoding**: All file operations use explicit `encoding='utf-8'`.
 
-### Agent Control Skills
+```python
+# With sandbox enabled (allowed_paths registered):
+# Only paths under allowed directories are permitted
+await read_skill.execute(path="/home/user/project/file.txt")  # OK if in allowed_paths
+await read_skill.execute(path="/etc/passwd")  # PathSecurityError
+
+# Without sandbox (allowed_paths not registered):
+# Any path is allowed (backwards compatible)
+await read_skill.execute(path="/etc/passwd")  # OK
+```
+
+### Testing Skill
+
+| Skill | Parameters | Description |
+|-------|------------|-------------|
+| `sleep` | `seconds` (required), `label` (optional) | Sleep for specified duration (max 3600s) |
+
+The `sleep` skill is useful for testing parallel execution and timeout behavior. The optional `label` parameter helps identify which sleep completed in test output.
+
+```python
+await sleep_skill.execute(seconds=1.5, label="test-sleep")
+# Returns: ToolResult(output="Slept 1.5s (test-sleep)")
+```
+
+### Echo Skill (Not Registered by Default)
+
+An `echo` skill class exists in `builtin/echo.py` but is not registered by `register_builtin_skills()`. Use `echo_skill_factory` to register it manually if needed for testing:
+
+```python
+from nexus3.skill.builtin.echo import echo_skill_factory
+registry.register("echo", echo_skill_factory)
+```
+
+### Agent Control Skills (Nexus Skills)
 
 Skills for communicating with Nexus agents running in server mode (`--serve`). These skills use `NexusClient` from `nexus3.client` for HTTP JSON-RPC communication.
 
-| Skill | Description | Parameters |
-|-------|-------------|------------|
-| `nexus_send` | Send a message to a Nexus agent and receive response | `url` (required), `content` (required), `request_id` (optional) |
-| `nexus_cancel` | Cancel an in-progress request on a Nexus agent | `url` (required), `request_id` (required) |
-| `nexus_status` | Get token usage and context info from an agent | `url` (required) |
-| `nexus_shutdown` | Request graceful shutdown of a Nexus agent | `url` (required) |
+| Skill | Parameters | Description |
+|-------|------------|-------------|
+| `nexus_create` | `agent_id` (required), `preset`?, `disable_tools`?, `port`? | Create a new agent with permissions |
+| `nexus_destroy` | `agent_id` (required), `port`? | Destroy an agent (server keeps running) |
+| `nexus_send` | `agent_id`, `content` (required), `port`? | Send a message to an agent |
+| `nexus_status` | `agent_id` (required), `port`? | Get token usage and context info |
+| `nexus_cancel` | `agent_id`, `request_id` (required), `port`? | Cancel an in-progress request |
+| `nexus_shutdown` | `port`? | Request graceful shutdown of server |
+
+**Common Parameters:**
+- `agent_id`: ID of the target agent (e.g., "worker-1"). Validated for safety.
+- `port`: Server port. Defaults to 8765 if not specified. Can also be set via ServiceContainer.
+- `preset`: Permission preset for new agents (yolo/trusted/sandboxed/worker).
+- `disable_tools`: List of tool names to disable for new agents.
+
+**Security Features:**
+- **URL validation**: All nexus skills use `validate_url()` with `allow_localhost=True` to prevent SSRF attacks.
+- **API key discovery**: Skills auto-discover API keys from `~/.nexus3/apikeys/{port}.key` or ServiceContainer.
+- **Agent ID validation**: Agent IDs are validated to prevent injection attacks.
+- **Ceiling inheritance**: `nexus_create` validates that the requested preset does not exceed parent agent's permissions.
 
 **Example usage:**
 
 ```python
-# Send message to agent at localhost:8765
-await nexus_send.execute(url="http://localhost:8765", content="Hello, agent!")
+# Create a new sandboxed worker agent
+await nexus_create.execute(
+    agent_id="worker-1",
+    preset="sandboxed",
+    disable_tools=["nexus_shutdown"]
+)
+
+# Send message to agent
+await nexus_send.execute(agent_id="worker-1", content="Hello, agent!")
 
 # Get token/context status
-await nexus_status.execute(url="http://localhost:8765")
+await nexus_status.execute(agent_id="worker-1")
+# Returns: {"tokens": {...}, "context": {...}}
 
-# Cancel a request (requires request_id from nexus_send)
-await nexus_cancel.execute(url="http://localhost:8765", request_id="123")
+# Cancel a request (requires request_id)
+await nexus_cancel.execute(agent_id="worker-1", request_id="123")
 
-# Gracefully shutdown the agent
-await nexus_shutdown.execute(url="http://localhost:8765")
+# Destroy the agent (server keeps running)
+await nexus_destroy.execute(agent_id="worker-1")
+
+# Gracefully shutdown the server (stops all agents)
+await nexus_shutdown.execute()
 ```
 
 ### NexusClient
@@ -214,7 +300,10 @@ The agent control skills use `NexusClient` (`nexus3/client.py`) internally:
 ```python
 from nexus3.client import NexusClient, ClientError
 
-async with NexusClient("http://localhost:8765") as client:
+async with NexusClient("http://localhost:8765", api_key="secret") as client:
+    # Create agent
+    result = await client.create_agent("worker-1", preset="sandboxed")
+
     # Send message
     result = await client.send("Hello!")  # {"content": "...", ...}
 
@@ -227,8 +316,11 @@ async with NexusClient("http://localhost:8765") as client:
     # Cancel in-progress request
     await client.cancel(request_id=123)
 
+    # Destroy agent
+    await client.destroy_agent("worker-1")
+
     # Request shutdown
-    await client.shutdown()
+    await client.shutdown_server()
 ```
 
 The client uses `httpx` for HTTP communication and raises `ClientError` on connection failures, timeouts, or RPC errors.
@@ -258,7 +350,10 @@ services = ServiceContainer()
 registry = SkillRegistry(services)
 register_builtin_skills(registry)
 
-# Now registry has: read_file, write_file, sleep, nexus_send, nexus_cancel, nexus_status, nexus_shutdown
+# Now registry has:
+# - read_file, write_file
+# - sleep
+# - nexus_create, nexus_destroy, nexus_send, nexus_cancel, nexus_status, nexus_shutdown
 ```
 
 ## Multi-Agent Integration
@@ -273,6 +368,12 @@ This isolation ensures agents don't share mutable state while still sharing expe
 ```python
 # From AgentPool.create():
 services = ServiceContainer()
+services.register("allowed_paths", [Path.cwd()])  # Sandbox to CWD
+services.register("api_key", api_key)  # For nexus skills
+services.register("port", port)
+services.register("agent_id", agent_id)  # For ceiling enforcement
+services.register("permissions", permissions)  # For nexus_create ceiling checks
+
 registry = SkillRegistry(services)
 register_builtin_skills(registry)
 
@@ -281,38 +382,45 @@ agent = Agent(
     agent_id="worker-1",
     services=services,      # Per-agent ServiceContainer
     registry=registry,      # Per-agent SkillRegistry
+    permissions=permissions,  # Per-agent AgentPermissions
     # ... other components
 )
 ```
 
 This design allows:
 - **Service isolation**: Each agent can have different services registered
-- **Future permissions**: Different agents could have different skill sets based on permission level
+- **Permission enforcement**: Different agents have different skill sets based on permission level
 - **State isolation**: Skill instances are cached per-agent, not globally
 
-## Execution Modes
+## Permission Integration
 
-Skills support two execution modes when multiple tool calls are made in a single LLM response:
+The skill system integrates with the permission system (Phase 8):
 
-### Sequential (Default)
+### Tool Filtering
 
-Tools execute one at a time, in order. Use for dependent operations where one step needs the result of another.
+`get_definitions_for_permissions()` filters tools based on `AgentPermissions`:
 
-```json
-{"name": "read_file", "arguments": {"path": "config.json"}}
-{"name": "write_file", "arguments": {"path": "output.txt", "content": "..."}}
+```python
+# Sandboxed agent won't see nexus_create, nexus_shutdown, etc.
+tools = registry.get_definitions_for_permissions(agent.permissions)
 ```
 
-### Parallel
+### Ceiling Enforcement
 
-Add `"_parallel": true` to any tool call's arguments to run all tools in the current batch concurrently.
+`nexus_create` skill validates that the requested preset doesn't exceed parent permissions:
 
-```json
-{"name": "read_file", "arguments": {"path": "file1.py", "_parallel": true}}
-{"name": "read_file", "arguments": {"path": "file2.py", "_parallel": true}}
+```python
+# Parent is "trusted", cannot create "yolo" child
+await nexus_create.execute(agent_id="worker", preset="yolo")
+# Returns: ToolResult(error="Cannot create agent with 'yolo' preset: exceeds permission ceiling")
 ```
 
-Use parallel mode for independent operations like reading multiple files simultaneously.
+### Per-Tool Configuration
+
+The permission system supports per-tool settings like:
+- `enabled`: Whether tool is available
+- `allowed_paths`: Tool-specific sandbox paths
+- `timeout`: Tool-specific execution timeout
 
 ## Creating New Skills
 
@@ -364,8 +472,9 @@ Factories receive `ServiceContainer` for dependency injection:
 ```python
 def my_skill_factory(services: ServiceContainer) -> MySkill:
     # Access services if needed
-    pool = services.get("agent_pool")
-    return MySkill(pool)
+    api_key = services.get("api_key")
+    allowed_paths = services.get("allowed_paths")
+    return MySkill(api_key=api_key, allowed_paths=allowed_paths)
 ```
 
 ### 3. Register with Registry
@@ -382,6 +491,8 @@ registry.register("my_skill", my_skill_factory)
 4. **Use snake_case Names**: Skill names should be lowercase with underscores
 5. **Keep Skills Focused**: Each skill should do one thing well
 6. **Accept `**kwargs`**: Always accept `**kwargs` in `execute()` for forward compatibility
+7. **Use Async I/O**: For blocking operations, use `asyncio.to_thread()` to avoid blocking the event loop
+8. **Validate Input**: Check for empty/invalid parameters and return clear error messages
 
 ## Error Types
 
@@ -411,11 +522,11 @@ except SkillNotFoundError as e:
                     +--------+---------+
                              |
                              v
-+---------------+   +--------+--------+   +------------------+
-| Skill Factory |-->| SkillRegistry   |-->| get_definitions()|
-| (callable)    |   | - _factories{}  |   | (OpenAI format)  |
-+---------------+   | - _instances{}  |   +------------------+
-                    +--------+--------+
++---------------+   +--------+--------+   +------------------------+
+| Skill Factory |-->| SkillRegistry   |-->| get_definitions()      |
+| (callable)    |   | - _factories{}  |   | get_definitions_for_   |
++---------------+   | - _instances{}  |   |   permissions()        |
+                    +--------+--------+   +------------------------+
                              |
                              v
                     +--------+--------+
@@ -430,11 +541,21 @@ except SkillNotFoundError as e:
 **From `nexus3.core`:**
 - `ToolResult` - Return type for skill execution
 - `NexusError` - Base exception class
-- `normalize_path` - Cross-platform path handling (used by file skills)
+- `normalize_path`, `validate_sandbox` - Path handling and security (used by file skills)
+- `validate_url`, `UrlSecurityError` - URL validation (used by nexus skills)
+- `validate_agent_id`, `ValidationError` - Input validation (used by nexus skills)
+- `PathSecurityError` - Sandbox violation error
 
 **From `nexus3.client`:**
 - `NexusClient` - HTTP client for agent control skills
 - `ClientError` - Exception for client-side errors
+
+**From `nexus3.core.permissions`:**
+- `AgentPermissions` - Permission state for tool filtering
+- `get_builtin_presets`, `resolve_preset` - For ceiling validation in nexus_create
+
+**From `nexus3.rpc.auth`:**
+- `discover_api_key` - Auto-discover API keys for server authentication
 
 ## Module Exports
 
@@ -465,4 +586,11 @@ nexus_send_factory
 nexus_cancel_factory
 nexus_status_factory
 nexus_shutdown_factory
+```
+
+**Note:** `nexus_create_factory`, `nexus_destroy_factory`, `read_file_factory`, `write_file_factory`, and `sleep_skill_factory` are used by `register_builtin_skills()` but not exported from the `builtin` module's `__all__`. Import them directly if needed:
+
+```python
+from nexus3.skill.builtin.nexus_create import nexus_create_factory
+from nexus3.skill.builtin.read_file import read_file_factory
 ```

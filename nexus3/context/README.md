@@ -9,8 +9,8 @@ Context management for NEXUS3 conversations: system prompts, message history, to
 | `ContextManager` | Complete | Central coordinator for context |
 | `PromptLoader` with layered config | Complete | Personal + project prompt combination with system info |
 | Token counting (tiktoken default) | Complete | Accurate token counting with fallback |
-| Truncation strategies | Complete | `oldest_first` and `middle_out` |
-| Compaction workflow | Not Implemented | Summarizing old messages to save tokens |
+| Truncation strategies | Complete | `oldest_first` and `middle_out` with atomic message groups |
+| Message GC | Not Implemented | Pruning messages after truncation (tracked in CLAUDE.md) |
 
 ## Purpose
 
@@ -145,6 +145,19 @@ class ContextConfig:
 | `get_token_usage()` | Get breakdown: system, tools, messages, total, budget, available |
 | `is_over_budget()` | Check if total > available |
 
+### Internal Truncation Methods
+
+These methods are used internally by `build_messages()` but are documented here for understanding:
+
+| Method | Description |
+|--------|-------------|
+| `_get_context_messages()` | Get messages that fit in budget, applying truncation if needed |
+| `_identify_message_groups()` | Group messages into atomic units (standalone or tool call + results) |
+| `_count_group_tokens(group)` | Count tokens for a message group |
+| `_flatten_groups(groups)` | Flatten list of groups into single message list |
+| `_truncate_oldest_first()` | Remove oldest groups until under budget |
+| `_truncate_middle_out()` | Keep first/last groups, remove middle groups |
+
 ### Properties
 
 | Property | Description |
@@ -271,21 +284,32 @@ When context exceeds budget, messages are truncated automatically during `build_
 ### Strategies
 
 **`oldest_first` (default):**
-- Removes oldest messages first
-- Always keeps at least the most recent message
+- Removes oldest message groups first
+- Builds from newest groups backwards until budget exhausted
+- Always keeps at least the most recent group
 - Best for long conversations where recent context matters most
 
 **`middle_out`:**
-- Keeps first and last messages
-- Removes from the middle, prioritizing recent messages
+- Keeps first and last message groups
+- Removes from the middle, prioritizing recent groups
+- Fills remaining budget with groups nearest to the end
 - Preserves initial context and recent conversation
+
+### Atomic Message Groups
+
+Both truncation strategies preserve tool call/result pairs as atomic units:
+
+1. **Standalone messages**: USER, SYSTEM, or ASSISTANT without tool_calls
+2. **Tool call groups**: ASSISTANT with tool_calls + all corresponding TOOL result messages
+
+This prevents invalid API sequences where tool calls are separated from their results.
 
 ### Budget Calculation
 
 ```python
 budget_for_messages = available - system_tokens - tools_tokens
 
-# If budget <= 0, only most recent message is kept
+# If budget <= 0, only most recent group is kept
 ```
 
 ## Data Flow
@@ -481,20 +505,10 @@ Note: `FilePromptSource`, `PromptSource`, and `get_system_info` are available vi
 
 ## Not Yet Implemented
 
-### Compaction Workflow
+### Message GC (Garbage Collection)
 
-The compaction workflow for summarizing old messages is **planned but not implemented**.
+Message garbage collection (pruning messages after truncation) is tracked as a TODO in CLAUDE.md.
 
-**Purpose:** When a conversation grows long, compaction would:
-1. Select older messages to summarize
-2. Call the LLM provider to generate a concise summary
-3. Replace the original messages with the summary
-4. Reduce token usage while preserving important context
+**Current behavior:** Messages are truncated from the context returned by `build_messages()`, but the original `_messages` list is never pruned. Over very long sessions, this could lead to unbounded memory growth.
 
-**Related planned types (from CLAUDE.md):**
-- `CompactionWorkflow` - Manages the compaction process
-- `CompactionResult` - Result containing summary and token savings
-- `CompactionConfig` - Configuration for summary generation
-- `needs_compaction()` method on ContextManager
-
-This feature is tracked in the main project roadmap.
+**Potential solution:** Add a `max_messages` config option and prune `_messages` after truncation.

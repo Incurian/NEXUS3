@@ -29,7 +29,8 @@ from nexus3.rpc.types import Request, Response
 if TYPE_CHECKING:
     from nexus3.rpc.pool import AgentPool
 
-from nexus3.core.permissions import PermissionDelta
+from nexus3.core.permissions import AgentPermissions, PermissionDelta
+from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.rpc.pool import AgentConfig
 
 # Type alias for handler functions
@@ -149,6 +150,7 @@ class GlobalDispatcher:
                 - system_prompt: Optional[str] - System prompt override for this agent
                 - preset: Optional[str] - Permission preset (yolo, trusted, sandboxed, worker)
                 - disable_tools: Optional[list[str]] - Tools to disable for the agent
+                - parent_agent_id: Optional[str] - ID of parent agent for ceiling enforcement
 
         Returns:
             Dict containing:
@@ -157,18 +159,26 @@ class GlobalDispatcher:
 
         Raises:
             InvalidParamsError: If agent_id is provided but already exists,
-                or if parameter types are invalid.
+                or if parameter types are invalid, or if requested permissions
+                exceed parent ceiling.
         """
         agent_id = params.get("agent_id")
         system_prompt = params.get("system_prompt")
         preset = params.get("preset")
         disable_tools = params.get("disable_tools")
+        parent_agent_id = params.get("parent_agent_id")
 
         # Validate agent_id if provided
-        if agent_id is not None and not isinstance(agent_id, str):
-            raise InvalidParamsError(
-                f"agent_id must be string, got: {type(agent_id).__name__}"
-            )
+        if agent_id is not None:
+            if not isinstance(agent_id, str):
+                raise InvalidParamsError(
+                    f"agent_id must be string, got: {type(agent_id).__name__}"
+                )
+            # SECURITY: Validate agent_id format to prevent path traversal
+            try:
+                validate_agent_id(agent_id)
+            except ValidationError as e:
+                raise InvalidParamsError(e.message)
 
         # Validate system_prompt if provided
         if system_prompt is not None and not isinstance(system_prompt, str):
@@ -200,6 +210,23 @@ class GlobalDispatcher:
                         f"disable_tools[{i}] must be string, got: {type(tool).__name__}"
                     )
 
+        # Validate and look up parent_agent_id if provided
+        # SECURITY: Look up parent permissions from pool instead of trusting RPC data
+        parent_permissions: AgentPermissions | None = None
+        if parent_agent_id is not None:
+            if not isinstance(parent_agent_id, str):
+                raise InvalidParamsError(
+                    f"parent_agent_id must be string, got: {type(parent_agent_id).__name__}"
+                )
+            parent_agent = self._pool.get(parent_agent_id)
+            if parent_agent is None:
+                raise InvalidParamsError(f"Parent agent not found: {parent_agent_id}")
+            parent_permissions = parent_agent.services.get("permissions")
+            if parent_permissions is None:
+                raise InvalidParamsError(
+                    f"Parent agent '{parent_agent_id}' has no permissions configured"
+                )
+
         # Build delta from disable_tools
         delta: PermissionDelta | None = None
         if disable_tools:
@@ -211,6 +238,8 @@ class GlobalDispatcher:
             system_prompt=system_prompt,
             preset=preset,
             delta=delta,
+            parent_permissions=parent_permissions,
+            parent_agent_id=parent_agent_id,  # Pass actual parent agent ID
         )
         agent = await self._pool.create(agent_id=agent_id, config=config)
 

@@ -47,6 +47,7 @@ from nexus3.core.types import ToolCall
 from nexus3.display import Activity, StreamingDisplay, get_console
 from nexus3.display.streaming import ToolState
 from nexus3.display.theme import load_theme
+from nexus3.core.permissions import load_custom_presets_from_config
 from nexus3.provider.openrouter import OpenRouterProvider
 from nexus3.rpc.auth import ServerKeyManager
 from nexus3.rpc.detection import DetectionResult, detect_server
@@ -350,6 +351,11 @@ async def run_repl(
     prompt_loader = PromptLoader()
     loaded_prompt = prompt_loader.load()
 
+    # Load custom presets from config
+    custom_presets = load_custom_presets_from_config(
+        {k: v.model_dump() for k, v in config.permissions.presets.items()}
+    )
+
     # Create shared components for the AgentPool
     shared = SharedComponents(
         config=config,
@@ -357,6 +363,7 @@ async def run_repl(
         prompt_loader=prompt_loader,
         base_log_dir=base_log_dir,
         log_streams=streams,
+        custom_presets=custom_presets,
     )
 
     # Create agent pool
@@ -721,6 +728,8 @@ async def run_repl(
                     perm = "trusted"
                 elif p.lower() in ("--sandboxed", "-s"):
                     perm = "sandboxed"
+                elif p.lower() in ("--worker", "-w"):
+                    perm = "worker"
             return await unified_cmd.cmd_create(ctx, name, perm)
         elif cmd_name == "destroy":
             if not cmd_args:

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from nexus3.core.interfaces import AsyncProvider
 from nexus3.core.permissions import AgentPermissions
+from nexus3.core.validation import ValidationError, validate_tool_arguments
 from nexus3.core.types import (
     ContentDelta,
     Message,
@@ -156,7 +157,9 @@ class Session:
             True if confirmed, False if denied.
         """
         if self.on_confirm is None:
-            return True  # Auto-approve in non-interactive contexts
+            # No confirmation callback = no way to get user approval
+            # Deny by default to enforce TRUSTED semantics in server mode
+            return False
         return await self.on_confirm(tool_call)
 
     async def send(
@@ -412,8 +415,15 @@ class Session:
         if not skill:
             return ToolResult(error=f"Unknown skill: {tool_call.name}")
 
-        # Strip internal arguments before passing to skill
-        args = {k: v for k, v in tool_call.arguments.items() if not k.startswith("_")}
+        # SECURITY: Validate arguments against skill's JSON schema
+        try:
+            args = validate_tool_arguments(
+                tool_call.arguments,
+                skill.parameters,
+                logger=self.logger,
+            )
+        except ValidationError as e:
+            return ToolResult(error=f"Invalid arguments for {tool_call.name}: {e.message}")
 
         try:
             if effective_timeout > 0:
