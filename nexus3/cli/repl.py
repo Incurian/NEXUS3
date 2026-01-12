@@ -903,6 +903,8 @@ async def run_repl(
             return await repl_commands.cmd_compact(ctx)
         elif cmd_name == "model":
             return await repl_commands.cmd_model(ctx, cmd_args or None)
+        elif cmd_name == "mcp":
+            return await repl_commands.cmd_mcp(ctx, cmd_args or None)
 
         # Unified commands (work in both CLI and REPL)
         elif cmd_name == "list":

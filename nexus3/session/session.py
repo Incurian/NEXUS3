@@ -559,8 +559,29 @@ class Session:
             if tool_perm and tool_perm.timeout is not None:
                 effective_timeout = tool_perm.timeout
 
-        # Get the skill
+        # Get the skill (check local registry, then MCP registry for mcp_ tools)
         skill = self.registry.get(tool_call.name) if self.registry else None
+
+        # MCP fallback: Check MCP registry for tools starting with mcp_
+        if not skill and tool_call.name.startswith("mcp_") and self._services:
+            from nexus3.mcp.permissions import can_use_mcp
+            from nexus3.mcp.registry import MCPServerRegistry
+
+            mcp_registry: MCPServerRegistry | None = self._services.get("mcp_registry")
+            if mcp_registry:
+                # Permission check: only TRUSTED/YOLO can use MCP
+                if permissions and not can_use_mcp(permissions):
+                    return ToolResult(error="MCP tools require TRUSTED or YOLO permission level")
+
+                # Find the MCP skill adapter
+                for server in mcp_registry._servers.values():
+                    for mcp_skill in server.skills:
+                        if mcp_skill.name == tool_call.name:
+                            skill = mcp_skill
+                            break
+                    if skill:
+                        break
+
         if not skill:
             return ToolResult(error=f"Unknown skill: {tool_call.name}")
 

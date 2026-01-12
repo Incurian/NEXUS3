@@ -77,6 +77,12 @@ Configuration:
   /prompt [file]      Show or set system prompt
   /compact            Force context compaction/summarization
 
+MCP (External Tools):
+  /mcp                List configured and connected MCP servers
+  /mcp connect <name> Connect to a configured MCP server
+  /mcp disconnect <name>  Disconnect from an MCP server
+  /mcp tools [server] List available MCP tools
+
 REPL Control:
   /help               Show this help message
   /clear              Clear the display (preserves context)
@@ -805,3 +811,177 @@ async def cmd_model(
             "alias": new_model.alias,
         },
     )
+
+
+async def cmd_mcp(
+    ctx: CommandContext,
+    args: str | None = None,
+) -> CommandOutput:
+    """Handle /mcp commands for MCP server management.
+
+    Subcommands:
+        /mcp                List configured and connected servers
+        /mcp connect <name> Connect to a configured MCP server
+        /mcp disconnect <name>  Disconnect from server
+        /mcp tools [server] List available MCP tools
+
+    Args:
+        ctx: Command context with pool access.
+        args: Subcommand and arguments.
+
+    Returns:
+        CommandOutput with result.
+    """
+    from nexus3.mcp.permissions import can_use_mcp
+    from nexus3.mcp.registry import MCPServerConfig
+
+    # Check agent permissions for MCP access
+    if ctx.current_agent_id is not None:
+        agent = ctx.pool.get(ctx.current_agent_id)
+        if agent is not None:
+            perms = agent.services.get("permissions")
+            if not can_use_mcp(perms):
+                return CommandOutput.error(
+                    "MCP access requires TRUSTED or YOLO permission level"
+                )
+
+    # Get shared components
+    shared = getattr(ctx.pool, "_shared", None)
+    if shared is None:
+        return CommandOutput.error("Pool shared components not available")
+
+    config = shared.config
+    registry = shared.mcp_registry
+
+    # Parse subcommand
+    parts = (args or "").strip().split()
+
+    if len(parts) == 0:
+        # List servers
+        lines = ["MCP Servers:"]
+        lines.append("")
+
+        # Configured servers
+        if config.mcp_servers:
+            lines.append("Configured:")
+            for srv_cfg in config.mcp_servers:
+                connected = registry.get(srv_cfg.name) is not None
+                status = "[connected]" if connected else "[disconnected]"
+                enabled = "" if srv_cfg.enabled else " (disabled)"
+                lines.append(f"  {srv_cfg.name} {status}{enabled}")
+        else:
+            lines.append("Configured: (none)")
+
+        lines.append("")
+
+        # Connected servers
+        connected_names = registry.list_servers()
+        if connected_names:
+            lines.append(f"Connected: {len(connected_names)}")
+            for name in connected_names:
+                server = registry.get(name)
+                if server:
+                    tool_count = len(server.skills)
+                    allow_mode = "allow-all" if server.allowed_all else "per-tool"
+                    lines.append(f"  {name}: {tool_count} tools ({allow_mode})")
+        else:
+            lines.append("Connected: (none)")
+
+        return CommandOutput.success(message="\n".join(lines))
+
+    subcmd = parts[0].lower()
+
+    if subcmd == "connect":
+        if len(parts) < 2:
+            return CommandOutput.error("Usage: /mcp connect <name>")
+
+        name = parts[1]
+
+        # Find in config
+        srv_cfg = next(
+            (c for c in config.mcp_servers if c.name == name),
+            None,
+        )
+
+        if srv_cfg is None:
+            return CommandOutput.error(
+                f"MCP server '{name}' not found in config.\n"
+                f"Add it to config.json under 'mcp_servers'."
+            )
+
+        if not srv_cfg.enabled:
+            return CommandOutput.error(f"MCP server '{name}' is disabled in config")
+
+        # Already connected?
+        if registry.get(name) is not None:
+            return CommandOutput.error(f"Already connected to '{name}'")
+
+        # Convert config schema to registry config
+        reg_cfg = MCPServerConfig(
+            name=srv_cfg.name,
+            command=srv_cfg.command,
+            url=srv_cfg.url,
+            env=srv_cfg.env,
+            enabled=srv_cfg.enabled,
+        )
+
+        try:
+            # TODO: Prompt for allow_all choice in TRUSTED mode
+            # For now, default to per-tool confirmation
+            server = await registry.connect(reg_cfg, allow_all=False)
+            tool_names = [s.original_name for s in server.skills]
+            return CommandOutput.success(
+                message=f"Connected to '{name}'\n"
+                        f"Tools available: {', '.join(tool_names)}",
+                data={
+                    "server": name,
+                    "tools": tool_names,
+                },
+            )
+        except Exception as e:
+            return CommandOutput.error(f"Failed to connect to '{name}': {e}")
+
+    elif subcmd == "disconnect":
+        if len(parts) < 2:
+            return CommandOutput.error("Usage: /mcp disconnect <name>")
+
+        name = parts[1]
+
+        if registry.get(name) is None:
+            return CommandOutput.error(f"Not connected to '{name}'")
+
+        await registry.disconnect(name)
+        return CommandOutput.success(message=f"Disconnected from '{name}'")
+
+    elif subcmd == "tools":
+        server_name = parts[1] if len(parts) > 1 else None
+
+        if server_name:
+            server = registry.get(server_name)
+            if server is None:
+                return CommandOutput.error(f"Not connected to '{server_name}'")
+            skills = server.skills
+        else:
+            skills = registry.get_all_skills()
+
+        if not skills:
+            return CommandOutput.success(message="No MCP tools available")
+
+        lines = ["MCP Tools:"]
+        for skill in skills:
+            lines.append(f"  {skill.name}")
+            if skill.description:
+                # Truncate long descriptions
+                desc = skill.description[:60] + "..." if len(skill.description) > 60 else skill.description
+                lines.append(f"    {desc}")
+
+        return CommandOutput.success(
+            message="\n".join(lines),
+            data={"tools": [s.name for s in skills]},
+        )
+
+    else:
+        return CommandOutput.error(
+            f"Unknown MCP subcommand: {subcmd}\n"
+            f"Usage: /mcp [connect|disconnect|tools] [args]"
+        )

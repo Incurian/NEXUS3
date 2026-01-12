@@ -49,6 +49,7 @@ from nexus3.core.permissions import (
     load_custom_presets_from_config,
     resolve_preset,
 )
+from nexus3.mcp.registry import MCPServerRegistry
 from nexus3.rpc.dispatcher import Dispatcher
 from nexus3.rpc.log_multiplexer import LogMultiplexer
 from nexus3.session import LogConfig, LogStream, Session, SessionLogger
@@ -132,6 +133,7 @@ class SharedComponents:
     base_log_dir: Path
     log_streams: LogStream = LogStream.ALL
     custom_presets: dict[str, PermissionPreset] = field(default_factory=dict)
+    mcp_registry: MCPServerRegistry = field(default_factory=MCPServerRegistry)
 
 
 @dataclass
@@ -392,18 +394,38 @@ class AgentPool:
                 permissions.parent_agent_id = effective_config.parent_agent_id
                 permissions.depth = effective_config.parent_permissions.depth + 1
 
-            # Register agent_id, permissions, allowed_paths, and model
+            # Register agent_id, permissions, allowed_paths, model, and MCP registry
             services.register("agent_id", effective_id)
             services.register("permissions", permissions)
             services.register("allowed_paths", permissions.effective_policy.allowed_paths)
             services.register("model", resolved_model)  # ResolvedModel for model hotswapping
+            services.register("mcp_registry", self._shared.mcp_registry)
 
             registry = SkillRegistry(services)
             register_builtin_skills(registry)
 
             # SECURITY FIX: Inject only enabled tool definitions into context
             # Disabled tools should not be visible to the LLM at all
-            context.set_tool_definitions(registry.get_definitions_for_permissions(permissions))
+            tool_defs = registry.get_definitions_for_permissions(permissions)
+
+            # Add MCP tools if agent has MCP permission (TRUSTED/YOLO only)
+            from nexus3.mcp.permissions import can_use_mcp
+            if can_use_mcp(permissions):
+                for mcp_skill in self._shared.mcp_registry.get_all_skills():
+                    # Check if MCP tool is disabled in permissions
+                    tool_perm = permissions.tool_permissions.get(mcp_skill.name)
+                    if tool_perm is not None and not tool_perm.enabled:
+                        continue
+                    tool_defs.append({
+                        "type": "function",
+                        "function": {
+                            "name": mcp_skill.name,
+                            "description": mcp_skill.description,
+                            "parameters": mcp_skill.parameters,
+                        },
+                    })
+
+            context.set_tool_definitions(tool_defs)
 
             # Create session with context and services for permission enforcement
             session = Session(
@@ -592,17 +614,37 @@ class AgentPool:
                 delta = PermissionDelta(disable_tools=saved.disabled_tools)
                 permissions = permissions.apply_delta(delta)
 
-            # Register agent_id, permissions, and allowed_paths
+            # Register agent_id, permissions, allowed_paths, and MCP registry
             services.register("agent_id", agent_id)
             services.register("permissions", permissions)
             services.register("allowed_paths", permissions.effective_policy.allowed_paths)
+            services.register("mcp_registry", self._shared.mcp_registry)
 
             registry = SkillRegistry(services)
             register_builtin_skills(registry)
 
             # SECURITY FIX: Inject only enabled tool definitions into context
             # Disabled tools should not be visible to the LLM at all
-            context.set_tool_definitions(registry.get_definitions_for_permissions(permissions))
+            tool_defs = registry.get_definitions_for_permissions(permissions)
+
+            # Add MCP tools if agent has MCP permission (TRUSTED/YOLO only)
+            from nexus3.mcp.permissions import can_use_mcp
+            if can_use_mcp(permissions):
+                for mcp_skill in self._shared.mcp_registry.get_all_skills():
+                    # Check if MCP tool is disabled in permissions
+                    tool_perm = permissions.tool_permissions.get(mcp_skill.name)
+                    if tool_perm is not None and not tool_perm.enabled:
+                        continue
+                    tool_defs.append({
+                        "type": "function",
+                        "function": {
+                            "name": mcp_skill.name,
+                            "description": mcp_skill.description,
+                            "parameters": mcp_skill.parameters,
+                        },
+                    })
+
+            context.set_tool_definitions(tool_defs)
 
             # Create session with context and services for permission enforcement
             session = Session(
