@@ -18,8 +18,11 @@ An AI-powered CLI agent framework with multi-agent support. NEXUS3 is a clean-sl
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [CLI Reference](#cli-reference)
+- [Session Management](#session-management)
+- [Security & Permissions](#security--permissions)
 - [Multi-Agent API](#multi-agent-api)
 - [Built-in Skills](#built-in-skills)
+- [Adding Custom Skills](#adding-custom-skills)
 - [Configuration](#configuration)
 - [Architecture](#architecture)
 - [Development](#development)
@@ -68,81 +71,49 @@ export OPENROUTER_API_KEY="your-key-here"
 Start an interactive session with streaming responses:
 
 ```bash
-python -m nexus3
+nexus                    # Lobby mode - choose/create sessions
+nexus --fresh            # Skip lobby, start new temp session
+nexus --resume           # Resume last session
+nexus --session NAME     # Load specific saved session
 ```
 
 - Type messages at the prompt to chat with the AI
 - Press **ESC** during streaming to cancel a response
 - Use `/quit`, `/exit`, or `/q` to exit
+- Use `/save NAME` to save your session
+- Use `/help` to see all commands
 
 ### HTTP Server Mode
 
 Start the JSON-RPC server for programmatic control:
 
 ```bash
-# Default port 8765
-python -m nexus3 --serve
-
-# Custom port
-python -m nexus3 --serve 9000
-
-# With auto-reload for development
-python -m nexus3 --serve --reload
+nexus --serve            # Default port 8765
+nexus --serve 9000       # Custom port
+nexus --serve --reload   # Auto-reload for development
 ```
 
-Send a message via curl:
+### RPC Commands
+
+Programmatic operations via `nexus-rpc`:
 
 ```bash
-# Create an agent
-curl -X POST http://localhost:8765 \
-    -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","method":"create_agent","params":{"agent_id":"main"},"id":1}'
-
-# Send a message
-curl -X POST http://localhost:8765/agent/main \
-    -H "Content-Type: application/json" \
-    -d '{"jsonrpc":"2.0","method":"send","params":{"content":"Hello!"},"id":2}'
+nexus-rpc detect             # Check if server running
+nexus-rpc list               # List agents (auto-starts server)
+nexus-rpc create worker-1    # Create agent
+nexus-rpc send worker-1 "Hello"  # Send message
+nexus-rpc status worker-1    # Get agent status
+nexus-rpc destroy worker-1   # Destroy agent
+nexus-rpc shutdown           # Stop server
 ```
 
-### Client Mode (Connect to Remote Server)
+### Client Mode
 
-Connect to a running NEXUS3 server as a REPL client:
-
-```bash
-# Connect to default server (localhost:8765)
-python -m nexus3 --connect
-
-# Connect to custom server
-python -m nexus3 --connect http://server:9000
-
-# Connect to a specific agent
-python -m nexus3 --connect --agent worker-1
-```
-
-Inside the client REPL:
-- Type messages to send to the remote agent
-- `/status` - Show token usage and context info
-- `/quit` - Disconnect
-
-### CLI Subcommands
-
-One-shot commands for controlling remote agents:
+Connect to a running server as a REPL client:
 
 ```bash
-# Send a message
-python -m nexus3 send http://localhost:8765/agent/main "What is 2+2?"
-
-# Send with request ID for tracking
-python -m nexus3 send http://localhost:8765/agent/main "Hello" --request-id 42
-
-# Cancel an in-progress request
-python -m nexus3 cancel http://localhost:8765/agent/main 42
-
-# Get agent status (tokens + context)
-python -m nexus3 status http://localhost:8765/agent/main
-
-# Request graceful shutdown
-python -m nexus3 shutdown http://localhost:8765/agent/main
+nexus --connect              # Connect to localhost:8765
+nexus --connect http://server:9000 --agent worker-1
 ```
 
 ---
@@ -156,19 +127,153 @@ python -m nexus3 shutdown http://localhost:8765/agent/main
 | `--serve [PORT]` | 8765 | Run HTTP JSON-RPC server instead of REPL |
 | `--connect [URL]` | `http://localhost:8765` | Connect to server as REPL client |
 | `--agent ID` | `main` | Agent ID to connect to (requires `--connect`) |
+| `--fresh` | off | Skip lobby, start new temp session |
+| `--resume` | off | Resume last session |
+| `--session NAME` | - | Load specific saved session |
+| `--template PATH` | - | Use custom system prompt file |
 | `--verbose` | off | Enable verbose logging (thinking traces, timing) |
 | `--raw-log` | off | Enable raw API JSON logging |
 | `--log-dir PATH` | `.nexus3/logs` | Directory for session logs |
 | `--reload` | off | Auto-reload on code changes (serve mode only) |
 
-### Subcommands
+### REPL Commands
 
-| Command | Arguments | Description |
-|---------|-----------|-------------|
-| `send` | `URL CONTENT [--request-id ID]` | Send message to agent |
-| `cancel` | `URL REQUEST_ID` | Cancel in-progress request |
-| `status` | `URL` | Get tokens and context info |
-| `shutdown` | `URL` | Request graceful shutdown |
+| Command | Description |
+|---------|-------------|
+| `/help` | Show all available commands |
+| `/save NAME` | Save current session |
+| `/load NAME` | Load a saved session |
+| `/new` | Start a new session |
+| `/sessions` | List saved sessions |
+| `/agent ID [--preset]` | Create a new agent |
+| `/switch ID` | Switch to another agent |
+| `/destroy ID` | Destroy an agent |
+| `/whisper` | Enter whisper mode (side conversation) |
+| `/permissions` | Show/modify permissions |
+| `/cwd [PATH]` | Show/change working directory |
+| `/status` | Show token usage |
+| `/quit` | Exit NEXUS3 |
+
+---
+
+## Session Management
+
+NEXUS3 supports persistent sessions that can be saved, loaded, and resumed.
+
+### Session Types
+
+| Type | Example | Description |
+|------|---------|-------------|
+| **Temp sessions** | `.1`, `.2` | Auto-generated, not persisted |
+| **Saved sessions** | `myproject` | Named, persisted to disk |
+
+### Lobby Mode
+
+When you run `nexus` without flags, you enter lobby mode:
+- See list of saved sessions
+- Resume a previous session
+- Start a new session
+- Delete old sessions
+
+### Persistence
+
+Sessions are saved to `~/.nexus3/sessions/` as JSON files containing:
+- Conversation history
+- Token counts
+- Permission settings
+- Working directory (planned)
+
+The last session is auto-saved to `~/.nexus3/last-session.json` for quick resume with `nexus --resume`.
+
+### Whisper Mode
+
+Use `/whisper` to start a side conversation that doesn't affect the main session history. Useful for asking clarifying questions or exploring tangents without polluting the main context.
+
+---
+
+## Security & Permissions
+
+NEXUS3 includes a comprehensive security system with API authentication, path sandboxing, and permission presets.
+
+### API Authentication
+
+The HTTP server uses API key authentication:
+- Keys are auto-generated on first server start
+- Stored in `~/.nexus3/server.key` (or `server-{port}.key` for non-default ports)
+- All RPC requests require `Authorization: Bearer <key>` header
+- Keys use constant-time comparison to prevent timing attacks
+
+```bash
+# API key is auto-discovered by nexus-rpc commands
+nexus-rpc send worker-1 "Hello"
+
+# Or specify explicitly
+nexus-rpc --api-key nxk_abc123... send worker-1 "Hello"
+```
+
+### Permission Presets
+
+Agents can be created with different permission levels:
+
+| Preset | Level | Description |
+|--------|-------|-------------|
+| `yolo` | YOLO | Full access, no confirmations |
+| `trusted` | TRUSTED | Confirmations for destructive actions (default) |
+| `sandboxed` | SANDBOXED | Limited to CWD, no network, nexus tools disabled |
+| `worker` | SANDBOXED | Minimal: no write_file, no agent management |
+
+```bash
+# Create agent with preset
+nexus-rpc create worker-1 --preset sandboxed
+
+# Or via REPL
+/agent worker-1 --sandboxed
+```
+
+### Permission Features
+
+1. **Per-tool configuration**: Enable/disable tools, per-tool paths, per-tool timeouts
+2. **Ceiling inheritance**: Subagents cannot exceed parent permissions
+3. **Runtime modification**: `/permissions` command to change settings mid-session
+4. **Confirmation prompts**: TRUSTED mode prompts before destructive actions
+
+```bash
+# View current permissions
+/permissions
+
+# Disable a tool
+/permissions --disable write_file
+
+# Re-enable (if ceiling allows)
+/permissions --enable write_file
+
+# List all tools with status
+/permissions --list-tools
+```
+
+### Path Sandboxing
+
+File operations (`read_file`, `write_file`) are sandboxed:
+- **YOLO/TRUSTED**: Full filesystem access
+- **SANDBOXED/WORKER**: Limited to `allowed_paths` (default: CWD)
+- Path traversal attempts (`../`) are blocked
+- Symlinks outside sandbox are rejected
+
+### URL Validation (SSRF Protection)
+
+All nexus skills validate URLs before making requests:
+- Only localhost connections allowed
+- Private IP ranges blocked (10.x, 172.16-31.x, 192.168.x)
+- DNS rebinding protection
+- Configurable via `allow_localhost` parameter
+
+### Destructive Actions
+
+These tools require confirmation in TRUSTED mode:
+- `write_file`
+- `nexus_destroy`
+- `nexus_shutdown`
+- `nexus_create` (spawning agents)
 
 ---
 
@@ -192,8 +297,20 @@ These methods are sent to `/` or `/rpc`:
 Create a new agent instance with isolated context and state.
 
 ```bash
+# Basic creation
 curl -X POST http://localhost:8765 \
+    -H "Authorization: Bearer $NEXUS_API_KEY" \
     -d '{"jsonrpc":"2.0","method":"create_agent","params":{"agent_id":"worker-1"},"id":1}'
+
+# With permission preset
+curl -X POST http://localhost:8765 \
+    -H "Authorization: Bearer $NEXUS_API_KEY" \
+    -d '{"jsonrpc":"2.0","method":"create_agent","params":{"agent_id":"worker-1","preset":"sandboxed"},"id":1}'
+
+# With disabled tools
+curl -X POST http://localhost:8765 \
+    -H "Authorization: Bearer $NEXUS_API_KEY" \
+    -d '{"jsonrpc":"2.0","method":"create_agent","params":{"agent_id":"worker-1","preset":"trusted","disable_tools":["write_file"]},"id":1}'
 ```
 
 Response:
@@ -203,6 +320,8 @@ Response:
 
 Parameters:
 - `agent_id` (optional): Unique identifier. Auto-generated if omitted.
+- `preset` (optional): Permission preset (yolo/trusted/sandboxed/worker). Default: trusted.
+- `disable_tools` (optional): List of tools to disable for this agent.
 - `system_prompt` (optional): Override the default system prompt.
 
 #### `list_agents`
@@ -211,6 +330,7 @@ List all active agents with their status.
 
 ```bash
 curl -X POST http://localhost:8765 \
+    -H "Authorization: Bearer $NEXUS_API_KEY" \
     -d '{"jsonrpc":"2.0","method":"list_agents","id":2}'
 ```
 
@@ -220,7 +340,7 @@ Response:
   "jsonrpc":"2.0","id":2,
   "result":{
     "agents":[
-      {"agent_id":"worker-1","created_at":"2024-01-15T10:30:00","message_count":5,"should_shutdown":false}
+      {"agent_id":"worker-1","created_at":"2024-01-15T10:30:00","message_count":5,"is_temp":false}
     ]
   }
 }
@@ -228,16 +348,27 @@ Response:
 
 #### `destroy_agent`
 
-Destroy an agent and clean up resources.
+Destroy an agent and clean up resources. Cancels any in-progress requests.
 
 ```bash
 curl -X POST http://localhost:8765 \
+    -H "Authorization: Bearer $NEXUS_API_KEY" \
     -d '{"jsonrpc":"2.0","method":"destroy_agent","params":{"agent_id":"worker-1"},"id":3}'
 ```
 
 Response:
 ```json
 {"jsonrpc":"2.0","id":3,"result":{"success":true,"agent_id":"worker-1"}}
+```
+
+#### `shutdown_server`
+
+Gracefully shutdown the entire server.
+
+```bash
+curl -X POST http://localhost:8765 \
+    -H "Authorization: Bearer $NEXUS_API_KEY" \
+    -d '{"jsonrpc":"2.0","method":"shutdown_server","id":4}'
 ```
 
 ### Agent Operation Methods
@@ -355,7 +486,7 @@ async with NexusClient("http://localhost:8765") as client:
 
 ## Built-in Skills
 
-NEXUS3 includes 7 built-in skills registered automatically:
+NEXUS3 includes 9 built-in skills registered automatically:
 
 ### File Operations
 
@@ -364,10 +495,12 @@ NEXUS3 includes 7 built-in skills registered automatically:
 | `read_file` | Read file contents as UTF-8 text | `path` (required) |
 | `write_file` | Write content to file (creates directories) | `path`, `content` (required) |
 
-Cross-platform path handling:
-- Windows backslashes (`C:\Users\...`) converted to forward slashes
+Features:
+- Cross-platform path handling (Windows/Unix)
 - Home directory expansion (`~/.config/...`)
-- Relative paths resolved to absolute
+- **Path sandboxing**: SANDBOXED/WORKER presets restrict to allowed paths
+- **Async I/O**: Non-blocking file operations
+- **UTF-8 encoding**: With error replacement for invalid bytes
 
 ### Testing
 
@@ -377,33 +510,170 @@ Cross-platform path handling:
 
 ### Agent Control
 
-These skills enable agent-to-agent communication via HTTP JSON-RPC:
+These skills enable agent-to-agent communication. All use `agent_id` + optional `port` instead of URLs:
 
 | Skill | Description | Parameters |
 |-------|-------------|------------|
-| `nexus_send` | Send message to a Nexus agent | `url`, `content` (required), `request_id` (optional) |
-| `nexus_cancel` | Cancel in-progress request | `url`, `request_id` (required) |
-| `nexus_status` | Get token/context info from agent | `url` (required) |
-| `nexus_shutdown` | Request graceful agent shutdown | `url` (required) |
+| `nexus_create` | Create a new agent | `agent_id`, `preset`?, `disable_tools`?, `port`? |
+| `nexus_destroy` | Destroy an agent | `agent_id`, `port`? |
+| `nexus_send` | Send message to agent | `agent_id`, `content`, `port`? |
+| `nexus_status` | Get agent tokens/context | `agent_id`, `port`? |
+| `nexus_cancel` | Cancel in-progress request | `agent_id`, `request_id`, `port`? |
+| `nexus_shutdown` | Shutdown entire server | `port`? |
 
-Example: One agent controlling another:
+*Note: `port` defaults to 8765. API key is auto-discovered.*
+
+Security features:
+- **URL validation**: SSRF protection blocks private IPs
+- **Ceiling inheritance**: Subagents cannot exceed parent permissions
+- **Agent ID validation**: Only alphanumeric, dash, underscore, dot allowed
+
+Example: One agent spawning and controlling another:
 
 ```python
-# Agent A can send messages to Agent B
-await nexus_send.execute(url="http://localhost:8765/agent/worker-b", content="Process this data")
+# Create a sandboxed worker
+await nexus_create.execute(agent_id="worker-1", preset="sandboxed")
+
+# Send it a task
+await nexus_send.execute(agent_id="worker-1", content="Process this data")
 
 # Check status
-await nexus_status.execute(url="http://localhost:8765/agent/worker-b")
+await nexus_status.execute(agent_id="worker-1")
+
+# Clean up
+await nexus_destroy.execute(agent_id="worker-1")
 ```
 
 ### Parallel Execution
 
-Add `"_parallel": true` to any tool call's arguments to run all tools in the batch concurrently:
+The LLM can request parallel tool execution. Tools in the same batch run concurrently up to `max_concurrent_tools` (default: 10).
+
+### Skill Timeout
+
+All skills have a configurable timeout (default: 30 seconds). Configure via `skill_timeout` in config.
+
+---
+
+## Adding Custom Skills
+
+NEXUS3's skill system is designed for extensibility. Here's how to add new tools with proper permission integration.
+
+### Basic Skill Structure
+
+```python
+from nexus3.skill.base import BaseSkill
+from nexus3.core.types import ToolResult
+
+class MySkill(BaseSkill):
+    def __init__(self):
+        super().__init__(
+            name="my_skill",
+            description="Does something useful",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "input": {"type": "string", "description": "The input to process"}
+                },
+                "required": ["input"]
+            }
+        )
+
+    async def execute(self, input: str = "", **kwargs) -> ToolResult:
+        # Your logic here
+        return ToolResult(output=f"Processed: {input}")
+```
+
+### Using Dependency Injection
+
+Skills can access services via the `ServiceContainer`:
+
+```python
+from nexus3.skill.services import ServiceContainer
+from pathlib import Path
+
+def my_skill_factory(services: ServiceContainer) -> MySkill:
+    """Factory function for DI-based skill creation."""
+    allowed_paths = services.get("allowed_paths")  # list[Path] | None
+    api_key = services.get("api_key")              # str | None
+    permissions = services.get("permissions")       # AgentPermissions | None
+    return MySkill(allowed_paths=allowed_paths)
+```
+
+### Available Services
+
+| Service | Type | Description |
+|---------|------|-------------|
+| `allowed_paths` | `list[Path] \| None` | Sandbox paths (None = unrestricted) |
+| `api_key` | `str \| None` | Server API key for RPC calls |
+| `port` | `int` | Server port (default: 8765) |
+| `agent_id` | `str \| None` | Current agent's ID |
+| `permissions` | `AgentPermissions \| None` | Current agent's permissions |
+
+### Integrating with Permissions
+
+For skills that need permission checks:
+
+```python
+from nexus3.core.paths import validate_sandbox, PathSecurityError
+from nexus3.core.url_validator import validate_url, UrlSecurityError
+
+class SecureFileSkill(BaseSkill):
+    def __init__(self, allowed_paths: list[Path] | None = None):
+        self.allowed_paths = allowed_paths
+        # ...
+
+    async def execute(self, path: str = "", **kwargs) -> ToolResult:
+        # Validate path if sandboxed
+        if self.allowed_paths is not None:
+            try:
+                validated_path = validate_sandbox(path, self.allowed_paths)
+            except PathSecurityError as e:
+                return ToolResult(error=str(e))
+        else:
+            validated_path = Path(path).resolve()
+
+        # Your file operation here
+        content = await asyncio.to_thread(validated_path.read_text, encoding="utf-8")
+        return ToolResult(output=content)
+```
+
+### Marking Skills as Destructive
+
+If your skill modifies state, add it to the destructive tools list in config:
 
 ```json
-{"name": "read_file", "arguments": {"path": "file1.py", "_parallel": true}}
-{"name": "read_file", "arguments": {"path": "file2.py", "_parallel": true}}
+{
+  "permissions": {
+    "destructive_tools": ["write_file", "my_destructive_skill"]
+  }
+}
 ```
+
+This ensures TRUSTED mode prompts for confirmation before execution.
+
+### Registering Skills
+
+Register skills in `skill/builtin/registration.py`:
+
+```python
+from nexus3.skill.registry import SkillRegistry
+
+def register_builtin_skills(registry: SkillRegistry) -> None:
+    # Simple skill (no DI needed)
+    registry.register(MySimpleSkill)
+
+    # Skill with DI factory
+    registry.register_factory("my_skill", my_skill_factory)
+```
+
+### Best Practices
+
+1. **Always use async I/O**: Wrap blocking operations with `asyncio.to_thread()`
+2. **Validate inputs**: Use `validate_sandbox()` for paths, `validate_url()` for URLs
+3. **Return errors gracefully**: Use `ToolResult(error=message)` instead of raising
+4. **Respect permissions**: Check `allowed_paths` if your skill accesses files
+5. **Use UTF-8**: Always specify `encoding="utf-8", errors="replace"` for file ops
+6. **Document parameters**: Use JSON Schema with descriptions in `parameters`
 
 ---
 
@@ -421,8 +691,47 @@ NEXUS3 looks for configuration in this order:
     "model": "anthropic/claude-sonnet-4",
     "api_key_env": "OPENROUTER_API_KEY"
   },
-  "stream_output": true
+  "stream_output": true,
+  "skill_timeout": 30.0,
+  "max_concurrent_tools": 10,
+  "max_tool_iterations": 10,
+  "permissions": {
+    "default_preset": "trusted",
+    "destructive_tools": ["write_file", "nexus_destroy", "nexus_shutdown", "nexus_create"],
+    "presets": {
+      "dev": {
+        "extends": "trusted",
+        "allowed_paths": ["/home/user/projects"],
+        "tool_permissions": {
+          "nexus_shutdown": {"enabled": false}
+        }
+      }
+    }
+  }
 }
+```
+
+### File Locations
+
+```
+~/.nexus3/
+├── config.json           # Global configuration
+├── NEXUS.md              # Personal system prompt
+├── server.key            # API key for default port
+├── server-9000.key       # API key for port 9000
+├── sessions/             # Saved session files
+│   ├── myproject.json
+│   └── experiment.json
+└── last-session.json     # Auto-saved for --resume
+
+./.nexus3/                # Project-local (gitignored)
+└── logs/                 # Session logs
+    └── session-123/
+        ├── session.db    # SQLite log
+        ├── context.md    # Human-readable
+        └── raw.jsonl     # Raw API (if --raw-log)
+
+./NEXUS.md                # Project system prompt
 ```
 
 ### System Prompts
@@ -438,27 +747,14 @@ Project Layer (optional):
   ./NEXUS.md                      # Project-specific (in cwd)
 ```
 
-Both layers are combined with headers:
-
-```markdown
-# Personal Configuration
-[personal prompt content]
-
-# Project Configuration
-[project prompt content]
-
-# Environment
-Working directory: /path/to/project
-Operating system: Linux (WSL2 on Windows)
-Terminal: vscode (xterm-256color)
-Mode: Interactive REPL
-```
+Both layers are combined with environment info appended.
 
 ### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
 | `OPENROUTER_API_KEY` | API key for OpenRouter LLM provider |
+| `NEXUS_API_KEY` | Override auto-discovered server API key |
 
 ---
 
@@ -468,16 +764,16 @@ Mode: Interactive REPL
 
 ```
 nexus3/
-├── core/           # Foundational types, protocols, errors
-├── config/         # Pydantic schema, fail-fast loader
-├── provider/       # LLM provider implementations
-├── context/        # Message history, token tracking, truncation
-├── session/        # Session coordinator, logging
-├── skill/          # Skill system with dependency injection
-├── display/        # Terminal UI with Rich
-├── cli/            # REPL and HTTP server entry points
-├── rpc/            # JSON-RPC 2.0 protocol and multi-agent pool
-└── client.py       # Async HTTP client for agent communication
+├── core/           # Types, interfaces, errors, paths, URL validation, permissions
+├── config/         # Pydantic schema, permission config, fail-fast loader
+├── provider/       # AsyncProvider protocol, OpenRouter implementation, retry logic
+├── context/        # ContextManager, PromptLoader, TokenCounter, atomic truncation
+├── session/        # Session coordinator, persistence, SessionManager, SQLite logging
+├── skill/          # Skill protocol, SkillRegistry, ServiceContainer, builtin skills
+├── display/        # DisplayManager, StreamingDisplay, InlinePrinter, SummaryBar, theme
+├── cli/            # Unified REPL, lobby, whisper, HTTP server, client commands
+├── rpc/            # JSON-RPC protocol, Dispatcher, GlobalDispatcher, AgentPool, auth
+└── client.py       # NexusClient for agent-to-agent communication
 ```
 
 ### Core Module (`nexus3/core`)
