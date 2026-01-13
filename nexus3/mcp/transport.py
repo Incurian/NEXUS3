@@ -204,39 +204,94 @@ class StdioTransport(MCPTransport):
 class HTTPTransport(MCPTransport):
     """Connect to remote MCP server via HTTP.
 
-    Placeholder for HTTP-based MCP transport. MCP over HTTP typically
-    uses Server-Sent Events (SSE) for server-to-client messages.
+    MCP over HTTP uses:
+    - POST requests for client→server JSON-RPC calls
+    - Synchronous responses (server responds to each POST)
 
-    Not yet implemented - stdio transport covers most use cases.
+    This is a simpler model than SSE - each send() is paired with
+    a receive() in the same HTTP request/response cycle.
+
+    Attributes:
+        url: Base URL of the MCP server (e.g., http://localhost:9000).
+        headers: Additional HTTP headers (e.g., for auth).
+        timeout: Request timeout in seconds.
     """
 
     def __init__(
         self,
         url: str,
         headers: dict[str, str] | None = None,
+        timeout: float = 30.0,
     ):
         """Initialize HTTPTransport.
 
         Args:
             url: Base URL of the MCP server.
             headers: Additional HTTP headers (e.g., for auth).
+            timeout: Request timeout in seconds.
         """
-        self._url = url
+        self._url = url.rstrip("/")
         self._headers = headers or {}
-        # Would use httpx.AsyncClient here
+        self._timeout = timeout
+        self._client: Any = None  # httpx.AsyncClient
+        self._pending_response: dict[str, Any] | None = None
 
     async def connect(self) -> None:
-        """Establish HTTP connection."""
-        raise NotImplementedError("HTTP transport not yet implemented")
+        """Create HTTP client (connection pool)."""
+        try:
+            import httpx
+        except ImportError as e:
+            raise MCPTransportError("httpx required for HTTP transport: pip install httpx") from e
+
+        self._client = httpx.AsyncClient(
+            timeout=self._timeout,
+            headers={"Content-Type": "application/json", **self._headers},
+        )
 
     async def send(self, message: dict[str, Any]) -> None:
-        """Send JSON-RPC message via HTTP POST."""
-        raise NotImplementedError("HTTP transport not yet implemented")
+        """Send JSON-RPC message via HTTP POST.
+
+        The response is stored internally for the next receive() call.
+        This maintains the send/receive pattern expected by MCPClient.
+
+        For notifications (no id), the server may return 204 No Content.
+        """
+        if self._client is None:
+            raise MCPTransportError("Transport not connected")
+
+        try:
+            data = json.dumps(message, separators=(",", ":"))
+            response = await self._client.post(self._url, content=data)
+            response.raise_for_status()
+
+            # Handle 204 No Content (for notifications)
+            if response.status_code == 204 or not response.content:
+                self._pending_response = None
+            else:
+                self._pending_response = response.json()
+        except Exception as e:
+            raise MCPTransportError(f"HTTP request failed: {e}") from e
 
     async def receive(self) -> dict[str, Any]:
-        """Receive JSON-RPC message (via SSE or polling)."""
-        raise NotImplementedError("HTTP transport not yet implemented")
+        """Return the response from the last send().
+
+        HTTP transport is synchronous - each POST gets a response.
+        This method returns the response that was stored by send().
+        """
+        if self._pending_response is None:
+            raise MCPTransportError("No pending response (call send() first)")
+
+        response = self._pending_response
+        self._pending_response = None
+        return response
 
     async def close(self) -> None:
-        """Close HTTP connection."""
-        raise NotImplementedError("HTTP transport not yet implemented")
+        """Close HTTP client."""
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+    @property
+    def is_connected(self) -> bool:
+        """Check if transport is connected."""
+        return self._client is not None

@@ -1,5 +1,7 @@
 """Integration tests for MCP client with test server."""
 
+import asyncio
+
 import pytest
 
 from nexus3.mcp import (
@@ -10,7 +12,7 @@ from nexus3.mcp import (
     MCPTool,
     MCPToolResult,
 )
-from nexus3.mcp.transport import StdioTransport
+from nexus3.mcp.transport import HTTPTransport, StdioTransport
 
 
 @pytest.fixture
@@ -239,5 +241,128 @@ class TestMCPSkillAdapter:
 
         assert result.success
         assert result.output == "12"
+
+        await registry.close_all()
+
+
+# --- HTTP Transport Tests ---
+
+@pytest.fixture
+async def http_server():
+    """Start HTTP test server for tests."""
+    from aiohttp import web
+    from nexus3.mcp.test_server.http_server import handle_request
+
+    async def handle_post(request: web.Request) -> web.Response:
+        body = await request.json()
+        response = handle_request(body)
+        if response is None:
+            return web.Response(status=204)
+        return web.json_response(response)
+
+    app = web.Application()
+    app.router.add_post("/", handle_post)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 9999)
+    await site.start()
+
+    yield "http://127.0.0.1:9999"
+
+    await runner.cleanup()
+
+
+@pytest.fixture
+async def http_mcp_client(http_server: str):
+    """Create MCP client connected to HTTP test server."""
+    transport = HTTPTransport(http_server)
+    async with MCPClient(transport) as client:
+        yield client
+
+
+class TestHTTPTransport:
+    """Test HTTP transport with HTTP test server."""
+
+    @pytest.mark.asyncio
+    async def test_http_initialization(self, http_mcp_client: MCPClient) -> None:
+        """Test HTTP client initializes and gets server info."""
+        assert http_mcp_client.is_initialized
+        assert http_mcp_client.server_info is not None
+        assert http_mcp_client.server_info.name == "nexus3-http-test-server"
+
+    @pytest.mark.asyncio
+    async def test_http_list_tools(self, http_mcp_client: MCPClient) -> None:
+        """Test HTTP client discovers tools."""
+        tools = await http_mcp_client.list_tools()
+
+        assert len(tools) == 3
+        tool_names = {t.name for t in tools}
+        assert tool_names == {"echo", "get_time", "add"}
+
+    @pytest.mark.asyncio
+    async def test_http_call_echo(self, http_mcp_client: MCPClient) -> None:
+        """Test HTTP client calls echo tool."""
+        result = await http_mcp_client.call_tool("echo", {"message": "http test"})
+
+        assert not result.is_error
+        assert result.to_text() == "http test"
+
+    @pytest.mark.asyncio
+    async def test_http_call_add(self, http_mcp_client: MCPClient) -> None:
+        """Test HTTP client calls add tool."""
+        result = await http_mcp_client.call_tool("add", {"a": 100, "b": 23})
+
+        assert not result.is_error
+        assert result.to_text() == "123"
+
+    @pytest.mark.asyncio
+    async def test_http_transport_connect_disconnect(self) -> None:
+        """Test HTTP transport connection lifecycle."""
+        transport = HTTPTransport("http://127.0.0.1:9999")
+
+        await transport.connect()
+        assert transport.is_connected
+
+        await transport.close()
+        assert not transport.is_connected
+
+
+class TestRegistryWithHTTP:
+    """Test registry with HTTP transport."""
+
+    @pytest.mark.asyncio
+    async def test_registry_auto_selects_http(self, http_server: str) -> None:
+        """Test registry uses HTTP transport when url is specified."""
+        registry = MCPServerRegistry()
+
+        config = MCPServerConfig(
+            name="http-test",
+            url=http_server,
+        )
+
+        server = await registry.connect(config)
+        assert server.config.name == "http-test"
+        assert len(server.skills) == 3
+
+        await registry.close_all()
+
+    @pytest.mark.asyncio
+    async def test_registry_http_skill_execute(self, http_server: str) -> None:
+        """Test executing skill via HTTP transport."""
+        registry = MCPServerRegistry()
+
+        config = MCPServerConfig(
+            name="http-test",
+            url=http_server,
+        )
+
+        server = await registry.connect(config)
+        echo_skill = next(s for s in server.skills if s.original_name == "echo")
+
+        result = await echo_skill.execute(message="via http")
+
+        assert result.success
+        assert result.output == "via http"
 
         await registry.close_all()
