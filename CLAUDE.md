@@ -155,10 +155,13 @@ nexus-rpc shutdown
 | `read_file` | `path`, `offset`?, `limit`? | Read file contents (with optional line range) |
 | `tail` | `path`, `lines`? | Read last N lines of a file (default: 10) |
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
-| `write_file` | `path`, `content` | Write/create files |
-| `edit_file` | `path`, `old_string`, `new_string` | Edit files with string replacement |
-| `append_file` | `path`, `content`, `newline`? | Append content to a file |
-| `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | Pattern-based find/replace in files |
+| `write_file` | `path`, `content` | Write/create files (read file first!) |
+| `edit_file` | `path`, `old_string`, `new_string` | Edit files with string replacement (read file first!) |
+| `append_file` | `path`, `content`, `newline`? | Append content to a file (read file first!) |
+| `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | Pattern-based find/replace (read file first!) |
+| `copy_file` | `source`, `destination`, `overwrite`? | Copy a file to a new location |
+| `mkdir` | `path` | Create directory (and parents) |
+| `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory |
 | `list_directory` | `path` | List directory contents |
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern (with exclusions) |
 | `grep` | `pattern`, `path`?, `include`?, `context`? | Search file contents with file filter and context lines |
@@ -173,7 +176,7 @@ nexus-rpc shutdown
 | `nexus_cancel` | `agent_id`, `request_id`, `port`? | Cancel in-progress request |
 | `nexus_shutdown` | `port`? | Shutdown the entire server |
 
-*Note: `port` defaults to 8765. `preset` can be trusted/sandboxed/worker (yolo is REPL-only). Skills mirror `nexus-rpc` CLI commands.*
+*Note: `port` defaults to 8765. `preset` can be trusted/sandboxed/worker (yolo is REPL-only). Skills mirror `nexus-rpc` CLI commands. Destructive file tools remind agents to read files before modifying.*
 
 ---
 

@@ -495,7 +495,7 @@ async with NexusClient("http://localhost:8765") as client:
 
 ## Built-in Skills
 
-NEXUS3 includes 21 built-in skills registered automatically:
+NEXUS3 includes 24 built-in skills registered automatically:
 
 ### File Operations (Read-Only)
 
@@ -516,6 +516,11 @@ NEXUS3 includes 21 built-in skills registered automatically:
 | `edit_file` | Edit file with search/replace | `path`, `old_string`, `new_string` |
 | `append_file` | Append content to a file | `path`, `content`, `newline`? |
 | `regex_replace` | Pattern-based find/replace | `path`, `pattern`, `replacement`, `count`?, etc. |
+| `copy_file` | Copy a file to a new location | `source`, `destination`, `overwrite`? |
+| `mkdir` | Create directory (and parents) | `path` |
+| `rename` | Rename or move file/directory | `source`, `destination`, `overwrite`? |
+
+**Note:** Destructive tools include guidance to read files before modifying them for safety.
 
 ### Version Control
 

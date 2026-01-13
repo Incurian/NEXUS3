@@ -2,12 +2,14 @@
 
 from nexus3.skill.builtin.append_file import append_file_factory
 from nexus3.skill.builtin.bash import bash_factory
+from nexus3.skill.builtin.copy_file import copy_file_factory
 from nexus3.skill.builtin.edit_file import edit_file_factory
 from nexus3.skill.builtin.file_info import file_info_factory
 from nexus3.skill.builtin.git import git_factory
 from nexus3.skill.builtin.glob_search import glob_factory
 from nexus3.skill.builtin.grep import grep_factory
 from nexus3.skill.builtin.list_directory import list_directory_factory
+from nexus3.skill.builtin.mkdir import mkdir_factory
 from nexus3.skill.builtin.nexus_cancel import nexus_cancel_factory
 from nexus3.skill.builtin.nexus_create import nexus_create_factory
 from nexus3.skill.builtin.nexus_destroy import nexus_destroy_factory
@@ -16,6 +18,7 @@ from nexus3.skill.builtin.nexus_shutdown import nexus_shutdown_factory
 from nexus3.skill.builtin.nexus_status import nexus_status_factory
 from nexus3.skill.builtin.read_file import read_file_factory
 from nexus3.skill.builtin.regex_replace import regex_replace_factory
+from nexus3.skill.builtin.rename import rename_factory
 from nexus3.skill.builtin.run_python import run_python_factory
 from nexus3.skill.builtin.sleep import sleep_skill_factory
 from nexus3.skill.builtin.tail import tail_factory
@@ -47,6 +50,9 @@ def register_builtin_skills(registry: SkillRegistry) -> None:
     registry.register("edit_file", edit_file_factory)
     registry.register("append_file", append_file_factory)
     registry.register("regex_replace", regex_replace_factory)
+    registry.register("copy_file", copy_file_factory)
+    registry.register("mkdir", mkdir_factory)
+    registry.register("rename", rename_factory)
 
     # Version control (permission-filtered internally)
     registry.register("git", git_factory)

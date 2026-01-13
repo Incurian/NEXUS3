@@ -42,7 +42,10 @@ class EditFileSkill:
 
     @property
     def description(self) -> str:
-        return "Edit a file using string replacement or line-based editing"
+        return (
+            "Edit a file using string replacement or line-based editing. "
+            "IMPORTANT: Read the file first to verify your old_string matches exactly."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

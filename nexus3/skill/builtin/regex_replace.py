@@ -43,7 +43,10 @@ class RegexReplaceSkill:
 
     @property
     def description(self) -> str:
-        return "Replace text in a file using regular expression pattern"
+        return (
+            "Replace text in a file using regular expression pattern. "
+            "IMPORTANT: Read the file first to verify your pattern matches the intended text."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

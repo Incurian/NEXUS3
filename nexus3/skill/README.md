@@ -10,7 +10,7 @@ This module provides the skill/tool infrastructure for NEXUS3:
 - **BaseSkill** abstract base class for convenience
 - **SkillRegistry** for managing skill factories with lazy instantiation and caching
 - **ServiceContainer** for dependency injection into skills
-- **20 built-in skills** for file I/O, search, execution, git, agent control, and testing (+ `echo` manual)
+- **23 built-in skills** for file I/O, search, execution, git, agent control, and testing (+ `echo` manual)
 
 Skills are the fundamental unit of capability in NEXUS3. Each skill provides a single, well-defined, async-executable action that the LLM invokes via function calling.
 
@@ -35,8 +35,8 @@ Skills are the fundamental unit of capability in NEXUS3. Each skill provides a s
 | `services.py` | `ServiceContainer` |
 | `errors.py` | `SkillError`, `SkillNotFoundError`, `SkillExecutionError` |
 | `builtin/__init__.py` | Exports `register_builtin_skills`, nexus factories |
-| `builtin/registration.py` | `register_builtin_skills(registry)` registers all 20 |
-| `builtin/*.py` | Individual skills: append_file.py, bash.py, echo.py, edit_file.py, file_info.py, git.py, glob_search.py, grep.py, list_directory.py, read_file.py, regex_replace.py, run_python.py, sleep.py, tail.py, write_file.py, nexus_*.py |
+| `builtin/registration.py` | `register_builtin_skills(registry)` registers all 23 |
+| `builtin/*.py` | Individual skills: append_file.py, bash.py, copy_file.py, echo.py, edit_file.py, file_info.py, git.py, glob_search.py, grep.py, list_directory.py, mkdir.py, read_file.py, regex_replace.py, rename.py, run_python.py, sleep.py, tail.py, write_file.py, nexus_*.py |
 
 ## Skill Protocol
 
@@ -116,7 +116,7 @@ services.names()
 | `agent_id` | `str \| None` | `nexus_create` (ceiling parent) |
 | `permissions` | `AgentPermissions \| None` | `nexus_create` (ceiling check) |
 
-## Built-in Skills (20 Total, Auto-Registered)
+## Built-in Skills (23 Total, Auto-Registered)
 
 **register_builtin_skills(registry)** registers:
 
@@ -135,10 +135,13 @@ services.names()
 
 | Skill | Parameters | Description |
 |-------|------------|-------------|
-| `write_file` | `path` (req), `content` (req) | Write UTF-8; `mkdir -p`; sandbox |
-| `edit_file` | `path` (req), **String:** `old_string`, `new_string`, `replace_all=false`<br>**Line:** `start_line`, `end_line=?`, `new_content` | Unique check; sandbox |
-| `append_file` | `path` (req), `content` (req), `newline=true`? | Append content with smart newline handling; sandbox |
-| `regex_replace` | `path` (req), `pattern` (req), `replacement` (req), `count=0`?, `ignore_case`?, `multiline`?, `dotall`? | Pattern-based find/replace; backrefs (\1); max 10000 matches; 5s timeout; sandbox |
+| `write_file` | `path` (req), `content` (req) | Write UTF-8; `mkdir -p`; sandbox. **Read file first before overwriting.** |
+| `edit_file` | `path` (req), **String:** `old_string`, `new_string`, `replace_all=false`<br>**Line:** `start_line`, `end_line=?`, `new_content` | Unique check; sandbox. **Read file first to verify match.** |
+| `append_file` | `path` (req), `content` (req), `newline=true`? | Append content with smart newline handling; sandbox. **Read file first.** |
+| `regex_replace` | `path` (req), `pattern` (req), `replacement` (req), `count=0`?, `ignore_case`?, `multiline`?, `dotall`? | Pattern-based find/replace; backrefs (\1); max 10000 matches; 5s timeout; sandbox. **Read file first.** |
+| `copy_file` | `source` (req), `destination` (req), `overwrite=false`? | Copy file preserving metadata; creates parent dirs; sandbox |
+| `mkdir` | `path` (req) | Create directory and parents (`mkdir -p`); sandbox |
+| `rename` | `source` (req), `destination` (req), `overwrite=false`? | Rename/move file or directory; creates parent dirs; sandbox |
 
 ### Git Operations (Permission-Filtered)
 

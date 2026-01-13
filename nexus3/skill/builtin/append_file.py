@@ -36,7 +36,10 @@ class AppendFileSkill:
 
     @property
     def description(self) -> str:
-        return "Append content to a file"
+        return (
+            "Append content to a file. "
+            "IMPORTANT: Read the file first to understand its current content and structure."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

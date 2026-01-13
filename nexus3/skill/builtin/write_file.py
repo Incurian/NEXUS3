@@ -37,7 +37,10 @@ class WriteFileSkill:
 
     @property
     def description(self) -> str:
-        return "Write content to a file (creates or overwrites)"
+        return (
+            "Write content to a file (creates or overwrites). "
+            "IMPORTANT: If modifying an existing file, read it first to understand its current state."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
