@@ -3,6 +3,9 @@
 Manages connections to multiple MCP servers, providing persistent clients
 and skill adapters for use in NEXUS3 agents.
 
+Connections can be private (visible only to the creating agent) or shared
+(visible to all agents). Permissions/allowances are always per-agent.
+
 Usage:
     registry = MCPServerRegistry()
 
@@ -10,10 +13,10 @@ Usage:
         name="test",
         command=["python", "-m", "nexus3.mcp.test_server"]
     )
-    server = await registry.connect(config, allow_all=True)
+    server = await registry.connect(config, owner_agent_id="main", shared=False)
 
-    # Get all MCP skills
-    skills = registry.get_all_skills()
+    # Get skills visible to an agent
+    skills = registry.get_skills_for_agent("main")
 
     # Clean up
     await registry.close_all()
@@ -23,7 +26,7 @@ from dataclasses import dataclass, field
 
 from nexus3.mcp.client import MCPClient
 from nexus3.mcp.skill_adapter import MCPSkillAdapter
-from nexus3.mcp.transport import HTTPTransport, StdioTransport
+from nexus3.mcp.transport import HTTPTransport, MCPTransportError, StdioTransport
 
 
 @dataclass
@@ -53,20 +56,46 @@ class ConnectedServer:
         config: Server configuration.
         client: Active MCP client.
         skills: Skill adapters for this server's tools.
-        allowed_all: Whether user chose to allow all tools without prompts.
+        owner_agent_id: ID of the agent that created this connection.
+        shared: If True, connection is visible to all agents.
+            If False, only visible to owner_agent_id.
     """
 
     config: MCPServerConfig
     client: MCPClient
     skills: list[MCPSkillAdapter] = field(default_factory=list)
-    allowed_all: bool = False
+    owner_agent_id: str = "main"
+    shared: bool = False
+
+    def is_visible_to(self, agent_id: str) -> bool:
+        """Check if this connection is visible to a given agent.
+
+        Args:
+            agent_id: Agent to check visibility for.
+
+        Returns:
+            True if shared or if agent_id matches owner.
+        """
+        return self.shared or self.owner_agent_id == agent_id
+
+    def is_alive(self) -> bool:
+        """Check if the connection is still alive.
+
+        For stdio: checks if subprocess is still running.
+        For HTTP: returns True (actual check happens on next request).
+
+        Returns:
+            True if connection appears alive.
+        """
+        transport = self.client._transport
+        return transport.is_connected
 
 
 class MCPServerRegistry:
     """Registry for managing multiple MCP server connections.
 
     Tracks connected servers, provides access to their skills, and
-    handles cleanup on shutdown.
+    handles cleanup on shutdown. Supports per-agent and shared connections.
     """
 
     def __init__(self) -> None:
@@ -76,7 +105,8 @@ class MCPServerRegistry:
     async def connect(
         self,
         config: MCPServerConfig,
-        allow_all: bool = False,
+        owner_agent_id: str = "main",
+        shared: bool = False,
     ) -> ConnectedServer:
         """Connect to an MCP server and create skill adapters.
 
@@ -85,8 +115,8 @@ class MCPServerRegistry:
 
         Args:
             config: Server configuration.
-            allow_all: If True, allow all tools from this server without
-                individual confirmation prompts.
+            owner_agent_id: ID of the agent creating this connection.
+            shared: If True, connection is visible to all agents.
 
         Returns:
             ConnectedServer instance with active client and skills.
@@ -119,7 +149,8 @@ class MCPServerRegistry:
             config=config,
             client=client,
             skills=skills,
-            allowed_all=allow_all,
+            owner_agent_id=owner_agent_id,
+            shared=shared,
         )
         self._servers[config.name] = connected
         return connected
@@ -139,53 +170,84 @@ class MCPServerRegistry:
             return True
         return False
 
-    def get(self, name: str) -> ConnectedServer | None:
+    def get(self, name: str, agent_id: str | None = None) -> ConnectedServer | None:
         """Get a connected server by name.
 
         Args:
             name: Server name.
+            agent_id: If provided, only return if visible to this agent.
 
         Returns:
-            ConnectedServer if found, None otherwise.
+            ConnectedServer if found (and visible), None otherwise.
         """
-        return self._servers.get(name)
+        server = self._servers.get(name)
+        if server is None:
+            return None
+        if agent_id is not None and not server.is_visible_to(agent_id):
+            return None
+        return server
 
-    def list_servers(self) -> list[str]:
-        """List names of all connected servers.
+    def list_servers(self, agent_id: str | None = None) -> list[str]:
+        """List names of connected servers.
+
+        Args:
+            agent_id: If provided, only return servers visible to this agent.
 
         Returns:
             List of server names.
         """
-        return list(self._servers.keys())
+        if agent_id is None:
+            return list(self._servers.keys())
+        return [
+            name for name, server in self._servers.items()
+            if server.is_visible_to(agent_id)
+        ]
 
-    def get_all_skills(self) -> list[MCPSkillAdapter]:
-        """Get all skill adapters from all connected servers.
+    def get_all_skills(self, agent_id: str | None = None) -> list[MCPSkillAdapter]:
+        """Get all skill adapters from connected servers.
+
+        Args:
+            agent_id: If provided, only return skills from visible servers.
 
         Returns:
-            Combined list of skills from all servers.
+            Combined list of skills from (visible) servers.
         """
         skills: list[MCPSkillAdapter] = []
         for server in self._servers.values():
-            skills.extend(server.skills)
+            if agent_id is None or server.is_visible_to(agent_id):
+                skills.extend(server.skills)
         return skills
 
-    def is_tool_allowed(self, skill_name: str) -> bool:
-        """Check if a skill is from an 'allow_all' server.
-
-        Used to determine if a tool call needs individual confirmation.
+    def get_server_for_skill(self, skill_name: str) -> ConnectedServer | None:
+        """Find which server provides a given skill.
 
         Args:
             skill_name: Prefixed skill name (e.g., 'mcp_test_echo').
 
         Returns:
-            True if the skill's server has allowed_all=True.
+            ConnectedServer if found, None otherwise.
         """
         for server in self._servers.values():
-            if server.allowed_all:
-                prefix = f"mcp_{server.config.name}_"
-                if skill_name.startswith(prefix):
-                    return True
-        return False
+            prefix = f"mcp_{server.config.name}_"
+            if skill_name.startswith(prefix):
+                return server
+        return None
+
+    async def check_connections(self) -> list[str]:
+        """Check all connections and remove dead ones.
+
+        For stdio servers, this checks if the subprocess has exited.
+        For HTTP servers, this only detects if client was closed.
+
+        Returns:
+            List of server names that were removed due to dead connections.
+        """
+        dead: list[str] = []
+        for name, server in list(self._servers.items()):
+            if not server.is_alive():
+                await self.disconnect(name)
+                dead.append(name)
+        return dead
 
     async def close_all(self) -> None:
         """Disconnect all servers.

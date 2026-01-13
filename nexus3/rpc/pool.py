@@ -409,9 +409,10 @@ class AgentPool:
             tool_defs = registry.get_definitions_for_permissions(permissions)
 
             # Add MCP tools if agent has MCP permission (TRUSTED/YOLO only)
+            # Only include tools from MCP servers visible to this agent
             from nexus3.mcp.permissions import can_use_mcp
             if can_use_mcp(permissions):
-                for mcp_skill in self._shared.mcp_registry.get_all_skills():
+                for mcp_skill in self._shared.mcp_registry.get_all_skills(agent_id=effective_id):
                     # Check if MCP tool is disabled in permissions
                     tool_perm = permissions.tool_permissions.get(mcp_skill.name)
                     if tool_perm is not None and not tool_perm.enabled:
@@ -628,9 +629,10 @@ class AgentPool:
             tool_defs = registry.get_definitions_for_permissions(permissions)
 
             # Add MCP tools if agent has MCP permission (TRUSTED/YOLO only)
+            # Only include tools from MCP servers visible to this agent
             from nexus3.mcp.permissions import can_use_mcp
             if can_use_mcp(permissions):
-                for mcp_skill in self._shared.mcp_registry.get_all_skills():
+                for mcp_skill in self._shared.mcp_registry.get_all_skills(agent_id=agent_id):
                     # Check if MCP tool is disabled in permissions
                     tool_perm = permissions.tool_permissions.get(mcp_skill.name)
                     if tool_perm is not None and not tool_perm.enabled:

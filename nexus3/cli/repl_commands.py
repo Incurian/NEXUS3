@@ -48,6 +48,7 @@ def _refresh_agent_tools(
 
     Rebuilds the tool definitions list to include/exclude MCP tools
     based on current MCP registry state and agent permissions.
+    Only includes MCP tools from servers visible to this agent.
     """
     from nexus3.mcp.permissions import can_use_mcp
 
@@ -58,9 +59,9 @@ def _refresh_agent_tools(
     # Get base tools from skill registry
     tool_defs = agent.registry.get_definitions_for_permissions(permissions)
 
-    # Add MCP tools if agent has permission
+    # Add MCP tools if agent has permission (only from visible servers)
     if can_use_mcp(permissions):
-        for mcp_skill in mcp_registry.get_all_skills():
+        for mcp_skill in mcp_registry.get_all_skills(agent_id=agent.agent_id):
             # Check if MCP tool is disabled in permissions
             tool_perm = permissions.tool_permissions.get(mcp_skill.name)
             if tool_perm is not None and not tool_perm.enabled:
@@ -901,6 +902,78 @@ async def _mcp_connection_consent(
         return (False, False)  # Don't proceed
 
 
+async def _mcp_sharing_prompt(
+    server_name: str,
+    is_yolo: bool = False,
+) -> bool:
+    """Prompt user for MCP connection sharing preference.
+
+    Args:
+        server_name: Name of the MCP server.
+        is_yolo: If True, skip prompt and default to private.
+
+    Returns:
+        True if connection should be shared with all agents, False for private.
+    """
+    import asyncio
+    from rich.console import Console
+
+    # YOLO mode defaults to private (no sharing)
+    if is_yolo:
+        return False
+
+    console = Console()
+
+    console.print(f"\n[yellow]Share this connection with other agents?[/]")
+    console.print("  [dim](Other agents will still need to approve their own permissions)[/]")
+    console.print()
+    console.print("  [cyan][1][/] Yes - all agents can use this connection")
+    console.print("  [cyan][2][/] No - only this agent (default)")
+
+    def get_input() -> str:
+        try:
+            return console.input("\n[dim]Choice [1-2]:[/] ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return "2"
+
+    response = await asyncio.to_thread(get_input)
+
+    return response == "1"
+
+
+def _parse_mcp_flags(parts: list[str]) -> tuple[list[str], dict[str, bool]]:
+    """Parse MCP command flags.
+
+    Args:
+        parts: Command parts to parse.
+
+    Returns:
+        Tuple of (remaining_parts, flags_dict).
+        Flags: allow_all, per_tool, shared, private
+    """
+    flags = {
+        "allow_all": False,
+        "per_tool": False,
+        "shared": False,
+        "private": False,
+    }
+    remaining = []
+
+    for part in parts:
+        if part == "--allow-all":
+            flags["allow_all"] = True
+        elif part == "--per-tool":
+            flags["per_tool"] = True
+        elif part == "--shared":
+            flags["shared"] = True
+        elif part == "--private":
+            flags["private"] = True
+        else:
+            remaining.append(part)
+
+    return remaining, flags
+
+
 async def cmd_mcp(
     ctx: CommandContext,
     args: str | None = None,
@@ -909,9 +982,15 @@ async def cmd_mcp(
 
     Subcommands:
         /mcp                List configured and connected servers
-        /mcp connect <name> Connect to a configured MCP server
+        /mcp connect <name> [flags]  Connect to a configured MCP server
         /mcp disconnect <name>  Disconnect from server
         /mcp tools [server] List available MCP tools
+
+    Connect flags:
+        --allow-all   Skip consent prompt, allow all tools
+        --per-tool    Skip consent prompt, require per-tool confirmation
+        --shared      Skip sharing prompt, share with all agents
+        --private     Skip sharing prompt, keep private to this agent
 
     Args:
         ctx: Command context with pool access.
@@ -924,15 +1003,16 @@ async def cmd_mcp(
     from nexus3.mcp.registry import MCPServerConfig
     from nexus3.core.permissions import PermissionLevel
 
+    # Get current agent info
+    current_agent_id = ctx.current_agent_id or "main"
+    agent = ctx.pool.get(current_agent_id) if ctx.current_agent_id else None
+    perms = agent.services.get("permissions") if agent else None
+
     # Check agent permissions for MCP access
-    if ctx.current_agent_id is not None:
-        agent = ctx.pool.get(ctx.current_agent_id)
-        if agent is not None:
-            perms = agent.services.get("permissions")
-            if not can_use_mcp(perms):
-                return CommandOutput.error(
-                    "MCP access requires TRUSTED or YOLO permission level"
-                )
+    if perms is not None and not can_use_mcp(perms):
+        return CommandOutput.error(
+            "MCP access requires TRUSTED or YOLO permission level"
+        )
 
     # Get shared components
     shared = getattr(ctx.pool, "_shared", None)
@@ -942,11 +1022,18 @@ async def cmd_mcp(
     config = shared.config
     registry = shared.mcp_registry
 
-    # Parse subcommand
-    parts = (args or "").strip().split()
+    # Parse subcommand and flags
+    all_parts = (args or "").strip().split()
+    parts, flags = _parse_mcp_flags(all_parts)
 
     if len(parts) == 0:
-        # List servers
+        # List servers - first check for dead connections
+        dead = await registry.check_connections()
+        if dead:
+            # Refresh tools if any connections died
+            if agent:
+                _refresh_agent_tools(agent, registry, shared)
+
         lines = ["MCP Servers:"]
         lines.append("")
 
@@ -954,8 +1041,15 @@ async def cmd_mcp(
         if config.mcp_servers:
             lines.append("Configured:")
             for srv_cfg in config.mcp_servers:
-                connected = registry.get(srv_cfg.name) is not None
-                status = "[connected]" if connected else "[disconnected]"
+                # Check if connected AND visible to this agent
+                server = registry.get(srv_cfg.name, agent_id=current_agent_id)
+                if server is not None:
+                    status = "[connected]"
+                elif registry.get(srv_cfg.name) is not None:
+                    # Connected but not visible to this agent
+                    status = "[connected, not visible]"
+                else:
+                    status = "[disconnected]"
                 enabled = "" if srv_cfg.enabled else " (disabled)"
                 lines.append(f"  {srv_cfg.name} {status}{enabled}")
         else:
@@ -963,18 +1057,18 @@ async def cmd_mcp(
 
         lines.append("")
 
-        # Connected servers
-        connected_names = registry.list_servers()
-        if connected_names:
-            lines.append(f"Connected: {len(connected_names)}")
-            for name in connected_names:
-                server = registry.get(name)
+        # Connected servers visible to this agent
+        visible_servers = registry.list_servers(agent_id=current_agent_id)
+        if visible_servers:
+            lines.append(f"Connected (visible to you): {len(visible_servers)}")
+            for name in visible_servers:
+                server = registry.get(name, agent_id=current_agent_id)
                 if server:
                     tool_count = len(server.skills)
-                    allow_mode = "allow-all" if server.allowed_all else "per-tool"
-                    lines.append(f"  {name}: {tool_count} tools ({allow_mode})")
+                    sharing = "shared" if server.shared else f"owner: {server.owner_agent_id}"
+                    lines.append(f"  {name}: {tool_count} tools ({sharing})")
         else:
-            lines.append("Connected: (none)")
+            lines.append("Connected (visible to you): (none)")
 
         return CommandOutput.success(message="\n".join(lines))
 
@@ -982,7 +1076,9 @@ async def cmd_mcp(
 
     if subcmd == "connect":
         if len(parts) < 2:
-            return CommandOutput.error("Usage: /mcp connect <name>")
+            return CommandOutput.error(
+                "Usage: /mcp connect <name> [--allow-all|--per-tool] [--shared|--private]"
+            )
 
         name = parts[1]
 
@@ -1001,9 +1097,15 @@ async def cmd_mcp(
         if not srv_cfg.enabled:
             return CommandOutput.error(f"MCP server '{name}' is disabled in config")
 
-        # Already connected?
-        if registry.get(name) is not None:
-            return CommandOutput.error(f"Already connected to '{name}'")
+        # Check if already connected (by anyone)
+        existing = registry.get(name)
+        if existing is not None:
+            if existing.is_visible_to(current_agent_id):
+                return CommandOutput.error(f"Already connected to '{name}'")
+            else:
+                return CommandOutput.error(
+                    f"Server '{name}' is connected by another agent (owner: {existing.owner_agent_id})"
+                )
 
         # Convert config schema to registry config
         reg_cfg = MCPServerConfig(
@@ -1014,33 +1116,52 @@ async def cmd_mcp(
             enabled=srv_cfg.enabled,
         )
 
-        # Get agent permissions to check if YOLO (skip prompts)
-        agent = ctx.pool.get(ctx.current_agent_id) if ctx.current_agent_id else None
-        perms = agent.services.get("permissions") if agent else None
+        # Check if YOLO (skip all prompts)
         is_yolo = (
             perms is not None and
             perms.effective_policy.level == PermissionLevel.YOLO
         )
 
         try:
-            # Connect initially with allow_all=False to get tool list
-            server = await registry.connect(reg_cfg, allow_all=False)
+            # Connect initially to get tool list
+            server = await registry.connect(
+                reg_cfg,
+                owner_agent_id=current_agent_id,
+                shared=False,  # Will update after prompts
+            )
             tool_names = [s.original_name for s in server.skills]
 
-            # Prompt for consent (TRUSTED mode), skip for YOLO
-            proceed, allow_all = await _mcp_connection_consent(
-                name, tool_names, is_yolo=is_yolo
-            )
+            # Determine allow_all from flags or prompt
+            if flags["allow_all"]:
+                allow_all = True
+                proceed = True
+            elif flags["per_tool"]:
+                allow_all = False
+                proceed = True
+            else:
+                # Prompt for consent (TRUSTED mode), skip for YOLO
+                proceed, allow_all = await _mcp_connection_consent(
+                    name, tool_names, is_yolo=is_yolo
+                )
 
             if not proceed:
                 # User denied - disconnect and return
                 await registry.disconnect(name)
                 return CommandOutput.error(f"Connection to '{name}' denied by user")
 
-            # Update the server's allowed_all flag
-            server.allowed_all = allow_all
+            # Determine sharing from flags or prompt
+            if flags["shared"]:
+                share = True
+            elif flags["private"]:
+                share = False
+            else:
+                # Prompt for sharing preference
+                share = await _mcp_sharing_prompt(name, is_yolo=is_yolo)
 
-            # If allow_all, add to session allowances for persistence
+            # Update server with final settings
+            server.shared = share
+
+            # If allow_all, add to session allowances
             if allow_all and perms is not None:
                 perms.session_allowances.add_mcp_server(name)
 
@@ -1048,14 +1169,16 @@ async def cmd_mcp(
             if agent:
                 _refresh_agent_tools(agent, registry, shared)
 
-            mode = "allow-all" if allow_all else "per-tool"
+            sharing_str = "shared" if share else "private"
+            mode_str = "allow-all" if allow_all else "per-tool"
             return CommandOutput.success(
-                message=f"Connected to '{name}' ({mode})\n"
+                message=f"Connected to '{name}' ({mode_str}, {sharing_str})\n"
                         f"Tools available: {', '.join(tool_names)}",
                 data={
                     "server": name,
                     "tools": tool_names,
                     "allow_all": allow_all,
+                    "shared": share,
                 },
             )
         except Exception as e:
@@ -1067,16 +1190,33 @@ async def cmd_mcp(
 
         name = parts[1]
 
-        if registry.get(name) is None:
+        # Check if connected and visible/owned by this agent
+        server = registry.get(name)
+        if server is None:
             return CommandOutput.error(f"Not connected to '{name}'")
+
+        # Only owner can disconnect (shared connections still have an owner)
+        if server.owner_agent_id != current_agent_id:
+            return CommandOutput.error(
+                f"Cannot disconnect '{name}' - owned by agent '{server.owner_agent_id}'"
+            )
 
         await registry.disconnect(name)
 
+        # Reset MCP allowances for this server (for current agent)
+        if perms:
+            # Remove server from allowed servers
+            perms.session_allowances.mcp_servers.discard(name)
+            # Remove tools from this server (prefix is mcp_{name}_)
+            prefix = f"mcp_{name}_"
+            perms.session_allowances.mcp_tools = {
+                t for t in perms.session_allowances.mcp_tools
+                if not t.startswith(prefix)
+            }
+
         # Refresh tool definitions to remove disconnected MCP tools
-        if ctx.current_agent_id:
-            agent = ctx.pool.get(ctx.current_agent_id)
-            if agent:
-                _refresh_agent_tools(agent, registry, shared)
+        if agent:
+            _refresh_agent_tools(agent, registry, shared)
 
         return CommandOutput.success(message=f"Disconnected from '{name}'")
 
@@ -1084,15 +1224,22 @@ async def cmd_mcp(
         server_name = parts[1] if len(parts) > 1 else None
 
         if server_name:
-            server = registry.get(server_name)
+            # Check visibility
+            server = registry.get(server_name, agent_id=current_agent_id)
             if server is None:
+                # Check if it exists but isn't visible
+                if registry.get(server_name) is not None:
+                    return CommandOutput.error(
+                        f"Server '{server_name}' is not visible to this agent"
+                    )
                 return CommandOutput.error(f"Not connected to '{server_name}'")
             skills = server.skills
         else:
-            skills = registry.get_all_skills()
+            # Get all skills visible to this agent
+            skills = registry.get_all_skills(agent_id=current_agent_id)
 
         if not skills:
-            return CommandOutput.success(message="No MCP tools available")
+            return CommandOutput.success(message="No MCP tools available (for this agent)")
 
         lines = ["MCP Tools:"]
         for skill in skills:

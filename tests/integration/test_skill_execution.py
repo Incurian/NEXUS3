@@ -312,6 +312,11 @@ class TestSessionWithEchoTool:
         context = ContextManager(config=ContextConfig())
         registry = SkillRegistry()
         registry.register("echo", lambda _: EchoSkill())
+
+        # Set tool definitions on context (normally done by AgentPool)
+        tool_defs = registry.get_definitions()
+        context.set_tool_definitions(tool_defs)
+
         session = Session(provider, context=context, registry=registry)
 
         _ = [chunk async for chunk in session.send("Hi")]

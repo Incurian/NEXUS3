@@ -164,22 +164,50 @@ class TestMCPServerRegistry:
         await registry.close_all()
 
     @pytest.mark.asyncio
-    async def test_is_tool_allowed(self) -> None:
-        """Test tool allowance checking."""
+    async def test_agent_visibility(self) -> None:
+        """Test connection visibility per agent."""
         registry = MCPServerRegistry()
 
         config = MCPServerConfig(
-            name="allowed",
+            name="private",
             command=["python3", "-m", "nexus3.mcp.test_server"],
         )
 
-        # Connect with allow_all=True
-        await registry.connect(config, allow_all=True)
+        # Connect as agent "main" with private visibility
+        await registry.connect(config, owner_agent_id="main", shared=False)
 
-        assert registry.is_tool_allowed("mcp_allowed_echo") is True
-        assert registry.is_tool_allowed("mcp_allowed_add") is True
-        assert registry.is_tool_allowed("mcp_other_echo") is False
-        assert registry.is_tool_allowed("read_file") is False
+        # Owner can see it
+        assert registry.get("private", agent_id="main") is not None
+        assert len(registry.list_servers(agent_id="main")) == 1
+        assert len(registry.get_all_skills(agent_id="main")) == 3
+
+        # Other agent cannot see it
+        assert registry.get("private", agent_id="worker") is None
+        assert len(registry.list_servers(agent_id="worker")) == 0
+        assert len(registry.get_all_skills(agent_id="worker")) == 0
+
+        await registry.close_all()
+
+    @pytest.mark.asyncio
+    async def test_shared_visibility(self) -> None:
+        """Test shared connection visibility."""
+        registry = MCPServerRegistry()
+
+        config = MCPServerConfig(
+            name="shared",
+            command=["python3", "-m", "nexus3.mcp.test_server"],
+        )
+
+        # Connect as agent "main" with shared visibility
+        await registry.connect(config, owner_agent_id="main", shared=True)
+
+        # Owner can see it
+        assert registry.get("shared", agent_id="main") is not None
+
+        # Other agent can also see it (shared)
+        assert registry.get("shared", agent_id="worker") is not None
+        assert len(registry.list_servers(agent_id="worker")) == 1
+        assert len(registry.get_all_skills(agent_id="worker")) == 3
 
         await registry.close_all()
 

@@ -44,9 +44,9 @@ class TestSharedComponents:
         assert hasattr(SharedComponents, "__dataclass_fields__")
 
     def test_shared_components_has_expected_fields(self):
-        """SharedComponents has config, provider, prompt_loader, base_log_dir, log_streams, custom_presets fields."""
+        """SharedComponents has expected fields including mcp_registry."""
         field_names = {f.name for f in fields(SharedComponents)}
-        expected = {"config", "provider", "prompt_loader", "base_log_dir", "log_streams", "custom_presets"}
+        expected = {"config", "provider", "prompt_loader", "base_log_dir", "log_streams", "custom_presets", "mcp_registry"}
         assert field_names == expected
 
     def test_shared_components_is_frozen(self):

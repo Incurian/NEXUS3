@@ -29,6 +29,10 @@
     {
       "name": "test",
       "command": ["python3", "-m", "nexus3.mcp.test_server"]
+    },
+    {
+      "name": "http-test",
+      "url": "http://127.0.0.1:9000"
     }
   ]
 }
