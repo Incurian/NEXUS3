@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. The goal is a simpler, more maintainable, end-to-end tested agent with clear architecture.
 
-**Status:** Phase 9 complete. Context management with layered loading, subagent inheritance, and init commands.
+**Status:** Phase 10 complete. Multi-provider support with factory pattern.
 
 ---
 
@@ -55,6 +55,7 @@ nexus-rpc destroy researcher
 | **8 - Permissions** | Permission presets (yolo/trusted/sandboxed/worker), per-tool config, deltas, ceiling inheritance, confirmation prompts |
 | **8+ - Compaction** | LLM-based context compaction, system prompt reloading, `/compact` command, configurable thresholds |
 | **9 - Context Mgmt** | Layered context loading (global→ancestors→local), subagent inheritance, deep config merge, `/init` command, `--init-global` |
+| **10 - Providers** | Multi-provider factory (openrouter/openai/azure/anthropic/ollama/vllm), configurable auth, provider README with extension guide |
 
 ---
 
@@ -285,6 +286,44 @@ nexus-rpc cancel AGENT ID    # Cancel in-progress request
 ./NEXUS.md           # Project system prompt (overrides personal)
 .nexus3/logs/        # Session logs (gitignored)
 ```
+
+### Provider Configuration
+
+NEXUS3 supports multiple LLM providers via the `provider` config:
+
+| Type | Description |
+|------|-------------|
+| `openrouter` | OpenRouter.ai (default) |
+| `openai` | Direct OpenAI API |
+| `azure` | Azure OpenAI Service |
+| `anthropic` | Anthropic Claude API |
+| `ollama` | Local Ollama server |
+| `vllm` | vLLM OpenAI-compatible server |
+
+```json
+// OpenRouter (default)
+{"provider": {"type": "openrouter", "model": "anthropic/claude-sonnet-4"}}
+
+// OpenAI
+{"provider": {"type": "openai", "api_key_env": "OPENAI_API_KEY", "model": "gpt-4o"}}
+
+// Azure OpenAI
+{"provider": {
+  "type": "azure",
+  "base_url": "https://my-resource.openai.azure.com",
+  "api_key_env": "AZURE_OPENAI_KEY",
+  "deployment": "gpt-4",
+  "api_version": "2024-02-01"
+}}
+
+// Anthropic (native API)
+{"provider": {"type": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "model": "claude-sonnet-4-20250514"}}
+
+// Ollama (local)
+{"provider": {"type": "ollama", "base_url": "http://localhost:11434/v1", "model": "llama3.2"}}
+```
+
+See `nexus3/provider/README.md` for full documentation and adding new providers.
 
 ### Compaction Config Example
 
