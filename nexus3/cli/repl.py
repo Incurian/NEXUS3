@@ -152,6 +152,7 @@ async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> 
     # Determine tool type for appropriate prompting
     is_exec_tool = tool_name in ("bash", "run_python")
     is_nexus_tool = tool_name.startswith("nexus_")
+    is_mcp_tool = tool_name.startswith("mcp_")
 
     # Pause the Live display during confirmation to prevent visual conflicts
     live = _current_live.get()
@@ -165,7 +166,17 @@ async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> 
 
     try:
         # Build description based on tool type
-        if is_exec_tool:
+        if is_mcp_tool:
+            # Extract server name from mcp_{server}_{tool} format
+            parts = tool_name.split("_", 2)
+            server_name = parts[1] if len(parts) > 1 else "unknown"
+            args_preview = str(tool_call.arguments)[:60]
+            if len(str(tool_call.arguments)) > 60:
+                args_preview += "..."
+            console.print(f"\n[yellow]Allow MCP tool '{tool_name}'?[/]")
+            console.print(f"  [dim]Server:[/] {server_name}")
+            console.print(f"  [dim]Arguments:[/] {args_preview}")
+        elif is_exec_tool:
             cwd = tool_call.arguments.get("cwd", str(Path.cwd()))
             command = tool_call.arguments.get("command", tool_call.arguments.get("code", ""))
             preview = command[:50] + "..." if len(command) > 50 else command
@@ -184,7 +195,11 @@ async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> 
 
         # Show options based on tool type
         console.print()
-        if is_exec_tool:
+        if is_mcp_tool:
+            console.print("  [cyan][1][/] Allow once")
+            console.print("  [cyan][2][/] Allow always (all tools from this server)")
+            console.print("  [cyan][3][/] Deny")
+        elif is_exec_tool:
             console.print("  [cyan][1][/] Allow once")
             console.print("  [cyan][2][/] Allow always in this directory")
             console.print("  [cyan][3][/] Allow always (global)")
@@ -196,9 +211,10 @@ async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> 
             console.print("  [cyan][4][/] Deny")
 
         # Use asyncio.to_thread for blocking input to allow event loop to continue
+        max_choice = "3" if is_mcp_tool else "4"
         def get_input() -> str:
             try:
-                return console.input("\n[dim]Choice [1-4]:[/] ").strip()
+                return console.input(f"\n[dim]Choice [1-{max_choice}]:[/] ").strip()
             except (EOFError, KeyboardInterrupt):
                 return ""
 
@@ -207,12 +223,17 @@ async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> 
         if response == "1":
             return ConfirmationResult.ALLOW_ONCE
         elif response == "2":
-            if is_exec_tool:
+            if is_mcp_tool:
+                # "Allow always" for MCP means allow all tools from this server
+                return ConfirmationResult.ALLOW_EXEC_GLOBAL
+            elif is_exec_tool:
                 return ConfirmationResult.ALLOW_EXEC_CWD
             else:
                 return ConfirmationResult.ALLOW_FILE
         elif response == "3":
-            if is_exec_tool:
+            if is_mcp_tool:
+                return ConfirmationResult.DENY
+            elif is_exec_tool:
                 return ConfirmationResult.ALLOW_EXEC_GLOBAL
             else:
                 return ConfirmationResult.ALLOW_WRITE_DIRECTORY

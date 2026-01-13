@@ -853,6 +853,54 @@ async def cmd_model(
     )
 
 
+async def _mcp_connection_consent(
+    server_name: str,
+    tool_names: list[str],
+    is_yolo: bool = False,
+) -> tuple[bool, bool]:
+    """Prompt user for MCP connection consent.
+
+    Args:
+        server_name: Name of the MCP server.
+        tool_names: List of tool names the server provides.
+        is_yolo: If True, skip prompt and allow all.
+
+    Returns:
+        Tuple of (proceed: bool, allow_all: bool).
+        If proceed is False, the connection should be cancelled.
+    """
+    import asyncio
+    from rich.console import Console
+
+    # YOLO mode skips prompts
+    if is_yolo:
+        return (True, True)
+
+    console = Console()
+
+    console.print(f"\n[yellow]Connect to MCP server '{server_name}'?[/]")
+    console.print(f"  [dim]Tools:[/] {', '.join(tool_names)}")
+    console.print()
+    console.print("  [cyan][1][/] Allow all tools (this session)")
+    console.print("  [cyan][2][/] Require confirmation for each tool")
+    console.print("  [cyan][3][/] Deny connection")
+
+    def get_input() -> str:
+        try:
+            return console.input("\n[dim]Choice [1-3]:[/] ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return "3"
+
+    response = await asyncio.to_thread(get_input)
+
+    if response == "1":
+        return (True, True)  # Proceed, allow all
+    elif response == "2":
+        return (True, False)  # Proceed, per-tool confirmation
+    else:
+        return (False, False)  # Don't proceed
+
+
 async def cmd_mcp(
     ctx: CommandContext,
     args: str | None = None,
@@ -874,6 +922,7 @@ async def cmd_mcp(
     """
     from nexus3.mcp.permissions import can_use_mcp
     from nexus3.mcp.registry import MCPServerConfig
+    from nexus3.core.permissions import PermissionLevel
 
     # Check agent permissions for MCP access
     if ctx.current_agent_id is not None:
@@ -965,24 +1014,48 @@ async def cmd_mcp(
             enabled=srv_cfg.enabled,
         )
 
+        # Get agent permissions to check if YOLO (skip prompts)
+        agent = ctx.pool.get(ctx.current_agent_id) if ctx.current_agent_id else None
+        perms = agent.services.get("permissions") if agent else None
+        is_yolo = (
+            perms is not None and
+            perms.effective_policy.level == PermissionLevel.YOLO
+        )
+
         try:
-            # TODO: Prompt for allow_all choice in TRUSTED mode
-            # For now, default to per-tool confirmation
+            # Connect initially with allow_all=False to get tool list
             server = await registry.connect(reg_cfg, allow_all=False)
             tool_names = [s.original_name for s in server.skills]
 
-            # Refresh tool definitions for current agent to include new MCP tools
-            if ctx.current_agent_id:
-                agent = ctx.pool.get(ctx.current_agent_id)
-                if agent:
-                    _refresh_agent_tools(agent, registry, shared)
+            # Prompt for consent (TRUSTED mode), skip for YOLO
+            proceed, allow_all = await _mcp_connection_consent(
+                name, tool_names, is_yolo=is_yolo
+            )
 
+            if not proceed:
+                # User denied - disconnect and return
+                await registry.disconnect(name)
+                return CommandOutput.error(f"Connection to '{name}' denied by user")
+
+            # Update the server's allowed_all flag
+            server.allowed_all = allow_all
+
+            # If allow_all, add to session allowances for persistence
+            if allow_all and perms is not None:
+                perms.session_allowances.add_mcp_server(name)
+
+            # Refresh tool definitions for current agent
+            if agent:
+                _refresh_agent_tools(agent, registry, shared)
+
+            mode = "allow-all" if allow_all else "per-tool"
             return CommandOutput.success(
-                message=f"Connected to '{name}'\n"
+                message=f"Connected to '{name}' ({mode})\n"
                         f"Tools available: {', '.join(tool_names)}",
                 data={
                     "server": name,
                     "tools": tool_names,
+                    "allow_all": allow_all,
                 },
             )
         except Exception as e:

@@ -115,6 +115,7 @@ class SessionAllowances:
     Categories:
     - Write allowances: Per-file or per-directory for write operations
     - Execution allowances: Per-directory or global for execution tools (bash, run_python)
+    - MCP allowances: Servers where all tools are allowed without per-tool confirmation
 
     Note: Read operations are unrestricted in TRUSTED mode.
     """
@@ -128,6 +129,9 @@ class SessionAllowances:
     # Execution tools allowed in specific directories only
     # Maps tool_name -> set of allowed directories
     exec_directories: dict[str, set[Path]] = field(default_factory=dict)
+
+    # MCP servers where all tools are allowed (user chose "allow all" at connection)
+    mcp_servers: set[str] = field(default_factory=set)
 
     def is_write_allowed(self, path: Path) -> bool:
         """Check if path is covered by an existing write allowance."""
@@ -208,6 +212,14 @@ class SessionAllowances:
 
         self.exec_directories[tool_name].add(directory.resolve())
 
+    def is_mcp_server_allowed(self, server_name: str) -> bool:
+        """Check if MCP server tools are allowed without per-tool confirmation."""
+        return server_name in self.mcp_servers
+
+    def add_mcp_server(self, server_name: str) -> None:
+        """Allow all tools from an MCP server for this session."""
+        self.mcp_servers.add(server_name)
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize for persistence."""
         return {
@@ -218,6 +230,7 @@ class SessionAllowances:
                 tool: [str(p) for p in dirs]
                 for tool, dirs in self.exec_directories.items()
             },
+            "mcp_servers": list(self.mcp_servers),
         }
 
     @classmethod
@@ -231,6 +244,7 @@ class SessionAllowances:
                 tool: {Path(p) for p in dirs}
                 for tool, dirs in data.get("exec_directories", {}).items()
             },
+            mcp_servers=set(data.get("mcp_servers", [])),
         )
 
     # Backwards compatibility

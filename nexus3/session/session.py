@@ -563,9 +563,11 @@ class Session:
         skill = self.registry.get(tool_call.name) if self.registry else None
 
         # MCP fallback: Check MCP registry for tools starting with mcp_
+        mcp_server_name: str | None = None
         if not skill and tool_call.name.startswith("mcp_") and self._services:
             from nexus3.mcp.permissions import can_use_mcp
             from nexus3.mcp.registry import MCPServerRegistry
+            from nexus3.mcp.skill_adapter import MCPSkillAdapter
 
             mcp_registry: MCPServerRegistry | None = self._services.get("mcp_registry")
             if mcp_registry:
@@ -573,14 +575,34 @@ class Session:
                 if permissions and not can_use_mcp(permissions):
                     return ToolResult(error="MCP tools require TRUSTED or YOLO permission level")
 
-                # Find the MCP skill adapter
+                # Find the MCP skill adapter and its server
                 for server in mcp_registry._servers.values():
                     for mcp_skill in server.skills:
                         if mcp_skill.name == tool_call.name:
                             skill = mcp_skill
+                            mcp_server_name = server.config.name
                             break
                     if skill:
                         break
+
+                # MCP per-tool confirmation for TRUSTED mode
+                if skill and mcp_server_name and permissions:
+                    from nexus3.core.permissions import PermissionLevel, ConfirmationResult
+
+                    level = permissions.effective_policy.level
+
+                    # YOLO skips confirmation
+                    if level != PermissionLevel.YOLO:
+                        # Check if server is in allow-all mode (session allowances)
+                        if not permissions.session_allowances.is_mcp_server_allowed(mcp_server_name):
+                            # Need per-tool confirmation
+                            result = await self._request_confirmation(tool_call, None)
+                            if result == ConfirmationResult.DENY:
+                                return ToolResult(error=f"MCP tool '{tool_call.name}' denied by user")
+                            elif result == ConfirmationResult.ALLOW_EXEC_GLOBAL:
+                                # User chose "allow always" - add server to allowances
+                                permissions.session_allowances.add_mcp_server(mcp_server_name)
+                            # ALLOW_ONCE proceeds without adding to allowances
 
         if not skill:
             return ToolResult(error=f"Unknown skill: {tool_call.name}")
