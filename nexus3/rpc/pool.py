@@ -266,6 +266,17 @@ class AgentPool:
         """Get the log multiplexer for setting agent context in dispatchers."""
         return self._log_multiplexer
 
+    @property
+    def system_prompt_path(self) -> str | None:
+        """Get the system prompt path from the prompt loader.
+
+        Returns the project path if available, otherwise the personal path.
+        Returns None if neither is set.
+        """
+        loader = self._shared.prompt_loader
+        path = loader.project_path or loader.personal_path
+        return str(path) if path else None
+
     async def create(
         self,
         agent_id: str | None = None,

@@ -152,15 +152,21 @@ nexus-rpc shutdown
 |-------|------------|-------------|
 | `read_file` | `path` | Read file contents |
 | `write_file` | `path`, `content` | Write/create files |
+| `edit_file` | `path`, `old_string`, `new_string` | Edit files with string replacement |
+| `list_directory` | `path` | List directory contents |
+| `glob` | `pattern`, `path`? | Find files matching glob pattern |
+| `grep` | `pattern`, `path`?, `include`? | Search file contents |
+| `bash` | `command`, `timeout`? | Execute shell commands |
+| `run_python` | `code`, `timeout`? | Execute Python code |
 | `sleep` | `seconds`, `label`? | Pause execution (for testing) |
-| `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `port`? | Create a new agent with permissions |
+| `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `model`? | Create a new agent with permissions |
 | `nexus_destroy` | `agent_id`, `port`? | Remove an agent (server keeps running) |
 | `nexus_send` | `agent_id`, `content`, `port`? | Send message to an agent |
 | `nexus_status` | `agent_id`, `port`? | Get agent tokens + context |
 | `nexus_cancel` | `agent_id`, `request_id`, `port`? | Cancel in-progress request |
 | `nexus_shutdown` | `port`? | Shutdown the entire server |
 
-*Note: `port` defaults to 8765. `preset` can be yolo/trusted/sandboxed/worker. Skills mirror `nexus-rpc` CLI commands.*
+*Note: `port` defaults to 8765. `preset` can be trusted/sandboxed/worker (yolo is REPL-only). Skills mirror `nexus-rpc` CLI commands.*
 
 ---
 
@@ -339,11 +345,11 @@ Full review in `/code-review/SUMMARY.md`. 21 files analyzed.
 | 3 | SSRF in nexus_send | ✅ FIXED | `validate_url()` in all 6 nexus skills |
 | 4 | Tool call/result pair truncation | ✅ FIXED | Groups preserved as atomic units |
 | 5 | Blocking file I/O in async skills | ✅ FIXED | `asyncio.to_thread()` in file skills |
-| 6 | No provider tests | ⚠️ PARTIAL | Provider has retry logic, tests incomplete |
+| 6 | No provider tests | ✅ FIXED | 26 tests for init, retry, conversion, headers |
 | 7 | Raw log callback race | ✅ FIXED | `rpc/log_multiplexer.py` with contextvars |
 | 8 | Requests not cancelled on destroy | ✅ FIXED | `cancel_all_requests()` in Dispatcher |
 | 9 | Messages never GC'd | ✅ FIXED | `_messages` syncs with context after truncation |
-| 10 | Missing encoding in file ops | ⚠️ PARTIAL | Skills have it, session logs need check |
+| 10 | Missing encoding in file ops | ✅ FIXED | All file ops use `encoding="utf-8"` |
 
 ---
 
@@ -359,14 +365,14 @@ Full review in `/code-review/SUMMARY.md`. 21 files analyzed.
 | SSRF Protection | ✅ Done | All 6 nexus skills use `validate_url()` |
 | JSON Injection | ✅ Done | All errors use `json.dumps()` |
 
-### Phase 5R.2: Data Integrity - MOSTLY COMPLETE
+### Phase 5R.2: Data Integrity - COMPLETE
 
 | Task | Status | Description |
 |------|--------|-------------|
 | Truncation Fix | ✅ Done | Groups tool_call + results as atomic units |
 | Message GC | ✅ Done | `_messages` syncs with context after truncation |
 | Cancel on Destroy | ✅ Done | `cancel_all_requests()` in Dispatcher |
-| Encoding | ⚠️ Partial | Skills have it, session logs need audit |
+| Encoding | ✅ Done | All file ops use `encoding="utf-8"` |
 
 ### Phase 5R.3: Async/Performance - MOSTLY COMPLETE
 
@@ -377,11 +383,11 @@ Full review in `/code-review/SUMMARY.md`. 21 files analyzed.
 | Concurrency Limit | ✅ Done | Semaphore + `max_concurrent_tools` config |
 | Log Multiplexer | ✅ Done | `rpc/log_multiplexer.py` with contextvars |
 
-### Phase 5R.4: Test Coverage - PARTIAL
+### Phase 5R.4: Test Coverage - COMPLETE
 
-Provider has retry logic and tests. Context truncation tests needed. CLI/REPL tests added in Phase 6.
+Provider tests added (26 tests). Context truncation tests exist (5 tests). CLI/REPL tests added in Phase 6.
 
-### Phase 5R.5: Minor Fixes - MOSTLY COMPLETE
+### Phase 5R.5: Minor Fixes - COMPLETE
 
 | Task | Status |
 |------|--------|
@@ -389,7 +395,7 @@ Provider has retry logic and tests. Context truncation tests needed. CLI/REPL te
 | extra="forbid" Pydantic | ✅ Done |
 | Consolidate InvalidParamsError | ✅ Done |
 | Remove cli/output.py | ✅ Done |
-| verbose/raw_log params | ❌ TODO |
+| verbose/raw_log params | ✅ Done |
 | Provider retry | ✅ Done |
 | max_iterations config | ✅ Done |
 
@@ -415,9 +421,9 @@ All Phase 6 infrastructure and integration complete:
 |---------|--------|-------|
 | Permission enforcement | ✅ Done | Completed in Phase 8: `Session._execute_single_tool()` |
 | SQLite session markers | ✅ Done | `init_session_markers()` called in SessionLogger |
-| Working directory persistence | `/cwd` works | Not persisted in session save/restore |
+| Working directory persistence | ✅ Done | Persisted in session save/restore |
 | `/permissions` per-agent | ✅ Done | Full implementation in Phase 8: `--disable`, `--enable`, `--list-tools` |
-| `/save` full metadata | Partial | Missing system_prompt_path, working_directory |
+| `/save` full metadata | ✅ Done | Includes system_prompt_path, working_directory, permissions |
 
 ### Known Issue: WSL Terminal
 
@@ -613,8 +619,8 @@ async def destroy(self, agent_id: str) -> bool:
 | ~~Message GC~~ | ✅ Done - `_messages` syncs with context after truncation |
 | ~~Log multiplexer~~ | ✅ Done - `rpc/log_multiplexer.py` with contextvars |
 | ~~Permission enforcement~~ | ✅ Done in Phase 8 |
-| verbose/raw_log CLI | Wire to LogStream flags |
-| More tools | bash, web_fetch, etc. |
+| ~~verbose/raw_log CLI~~ | ✅ Done - Wired to LogStream flags |
+| ~~More tools~~ | ✅ Done - bash, edit_file, glob, grep, list_directory, run_python |
 
 ---
 

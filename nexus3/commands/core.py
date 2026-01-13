@@ -24,9 +24,11 @@ Example:
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
 
 from nexus3.commands.protocol import CommandContext, CommandOutput
+from nexus3.core.permissions import AgentPermissions
 from nexus3.rpc.pool import is_temp_agent
 from nexus3.session.persistence import serialize_session
 from nexus3.session.session_manager import SessionManagerError, SessionNotFoundError
@@ -349,17 +351,30 @@ async def cmd_save(
             "Provide a name: /save myname"
         )
 
+    # Get permission data from agent
+    permissions: AgentPermissions | None = agent.services.get("permissions")
+    if permissions:
+        perm_level = permissions.level.value
+        perm_preset = permissions.preset_name
+        disabled_tools = permissions.disabled_tools
+    else:
+        perm_level = "trusted"
+        perm_preset = None
+        disabled_tools = []
+
     # Create saved session from agent state
     saved = serialize_session(
         agent_id=save_name,
         messages=agent.context.messages,
         system_prompt=agent.context.system_prompt or "",
-        system_prompt_path=None,  # TODO: Track this in agent
-        working_directory=".",  # TODO: Track this in agent
-        permission_level="trusted",  # TODO: Track this in agent
+        system_prompt_path=ctx.pool.system_prompt_path,
+        working_directory=os.getcwd(),
+        permission_level=perm_level,
         token_usage=agent.context.get_token_usage(),
         provenance="user",
         created_at=agent.created_at,
+        permission_preset=perm_preset,
+        disabled_tools=disabled_tools,
     )
 
     try:

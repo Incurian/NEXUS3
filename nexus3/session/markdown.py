@@ -39,7 +39,7 @@ class MarkdownWriter:
         if not self.context_path.exists():
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             header = f"# Session Log\n\nStarted: {timestamp}\n\n---\n\n"
-            self.context_path.write_text(header)
+            self.context_path.write_text(header, encoding="utf-8")
             # Set secure permissions (owner read/write only)
             os.chmod(self.context_path, _SECURE_FILE_MODE)
 
@@ -48,13 +48,13 @@ class MarkdownWriter:
         if not self.verbose_path.exists():
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             header = f"# Verbose Log\n\nStarted: {timestamp}\n\n---\n\n"
-            self.verbose_path.write_text(header)
+            self.verbose_path.write_text(header, encoding="utf-8")
             # Set secure permissions (owner read/write only)
             os.chmod(self.verbose_path, _SECURE_FILE_MODE)
 
     def _append(self, path: Path, content: str) -> None:
         """Append content to a file."""
-        with path.open("a") as f:
+        with path.open("a", encoding="utf-8") as f:
             f.write(content)
 
     def _format_timestamp(self, ts: float | None = None) -> str:
@@ -249,7 +249,7 @@ class RawWriter:
     def _append_jsonl(self, entry: dict[str, Any]) -> None:
         """Append a JSON line to the file."""
         is_new = not self.raw_path.exists()
-        with self.raw_path.open("a") as f:
+        with self.raw_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
         # Set secure permissions on first write
         if is_new:

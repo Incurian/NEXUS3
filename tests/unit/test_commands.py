@@ -152,6 +152,7 @@ class MockAgent:
         self.context.messages = []
         self.context.system_prompt = "Test prompt"
         self.context.get_token_summary.return_value = {"total": 100}
+        self.context.get_token_usage.return_value = {"total": 100}
 
         # Mock session
         self.session = MagicMock()
@@ -173,12 +174,22 @@ class MockAgent:
         self.dispatcher.should_shutdown = False
         self.dispatcher.request_shutdown = MagicMock()
 
+        # Mock services (dict-like for .get())
+        self.services = MagicMock()
+        self.services.get = MagicMock(return_value=None)  # No permissions by default
+
 
 class MockAgentPool:
     """Mock AgentPool for testing commands."""
 
     def __init__(self):
         self._agents: dict[str, MockAgent] = {}
+        self._system_prompt_path: str | None = None
+
+    @property
+    def system_prompt_path(self) -> str | None:
+        """Mock system_prompt_path property."""
+        return self._system_prompt_path
 
     def __contains__(self, agent_id: str) -> bool:
         return agent_id in self._agents

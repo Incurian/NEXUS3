@@ -679,6 +679,12 @@ async def run_repl(
             disabled = []
         return level, preset, disabled
 
+    def get_system_prompt_path() -> str | None:
+        """Get the system prompt path from the prompt loader."""
+        # Prefer project path (more specific) over personal path
+        path = shared.prompt_loader.project_path or shared.prompt_loader.personal_path
+        return str(path) if path else None
+
     # Update last-session immediately after startup (so resume works after quit)
     try:
         perm_level, perm_preset, disabled_tools = get_permission_data(main_agent)
@@ -686,8 +692,8 @@ async def run_repl(
             agent_id=agent_name,
             messages=main_agent.context.messages,
             system_prompt=main_agent.context.system_prompt or "",
-            system_prompt_path=None,
-            working_directory=".",
+            system_prompt_path=get_system_prompt_path(),
+            working_directory=os.getcwd(),
             permission_level=perm_level,
             token_usage=main_agent.context.get_token_usage(),
             provenance="user",
@@ -723,8 +729,8 @@ async def run_repl(
                     agent_id=agent_id,
                     messages=agent.context.messages,
                     system_prompt=agent.context.system_prompt or "",
-                    system_prompt_path=None,
-                    working_directory=".",
+                    system_prompt_path=get_system_prompt_path(),
+                    working_directory=os.getcwd(),
                     permission_level=perm_level,
                     token_usage=agent.context.get_token_usage(),
                     provenance="user",
@@ -1296,8 +1302,8 @@ async def run_repl(
                         agent_id=current_agent_id,
                         messages=save_agent.context.messages,
                         system_prompt=save_agent.context.system_prompt or "",
-                        system_prompt_path=None,
-                        working_directory=".",
+                        system_prompt_path=get_system_prompt_path(),
+                        working_directory=os.getcwd(),
                         permission_level=perm_level,
                         token_usage=save_agent.context.get_token_usage(),
                         provenance="user",
