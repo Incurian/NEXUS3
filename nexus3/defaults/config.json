@@ -10,7 +10,7 @@
   "models": {
     "fast": {
       "id": "x-ai/grok-4.1-fast",
-      "context_window": 500000
+      "context_window": 2000000
     }
   },
   "stream_output": true,

@@ -35,7 +35,7 @@ from nexus3.core.permissions import (
 from nexus3.rpc.pool import is_temp_agent
 
 if TYPE_CHECKING:
-    from nexus3.rpc.pool import Agent, SharedComponents
+    from nexus3.rpc.pool import Agent, AgentPool, SharedComponents
     from nexus3.mcp.registry import MCPServerRegistry
 
 
@@ -77,6 +77,22 @@ def _refresh_agent_tools(
 
     # Update context with new definitions
     agent.context.set_tool_definitions(tool_defs)
+
+
+def _refresh_all_other_agents_tools(
+    current_agent_id: str,
+    pool: "AgentPool",
+    mcp_registry: "MCPServerRegistry",
+    shared: "SharedComponents",
+) -> None:
+    """Refresh tool definitions for all agents except the current one.
+
+    Called after a shared MCP connection is made/removed so other agents
+    pick up the new tools.
+    """
+    for agent in pool._agents.values():
+        if agent.agent_id != current_agent_id:
+            _refresh_agent_tools(agent, mcp_registry, shared)
 
 
 # Help text for REPL commands
@@ -1030,9 +1046,10 @@ async def cmd_mcp(
         # List servers - first check for dead connections
         dead = await registry.check_connections()
         if dead:
-            # Refresh tools if any connections died
+            # Refresh tools for all agents since we don't track which were shared
             if agent:
                 _refresh_agent_tools(agent, registry, shared)
+            _refresh_all_other_agents_tools(current_agent_id, ctx.pool, registry, shared)
 
         lines = ["MCP Servers:"]
         lines.append("")
@@ -1169,6 +1186,10 @@ async def cmd_mcp(
             if agent:
                 _refresh_agent_tools(agent, registry, shared)
 
+            # If shared, also refresh all other agents so they see the new tools
+            if share:
+                _refresh_all_other_agents_tools(current_agent_id, ctx.pool, registry, shared)
+
             sharing_str = "shared" if share else "private"
             mode_str = "allow-all" if allow_all else "per-tool"
             return CommandOutput.success(
@@ -1201,6 +1222,9 @@ async def cmd_mcp(
                 f"Cannot disconnect '{name}' - owned by agent '{server.owner_agent_id}'"
             )
 
+        # Remember if it was shared before disconnecting
+        was_shared = server.shared
+
         await registry.disconnect(name)
 
         # Reset MCP allowances for this server (for current agent)
@@ -1217,6 +1241,10 @@ async def cmd_mcp(
         # Refresh tool definitions to remove disconnected MCP tools
         if agent:
             _refresh_agent_tools(agent, registry, shared)
+
+        # If it was shared, also refresh all other agents
+        if was_shared:
+            _refresh_all_other_agents_tools(current_agent_id, ctx.pool, registry, shared)
 
         return CommandOutput.success(message=f"Disconnected from '{name}'")
 

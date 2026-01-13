@@ -309,7 +309,7 @@ def parse_args() -> argparse.Namespace:
     create_parser.add_argument("agent_id", help="ID for the new agent")
     create_parser.add_argument(
         "--preset",
-        choices=["yolo", "trusted", "sandboxed"],
+        choices=["trusted", "sandboxed", "worker"],
         default="sandboxed",
         help="Permission preset (default: sandboxed)"
     )

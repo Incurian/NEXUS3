@@ -427,17 +427,19 @@ class Session:
         """Extract the target path from a tool call's arguments.
 
         Used for path-based permission checks in TRUSTED mode.
+        Path is resolved to absolute for consistent comparison with allowed_paths.
 
         Args:
             tool_call: The tool call to extract path from.
 
         Returns:
-            Path if the tool has a path argument, None otherwise.
+            Resolved absolute Path if the tool has a path argument, None otherwise.
         """
         # Tools that have path arguments
         path_arg = tool_call.arguments.get("path")
         if path_arg:
-            return Path(path_arg)
+            # Resolve to absolute path for consistent comparison with allowed_paths
+            return Path(path_arg).resolve()
         return None
 
     def _extract_exec_cwd_from_tool_call(self, tool_call: "ToolCall") -> Path:

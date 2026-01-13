@@ -47,8 +47,8 @@ class NexusCreateSkill:
                 },
                 "preset": {
                     "type": "string",
-                    "description": "Permission preset: yolo, trusted, sandboxed, or worker",
-                    "enum": ["yolo", "trusted", "sandboxed", "worker"],
+                    "description": "Permission preset: trusted, sandboxed, or worker",
+                    "enum": ["trusted", "sandboxed", "worker"],
                 },
                 "cwd": {
                     "type": "string",
@@ -109,7 +109,7 @@ class NexusCreateSkill:
 
         Args:
             agent_id: ID for the new agent
-            preset: Permission preset (yolo, trusted, sandboxed, worker)
+            preset: Permission preset (trusted, sandboxed, worker)
             cwd: Working directory / sandbox root for the agent
             allowed_write_paths: Paths where writes are allowed (must be within cwd)
             disable_tools: List of tool names to disable

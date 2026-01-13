@@ -9,7 +9,8 @@ An AI-powered CLI agent framework with multi-agent support. NEXUS3 is a clean-sl
 - **Multi-Agent Architecture** - Create, manage, and destroy multiple isolated agent instances via API
 - **Agent-to-Agent Communication** - Built-in skills for agents to control other agents
 - **Tool/Skill System** - Extensible skill framework with dependency injection and parallel execution support
-- **Context Management** - Token tracking, automatic truncation, and layered system prompts
+- **Context Management** - Token tracking, automatic truncation, LLM-based compaction, and layered system prompts
+- **MCP Support** - Connect to external Model Context Protocol servers (stdio/HTTP) and use their tools as native skills
 - **Structured Logging** - SQLite-backed session logs with human-readable Markdown exports
 - **Cross-Platform** - UTF-8 everywhere, path normalization for Windows/Unix compatibility
 
@@ -217,17 +218,21 @@ Agents can be created with different permission levels:
 
 | Preset | Level | Description |
 |--------|-------|-------------|
-| `yolo` | YOLO | Full access, no confirmations |
+| `yolo` | YOLO | Full access, no confirmations (**REPL only**) |
 | `trusted` | TRUSTED | Confirmations for destructive actions (default) |
 | `sandboxed` | SANDBOXED | Limited to CWD, no network, nexus tools disabled |
-| `worker` | SANDBOXED | Minimal: no write_file, no agent management |
+| `worker` | SANDBOXED | Alias for sandboxed with write_file disabled |
+
+**Note:** `yolo` preset is only available via interactive REPL (`/agent --yolo`), not via RPC or programmatic API. This prevents scripts from accidentally spawning unrestricted agents.
 
 ```bash
-# Create agent with preset
+# Create agent with preset (via RPC - yolo not allowed)
 nexus-rpc create worker-1 --preset sandboxed
+nexus-rpc create worker-1 --preset sandboxed --cwd /tmp/sandbox --write-path /tmp/sandbox/output
 
-# Or via REPL
+# Via REPL (yolo allowed for interactive use)
 /agent worker-1 --sandboxed
+/agent worker-1 --yolo
 ```
 
 ### Permission Features
@@ -262,10 +267,11 @@ File operations (`read_file`, `write_file`) are sandboxed:
 ### URL Validation (SSRF Protection)
 
 All nexus skills validate URLs before making requests:
-- Only localhost connections allowed
-- Private IP ranges blocked (10.x, 172.16-31.x, 192.168.x)
-- DNS rebinding protection
-- Configurable via `allow_localhost` parameter
+- Public internet allowed, private IPs blocked (10.x, 172.16-31.x, 192.168.x, link-local)
+- Cloud metadata endpoints blocked (169.254.169.254)
+- DNS rebinding protection (all resolved IPs checked)
+- Localhost allowed by default (`allow_localhost=True`)
+- HTTP/HTTPS only, no file:// or other schemes
 
 ### Destructive Actions
 
@@ -320,8 +326,11 @@ Response:
 
 Parameters:
 - `agent_id` (optional): Unique identifier. Auto-generated if omitted.
-- `preset` (optional): Permission preset (yolo/trusted/sandboxed/worker). Default: trusted.
+- `preset` (optional): Permission preset (trusted/sandboxed/worker). Default: trusted.
+- `cwd` (optional): Working directory / sandbox root. For sandboxed, this is the only readable path.
+- `allowed_write_paths` (optional): Paths where write_file/edit_file are allowed (must be within cwd).
 - `disable_tools` (optional): List of tools to disable for this agent.
+- `model` (optional): Model name/alias to use (from config.models or full model ID).
 - `system_prompt` (optional): Override the default system prompt.
 
 #### `list_agents`
@@ -486,14 +495,30 @@ async with NexusClient("http://localhost:8765") as client:
 
 ## Built-in Skills
 
-NEXUS3 includes 9 built-in skills registered automatically:
+NEXUS3 includes 16 built-in skills registered automatically:
 
-### File Operations
+### File Operations (Read-Only)
 
 | Skill | Description | Parameters |
 |-------|-------------|------------|
 | `read_file` | Read file contents as UTF-8 text | `path` (required) |
+| `list_directory` | List directory contents | `path` (required) |
+| `glob` | Find files matching pattern | `pattern`, `path`? |
+| `grep` | Search file contents with regex | `pattern`, `path`?, `include`? |
+
+### File Operations (Destructive)
+
+| Skill | Description | Parameters |
+|-------|-------------|------------|
 | `write_file` | Write content to file (creates directories) | `path`, `content` (required) |
+| `edit_file` | Edit file with search/replace | `path`, `old_text`, `new_text` |
+
+### Execution (High-Risk)
+
+| Skill | Description | Parameters |
+|-------|-------------|------------|
+| `bash` | Execute shell command | `command`, `cwd`? |
+| `run_python` | Execute Python code | `code`, `cwd`? |
 
 Features:
 - Cross-platform path handling (Windows/Unix)
@@ -502,7 +527,7 @@ Features:
 - **Async I/O**: Non-blocking file operations
 - **UTF-8 encoding**: With error replacement for invalid bytes
 
-### Testing
+### Utility
 
 | Skill | Description | Parameters |
 |-------|-------------|------------|
@@ -937,11 +962,15 @@ Each module has its own README with detailed documentation:
 | Module | README |
 |--------|--------|
 | Core types and protocols | [nexus3/core/README.md](nexus3/core/README.md) |
+| Configuration | [nexus3/config/README.md](nexus3/config/README.md) |
 | Context management | [nexus3/context/README.md](nexus3/context/README.md) |
 | Session and logging | [nexus3/session/README.md](nexus3/session/README.md) |
 | Skill system | [nexus3/skill/README.md](nexus3/skill/README.md) |
+| Display system | [nexus3/display/README.md](nexus3/display/README.md) |
 | CLI interface | [nexus3/cli/README.md](nexus3/cli/README.md) |
 | RPC and multi-agent | [nexus3/rpc/README.md](nexus3/rpc/README.md) |
+| MCP integration | [nexus3/mcp/README.md](nexus3/mcp/README.md) |
+| Provider (LLM APIs) | [nexus3/provider/README.md](nexus3/provider/README.md) |
 
 ---
 

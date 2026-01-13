@@ -6,12 +6,12 @@ Context management for NEXUS3 conversations: system prompts, message history, to
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| `ContextManager` | Complete | Central coordinator for context |
-| `PromptLoader` with layered config | Complete | Personal + project prompt combination with system info |
-| Token counting (tiktoken default) | Complete | Accurate token counting with fallback |
-| Truncation strategies | Complete | `oldest_first` and `middle_out` with atomic message groups |
-| Compaction | Complete | LLM-based summarization to free context space |
-| Message GC | Not Implemented | Pruning messages after truncation (tracked in CLAUDE.md) |
+| `ContextManager` | ✅ Complete | Central coordinator for context |
+| `PromptLoader` with layered config | ✅ Complete | Personal + project prompt combination with system info |
+| Token counting (tiktoken default) | ✅ Complete | Accurate token counting with fallback |
+| Truncation strategies | ✅ Complete | `oldest_first` and `middle_out` with atomic message groups |
+| Compaction | ✅ Complete | LLM-based summarization to free context space |
+
 
 ## Purpose
 

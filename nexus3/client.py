@@ -237,7 +237,8 @@ class NexusClient:
 
         Args:
             agent_id: The ID for the new agent.
-            preset: Permission preset (yolo, trusted, sandboxed, worker).
+            preset: Permission preset (trusted, sandboxed, worker). Note: yolo
+                is only available via interactive REPL, not programmatic API.
             disable_tools: List of tool names to disable for the agent.
             parent_agent_id: ID of the parent agent for ceiling enforcement.
                 Server will look up parent's permissions from the pool.

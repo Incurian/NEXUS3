@@ -200,7 +200,8 @@ class GlobalDispatcher:
                 raise InvalidParamsError(
                     f"preset must be string, got: {type(preset).__name__}"
                 )
-            valid_presets = {"yolo", "trusted", "sandboxed", "worker"}
+            # yolo is NOT allowed via RPC - only through interactive REPL
+            valid_presets = {"trusted", "sandboxed", "worker"}
             if preset not in valid_presets:
                 raise InvalidParamsError(
                     f"Invalid preset: {preset}. Valid: {sorted(valid_presets)}"
