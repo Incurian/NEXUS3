@@ -1,6 +1,17 @@
 """Pydantic models for NEXUS3 configuration validation."""
 
+from enum import Enum
+
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class AuthMethod(str, Enum):
+    """Authentication method for API requests."""
+
+    BEARER = "bearer"  # Authorization: Bearer <key>
+    API_KEY = "api-key"  # api-key: <key> header (Azure)
+    X_API_KEY = "x-api-key"  # x-api-key: <key> header (Anthropic)
+    NONE = "none"  # No auth (local Ollama)
 
 
 class ModelAliasConfig(BaseModel):
@@ -35,20 +46,50 @@ class ModelAliasConfig(BaseModel):
 
 
 class ProviderConfig(BaseModel):
-    """Configuration for LLM provider."""
+    """Configuration for LLM provider.
+
+    Supports multiple provider types with configurable authentication.
+
+    Provider types:
+        - openrouter: OpenRouter.ai (default)
+        - openai: Direct OpenAI API
+        - azure: Azure OpenAI Service
+        - anthropic: Anthropic Claude API
+        - ollama: Local Ollama server
+        - vllm: vLLM OpenAI-compatible server
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     type: str = "openrouter"
-    api_key_env: str = "OPENROUTER_API_KEY"  # env var name containing API key
+    """Provider type: openrouter, openai, azure, anthropic, ollama, vllm."""
+
+    api_key_env: str = "OPENROUTER_API_KEY"
+    """Environment variable containing API key."""
+
     model: str = "x-ai/grok-code-fast-1"
     """Model ID or alias name (resolved via models dict)."""
+
     base_url: str = "https://openrouter.ai/api/v1"
+    """Base URL for API requests."""
+
     context_window: int = 131072
     """Default context window size in tokens. Used for truncation and compaction."""
 
     reasoning: bool = False
     """Default extended thinking/reasoning setting."""
+
+    auth_method: AuthMethod = AuthMethod.BEARER
+    """How to send the API key (bearer, api-key, x-api-key, none)."""
+
+    extra_headers: dict[str, str] = {}
+    """Additional headers to include in API requests."""
+
+    api_version: str | None = None
+    """API version string (for Azure: e.g., '2024-02-01')."""
+
+    deployment: str | None = None
+    """Azure deployment name (if different from model)."""
 
 
 class ToolPermissionConfig(BaseModel):

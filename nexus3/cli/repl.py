@@ -54,7 +54,7 @@ from nexus3.display import Activity, StreamingDisplay, get_console
 from nexus3.display.streaming import ToolState
 from nexus3.display.theme import load_theme
 from nexus3.core.permissions import load_custom_presets_from_config
-from nexus3.provider.openrouter import OpenRouterProvider
+from nexus3.provider import create_provider
 from nexus3.rpc.auth import ServerKeyManager
 from nexus3.rpc.detection import DetectionResult, detect_server
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
@@ -578,7 +578,7 @@ async def run_repl(
             context_window=resolved.context_window,
             reasoning=resolved.reasoning,
         )
-        provider = OpenRouterProvider(provider_config)
+        provider = create_provider(provider_config)
     except NexusError as e:
         console.print(f"[red]Error:[/] {e.message}")
         return

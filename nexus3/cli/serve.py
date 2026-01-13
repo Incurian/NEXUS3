@@ -39,7 +39,7 @@ from nexus3.context import ContextLoader, PromptLoader
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
 from nexus3.core.permissions import load_custom_presets_from_config
-from nexus3.provider.openrouter import OpenRouterProvider
+from nexus3.provider import create_provider
 from nexus3.rpc.auth import ServerKeyManager
 from nexus3.rpc.detection import DetectionResult, detect_server
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
@@ -105,7 +105,7 @@ async def run_serve(
             context_window=resolved.context_window,
             reasoning=resolved.reasoning,
         )
-        provider = OpenRouterProvider(provider_config)
+        provider = create_provider(provider_config)
     except NexusError as e:
         print(f"Provider error: {e.message}")
         return

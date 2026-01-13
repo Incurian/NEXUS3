@@ -778,15 +778,19 @@ class Session:
 
         # Create a provider with the compaction model
         from nexus3.config.schema import ProviderConfig
-        from nexus3.provider.openrouter import OpenRouterProvider
+        from nexus3.provider import create_provider
 
         compaction_config = ProviderConfig(
             type=self._config.provider.type,
             api_key_env=self._config.provider.api_key_env,
             model=compaction_model,
             base_url=self._config.provider.base_url,
+            auth_method=self._config.provider.auth_method,
+            extra_headers=self._config.provider.extra_headers,
+            api_version=self._config.provider.api_version,
+            deployment=self._config.provider.deployment,
         )
-        self._compaction_provider = OpenRouterProvider(compaction_config)
+        self._compaction_provider = create_provider(compaction_config)
         return self._compaction_provider
 
     async def _generate_summary(
