@@ -24,6 +24,7 @@ Architecture in unified mode:
 
 import argparse
 import asyncio
+import os
 from contextvars import ContextVar
 from pathlib import Path
 
@@ -519,15 +520,40 @@ async def run_repl(
     # Check for existing server on the port
     detection_result = await detect_server(port)
     if detection_result == DetectionResult.NEXUS_SERVER:
-        # Server already running - auto-connect to it
-        console.print(f"[dim]Server already running on port {port}, connecting...[/]")
+        # Server already running - check if "main" agent exists
+        from nexus3.client import ClientError, NexusClient
+
+        console.print(f"[dim]Server already running on port {port}, checking for main agent...[/]")
+
+        # Try to connect to main agent
+        agent_url = f"http://localhost:{port}/agent/main"
         try:
+            async with NexusClient.with_auto_auth(agent_url, timeout=5.0) as client:
+                await client.get_tokens()
+            # Main agent exists, connect normally
+            console.print(f"[dim]Main agent found, connecting...[/]")
             await run_repl_client(f"http://localhost:{port}", "main")
-        except Exception as e:
-            console.print(f"\n[yellow]Tip:[/] If connection failed, try killing the old server:")
-            console.print(f"  [dim]lsof -i :{port} | awk 'NR>1 {{print $2}}' | xargs kill[/]")
-            console.print(f"  [dim]Then run 'nexus' again.[/]")
-        return
+            return
+        except ClientError as e:
+            # Main agent doesn't exist - shutdown old server and start fresh
+            if "not found" in str(e).lower():
+                console.print(f"[dim]Main agent not found, restarting server...[/]")
+                # Shutdown the orphaned server
+                try:
+                    shutdown_key_mgr = ServerKeyManager(port=port)
+                    api_key = shutdown_key_mgr.load()
+                    global_url = f"http://localhost:{port}"
+                    async with NexusClient(global_url, api_key=api_key, timeout=5.0) as shutdown_client:
+                        await shutdown_client.call("shutdown_server")
+                    # Give server time to shutdown
+                    await asyncio.sleep(0.5)
+                except Exception:
+                    pass  # Server might already be gone
+                # Fall through to start new embedded server
+            else:
+                # Some other connection error
+                console.print(f"[red]Connection failed:[/] {e}")
+                return
     elif detection_result == DetectionResult.OTHER_SERVICE:
         console.print(f"[red]Error:[/] Port {port} is already in use by another service")
         return
