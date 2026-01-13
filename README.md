@@ -495,30 +495,40 @@ async with NexusClient("http://localhost:8765") as client:
 
 ## Built-in Skills
 
-NEXUS3 includes 16 built-in skills registered automatically:
+NEXUS3 includes 21 built-in skills registered automatically:
 
 ### File Operations (Read-Only)
 
 | Skill | Description | Parameters |
 |-------|-------------|------------|
-| `read_file` | Read file contents as UTF-8 text | `path` (required) |
-| `list_directory` | List directory contents | `path` (required) |
-| `glob` | Find files matching pattern | `pattern`, `path`? |
-| `grep` | Search file contents with regex | `pattern`, `path`?, `include`? |
+| `read_file` | Read file contents with optional line range | `path`, `offset`?, `limit`? |
+| `tail` | Read last N lines of a file | `path`, `lines`? (default: 10) |
+| `file_info` | Get file/directory metadata | `path` |
+| `list_directory` | List directory contents | `path` |
+| `glob` | Find files matching pattern | `pattern`, `path`?, `exclude`? |
+| `grep` | Search file contents with regex | `pattern`, `path`?, `include`?, `context`? |
 
 ### File Operations (Destructive)
 
 | Skill | Description | Parameters |
 |-------|-------------|------------|
-| `write_file` | Write content to file (creates directories) | `path`, `content` (required) |
-| `edit_file` | Edit file with search/replace | `path`, `old_text`, `new_text` |
+| `write_file` | Write content to file (creates directories) | `path`, `content` |
+| `edit_file` | Edit file with search/replace | `path`, `old_string`, `new_string` |
+| `append_file` | Append content to a file | `path`, `content`, `newline`? |
+| `regex_replace` | Pattern-based find/replace | `path`, `pattern`, `replacement`, `count`?, etc. |
+
+### Version Control
+
+| Skill | Description | Parameters |
+|-------|-------------|------------|
+| `git` | Execute git commands (permission-filtered) | `command`, `cwd`? |
 
 ### Execution (High-Risk)
 
 | Skill | Description | Parameters |
 |-------|-------------|------------|
-| `bash` | Execute shell command | `command`, `cwd`? |
-| `run_python` | Execute Python code | `code`, `cwd`? |
+| `bash` | Execute shell command | `command`, `timeout`? |
+| `run_python` | Execute Python code | `code`, `timeout`? |
 
 Features:
 - Cross-platform path handling (Windows/Unix)
@@ -531,7 +541,7 @@ Features:
 
 | Skill | Description | Parameters |
 |-------|-------------|------------|
-| `sleep` | Sleep for specified duration | `seconds` (required), `label` (optional) |
+| `sleep` | Pause execution | `seconds`, `label`? |
 
 ### Agent Control
 
@@ -539,14 +549,14 @@ These skills enable agent-to-agent communication. All use `agent_id` + optional 
 
 | Skill | Description | Parameters |
 |-------|-------------|------------|
-| `nexus_create` | Create a new agent | `agent_id`, `preset`?, `disable_tools`?, `port`? |
+| `nexus_create` | Create a new agent | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `model`?, `initial_message`? |
 | `nexus_destroy` | Destroy an agent | `agent_id`, `port`? |
 | `nexus_send` | Send message to agent | `agent_id`, `content`, `port`? |
 | `nexus_status` | Get agent tokens/context | `agent_id`, `port`? |
 | `nexus_cancel` | Cancel in-progress request | `agent_id`, `request_id`, `port`? |
 | `nexus_shutdown` | Shutdown entire server | `port`? |
 
-*Note: `port` defaults to 8765. API key is auto-discovered.*
+*Note: `port` defaults to 8765. API key is auto-discovered. `preset` can be trusted/sandboxed/worker (yolo is REPL-only).*
 
 Security features:
 - **URL validation**: SSRF protection blocks private IPs
@@ -713,6 +723,7 @@ NEXUS3 looks for configuration in this order:
 ```json
 {
   "provider": {
+    "type": "openrouter",
     "model": "anthropic/claude-sonnet-4",
     "api_key_env": "OPENROUTER_API_KEY"
   },
@@ -774,11 +785,29 @@ Project Layer (optional):
 
 Both layers are combined with environment info appended.
 
+### Provider Types
+
+NEXUS3 supports multiple LLM providers. Set `provider.type` in config:
+
+| Type | Description | API Key Env |
+|------|-------------|-------------|
+| `openrouter` | OpenRouter.ai (default) | `OPENROUTER_API_KEY` |
+| `openai` | Direct OpenAI API | `OPENAI_API_KEY` |
+| `azure` | Azure OpenAI Service | `AZURE_OPENAI_KEY` |
+| `anthropic` | Anthropic Claude API | `ANTHROPIC_API_KEY` |
+| `ollama` | Local Ollama server | (none required) |
+| `vllm` | vLLM server | (none required) |
+
+See `nexus3/provider/README.md` for full configuration examples.
+
 ### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `OPENROUTER_API_KEY` | API key for OpenRouter LLM provider |
+| `OPENROUTER_API_KEY` | API key for OpenRouter LLM provider (default) |
+| `OPENAI_API_KEY` | API key for OpenAI provider |
+| `AZURE_OPENAI_KEY` | API key for Azure OpenAI provider |
+| `ANTHROPIC_API_KEY` | API key for Anthropic provider |
 | `NEXUS_API_KEY` | Override auto-discovered server API key |
 
 ---
@@ -791,7 +820,7 @@ Both layers are combined with environment info appended.
 nexus3/
 ├── core/           # Types, interfaces, errors, paths, URL validation, permissions
 ├── config/         # Pydantic schema, permission config, fail-fast loader
-├── provider/       # AsyncProvider protocol, OpenRouter implementation, retry logic
+├── provider/       # AsyncProvider protocol, multi-provider support (OpenRouter/OpenAI/Azure/Anthropic/Ollama)
 ├── context/        # ContextManager, PromptLoader, TokenCounter, atomic truncation
 ├── session/        # Session coordinator, persistence, SessionManager, SQLite logging
 ├── skill/          # Skill protocol, SkillRegistry, ServiceContainer, builtin skills

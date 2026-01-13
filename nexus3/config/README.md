@@ -31,16 +31,22 @@ Model aliases for friendly names.
 
 ### `ProviderConfig` (schema.py)
 
-LLM provider configuration.
+LLM provider configuration. Supports multiple provider types with configurable authentication.
 
-| Field            | Type     | Default                  | Description |
-|------------------|----------|--------------------------|-------------|
-| `type`           | `str`    | `openrouter`             | Provider type |
-| `api_key_env`    | `str`    | `OPENROUTER_API_KEY`     | Env var for API key |
-| `model`          | `str`    | `x-ai/grok-code-fast-1`  | Default model ID or alias |
-| `base_url`       | `str`    | `https://openrouter.ai/api/v1` | API base URL |
-| `context_window` | `int`    | `131072`                 | Default context window |
-| `reasoning`      | `bool`   | `False`                  | Default reasoning mode |
+| Field            | Type            | Default                  | Description |
+|------------------|-----------------|--------------------------|-------------|
+| `type`           | `str`           | `openrouter`             | Provider type: openrouter, openai, azure, anthropic, ollama, vllm |
+| `api_key_env`    | `str`           | `OPENROUTER_API_KEY`     | Env var for API key |
+| `model`          | `str`           | `x-ai/grok-code-fast-1`  | Default model ID or alias |
+| `base_url`       | `str`           | `https://openrouter.ai/api/v1` | API base URL |
+| `context_window` | `int`           | `131072`                 | Default context window |
+| `reasoning`      | `bool`          | `False`                  | Default reasoning mode |
+| `auth_method`    | `AuthMethod`    | `bearer`                 | How to send API key: bearer, api-key, x-api-key, none |
+| `extra_headers`  | `dict[str,str]` | `{}`                     | Additional HTTP headers |
+| `api_version`    | `str \| None`   | `None`                   | API version (for Azure) |
+| `deployment`     | `str \| None`   | `None`                   | Deployment name (for Azure) |
+
+**AuthMethod enum:** `bearer` (Authorization: Bearer), `api-key` (api-key header), `x-api-key` (x-api-key header), `none` (no auth)
 
 ### `ToolPermissionConfig` (schema.py)
 
