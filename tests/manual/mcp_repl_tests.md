@@ -38,11 +38,7 @@ nexus
 
 ---
 
-# Part 1: Core Permission Tests (Stdio)
-
-These tests use the stdio transport (`command` config).
-
----
+# Part 1: Core Permission Tests
 
 ## Test 1: Permission Enforcement (SANDBOXED blocked)
 
@@ -72,19 +68,20 @@ MCP Servers:
 
 Configured:
   test [disconnected]
+  http-test [disconnected]
 
-Connected: (none)
+Connected (visible to you): (none)
 ```
 
 ---
 
-## Test 3: Connection Consent - Allow All
+## Test 3: Full Connection Flow (Two Prompts)
 
 ```
 /mcp connect test
 ```
 
-**Expected prompt:**
+**Expected prompt 1 - Consent:**
 ```
 Connect to MCP server 'test'?
   Tools: echo, get_time, add
@@ -96,21 +93,22 @@ Connect to MCP server 'test'?
 
 Choose `[1]` - Allow all
 
+**Expected prompt 2 - Sharing:**
+```
+Share this connection with other agents?
+  (Other agents will still need to approve their own permissions)
+
+  [1] Yes - all agents can use this connection
+  [2] No - only this agent (default)
+```
+
+Choose `[2]` - No (private)
+
 **Expected:**
 ```
-Connected to 'test' (allow-all)
+Connected to 'test' (allow-all, private)
 Tools available: echo, get_time, add
 ```
-
----
-
-## Test 4: Allow-All Mode - No Per-Tool Prompts
-
-```
-Use mcp_test_echo to say "hello"
-```
-
-**Expected:** Tool executes immediately without confirmation prompt
 
 ```
 /mcp disconnect test
@@ -118,23 +116,250 @@ Use mcp_test_echo to say "hello"
 
 ---
 
-## Test 5: Connection Consent - Per-Tool Mode
+## Test 4: Connection with Sharing
 
 ```
 /mcp connect test
 ```
 
-Choose `[2]` - Require confirmation for each tool
+Choose `[1]` - Allow all, then `[1]` - Yes (shared)
 
 **Expected:**
 ```
-Connected to 'test' (per-tool)
+Connected to 'test' (allow-all, shared)
 Tools available: echo, get_time, add
+```
+
+```
+/mcp
+```
+
+**Expected status shows "shared":**
+```
+Connected (visible to you): 1
+  test: 3 tools (shared)
+```
+
+```
+/mcp disconnect test
 ```
 
 ---
 
-## Test 6: Per-Tool Confirmation - Allow Once
+# Part 2: CLI Flags (Skip Prompts)
+
+## Test 5: --allow-all --private (Skip Both Prompts)
+
+```
+/mcp connect test --allow-all --private
+```
+
+**Expected:** No prompts, immediate connection
+```
+Connected to 'test' (allow-all, private)
+Tools available: echo, get_time, add
+```
+
+```
+/mcp disconnect test
+```
+
+---
+
+## Test 6: --per-tool --shared (Skip Both Prompts)
+
+```
+/mcp connect test --per-tool --shared
+```
+
+**Expected:** No prompts, immediate connection
+```
+Connected to 'test' (per-tool, shared)
+Tools available: echo, get_time, add
+```
+
+```
+/mcp disconnect test
+```
+
+---
+
+## Test 7: --allow-all Only (Skip Consent, Prompt Sharing)
+
+```
+/mcp connect test --allow-all
+```
+
+**Expected:** Only sharing prompt appears
+
+Choose `[2]` - No
+
+**Expected:**
+```
+Connected to 'test' (allow-all, private)
+```
+
+```
+/mcp disconnect test
+```
+
+---
+
+## Test 8: --shared Only (Prompt Consent, Skip Sharing)
+
+```
+/mcp connect test --shared
+```
+
+**Expected:** Only consent prompt appears
+
+Choose `[1]` - Allow all
+
+**Expected:**
+```
+Connected to 'test' (allow-all, shared)
+```
+
+```
+/mcp disconnect test
+```
+
+---
+
+## Test 9: YOLO Mode Defaults
+
+```
+/agent yolo-test --yolo
+/mcp connect test
+```
+
+**Expected:** No prompts at all (YOLO defaults to allow-all, private)
+```
+Connected to 'test' (allow-all, private)
+```
+
+```
+/agent main
+/destroy yolo-test
+```
+
+---
+
+# Part 3: Agent Visibility
+
+## Test 10: Private Connection Not Visible to Other Agent
+
+```
+/mcp connect test --allow-all --private
+```
+
+Create another agent:
+```
+/agent worker-1
+/mcp
+```
+
+**Expected:** worker-1 cannot see the connection
+```
+Configured:
+  test [connected, not visible]
+  ...
+
+Connected (visible to you): (none)
+```
+
+```
+/mcp tools
+```
+
+**Expected:** No MCP tools available (for this agent)
+
+Switch back and disconnect:
+```
+/agent main
+/mcp disconnect test
+/destroy worker-1
+```
+
+---
+
+## Test 11: Shared Connection Visible to Other Agent
+
+```
+/mcp connect test --allow-all --shared
+```
+
+Create another agent:
+```
+/agent worker-1
+/mcp
+```
+
+**Expected:** worker-1 CAN see the connection
+```
+Configured:
+  test [connected]
+  ...
+
+Connected (visible to you): 1
+  test: 3 tools (shared)
+```
+
+```
+/mcp tools
+```
+
+**Expected:** Shows mcp_test_* tools
+
+---
+
+## Test 12: Other Agent Has Own Allowances
+
+Still as worker-1 (from Test 11), try to use a tool:
+```
+Use mcp_test_echo to say "hello from worker"
+```
+
+**Expected:** worker-1 gets its OWN consent prompt (allowances not shared)
+
+Choose `[1]` - Allow once
+
+**Expected:** Tool executes
+
+Switch back:
+```
+/agent main
+/mcp disconnect test
+/destroy worker-1
+```
+
+---
+
+## Test 13: Only Owner Can Disconnect
+
+```
+/mcp connect test --allow-all --shared
+/agent worker-1
+/mcp disconnect test
+```
+
+**Expected:** Error - Cannot disconnect 'test' - owned by agent 'main'
+
+```
+/agent main
+/mcp disconnect test
+/destroy worker-1
+```
+
+---
+
+# Part 4: Per-Tool Confirmation
+
+## Test 14: Per-Tool Mode - Allow Once
+
+```
+/mcp connect test --per-tool --private
+```
 
 ```
 Use mcp_test_echo to say "hello once"
@@ -168,7 +393,7 @@ Choose `[4]` - Deny
 
 ---
 
-## Test 7: Per-Tool Confirmation - Allow This Tool Always
+## Test 15: Per-Tool Mode - Allow This Tool Always
 
 ```
 Use mcp_test_echo to say "allowed tool"
@@ -194,7 +419,7 @@ Choose `[4]` - Deny
 
 ---
 
-## Test 8: Per-Tool Confirmation - Allow All From Server
+## Test 16: Per-Tool Mode - Allow All From Server
 
 ```
 Use mcp_test_add to add 10 and 20
@@ -211,88 +436,228 @@ Use mcp_test_get_time
 **Expected:** Executes immediately (all server tools now allowed)
 
 ```
-Use mcp_test_add to add 1 and 2
+/mcp disconnect test
 ```
-
-**Expected:** Executes immediately (no prompt)
 
 ---
 
-## Test 9: Connection Consent - Deny
+# Part 5: Allowances and Disconnect
+
+## Test 17: Allowances Reset on Disconnect
+
+```
+/mcp connect test --per-tool --private
+```
+
+```
+Use mcp_test_echo to say "first"
+```
+
+Choose `[2]` - Allow this tool always
+
+```
+Use mcp_test_echo to say "no prompt"
+```
+
+**Expected:** No prompt (tool allowed)
+
+Now disconnect and reconnect:
+```
+/mcp disconnect test
+/mcp connect test --per-tool --private
+```
+
+```
+Use mcp_test_echo to say "should prompt again"
+```
+
+**Expected:** Prompts again (allowances were reset on disconnect)
 
 ```
 /mcp disconnect test
-/mcp connect test
 ```
 
-Choose `[3]` - Deny connection
+---
 
-**Expected:** Error message "Connection to 'test' denied by user"
+# Part 6: Dead Connection Detection
+
+## Test 18: Stdio Server Dies Mid-Session
+
+```
+/mcp connect test --allow-all --private
+```
+
+Find and kill the subprocess:
+```bash
+# In another terminal
+pkill -f "nexus3.mcp.test_server"
+```
+
+Back in REPL:
+```
+/mcp
+```
+
+**Expected:** Server no longer listed as connected (dead connection detected)
+```
+Configured:
+  test [disconnected]
+  ...
+
+Connected (visible to you): (none)
+```
+
+---
+
+## Test 19: HTTP Server Dies Mid-Session
+
+Start HTTP server:
+```bash
+python3 -m nexus3.mcp.test_server.http_server --port 9000
+```
+
+Connect:
+```
+/mcp connect http-test --allow-all --private
+```
+
+Stop the HTTP server (Ctrl+C in other terminal).
+
+Try to use a tool:
+```
+Use mcp_http-test_echo to say "hello"
+```
+
+**Expected:** Error about connection failure
 
 ```
 /mcp
 ```
 
-**Expected:** test shows as [disconnected]
+**Expected:** May still show as connected (HTTP detection is lazy)
 
 ---
 
-## Test 10: YOLO Mode - No Prompts
+# Part 7: HTTP Transport
 
-```
-/agent yolo-test --yolo
-/mcp connect test
-```
+## Test 20: HTTP Connection Works
 
-**Expected:** Connects immediately with (allow-all), no consent prompt
-
-```
-Use mcp_test_echo to say "yolo"
+Start HTTP server if not running:
+```bash
+python3 -m nexus3.mcp.test_server.http_server --port 9000
 ```
 
-**Expected:** Executes immediately, no confirmation
+```
+/mcp connect http-test --allow-all --private
+```
+
+**Expected:**
+```
+Connected to 'http-test' (allow-all, private)
+Tools available: echo, get_time, add
+```
 
 ```
-/agent main
-/destroy yolo-test
+Use mcp_http-test_echo to say "via http"
+```
+
+**Expected:** Returns "via http"
+
+```
+/mcp disconnect http-test
 ```
 
 ---
 
-## Test 11: List MCP Tools
+## Test 21: Multiple Transports Simultaneously
 
 ```
-/mcp connect test
+/mcp connect test --allow-all --private
+/mcp connect http-test --allow-all --private
+/mcp
 ```
 
-(Choose any allow option)
+**Expected:**
+```
+Connected (visible to you): 2
+  test: 3 tools (owner: main)
+  http-test: 3 tools (owner: main)
+```
 
 ```
 /mcp tools
 ```
 
-**Expected:**
-```
-MCP Tools:
-  mcp_test_echo
-    Echo back the input message
-  mcp_test_get_time
-    Get current date and time
-  mcp_test_add
-    Add two numbers
-```
+**Expected:** Shows 6 tools (3 from each server)
 
 ```
-/mcp tools test
+/mcp disconnect test
+/mcp disconnect http-test
 ```
-
-**Expected:** Same output (filtered to 'test' server)
 
 ---
 
-## Test 12: Disable Individual MCP Tool
+# Part 8: Edge Cases
+
+## Test 22: Connect Non-existent Server
 
 ```
+/mcp connect nonexistent
+```
+
+**Expected:** Error - server not found in config
+
+---
+
+## Test 23: Double Connect (Already Connected)
+
+```
+/mcp connect test --allow-all --private
+/mcp connect test
+```
+
+**Expected:** Error - Already connected to 'test'
+
+```
+/mcp disconnect test
+```
+
+---
+
+## Test 24: Tool Definitions Refresh
+
+```
+/mcp disconnect test
+```
+
+Ask agent:
+```
+What tools do you have?
+```
+
+**Expected:** Should NOT list mcp_test_* tools
+
+```
+/mcp connect test --allow-all --private
+```
+
+Ask agent:
+```
+What tools do you have?
+```
+
+**Expected:** Should list mcp_test_echo, mcp_test_add, mcp_test_get_time
+
+```
+/mcp disconnect test
+```
+
+---
+
+## Test 25: Disable Individual MCP Tool
+
+```
+/mcp connect test --allow-all --private
 /permissions --disable mcp_test_add
 /permissions --list-tools
 ```
@@ -303,372 +668,87 @@ MCP Tools:
 Calculate 5 + 3 using mcp_test_add
 ```
 
-**Expected:** Error - tool disabled (regardless of allowances)
+**Expected:** Error - tool disabled
 
 ```
 Echo "still works" using mcp_test_echo
 ```
 
-**Expected:** Works (not disabled)
+**Expected:** Works
 
 ```
 /permissions --enable mcp_test_add
-```
-
----
-
-## Test 13: Server Status Shows Mode
-
-```
-/mcp
-```
-
-**Expected:** Shows connection mode
-```
-Connected: 1
-  test: 3 tools (allow-all)
-```
-
-or
-
-```
-Connected: 1
-  test: 3 tools (per-tool)
-```
-
----
-
-## Test 14: Connect Non-existent Server
-
-```
-/mcp connect nonexistent
-```
-
-**Expected:** Error - server not found in config
-
----
-
-## Test 15: Double Connect (Already Connected)
-
-```
-/mcp connect test
-```
-
-**Expected:** Error - already connected
-
----
-
-## Cleanup (Part 1)
-
-```
 /mcp disconnect test
-```
-
----
-
-# Part 2: HTTP Transport Tests
-
-These tests use the HTTP transport (`url` config). Ensure HTTP server is running first.
-
----
-
-## Test 16: Start HTTP Test Server
-
-In a separate terminal:
-```bash
-python3 -m nexus3.mcp.test_server.http_server --port 9000
-```
-
-**Expected:**
-```
-MCP HTTP test server running on http://127.0.0.1:9000
-Press Ctrl+C to stop
-```
-
----
-
-## Test 17: List Shows HTTP Server
-
-Ensure config has `http-test` with URL:
-```json
-{"name": "http-test", "url": "http://127.0.0.1:9000"}
-```
-
-```
-/mcp
-```
-
-**Expected:**
-```
-Configured:
-  test [disconnected]
-  http-test [disconnected]
-```
-
----
-
-## Test 18: Connect HTTP Server
-
-```
-/mcp connect http-test
-```
-
-**Expected prompt:** Same consent prompt as stdio
-
-Choose `[1]` - Allow all
-
-**Expected:**
-```
-Connected to 'http-test' (allow-all)
-Tools available: echo, get_time, add
-```
-
----
-
-## Test 19: HTTP Tools Work Identically
-
-```
-Use mcp_http-test_echo to say "via http"
-```
-
-**Expected:** Returns "via http"
-
-```
-Use mcp_http-test_add to add 100 and 23
-```
-
-**Expected:** Returns "123"
-
-```
-Use mcp_http-test_get_time
-```
-
-**Expected:** Returns ISO timestamp
-
----
-
-## Test 20: Multiple Transports Simultaneously
-
-```
-/mcp connect test
-```
-
-(Choose `[1]` - Allow all)
-
-```
-/mcp
-```
-
-**Expected:**
-```
-Connected: 2
-  test: 3 tools (allow-all)
-  http-test: 3 tools (allow-all)
-```
-
-```
-/mcp tools
-```
-
-**Expected:** Shows 6 tools (3 from each server)
-
----
-
-## Test 21: HTTP Per-Tool Mode
-
-```
-/mcp disconnect http-test
-/mcp connect http-test
-```
-
-Choose `[2]` - Per-tool
-
-```
-Use mcp_http-test_echo to say "confirm me"
-```
-
-**Expected:** Same 4-option confirmation prompt as stdio
-
-Choose `[2]` - Allow this tool always
-
-```
-Use mcp_http-test_echo to say "no prompt"
-```
-
-**Expected:** Executes without prompt
-
----
-
-## Test 22: HTTP Server Not Running
-
-Stop the HTTP server (Ctrl+C in the other terminal).
-
-```
-/mcp disconnect http-test
-/mcp connect http-test
-```
-
-**Expected:** Connection error - unable to reach server
-
----
-
-## Cleanup (Part 2)
-
-```
-/mcp disconnect test
-/mcp disconnect http-test
-```
-
-Start HTTP server again if needed for further tests.
-
----
-
-# Part 3: Edge Cases and Error Handling
-
----
-
-## Test 23: Invalid URL in Config
-
-Add to config:
-```json
-{"name": "bad-url", "url": "not-a-valid-url"}
-```
-
-```
-/mcp connect bad-url
-```
-
-**Expected:** URL validation error
-
----
-
-## Test 24: Session Allowances Persist
-
-```
-/mcp connect test
-```
-
-Choose `[2]` - Per-tool
-
-```
-Use mcp_test_echo to say "first"
-```
-
-Choose `[2]` - Allow this tool always
-
-```
-Use mcp_test_add to add 1 and 1
-```
-
-Choose `[3]` - Allow all from server
-
-Now all tools should work without prompts:
-
-```
-Use mcp_test_echo to say "no prompt"
-Use mcp_test_add to add 2 and 2
-Use mcp_test_get_time
-```
-
-**Expected:** All execute immediately
-
----
-
-## Test 25: Allowances Reset on Disconnect
-
-```
-/mcp disconnect test
-/mcp connect test
-```
-
-Choose `[2]` - Per-tool
-
-```
-Use mcp_test_echo to say "should prompt"
-```
-
-**Expected:** Prompts again (allowances reset on disconnect)
-
----
-
-## Test 26: Tool Definitions Refresh on Connect
-
-```
-/mcp disconnect test
-```
-
-Ask the agent to list available tools:
-```
-What tools do you have?
-```
-
-**Expected:** Should NOT list mcp_test_* tools
-
-```
-/mcp connect test
-```
-
-(Choose any allow option)
-
-```
-What tools do you have?
-```
-
-**Expected:** Should now list mcp_test_echo, mcp_test_add, mcp_test_get_time
-
----
-
-## Cleanup (Part 3)
-
-```
-/mcp disconnect test
-/quit
 ```
 
 ---
 
 # Test Results
 
-## Part 1: Core Permission Tests (Stdio)
+## Part 1: Core Permission Tests
 
 | Test | Pass/Fail | Notes |
 |------|-----------|-------|
 | 1. SANDBOXED blocked | | |
 | 2. List servers | | |
-| 3. Connect - allow all | | |
-| 4. Allow-all no prompts | | |
-| 5. Connect - per-tool | | |
-| 6. Per-tool - allow once | | |
-| 7. Per-tool - allow tool always | | |
-| 8. Per-tool - allow server | | |
-| 9. Connect - deny | | |
-| 10. YOLO no prompts | | |
-| 11. List tools | | |
-| 12. Disable tool | | |
-| 13. Status shows mode | | |
-| 14. Non-existent server | | |
-| 15. Double connect | | |
+| 3. Full connection flow (two prompts) | | |
+| 4. Connection with sharing | | |
 
-## Part 2: HTTP Transport Tests
+## Part 2: CLI Flags
 
 | Test | Pass/Fail | Notes |
 |------|-----------|-------|
-| 16. HTTP server starts | | |
-| 17. List shows HTTP server | | |
-| 18. Connect HTTP server | | |
-| 19. HTTP tools work | | |
-| 20. Multiple transports | | |
-| 21. HTTP per-tool mode | | |
-| 22. HTTP server not running | | |
+| 5. --allow-all --private | | |
+| 6. --per-tool --shared | | |
+| 7. --allow-all only | | |
+| 8. --shared only | | |
+| 9. YOLO defaults | | |
 
-## Part 3: Edge Cases
+## Part 3: Agent Visibility
 
 | Test | Pass/Fail | Notes |
 |------|-----------|-------|
-| 23. Invalid URL | | |
-| 24. Allowances persist | | |
-| 25. Allowances reset on disconnect | | |
-| 26. Tool definitions refresh | | |
+| 10. Private not visible | | |
+| 11. Shared visible | | |
+| 12. Other agent own allowances | | |
+| 13. Only owner can disconnect | | |
+
+## Part 4: Per-Tool Confirmation
+
+| Test | Pass/Fail | Notes |
+|------|-----------|-------|
+| 14. Allow once | | |
+| 15. Allow tool always | | |
+| 16. Allow all from server | | |
+
+## Part 5: Allowances and Disconnect
+
+| Test | Pass/Fail | Notes |
+|------|-----------|-------|
+| 17. Allowances reset on disconnect | | |
+
+## Part 6: Dead Connection Detection
+
+| Test | Pass/Fail | Notes |
+|------|-----------|-------|
+| 18. Stdio server dies | | |
+| 19. HTTP server dies | | |
+
+## Part 7: HTTP Transport
+
+| Test | Pass/Fail | Notes |
+|------|-----------|-------|
+| 20. HTTP connection works | | |
+| 21. Multiple transports | | |
+
+## Part 8: Edge Cases
+
+| Test | Pass/Fail | Notes |
+|------|-----------|-------|
+| 22. Non-existent server | | |
+| 23. Double connect | | |
+| 24. Tool definitions refresh | | |
+| 25. Disable MCP tool | | |
 
 ---
 
@@ -679,10 +759,21 @@ Transport Selection (automatic):
   config.command → StdioTransport (subprocess)
   config.url     → HTTPTransport (HTTP POST)
 
-Connection Consent (TRUSTED mode):
-  [1] Allow all → No per-tool prompts
-  [2] Per-tool  → Prompts for each tool call
-  [3] Deny      → Connection cancelled
+CLI Flags:
+  --allow-all   Skip consent prompt, allow all tools
+  --per-tool    Skip consent prompt, require per-tool confirmation
+  --shared      Skip sharing prompt, share with all agents
+  --private     Skip sharing prompt, keep private to this agent
+
+Prompts (TRUSTED mode, no flags):
+  1. Consent Prompt:
+     [1] Allow all → No per-tool prompts
+     [2] Per-tool  → Prompts for each tool call
+     [3] Deny      → Connection cancelled
+
+  2. Sharing Prompt:
+     [1] Yes → All agents can see and use this connection
+     [2] No  → Only this agent (default)
 
 Per-Tool Confirmation (per-tool mode):
   [1] Allow once      → This call only
@@ -690,24 +781,27 @@ Per-Tool Confirmation (per-tool mode):
   [3] Allow server    → All tools from server, rest of session
   [4] Deny            → Tool call rejected
 
-YOLO mode: All prompts skipped, auto-allow
+YOLO mode: All prompts skipped, defaults to allow-all + private
 SANDBOXED mode: MCP completely blocked
+
+Visibility Rules:
+  - Private connections: Only visible to owner agent
+  - Shared connections: Visible to all agents
+  - Allowances (allow-all, per-tool): Always per-agent, never shared
+  - Only owner can disconnect a connection
 ```
 
 ---
 
 # Quick Smoke Test
 
-Minimal test to verify MCP is working:
-
 ```bash
 # Terminal 1: Start REPL
 nexus
 
-# In REPL:
-/mcp connect test
-# Choose [1] Allow all
-# Type: Use mcp_test_add to calculate 40 + 2
+# Quick test with flags (no prompts)
+/mcp connect test --allow-all --private
+Use mcp_test_add to calculate 40 + 2
 # Expected: 42
 /mcp disconnect test
 /quit
@@ -721,11 +815,33 @@ python3 -m nexus3.mcp.test_server.http_server --port 9000
 # Terminal 2: Start REPL
 nexus
 
-# In REPL:
-/mcp connect http-test
-# Choose [1] Allow all
-# Type: Use mcp_http-test_echo to say "hello"
+/mcp connect http-test --allow-all --private
+Use mcp_http-test_echo to say "hello"
 # Expected: hello
 /mcp disconnect http-test
+/quit
+```
+
+Multi-agent test:
+```bash
+nexus
+
+# Connect as shared
+/mcp connect test --allow-all --shared
+
+# Create worker
+/agent worker-1
+
+# Worker sees the connection
+/mcp
+
+# Worker uses tool (gets own consent prompt)
+Use mcp_test_echo to say "from worker"
+# Choose [1] Allow once
+
+# Cleanup
+/agent main
+/mcp disconnect test
+/destroy worker-1
 /quit
 ```
