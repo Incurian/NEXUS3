@@ -44,3 +44,6 @@ Thumbs.db
 
 # Claude Code plans (keep skills, ignore plans)
 .claude/plans/
+
+# Archive (plans, reviews, old scripts)
+.archive/
