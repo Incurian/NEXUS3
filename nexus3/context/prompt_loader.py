@@ -14,6 +14,7 @@ Loading strategy:
 import os
 import platform
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -28,6 +29,9 @@ def get_system_info(is_repl: bool = True) -> str:
         Formatted string with system information.
     """
     parts = ["# Environment"]
+
+    # Note: Current date/time is injected dynamically per-request in ContextManager
+    # to ensure accuracy throughout the session
 
     # Working directory
     cwd = Path.cwd()

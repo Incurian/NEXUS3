@@ -361,6 +361,9 @@ class AgentPool:
             )
             context.set_system_prompt(system_prompt)
 
+            # Add session start timestamp as first message in history
+            context.add_session_start_message()
+
             # Create skill registry with services
             # Import here to avoid circular import (skills -> client -> rpc -> pool)
             from nexus3.skill.builtin import register_builtin_skills

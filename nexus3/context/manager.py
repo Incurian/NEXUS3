@@ -1,10 +1,31 @@
 """Context management for conversation state and token budgets."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from nexus3.context.token_counter import TokenCounter, get_token_counter
 from nexus3.core.types import Message, Role, ToolCall, ToolResult
+
+
+def get_current_datetime_str() -> str:
+    """Get current date and time formatted for context injection.
+
+    Returns:
+        Formatted string like "Current date: 2026-01-13, Current time: 14:32 (local)"
+    """
+    now = datetime.now()
+    return f"Current date: {now.strftime('%Y-%m-%d')}, Current time: {now.strftime('%H:%M')} (local)"
+
+
+def get_session_start_str() -> str:
+    """Get session start timestamp for history.
+
+    Returns:
+        Formatted string for session start message.
+    """
+    now = datetime.now()
+    return f"[Session started: {now.strftime('%Y-%m-%d %H:%M')} (local)]"
 
 if TYPE_CHECKING:
     from nexus3.session.logging import SessionLogger
@@ -77,6 +98,17 @@ class ContextManager:
         self._system_prompt = prompt
         if self._logger:
             self._logger.log_system(prompt)
+
+    def add_session_start_message(self) -> None:
+        """Add a session start timestamp message to history.
+
+        This should be called once when a new session begins. The timestamp
+        is fixed and marks when the session started.
+        """
+        start_msg = Message(role=Role.USER, content=get_session_start_str())
+        self._messages.append(start_msg)
+        if self._logger:
+            self._logger.log_user(start_msg.content)
 
     def set_tool_definitions(self, tools: list[dict[str, Any]]) -> None:
         """Set available tool definitions for context.
@@ -186,17 +218,32 @@ class ContextManager:
     def build_messages(self) -> list[Message]:
         """Build message list for API call.
 
-        Includes system prompt and messages that fit in context budget.
-        Applies truncation if over budget.
+        Includes system prompt (with dynamic date/time) and messages that fit
+        in context budget. Applies truncation if over budget.
+
+        The current date/time is injected fresh on every call to ensure the
+        agent always has accurate temporal context.
 
         Returns:
             List of messages ready for provider API call
         """
         result: list[Message] = []
 
-        # System prompt always first
+        # System prompt always first, with dynamic date/time injected
         if self._system_prompt:
-            result.append(Message(role=Role.SYSTEM, content=self._system_prompt))
+            # Inject current date/time at the start of the Environment section
+            # or at the end of the prompt if no Environment section exists
+            datetime_line = get_current_datetime_str()
+            if "# Environment" in self._system_prompt:
+                # Insert after the "# Environment" header
+                prompt_with_time = self._system_prompt.replace(
+                    "# Environment\n",
+                    f"# Environment\n{datetime_line}\n"
+                )
+            else:
+                # Append to end
+                prompt_with_time = f"{self._system_prompt}\n\n{datetime_line}"
+            result.append(Message(role=Role.SYSTEM, content=prompt_with_time))
 
         # Get messages that fit (with truncation if needed)
         context_messages = self._get_context_messages()

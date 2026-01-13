@@ -3,11 +3,11 @@
 import pytest
 
 from nexus3.context.compaction import (
-    SUMMARY_PREFIX,
     SUMMARIZE_PROMPT,
     build_summarize_prompt,
     create_summary_message,
     format_messages_for_summary,
+    get_summary_prefix,
     select_messages_for_compaction,
 )
 from nexus3.core.types import Message, Role, ToolCall
@@ -165,28 +165,34 @@ class TestCreateSummaryMessage:
         assert result.role == Role.USER
 
     def test_includes_summary_prefix(self):
-        """Test that the message includes the SUMMARY_PREFIX."""
+        """Test that the message includes the summary prefix with timestamp."""
         result = create_summary_message("This is a summary")
-        assert SUMMARY_PREFIX in result.content
+        # Check for constant parts of the prefix (timestamp varies)
+        assert "[CONTEXT SUMMARY - Generated:" in result.content
+        assert "automatically" in result.content
+        assert "generated when the context window needed compaction" in result.content
 
     def test_summary_text_follows_prefix(self):
         """Test that the summary text appears after the prefix."""
         summary_text = "Key decisions were made about X"
         result = create_summary_message(summary_text)
-        assert result.content == f"{SUMMARY_PREFIX}{summary_text}"
+        # Check prefix starts the content and summary text is at the end
+        assert result.content.startswith("[CONTEXT SUMMARY")
+        assert result.content.endswith(summary_text)
 
     def test_empty_summary(self):
         """Test with empty summary text."""
         result = create_summary_message("")
         assert result.role == Role.USER
-        assert result.content == SUMMARY_PREFIX
+        # Content should just be the prefix (with timestamp)
+        assert "[CONTEXT SUMMARY - Generated:" in result.content
 
     def test_multiline_summary(self):
         """Test with multiline summary text."""
         summary_text = "Line 1\nLine 2\nLine 3"
         result = create_summary_message(summary_text)
         assert summary_text in result.content
-        assert result.content.startswith(SUMMARY_PREFIX)
+        assert result.content.startswith("[CONTEXT SUMMARY")
 
 
 class TestBuildSummarizePrompt:

@@ -120,7 +120,7 @@ class TestSessionStreaming:
 
     @pytest.mark.asyncio
     async def test_send_includes_system_prompt(self) -> None:
-        """Test that send() includes system prompt when configured via ContextManager."""
+        """Test that send() includes system prompt with dynamic datetime."""
         provider = MockProvider()
         context = ContextManager(config=ContextConfig())
         context.set_system_prompt("You are a helpful assistant.")
@@ -132,9 +132,10 @@ class TestSessionStreaming:
         assert provider.last_messages is not None
         assert len(provider.last_messages) == 2
 
-        # First message should be system prompt
+        # First message should be system prompt with dynamic datetime appended
         assert provider.last_messages[0].role == Role.SYSTEM
-        assert provider.last_messages[0].content == "You are a helpful assistant."
+        assert provider.last_messages[0].content.startswith("You are a helpful assistant.")
+        assert "Current date:" in provider.last_messages[0].content
 
         # Second message should be user message
         assert provider.last_messages[1].role == Role.USER

@@ -1,11 +1,20 @@
 """Context compaction via LLM summarization."""
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from nexus3.core.types import Message, Role
 
 
-SUMMARY_PREFIX = """[CONTEXT SUMMARY]
+def get_summary_prefix() -> str:
+    """Generate summary prefix with current timestamp.
+
+    Returns:
+        Formatted summary prefix including when the compaction occurred.
+    """
+    now = datetime.now()
+    timestamp = now.strftime("%Y-%m-%d %H:%M")
+    return f"""[CONTEXT SUMMARY - Generated: {timestamp}]
 The following is a summary of our previous conversation. It was automatically
 generated when the context window needed compaction. Treat this as established
 context - you don't need to re-confirm decisions already made.
@@ -73,17 +82,17 @@ def format_messages_for_summary(messages: list[Message]) -> str:
 
 
 def create_summary_message(summary_text: str) -> Message:
-    """Create a USER message containing the summary with prefix.
+    """Create a USER message containing the summary with timestamped prefix.
 
     Args:
         summary_text: The generated summary
 
     Returns:
-        Message with role=USER and prefixed content
+        Message with role=USER and prefixed content including timestamp
     """
     return Message(
         role=Role.USER,
-        content=f"{SUMMARY_PREFIX}{summary_text}"
+        content=f"{get_summary_prefix()}{summary_text}"
     )
 
 

@@ -9,7 +9,7 @@ An AI-powered CLI agent framework with multi-agent support. NEXUS3 is a clean-sl
 - **Multi-Agent Architecture** - Create, manage, and destroy multiple isolated agent instances via API
 - **Agent-to-Agent Communication** - Built-in skills for agents to control other agents
 - **Tool/Skill System** - Extensible skill framework with dependency injection and parallel execution support
-- **Context Management** - Token tracking, automatic truncation, LLM-based compaction, and layered system prompts
+- **Context Management** - Token tracking, automatic truncation, LLM-based compaction, layered system prompts, and dynamic timestamps
 - **MCP Support** - Connect to external Model Context Protocol servers (stdio/HTTP) and use their tools as native skills
 - **Structured Logging** - SQLite-backed session logs with human-readable Markdown exports
 - **Cross-Platform** - UTF-8 everywhere, path normalization for Windows/Unix compatibility

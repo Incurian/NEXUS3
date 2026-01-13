@@ -376,7 +376,30 @@ Context compaction summarizes old conversation history via LLM to reclaim token 
 
 - **Longer sessions**: Reclaim space without losing context
 - **System prompt updates**: Changes to NEXUS.md apply on next compaction
+- **Timestamped summaries**: Each summary includes when it was generated
 - **Configurable**: Tune thresholds for your use case
+
+---
+
+## Temporal Context
+
+Agents always have accurate temporal awareness through three timestamp mechanisms:
+
+| Timestamp | When Set | Location | Purpose |
+|-----------|----------|----------|---------|
+| **Current date/time** | Every request | System prompt | Always accurate - agents know "now" |
+| **Session start** | Agent creation | First message in history | Marks when session began |
+| **Compaction** | On summary | Summary prefix | Indicates when history was summarized |
+
+Example session start message:
+```
+[Session started: 2026-01-13 14:30 (local)]
+```
+
+Example compaction summary header:
+```
+[CONTEXT SUMMARY - Generated: 2026-01-13 16:45]
+```
 
 ---
 

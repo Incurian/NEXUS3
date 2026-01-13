@@ -212,12 +212,20 @@ System Info (always appended):
 
 ### System Information
 
-The `get_system_info(is_repl)` function generates environment context:
+The `get_system_info(is_repl)` function generates static environment context:
 
 - **Working directory**: Current working directory path
 - **Operating system**: Detected OS with special handling for WSL2, Linux distros, macOS versions
 - **Terminal**: Terminal program and TERM variable (REPL mode only)
 - **Mode**: "Interactive REPL" or "HTTP JSON-RPC Server"
+
+### Temporal Context (Dynamic)
+
+NEXUS3 provides three layers of temporal context to ensure agents always know when events occurred:
+
+1. **Current Date/Time (Dynamic)**: Injected fresh on every API request via `ContextManager.build_messages()`. Always accurate.
+2. **Session Start Timestamp (Fixed)**: Added to message history when a new agent is created. Marks when the session began.
+3. **Compaction Timestamp (On Compaction)**: Included in context summaries to indicate when the summary was generated.
 
 ### Combination
 
@@ -231,10 +239,16 @@ All layers are combined with headers:
 [project prompt content]
 
 # Environment
+Current date: 2026-01-13, Current time: 14:30 (local)
 Working directory: /path/to/project
 Operating system: Linux (WSL2 on Windows)
 Terminal: vscode (xterm-256color)
 Mode: Interactive REPL
+```
+
+The first message in a new session's history is always:
+```
+[Session started: 2026-01-13 14:30 (local)]
 ```
 
 ### LoadedPrompt Result

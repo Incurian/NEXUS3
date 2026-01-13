@@ -254,8 +254,9 @@ class TestHttpAutoRestore:
             # Agent is in pool, no restore needed
             agent = pool.get("active-agent")
             assert agent is not None
-            # Messages should be empty since we created fresh, not restored
-            assert len(agent.context.messages) == 0
+            # Fresh agent has session start message only (not restored history)
+            assert len(agent.context.messages) == 1
+            assert "[Session started:" in agent.context.messages[0].content
             # Session manager has the saved session, but we didn't need it
             assert mock_session_manager.session_exists("active-agent")
 

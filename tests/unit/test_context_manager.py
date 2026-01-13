@@ -47,7 +47,7 @@ class TestContextManagerBasics:
         assert ctx.system_prompt == "You are helpful."
 
     def test_build_messages_includes_system_prompt(self):
-        """Test that build_messages includes system prompt first."""
+        """Test that build_messages includes system prompt first with dynamic datetime."""
         ctx = ContextManager()
         ctx.set_system_prompt("System prompt")
         ctx.add_user_message("Hello")
@@ -56,7 +56,9 @@ class TestContextManagerBasics:
 
         assert len(messages) == 2
         assert messages[0].role == Role.SYSTEM
-        assert messages[0].content == "System prompt"
+        # System prompt includes dynamic date/time appended
+        assert messages[0].content.startswith("System prompt")
+        assert "Current date:" in messages[0].content
         assert messages[1].role == Role.USER
 
     def test_clear_messages(self):
