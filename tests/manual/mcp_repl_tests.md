@@ -49,21 +49,194 @@ Connected: (none)
 
 ---
 
-## Test 3: Connect to Test Server
+## Test 3: Connection Consent - Allow All
 
 ```
 /mcp connect test
 ```
 
+**Expected prompt:**
+```
+Connect to MCP server 'test'?
+  Tools: echo, get_time, add
+
+  [1] Allow all tools (this session)
+  [2] Require confirmation for each tool
+  [3] Deny connection
+```
+
+Choose `[1]` - Allow all
+
 **Expected:**
 ```
-Connected to 'test'
+Connected to 'test' (allow-all)
 Tools available: echo, get_time, add
 ```
 
 ---
 
-## Test 4: List MCP Tools
+## Test 4: Allow-All Mode - No Per-Tool Prompts
+
+```
+Use mcp_test_echo to say "hello"
+```
+
+**Expected:** Tool executes immediately without confirmation prompt
+
+```
+/mcp disconnect test
+```
+
+---
+
+## Test 5: Connection Consent - Per-Tool Mode
+
+```
+/mcp connect test
+```
+
+Choose `[2]` - Require confirmation for each tool
+
+**Expected:**
+```
+Connected to 'test' (per-tool)
+Tools available: echo, get_time, add
+```
+
+---
+
+## Test 6: Per-Tool Confirmation - Allow Once
+
+```
+Use mcp_test_echo to say "hello once"
+```
+
+**Expected prompt:**
+```
+Allow MCP tool 'mcp_test_echo'?
+  Server: test
+  Arguments: {'message': 'hello once'}
+
+  [1] Allow once
+  [2] Allow this tool always (this session)
+  [3] Allow all tools from this server (this session)
+  [4] Deny
+```
+
+Choose `[1]` - Allow once
+
+**Expected:** Tool executes, returns "hello once"
+
+```
+Use mcp_test_echo to say "hello again"
+```
+
+**Expected:** Prompts again (allow once doesn't persist)
+
+Choose `[4]` - Deny
+
+**Expected:** Error message about tool denied
+
+---
+
+## Test 7: Per-Tool Confirmation - Allow This Tool Always
+
+```
+Use mcp_test_echo to say "allowed tool"
+```
+
+Choose `[2]` - Allow this tool always
+
+**Expected:** Tool executes
+
+```
+Use mcp_test_echo to say "no prompt now"
+```
+
+**Expected:** Executes immediately (no prompt - tool is allowed)
+
+```
+Use mcp_test_add to add 5 and 3
+```
+
+**Expected:** Prompts (different tool, not allowed yet)
+
+Choose `[4]` - Deny
+
+---
+
+## Test 8: Per-Tool Confirmation - Allow All From Server
+
+```
+Use mcp_test_add to add 10 and 20
+```
+
+Choose `[3]` - Allow all tools from this server
+
+**Expected:** Tool executes, returns "30"
+
+```
+Use mcp_test_get_time
+```
+
+**Expected:** Executes immediately (all server tools now allowed)
+
+```
+Use mcp_test_add to add 1 and 2
+```
+
+**Expected:** Executes immediately (no prompt)
+
+---
+
+## Test 9: Connection Consent - Deny
+
+```
+/mcp disconnect test
+/mcp connect test
+```
+
+Choose `[3]` - Deny connection
+
+**Expected:** Error message "Connection to 'test' denied by user"
+
+```
+/mcp
+```
+
+**Expected:** test shows as [disconnected]
+
+---
+
+## Test 10: YOLO Mode - No Prompts
+
+```
+/agent yolo-test --yolo
+/mcp connect test
+```
+
+**Expected:** Connects immediately with (allow-all), no consent prompt
+
+```
+Use mcp_test_echo to say "yolo"
+```
+
+**Expected:** Executes immediately, no confirmation
+
+```
+/agent main
+/destroy yolo-test
+```
+
+---
+
+## Test 11: List MCP Tools
+
+```
+/mcp connect test
+```
+
+(Choose any allow option)
 
 ```
 /mcp tools
@@ -80,81 +253,15 @@ MCP Tools:
     Add two numbers
 ```
 
----
-
-## Test 5: Verify Server Status
-
 ```
-/mcp
+/mcp tools test
 ```
 
-**Expected:**
-```
-MCP Servers:
-
-Configured:
-  test [connected]
-
-Connected: 1
-  test: 3 tools (per-tool)
-```
+**Expected:** Same output (filtered to 'test' server)
 
 ---
 
-## Test 6: Agent Uses MCP Tools
-
-Ask the agent to use each tool:
-
-```
-Use mcp_test_echo to echo "Hello MCP!"
-```
-**Expected:** Agent calls tool, returns "Hello MCP!"
-
-```
-Use mcp_test_add to calculate 17 + 25
-```
-**Expected:** Agent calls tool, returns "42"
-
-```
-What's the current time? Use mcp_test_get_time.
-```
-**Expected:** Agent calls tool, returns ISO timestamp
-
----
-
-## Test 7: Disconnect Server
-
-```
-/mcp disconnect test
-/mcp
-```
-
-**Expected:** Shows test as [disconnected], Connected: (none)
-
----
-
-## Test 8: Tools Unavailable After Disconnect
-
-```
-Use mcp_test_echo to say hello
-```
-
-**Expected:** Agent reports tool not available / unknown skill
-
----
-
-## Test 9: Reconnect Works
-
-```
-/mcp connect test
-/mcp tools
-```
-
-**Expected:** All 3 tools available again
-
----
-
-## Test 10: Disable Individual MCP Tool
+## Test 12: Disable Individual MCP Tool
 
 ```
 /permissions --disable mcp_test_add
@@ -167,28 +274,42 @@ Use mcp_test_echo to say hello
 Calculate 5 + 3 using mcp_test_add
 ```
 
-**Expected:** Error - tool disabled
+**Expected:** Error - tool disabled (regardless of allowances)
 
 ```
 Echo "still works" using mcp_test_echo
 ```
 
-**Expected:** Works - returns "still works"
-
----
-
-## Test 11: Re-enable Tool
+**Expected:** Works (not disabled)
 
 ```
 /permissions --enable mcp_test_add
-Calculate 100 + 23 using mcp_test_add
 ```
-
-**Expected:** Works - returns "123"
 
 ---
 
-## Test 12: Connect Non-existent Server
+## Test 13: Server Status Shows Mode
+
+```
+/mcp
+```
+
+**Expected:** Shows connection mode
+```
+Connected: 1
+  test: 3 tools (allow-all)
+```
+
+or
+
+```
+Connected: 1
+  test: 3 tools (per-tool)
+```
+
+---
+
+## Test 14: Connect Non-existent Server
 
 ```
 /mcp connect nonexistent
@@ -198,7 +319,7 @@ Calculate 100 + 23 using mcp_test_add
 
 ---
 
-## Test 13: Double Connect (Already Connected)
+## Test 15: Double Connect (Already Connected)
 
 ```
 /mcp connect test
@@ -223,14 +344,36 @@ Calculate 100 + 23 using mcp_test_add
 |------|-----------|-------|
 | 1. SANDBOXED blocked | | |
 | 2. List servers | | |
-| 3. Connect | | |
-| 4. List tools | | |
-| 5. Status after connect | | |
-| 6. Agent uses tools | | |
-| 7. Disconnect | | |
-| 8. Tools unavailable | | |
-| 9. Reconnect | | |
-| 10. Disable tool | | |
-| 11. Re-enable tool | | |
-| 12. Non-existent server | | |
-| 13. Double connect | | |
+| 3. Connect - allow all | | |
+| 4. Allow-all no prompts | | |
+| 5. Connect - per-tool | | |
+| 6. Per-tool - allow once | | |
+| 7. Per-tool - allow tool always | | |
+| 8. Per-tool - allow server | | |
+| 9. Connect - deny | | |
+| 10. YOLO no prompts | | |
+| 11. List tools | | |
+| 12. Disable tool | | |
+| 13. Status shows mode | | |
+| 14. Non-existent server | | |
+| 15. Double connect | | |
+
+---
+
+## Permission Flow Summary
+
+```
+Connection Consent (TRUSTED mode):
+  [1] Allow all → No per-tool prompts
+  [2] Per-tool  → Prompts for each tool call
+  [3] Deny      → Connection cancelled
+
+Per-Tool Confirmation (per-tool mode):
+  [1] Allow once      → This call only
+  [2] Allow tool      → This tool, rest of session
+  [3] Allow server    → All tools from server, rest of session
+  [4] Deny            → Tool call rejected
+
+YOLO mode: All prompts skipped, auto-allow
+SANDBOXED mode: MCP completely blocked
+```
