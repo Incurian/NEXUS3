@@ -500,7 +500,7 @@ class Session:
             skip_confirmation = False
             if tool_call.name == "nexus_destroy":
                 target_agent_id = tool_call.arguments.get("agent_id")
-                child_ids: set[str] | None = self.services.get("child_agent_ids") if self.services else None
+                child_ids: set[str] | None = self._services.get("child_agent_ids") if self._services else None
                 if target_agent_id and child_ids and target_agent_id in child_ids:
                     skip_confirmation = True
 
