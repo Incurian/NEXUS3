@@ -156,11 +156,13 @@ class GlobalDispatcher:
                 - cwd: Optional[str] - Working directory / sandbox root for the agent
                 - allowed_write_paths: Optional[list[str]] - Paths where writes are allowed
                 - model: Optional[str] - Model name/alias to use (from config.models or full ID)
+                - initial_message: Optional[str] - Message to send immediately after creation
 
         Returns:
             Dict containing:
                 - agent_id: str - The ID of the created agent
                 - url: str - The URL to use for agent-specific RPC calls
+                - response: Optional[dict] - Response from initial_message if provided
 
         Raises:
             InvalidParamsError: If agent_id is provided but already exists,
@@ -175,6 +177,7 @@ class GlobalDispatcher:
         cwd_param = params.get("cwd")
         allowed_write_paths = params.get("allowed_write_paths")
         model = params.get("model")
+        initial_message = params.get("initial_message")
 
         # Validate agent_id if provided
         if agent_id is not None:
@@ -223,6 +226,12 @@ class GlobalDispatcher:
         if model is not None and not isinstance(model, str):
             raise InvalidParamsError(
                 f"model must be string, got: {type(model).__name__}"
+            )
+
+        # Validate initial_message if provided
+        if initial_message is not None and not isinstance(initial_message, str):
+            raise InvalidParamsError(
+                f"initial_message must be string, got: {type(initial_message).__name__}"
             )
 
         # Validate cwd if provided
@@ -353,10 +362,27 @@ class GlobalDispatcher:
         )
         agent = await self._pool.create(agent_id=agent_id, config=config)
 
-        return {
+        result: dict[str, Any] = {
             "agent_id": agent.agent_id,
             "url": f"/agent/{agent.agent_id}",
         }
+
+        # Send initial message if provided
+        if initial_message:
+            from nexus3.rpc.types import Request as RpcRequest
+            send_request = RpcRequest(
+                jsonrpc="2.0",
+                method="send",
+                params={"content": initial_message},
+                id="initial_message",
+            )
+            response = await agent.dispatcher.dispatch(send_request)
+            if response and response.result:
+                result["response"] = response.result
+            elif response and response.error:
+                result["response"] = {"error": response.error}
+
+        return result
 
     async def _handle_destroy_agent(self, params: dict[str, Any]) -> dict[str, Any]:
         """Destroy an agent.

@@ -315,6 +315,8 @@ async def cmd_create(
     cwd: str | None = None,
     allowed_write_paths: list[str] | None = None,
     model: str | None = None,
+    message: str | None = None,
+    timeout: float = 120.0,
 ) -> int:
     """Create a new agent on the server.
 
@@ -328,6 +330,9 @@ async def cmd_create(
         cwd: Working directory / sandbox root for the agent.
         allowed_write_paths: Paths where write_file/edit_file are allowed.
         model: Model name/alias to use (from config.models or full model ID).
+        message: Initial message to send to the agent immediately after creation.
+            The agent will process this and the response will be in the result.
+        timeout: Request timeout in seconds (default 120, used when message provided).
 
     Returns:
         Exit code: 0 on success, 1 on error.
@@ -337,14 +342,17 @@ async def cmd_create(
 
     url = f"http://127.0.0.1:{port}"
     key = _get_api_key(port, api_key)
+    # Use longer timeout if initial message provided (agent needs time to respond)
+    client_timeout = timeout if message else 30.0
     try:
-        async with NexusClient(url, api_key=key) as client:
+        async with NexusClient(url, api_key=key, timeout=client_timeout) as client:
             result = await client.create_agent(
                 agent_id,
                 preset=preset,
                 cwd=cwd,
                 allowed_write_paths=allowed_write_paths,
                 model=model,
+                initial_message=message,
             )
             _print_json(result)
             return 0

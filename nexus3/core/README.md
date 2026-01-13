@@ -241,8 +241,12 @@ Comprehensive permission system for controlling agent access. All types are expo
 #### Action Categories
 
 ```python
-DESTRUCTIVE_ACTIONS = {"delete", "remove", "overwrite", "write", "execute",
-                       "run_command", "shutdown", "write_file", "nexus_destroy", "nexus_shutdown"}
+DESTRUCTIVE_ACTIONS = frozenset({
+    "write", "delete", "remove", "overwrite", "execute", "run_command", "shutdown",
+    # Specific tool names requiring confirmation in TRUSTED mode
+    "write_file", "edit_file", "append_file", "regex_replace",
+    "bash", "run_python", "nexus_destroy", "nexus_shutdown",
+})
 SAFE_ACTIONS = {"read", "list", "status", "search"}
 NETWORK_ACTIONS = {"http_request", "send_message", "connect"}
 ```

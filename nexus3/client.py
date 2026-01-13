@@ -229,6 +229,7 @@ class NexusClient:
         cwd: str | None = None,
         allowed_write_paths: list[str] | None = None,
         model: str | None = None,
+        initial_message: str | None = None,
     ) -> dict[str, Any]:
         """Create a new agent on the server.
 
@@ -249,9 +250,12 @@ class NexusClient:
                 allowed. For SANDBOXED agents, defaults to empty (read-only).
                 Must be within cwd and parent's allowed paths.
             model: Model name/alias to use (from config.models or full model ID).
+            initial_message: Message to send to the agent immediately after creation.
+                The agent will process this message and the response will be included
+                in the result under the 'response' key.
 
         Returns:
-            Creation result with agent_id.
+            Creation result with agent_id, url, and optionally response if initial_message provided.
         """
         params: dict[str, Any] = {"agent_id": agent_id}
         if preset is not None:
@@ -266,6 +270,8 @@ class NexusClient:
             params["allowed_write_paths"] = allowed_write_paths
         if model is not None:
             params["model"] = model
+        if initial_message is not None:
+            params["initial_message"] = initial_message
         response = await self._call("create_agent", params)
         return cast(dict[str, Any], self._check(response))
 

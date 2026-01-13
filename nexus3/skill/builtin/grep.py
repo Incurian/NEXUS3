@@ -1,6 +1,7 @@
 """Grep skill for searching file contents with regex."""
 
 import asyncio
+import fnmatch
 import re
 from pathlib import Path
 from typing import Any
@@ -67,6 +68,15 @@ class GrepSkill:
                     "type": "integer",
                     "description": "Maximum number of matches to return (default: 100)",
                     "default": 100
+                },
+                "include": {
+                    "type": "string",
+                    "description": "Only search files matching pattern (e.g., '*.py', '*.{js,ts}')"
+                },
+                "context": {
+                    "type": "integer",
+                    "description": "Number of lines before and after each match (default: 0)",
+                    "default": 0
                 }
             },
             "required": ["pattern", "path"]
@@ -79,6 +89,8 @@ class GrepSkill:
         recursive: bool = True,
         ignore_case: bool = False,
         max_matches: int = 100,
+        include: str | None = None,
+        context: int = 0,
         **kwargs: Any
     ) -> ToolResult:
         """Search for pattern in file(s).
@@ -89,6 +101,8 @@ class GrepSkill:
             recursive: Search subdirectories
             ignore_case: Case-insensitive matching
             max_matches: Maximum matches to return
+            include: Only search files matching this pattern
+            context: Lines of context before/after each match
 
         Returns:
             ToolResult with matching lines or error message
@@ -132,6 +146,24 @@ class GrepSkill:
             else:
                 return ToolResult(error=f"Path not found: {path}")
 
+            # Filter by include pattern if specified
+            if include and len(files_to_search) > 1:
+                # Handle brace expansion like '*.{js,ts}'
+                if '{' in include and '}' in include:
+                    # Extract patterns from braces
+                    prefix, rest = include.split('{', 1)
+                    options, suffix = rest.split('}', 1)
+                    patterns = [prefix + opt + suffix for opt in options.split(',')]
+                    files_to_search = [
+                        f for f in files_to_search
+                        if any(fnmatch.fnmatch(f.name, p) for p in patterns)
+                    ]
+                else:
+                    files_to_search = [
+                        f for f in files_to_search
+                        if fnmatch.fnmatch(f.name, include)
+                    ]
+
             # Search files
             matches: list[str] = []
             files_searched = 0
@@ -157,24 +189,65 @@ class GrepSkill:
                 except (UnicodeDecodeError, PermissionError, OSError):
                     continue
 
+                # Format relative path
+                try:
+                    rel_path = file_path.relative_to(search_path)
+                except ValueError:
+                    rel_path = file_path
+
+                lines = content.splitlines()
+                total_lines = len(lines)
+
                 # Search for matches
                 file_has_match = False
-                for line_num, line in enumerate(content.splitlines(), 1):
-                    if regex.search(line):
-                        if not file_has_match:
-                            file_has_match = True
-                            files_with_matches += 1
 
-                        # Format output
-                        try:
-                            rel_path = file_path.relative_to(search_path)
-                        except ValueError:
-                            rel_path = file_path
+                if context > 0:
+                    # Context mode: collect match line numbers, then output ranges
+                    match_lines: list[int] = []
+                    for line_num, line in enumerate(lines):
+                        if regex.search(line):
+                            match_lines.append(line_num)
 
-                        matches.append(f"{rel_path}:{line_num}: {line.rstrip()}")
+                    if match_lines:
+                        file_has_match = True
+                        files_with_matches += 1
 
-                        if len(matches) >= max_matches:
-                            break
+                        # Build output with context, deduplicating overlapping ranges
+                        printed_lines: set[int] = set()
+                        for match_idx in match_lines:
+                            start = max(0, match_idx - context)
+                            end = min(total_lines, match_idx + context + 1)
+
+                            # Output separator between non-adjacent groups
+                            if printed_lines and start > max(printed_lines) + 1:
+                                matches.append("--")
+
+                            for idx in range(start, end):
+                                if idx in printed_lines:
+                                    continue
+                                printed_lines.add(idx)
+
+                                line = lines[idx]
+                                prefix = ">" if idx == match_idx else " "
+                                matches.append(f"{rel_path}:{idx + 1}:{prefix} {line.rstrip()}")
+
+                                if len(matches) >= max_matches:
+                                    break
+
+                            if len(matches) >= max_matches:
+                                break
+                else:
+                    # No context mode: original behavior
+                    for line_num, line in enumerate(lines, 1):
+                        if regex.search(line):
+                            if not file_has_match:
+                                file_has_match = True
+                                files_with_matches += 1
+
+                            matches.append(f"{rel_path}:{line_num}: {line.rstrip()}")
+
+                            if len(matches) >= max_matches:
+                                break
 
             if not matches:
                 return ToolResult(output=f"No matches for '{pattern}' in {path}")

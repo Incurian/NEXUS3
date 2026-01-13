@@ -69,6 +69,8 @@ DESTRUCTIVE_ACTIONS = frozenset({
     # Specific tool names
     "write_file",
     "edit_file",
+    "append_file",
+    "regex_replace",
     "bash",
     "run_python",
     "nexus_destroy",

@@ -56,6 +56,11 @@ class GlobSkill:
                     "type": "integer",
                     "description": "Maximum number of results to return (default: 100)",
                     "default": 100
+                },
+                "exclude": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Patterns to exclude (e.g., ['node_modules', '.git', '__pycache__'])"
                 }
             },
             "required": ["pattern"]
@@ -66,6 +71,7 @@ class GlobSkill:
         pattern: str = "",
         path: str = ".",
         max_results: int = 100,
+        exclude: list[str] | None = None,
         **kwargs: Any
     ) -> ToolResult:
         """Find files matching glob pattern.
@@ -74,6 +80,7 @@ class GlobSkill:
             pattern: Glob pattern to match
             path: Base directory to search from
             max_results: Maximum number of results
+            exclude: Patterns to exclude from results
 
         Returns:
             ToolResult with matching file paths or error message
@@ -105,6 +112,18 @@ class GlobSkill:
                             validate_sandbox(match, self._allowed_paths)
                         except PathSecurityError:
                             continue  # Skip results outside sandbox
+
+                    # Check exclusion patterns
+                    if exclude:
+                        match_str = str(match)
+                        skip = False
+                        for excl in exclude:
+                            if excl in match_str:
+                                skip = True
+                                break
+                        if skip:
+                            continue
+
                     results.append(match)
                     if len(results) >= max_results:
                         break

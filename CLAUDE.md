@@ -150,16 +150,21 @@ nexus-rpc shutdown
 
 | Skill | Parameters | Description |
 |-------|------------|-------------|
-| `read_file` | `path` | Read file contents |
+| `read_file` | `path`, `offset`?, `limit`? | Read file contents (with optional line range) |
+| `tail` | `path`, `lines`? | Read last N lines of a file (default: 10) |
+| `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
 | `write_file` | `path`, `content` | Write/create files |
 | `edit_file` | `path`, `old_string`, `new_string` | Edit files with string replacement |
+| `append_file` | `path`, `content`, `newline`? | Append content to a file |
+| `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | Pattern-based find/replace in files |
 | `list_directory` | `path` | List directory contents |
-| `glob` | `pattern`, `path`? | Find files matching glob pattern |
-| `grep` | `pattern`, `path`?, `include`? | Search file contents |
+| `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern (with exclusions) |
+| `grep` | `pattern`, `path`?, `include`?, `context`? | Search file contents with file filter and context lines |
+| `git` | `command`, `cwd`? | Execute git commands (permission-filtered by level) |
 | `bash` | `command`, `timeout`? | Execute shell commands |
 | `run_python` | `code`, `timeout`? | Execute Python code |
 | `sleep` | `seconds`, `label`? | Pause execution (for testing) |
-| `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `model`? | Create a new agent with permissions |
+| `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `model`?, `initial_message`? | Create agent and optionally send initial message |
 | `nexus_destroy` | `agent_id`, `port`? | Remove an agent (server keeps running) |
 | `nexus_send` | `agent_id`, `content`, `port`? | Send message to an agent |
 | `nexus_status` | `agent_id`, `port`? | Get agent tokens + context |
@@ -244,6 +249,7 @@ nexus --connect [URL]        # Connect to existing server
 nexus-rpc detect             # Check if server is running
 nexus-rpc list               # List agents (auto-starts server)
 nexus-rpc create ID          # Create agent (auto-starts server)
+nexus-rpc create ID -M "msg" # Create agent and send initial message
 nexus-rpc destroy ID         # Destroy agent
 nexus-rpc send AGENT MSG     # Send message to agent
 nexus-rpc status AGENT       # Get agent status

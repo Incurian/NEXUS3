@@ -589,7 +589,7 @@ class Session:
 
                 # MCP per-tool confirmation for TRUSTED mode
                 if skill and mcp_server_name and permissions:
-                    from nexus3.core.permissions import PermissionLevel, ConfirmationResult
+                    from nexus3.core.permissions import PermissionLevel
 
                     level = permissions.effective_policy.level
 

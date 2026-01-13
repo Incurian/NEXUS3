@@ -1,4 +1,4 @@
-"""Read file skill for reading file contents."""
+"""Tail skill for reading last N lines of a file."""
 
 import asyncio
 from pathlib import Path
@@ -10,18 +10,18 @@ from nexus3.core.types import ToolResult
 from nexus3.skill.services import ServiceContainer
 
 
-class ReadFileSkill:
-    """Skill that reads the contents of a file.
+class TailSkill:
+    """Skill that reads the last N lines of a file.
 
-    Returns the file contents as text, or an error if the file
-    cannot be read.
+    More intuitive than negative offsets for common use cases like
+    reading log files or recent output.
 
     If allowed_paths is provided, path validation is performed to ensure
     the file is within the sandbox. Otherwise, any path is allowed.
     """
 
     def __init__(self, allowed_paths: list[Path] | None = None) -> None:
-        """Initialize ReadFileSkill.
+        """Initialize TailSkill.
 
         Args:
             allowed_paths: List of allowed directories for path validation.
@@ -29,16 +29,15 @@ class ReadFileSkill:
                 - []: Empty list means NO paths allowed (all reads denied)
                 - [Path(...)]: Only allow reads within these directories
         """
-        # None = unrestricted, [] = deny all, [paths...] = only within these
         self._allowed_paths = allowed_paths
 
     @property
     def name(self) -> str:
-        return "read_file"
+        return "tail"
 
     @property
     def description(self) -> str:
-        return "Read the contents of a file"
+        return "Read the last N lines of a file"
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -49,14 +48,10 @@ class ReadFileSkill:
                     "type": "string",
                     "description": "The path to the file to read"
                 },
-                "offset": {
+                "lines": {
                     "type": "integer",
-                    "description": "Line number to start reading from (1-indexed, default: 1)",
-                    "default": 1
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum number of lines to read (default: all)"
+                    "description": "Number of lines from end (default: 10)",
+                    "default": 10
                 }
             },
             "required": ["path"]
@@ -65,16 +60,14 @@ class ReadFileSkill:
     async def execute(
         self,
         path: str = "",
-        offset: int = 1,
-        limit: int | None = None,
+        lines: int = 10,
         **kwargs: Any
     ) -> ToolResult:
-        """Read the file and return its contents.
+        """Read the last N lines of the file.
 
         Args:
             path: The path to the file to read
-            offset: Line number to start reading from (1-indexed, default: 1)
-            limit: Maximum number of lines to read (default: all)
+            lines: Number of lines from end (default: 10)
 
         Returns:
             ToolResult with file contents in output, or error message in error
@@ -82,9 +75,8 @@ class ReadFileSkill:
         if not path:
             return ToolResult(error="No path provided")
 
-        # Validate offset
-        if offset < 1:
-            return ToolResult(error="Offset must be at least 1 (1-indexed)")
+        if lines < 1:
+            return ToolResult(error="Lines must be at least 1")
 
         try:
             # Validate sandbox if allowed_paths is configured
@@ -96,24 +88,27 @@ class ReadFileSkill:
             # Use async file I/O to avoid blocking
             content = await asyncio.to_thread(p.read_text, encoding="utf-8")
 
-            # Apply offset and limit if specified
-            if offset > 1 or limit is not None:
-                lines = content.splitlines(keepends=True)
-                start_idx = offset - 1  # Convert to 0-indexed
-                if limit is not None:
-                    end_idx = start_idx + limit
-                    selected_lines = lines[start_idx:end_idx]
-                else:
-                    selected_lines = lines[start_idx:]
+            # Get last N lines
+            all_lines = content.splitlines(keepends=True)
+            total_lines = len(all_lines)
 
-                # Format with line numbers
+            if lines >= total_lines:
+                # Return entire file with line numbers
+                numbered = [
+                    f"{i + 1}: {line}"
+                    for i, line in enumerate(all_lines)
+                ]
+            else:
+                # Return last N lines with correct line numbers
+                start_idx = total_lines - lines
+                selected_lines = all_lines[start_idx:]
                 numbered = [
                     f"{start_idx + i + 1}: {line}"
                     for i, line in enumerate(selected_lines)
                 ]
-                return ToolResult(output="".join(numbered))
 
-            return ToolResult(output=content)
+            return ToolResult(output="".join(numbered))
+
         except PathSecurityError as e:
             return ToolResult(error=str(e))
         except FileNotFoundError:
@@ -128,15 +123,15 @@ class ReadFileSkill:
             return ToolResult(error=f"Error reading file: {e}")
 
 
-def read_file_factory(services: ServiceContainer) -> ReadFileSkill:
-    """Factory function for ReadFileSkill.
+def tail_factory(services: ServiceContainer) -> TailSkill:
+    """Factory function for TailSkill.
 
     Args:
         services: ServiceContainer for dependency injection. If it contains
             'allowed_paths', sandbox validation will be enabled.
 
     Returns:
-        New ReadFileSkill instance
+        New TailSkill instance
     """
     allowed_paths: list[Path] | None = services.get("allowed_paths")
-    return ReadFileSkill(allowed_paths=allowed_paths)
+    return TailSkill(allowed_paths=allowed_paths)

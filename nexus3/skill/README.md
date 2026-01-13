@@ -10,7 +10,7 @@ This module provides the skill/tool infrastructure for NEXUS3:
 - **BaseSkill** abstract base class for convenience
 - **SkillRegistry** for managing skill factories with lazy instantiation and caching
 - **ServiceContainer** for dependency injection into skills
-- **16 built-in skills** for file I/O, search, execution, agent control, and testing (+ `echo` manual)
+- **20 built-in skills** for file I/O, search, execution, git, agent control, and testing (+ `echo` manual)
 
 Skills are the fundamental unit of capability in NEXUS3. Each skill provides a single, well-defined, async-executable action that the LLM invokes via function calling.
 
@@ -35,8 +35,8 @@ Skills are the fundamental unit of capability in NEXUS3. Each skill provides a s
 | `services.py` | `ServiceContainer` |
 | `errors.py` | `SkillError`, `SkillNotFoundError`, `SkillExecutionError` |
 | `builtin/__init__.py` | Exports `register_builtin_skills`, nexus factories |
-| `builtin/registration.py` | `register_builtin_skills(registry)` registers all 16 |
-| `builtin/*.py` | Individual skills: bash.py, echo.py, edit_file.py, etc. |
+| `builtin/registration.py` | `register_builtin_skills(registry)` registers all 20 |
+| `builtin/*.py` | Individual skills: append_file.py, bash.py, echo.py, edit_file.py, file_info.py, git.py, glob_search.py, grep.py, list_directory.py, read_file.py, regex_replace.py, run_python.py, sleep.py, tail.py, write_file.py, nexus_*.py |
 
 ## Skill Protocol
 
@@ -116,7 +116,7 @@ services.names()
 | `agent_id` | `str \| None` | `nexus_create` (ceiling parent) |
 | `permissions` | `AgentPermissions \| None` | `nexus_create` (ceiling check) |
 
-## Built-in Skills (16 Total, Auto-Registered)
+## Built-in Skills (20 Total, Auto-Registered)
 
 **register_builtin_skills(registry)** registers:
 
@@ -124,10 +124,12 @@ services.names()
 
 | Skill | Parameters | Description |
 |-------|------------|-------------|
-| `read_file` | `path` (req) | Read UTF-8 text; sandbox if `allowed_paths` |
+| `read_file` | `path` (req), `offset=1`?, `limit`? | Read UTF-8 text with optional line range; sandbox |
+| `tail` | `path` (req), `lines=10`? | Read last N lines of a file; sandbox |
+| `file_info` | `path` (req) | Get file/dir metadata: size, mtime, permissions, type |
 | `list_directory` | `path=?`, `all` (hidden)?, `long` (ls -l)? | List dir; `drwx size date name`; sandbox |
-| `glob` | `pattern` (req), `path=?`, `max_results=100` | `**/*.py`; relative paths; sandbox |
-| `grep` | `pattern` (req), `path` (req), `recursive=true`, `ignore_case=false`, `max_matches=100` | Regex; `file:line: match`; skips binary; sandbox |
+| `glob` | `pattern` (req), `path=?`, `max_results=100`, `exclude`? | `**/*.py`; supports exclusion patterns; sandbox |
+| `grep` | `pattern` (req), `path` (req), `recursive=true`, `ignore_case=false`, `max_matches=100`, `include`?, `context=0`? | Regex; file filter; context lines; skips binary; sandbox |
 
 ### File I/O (Destructive)
 
@@ -135,6 +137,19 @@ services.names()
 |-------|------------|-------------|
 | `write_file` | `path` (req), `content` (req) | Write UTF-8; `mkdir -p`; sandbox |
 | `edit_file` | `path` (req), **String:** `old_string`, `new_string`, `replace_all=false`<br>**Line:** `start_line`, `end_line=?`, `new_content` | Unique check; sandbox |
+| `append_file` | `path` (req), `content` (req), `newline=true`? | Append content with smart newline handling; sandbox |
+| `regex_replace` | `path` (req), `pattern` (req), `replacement` (req), `count=0`?, `ignore_case`?, `multiline`?, `dotall`? | Pattern-based find/replace; backrefs (\1); max 10000 matches; 5s timeout; sandbox |
+
+### Git Operations (Permission-Filtered)
+
+| Skill | Parameters | Description |
+|-------|------------|-------------|
+| `git` | `command` (req), `cwd=.`? | Git commands filtered by permission level; 30s timeout; JSON output |
+
+**Permission levels:**
+- SANDBOXED: Read-only commands (status, diff, log, show, branch, etc.)
+- TRUSTED: Read + write commands (add, commit, push, pull, etc.); blocks dangerous ops
+- YOLO: All commands including dangerous (reset --hard, push --force, clean -fd)
 
 ### Execution (High-Risk: Disabled in Sandboxed)
 
@@ -149,7 +164,7 @@ Localhost-only; auto-discovers `api_key`; validates `agent_id`/URL.
 
 | Skill | Parameters | Description |
 |-------|------------|-------------|
-| `nexus_create` | `agent_id` (req), `preset`? (trusted/sandboxed/worker), `cwd`?, `allowed_write_paths`?, `disable_tools`?, `model`?, `port`? | Ceiling check via parent `permissions` |
+| `nexus_create` | `agent_id` (req), `preset`?, `cwd`?, `allowed_write_paths`?, `disable_tools`?, `model`?, `initial_message`?, `port`? | Create agent; if `initial_message` provided, sends it and includes response |
 | `nexus_destroy` | `agent_id` (req), `port`? | Remove agent (server continues) |
 | `nexus_send` | `agent_id` (req), `content` (req), `port`? | Send msg → full JSON response |
 | `nexus_status` | `agent_id` (req), `port`? | `{"tokens":..., "context":...}` |

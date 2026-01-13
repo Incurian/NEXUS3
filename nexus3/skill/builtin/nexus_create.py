@@ -34,7 +34,7 @@ class NexusCreateSkill:
 
     @property
     def description(self) -> str:
-        return "Create a new agent on the Nexus server"
+        return "Create a new agent on the Nexus server. Use initial_message to send a task immediately after creation."
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -70,6 +70,11 @@ class NexusCreateSkill:
                     "type": "string",
                     "description": "Model name/alias to use (e.g., 'fast', 'smart', or full model ID)",
                 },
+                "initial_message": {
+                    "type": "string",
+                    "description": "Message to send to the agent immediately after creation. "
+                    "The agent will process this and the response will be in the result.",
+                },
                 "port": {
                     "type": "integer",
                     "description": "Server port (default: 8765)",
@@ -102,6 +107,7 @@ class NexusCreateSkill:
         allowed_write_paths: list[str] | None = None,
         disable_tools: list[str] | None = None,
         model: str | None = None,
+        initial_message: str | None = None,
         port: int | None = None,
         **kwargs: Any,
     ) -> ToolResult:
@@ -114,10 +120,11 @@ class NexusCreateSkill:
             allowed_write_paths: Paths where writes are allowed (must be within cwd)
             disable_tools: List of tool names to disable
             model: Model name/alias to use (from config.models or full model ID)
+            initial_message: Message to send to agent immediately after creation
             port: Optional server port (default: 8765)
 
         Returns:
-            ToolResult with creation result or error
+            ToolResult with creation result or error (includes response if initial_message provided)
         """
         if not agent_id:
             return ToolResult(error="No agent_id provided")
@@ -159,6 +166,7 @@ class NexusCreateSkill:
                     cwd=cwd,
                     allowed_write_paths=allowed_write_paths,
                     model=model,
+                    initial_message=initial_message,
                 )
                 return ToolResult(output=json.dumps(result))
         except ClientError as e:

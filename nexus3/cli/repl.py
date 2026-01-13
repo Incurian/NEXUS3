@@ -329,6 +329,17 @@ def parse_args() -> argparse.Namespace:
         metavar="NAME",
         help="Model name/alias to use (from config.models or full model ID)"
     )
+    create_parser.add_argument(
+        "--message", "-M",
+        metavar="MSG",
+        help="Initial message to send to agent immediately after creation"
+    )
+    create_parser.add_argument(
+        "--timeout", "-t",
+        type=float,
+        default=120.0,
+        help="Request timeout in seconds for initial message (default: 120)"
+    )
     add_port_arg(create_parser)
     add_api_key_arg(create_parser)
 
@@ -1458,6 +1469,8 @@ def main() -> None:
                     args.cwd,
                     args.allowed_write_paths,
                     args.model,
+                    args.message,
+                    args.timeout,
                 ))
             elif rpc_cmd == "destroy":
                 exit_code = asyncio.run(cmd_destroy(args.agent_id, args.port, args.api_key))
