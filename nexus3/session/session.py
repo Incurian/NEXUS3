@@ -593,14 +593,21 @@ class Session:
 
                     # YOLO skips confirmation
                     if level != PermissionLevel.YOLO:
-                        # Check if server is in allow-all mode (session allowances)
-                        if not permissions.session_allowances.is_mcp_server_allowed(mcp_server_name):
+                        # Check if server is in allow-all mode
+                        server_allowed = permissions.session_allowances.is_mcp_server_allowed(mcp_server_name)
+                        # Check if this specific tool is allowed
+                        tool_allowed = permissions.session_allowances.is_mcp_tool_allowed(tool_call.name)
+
+                        if not server_allowed and not tool_allowed:
                             # Need per-tool confirmation
                             result = await self._request_confirmation(tool_call, None)
                             if result == ConfirmationResult.DENY:
                                 return ToolResult(error=f"MCP tool '{tool_call.name}' denied by user")
+                            elif result == ConfirmationResult.ALLOW_FILE:
+                                # User chose "allow this tool always"
+                                permissions.session_allowances.add_mcp_tool(tool_call.name)
                             elif result == ConfirmationResult.ALLOW_EXEC_GLOBAL:
-                                # User chose "allow always" - add server to allowances
+                                # User chose "allow all tools from this server"
                                 permissions.session_allowances.add_mcp_server(mcp_server_name)
                             # ALLOW_ONCE proceeds without adding to allowances
 

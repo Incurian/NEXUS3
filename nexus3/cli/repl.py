@@ -197,8 +197,9 @@ async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> 
         console.print()
         if is_mcp_tool:
             console.print("  [cyan][1][/] Allow once")
-            console.print("  [cyan][2][/] Allow always (all tools from this server)")
-            console.print("  [cyan][3][/] Deny")
+            console.print("  [cyan][2][/] Allow this tool always (this session)")
+            console.print("  [cyan][3][/] Allow all tools from this server (this session)")
+            console.print("  [cyan][4][/] Deny")
         elif is_exec_tool:
             console.print("  [cyan][1][/] Allow once")
             console.print("  [cyan][2][/] Allow always in this directory")
@@ -211,10 +212,9 @@ async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> 
             console.print("  [cyan][4][/] Deny")
 
         # Use asyncio.to_thread for blocking input to allow event loop to continue
-        max_choice = "3" if is_mcp_tool else "4"
         def get_input() -> str:
             try:
-                return console.input(f"\n[dim]Choice [1-{max_choice}]:[/] ").strip()
+                return console.input("\n[dim]Choice [1-4]:[/] ").strip()
             except (EOFError, KeyboardInterrupt):
                 return ""
 
@@ -224,15 +224,16 @@ async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> 
             return ConfirmationResult.ALLOW_ONCE
         elif response == "2":
             if is_mcp_tool:
-                # "Allow always" for MCP means allow all tools from this server
-                return ConfirmationResult.ALLOW_EXEC_GLOBAL
+                # "Allow this tool always" - we use ALLOW_FILE to signal tool-level
+                return ConfirmationResult.ALLOW_FILE
             elif is_exec_tool:
                 return ConfirmationResult.ALLOW_EXEC_CWD
             else:
                 return ConfirmationResult.ALLOW_FILE
         elif response == "3":
             if is_mcp_tool:
-                return ConfirmationResult.DENY
+                # "Allow all tools from this server"
+                return ConfirmationResult.ALLOW_EXEC_GLOBAL
             elif is_exec_tool:
                 return ConfirmationResult.ALLOW_EXEC_GLOBAL
             else:

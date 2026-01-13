@@ -133,6 +133,9 @@ class SessionAllowances:
     # MCP servers where all tools are allowed (user chose "allow all" at connection)
     mcp_servers: set[str] = field(default_factory=set)
 
+    # Individual MCP tools allowed (user chose "allow this tool always")
+    mcp_tools: set[str] = field(default_factory=set)
+
     def is_write_allowed(self, path: Path) -> bool:
         """Check if path is covered by an existing write allowance."""
         resolved = path.resolve()
@@ -220,6 +223,14 @@ class SessionAllowances:
         """Allow all tools from an MCP server for this session."""
         self.mcp_servers.add(server_name)
 
+    def is_mcp_tool_allowed(self, tool_name: str) -> bool:
+        """Check if a specific MCP tool is allowed without confirmation."""
+        return tool_name in self.mcp_tools
+
+    def add_mcp_tool(self, tool_name: str) -> None:
+        """Allow a specific MCP tool for this session."""
+        self.mcp_tools.add(tool_name)
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize for persistence."""
         return {
@@ -231,6 +242,7 @@ class SessionAllowances:
                 for tool, dirs in self.exec_directories.items()
             },
             "mcp_servers": list(self.mcp_servers),
+            "mcp_tools": list(self.mcp_tools),
         }
 
     @classmethod
@@ -245,6 +257,7 @@ class SessionAllowances:
                 for tool, dirs in data.get("exec_directories", {}).items()
             },
             mcp_servers=set(data.get("mcp_servers", [])),
+            mcp_tools=set(data.get("mcp_tools", [])),
         )
 
     # Backwards compatibility
