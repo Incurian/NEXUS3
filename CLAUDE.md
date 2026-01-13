@@ -440,6 +440,12 @@ nexus --init-global-force     # Overwrite existing
 
 ---
 
+## TODO / Future Work
+
+- [ ] **Portable auto-bootstrap launcher**: Add a launcher script that auto-installs deps (httpx, pydantic, rich, prompt-toolkit, python-dotenv) on first run, enabling "copy folder and go" portability without manual pip install. See packaging investigation for options (shiv/zipapp as alternative).
+
+---
+
 ## Known Issues
 
-- **WSL Terminal**: Bash may close after `nexus` exits. Environmental issue, workaround TBD.
+- ~~**WSL Terminal**: Bash may close after `nexus` exits.~~ Fixed in d276c70.
