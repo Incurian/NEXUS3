@@ -8,6 +8,7 @@ Context management for NEXUS3 conversations: system prompts, message history, to
 |-----------|--------|-------|
 | `ContextManager` | ✅ Complete | Central coordinator for context |
 | `PromptLoader` with layered config | ✅ Complete | Personal + project prompt combination with system info |
+| `ContextLoader` with multi-layer loading | ✅ Complete | Global → ancestors → local with labeled sections |
 | Token counting (tiktoken default) | ✅ Complete | Accurate token counting with fallback |
 | Truncation strategies | ✅ Complete | `oldest_first` and `middle_out` with atomic message groups |
 | Compaction | ✅ Complete | LLM-based summarization to free context space |
@@ -28,6 +29,10 @@ This module manages the conversation context window for LLM API calls:
 |------|-------------|
 | `ContextManager` | Central coordinator for conversation state and token budgets |
 | `ContextConfig` | Configuration for token limits and truncation strategy |
+| `ContextLoader` | Unified loader for multi-layer context (global → ancestors → local) |
+| `LoadedContext` | Result of context loading with merged prompt, config, and MCP servers |
+| `ContextLayer` | A single layer of context (global, ancestor, or local) |
+| `ContextSources` | Tracks where each piece of context came from |
 | `PromptLoader` | Loads and combines system prompts from multiple sources with system info |
 | `LoadedPrompt` | Result of prompt loading with combined content and source paths |
 | `PromptSource` | Protocol for prompt sources (files, env vars, etc.) |

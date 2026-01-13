@@ -1287,3 +1287,28 @@ async def cmd_mcp(
             f"Unknown MCP subcommand: {subcmd}\n"
             f"Usage: /mcp [connect|disconnect|tools] [args]"
         )
+
+
+async def cmd_init(ctx: CommandContext, args: str | None) -> CommandOutput:
+    """Initialize project configuration directory.
+
+    Usage:
+        /init           - Create .nexus3/ in current directory
+        /init --force   - Overwrite existing files
+        /init --global  - Initialize ~/.nexus3/ instead
+    """
+    from nexus3.cli.init_commands import init_global, init_local
+
+    parts = (args or "").split()
+    force = "--force" in parts or "-f" in parts
+    global_mode = "--global" in parts or "-g" in parts
+
+    if global_mode:
+        success, message = init_global(force=force)
+    else:
+        success, message = init_local(force=force)
+
+    if success:
+        return CommandOutput.success(message=message)
+    else:
+        return CommandOutput.error(message)

@@ -1,6 +1,6 @@
 """Pydantic models for NEXUS3 configuration validation."""
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelAliasConfig(BaseModel):
@@ -140,6 +140,37 @@ class CompactionConfig(BaseModel):
     """Compact when context exceeds this ratio of available budget."""
 
 
+class ContextConfig(BaseModel):
+    """Configuration for context loading.
+
+    Controls how NEXUS.md prompts are loaded from multiple directory layers.
+
+    Example in config.json:
+        "context": {
+            "ancestor_depth": 2,
+            "include_readme": false,
+            "readme_as_fallback": true
+        }
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    ancestor_depth: int = Field(
+        default=2,
+        ge=0,
+        le=10,
+        description="How many directory levels above CWD to search for .nexus3/",
+    )
+    include_readme: bool = Field(
+        default=False,
+        description="Always include README.md in context alongside NEXUS.md",
+    )
+    readme_as_fallback: bool = Field(
+        default=True,
+        description="Use README.md as context when no NEXUS.md exists",
+    )
+
+
 class MCPServerConfig(BaseModel):
     """Configuration for an MCP server.
 
@@ -214,6 +245,7 @@ class Config(BaseModel):
     max_concurrent_tools: int = 10  # Max parallel tool executions
     permissions: PermissionsConfig = PermissionsConfig()  # Permission system config
     compaction: CompactionConfig = CompactionConfig()  # Context compaction config
+    context: ContextConfig = ContextConfig()  # Context loading config
     mcp_servers: list[MCPServerConfig] = []
     """MCP server configurations for external tool providers."""
 

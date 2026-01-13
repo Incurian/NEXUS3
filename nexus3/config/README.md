@@ -4,7 +4,18 @@ Configuration loading and validation module for NEXUS3.
 
 ## Purpose
 
-This module provides fail-fast configuration loading with Pydantic validation. It supports a hierarchical config search (project-local overrides global/shipped defaults) and returns sensible defaults when no config file exists.
+This module provides fail-fast configuration loading with Pydantic validation. It supports layered configuration with deep merging:
+
+**Load Order (earlier layers are base, later override):**
+1. **Shipped defaults** (`nexus3/defaults/config.json`)
+2. **Global user** (`~/.nexus3/config.json`)
+3. **Ancestor directories** (up to N levels above CWD, configurable)
+4. **Project local** (`CWD/.nexus3/config.json`)
+
+**Merge behavior:**
+- Dicts are recursively merged (local keys override, global preserved)
+- Lists are concatenated (not replaced)
+- Other values are overwritten by later layers
 
 ## Key Types/Classes
 
@@ -79,6 +90,16 @@ Context compaction settings.
 | `summary_budget_ratio` | `float`  | `0.25`  | Budget ratio for summary |
 | `recent_preserve_ratio`| `float`  | `0.25`  | Ratio of recent messages to preserve |
 | `trigger_threshold`    | `float`  | `0.9`   | Compact when context > this budget ratio |
+
+### `ContextConfig` (schema.py)
+
+Context loading settings.
+
+| Field                  | Type     | Default | Description |
+|------------------------|----------|---------|-------------|
+| `ancestor_depth`       | `int`    | `2`     | How many parent dirs to check for .nexus3/ (0-10) |
+| `include_readme`       | `bool`   | `False` | Always include README.md in context |
+| `readme_as_fallback`   | `bool`   | `True`  | Use README.md when no NEXUS.md exists |
 
 ### `MCPServerConfig` (schema.py)
 

@@ -466,6 +466,17 @@ def parse_args() -> argparse.Namespace:
         default="main",
         help="Agent ID to connect to (default: main, requires --connect)",
     )
+    # Init commands
+    parser.add_argument(
+        "--init-global",
+        action="store_true",
+        help="Initialize ~/.nexus3/ with default configuration and exit",
+    )
+    parser.add_argument(
+        "--init-global-force",
+        action="store_true",
+        help="Initialize ~/.nexus3/ and overwrite existing files",
+    )
     return parser.parse_args()
 
 
@@ -944,6 +955,8 @@ async def run_repl(
             return await repl_commands.cmd_model(ctx, cmd_args or None)
         elif cmd_name == "mcp":
             return await repl_commands.cmd_mcp(ctx, cmd_args or None)
+        elif cmd_name == "init":
+            return await repl_commands.cmd_init(ctx, cmd_args or None)
 
         # Unified commands (work in both CLI and REPL)
         elif cmd_name == "list":
@@ -1490,6 +1503,15 @@ def main() -> None:
                 print(f"Unknown rpc command: {rpc_cmd}")
                 exit_code = 1
             raise SystemExit(exit_code)
+
+        # Handle init-global command
+        if args.init_global or args.init_global_force:
+            from nexus3.cli.init_commands import init_global
+
+            force = args.init_global_force
+            success, message = init_global(force=force)
+            print(message)
+            raise SystemExit(0 if success else 1)
 
         # Handle connect mode (REPL as client)
         if args.connect is not None:

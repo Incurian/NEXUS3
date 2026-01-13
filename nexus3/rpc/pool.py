@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from nexus3.context import ContextConfig, ContextManager
+from nexus3.context import ContextConfig, ContextLoader, ContextManager, LoadedContext
 from nexus3.core.permissions import (
     AgentPermissions,
     PermissionDelta,
@@ -125,6 +125,7 @@ class SharedComponents:
         base_log_dir: Base directory for agent logs. Each agent gets a subdirectory.
         log_streams: Log streams to enable (defaults to ALL for backwards compatibility).
         custom_presets: Custom permission presets loaded from config.
+        base_context: The loaded context from server startup (for subagent inheritance).
     """
 
     config: Config
@@ -134,6 +135,7 @@ class SharedComponents:
     log_streams: LogStream = LogStream.ALL
     custom_presets: dict[str, PermissionPreset] = field(default_factory=dict)
     mcp_registry: MCPServerRegistry = field(default_factory=MCPServerRegistry)
+    base_context: LoadedContext | None = None
 
 
 @dataclass
@@ -332,8 +334,17 @@ class AgentPool:
             # Determine system prompt
             if effective_config.system_prompt is not None:
                 system_prompt = effective_config.system_prompt
+            elif effective_config.cwd is not None:
+                # Subagent with custom cwd - use ContextLoader for per-directory context
+                context_loader = ContextLoader(
+                    cwd=effective_config.cwd,
+                    context_config=self._shared.config.context,
+                )
+                system_prompt = context_loader.load_for_subagent(
+                    parent_context=self._shared.base_context,
+                )
             else:
-                # Load from prompt_loader
+                # Load from prompt_loader (default server context)
                 loaded_prompt = self._shared.prompt_loader.load(is_repl=False)
                 system_prompt = loaded_prompt.content
 

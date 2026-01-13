@@ -12,6 +12,15 @@ from nexus3.context.compaction import (
     create_summary_message,
     select_messages_for_compaction,
 )
+from nexus3.context.loader import (
+    ContextLayer,
+    ContextLoader,
+    ContextSources,
+    LoadedContext,
+    MCPServerWithOrigin,
+    PromptSource,
+    deep_merge,
+)
 from nexus3.context.manager import ContextConfig, ContextManager
 from nexus3.context.prompt_loader import LoadedPrompt, PromptLoader
 from nexus3.context.token_counter import (
@@ -22,16 +31,28 @@ from nexus3.context.token_counter import (
 )
 
 __all__ = [
+    # Compaction
     "CompactionResult",
     "build_summarize_prompt",
     "create_summary_message",
     "select_messages_for_compaction",
+    # Context loader
+    "ContextLayer",
+    "ContextLoader",
+    "ContextSources",
+    "LoadedContext",
+    "MCPServerWithOrigin",
+    "PromptSource",
+    "deep_merge",
+    # Prompt loader
     "LoadedPrompt",
     "PromptLoader",
+    # Token counter
     "TokenCounter",
     "SimpleTokenCounter",
     "TiktokenCounter",
     "get_token_counter",
+    # Context manager
     "ContextManager",
     "ContextConfig",
 ]

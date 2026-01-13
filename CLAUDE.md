@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. The goal is a simpler, more maintainable, end-to-end tested agent with clear architecture.
 
-**Status:** Phase 8+ complete. Full permission system with presets, per-tool config, inheritance, and context compaction.
+**Status:** Phase 9 complete. Context management with layered loading, subagent inheritance, and init commands.
 
 ---
 
@@ -54,6 +54,7 @@ nexus-rpc destroy researcher
 | **7 - Integration** | Sandbox → file skills, URL validation → nexus skills, async I/O, skill timeout, concurrency limit, truncation fix |
 | **8 - Permissions** | Permission presets (yolo/trusted/sandboxed/worker), per-tool config, deltas, ceiling inheritance, confirmation prompts |
 | **8+ - Compaction** | LLM-based context compaction, system prompt reloading, `/compact` command, configurable thresholds |
+| **9 - Context Mgmt** | Layered context loading (global→ancestors→local), subagent inheritance, deep config merge, `/init` command, `--init-global` |
 
 ---
 
@@ -334,6 +335,79 @@ Context compaction summarizes old conversation history via LLM to reclaim token 
 - **Longer sessions**: Reclaim space without losing context
 - **System prompt updates**: Changes to NEXUS.md apply on next compaction
 - **Configurable**: Tune thresholds for your use case
+
+---
+
+## Context Management (Phase 9)
+
+Context is loaded from multiple directory layers and merged together. Each layer extends the previous one.
+
+### Layer Hierarchy
+
+```
+LAYER 1: Install Defaults (shipped with package)
+    ↓
+LAYER 2: Global (~/.nexus3/)
+    ↓
+LAYER 3: Ancestors (up to N levels above CWD, default 2)
+    ↓
+LAYER 4: Local (CWD/.nexus3/)
+```
+
+### Directory Structure
+
+```
+~/.nexus3/                    # Global (user defaults)
+├── NEXUS.md                  # Personal system prompt
+├── config.json               # Personal configuration
+└── mcp.json                  # Personal MCP servers
+
+./parent/.nexus3/             # Ancestor (1 level up)
+├── NEXUS.md
+└── config.json
+
+./.nexus3/                    # Local (CWD)
+├── NEXUS.md                  # Project-specific prompt
+├── config.json               # Project config overrides
+└── mcp.json                  # Project MCP servers
+```
+
+### Configuration Merging
+
+- **Configs**: Deep merged (local keys override global, unspecified keys preserved)
+- **NEXUS.md**: All layers included with labeled sections
+- **MCP servers**: Same name = local wins
+
+### Subagent Context Inheritance
+
+Subagents created with `cwd` parameter get:
+1. Their cwd's NEXUS.md (if exists)
+2. Parent's context (non-redundantly)
+
+### Init Commands
+
+```bash
+# Initialize global config
+nexus --init-global           # Create ~/.nexus3/ with defaults
+nexus --init-global-force     # Overwrite existing
+
+# Initialize local config (REPL)
+/init                         # Create ./.nexus3/ with templates
+/init --force                 # Overwrite existing
+/init --global                # Initialize ~/.nexus3/ instead
+```
+
+### New Config Options
+
+```json
+{
+  "context": {
+    "ancestor_depth": 2,       // How many parent dirs to check (0-10)
+    "include_readme": false,   // Always include README.md
+    "readme_as_fallback": true // Use README when no NEXUS.md
+  }
+}
+```
 
 ---
 

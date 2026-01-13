@@ -35,7 +35,7 @@ from dotenv import load_dotenv
 
 from nexus3.config.loader import load_config
 from nexus3.config.schema import ProviderConfig
-from nexus3.context import PromptLoader
+from nexus3.context import ContextLoader, PromptLoader
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
 from nexus3.core.permissions import load_custom_presets_from_config
@@ -128,6 +128,10 @@ async def run_serve(
         {k: v.model_dump() for k, v in config.permissions.presets.items()}
     )
 
+    # Load base context for subagent inheritance
+    context_loader = ContextLoader(context_config=config.context)
+    base_context = context_loader.load(is_repl=False)
+
     # Create shared components
     shared = SharedComponents(
         config=config,
@@ -136,6 +140,7 @@ async def run_serve(
         base_log_dir=base_log_dir,
         log_streams=log_streams,
         custom_presets=custom_presets,
+        base_context=base_context,
     )
 
     # Create agent pool

@@ -1,0 +1,237 @@
+"""Tests for layered config loading."""
+
+import json
+from pathlib import Path
+
+import pytest
+
+from nexus3.config.loader import _deep_merge, _find_ancestor_config_dirs, load_config
+from nexus3.config.schema import Config
+from nexus3.core.errors import ConfigError
+
+
+class TestDeepMerge:
+    """Tests for _deep_merge function."""
+
+    def test_simple_merge(self) -> None:
+        """Test basic key merging."""
+        base = {"a": 1, "b": 2}
+        override = {"b": 3, "c": 4}
+        result = _deep_merge(base, override)
+        assert result == {"a": 1, "b": 3, "c": 4}
+
+    def test_nested_merge(self) -> None:
+        """Test nested dict merging preserves base keys."""
+        base = {"provider": {"model": "a", "type": "openrouter"}}
+        override = {"provider": {"model": "b"}}
+        result = _deep_merge(base, override)
+        assert result == {"provider": {"model": "b", "type": "openrouter"}}
+
+    def test_list_extension(self) -> None:
+        """Test lists are concatenated."""
+        base = {"items": [1, 2]}
+        override = {"items": [3, 4]}
+        result = _deep_merge(base, override)
+        assert result == {"items": [1, 2, 3, 4]}
+
+
+class TestAncestorDiscovery:
+    """Tests for ancestor config directory discovery."""
+
+    def test_finds_ancestors(self, tmp_path: Path) -> None:
+        """Test finding ancestor .nexus3 directories."""
+        # Create structure: a/b/c/project
+        project = tmp_path / "a" / "b" / "c" / "project"
+        project.mkdir(parents=True)
+
+        # Create .nexus3 in a and b
+        (tmp_path / "a" / ".nexus3").mkdir()
+        (tmp_path / "a" / "b" / ".nexus3").mkdir()
+
+        ancestors = _find_ancestor_config_dirs(project, max_depth=4)
+
+        assert len(ancestors) == 2
+        # Should be ordered: furthest first (a before b)
+        assert ancestors[0] == tmp_path / "a" / ".nexus3"
+        assert ancestors[1] == tmp_path / "a" / "b" / ".nexus3"
+
+    def test_respects_depth_limit(self, tmp_path: Path) -> None:
+        """Test depth limit is respected."""
+        project = tmp_path / "a" / "b" / "c" / "project"
+        project.mkdir(parents=True)
+
+        (tmp_path / "a" / ".nexus3").mkdir()
+        (tmp_path / "a" / "b" / ".nexus3").mkdir()
+        (tmp_path / "a" / "b" / "c" / ".nexus3").mkdir()
+
+        ancestors = _find_ancestor_config_dirs(project, max_depth=1)
+
+        assert len(ancestors) == 1
+        assert ancestors[0] == tmp_path / "a" / "b" / "c" / ".nexus3"
+
+    def test_stops_at_root(self, tmp_path: Path) -> None:
+        """Test doesn't go beyond filesystem root."""
+        ancestors = _find_ancestor_config_dirs(tmp_path, max_depth=100)
+        # Shouldn't crash, just return whatever it finds
+        assert isinstance(ancestors, list)
+
+
+class TestLayeredConfigLoading:
+    """Tests for layered config loading."""
+
+    def test_local_overrides_global(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test local config overrides global."""
+        # Mock home
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
+
+        # Create global config
+        global_nexus = home / ".nexus3"
+        global_nexus.mkdir()
+        (global_nexus / "config.json").write_text(json.dumps({
+            "stream_output": True,
+            "max_tool_iterations": 5,
+        }))
+
+        # Create local config
+        project = tmp_path / "project"
+        local_nexus = project / ".nexus3"
+        local_nexus.mkdir(parents=True)
+        (local_nexus / "config.json").write_text(json.dumps({
+            "max_tool_iterations": 10,
+        }))
+
+        config = load_config(cwd=project)
+
+        # Local should override global
+        assert config.max_tool_iterations == 10
+        # Global should be preserved where not overridden
+        assert config.stream_output is True
+
+    def test_nested_config_merge(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test nested objects are deep merged."""
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
+
+        # Global with provider config
+        global_nexus = home / ".nexus3"
+        global_nexus.mkdir()
+        (global_nexus / "config.json").write_text(json.dumps({
+            "provider": {
+                "type": "openrouter",
+                "model": "global-model",
+            }
+        }))
+
+        # Local overrides just model
+        project = tmp_path / "project"
+        local_nexus = project / ".nexus3"
+        local_nexus.mkdir(parents=True)
+        (local_nexus / "config.json").write_text(json.dumps({
+            "provider": {
+                "model": "local-model",
+            }
+        }))
+
+        config = load_config(cwd=project)
+
+        # Should have local model but global type
+        assert config.provider.model == "local-model"
+        assert config.provider.type == "openrouter"
+
+    def test_ancestor_configs_merged(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test ancestor directory configs are merged."""
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
+
+        # No global config
+
+        # Company level
+        company = tmp_path / "company"
+        company_nexus = company / ".nexus3"
+        company_nexus.mkdir(parents=True)
+        (company_nexus / "config.json").write_text(json.dumps({
+            "max_tool_iterations": 8,
+            "stream_output": False,
+        }))
+
+        # Project level
+        project = company / "project"
+        project_nexus = project / ".nexus3"
+        project_nexus.mkdir(parents=True)
+        (project_nexus / "config.json").write_text(json.dumps({
+            "skill_timeout": 45.0,
+        }))
+
+        config = load_config(cwd=project)
+
+        # Should have both company and project settings
+        assert config.max_tool_iterations == 8
+        assert config.stream_output is False
+        assert config.skill_timeout == 45.0
+
+    def test_invalid_json_fails_fast(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test invalid JSON causes error."""
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
+
+        project = tmp_path / "project"
+        local_nexus = project / ".nexus3"
+        local_nexus.mkdir(parents=True)
+        (local_nexus / "config.json").write_text("not valid json")
+
+        with pytest.raises(ConfigError, match="Invalid JSON"):
+            load_config(cwd=project)
+
+    def test_empty_file_ok(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test empty config file is treated as empty dict."""
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
+
+        project = tmp_path / "project"
+        local_nexus = project / ".nexus3"
+        local_nexus.mkdir(parents=True)
+        (local_nexus / "config.json").write_text("")
+
+        # Should not raise, just use defaults
+        config = load_config(cwd=project)
+        assert isinstance(config, Config)
+
+    def test_explicit_path_skips_layering(self, tmp_path: Path) -> None:
+        """Test explicit path bypasses layered loading."""
+        config_file = tmp_path / "explicit.json"
+        config_file.write_text(json.dumps({
+            "max_tool_iterations": 99,
+        }))
+
+        config = load_config(path=config_file)
+        assert config.max_tool_iterations == 99
+
+    def test_no_configs_uses_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test missing all configs uses Pydantic defaults."""
+        # Point to empty home
+        home = tmp_path / "empty_home"
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
+
+        project = tmp_path / "empty_project"
+        project.mkdir()
+
+        # Also need to mock the defaults dir
+        import nexus3.config.loader as loader_module
+
+        original_default = loader_module.DEFAULT_CONFIG
+        loader_module.DEFAULT_CONFIG = tmp_path / "nonexistent" / "config.json"
+
+        try:
+            config = load_config(cwd=project)
+            # Should get Pydantic defaults
+            assert config.max_tool_iterations == 10
+            assert config.stream_output is True
+        finally:
+            loader_module.DEFAULT_CONFIG = original_default
