@@ -530,16 +530,45 @@ nexus --init-global-force     # Overwrite existing
 
 ---
 
-## Code Review
+## Remediation Tracking
 
-A comprehensive code review was completed (2026-01-13) using 24 NEXUS3 subagents. Results in `reviews/`:
-- `TRIAGE-SUMMARY.md` - Issues identified across security, architecture, quality
-- `REMEDIATION-PLAN.md` - Master implementation guide
-- `remediation/*.md` - Detailed fix plans
+Code review completed 2026-01-13 using 24 NEXUS3 subagents. Details in `reviews/REMEDIATION-PLAN.md`.
 
-**Completed remediation:** Config validation, structured logging (RPC layer), port wiring, provider timeout/retry, path validation unification, skill type hierarchy.
+### Active Items
 
-**Remaining:** See `reviews/REMEDIATION-PLAN.md` for outstanding items (bash/git security hardening, RPC decoupling).
+| # | Issue | Priority | Effort | User Impact | Notes |
+|---|-------|----------|--------|-------------|-------|
+| 1 | **Bash shell injection** | P0 Critical | 2-3h | **YES** - loses shell features (`\|`, `&&`, `>`) | Switch to `subprocess_exec` + `shlex.split()` |
+| 9 | **Git skill bypass** | P1 High | 2-3h | Minor - stricter filtering | Harden regex, explicit arg parsing |
+| 11 | **Skill param validation** | P2 Medium | 2-4h | No - better error messages | JSON Schema validation before `execute()` |
+| 12 | **Loader unification** | P2 Medium | 2-3h | No - internal cleanup | Deprecate PromptLoader, use context loading |
+| 4 | **RPC decoupling** | P2 Medium | 4-6h | No - same API, less overhead | AgentAPI injection, eliminate HTTP loopback |
+
+### Completed
+
+- Config validation (ProviderType enum, path validators)
+- Structured logging (RPC layer, root logger, client)
+- Port wiring (ServerConfig to serve/repl/skills)
+- Provider timeout/retry configuration
+- Path validation unification (FileSkill base class)
+- Skill type hierarchy (FileSkill, NexusSkill, ExecutionSkill, FilteredCommandSkill)
+- Exception hierarchy (all inherit NexusError)
+- Quick wins (deleted duplicate openrouter.py)
+- Permissions.py split (policy.py, allowances.py, presets.py)
+
+### Deferred
+
+| # | Issue | Reason |
+|---|-------|--------|
+| 5 | Repl.py split | Large refactor, low priority |
+| 14 | Display config | Polish, no current need |
+| 15 | Windows ESC key | No Windows users yet |
+| 17 | BaseSkill underutilization | Cosmetic |
+| 22 | CLI tests | Task not remediation |
+| 23 | SimpleTokenCounter accuracy | Minor |
+| 25 | Model-specific tokenizers | Future feature |
+| 28 | ServiceContainer typing | Polish |
+| 29 | HTTP keep-alive | Advanced feature |
 
 ---
 
