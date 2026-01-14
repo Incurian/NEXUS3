@@ -39,7 +39,7 @@ from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
 from nexus3.core.permissions import load_custom_presets_from_config
 from nexus3.provider import ProviderRegistry
-from nexus3.rpc.auth import ServerKeyManager
+from nexus3.rpc.auth import ServerTokenManager
 from nexus3.rpc.detection import DetectionResult, detect_server
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
 from nexus3.rpc.http import run_http_server
@@ -134,9 +134,12 @@ async def run_serve(
     # Create global dispatcher for agent management
     global_dispatcher = GlobalDispatcher(pool)
 
-    # Load existing API key or generate new one (persistence prevents auth mismatches)
-    key_manager = ServerKeyManager(port=effective_port)
-    api_key = key_manager.load_or_generate()
+    # Wire pool and dispatcher for in-process AgentAPI (bypasses HTTP loopback)
+    pool.set_global_dispatcher(global_dispatcher)
+
+    # Generate fresh token (we've confirmed no server is running, so any existing token is stale)
+    token_manager = ServerTokenManager(port=effective_port)
+    api_key = token_manager.generate_fresh()
 
     # Create session manager for auto-restore of saved sessions
     session_manager = SessionManager()
@@ -145,7 +148,7 @@ async def run_serve(
     print("NEXUS3 Multi-Agent HTTP Server")
     print(f"Logs: {base_log_dir}")
     print(f"Listening on http://localhost:{effective_port}")
-    print(f"Key file: {key_manager.key_path}")
+    print(f"Token file: {token_manager.token_path}")
     print("Press Ctrl+C to stop")
     print("")
 
@@ -156,8 +159,8 @@ async def run_serve(
             session_manager=session_manager
         )
     finally:
-        # Clean up API key file
-        key_manager.delete()
+        # Clean up token file
+        token_manager.delete()
 
         # Cleanup all agents
         for agent_info in pool.list():

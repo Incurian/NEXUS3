@@ -282,7 +282,7 @@ nexus-rpc cancel AGENT ID    # Cancel in-progress request
 ~/.nexus3/
 ├── config.json      # Global config
 ├── NEXUS.md         # Personal system prompt
-├── server.key       # Auto-generated API key (port-specific keys: server-{port}.key)
+├── rpc.token        # Auto-generated RPC token (port-specific: rpc-{port}.token)
 ├── sessions/        # Saved session files (JSON)
 └── last-session.json  # Auto-saved for --resume
 
@@ -579,9 +579,7 @@ Code review completed 2026-01-13 using 24 NEXUS3 subagents. Details in `reviews/
 
 ### Active Items
 
-| # | Issue | Priority | Effort | User Impact | Notes |
-|---|-------|----------|--------|-------------|-------|
-| 4 | **RPC decoupling** | P2 Medium | 4-6h | No - same API, less overhead | AgentAPI injection, eliminate HTTP loopback |
+All remediation items completed.
 
 ### Completed
 
@@ -599,6 +597,8 @@ Code review completed 2026-01-13 using 24 NEXUS3 subagents. Details in `reviews/
 - **Git skill bypass** - Parse with shlex FIRST, validate parsed args (prevents quote-based bypasses)
 - **Execution allowance tiers** - shell_UNSAFE per-use only, bash_safe/run_python directory-only
 - **Skill param validation** - `@validate_skill_parameters()` decorator, applied to core FileSkills
+- **RPC decoupling** - DirectAgentAPI bypasses HTTP for in-process agent communication; skills use AgentAPI when available
+- **Per-tool path resolution** - ServiceContainer.get_tool_allowed_paths() resolves per-tool ToolPermission.allowed_paths; enables `--write-path` for RPC workers
 
 ### Deferred
 
@@ -616,9 +616,7 @@ Code review completed 2026-01-13 using 24 NEXUS3 subagents. Details in `reviews/
 
 ### Remaining Work
 
-One item remains:
-
-**#4 RPC decoupling** — Replace HTTP loopback with direct AgentAPI injection. Same API, less overhead.
+All remediation items completed.
 
 ---
 
@@ -631,10 +629,10 @@ Skills are organized into base classes that provide shared infrastructure for co
 ```
 Skill (Protocol)
 ├── BaseSkill         # Minimal abstract base (name, description, parameters, execute)
-├── FileSkill         # Path validation + allowed_paths handling
+├── FileSkill         # Path validation + per-tool allowed_paths resolution via ServiceContainer
 ├── NexusSkill        # Server communication (port discovery, client management)
 ├── ExecutionSkill    # Subprocess execution (timeout, output formatting)
-└── FilteredCommandSkill  # Permission-based command filtering
+└── FilteredCommandSkill  # Permission-based command filtering + per-tool allowed_paths
 ```
 
 ### Base Classes
@@ -710,8 +708,6 @@ class MySpecialSkill(BaseSkill):
 ## TODO / Future Work
 
 - [ ] **Portable auto-bootstrap launcher**: Add a launcher script that auto-installs deps (httpx, pydantic, rich, prompt-toolkit, python-dotenv) on first run, enabling "copy folder and go" portability without manual pip install. See packaging investigation for options (shiv/zipapp as alternative).
-
-- [ ] **Smarter API key rotation**: Current `load_or_generate()` persists keys indefinitely. Better approach: check if port is in use before deciding. If server running → reuse key. If no server → delete stale key and generate fresh. This gives key rotation on true restarts while preventing auth mismatches when reconnecting to existing servers.
 
 ---
 

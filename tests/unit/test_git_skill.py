@@ -3,6 +3,7 @@
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,20 +18,37 @@ from nexus3.skill.builtin.git import (
 from nexus3.skill.services import ServiceContainer
 
 
+class MockServiceContainer:
+    """Mock ServiceContainer for testing skills."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._data = kwargs
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data.get(key, default)
+
+    def get_tool_allowed_paths(self, tool_name: str) -> list[Path] | None:
+        """Return allowed_paths from data."""
+        return self._data.get("allowed_paths")
+
+
 class TestGitSkillValidation:
     """Tests for git command validation."""
 
     @pytest.fixture
     def sandboxed_skill(self) -> GitSkill:
-        return GitSkill(permission_level=PermissionLevel.SANDBOXED)
+        services = MockServiceContainer(permission_level=PermissionLevel.SANDBOXED)
+        return GitSkill(services)
 
     @pytest.fixture
     def trusted_skill(self) -> GitSkill:
-        return GitSkill(permission_level=PermissionLevel.TRUSTED)
+        services = MockServiceContainer(permission_level=PermissionLevel.TRUSTED)
+        return GitSkill(services)
 
     @pytest.fixture
     def yolo_skill(self) -> GitSkill:
-        return GitSkill(permission_level=PermissionLevel.YOLO)
+        services = MockServiceContainer(permission_level=PermissionLevel.YOLO)
+        return GitSkill(services)
 
     def test_empty_command_rejected(self, trusted_skill: GitSkill) -> None:
         """Empty command is rejected."""
@@ -109,7 +127,8 @@ class TestGitSkillBypassPrevention:
 
     @pytest.fixture
     def trusted_skill(self) -> GitSkill:
-        return GitSkill(permission_level=PermissionLevel.TRUSTED)
+        services = MockServiceContainer(permission_level=PermissionLevel.TRUSTED)
+        return GitSkill(services)
 
     def test_quoted_force_flag_blocked(self, trusted_skill: GitSkill) -> None:
         """Quoted --force flag is still blocked after shlex parsing."""
@@ -192,7 +211,8 @@ class TestGitSkillExecution:
 
     @pytest.fixture
     def skill(self) -> GitSkill:
-        return GitSkill()
+        services = MockServiceContainer()
+        return GitSkill(services)
 
     @pytest.mark.asyncio
     async def test_command_required(self, skill: GitSkill) -> None:
@@ -211,7 +231,8 @@ class TestGitSkillExecution:
     @pytest.mark.asyncio
     async def test_sandbox_enforced(self, tmp_path: Path) -> None:
         """Sandbox is enforced when allowed_paths set."""
-        skill = GitSkill(allowed_paths=[tmp_path])
+        services = MockServiceContainer(allowed_paths=[tmp_path])
+        skill = GitSkill(services)
         result = await skill.execute(command="status", cwd="/etc")
         assert result.error
         assert "outside" in result.error.lower() or "sandbox" in result.error.lower()
@@ -222,7 +243,8 @@ class TestGitSkillExecution:
         # Initialize a git repo
         subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
 
-        skill = GitSkill()
+        services = MockServiceContainer()
+        skill = GitSkill(services)
         result = await skill.execute(command="status", cwd=str(tmp_path))
 
         # Should succeed (not an error)
@@ -234,7 +256,8 @@ class TestGitSkillExecution:
     @pytest.mark.asyncio
     async def test_git_not_a_repo(self, tmp_path: Path) -> None:
         """Git returns error when not in a repo."""
-        skill = GitSkill()
+        services = MockServiceContainer()
+        skill = GitSkill(services)
         result = await skill.execute(command="status", cwd=str(tmp_path))
 
         # Should return git error
@@ -247,7 +270,8 @@ class TestGitSkillOutputParsing:
 
     @pytest.fixture
     def skill(self) -> GitSkill:
-        return GitSkill()
+        services = MockServiceContainer()
+        return GitSkill(services)
 
     def test_parse_status_branch(self, skill: GitSkill) -> None:
         """Parses branch from status output."""
@@ -287,7 +311,12 @@ class TestGitSkillFactory:
     def test_factory_creates_skill(self) -> None:
         """Factory creates skill with configuration."""
         services = ServiceContainer()
-        services.register("allowed_paths", [Path("/tmp")])
+        # Create mock permissions with tool_permissions
+        mock_perms = MagicMock()
+        mock_perms.tool_permissions = {"git": MagicMock(allowed_paths=[Path("/tmp")])}
+        mock_perms.effective_policy.allowed_paths = None
+        mock_perms.effective_policy.level = PermissionLevel.TRUSTED
+        services.register("permissions", mock_perms)
 
         skill = git_factory(services)
         assert isinstance(skill, GitSkill)
@@ -300,14 +329,19 @@ class TestGitSkillFactory:
         # Mock permissions object
         mock_perms = MagicMock()
         mock_perms.effective_policy.level = PermissionLevel.SANDBOXED
+        mock_perms.tool_permissions = {}
+        mock_perms.effective_policy.allowed_paths = None
         services.register("permissions", mock_perms)
+        services.register("permission_level", PermissionLevel.SANDBOXED)
 
         skill = git_factory(services)
         assert skill._permission_level == PermissionLevel.SANDBOXED
 
     def test_factory_defaults_to_trusted(self) -> None:
-        """Factory defaults to TRUSTED when no permissions."""
+        """Factory defaults to TRUSTED when no permission_level."""
         services = ServiceContainer()
+        # Even without permissions, permission_level service can be set
+        services.register("permission_level", PermissionLevel.TRUSTED)
         skill = git_factory(services)
         assert skill._permission_level == PermissionLevel.TRUSTED
 

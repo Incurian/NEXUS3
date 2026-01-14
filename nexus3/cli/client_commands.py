@@ -22,7 +22,7 @@ import sys
 from typing import Any
 
 from nexus3.client import ClientError, NexusClient
-from nexus3.rpc.auth import discover_api_key
+from nexus3.rpc.auth import discover_rpc_token
 from nexus3.rpc.detection import DetectionResult, detect_server, wait_for_server
 
 
@@ -102,7 +102,7 @@ def _get_api_key(port: int, api_key: str | None) -> str | None:
     """
     if api_key:
         return api_key
-    return discover_api_key(port=port)
+    return discover_rpc_token(port=port)
 
 
 async def cmd_send(
@@ -110,7 +110,7 @@ async def cmd_send(
     content: str,
     port: int = DEFAULT_PORT,
     api_key: str | None = None,
-    timeout: float = 120.0,
+    timeout: float = 300.0,
 ) -> int:
     """Send a message to a Nexus agent.
 
@@ -327,7 +327,7 @@ async def cmd_create(
     allowed_write_paths: list[str] | None = None,
     model: str | None = None,
     message: str | None = None,
-    timeout: float = 120.0,
+    timeout: float = 300.0,
 ) -> int:
     """Create a new agent on the server.
 

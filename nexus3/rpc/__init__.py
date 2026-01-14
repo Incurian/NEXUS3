@@ -10,10 +10,11 @@ Example usage:
         -d '{"jsonrpc":"2.0","method":"send","params":{"content":"Hi"},"id":1}'
 """
 
+from nexus3.rpc.agent_api import AgentScopedAPI, ClientAdapter, DirectAgentAPI
 from nexus3.rpc.auth import (
     API_KEY_PREFIX,
-    ServerKeyManager,
-    discover_api_key,
+    ServerTokenManager,
+    discover_rpc_token,
     generate_api_key,
     validate_api_key,
 )
@@ -90,12 +91,16 @@ __all__ = [
     "AgentConfig",
     "AgentPool",
     "SharedComponents",
+    # AgentAPI (in-process communication)
+    "DirectAgentAPI",
+    "AgentScopedAPI",
+    "ClientAdapter",
     # Authentication
     "API_KEY_PREFIX",
     "generate_api_key",
     "validate_api_key",
-    "ServerKeyManager",
-    "discover_api_key",
+    "ServerTokenManager",
+    "discover_rpc_token",
     # Detection
     "DetectionResult",
     "detect_server",

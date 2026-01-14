@@ -5,6 +5,7 @@ import json
 import stat
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -15,12 +16,27 @@ from nexus3.skill.builtin.tail import TailSkill, tail_factory
 from nexus3.skill.services import ServiceContainer
 
 
+class MockServiceContainer:
+    """Mock ServiceContainer for testing skills."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._data = kwargs
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data.get(key, default)
+
+    def get_tool_allowed_paths(self, tool_name: str) -> list[Path] | None:
+        """Return allowed_paths from data."""
+        return self._data.get("allowed_paths")
+
+
 class TestTailSkill:
     """Tests for tail skill."""
 
     @pytest.fixture
     def skill(self) -> TailSkill:
-        return TailSkill()
+        services = MockServiceContainer()
+        return TailSkill(services)
 
     @pytest.fixture
     def test_file(self, tmp_path: Path) -> Path:
@@ -89,7 +105,8 @@ class TestTailSkill:
         outside.write_text("test")
 
         try:
-            skill = TailSkill(allowed_paths=[tmp_path])
+            services = MockServiceContainer(allowed_paths=[tmp_path])
+            skill = TailSkill(services)
             result = await skill.execute(path=str(outside))
             assert result.error is not None
         finally:
@@ -97,8 +114,13 @@ class TestTailSkill:
 
     def test_factory_creates_skill(self) -> None:
         """Factory creates skill with proper configuration."""
+        # Create mock permissions with tool_permissions to test per-tool lookup
+        from unittest.mock import MagicMock
         services = ServiceContainer()
-        services.register("allowed_paths", [Path("/tmp")])
+        mock_perms = MagicMock()
+        mock_perms.tool_permissions = {}
+        mock_perms.effective_policy.allowed_paths = [Path("/tmp")]
+        services.register("permissions", mock_perms)
         skill = tail_factory(services)
         assert isinstance(skill, TailSkill)
         assert skill._allowed_paths == [Path("/tmp")]
@@ -109,7 +131,8 @@ class TestFileInfoSkill:
 
     @pytest.fixture
     def skill(self) -> FileInfoSkill:
-        return FileInfoSkill()
+        services = MockServiceContainer()
+        return FileInfoSkill(services)
 
     @pytest.mark.asyncio
     async def test_file_info(self, skill: FileInfoSkill, tmp_path: Path) -> None:
@@ -169,7 +192,8 @@ class TestFileInfoSkill:
         outside.write_text("test")
 
         try:
-            skill = FileInfoSkill(allowed_paths=[tmp_path])
+            services = MockServiceContainer(allowed_paths=[tmp_path])
+            skill = FileInfoSkill(services)
             result = await skill.execute(path=str(outside))
             assert result.error is not None
         finally:
@@ -188,7 +212,8 @@ class TestAppendFileSkill:
 
     @pytest.fixture
     def skill(self) -> AppendFileSkill:
-        return AppendFileSkill()
+        services = MockServiceContainer()
+        return AppendFileSkill(services)
 
     @pytest.mark.asyncio
     async def test_append_to_existing_file(self, skill: AppendFileSkill, tmp_path: Path) -> None:
@@ -261,7 +286,8 @@ class TestAppendFileSkill:
         outside.write_text("test")
 
         try:
-            skill = AppendFileSkill(allowed_paths=[tmp_path])
+            services = MockServiceContainer(allowed_paths=[tmp_path])
+            skill = AppendFileSkill(services)
             result = await skill.execute(path=str(outside), content="more")
             assert result.error is not None
         finally:

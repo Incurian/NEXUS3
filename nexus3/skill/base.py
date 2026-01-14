@@ -373,10 +373,14 @@ class FileSkill(ABC):
     skills should inherit from this class to ensure consistent security
     behavior across permission modes.
 
-    Path validation semantics:
+    Path validation semantics (resolved per-tool at validation time):
     - allowed_paths=None: Unrestricted access (TRUSTED/YOLO modes)
     - allowed_paths=[]: Deny all access
     - allowed_paths=[Path(...)]: Only allow within these directories
+
+    Per-tool path overrides (e.g., allowed_write_paths) are automatically
+    resolved via ServiceContainer.get_tool_allowed_paths(). This allows
+    different tools to have different path restrictions within the same agent.
 
     Symlinks are always resolved before checking against allowed_paths,
     so a symlink pointing outside the sandbox will be rejected.
@@ -407,22 +411,35 @@ class FileSkill(ABC):
         ...         return ToolResult(output=content)
     """
 
-    def __init__(self, allowed_paths: list[Path] | None = None) -> None:
-        """Initialize FileSkill with path restrictions.
+    def __init__(self, services: "ServiceContainer") -> None:
+        """Initialize FileSkill with ServiceContainer for path resolution.
 
         Args:
-            allowed_paths: List of allowed directories for path validation.
-                - None: No sandbox validation (unrestricted access)
-                - []: Empty list means NO paths allowed (all operations denied)
-                - [Path(...)]: Only allow operations within these directories
+            services: ServiceContainer for accessing permissions and resolving
+                per-tool allowed_paths at validation time.
         """
-        self._allowed_paths = allowed_paths
+        self._services = services
+
+    @property
+    def _allowed_paths(self) -> list[Path] | None:
+        """Get effective allowed_paths for this skill.
+
+        Resolves per-tool path overrides via ServiceContainer.
+        This property is provided for skills that need raw access to
+        allowed_paths (e.g., glob/grep that check many paths in a loop).
+
+        Returns:
+            List of allowed Path objects, or None for unrestricted access.
+        """
+        return self._services.get_tool_allowed_paths(self.name)
 
     def _validate_path(self, path: str | Path) -> Path:
         """Validate and resolve a path against allowed_paths.
 
         Resolves symlinks and checks that the resolved path is within
-        allowed directories (if restrictions are set).
+        allowed directories. Uses the _allowed_paths property which
+        resolves per-tool path overrides (e.g., write_file may have
+        different allowed_paths than read_file).
 
         Args:
             path: The path to validate.
@@ -466,8 +483,9 @@ _T = TypeVar("_T", bound=FileSkill)
 def file_skill_factory(cls: type[_T]) -> Callable[["ServiceContainer"], _T]:
     """Factory decorator for FileSkill subclasses.
 
-    Creates a standard factory function that extracts 'allowed_paths'
-    from the ServiceContainer and passes it to the skill constructor.
+    Creates a standard factory function that passes ServiceContainer
+    to the skill constructor. The skill uses ServiceContainer at
+    validation time to resolve per-tool allowed_paths.
 
     Usage:
         @file_skill_factory
@@ -488,8 +506,7 @@ def file_skill_factory(cls: type[_T]) -> Callable[["ServiceContainer"], _T]:
         A factory function that creates instances of the skill.
     """
     def factory(services: "ServiceContainer") -> _T:
-        allowed_paths: list[Path] | None = services.get("allowed_paths")
-        skill = cls(allowed_paths=allowed_paths)
+        skill = cls(services)
         _wrap_with_validation(skill)
         return skill
 
@@ -570,11 +587,11 @@ class NexusSkill(ABC):
 
     def _get_api_key(self, port: int) -> str | None:
         """Get API key from ServiceContainer or auto-discover."""
-        from nexus3.rpc.auth import discover_api_key
+        from nexus3.rpc.auth import discover_rpc_token
         api_key: str | None = self._services.get("api_key")
         if api_key:
             return api_key
-        return discover_api_key(port=port)
+        return discover_rpc_token(port=port)
 
     def _build_url(self, port: int, agent_id: str | None = None) -> str:
         """Build URL for the Nexus server.
@@ -592,6 +609,23 @@ class NexusSkill(ABC):
             return f"{base}/agent/{agent_id}"
         return base
 
+    def _can_use_direct_api(self, port: int | None) -> bool:
+        """Check if we can use DirectAgentAPI for in-process communication.
+
+        Returns True if:
+        - agent_api is available in services
+        - port is None or matches the default port (same process)
+
+        Using direct API bypasses HTTP for same-process agent communication,
+        eliminating network overhead and JSON serialization.
+        """
+        if not self._services.has("agent_api"):
+            return False
+        # If explicit port specified and differs from default, use HTTP
+        if port is not None and port != self._get_default_port():
+            return False
+        return True
+
     async def _execute_with_client(
         self,
         port: int | None,
@@ -601,6 +635,8 @@ class NexusSkill(ABC):
         """Execute an operation with a NexusClient, handling common patterns.
 
         This method handles:
+        - In-process path (DirectAgentAPI) when available - bypasses HTTP
+        - HTTP path (NexusClient) as fallback
         - Port resolution
         - URL construction and validation
         - API key discovery
@@ -617,6 +653,21 @@ class NexusSkill(ABC):
             ToolResult with JSON output or error message
         """
         from nexus3.client import ClientError, NexusClient
+
+        # Try in-process path first (bypasses HTTP for same-process communication)
+        if self._can_use_direct_api(port):
+            from nexus3.rpc.agent_api import ClientAdapter, DirectAgentAPI
+
+            api: DirectAgentAPI = self._services.get("agent_api")
+            scoped = api.for_agent(agent_id) if agent_id else None
+            adapter = ClientAdapter(api, scoped)
+            try:
+                result = await operation(adapter)
+                return ToolResult(output=json.dumps(result))
+            except ClientError as e:
+                return ToolResult(error=str(e))
+
+        # Fall back to HTTP path
         from nexus3.core.url_validator import UrlSecurityError, validate_url
 
         actual_port = self._get_port(port)
@@ -917,19 +968,34 @@ class FilteredCommandSkill(ABC):
         ...         ]
     """
 
-    def __init__(
-        self,
-        allowed_paths: list[Path] | None = None,
-        permission_level: "PermissionLevel | None" = None,
-    ) -> None:
-        """Initialize FilteredCommandSkill.
+    def __init__(self, services: "ServiceContainer") -> None:
+        """Initialize FilteredCommandSkill with ServiceContainer.
 
         Args:
-            allowed_paths: Paths where cwd is allowed (None = unrestricted)
-            permission_level: Permission level for command filtering
+            services: ServiceContainer for accessing permissions and resolving
+                per-tool allowed_paths at validation time.
         """
-        self._allowed_paths = allowed_paths
-        self._permission_level = permission_level
+        self._services = services
+
+    @property
+    def _allowed_paths(self) -> list[Path] | None:
+        """Get effective allowed_paths for this skill.
+
+        Resolves per-tool path overrides via ServiceContainer.
+
+        Returns:
+            List of allowed Path objects, or None for unrestricted access.
+        """
+        return self._services.get_tool_allowed_paths(self.name)
+
+    @property
+    def _permission_level(self) -> "PermissionLevel | None":
+        """Get permission level from ServiceContainer.
+
+        Returns:
+            The permission level, or None if not set.
+        """
+        return self._services.get("permission_level")
 
     def _validate_cwd(self, cwd: str) -> tuple[Path, str | None]:
         """Validate working directory against allowed paths.
@@ -1037,8 +1103,9 @@ _FC = TypeVar("_FC", bound=FilteredCommandSkill)
 def filtered_command_skill_factory(cls: type[_FC]) -> Callable[["ServiceContainer"], _FC]:
     """Factory decorator for FilteredCommandSkill subclasses.
 
-    Creates a standard factory function that extracts 'allowed_paths' and
-    'permission_level' from the ServiceContainer.
+    Creates a standard factory function that passes ServiceContainer to
+    the skill constructor. The skill resolves allowed_paths and permission_level
+    at validation time.
 
     Args:
         cls: A FilteredCommandSkill subclass to create a factory for.
@@ -1047,10 +1114,7 @@ def filtered_command_skill_factory(cls: type[_FC]) -> Callable[["ServiceContaine
         A factory function that creates instances of the skill.
     """
     def factory(services: "ServiceContainer") -> _FC:
-        from nexus3.core.permissions import PermissionLevel
-        allowed_paths: list[Path] | None = services.get("allowed_paths")
-        permission_level: PermissionLevel | None = services.get("permission_level")
-        skill = cls(allowed_paths=allowed_paths, permission_level=permission_level)
+        skill = cls(services)
         _wrap_with_validation(skill)
         return skill
 

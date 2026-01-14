@@ -78,5 +78,9 @@
       "name": "http-test",
       "url": "http://127.0.0.1:9000"
     }
-  ]
+  ],
+  "context": {
+    "include_readme": false,
+    "readme_as_fallback": false
+  }
 }

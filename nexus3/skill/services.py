@@ -23,7 +23,11 @@ Example usage:
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from nexus3.core.permissions import AgentPermissions
 
 
 @dataclass
@@ -127,3 +131,35 @@ class ServiceContainer:
             List of registered service names.
         """
         return list(self._services.keys())
+
+    def get_tool_allowed_paths(self, tool_name: str) -> list[Path] | None:
+        """Get effective allowed_paths for a specific tool.
+
+        Resolves per-tool path overrides from ToolPermission, falling back
+        to the general allowed_paths from the permission policy.
+
+        Resolution order:
+        1. Check permissions.tool_permissions[tool_name].allowed_paths
+        2. If None (or no override), use permissions.effective_policy.allowed_paths
+        3. If no permissions registered, fall back to "allowed_paths" service (for tests)
+
+        Args:
+            tool_name: The tool name to get allowed paths for.
+
+        Returns:
+            List of allowed Path objects, or None for unrestricted access.
+            Empty list means deny all path access.
+        """
+        permissions: "AgentPermissions | None" = self.get("permissions")
+
+        if permissions is None:
+            # Fallback for tests that don't set up full permissions
+            return self.get("allowed_paths")
+
+        # Check for per-tool override
+        tool_perm = permissions.tool_permissions.get(tool_name)
+        if tool_perm is not None and tool_perm.allowed_paths is not None:
+            return tool_perm.allowed_paths
+
+        # Fall back to general allowed_paths from policy
+        return permissions.effective_policy.allowed_paths

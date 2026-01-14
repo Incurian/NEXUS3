@@ -143,7 +143,7 @@ Immutable shared resources:
 
 ## Authentication (auth.py)
 
-Unchanged. Keys: `nxk_` + b64. Storage: `~/.nexus3/server.key`.
+Token format: `nxk_` + b64. Storage: `~/.nexus3/rpc.token`.
 
 ## Server Detection (detection.py)
 
@@ -289,3 +289,47 @@ Unchanged.
 - `shutdown`
 - `get_tokens`
 - `get_context`
+
+## In-Process AgentAPI
+
+For same-process agent communication, `DirectAgentAPI` bypasses HTTP by calling dispatchers directly:
+
+```
+nexus_send skill
+    → _execute_with_client()
+        → if agent_api in services:
+            → ClientAdapter(DirectAgentAPI, AgentScopedAPI)
+                → dispatcher.dispatch(Request)  # Direct call
+        → else:
+            → NexusClient (HTTP fallback)
+```
+
+### Classes
+
+| Class | Purpose |
+|-------|---------|
+| `DirectAgentAPI` | Global methods (create_agent, destroy_agent, list_agents, shutdown_server) |
+| `AgentScopedAPI` | Agent methods (send, cancel, get_tokens, etc.) for a specific agent |
+| `ClientAdapter` | Wraps both to match NexusClient interface |
+
+### Usage
+
+Skills get `agent_api` via ServiceContainer. When available and port matches default, the HTTP path is skipped:
+
+```python
+# In NexusSkill._execute_with_client():
+if self._can_use_direct_api(port):
+    api = self._services.get("agent_api")
+    scoped = api.for_agent(agent_id) if agent_id else None
+    adapter = ClientAdapter(api, scoped)
+    result = await operation(adapter)  # Direct call
+else:
+    async with NexusClient(url, api_key) as client:
+        result = await operation(client)  # HTTP
+```
+
+### Benefits
+
+- ~10x faster for in-process calls (no HTTP serialization)
+- Same interface (skills unchanged)
+- Automatic fallback to HTTP for external servers

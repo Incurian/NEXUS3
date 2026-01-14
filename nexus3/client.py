@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 import httpx
 
 from nexus3.core.errors import NexusError
-from nexus3.rpc.auth import discover_api_key
+from nexus3.rpc.auth import discover_rpc_token
 from nexus3.rpc.protocol import ParseError, parse_response, serialize_request
 from nexus3.rpc.types import Request, Response
 
@@ -74,8 +74,8 @@ class NexusClient:
 
         Attempts to discover the API key from:
         1. NEXUS3_API_KEY environment variable
-        2. ~/.nexus3/server-{port}.key (port-specific)
-        3. ~/.nexus3/server.key (default)
+        2. ~/.nexus3/rpc-{port}.token (port-specific)
+        3. ~/.nexus3/rpc.token (default)
 
         Args:
             url: Base URL of the JSON-RPC server.
@@ -87,7 +87,7 @@ class NexusClient:
         # Extract port from URL for key discovery
         parsed = urlparse(url)
         port = parsed.port or _get_default_port()
-        api_key = discover_api_key(port=port)
+        api_key = discover_rpc_token(port=port)
         if api_key:
             logger.debug("Auto-discovered API key for port %d", port)
         else:

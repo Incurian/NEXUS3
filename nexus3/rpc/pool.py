@@ -59,6 +59,7 @@ from nexus3.skill import ServiceContainer, SkillRegistry
 if TYPE_CHECKING:
     from nexus3.config.schema import Config
     from nexus3.provider.registry import ProviderRegistry
+    from nexus3.rpc.global_dispatcher import GlobalDispatcher
 
 
 # Maximum nesting depth for agent creation
@@ -261,6 +262,22 @@ class AgentPool:
         # This will be applied to all providers as they are created
         self._shared.provider_registry.set_raw_log_callback(self._log_multiplexer)
 
+        # Global dispatcher reference for in-process AgentAPI
+        # Set via set_global_dispatcher() after GlobalDispatcher is created
+        self._global_dispatcher: GlobalDispatcher | None = None
+
+    def set_global_dispatcher(self, dispatcher: "GlobalDispatcher") -> None:
+        """Set the global dispatcher for in-process AgentAPI.
+
+        This enables skills to use DirectAgentAPI instead of HTTP for
+        same-process agent communication. Must be called after creating
+        the GlobalDispatcher.
+
+        Args:
+            dispatcher: The GlobalDispatcher instance.
+        """
+        self._global_dispatcher = dispatcher
+
     @property
     def log_multiplexer(self) -> LogMultiplexer:
         """Get the log multiplexer for setting agent context in dispatchers."""
@@ -424,6 +441,12 @@ class AgentPool:
             services.register("allowed_paths", permissions.effective_policy.allowed_paths)
             services.register("model", resolved_model)  # ResolvedModel for model hotswapping
             services.register("mcp_registry", self._shared.mcp_registry)
+
+            # Register AgentAPI for in-process communication (bypasses HTTP)
+            if self._global_dispatcher is not None:
+                from nexus3.rpc.agent_api import DirectAgentAPI
+                agent_api = DirectAgentAPI(self, self._global_dispatcher)
+                services.register("agent_api", agent_api)
 
             registry = SkillRegistry(services)
             register_builtin_skills(registry)
@@ -652,6 +675,12 @@ class AgentPool:
             services.register("permissions", permissions)
             services.register("allowed_paths", permissions.effective_policy.allowed_paths)
             services.register("mcp_registry", self._shared.mcp_registry)
+
+            # Register AgentAPI for in-process communication (bypasses HTTP)
+            if self._global_dispatcher is not None:
+                from nexus3.rpc.agent_api import DirectAgentAPI
+                agent_api = DirectAgentAPI(self, self._global_dispatcher)
+                services.register("agent_api", agent_api)
 
             registry = SkillRegistry(services)
             register_builtin_skills(registry)

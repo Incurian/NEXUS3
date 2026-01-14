@@ -200,7 +200,7 @@ NEXUS3 includes a comprehensive security system with API authentication, path sa
 
 The HTTP server uses API key authentication:
 - Keys are auto-generated on first server start
-- Stored in `~/.nexus3/server.key` (or `server-{port}.key` for non-default ports)
+- Stored in `~/.nexus3/rpc.token` (or `rpc-{port}.token` for non-default ports)
 - All RPC requests require `Authorization: Bearer <key>` header
 - Keys use constant-time comparison to prevent timing attacks
 

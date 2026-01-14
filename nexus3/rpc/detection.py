@@ -32,7 +32,7 @@ from enum import Enum
 
 import httpx
 
-from nexus3.rpc.auth import discover_api_key
+from nexus3.rpc.auth import discover_rpc_token
 from nexus3.rpc.protocol import serialize_request
 from nexus3.rpc.types import Request
 
@@ -94,9 +94,9 @@ async def detect_server(
         id=1,
     )
 
-    # Try to discover API key for authenticated request
+    # Try to discover token for authenticated request
     headers: dict[str, str] = {"Content-Type": "application/json"}
-    api_key = discover_api_key(port=port)
+    api_key = discover_rpc_token(port=port)
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 

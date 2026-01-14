@@ -54,7 +54,7 @@ from nexus3.display import Activity, StreamingDisplay, get_console
 from nexus3.display.streaming import ToolState
 from nexus3.display.theme import load_theme
 from nexus3.provider import ProviderRegistry
-from nexus3.rpc.auth import ServerKeyManager
+from nexus3.rpc.auth import ServerTokenManager
 from nexus3.rpc.detection import DetectionResult, detect_server
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
 from nexus3.rpc.http import run_http_server
@@ -361,8 +361,8 @@ def parse_args() -> argparse.Namespace:
     create_parser.add_argument(
         "--timeout", "-t",
         type=float,
-        default=120.0,
-        help="Request timeout in seconds for initial message (default: 120)"
+        default=300.0,
+        help="Request timeout in seconds for initial message (default: 300)"
     )
     add_port_arg(create_parser)
     add_api_key_arg(create_parser)
@@ -577,12 +577,12 @@ async def run_repl(
 
             # Try to shutdown the orphaned/incompatible server
             try:
-                shutdown_key_mgr = ServerKeyManager(port=effective_port)
-                api_key = shutdown_key_mgr.load()
+                shutdown_token_mgr = ServerTokenManager(port=effective_port)
+                api_key = shutdown_token_mgr.load()
                 global_url = f"http://localhost:{effective_port}"
                 client_args = dict(api_key=api_key, timeout=5.0)
                 async with NexusClient(global_url, **client_args) as shutdown_client:
-                    await shutdown_client.call("shutdown_server")
+                    await shutdown_client.shutdown_server()
                 # Wait for server to fully release the port
                 for _ in range(20):  # Up to 2 seconds
                     await asyncio.sleep(0.1)
@@ -638,9 +638,12 @@ async def run_repl(
     # Create global dispatcher for agent management
     global_dispatcher = GlobalDispatcher(pool)
 
-    # Load existing API key or generate new one (persistence prevents auth mismatches)
-    key_manager = ServerKeyManager(port=effective_port)
-    api_key = key_manager.load_or_generate()
+    # Wire pool and dispatcher for in-process AgentAPI (bypasses HTTP loopback)
+    pool.set_global_dispatcher(global_dispatcher)
+
+    # Generate fresh token (we've confirmed no server is running, so any existing token is stale)
+    token_manager = ServerTokenManager(port=effective_port)
+    api_key = token_manager.generate_fresh()
 
     # Create session manager for auto-restore of saved sessions
     session_manager = SessionManager()
@@ -657,7 +660,7 @@ async def run_repl(
         last = session_manager.load_last_session()
         if last is None:
             console.print("[red]No last session to resume[/]")
-            key_manager.delete()
+            token_manager.delete()
             return
         saved_session, agent_name = last
         startup_mode = "resume"
@@ -674,13 +677,13 @@ async def run_repl(
             startup_mode = "session"
         except SessionNotFoundError:
             console.print(f"[red]Session not found: {session_name}[/]")
-            key_manager.delete()
+            token_manager.delete()
             return
     else:
         # Show lobby
         lobby_result = await show_lobby(session_manager, console)
         if lobby_result.choice == LobbyChoice.QUIT:
-            key_manager.delete()
+            token_manager.delete()
             return
         elif lobby_result.choice == LobbyChoice.RESUME:
             last = session_manager.load_last_session()
@@ -719,7 +722,7 @@ async def run_repl(
                 main_agent.context.set_system_prompt(content)
             except OSError as e:
                 console.print(f"[red]Error loading template: {e}[/]")
-                key_manager.delete()
+                token_manager.delete()
                 await pool.destroy(agent_name)
                 return
 
@@ -1411,7 +1414,7 @@ async def run_repl(
         pass
 
     # 3. Delete the API key file
-    key_manager.delete()
+    token_manager.delete()
 
     # 4. Destroy all agents (cleans up loggers)
     for agent_info in pool.list():

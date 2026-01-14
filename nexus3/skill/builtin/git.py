@@ -319,7 +319,7 @@ def git_factory(services: "ServiceContainer") -> GitSkill:
     """Factory function for GitSkill.
 
     Note: GitSkill has special factory logic to extract permission_level
-    from the permissions object, so it doesn't use filtered_command_skill_factory.
+    from the permissions object and register it in services for the skill to use.
 
     Args:
         services: ServiceContainer for dependency injection.
@@ -327,13 +327,17 @@ def git_factory(services: "ServiceContainer") -> GitSkill:
     Returns:
         New GitSkill instance configured based on services.
     """
-    allowed_paths: list[Path] | None = services.get("allowed_paths")
+    # Get permission level from permissions object and register it
+    # so FilteredCommandSkill._permission_level can access it
+    if not services.has("permission_level"):
+        permissions = services.get("permissions")
+        if permissions:
+            level = permissions.effective_policy.level
+        else:
+            level = PermissionLevel.TRUSTED
+        services.register("permission_level", level)
 
-    # Get permission level from permissions object
-    permissions = services.get("permissions")
-    if permissions:
-        level = permissions.effective_policy.level
-    else:
-        level = PermissionLevel.TRUSTED
-
-    return GitSkill(allowed_paths=allowed_paths, permission_level=level)
+    from nexus3.skill.base import _wrap_with_validation
+    skill = GitSkill(services)
+    _wrap_with_validation(skill)
+    return skill

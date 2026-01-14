@@ -22,6 +22,10 @@ class MockServiceContainer:
     def get(self, key: str, default: Any = None) -> Any:
         return self._data.get(key, default)
 
+    def get_tool_allowed_paths(self, tool_name: str) -> list[Path] | None:
+        """Return allowed_paths from data (used by FileSkill._validate_path)."""
+        return self._data.get("allowed_paths")
+
 
 class TestReadFileOffsetLimit:
     """Tests for read_file offset and limit parameters."""

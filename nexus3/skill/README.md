@@ -284,7 +284,7 @@ services.names()
 - **Async**: `asyncio.to_thread` (I/O, glob, etc.)
 - **Errors**: `ToolResult(error=...)`; no exceptions bubble
 - **Permissions**: Tool filtering; destructive confirm (TRUSTED); preset ceiling
-- **Nexus**: `validate_url(localhost)`, `discover_api_key`, `validate_agent_id`
+- **Nexus**: `validate_url(localhost)`, `discover_rpc_token`, `validate_agent_id`
 
 ## Multi-Agent (`AgentPool`)
 
@@ -332,7 +332,7 @@ register_builtin_skills(registry)
 
 - `nexus3.core.*`: `ToolResult`, paths, errors, validation, `AgentPermissions`
 - `nexus3.client`: `NexusClient`
-- `nexus3.rpc.auth`: `discover_api_key`
+- `nexus3.rpc.auth`: `discover_rpc_token`
 
 ## Exports
 

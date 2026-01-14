@@ -101,6 +101,121 @@ class TestServiceContainer:
         assert container.get("key") == "updated"
 
 
+class TestServiceContainerToolAllowedPaths:
+    """Tests for ServiceContainer.get_tool_allowed_paths() per-tool path resolution."""
+
+    def test_returns_fallback_when_no_permissions(self):
+        """Falls back to 'allowed_paths' service when no permissions object."""
+        from pathlib import Path
+
+        container = ServiceContainer()
+        container.register("allowed_paths", [Path("/sandbox")])
+
+        result = container.get_tool_allowed_paths("write_file")
+        assert result == [Path("/sandbox")]
+
+    def test_returns_none_when_nothing_configured(self):
+        """Returns None when neither permissions nor allowed_paths configured."""
+        container = ServiceContainer()
+
+        result = container.get_tool_allowed_paths("write_file")
+        assert result is None
+
+    def test_returns_general_allowed_paths_when_no_tool_override(self):
+        """Returns effective_policy.allowed_paths when no per-tool override."""
+        from pathlib import Path
+
+        container = ServiceContainer()
+        permissions = AgentPermissions(
+            base_preset="sandboxed",
+            effective_policy=PermissionPolicy(
+                level=PermissionLevel.SANDBOXED,
+                allowed_paths=[Path("/sandbox")],
+            ),
+            tool_permissions={},  # No per-tool overrides
+        )
+        container.register("permissions", permissions)
+
+        result = container.get_tool_allowed_paths("read_file")
+        assert result == [Path("/sandbox")]
+
+    def test_returns_per_tool_allowed_paths_when_set(self):
+        """Returns per-tool allowed_paths when override exists."""
+        from pathlib import Path
+
+        container = ServiceContainer()
+        permissions = AgentPermissions(
+            base_preset="sandboxed",
+            effective_policy=PermissionPolicy(
+                level=PermissionLevel.SANDBOXED,
+                allowed_paths=[Path("/sandbox")],  # General sandbox
+            ),
+            tool_permissions={
+                "write_file": ToolPermission(
+                    enabled=True,
+                    allowed_paths=[Path("/sandbox/output")],  # More restrictive
+                ),
+            },
+        )
+        container.register("permissions", permissions)
+
+        # write_file should use its per-tool override
+        result = container.get_tool_allowed_paths("write_file")
+        assert result == [Path("/sandbox/output")]
+
+        # read_file has no override, should use general allowed_paths
+        result = container.get_tool_allowed_paths("read_file")
+        assert result == [Path("/sandbox")]
+
+    def test_per_tool_none_means_inherit(self):
+        """Per-tool allowed_paths=None means inherit from policy."""
+        from pathlib import Path
+
+        container = ServiceContainer()
+        permissions = AgentPermissions(
+            base_preset="sandboxed",
+            effective_policy=PermissionPolicy(
+                level=PermissionLevel.SANDBOXED,
+                allowed_paths=[Path("/sandbox")],
+            ),
+            tool_permissions={
+                "write_file": ToolPermission(
+                    enabled=True,
+                    allowed_paths=None,  # Explicitly None = inherit
+                ),
+            },
+        )
+        container.register("permissions", permissions)
+
+        # Should inherit from policy even though ToolPermission exists
+        result = container.get_tool_allowed_paths("write_file")
+        assert result == [Path("/sandbox")]
+
+    def test_per_tool_empty_list_means_deny_all(self):
+        """Per-tool allowed_paths=[] means deny all paths."""
+        from pathlib import Path
+
+        container = ServiceContainer()
+        permissions = AgentPermissions(
+            base_preset="sandboxed",
+            effective_policy=PermissionPolicy(
+                level=PermissionLevel.SANDBOXED,
+                allowed_paths=[Path("/sandbox")],
+            ),
+            tool_permissions={
+                "write_file": ToolPermission(
+                    enabled=True,
+                    allowed_paths=[],  # Empty = deny all
+                ),
+            },
+        )
+        container.register("permissions", permissions)
+
+        # Empty list means tool cannot access any paths
+        result = container.get_tool_allowed_paths("write_file")
+        assert result == []
+
+
 class TestSkillRegistry:
     """Tests for SkillRegistry."""
 

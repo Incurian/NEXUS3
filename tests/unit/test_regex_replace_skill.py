@@ -2,6 +2,7 @@
 
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -13,12 +14,27 @@ from nexus3.skill.builtin.regex_replace import (
 from nexus3.skill.services import ServiceContainer
 
 
+class MockServiceContainer:
+    """Mock ServiceContainer for testing skills."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._data = kwargs
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data.get(key, default)
+
+    def get_tool_allowed_paths(self, tool_name: str) -> list[Path] | None:
+        """Return allowed_paths from data."""
+        return self._data.get("allowed_paths")
+
+
 class TestRegexReplaceBasic:
     """Basic tests for regex_replace skill."""
 
     @pytest.fixture
     def skill(self) -> RegexReplaceSkill:
-        return RegexReplaceSkill()
+        services = MockServiceContainer()
+        return RegexReplaceSkill(services)
 
     @pytest.fixture
     def test_file(self, tmp_path: Path) -> Path:
@@ -121,7 +137,8 @@ class TestRegexReplaceFlags:
 
     @pytest.fixture
     def skill(self) -> RegexReplaceSkill:
-        return RegexReplaceSkill()
+        services = MockServiceContainer()
+        return RegexReplaceSkill(services)
 
     @pytest.mark.asyncio
     async def test_ignore_case(self, skill: RegexReplaceSkill, tmp_path: Path) -> None:
@@ -179,7 +196,8 @@ class TestRegexReplaceSafety:
 
     @pytest.fixture
     def skill(self) -> RegexReplaceSkill:
-        return RegexReplaceSkill()
+        services = MockServiceContainer()
+        return RegexReplaceSkill(services)
 
     @pytest.mark.asyncio
     async def test_path_required(self, skill: RegexReplaceSkill) -> None:
@@ -247,7 +265,8 @@ class TestRegexReplaceSafety:
         outside.write_text("test")
 
         try:
-            skill = RegexReplaceSkill(allowed_paths=[tmp_path])
+            services = MockServiceContainer(allowed_paths=[tmp_path])
+            skill = RegexReplaceSkill(services)
             result = await skill.execute(
                 path=str(outside),
                 pattern="test",

@@ -1,26 +1,32 @@
-"""API key authentication for NEXUS3 HTTP server.
+"""RPC token authentication for NEXUS3 HTTP server.
 
-This module provides API key generation, validation, and management for
+This module provides token generation, validation, and management for
 securing the JSON-RPC HTTP server.
 
-Key Format: nxk_ + 32 bytes URL-safe Base64 (e.g., nxk_7Ks9XmN2pLqR4Tv8YbHc...)
+Token Format: nxk_ + 32 bytes URL-safe Base64 (e.g., nxk_7Ks9XmN2pLqR4Tv8YbHc...)
 
-Key Storage:
+Token Storage:
     ~/.nexus3/
-    ├── server.key          # Default (port 8765)
-    └── server-{port}.key   # Port-specific
+    ├── rpc.token           # Default (port 8765)
+    └── rpc-{port}.token    # Port-specific
+
+Security properties:
+    - File permissions: 0o600 (owner read/write only)
+    - Local-only: Server binds to localhost by default
+    - Ephemeral: Deleted on clean server shutdown
+    - Rotated: Fresh token on each server start (when no server running)
 
 Example usage:
-    # Server-side: Generate and store key
-    manager = ServerKeyManager(port=8765)
-    api_key = manager.generate_and_save()
-    print(f"API key: {api_key}")
+    # Server-side: Generate and store token
+    manager = ServerTokenManager(port=8765)
+    token = manager.generate_fresh()
+    print(f"Token: {token}")
 
-    # Client-side: Discover key
-    key = discover_api_key(port=8765)
-    if key:
-        # Use key in Authorization header
-        headers = {"Authorization": f"Bearer {key}"}
+    # Client-side: Discover token
+    token = discover_rpc_token(port=8765)
+    if token:
+        # Use token in Authorization header
+        headers = {"Authorization": f"Bearer {token}"}
 """
 
 from __future__ import annotations
@@ -84,27 +90,24 @@ def validate_api_key(provided: str, expected: str) -> bool:
     return hmac.compare_digest(provided, expected)
 
 
-class ServerKeyManager:
-    """Manages server API key storage and lifecycle.
+class ServerTokenManager:
+    """Manages server RPC token storage and lifecycle.
 
-    This class handles generating, storing, loading, and deleting API keys
-    for the NEXUS3 HTTP server. Keys are stored in files with mode 0o600
+    This class handles generating, storing, loading, and deleting tokens
+    for the NEXUS3 HTTP server. Tokens are stored in files with mode 0o600
     (readable only by owner) for security.
 
     Attributes:
-        port: The port number for port-specific key files.
+        port: The port number for port-specific token files.
         nexus_dir: The NEXUS3 configuration directory.
 
     Example:
         # Create manager for default port
-        manager = ServerKeyManager()
+        manager = ServerTokenManager()
 
-        # Generate and save a new key
-        key = manager.generate_and_save()
-        print(f"Key saved to: {manager.key_path}")
-
-        # Later, load the key
-        loaded_key = manager.load()
+        # Generate fresh token (deletes any stale token first)
+        token = manager.generate_fresh()
+        print(f"Token saved to: {manager.token_path}")
 
         # Cleanup on shutdown
         manager.delete()
@@ -115,12 +118,12 @@ class ServerKeyManager:
         port: int = 8765,
         nexus_dir: Path | None = None,
     ) -> None:
-        """Initialize the key manager.
+        """Initialize the token manager.
 
         Args:
-            port: The server port. Used for port-specific key files.
-                  Default port (8765) uses server.key, other ports use
-                  server-{port}.key.
+            port: The server port. Used for port-specific token files.
+                  Default port (8765) uses rpc.token, other ports use
+                  rpc-{port}.token.
             nexus_dir: The NEXUS3 configuration directory. Defaults to
                        ~/.nexus3 if not specified.
         """
@@ -138,149 +141,144 @@ class ServerKeyManager:
         return self._nexus_dir
 
     @property
-    def key_path(self) -> Path:
-        """Path to the key file for this port.
+    def token_path(self) -> Path:
+        """Path to the token file for this port.
 
         Returns:
-            Path to server.key for default port (8765), or
-            server-{port}.key for other ports.
+            Path to rpc.token for default port (8765), or
+            rpc-{port}.token for other ports.
         """
         if self._port == 8765:
-            return self._nexus_dir / "server.key"
+            return self._nexus_dir / "rpc.token"
         else:
-            return self._nexus_dir / f"server-{self._port}.key"
+            return self._nexus_dir / f"rpc-{self._port}.token"
 
-    def generate_and_save(self) -> str:
-        """Generate a new API key and save it to the key file.
+    def _save(self, token: str) -> None:
+        """Save a token to the token file with secure permissions.
 
-        Creates the NEXUS3 directory if it doesn't exist. The key file
+        Creates the NEXUS3 directory if it doesn't exist. The token file
         is created with mode 0o600 (readable only by owner).
 
-        Returns:
-            The generated API key.
+        Args:
+            token: The token to save.
 
         Raises:
-            OSError: If the key file cannot be written.
+            OSError: If the token file cannot be written.
         """
         # Ensure directory exists
         self._nexus_dir.mkdir(parents=True, exist_ok=True)
 
-        # Generate key
-        api_key = generate_api_key()
-
-        # Write key with restrictive permissions
-        # First write, then chmod to ensure file exists
-        self.key_path.write_text(api_key, encoding="utf-8")
+        # Write token with restrictive permissions
+        self.token_path.write_text(token, encoding="utf-8")
 
         # Set file permissions to 0o600 (owner read/write only)
-        # This prevents other users from reading the key
-        os.chmod(self.key_path, stat.S_IRUSR | stat.S_IWUSR)
-
-        return api_key
+        os.chmod(self.token_path, stat.S_IRUSR | stat.S_IWUSR)
 
     def load(self) -> str | None:
-        """Load the API key from the key file.
+        """Load the token from the token file.
 
         Returns:
-            The API key if the file exists and is readable, None otherwise.
+            The token if the file exists and is readable, None otherwise.
         """
-        if not self.key_path.exists():
+        if not self.token_path.exists():
             return None
 
         try:
-            return self.key_path.read_text(encoding="utf-8").strip()
+            return self.token_path.read_text(encoding="utf-8").strip()
         except OSError as e:
-            logger.debug("Failed to read key file %s: %s", self.key_path, e)
+            logger.debug("Failed to read token file %s: %s", self.token_path, e)
             return None
 
-    def load_or_generate(self) -> str:
-        """Load existing API key or generate a new one.
+    def generate_fresh(self) -> str:
+        """Delete any stale token and generate a fresh one.
 
-        This method provides key persistence across server restarts:
-        - If a valid key file exists, use it (prevents auth mismatches)
-        - If no key exists, generate and save a new one
+        Use this when starting a server after confirming no other server
+        is running on this port. This provides token rotation while still
+        preventing auth mismatches (since there's no existing server to
+        mismatch with).
 
-        This is preferred over generate_and_save() for server startup
-        because it prevents auth errors when a server is restarted
-        while clients still have the old key cached.
+        The sequence is:
+        1. Delete existing token file (if any) - it's stale
+        2. Generate new random token
+        3. Save with secure permissions (0o600)
 
         Returns:
-            The API key (existing or newly generated).
+            The newly generated token.
         """
-        existing_key = self.load()
-        if existing_key and existing_key.startswith(API_KEY_PREFIX):
-            logger.debug("Using existing API key from %s", self.key_path)
-            return existing_key
-
-        logger.debug("Generating new API key")
-        return self.generate_and_save()
+        self.delete()
+        token = generate_api_key()
+        self._save(token)
+        logger.debug("Generated fresh token at %s", self.token_path)
+        return token
 
     def delete(self) -> None:
-        """Delete the key file if it exists.
+        """Delete the token file if it exists.
 
         This should be called during server shutdown to clean up
-        the key file. Silently succeeds if the file doesn't exist.
+        the token file. Silently succeeds if the file doesn't exist.
         """
         try:
-            self.key_path.unlink(missing_ok=True)
+            self.token_path.unlink(missing_ok=True)
         except OSError as e:
-            logger.debug("Failed to delete key file %s: %s", self.key_path, e)
+            logger.debug("Failed to delete token file %s: %s", self.token_path, e)
 
 
-def discover_api_key(
+def discover_rpc_token(
     port: int = 8765,
     nexus_dir: Path | None = None,
 ) -> str | None:
-    """Discover an API key for connecting to a NEXUS3 server.
+    """Discover an RPC token for connecting to a NEXUS3 server.
 
-    This function checks multiple locations for an API key, in order:
-    1. NEXUS3_API_KEY environment variable
-    2. ~/.nexus3/server-{port}.key (port-specific)
-    3. ~/.nexus3/server.key (default)
+    This function checks multiple locations for a token, in order:
+    1. NEXUS3_API_KEY environment variable (for backwards compatibility)
+    2. ~/.nexus3/rpc-{port}.token (port-specific)
+    3. ~/.nexus3/rpc.token (default)
 
     Args:
         port: The server port to connect to. Used for port-specific
-              key file lookup.
+              token file lookup.
         nexus_dir: The NEXUS3 configuration directory. Defaults to
                    ~/.nexus3 if not specified.
 
     Returns:
-        The discovered API key, or None if no key was found.
+        The discovered token, or None if no token was found.
 
     Example:
-        # Try to discover key for default port
-        key = discover_api_key()
-        if key:
-            client = NexusClient(url, api_key=key)
+        # Try to discover token for default port
+        token = discover_rpc_token()
+        if token:
+            client = NexusClient(url, api_key=token)
         else:
-            print("No API key found. Use --api-key flag.")
+            print("No token found. Use --api-key flag.")
     """
     nexus_dir = nexus_dir or DEFAULT_NEXUS_DIR
 
-    # 1. Check environment variable
-    env_key = os.environ.get("NEXUS3_API_KEY")
-    if env_key:
-        return env_key.strip()
+    # 1. Check environment variable (backwards compatible name)
+    env_token = os.environ.get("NEXUS3_API_KEY")
+    if env_token:
+        return env_token.strip()
 
-    # 2. Check port-specific key file
+    # 2. Check port-specific token file
     if port != 8765:
-        port_key_path = nexus_dir / f"server-{port}.key"
-        if port_key_path.exists():
+        port_token_path = nexus_dir / f"rpc-{port}.token"
+        if port_token_path.exists():
             try:
-                key = port_key_path.read_text(encoding="utf-8").strip()
-                if key:
-                    return key
+                token = port_token_path.read_text(encoding="utf-8").strip()
+                if token:
+                    return token
             except OSError as e:
-                logger.debug("Failed to read port-specific key file %s: %s", port_key_path, e)
+                logger.debug("Failed to read port-specific token file %s: %s", port_token_path, e)
 
-    # 3. Check default key file
-    default_key_path = nexus_dir / "server.key"
-    if default_key_path.exists():
+    # 3. Check default token file
+    default_token_path = nexus_dir / "rpc.token"
+    if default_token_path.exists():
         try:
-            key = default_key_path.read_text(encoding="utf-8").strip()
-            if key:
-                return key
+            token = default_token_path.read_text(encoding="utf-8").strip()
+            if token:
+                return token
         except OSError as e:
-            logger.debug("Failed to read default key file %s: %s", default_key_path, e)
+            logger.debug("Failed to read default token file %s: %s", default_token_path, e)
 
     return None
+
+
