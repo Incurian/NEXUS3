@@ -58,7 +58,7 @@ from nexus3.provider import create_provider
 from nexus3.rpc.auth import ServerKeyManager
 from nexus3.rpc.detection import DetectionResult, detect_server
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
-from nexus3.rpc.http import DEFAULT_PORT, run_http_server
+from nexus3.rpc.http import run_http_server
 from nexus3.rpc.pool import AgentConfig, AgentPool, SharedComponents, generate_temp_id
 from nexus3.session import LogStream, SessionManager
 from nexus3.session.persistence import (
@@ -485,7 +485,7 @@ async def run_repl(
     verbose: bool = False,
     raw_log: bool = False,
     log_dir: Path | None = None,
-    port: int = DEFAULT_PORT,
+    port: int | None = None,
     # Phase 6: Session startup flags
     resume: bool = False,
     fresh: bool = False,
@@ -507,7 +507,7 @@ async def run_repl(
         verbose: Enable verbose logging stream.
         raw_log: Enable raw API logging stream.
         log_dir: Directory for session logs.
-        port: Port for embedded HTTP server (default: 8765).
+        port: Port for embedded HTTP server. If None, uses config.server.port.
         resume: Resume last session automatically (skip lobby).
         fresh: Start fresh temp session (skip lobby).
         session_name: Load specific saved session by name (skip lobby).
@@ -517,22 +517,34 @@ async def run_repl(
     console = get_console()
     theme = load_theme()
 
+    # Load configuration early to get default port
+    try:
+        config = load_config()
+    except NexusError as e:
+        console.print(f"[red]Error:[/] {e.message}")
+        return
+
+    # Use config port if not specified via CLI
+    effective_port = port if port is not None else config.server.port
+
     # Check for existing server on the port
-    detection_result = await detect_server(port)
+    detection_result = await detect_server(effective_port)
     if detection_result == DetectionResult.NEXUS_SERVER:
         # Server already running - check if "main" agent exists
         from nexus3.client import ClientError, NexusClient
 
-        console.print(f"[dim]Server already running on port {port}, checking for main agent...[/]")
+        console.print(
+            f"[dim]Server already running on port {effective_port}, checking for main agent...[/]"
+        )
 
         # Try to connect to main agent
-        agent_url = f"http://localhost:{port}/agent/main"
+        agent_url = f"http://localhost:{effective_port}/agent/main"
         try:
             async with NexusClient.with_auto_auth(agent_url, timeout=5.0) as client:
                 await client.get_tokens()
             # Main agent exists, connect normally
             console.print(f"[dim]Main agent found, connecting...[/]")
-            await run_repl_client(f"http://localhost:{port}", "main")
+            await run_repl_client(f"http://localhost:{effective_port}", "main")
             return
         except ClientError as e:
             # Main agent doesn't exist - shutdown old server and start fresh
@@ -540,10 +552,11 @@ async def run_repl(
                 console.print(f"[dim]Main agent not found, restarting server...[/]")
                 # Shutdown the orphaned server
                 try:
-                    shutdown_key_mgr = ServerKeyManager(port=port)
+                    shutdown_key_mgr = ServerKeyManager(port=effective_port)
                     api_key = shutdown_key_mgr.load()
-                    global_url = f"http://localhost:{port}"
-                    async with NexusClient(global_url, api_key=api_key, timeout=5.0) as shutdown_client:
+                    global_url = f"http://localhost:{effective_port}"
+                    client_args = dict(api_key=api_key, timeout=5.0)
+                    async with NexusClient(global_url, **client_args) as shutdown_client:
                         await shutdown_client.call("shutdown_server")
                     # Give server time to shutdown
                     await asyncio.sleep(0.5)
@@ -555,15 +568,10 @@ async def run_repl(
                 console.print(f"[red]Connection failed:[/] {e}")
                 return
     elif detection_result == DetectionResult.OTHER_SERVICE:
-        console.print(f"[red]Error:[/] Port {port} is already in use by another service")
+        console.print(f"[red]Error:[/] Port {effective_port} is already in use by another service")
         return
 
-    # Load configuration
-    try:
-        config = load_config()
-    except NexusError as e:
-        console.print(f"[red]Error:[/] {e.message}")
-        return
+    # Config already loaded above for port resolution
 
     # Create provider (shared across all agents)
     # Resolve model alias to actual model ID before creating provider
@@ -619,7 +627,7 @@ async def run_repl(
     global_dispatcher = GlobalDispatcher(pool)
 
     # Generate and save API key
-    key_manager = ServerKeyManager(port=port)
+    key_manager = ServerKeyManager(port=effective_port)
     api_key = key_manager.generate_and_save()
 
     # Create session manager for auto-restore of saved sessions
@@ -793,7 +801,7 @@ async def run_repl(
     # Start HTTP server as a background task
     http_task = asyncio.create_task(
         run_http_server(
-            pool, global_dispatcher, port, api_key=api_key,
+            pool, global_dispatcher, effective_port, api_key=api_key,
             session_manager=session_manager
         ),
         name="http_server",
@@ -900,7 +908,7 @@ async def run_repl(
     console.print("[bold]NEXUS3 v0.1.0[/bold]")
     console.print(f"Agent: {current_agent_id}", style="dim")
     console.print(f"Session: {logger.session_dir}", style="dim")
-    console.print(f"Server: http://localhost:{port}", style="dim")
+    console.print(f"Server: http://localhost:{effective_port}", style="dim")
     if loaded_prompt.personal_path:
         console.print(f"Personal: {loaded_prompt.personal_path}", style="dim")
     if loaded_prompt.project_path:

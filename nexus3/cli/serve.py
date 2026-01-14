@@ -43,7 +43,7 @@ from nexus3.provider import create_provider
 from nexus3.rpc.auth import ServerKeyManager
 from nexus3.rpc.detection import DetectionResult, detect_server
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
-from nexus3.rpc.http import DEFAULT_PORT, run_http_server
+from nexus3.rpc.http import run_http_server
 from nexus3.rpc.pool import AgentPool, SharedComponents
 from nexus3.session import LogStream, SessionManager
 
@@ -55,7 +55,7 @@ load_dotenv()
 
 
 async def run_serve(
-    port: int = DEFAULT_PORT,
+    port: int | None = None,
     verbose: bool = False,
     raw_log: bool = False,
     log_dir: Path | None = None,
@@ -71,26 +71,29 @@ async def run_serve(
     If so, exits with an error message.
 
     Args:
-        port: Port to listen on (default: 8765).
+        port: Port to listen on. If None, uses config.server.port.
         verbose: Enable verbose logging stream.
         raw_log: Enable raw API logging stream.
         log_dir: Directory for session logs.
     """
-    # Check for existing server on the port
-    detection_result = await detect_server(port)
-    if detection_result == DetectionResult.NEXUS_SERVER:
-        print(f"Error: NEXUS3 server already running on port {port}")
-        print(f"Use 'nexus --connect http://localhost:{port}' to connect to it")
-        return
-    elif detection_result == DetectionResult.OTHER_SERVICE:
-        print(f"Error: Port {port} is already in use by another service")
-        return
-
-    # Load configuration
+    # Load configuration first to get default port
     try:
         config = load_config()
     except NexusError as e:
         print(f"Configuration error: {e.message}")
+        return
+
+    # Use config port if not specified
+    effective_port = port if port is not None else config.server.port
+
+    # Check for existing server on the port
+    detection_result = await detect_server(effective_port)
+    if detection_result == DetectionResult.NEXUS_SERVER:
+        print(f"Error: NEXUS3 server already running on port {effective_port}")
+        print(f"Use 'nexus --connect http://localhost:{effective_port}' to connect to it")
+        return
+    elif detection_result == DetectionResult.OTHER_SERVICE:
+        print(f"Error: Port {effective_port} is already in use by another service")
         return
 
     # Create provider (shared across all agents)
@@ -150,7 +153,7 @@ async def run_serve(
     global_dispatcher = GlobalDispatcher(pool)
 
     # Generate and save API key
-    key_manager = ServerKeyManager(port=port)
+    key_manager = ServerKeyManager(port=effective_port)
     api_key = key_manager.generate_and_save()
 
     # Create session manager for auto-restore of saved sessions
@@ -159,7 +162,7 @@ async def run_serve(
     # Print startup info
     print("NEXUS3 Multi-Agent HTTP Server")
     print(f"Logs: {base_log_dir}")
-    print(f"Listening on http://localhost:{port}")
+    print(f"Listening on http://localhost:{effective_port}")
     print(f"Key file: {key_manager.key_path}")
     print("Press Ctrl+C to stop")
     print("")
@@ -167,7 +170,7 @@ async def run_serve(
     # Run the HTTP server
     try:
         await run_http_server(
-            pool, global_dispatcher, port, api_key=api_key,
+            pool, global_dispatcher, effective_port, api_key=api_key,
             session_manager=session_manager
         )
     finally:

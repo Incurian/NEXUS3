@@ -545,10 +545,8 @@ A comprehensive code review was completed (2026-01-13) using 24 NEXUS3 subagents
 - [x] Structured logging (`06-logging.md`) - added to RPC layer (http, auth, dispatcher, global_dispatcher)
 
 **Easy (1-2 hours, isolated changes):**
-- [ ] Quick wins remainder (`17-quick-wins.md`) - rate limiting semaphore, lobby recursion, deprecated executor
+- [x] Quick wins (`17-quick-wins.md`) - rate limiting, lobby recursion, deprecated executor, delete openrouter.py
 - [ ] Port wiring (`02-port-config.md`) - use ServerConfig in serve/repl
-- [ ] Token caching (`08-performance.md`) - per-message cache in TokenCounter
-- [ ] Compaction cache (`16-compaction-cache.md`) - mtime check before prompt reload
 
 **Medium (2-4 hours, multiple files):**
 - [ ] Logging completion (`06-logging.md`) - add to skills, client, session modules
@@ -564,6 +562,8 @@ A comprehensive code review was completed (2026-01-13) using 24 NEXUS3 subagents
 - [ ] Permissions split (`03-permissions-split.md`) - break up monolith
 
 **Deferred (low priority):**
+- Token caching (`08-performance.md`) - micro-optimization, tiktoken already fast
+- Compaction cache (`16-compaction-cache.md`) - micro-optimization, ~10ms savings
 - Display hardcoding (`14-display-config.md`) - works fine as-is
 - REPL split (`05-repl-split.md`) - large refactor, stable code
 - Windows ESC key (`15-windows-keys.md`) - platform we don't target
