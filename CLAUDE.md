@@ -581,10 +581,7 @@ Code review completed 2026-01-13 using 24 NEXUS3 subagents. Details in `reviews/
 
 | # | Issue | Priority | Effort | User Impact | Notes |
 |---|-------|----------|--------|-------------|-------|
-| 1 | **Bash shell injection** | P0 Critical | 2-3h | **YES** - loses shell features (`\|`, `&&`, `>`) | Switch to `subprocess_exec` + `shlex.split()` |
-| 9 | **Git skill bypass** | P1 High | 2-3h | Minor - stricter filtering | Harden regex, explicit arg parsing |
 | 11 | **Skill param validation** | P2 Medium | 2-4h | No - better error messages | JSON Schema validation before `execute()` |
-| 12 | ~~Loader unification~~ | ~~P2 Medium~~ | ~~2-3h~~ | ~~No - internal cleanup~~ | **DONE** - PromptLoader removed, using ContextLoader |
 | 4 | **RPC decoupling** | P2 Medium | 4-6h | No - same API, less overhead | AgentAPI injection, eliminate HTTP loopback |
 
 ### Completed
@@ -599,6 +596,9 @@ Code review completed 2026-01-13 using 24 NEXUS3 subagents. Details in `reviews/
 - Quick wins (deleted duplicate openrouter.py)
 - Permissions.py split (policy.py, allowances.py, presets.py)
 - **Loader unification** - PromptLoader removed, ContextLoader used everywhere
+- **Bash shell injection** - Dual skills: `bash_safe` (subprocess_exec) and `shell_UNSAFE` (shell=True)
+- **Git skill bypass** - Parse with shlex FIRST, validate parsed args (prevents quote-based bypasses)
+- **Execution allowance tiers** - shell_UNSAFE per-use only, bash_safe/run_python directory-only
 
 ### Deferred
 
@@ -614,23 +614,13 @@ Code review completed 2026-01-13 using 24 NEXUS3 subagents. Details in `reviews/
 | 28 | ServiceContainer typing | Polish |
 | 29 | HTTP keep-alive | Advanced feature |
 
-### Suggested Implementation Order
+### Remaining Work
 
-Based on dependencies and difficulty:
+Two items remain:
 
-1. **#12 Loader unification** (2-3h) — Do first. Simpler `pool.py` change, no dependencies. Stabilizes pool.py before #4.
+1. **#11 Skill param validation** — JSON Schema validation before `execute()`. Better error messages, catches invalid params early.
 
-2. **#1 + #9 Security batch** (4-6h combined) — Both are command validation in execution skills. Similar patterns, can be one PR. Has user impact (loses shell features in bash), so do early to validate trade-offs.
-
-3. **#11 Skill param validation** (2-4h) — Adds infrastructure to skill/base.py. Independent of above, can be done anytime. Nice foundation for future skill work.
-
-4. **#4 RPC decoupling** (4-6h) — Largest change, touches pool.py extensively. Do last after pool.py is stabilized by #12.
-
-**Rationale:**
-- #12 and #4 both touch `pool.py` → do #12 first (simpler)
-- #1 and #9 are both security/command validation → batch together
-- #11 is independent → flexible timing
-- #4 is the largest refactor → do last when other changes are stable
+2. **#4 RPC decoupling** — Largest remaining change. Replace HTTP loopback with direct AgentAPI injection. Same API, less overhead.
 
 ---
 
