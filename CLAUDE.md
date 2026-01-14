@@ -711,6 +711,8 @@ class MySpecialSkill(BaseSkill):
 
 - [ ] **Portable auto-bootstrap launcher**: Add a launcher script that auto-installs deps (httpx, pydantic, rich, prompt-toolkit, python-dotenv) on first run, enabling "copy folder and go" portability without manual pip install. See packaging investigation for options (shiv/zipapp as alternative).
 
+- [ ] **Smarter API key rotation**: Current `load_or_generate()` persists keys indefinitely. Better approach: check if port is in use before deciding. If server running → reuse key. If no server → delete stale key and generate fresh. This gives key rotation on true restarts while preventing auth mismatches when reconnecting to existing servers.
+
 ---
 
 ## Known Issues
