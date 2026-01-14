@@ -570,6 +570,24 @@ Code review completed 2026-01-13 using 24 NEXUS3 subagents. Details in `reviews/
 | 28 | ServiceContainer typing | Polish |
 | 29 | HTTP keep-alive | Advanced feature |
 
+### Suggested Implementation Order
+
+Based on dependencies and difficulty:
+
+1. **#12 Loader unification** (2-3h) — Do first. Simpler `pool.py` change, no dependencies. Stabilizes pool.py before #4.
+
+2. **#1 + #9 Security batch** (4-6h combined) — Both are command validation in execution skills. Similar patterns, can be one PR. Has user impact (loses shell features in bash), so do early to validate trade-offs.
+
+3. **#11 Skill param validation** (2-4h) — Adds infrastructure to skill/base.py. Independent of above, can be done anytime. Nice foundation for future skill work.
+
+4. **#4 RPC decoupling** (4-6h) — Largest change, touches pool.py extensively. Do last after pool.py is stabilized by #12.
+
+**Rationale:**
+- #12 and #4 both touch `pool.py` → do #12 first (simpler)
+- #1 and #9 are both security/command validation → batch together
+- #11 is independent → flexible timing
+- #4 is the largest refactor → do last when other changes are stable
+
 ---
 
 ## Skill Type Hierarchy
