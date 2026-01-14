@@ -1,8 +1,55 @@
 """Pydantic models for NEXUS3 configuration validation."""
 
+import os
+import warnings
 from enum import Enum
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def _normalize_paths(paths: list[str] | None) -> list[str] | None:
+    """Normalize and validate a list of paths.
+
+    - Expands ~ to home directory
+    - Converts to absolute paths
+    - Warns if path doesn't exist or isn't a directory
+
+    Args:
+        paths: List of path strings, or None.
+
+    Returns:
+        List of normalized absolute path strings, or None.
+    """
+    if paths is None:
+        return None
+
+    normalized = []
+    for path_str in paths:
+        # Expand ~ and make absolute
+        expanded = os.path.expanduser(path_str)
+        absolute = os.path.abspath(expanded)
+
+        # Warn if path doesn't exist
+        if not os.path.exists(absolute):
+            warnings.warn(
+                f"Config path does not exist: {path_str!r} -> {absolute}",
+                UserWarning,
+                stacklevel=4,
+            )
+        elif not os.path.isdir(absolute):
+            warnings.warn(
+                f"Config path is not a directory: {path_str!r} -> {absolute}",
+                UserWarning,
+                stacklevel=4,
+            )
+
+        normalized.append(absolute)
+
+    return normalized
+
+# Supported provider types
+ProviderType = Literal["openrouter", "openai", "azure", "anthropic", "ollama", "vllm"]
 
 
 class AuthMethod(str, Enum):
@@ -61,7 +108,7 @@ class ProviderConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    type: str = "openrouter"
+    type: ProviderType = "openrouter"
     """Provider type: openrouter, openai, azure, anthropic, ollama, vllm."""
 
     api_key_env: str = "OPENROUTER_API_KEY"
@@ -91,6 +138,15 @@ class ProviderConfig(BaseModel):
     deployment: str | None = None
     """Azure deployment name (if different from model)."""
 
+    request_timeout: float = Field(default=120.0, gt=0)
+    """Timeout in seconds for API requests."""
+
+    max_retries: int = Field(default=3, ge=0, le=10)
+    """Maximum number of retry attempts for failed requests."""
+
+    retry_backoff: float = Field(default=1.5, ge=1.0, le=5.0)
+    """Exponential backoff multiplier between retries."""
+
 
 class ToolPermissionConfig(BaseModel):
     """Per-tool permission configuration in config.json.
@@ -112,6 +168,12 @@ class ToolPermissionConfig(BaseModel):
     allowed_paths: list[str] | None = None
     timeout: float | None = None
     requires_confirmation: bool | None = None
+
+    @field_validator("allowed_paths", mode="before")
+    @classmethod
+    def normalize_allowed_paths(cls, v: list[str] | None) -> list[str] | None:
+        """Normalize allowed_paths to absolute paths with warnings."""
+        return _normalize_paths(v)
 
 
 class PermissionPresetConfig(BaseModel):
@@ -141,6 +203,18 @@ class PermissionPresetConfig(BaseModel):
     network_access: bool | None = None
     tool_permissions: dict[str, ToolPermissionConfig] = {}
     default_tool_timeout: float | None = None
+
+    @field_validator("allowed_paths", mode="before")
+    @classmethod
+    def normalize_allowed_paths(cls, v: list[str] | None) -> list[str] | None:
+        """Normalize allowed_paths to absolute paths with warnings."""
+        return _normalize_paths(v)
+
+    @field_validator("blocked_paths", mode="before")
+    @classmethod
+    def normalize_blocked_paths(cls, v: list[str]) -> list[str]:
+        """Normalize blocked_paths to absolute paths with warnings."""
+        return _normalize_paths(v) or []
 
 
 class PermissionsConfig(BaseModel):
@@ -212,6 +286,31 @@ class ContextConfig(BaseModel):
     )
 
 
+class ServerConfig(BaseModel):
+    """Configuration for the NEXUS3 HTTP server.
+
+    Controls server behavior when running in --serve mode.
+
+    Example in config.json:
+        "server": {
+            "host": "0.0.0.0",
+            "port": 8765,
+            "log_level": "INFO"
+        }
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    host: str = "127.0.0.1"
+    """Host address to bind to (use 0.0.0.0 for all interfaces)."""
+
+    port: int = Field(default=8765, ge=1, le=65535)
+    """Port number for the HTTP server."""
+
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    """Logging level for server operations."""
+
+
 class MCPServerConfig(BaseModel):
     """Configuration for an MCP server.
 
@@ -276,6 +375,9 @@ class Config(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    config_version: int = Field(default=1, ge=1)
+    """Schema version for migration support. Current version: 1."""
+
     provider: ProviderConfig = ProviderConfig()
     models: dict[str, ModelAliasConfig] = {}
     """Model aliases mapping friendly names to model configs."""
@@ -289,6 +391,9 @@ class Config(BaseModel):
     context: ContextConfig = ContextConfig()  # Context loading config
     mcp_servers: list[MCPServerConfig] = []
     """MCP server configurations for external tool providers."""
+
+    server: ServerConfig = ServerConfig()
+    """HTTP server configuration for --serve mode."""
 
     def resolve_model(self, name_or_id: str | None = None) -> ResolvedModel:
         """Resolve a model name/alias to full model settings.
@@ -314,10 +419,15 @@ class Config(BaseModel):
         # Check if it's an alias
         if effective_name in self.models:
             alias_config = self.models[effective_name]
+            reasoning = (
+                alias_config.reasoning
+                if alias_config.reasoning is not None
+                else self.provider.reasoning
+            )
             return ResolvedModel(
                 model_id=alias_config.id,
                 context_window=alias_config.context_window or self.provider.context_window,
-                reasoning=alias_config.reasoning if alias_config.reasoning is not None else self.provider.reasoning,
+                reasoning=reasoning,
                 alias=effective_name,
             )
 
