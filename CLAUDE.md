@@ -328,6 +328,31 @@ NEXUS3 supports multiple LLM providers via the `provider` config:
 
 See `nexus3/provider/README.md` for full documentation and adding new providers.
 
+### Server Config Example
+
+```json
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8765,
+    "log_level": "INFO"
+  }
+}
+```
+
+### Provider Timeout/Retry Config
+
+```json
+{
+  "provider": {
+    "type": "openrouter",
+    "request_timeout": 120.0,
+    "max_retries": 3,
+    "retry_backoff": 1.5
+  }
+}
+```
+
 ### Compaction Config Example
 
 ```json
@@ -502,6 +527,46 @@ nexus --init-global-force     # Overwrite existing
 /permissions --disable write_file   # Disable a tool
 /permissions --list-tools           # List tool status
 ```
+
+---
+
+## Code Review & Remediation Plan
+
+A comprehensive code review was completed (2026-01-13) using 24 NEXUS3 subagents. Results in `reviews/`:
+- `TRIAGE-SUMMARY.md` - 30 issues identified across security, architecture, quality
+- `REMEDIATION-PLAN.md` - Master implementation guide
+- `remediation/*.md` - 17 detailed fix plans with code snippets
+
+### Remediation by Ease (Easy → Hard)
+
+**Completed:**
+- [x] Config validation (`07-config-validation.md`) - ServerConfig, timeout/retries, config_version, path validators
+- [x] Delete openrouter.py (`17-quick-wins.md`) - removed duplicate provider
+- [x] Structured logging (`06-logging.md`) - added to RPC layer (http, auth, dispatcher, global_dispatcher)
+
+**Easy (1-2 hours, isolated changes):**
+- [ ] Quick wins remainder (`17-quick-wins.md`) - rate limiting semaphore, lobby recursion, deprecated executor
+- [ ] Port wiring (`02-port-config.md`) - use ServerConfig in serve/repl
+- [ ] Token caching (`08-performance.md`) - per-message cache in TokenCounter
+- [ ] Compaction cache (`16-compaction-cache.md`) - mtime check before prompt reload
+
+**Medium (2-4 hours, multiple files):**
+- [ ] Logging completion (`06-logging.md`) - add to skills, client, session modules
+- [ ] Symlink security (`10-symlink-security.md`) - universal checks in path utilities
+- [ ] Skill validation (`11-skill-validation.md`) - validate params before execute
+- [ ] Exception hierarchy (`13-exception-hierarchy.md`) - unify under NexusError
+- [ ] Loader unification (`12-loader-unification.md`) - deprecate PromptLoader
+
+**Hard (4+ hours, architectural/security-critical):**
+- [ ] Bash skill injection (`01-bash-security.md`) - switch to subprocess list args
+- [ ] Git skill bypass (`09-git-security.md`) - proper arg parsing
+- [ ] RPC coupling (`04-rpc-decoupling.md`) - AgentAPI service injection
+- [ ] Permissions split (`03-permissions-split.md`) - break up monolith
+
+**Deferred (low priority):**
+- Display hardcoding (`14-display-config.md`) - works fine as-is
+- REPL split (`05-repl-split.md`) - large refactor, stable code
+- Windows ESC key (`15-windows-keys.md`) - platform we don't target
 
 ---
 
