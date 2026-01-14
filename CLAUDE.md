@@ -581,7 +581,6 @@ Code review completed 2026-01-13 using 24 NEXUS3 subagents. Details in `reviews/
 
 | # | Issue | Priority | Effort | User Impact | Notes |
 |---|-------|----------|--------|-------------|-------|
-| 11 | **Skill param validation** | P2 Medium | 2-4h | No - better error messages | JSON Schema validation before `execute()` |
 | 4 | **RPC decoupling** | P2 Medium | 4-6h | No - same API, less overhead | AgentAPI injection, eliminate HTTP loopback |
 
 ### Completed
@@ -599,6 +598,7 @@ Code review completed 2026-01-13 using 24 NEXUS3 subagents. Details in `reviews/
 - **Bash shell injection** - Dual skills: `bash_safe` (subprocess_exec) and `shell_UNSAFE` (shell=True)
 - **Git skill bypass** - Parse with shlex FIRST, validate parsed args (prevents quote-based bypasses)
 - **Execution allowance tiers** - shell_UNSAFE per-use only, bash_safe/run_python directory-only
+- **Skill param validation** - `@validate_skill_parameters()` decorator, applied to core FileSkills
 
 ### Deferred
 
@@ -616,11 +616,9 @@ Code review completed 2026-01-13 using 24 NEXUS3 subagents. Details in `reviews/
 
 ### Remaining Work
 
-Two items remain:
+One item remains:
 
-1. **#11 Skill param validation** — JSON Schema validation before `execute()`. Better error messages, catches invalid params early.
-
-2. **#4 RPC decoupling** — Largest remaining change. Replace HTTP loopback with direct AgentAPI injection. Same API, less overhead.
+**#4 RPC decoupling** — Replace HTTP loopback with direct AgentAPI injection. Same API, less overhead.
 
 ---
 
