@@ -13,11 +13,12 @@ from pathlib import Path
 # Secure file permissions: owner read/write only (0o600)
 _SECURE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
 
+from nexus3.core.errors import NexusError
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.session.persistence import SavedSession, SessionSummary
 
 
-class SessionManagerError(Exception):
+class SessionManagerError(NexusError):
     """Base error for session manager operations."""
 
     pass

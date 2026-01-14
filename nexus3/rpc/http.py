@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
+from nexus3.core.errors import NexusError
 from nexus3.core.validation import is_valid_agent_id
 from nexus3.rpc.auth import validate_api_key
 from nexus3.rpc.protocol import (
@@ -108,7 +109,7 @@ class HttpRequest:
     body: str
 
 
-class HttpParseError(Exception):
+class HttpParseError(NexusError):
     """Raised when HTTP request parsing fails."""
 
 

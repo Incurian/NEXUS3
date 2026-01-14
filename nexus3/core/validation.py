@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from nexus3.core.errors import NexusError
+
 # Agent ID pattern: alphanumeric + dot/underscore/hyphen, 1-63 chars total
 # Must start with alphanumeric OR dot (for temp agents like .1, .2)
 # Dot-prefixed IDs (.1, .2) are temp agents
@@ -20,12 +22,10 @@ AGENT_ID_PATTERN = re.compile(r'^\.?[a-zA-Z0-9][a-zA-Z0-9._-]{0,61}$')
 ALLOWED_INTERNAL_PARAMS = {"_parallel"}
 
 
-class ValidationError(Exception):
+class ValidationError(NexusError):
     """Raised when validation fails."""
 
-    def __init__(self, message: str) -> None:
-        self.message = message
-        super().__init__(message)
+    pass
 
 
 def validate_agent_id(agent_id: str) -> str:
