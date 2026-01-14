@@ -546,7 +546,7 @@ A comprehensive code review was completed (2026-01-13) using 24 NEXUS3 subagents
 
 **Easy (1-2 hours, isolated changes):**
 - [x] Quick wins (`17-quick-wins.md`) - rate limiting, lobby recursion, deprecated executor, delete openrouter.py
-- [ ] Port wiring (`02-port-config.md`) - use ServerConfig in serve/repl
+- [x] Port wiring (`02-port-config.md`) - use ServerConfig in serve/repl
 
 **Medium (2-4 hours, multiple files):**
 - [ ] Logging completion (`06-logging.md`) - add to skills, client, session modules
