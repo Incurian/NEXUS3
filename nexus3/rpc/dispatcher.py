@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 
 from nexus3.core.cancel import CancellationToken
 from nexus3.core.errors import NexusError
+
+logger = logging.getLogger(__name__)
 from nexus3.rpc.protocol import (
     INTERNAL_ERROR,
     INVALID_PARAMS,
@@ -124,6 +127,7 @@ class Dispatcher:
             return make_error_response(request.id, INTERNAL_ERROR, e.message)
 
         except Exception as e:
+            logger.error("Unexpected error dispatching method '%s': %s", method, e, exc_info=True)
             if request.id is None:
                 return None
             return make_error_response(

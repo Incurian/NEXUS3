@@ -28,8 +28,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 from nexus3.core.validation import is_valid_agent_id
 from nexus3.rpc.auth import validate_api_key
@@ -343,7 +346,7 @@ async def handle_connection(
                 if session_manager is not None and session_manager.session_exists(agent_id):
                     try:
                         # Log the auto-restore event
-                        print(f"[auto-restoring {agent_id} from saved session]")
+                        logger.info("Auto-restoring agent '%s' from saved session", agent_id)
                         saved = session_manager.load_session(agent_id)
                         agent = await pool.restore_from_saved(saved)
                     except Exception as e:
@@ -390,18 +393,19 @@ async def handle_connection(
 
     except Exception as e:
         # Catch-all for any unexpected errors
+        logger.error("Unexpected error handling connection: %s", e, exc_info=True)
         try:
             error_response = make_error_response(None, INTERNAL_ERROR, f"Server error: {type(e).__name__}")
             await send_http_response(writer, 500, serialize_response(error_response))
-        except Exception:
-            pass  # Connection may be broken
+        except Exception as send_err:
+            logger.debug("Failed to send error response (client disconnected?): %s", send_err)
 
     finally:
         try:
             writer.close()
             await writer.wait_closed()
-        except Exception:
-            pass  # Connection may already be closed
+        except Exception as close_err:
+            logger.debug("Connection close failed (already closed?): %s", close_err)
 
 
 async def run_http_server(
@@ -411,6 +415,7 @@ async def run_http_server(
     host: str = BIND_HOST,
     api_key: str | None = None,
     session_manager: SessionManager | None = None,
+    max_concurrent: int = 32,
 ) -> None:
     """Run the HTTP server for JSON-RPC requests with path-based routing.
 
@@ -437,6 +442,7 @@ async def run_http_server(
         session_manager: Optional SessionManager for auto-restoring saved sessions.
                         When provided, requests to inactive but saved agents will
                         trigger automatic session restoration.
+        max_concurrent: Maximum concurrent connections to prevent DoS. Defaults to 32.
     """
     # Security: Force localhost binding
     if host not in ("127.0.0.1", "localhost", "::1"):
@@ -444,13 +450,17 @@ async def run_http_server(
             f"Security: HTTP server must bind to localhost only, not {host!r}"
         )
 
+    # Rate limiting: limit concurrent connections
+    semaphore = asyncio.Semaphore(max_concurrent)
+
     async def client_handler(
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
     ) -> None:
-        await handle_connection(
-            reader, writer, pool, global_dispatcher, api_key, session_manager
-        )
+        async with semaphore:
+            await handle_connection(
+                reader, writer, pool, global_dispatcher, api_key, session_manager
+            )
 
     server = await asyncio.start_server(
         client_handler,
@@ -459,7 +469,7 @@ async def run_http_server(
     )
 
     addr = server.sockets[0].getsockname() if server.sockets else (host, port)
-    print(f"JSON-RPC HTTP server running at http://{addr[0]}:{addr[1]}/")
+    logger.info("JSON-RPC HTTP server running at http://%s:%s/", addr[0], addr[1])
 
     async with server:
         # Check for shutdown periodically
@@ -470,4 +480,4 @@ async def run_http_server(
         # Graceful shutdown
         server.close()
         await server.wait_closed()
-        print("HTTP server stopped.")
+        logger.info("HTTP server stopped")

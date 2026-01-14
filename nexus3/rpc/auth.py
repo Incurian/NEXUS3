@@ -26,10 +26,13 @@ Example usage:
 from __future__ import annotations
 
 import hmac
+import logging
 import os
 import secrets
 import stat
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # API key prefix for identification
 API_KEY_PREFIX = "nxk_"
@@ -186,7 +189,8 @@ class ServerKeyManager:
 
         try:
             return self.key_path.read_text(encoding="utf-8").strip()
-        except OSError:
+        except OSError as e:
+            logger.debug("Failed to read key file %s: %s", self.key_path, e)
             return None
 
     def delete(self) -> None:
@@ -197,8 +201,8 @@ class ServerKeyManager:
         """
         try:
             self.key_path.unlink(missing_ok=True)
-        except OSError:
-            pass  # Ignore errors during cleanup
+        except OSError as e:
+            logger.debug("Failed to delete key file %s: %s", self.key_path, e)
 
 
 def discover_api_key(
@@ -244,8 +248,8 @@ def discover_api_key(
                 key = port_key_path.read_text(encoding="utf-8").strip()
                 if key:
                     return key
-            except OSError:
-                pass
+            except OSError as e:
+                logger.debug("Failed to read port-specific key file %s: %s", port_key_path, e)
 
     # 3. Check default key file
     default_key_path = nexus_dir / "server.key"
@@ -254,7 +258,7 @@ def discover_api_key(
             key = default_key_path.read_text(encoding="utf-8").strip()
             if key:
                 return key
-        except OSError:
-            pass
+        except OSError as e:
+            logger.debug("Failed to read default key file %s: %s", default_key_path, e)
 
     return None
