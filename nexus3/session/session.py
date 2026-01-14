@@ -1,7 +1,8 @@
 """Chat session coordinator for NEXUS3."""
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Awaitable
+import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -13,7 +14,6 @@ from nexus3.context.compaction import (
 )
 from nexus3.core.interfaces import AsyncProvider
 from nexus3.core.permissions import AgentPermissions, ConfirmationResult
-from nexus3.core.validation import ValidationError, validate_tool_arguments
 from nexus3.core.types import (
     ContentDelta,
     Message,
@@ -24,6 +24,7 @@ from nexus3.core.types import (
     ToolCallStarted,
     ToolResult,
 )
+from nexus3.core.validation import ValidationError, validate_tool_arguments
 
 if TYPE_CHECKING:
     from nexus3.config.schema import CompactionConfig, Config
@@ -33,6 +34,8 @@ if TYPE_CHECKING:
     from nexus3.session.logging import SessionLogger
     from nexus3.skill.registry import SkillRegistry
     from nexus3.skill.services import ServiceContainer
+
+logger = logging.getLogger(__name__)
 
 # Confirmation callback type - returns ConfirmationResult for allow once/always UI
 ConfirmationCallback = Callable[["ToolCall", "Path | None"], Awaitable[ConfirmationResult]]
@@ -492,17 +495,27 @@ class Session:
 
             # Check if action is allowed at all (SANDBOXED blocks execution tools)
             if not permissions.effective_policy.allows_action(tool_call.name):
-                return ToolResult(error=f"Tool '{tool_call.name}' is not allowed in {permissions.effective_policy.level.value} mode")
+                level = permissions.effective_policy.level.value
+                return ToolResult(
+                    error=f"Tool '{tool_call.name}' is not allowed in {level} mode"
+                )
 
             # Extract path/cwd for permission checks
             target_path = self._extract_path_from_tool_call(tool_call)
-            exec_cwd = self._extract_exec_cwd_from_tool_call(tool_call) if tool_call.name in ("bash", "run_python") else None
+            exec_tools = ("bash", "run_python")
+            exec_cwd = (
+                self._extract_exec_cwd_from_tool_call(tool_call)
+                if tool_call.name in exec_tools
+                else None
+            )
 
             # Skip confirmation for nexus_destroy of own child agents
             skip_confirmation = False
             if tool_call.name == "nexus_destroy":
                 target_agent_id = tool_call.arguments.get("agent_id")
-                child_ids: set[str] | None = self._services.get("child_agent_ids") if self._services else None
+                child_ids: set[str] | None = (
+                    self._services.get("child_agent_ids") if self._services else None
+                )
                 if target_agent_id and child_ids and target_agent_id in child_ids:
                     skip_confirmation = True
 
@@ -569,7 +582,6 @@ class Session:
         if not skill and tool_call.name.startswith("mcp_") and self._services:
             from nexus3.mcp.permissions import can_use_mcp
             from nexus3.mcp.registry import MCPServerRegistry
-            from nexus3.mcp.skill_adapter import MCPSkillAdapter
 
             mcp_registry: MCPServerRegistry | None = self._services.get("mcp_registry")
             if mcp_registry:
@@ -596,15 +608,18 @@ class Session:
                     # YOLO skips confirmation
                     if level != PermissionLevel.YOLO:
                         # Check if server is in allow-all mode
-                        server_allowed = permissions.session_allowances.is_mcp_server_allowed(mcp_server_name)
+                        allowances = permissions.session_allowances
+                        server_allowed = allowances.is_mcp_server_allowed(mcp_server_name)
                         # Check if this specific tool is allowed
-                        tool_allowed = permissions.session_allowances.is_mcp_tool_allowed(tool_call.name)
+                        tool_allowed = allowances.is_mcp_tool_allowed(tool_call.name)
 
                         if not server_allowed and not tool_allowed:
                             # Need per-tool confirmation
                             result = await self._request_confirmation(tool_call, None)
                             if result == ConfirmationResult.DENY:
-                                return ToolResult(error=f"MCP tool '{tool_call.name}' denied by user")
+                                return ToolResult(
+                                    error=f"MCP tool '{tool_call.name}' denied by user"
+                                )
                             elif result == ConfirmationResult.ALLOW_FILE:
                                 # User chose "allow this tool always"
                                 permissions.session_allowances.add_mcp_tool(tool_call.name)
@@ -614,6 +629,7 @@ class Session:
                             # ALLOW_ONCE proceeds without adding to allowances
 
         if not skill:
+            logger.warning("Unknown skill requested: %s", tool_call.name)
             return ToolResult(error=f"Unknown skill: {tool_call.name}")
 
         # SECURITY: Validate arguments against skill's JSON schema
@@ -624,6 +640,7 @@ class Session:
                 logger=self.logger,
             )
         except ValidationError as e:
+            logger.warning("Invalid arguments for skill '%s': %s", tool_call.name, e.message)
             return ToolResult(error=f"Invalid arguments for {tool_call.name}: {e.message}")
 
         try:
@@ -634,10 +651,20 @@ class Session:
                 )
             else:
                 result = await skill.execute(**args)
+
+            # Log skill errors (non-exception failures)
+            if result.error:
+                logger.warning("Skill '%s' returned error: %s", tool_call.name, result.error)
+
             return result
-        except asyncio.TimeoutError:
-            return ToolResult(error=f"Skill '{tool_call.name}' timed out after {effective_timeout}s")
+        except TimeoutError:
+            logger.warning(
+                "Skill '%s' timed out after %ss", tool_call.name, effective_timeout
+            )
+            msg = f"Skill '{tool_call.name}' timed out after {effective_timeout}s"
+            return ToolResult(error=msg)
         except Exception as e:
+            logger.error("Skill '%s' raised exception: %s", tool_call.name, e, exc_info=True)
             return ToolResult(error=f"Skill execution error: {e}")
 
     async def _execute_tools_parallel(

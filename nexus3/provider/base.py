@@ -22,12 +22,13 @@ from nexus3.core.types import Message, StreamEvent
 if TYPE_CHECKING:
     from nexus3.core.interfaces import RawLogCallback
 
-# Default timeout for API requests (30 seconds)
-DEFAULT_TIMEOUT = 30.0
+# Default timeout for API requests (seconds) - can be overridden via config
+DEFAULT_TIMEOUT = 120.0
 
-# Retry configuration
+# Retry configuration defaults - can be overridden via config
 MAX_RETRIES = 3
 MAX_RETRY_DELAY = 10.0  # Maximum delay between retries in seconds
+DEFAULT_RETRY_BACKOFF = 1.5  # Exponential backoff multiplier
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
@@ -66,6 +67,11 @@ class BaseProvider(ABC):
         self._base_url = config.base_url.rstrip("/")
         self._model = config.model
         self._raw_log = raw_log
+
+        # Timeout/retry settings from config (with fallbacks to module defaults)
+        self._timeout = config.request_timeout
+        self._max_retries = config.max_retries
+        self._retry_backoff = config.retry_backoff
 
     def set_raw_log_callback(self, callback: RawLogCallback | None) -> None:
         """Set or clear the raw logging callback.
@@ -128,8 +134,8 @@ class BaseProvider(ABC):
         Returns:
             Delay in seconds before next retry.
         """
-        # Exponential backoff: 2^attempt + random jitter (0-1s)
-        delay = 2**attempt + random.uniform(0, 1)
+        # Exponential backoff using config multiplier + random jitter (0-1s)
+        delay = (self._retry_backoff ** attempt) + random.uniform(0, 1)
         return min(delay, MAX_RETRY_DELAY)
 
     def _is_retryable_error(self, status_code: int) -> bool:
@@ -166,9 +172,9 @@ class BaseProvider(ABC):
 
         last_error: Exception | None = None
 
-        for attempt in range(MAX_RETRIES):
+        for attempt in range(self._max_retries):
             try:
-                async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+                async with httpx.AsyncClient(timeout=self._timeout) as client:
                     response = await client.post(
                         url,
                         headers=self._build_headers(),
@@ -191,7 +197,7 @@ class BaseProvider(ABC):
                         last_error = ProviderError(
                             f"API request failed with status {response.status_code}: {error_detail}"
                         )
-                        if attempt < MAX_RETRIES - 1:
+                        if attempt < self._max_retries - 1:
                             delay = self._calculate_retry_delay(attempt)
                             await asyncio.sleep(delay)
                             continue
@@ -215,17 +221,17 @@ class BaseProvider(ABC):
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 # Network errors are retryable
                 last_error = e
-                if attempt < MAX_RETRIES - 1:
+                if attempt < self._max_retries - 1:
                     delay = self._calculate_retry_delay(attempt)
                     await asyncio.sleep(delay)
                     continue
                 # Final attempt failed
                 if isinstance(e, httpx.ConnectError):
                     raise ProviderError(
-                        f"Failed to connect to API after {MAX_RETRIES} attempts: {e}"
+                        f"Failed to connect to API after {self._max_retries} attempts: {e}"
                     ) from e
                 raise ProviderError(
-                    f"API request timed out after {MAX_RETRIES} attempts: {e}"
+                    f"API request timed out after {self._max_retries} attempts: {e}"
                 ) from e
             except httpx.HTTPError as e:
                 # Other HTTP errors - don't retry
@@ -233,7 +239,8 @@ class BaseProvider(ABC):
 
         # Shouldn't reach here, but handle it
         if last_error:
-            raise ProviderError(f"Request failed after {MAX_RETRIES} attempts") from last_error
+            msg = f"Request failed after {self._max_retries} attempts"
+            raise ProviderError(msg) from last_error
         raise ProviderError("Request failed unexpectedly")
 
     async def _make_streaming_request(
@@ -259,9 +266,9 @@ class BaseProvider(ABC):
 
         last_error: Exception | None = None
 
-        for attempt in range(MAX_RETRIES):
+        for attempt in range(self._max_retries):
             try:
-                async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
+                async with httpx.AsyncClient(timeout=self._timeout) as client:
                     async with client.stream(
                         "POST",
                         url,
@@ -285,7 +292,7 @@ class BaseProvider(ABC):
                             last_error = ProviderError(
                                 f"API request failed ({response.status_code}): {error_msg}"
                             )
-                            if attempt < MAX_RETRIES - 1:
+                            if attempt < self._max_retries - 1:
                                 delay = self._calculate_retry_delay(attempt)
                                 await asyncio.sleep(delay)
                                 continue
@@ -306,17 +313,17 @@ class BaseProvider(ABC):
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 # Network errors are retryable
                 last_error = e
-                if attempt < MAX_RETRIES - 1:
+                if attempt < self._max_retries - 1:
                     delay = self._calculate_retry_delay(attempt)
                     await asyncio.sleep(delay)
                     continue
                 # Final attempt failed
                 if isinstance(e, httpx.ConnectError):
                     raise ProviderError(
-                        f"Failed to connect to API after {MAX_RETRIES} attempts: {e}"
+                        f"Failed to connect to API after {self._max_retries} attempts: {e}"
                     ) from e
                 raise ProviderError(
-                    f"API request timed out after {MAX_RETRIES} attempts: {e}"
+                    f"API request timed out after {self._max_retries} attempts: {e}"
                 ) from e
             except httpx.HTTPError as e:
                 # Other HTTP errors - don't retry
@@ -324,7 +331,8 @@ class BaseProvider(ABC):
 
         # Shouldn't reach here
         if last_error:
-            raise ProviderError(f"Request failed after {MAX_RETRIES} attempts") from last_error
+            msg = f"Request failed after {self._max_retries} attempts"
+            raise ProviderError(msg) from last_error
 
     # Abstract methods for subclasses to implement
 

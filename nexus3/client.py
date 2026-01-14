@@ -11,6 +11,16 @@ from nexus3.rpc.protocol import ParseError, parse_response, serialize_request
 from nexus3.rpc.types import Request, Response
 
 
+def _get_default_port() -> int:
+    """Get default port from config, with fallback to 8765."""
+    try:
+        from nexus3.config.loader import load_config
+        config = load_config()
+        return config.server.port
+    except Exception:
+        return 8765
+
+
 class ClientError(NexusError):
     """Exception for client-side errors (connection, timeout, protocol)."""
 
@@ -30,18 +40,20 @@ class NexusClient:
 
     def __init__(
         self,
-        url: str = "http://127.0.0.1:8765",
+        url: str | None = None,
         timeout: float = 60.0,
         api_key: str | None = None,
     ) -> None:
         """Initialize the client.
 
         Args:
-            url: Base URL of the JSON-RPC server.
+            url: Base URL of the JSON-RPC server. If None, uses config default.
             timeout: Request timeout in seconds.
             api_key: Optional API key for authentication. If provided,
                      adds Authorization: Bearer <key> header to all requests.
         """
+        if url is None:
+            url = f"http://127.0.0.1:{_get_default_port()}"
         self._url = url
         self._timeout = timeout
         self._api_key = api_key
@@ -51,7 +63,7 @@ class NexusClient:
     @classmethod
     def with_auto_auth(
         cls,
-        url: str = "http://127.0.0.1:8765",
+        url: str | None = None,
         timeout: float = 60.0,
     ) -> "NexusClient":
         """Create a client with auto-discovered API key.
@@ -70,7 +82,7 @@ class NexusClient:
         """
         # Extract port from URL for key discovery
         parsed = urlparse(url)
-        port = parsed.port or 8765
+        port = parsed.port or _get_default_port()
         api_key = discover_api_key(port=port)
         return cls(url=url, timeout=timeout, api_key=api_key)
 

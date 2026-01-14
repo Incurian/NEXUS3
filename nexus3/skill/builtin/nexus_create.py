@@ -14,7 +14,18 @@ from nexus3.core.url_validator import UrlSecurityError, validate_url
 from nexus3.rpc.auth import discover_api_key
 from nexus3.skill.services import ServiceContainer
 
-DEFAULT_PORT = 8765
+
+def _get_default_port() -> int:
+    """Get default port from config, with fallback to 8765."""
+    try:
+        from nexus3.config.loader import load_config
+        config = load_config()
+        return config.server.port
+    except Exception:
+        return 8765
+
+
+DEFAULT_PORT = _get_default_port()
 
 
 class NexusCreateSkill:
@@ -34,7 +45,10 @@ class NexusCreateSkill:
 
     @property
     def description(self) -> str:
-        return "Create a new agent on the Nexus server. Use initial_message to send a task immediately after creation."
+        return (
+            "Create a new agent on the Nexus server. "
+            "Use initial_message to send a task immediately after creation."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -68,7 +82,7 @@ class NexusCreateSkill:
                 },
                 "model": {
                     "type": "string",
-                    "description": "Model name/alias to use (e.g., 'fast', 'smart', or full model ID)",
+                    "description": "Model name/alias (e.g., 'fast', 'smart', or full ID)",
                 },
                 "initial_message": {
                     "type": "string",
@@ -139,9 +153,8 @@ class NexusCreateSkill:
                 try:
                     requested = resolve_preset(preset)
                     if not parent_perms.can_grant(requested):
-                        return ToolResult(
-                            error=f"Cannot create agent with '{preset}' preset: exceeds permission ceiling"
-                        )
+                        msg = f"Cannot create agent with '{preset}': exceeds ceiling"
+                        return ToolResult(error=msg)
                 except ValueError as e:
                     return ToolResult(error=f"Invalid preset: {e}")
 

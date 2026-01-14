@@ -25,8 +25,19 @@ from nexus3.client import ClientError, NexusClient
 from nexus3.rpc.auth import discover_api_key
 from nexus3.rpc.detection import DetectionResult, detect_server, wait_for_server
 
-# Default server settings
-DEFAULT_PORT = 8765
+
+def _get_default_port() -> int:
+    """Get default port from config, with fallback to 8765."""
+    try:
+        from nexus3.config.loader import load_config
+        config = load_config()
+        return config.server.port
+    except Exception:
+        return 8765
+
+
+# Default server settings - loaded from config when available
+DEFAULT_PORT = _get_default_port()
 
 
 def _print_json(data: Any) -> None:

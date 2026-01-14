@@ -77,20 +77,20 @@ class TestRetryLogic:
     def test_calculate_retry_delay_first_attempt(self, provider: OpenRouterProvider) -> None:
         """Test retry delay for first attempt (attempt=0)."""
         delay = provider._calculate_retry_delay(0)
-        # 2^0 + jitter(0-1) = 1 + 0-1 = 1-2
+        # backoff^0 + jitter(0-1) = 1.0 + 0-1 = 1-2
         assert 1.0 <= delay <= 2.0
 
     def test_calculate_retry_delay_second_attempt(self, provider: OpenRouterProvider) -> None:
         """Test retry delay for second attempt (attempt=1)."""
         delay = provider._calculate_retry_delay(1)
-        # 2^1 + jitter(0-1) = 2 + 0-1 = 2-3
-        assert 2.0 <= delay <= 3.0
+        # backoff^1 + jitter(0-1) = 1.5 + 0-1 = 1.5-2.5
+        assert 1.5 <= delay <= 2.5
 
     def test_calculate_retry_delay_third_attempt(self, provider: OpenRouterProvider) -> None:
         """Test retry delay for third attempt (attempt=2)."""
         delay = provider._calculate_retry_delay(2)
-        # 2^2 + jitter(0-1) = 4 + 0-1 = 4-5
-        assert 4.0 <= delay <= 5.0
+        # backoff^2 + jitter(0-1) = 2.25 + 0-1 = 2.25-3.25
+        assert 2.25 <= delay <= 3.25
 
     def test_calculate_retry_delay_capped(self, provider: OpenRouterProvider) -> None:
         """Test that retry delay is capped at MAX_RETRY_DELAY."""
