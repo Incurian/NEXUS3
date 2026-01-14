@@ -8,11 +8,11 @@ import pytest
 from nexus3.config.schema import ProviderConfig
 from nexus3.core.errors import ProviderError
 from nexus3.core.types import Message, Role
-from nexus3.provider.openrouter import (
+from nexus3.provider import OpenRouterProvider
+from nexus3.provider.base import (
     MAX_RETRY_DELAY,
     MAX_RETRIES,
     RETRYABLE_STATUS_CODES,
-    OpenRouterProvider,
 )
 
 
@@ -202,7 +202,8 @@ class TestHeaders:
         headers = provider._build_headers()
         assert headers["Authorization"] == "Bearer my-api-key"
         assert headers["Content-Type"] == "application/json"
-        assert "HTTP-Referer" in headers
+        # Note: HTTP-Referer is now added via extra_headers in config for OpenRouter,
+        # not hardcoded in the base provider class
 
 
 class TestRawLogCallback:

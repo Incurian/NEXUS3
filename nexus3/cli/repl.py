@@ -1474,7 +1474,18 @@ async def run_repl_client(url: str, agent_id: str) -> None:
 
 def main() -> None:
     """Entry point for the NEXUS3 CLI."""
+    import logging
+
     args = parse_args()
+
+    # Configure logging based on verbosity
+    log_level = logging.DEBUG if getattr(args, "verbose", False) else logging.WARNING
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
     try:
         # Handle rpc subcommand group
         if args.command == "rpc":
