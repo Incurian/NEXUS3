@@ -108,7 +108,7 @@ def validate_tool_arguments(
     try:
         jsonschema.validate(arguments, schema)
     except jsonschema.ValidationError as e:
-        raise ValidationError(f"Invalid argument: {e.message}")
+        raise ValidationError(f"Invalid argument: {e.message}") from e
 
     # Get known properties from schema
     schema_props = set(schema.get("properties", {}).keys())

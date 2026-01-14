@@ -7,11 +7,80 @@ from multiple directory layers (global, ancestor, local).
 from __future__ import annotations
 
 import json
+import os
+import platform
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from nexus3.config.schema import ContextConfig, MCPServerConfig
+
+
+def get_system_info(is_repl: bool = True) -> str:
+    """Generate system environment information for context injection.
+
+    Args:
+        is_repl: Whether running in interactive REPL mode.
+
+    Returns:
+        Formatted string with system information.
+    """
+    parts = ["# Environment"]
+
+    # Note: Current date/time is injected dynamically per-request in ContextManager
+    # to ensure accuracy throughout the session
+
+    # Working directory
+    cwd = Path.cwd()
+    parts.append(f"Working directory: {cwd}")
+
+    # Operating system detection with WSL handling
+    system = platform.system()
+    release = platform.release()
+
+    if system == "Linux" and "microsoft" in release.lower():
+        # Running in WSL
+        parts.append("Operating system: Linux (WSL2 on Windows)")
+        parts.append(f"Kernel: {release}")
+    elif system == "Linux":
+        # Native Linux
+        try:
+            # Try to get distro info
+            if Path("/etc/os-release").exists():
+                os_release = Path("/etc/os-release").read_text(encoding="utf-8")
+                for line in os_release.splitlines():
+                    if line.startswith("PRETTY_NAME="):
+                        distro = line.split("=", 1)[1].strip('"')
+                        parts.append(f"Operating system: {distro}")
+                        break
+                else:
+                    parts.append(f"Operating system: Linux {release}")
+            else:
+                parts.append(f"Operating system: Linux {release}")
+        except Exception:
+            parts.append(f"Operating system: Linux {release}")
+    elif system == "Darwin":
+        # macOS
+        mac_ver = platform.mac_ver()[0]
+        parts.append(f"Operating system: macOS {mac_ver}")
+    elif system == "Windows":
+        parts.append(f"Operating system: Windows {release}")
+    else:
+        parts.append(f"Operating system: {system} {release}")
+
+    # Terminal/mode info
+    if is_repl:
+        term = os.environ.get("TERM", "unknown")
+        term_program = os.environ.get("TERM_PROGRAM", "")
+        if term_program:
+            parts.append(f"Terminal: {term_program} ({term})")
+        else:
+            parts.append(f"Terminal: {term}")
+        parts.append("Mode: Interactive REPL")
+    else:
+        parts.append("Mode: HTTP JSON-RPC Server")
+
+    return "\n".join(parts)
 
 
 @dataclass
@@ -285,17 +354,13 @@ class ContextLoader:
         # Handle README.md based on config
         if content is None and self._config.readme_as_fallback and layer.readme:
             content = layer.readme
-            source_file = "README.md"
         elif self._config.include_readme and layer.readme:
             # Include README after NEXUS.md
             if content:
                 content = f"{content.strip()}\n\n---\n\n{layer.readme.strip()}"
             else:
                 content = layer.readme
-            source_file = "NEXUS.md + README.md" if layer.prompt else "README.md"
-        elif content:
-            source_file = "NEXUS.md"
-        else:
+        elif not content:
             return None
 
         if not content:
@@ -373,8 +438,6 @@ Source: {source_path}
         Returns:
             LoadedContext with merged prompt, config, and MCP servers.
         """
-        from nexus3.context.prompt_loader import get_system_info
-
         sources = ContextSources()
         layers: list[ContextLayer] = []
         prompt_sections: list[str] = []
@@ -461,8 +524,6 @@ Source: {source_path}
         Returns:
             System prompt for the subagent.
         """
-        from nexus3.context.prompt_loader import get_system_info
-
         # Load agent's local NEXUS.md
         local_nexus = self._cwd / ".nexus3" / "NEXUS.md"
 

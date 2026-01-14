@@ -65,15 +65,19 @@ class OpenAICompatProvider(BaseProvider):
     def __init__(
         self,
         config: ProviderConfig,
+        model_id: str,
         raw_log: RawLogCallback | None = None,
+        reasoning: bool = False,
     ) -> None:
         """Initialize the OpenAI-compatible provider.
 
         Args:
             config: Provider configuration.
+            model_id: The model ID to use for API requests.
             raw_log: Optional callback for raw API logging.
+            reasoning: Whether to enable extended thinking/reasoning.
         """
-        super().__init__(config, raw_log)
+        super().__init__(config, model_id, raw_log, reasoning)
 
     def _build_endpoint(self, stream: bool = False) -> str:
         """Build the chat completions endpoint URL.
@@ -112,7 +116,7 @@ class OpenAICompatProvider(BaseProvider):
             body["tools"] = tools
 
         # Enable extended thinking/reasoning if configured
-        if self._config.reasoning:
+        if self._reasoning:
             body["reasoning"] = {"effort": "high"}
 
         return body

@@ -35,14 +35,14 @@ from nexus3.core.permissions import (
 from nexus3.rpc.pool import is_temp_agent
 
 if TYPE_CHECKING:
-    from nexus3.rpc.pool import Agent, AgentPool, SharedComponents
     from nexus3.mcp.registry import MCPServerRegistry
+    from nexus3.rpc.pool import Agent, AgentPool, SharedComponents
 
 
 def _refresh_agent_tools(
-    agent: "Agent",
-    mcp_registry: "MCPServerRegistry",
-    shared: "SharedComponents",
+    agent: Agent,
+    mcp_registry: MCPServerRegistry,
+    shared: SharedComponents,
 ) -> None:
     """Refresh an agent's tool definitions after MCP connection changes.
 
@@ -81,9 +81,9 @@ def _refresh_agent_tools(
 
 def _refresh_all_other_agents_tools(
     current_agent_id: str,
-    pool: "AgentPool",
-    mcp_registry: "MCPServerRegistry",
-    shared: "SharedComponents",
+    pool: AgentPool,
+    mcp_registry: MCPServerRegistry,
+    shared: SharedComponents,
 ) -> None:
     """Refresh tool definitions for all agents except the current one.
 
@@ -563,7 +563,6 @@ async def _change_preset(
     custom_presets: dict | None = None,
 ) -> CommandOutput:
     """Change agent to a new preset."""
-    from nexus3.core.permissions import PermissionPreset
 
     # Handle legacy "worker" preset by mapping to sandboxed
     original_preset_name = preset_name
@@ -802,12 +801,17 @@ async def cmd_model(
     if name is None:
         # Show current model
         if current_model is None:
+            # No model set - show default from config
+            default_model = config.resolve_model()
             return CommandOutput.success(
-                message=f"Model: {config.provider.model} (default)",
+                message=f"Model: {default_model.model_id} (default)\n"
+                        f"Context window: {default_model.context_window:,} tokens\n"
+                        f"Provider: {default_model.provider_name}",
                 data={
-                    "model_id": config.provider.model,
-                    "context_window": config.provider.context_window,
-                    "alias": None,
+                    "model_id": default_model.model_id,
+                    "context_window": default_model.context_window,
+                    "alias": default_model.alias,
+                    "provider": default_model.provider_name,
                 },
             )
         else:
@@ -887,6 +891,7 @@ async def _mcp_connection_consent(
         If proceed is False, the connection should be cancelled.
     """
     import asyncio
+
     from rich.console import Console
 
     # YOLO mode skips prompts
@@ -932,6 +937,7 @@ async def _mcp_sharing_prompt(
         True if connection should be shared with all agents, False for private.
     """
     import asyncio
+
     from rich.console import Console
 
     # YOLO mode defaults to private (no sharing)
@@ -940,7 +946,7 @@ async def _mcp_sharing_prompt(
 
     console = Console()
 
-    console.print(f"\n[yellow]Share this connection with other agents?[/]")
+    console.print("\n[yellow]Share this connection with other agents?[/]")
     console.print("  [dim](Other agents will still need to approve their own permissions)[/]")
     console.print()
     console.print("  [cyan][1][/] Yes - all agents can use this connection")
@@ -1015,9 +1021,9 @@ async def cmd_mcp(
     Returns:
         CommandOutput with result.
     """
+    from nexus3.core.permissions import PermissionLevel
     from nexus3.mcp.permissions import can_use_mcp
     from nexus3.mcp.registry import MCPServerConfig
-    from nexus3.core.permissions import PermissionLevel
 
     # Get current agent info
     current_agent_id = ctx.current_agent_id or "main"

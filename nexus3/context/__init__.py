@@ -20,9 +20,9 @@ from nexus3.context.loader import (
     MCPServerWithOrigin,
     PromptSource,
     deep_merge,
+    get_system_info,
 )
 from nexus3.context.manager import ContextConfig, ContextManager
-from nexus3.context.prompt_loader import LoadedPrompt, PromptLoader
 from nexus3.context.token_counter import (
     SimpleTokenCounter,
     TiktokenCounter,
@@ -44,9 +44,7 @@ __all__ = [
     "MCPServerWithOrigin",
     "PromptSource",
     "deep_merge",
-    # Prompt loader
-    "LoadedPrompt",
-    "PromptLoader",
+    "get_system_info",
     # Token counter
     "TokenCounter",
     "SimpleTokenCounter",

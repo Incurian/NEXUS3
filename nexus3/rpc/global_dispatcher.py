@@ -194,7 +194,7 @@ class GlobalDispatcher:
             try:
                 validate_agent_id(agent_id)
             except ValidationError as e:
-                raise InvalidParamsError(e.message)
+                raise InvalidParamsError(e.message) from e
 
         # Validate system_prompt if provided
         if system_prompt is not None and not isinstance(system_prompt, str):
@@ -250,7 +250,7 @@ class GlobalDispatcher:
                 # Use validate_path for consistent path resolution (follows symlinks)
                 cwd_path = validate_path(cwd_param, allowed_paths=None)
             except PathSecurityError as e:
-                raise InvalidParamsError(f"cwd invalid: {e.message}")
+                raise InvalidParamsError(f"cwd invalid: {e.message}") from e
             if not cwd_path.exists():
                 raise InvalidParamsError(f"cwd does not exist: {cwd_param}")
             if not cwd_path.is_dir():
@@ -295,10 +295,10 @@ class GlobalDispatcher:
                     try:
                         # Use validate_path for consistent containment check
                         validate_path(cwd_path, allowed_paths=parent_allowed)
-                    except PathSecurityError:
+                    except PathSecurityError as e:
                         raise InvalidParamsError(
                             f"cwd '{cwd_path}' is outside parent's allowed paths"
-                        )
+                        ) from e
 
             # SECURITY: Validate write paths are within cwd (or parent's paths if no cwd)
             if write_paths:
@@ -306,10 +306,10 @@ class GlobalDispatcher:
                 for wp in write_paths:
                     try:
                         wp.relative_to(sandbox_root)
-                    except ValueError:
+                    except ValueError as e:
                         raise InvalidParamsError(
                             f"allowed_write_path '{wp}' is outside sandbox root '{sandbox_root}'"
-                        )
+                        ) from e
 
         # Build delta from parameters (disable_tools and write permissions)
         delta: PermissionDelta | None = None

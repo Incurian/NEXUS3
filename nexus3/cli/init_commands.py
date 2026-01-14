@@ -27,8 +27,9 @@ NEXUS_MD_TEMPLATE = """# Project Configuration
 
 CONFIG_JSON_TEMPLATE = """{
   "_comment": "Project-specific NEXUS3 configuration. All fields optional - extends global config.",
-  "provider": {
-    "_comment": "Override model settings for this project"
+  "default_model": null,
+  "providers": {
+    "_comment": "Add project-specific provider configs here"
   },
   "permissions": {
     "_comment": "Project-specific permission overrides"

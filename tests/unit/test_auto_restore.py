@@ -33,19 +33,30 @@ def create_mock_shared_components(tmp_path: Path) -> SharedComponents:
     # Provide concrete values for skill timeout and concurrency limit
     mock_config.skill_timeout = 30.0
     mock_config.max_concurrent_tools = 10
-    mock_provider = MagicMock()
+    mock_config.default_provider = None  # Use "default" provider
 
-    # Mock prompt_loader.load() to return a LoadedPrompt-like object
-    mock_prompt_loader = MagicMock()
-    mock_loaded_prompt = MagicMock()
-    mock_loaded_prompt.content = "You are a test assistant."
-    mock_prompt_loader.load.return_value = mock_loaded_prompt
+    # Mock provider registry
+    mock_provider_registry = MagicMock()
+    mock_provider = MagicMock()
+    mock_provider_registry.get.return_value = mock_provider
+
+    # Mock base_context with system_prompt
+    mock_base_context = MagicMock()
+    mock_base_context.system_prompt = "You are a test assistant."
+    mock_base_context.sources.prompt_sources = []
+
+    # Mock context_loader for compaction
+    mock_context_loader = MagicMock()
+    mock_loaded_context = MagicMock()
+    mock_loaded_context.system_prompt = "You are a test assistant."
+    mock_context_loader.load.return_value = mock_loaded_context
 
     return SharedComponents(
         config=mock_config,
-        provider=mock_provider,
-        prompt_loader=mock_prompt_loader,
+        provider_registry=mock_provider_registry,
         base_log_dir=tmp_path / "logs",
+        base_context=mock_base_context,
+        context_loader=mock_context_loader,
     )
 
 

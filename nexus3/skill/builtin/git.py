@@ -15,8 +15,7 @@ if TYPE_CHECKING:
 from nexus3.core.paths import validate_path
 from nexus3.core.permissions import PermissionLevel
 from nexus3.core.types import ToolResult
-from nexus3.skill.base import FilteredCommandSkill, filtered_command_skill_factory
-
+from nexus3.skill.base import FilteredCommandSkill
 
 # Commands safe for read-only (SANDBOXED) mode
 READ_ONLY_COMMANDS = frozenset({
@@ -30,15 +29,30 @@ CONFIRM_COMMANDS = frozenset({
     "push", "pull", "merge", "rebase", "tag",
 })
 
-# Dangerous patterns - blocked in all modes except YOLO
-BLOCKED_PATTERNS: list[tuple[str, str]] = [
-    (r"reset\s+--hard", "reset --hard discards uncommitted changes"),
-    (r"push\s+(-f|--force)", "force push rewrites remote history"),
-    (r"clean\s+-[fd]", "clean -f/-d deletes untracked files"),
-    (r"rebase\s+-i", "interactive rebase requires terminal"),
-    (r"checkout\s+--orphan", "orphan checkout destroys branch history"),
-    (r"push\s+--force-with-lease", "force push rewrites remote history"),
-]
+# Dangerous flags per command - blocked in all modes except YOLO
+# Maps command -> {flag -> reason}
+# Flags are checked after shlex parsing to prevent quote-based bypasses
+DANGEROUS_FLAGS: dict[str, dict[str, str]] = {
+    "reset": {
+        "--hard": "discards uncommitted changes",
+    },
+    "push": {
+        "-f": "rewrites remote history",
+        "--force": "rewrites remote history",
+        "--force-with-lease": "rewrites remote history",
+    },
+    "clean": {
+        "-f": "deletes untracked files",
+        "-d": "deletes untracked directories",
+    },
+    "rebase": {
+        "-i": "requires terminal interaction",
+        "--interactive": "requires terminal interaction",
+    },
+    "checkout": {
+        "--orphan": "destroys branch history",
+    },
+}
 
 # Timeout for git commands
 GIT_TIMEOUT = 30.0
@@ -90,31 +104,76 @@ class GitSkill(FilteredCommandSkill):
             "required": ["command"]
         }
 
-    def _validate_command(self, command: str) -> tuple[bool, str | None]:
+    def _validate_command(self, command: str) -> tuple[bool, list[str] | None, str | None]:
         """Validate git command against permission level.
 
+        Parses the command with shlex.split() FIRST, then validates the parsed
+        arguments. This prevents bypass attacks via creative quoting like
+        'push "--force"' which would pass regex but execute dangerously.
+
         Returns:
-            (allowed, error_message) tuple.
+            (allowed, parsed_args, error_message) tuple.
+            parsed_args is the shlex-parsed argument list if allowed.
         """
         if not command.strip():
-            return False, "No git command provided"
+            return False, None, "No git command provided"
 
-        # Extract base command (first word)
-        parts = command.split()
-        base_cmd = parts[0].lower() if parts else ""
+        # Parse command FIRST - this is the key security fix
+        # Validation must operate on the same form that will be executed
+        try:
+            args = shlex.split(command)
+        except ValueError as e:
+            return False, None, f"Invalid command syntax: {e}"
 
-        # Check blocked patterns (except YOLO)
+        if not args:
+            return False, None, "No git command provided"
+
+        base_cmd = args[0].lower()
+
+        # Check dangerous flags on PARSED args (except YOLO)
         if self._permission_level != PermissionLevel.YOLO:
-            for pattern, reason in BLOCKED_PATTERNS:
-                if re.search(pattern, command, re.IGNORECASE):
-                    return False, f"Command blocked: {reason}"
+            error = self._check_dangerous_flags(base_cmd, args)
+            if error:
+                return False, None, error
 
         # Check permission level
         if self._permission_level == PermissionLevel.SANDBOXED:
             if base_cmd not in READ_ONLY_COMMANDS:
-                return False, f"Only read-only git commands allowed in sandboxed mode. Allowed: {', '.join(sorted(READ_ONLY_COMMANDS))}"
+                return False, None, f"Only read-only git commands allowed in sandboxed mode. Allowed: {', '.join(sorted(READ_ONLY_COMMANDS))}"
 
-        return True, None
+        return True, args, None
+
+    def _check_dangerous_flags(self, base_cmd: str, args: list[str]) -> str | None:
+        """Check parsed arguments for dangerous flags.
+
+        Handles both long flags (--force) and combined short flags (-fd).
+
+        Args:
+            base_cmd: The git subcommand (e.g., 'push', 'reset').
+            args: Parsed argument list from shlex.split().
+
+        Returns:
+            Error message if dangerous flag found, None otherwise.
+        """
+        if base_cmd not in DANGEROUS_FLAGS:
+            return None
+
+        dangerous = DANGEROUS_FLAGS[base_cmd]
+
+        for arg in args[1:]:  # Skip the command itself
+            # Handle long flags (--force, --hard, etc.)
+            if arg.startswith("--"):
+                if arg in dangerous:
+                    return f"Command blocked: {base_cmd} {arg} {dangerous[arg]}"
+            # Handle short flags, including combined ones (-fd, -rf, etc.)
+            elif arg.startswith("-") and len(arg) > 1:
+                # Check each character in combined flags
+                for char in arg[1:]:
+                    flag = f"-{char}"
+                    if flag in dangerous:
+                        return f"Command blocked: {base_cmd} {flag} {dangerous[flag]}"
+
+        return None
 
     def _parse_status_output(self, stdout: str) -> dict[str, Any]:
         """Parse git status output into structured format."""
@@ -191,9 +250,10 @@ class GitSkill(FilteredCommandSkill):
         Returns:
             ToolResult with command output or error.
         """
-        # Validate command
-        allowed, error = self._validate_command(command)
-        if not allowed:
+        # Validate command - returns parsed args to ensure we execute
+        # exactly what we validated (no parse/validate/re-parse mismatch)
+        allowed, parsed_args, error = self._validate_command(command)
+        if not allowed or parsed_args is None:
             return ToolResult(error=error or "Command not allowed")
 
         try:
@@ -204,8 +264,8 @@ class GitSkill(FilteredCommandSkill):
             if not work_dir.is_dir():
                 return ToolResult(error=f"Directory not found: {cwd}")
 
-            # Build command
-            cmd_parts = ["git"] + shlex.split(command)
+            # Build command using pre-parsed args (not re-parsing!)
+            cmd_parts = ["git"] + parsed_args
 
             # Execute with timeout
             def run_git() -> subprocess.CompletedProcess[str]:
@@ -229,7 +289,7 @@ class GitSkill(FilteredCommandSkill):
 
             # Build output
             stdout = result.stdout.strip()
-            base_cmd = command.split()[0].lower() if command.split() else ""
+            base_cmd = parsed_args[0].lower() if parsed_args else ""
 
             # Try to add structured data for common commands
             output_data: dict[str, Any] = {

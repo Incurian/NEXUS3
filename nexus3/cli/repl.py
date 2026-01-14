@@ -43,18 +43,17 @@ from nexus3.cli.lobby import LobbyChoice, show_lobby
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands import core as unified_cmd
 from nexus3.commands.protocol import CommandContext, CommandOutput
-from nexus3.core.permissions import ConfirmationResult
 from nexus3.commands.protocol import CommandResult as CmdResult
 from nexus3.config.loader import load_config
-from nexus3.context import PromptLoader
+from nexus3.context import ContextLoader
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
+from nexus3.core.permissions import ConfirmationResult, load_custom_presets_from_config
 from nexus3.core.types import ToolCall
 from nexus3.display import Activity, StreamingDisplay, get_console
 from nexus3.display.streaming import ToolState
 from nexus3.display.theme import load_theme
-from nexus3.core.permissions import load_custom_presets_from_config
-from nexus3.provider import create_provider
+from nexus3.provider import ProviderRegistry
 from nexus3.rpc.auth import ServerKeyManager
 from nexus3.rpc.detection import DetectionResult, detect_server
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
@@ -151,7 +150,8 @@ async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> 
     tool_name = tool_call.name
 
     # Determine tool type for appropriate prompting
-    is_exec_tool = tool_name in ("bash", "run_python")
+    is_exec_tool = tool_name in ("bash_safe", "shell_UNSAFE", "run_python")
+    is_shell_unsafe = tool_name == "shell_UNSAFE"  # Always requires per-use approval
     is_nexus_tool = tool_name.startswith("nexus_")
     is_mcp_tool = tool_name.startswith("mcp_")
 
@@ -201,11 +201,16 @@ async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> 
             console.print("  [cyan][2][/] Allow this tool always (this session)")
             console.print("  [cyan][3][/] Allow all tools from this server (this session)")
             console.print("  [cyan][4][/] Deny")
+        elif is_shell_unsafe:
+            # shell_UNSAFE always requires per-use approval - no "allow always" options
+            console.print("  [cyan][1][/] Allow once")
+            console.print("  [cyan][2][/] Deny")
+            console.print("  [dim](shell_UNSAFE requires approval each time)[/]")
         elif is_exec_tool:
+            # bash_safe and run_python allow directory scope but not global
             console.print("  [cyan][1][/] Allow once")
             console.print("  [cyan][2][/] Allow always in this directory")
-            console.print("  [cyan][3][/] Allow always (global)")
-            console.print("  [cyan][4][/] Deny")
+            console.print("  [cyan][3][/] Deny")
         else:
             console.print("  [cyan][1][/] Allow once")
             console.print("  [cyan][2][/] Allow always for this file")
@@ -215,11 +220,33 @@ async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> 
         # Use asyncio.to_thread for blocking input to allow event loop to continue
         def get_input() -> str:
             try:
-                return console.input("\n[dim]Choice [1-4]:[/] ").strip()
+                if is_shell_unsafe:
+                    prompt = "\n[dim]Choice [1-2]:[/] "
+                elif is_exec_tool:
+                    prompt = "\n[dim]Choice [1-3]:[/] "
+                else:
+                    prompt = "\n[dim]Choice [1-4]:[/] "
+                return console.input(prompt).strip()
             except (EOFError, KeyboardInterrupt):
                 return ""
 
         response = await asyncio.to_thread(get_input)
+
+        # shell_UNSAFE only has 2 options: 1=allow once, 2=deny
+        if is_shell_unsafe:
+            if response == "1":
+                return ConfirmationResult.ALLOW_ONCE
+            else:
+                return ConfirmationResult.DENY
+
+        # bash_safe and run_python have 3 options: 1=allow once, 2=allow directory, 3=deny
+        if is_exec_tool:
+            if response == "1":
+                return ConfirmationResult.ALLOW_ONCE
+            elif response == "2":
+                return ConfirmationResult.ALLOW_EXEC_CWD
+            else:
+                return ConfirmationResult.DENY
 
         if response == "1":
             return ConfirmationResult.ALLOW_ONCE
@@ -227,15 +254,11 @@ async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> 
             if is_mcp_tool:
                 # "Allow this tool always" - we use ALLOW_FILE to signal tool-level
                 return ConfirmationResult.ALLOW_FILE
-            elif is_exec_tool:
-                return ConfirmationResult.ALLOW_EXEC_CWD
             else:
                 return ConfirmationResult.ALLOW_FILE
         elif response == "3":
             if is_mcp_tool:
                 # "Allow all tools from this server"
-                return ConfirmationResult.ALLOW_EXEC_GLOBAL
-            elif is_exec_tool:
                 return ConfirmationResult.ALLOW_EXEC_GLOBAL
             else:
                 return ConfirmationResult.ALLOW_WRITE_DIRECTORY
@@ -543,34 +566,32 @@ async def run_repl(
             async with NexusClient.with_auto_auth(agent_url, timeout=5.0) as client:
                 await client.get_tokens()
             # Main agent exists, connect normally
-            console.print(f"[dim]Main agent found, connecting...[/]")
+            console.print("[dim]Main agent found, connecting...[/]")
             await run_repl_client(f"http://localhost:{effective_port}", "main")
             return
         except ClientError as e:
-            # Main agent doesn't exist - shutdown old server and start fresh
-            if "not found" in str(e).lower():
-                console.print(f"[dim]Main agent not found, restarting server...[/]")
-                # Shutdown the orphaned server
-                try:
-                    shutdown_key_mgr = ServerKeyManager(port=effective_port)
-                    api_key = shutdown_key_mgr.load()
-                    global_url = f"http://localhost:{effective_port}"
-                    client_args = dict(api_key=api_key, timeout=5.0)
-                    async with NexusClient(global_url, **client_args) as shutdown_client:
-                        await shutdown_client.call("shutdown_server")
-                    # Wait for server to fully release the port
-                    for _ in range(20):  # Up to 2 seconds
-                        await asyncio.sleep(0.1)
-                        result = await detect_server(effective_port)
-                        if result == DetectionResult.NO_SERVER:
-                            break
-                except Exception:
-                    pass  # Server might already be gone
-                # Fall through to start new embedded server
-            else:
-                # Some other connection error
-                console.print(f"[red]Connection failed:[/] {e}")
-                return
+            # Connection failed - shutdown old server and start fresh
+            # This handles: auth errors, agent not found, timeouts, etc.
+            reason = "not found" if "not found" in str(e).lower() else "connection failed"
+            console.print(f"[dim]Main agent {reason}, restarting server...[/]")
+
+            # Try to shutdown the orphaned/incompatible server
+            try:
+                shutdown_key_mgr = ServerKeyManager(port=effective_port)
+                api_key = shutdown_key_mgr.load()
+                global_url = f"http://localhost:{effective_port}"
+                client_args = dict(api_key=api_key, timeout=5.0)
+                async with NexusClient(global_url, **client_args) as shutdown_client:
+                    await shutdown_client.call("shutdown_server")
+                # Wait for server to fully release the port
+                for _ in range(20):  # Up to 2 seconds
+                    await asyncio.sleep(0.1)
+                    result = await detect_server(effective_port)
+                    if result == DetectionResult.NO_SERVER:
+                        break
+            except Exception:
+                pass  # Server might already be gone or unreachable
+            # Fall through to start new embedded server
     elif detection_result == DetectionResult.OTHER_SERVICE:
         console.print(f"[red]Error:[/] Port {effective_port} is already in use by another service")
         return
@@ -578,22 +599,8 @@ async def run_repl(
     # Config already loaded above for port resolution
 
     # Create provider (shared across all agents)
-    # Resolve model alias to actual model ID before creating provider
-    try:
-        from nexus3.config.schema import ProviderConfig
-        resolved = config.resolve_model()
-        provider_config = ProviderConfig(
-            type=config.provider.type,
-            api_key_env=config.provider.api_key_env,
-            model=resolved.model_id,  # Use resolved ID, not alias
-            base_url=config.provider.base_url,
-            context_window=resolved.context_window,
-            reasoning=resolved.reasoning,
-        )
-        provider = create_provider(provider_config)
-    except NexusError as e:
-        console.print(f"[red]Error:[/] {e.message}")
-        return
+    # Create provider registry (lazy-creates providers on first use)
+    provider_registry = ProviderRegistry(config)
 
     # Configure logging streams based on CLI flags
     streams = LogStream.CONTEXT  # Always on for basic functionality
@@ -605,21 +612,22 @@ async def run_repl(
     # Base log directory
     base_log_dir = log_dir or Path(".nexus3/logs")
 
-    # Create prompt loader (shared)
-    prompt_loader = PromptLoader()
-    loaded_prompt = prompt_loader.load()
-
     # Load custom presets from config
     custom_presets = load_custom_presets_from_config(
         {k: v.model_dump() for k, v in config.permissions.presets.items()}
     )
 
+    # Load base context for subagent inheritance
+    context_loader = ContextLoader(context_config=config.context)
+    base_context = context_loader.load(is_repl=True)
+
     # Create shared components for the AgentPool
     shared = SharedComponents(
         config=config,
-        provider=provider,
-        prompt_loader=prompt_loader,
+        provider_registry=provider_registry,
         base_log_dir=base_log_dir,
+        base_context=base_context,
+        context_loader=context_loader,
         log_streams=streams,
         custom_presets=custom_presets,
     )
@@ -740,10 +748,12 @@ async def run_repl(
         return level, preset, disabled
 
     def get_system_prompt_path() -> str | None:
-        """Get the system prompt path from the prompt loader."""
-        # Prefer project path (more specific) over personal path
-        path = shared.prompt_loader.project_path or shared.prompt_loader.personal_path
-        return str(path) if path else None
+        """Get the system prompt path from the loaded context."""
+        # Return the most specific prompt source (last in list)
+        sources = shared.base_context.sources.prompt_sources
+        if not sources:
+            return None
+        return str(sources[-1].path)
 
     # Update last-session immediately after startup (so resume works after quit)
     try:
@@ -913,10 +923,9 @@ async def run_repl(
     console.print(f"Agent: {current_agent_id}", style="dim")
     console.print(f"Session: {logger.session_dir}", style="dim")
     console.print(f"Server: http://localhost:{effective_port}", style="dim")
-    if loaded_prompt.personal_path:
-        console.print(f"Personal: {loaded_prompt.personal_path}", style="dim")
-    if loaded_prompt.project_path:
-        console.print(f"Project: {loaded_prompt.project_path}", style="dim")
+    # Show prompt sources (from ContextLoader)
+    for source in base_context.sources.prompt_sources:
+        console.print(f"Context: {source.path} ({source.layer_name})", style="dim")
     console.print("Commands: /help | ESC to cancel", style="dim")
     console.print("")
 

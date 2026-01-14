@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from nexus3.config.loader import load_config
 from nexus3.config.schema import (
     Config,
+    ModelConfig,
     PermissionPresetConfig,
     ProviderConfig,
     ServerConfig,
@@ -25,21 +26,24 @@ class TestProviderConfig:
         pc = ProviderConfig()
         assert pc.type == "openrouter"
         assert pc.api_key_env == "OPENROUTER_API_KEY"
-        assert pc.model == "x-ai/grok-code-fast-1"
         assert pc.base_url == "https://openrouter.ai/api/v1"
+        assert pc.models == {}
 
     def test_provider_config_custom_values(self):
         """ProviderConfig accepts custom values for valid provider types."""
         pc = ProviderConfig(
             type="openai",
             api_key_env="CUSTOM_API_KEY",
-            model="custom/model",
             base_url="https://custom.api.com/v1",
+            models={
+                "test": ModelConfig(id="custom/model", context_window=100000)
+            },
         )
         assert pc.type == "openai"
         assert pc.api_key_env == "CUSTOM_API_KEY"
-        assert pc.model == "custom/model"
         assert pc.base_url == "https://custom.api.com/v1"
+        assert "test" in pc.models
+        assert pc.models["test"].id == "custom/model"
 
     def test_provider_config_rejects_invalid_type(self):
         """ProviderConfig rejects invalid provider types."""
@@ -68,6 +72,28 @@ class TestProviderConfig:
             ProviderConfig(max_retries=-1)  # Must be >= 0
         with pytest.raises(ValidationError):
             ProviderConfig(retry_backoff=0.5)  # Must be >= 1.0
+
+
+class TestModelConfig:
+    """Tests for ModelConfig schema."""
+
+    def test_model_config_required_id(self):
+        """ModelConfig requires id field."""
+        with pytest.raises(ValidationError):
+            ModelConfig()  # id is required
+
+    def test_model_config_defaults(self):
+        """ModelConfig has expected default values."""
+        mc = ModelConfig(id="test/model")
+        assert mc.id == "test/model"
+        assert mc.context_window == 131072
+        assert mc.reasoning is False
+
+    def test_model_config_custom(self):
+        """ModelConfig accepts custom values."""
+        mc = ModelConfig(id="test/model", context_window=200000, reasoning=True)
+        assert mc.context_window == 200000
+        assert mc.reasoning is True
 
 
 class TestServerConfig:
@@ -188,23 +214,78 @@ class TestConfig:
     """Tests for Config schema."""
 
     def test_config_defaults(self):
-        """Config() has expected default values."""
-        cfg = Config()
+        """Config() with minimal valid config has expected defaults."""
+        cfg = Config(
+            default_model="test/haiku",
+            providers={
+                "test": ProviderConfig(
+                    models={"haiku": ModelConfig(id="test/model")}
+                )
+            },
+        )
         assert cfg.stream_output is True
-        assert isinstance(cfg.provider, ProviderConfig)
-        assert cfg.config_version == 1
+        assert cfg.default_model == "test/haiku"
         assert isinstance(cfg.server, ServerConfig)
 
-    def test_config_provider_defaults(self):
-        """Default Config has default ProviderConfig."""
-        cfg = Config()
-        assert cfg.provider.type == "openrouter"
-        assert cfg.provider.model == "x-ai/grok-code-fast-1"
+    def test_config_validates_default_model_exists(self):
+        """Config validates default_model references existing alias."""
+        with pytest.raises(ValidationError, match="Unknown model alias"):
+            Config(default_model="nonexistent")
 
-    def test_config_custom_stream_output(self):
-        """Config accepts custom stream_output value."""
-        cfg = Config(stream_output=False)
-        assert cfg.stream_output is False
+    def test_config_validates_default_model_provider_exists(self):
+        """Config validates explicit provider/alias format."""
+        with pytest.raises(ValidationError, match="Unknown provider"):
+            Config(default_model="nonexistent/model")
+
+    def test_config_validates_unique_aliases(self):
+        """Config validates model aliases are globally unique."""
+        with pytest.raises(ValidationError, match="Duplicate model alias"):
+            Config(
+                default_model="p1/haiku",
+                providers={
+                    "p1": ProviderConfig(
+                        models={"haiku": ModelConfig(id="m1")}
+                    ),
+                    "p2": ProviderConfig(
+                        models={"haiku": ModelConfig(id="m2")}  # Duplicate!
+                    ),
+                },
+            )
+
+    def test_config_resolve_model(self):
+        """Config.resolve_model resolves aliases correctly."""
+        cfg = Config(
+            default_model="haiku",  # Just alias, no provider prefix
+            providers={
+                "openrouter": ProviderConfig(
+                    models={
+                        "haiku": ModelConfig(id="anthropic/claude-haiku-4.5", context_window=200000)
+                    }
+                ),
+                "anthropic": ProviderConfig(
+                    type="anthropic",
+                    models={
+                        "native": ModelConfig(id="claude-haiku-4-5", context_window=200000)
+                    }
+                ),
+            },
+        )
+
+        # Default model (just alias)
+        resolved = cfg.resolve_model()
+        assert resolved.model_id == "anthropic/claude-haiku-4.5"
+        assert resolved.provider_name == "openrouter"
+        assert resolved.alias == "haiku"
+
+        # By alias
+        resolved = cfg.resolve_model("native")
+        assert resolved.model_id == "claude-haiku-4-5"
+        assert resolved.provider_name == "anthropic"
+
+        # By explicit provider/alias (still works)
+        resolved = cfg.resolve_model("anthropic/native")
+        assert resolved.model_id == "claude-haiku-4-5"
+        assert resolved.provider_name == "anthropic"
 
 
 class TestLoadConfig:
@@ -224,7 +305,8 @@ class TestLoadConfig:
         cfg = load_config()
         assert isinstance(cfg, Config)
         assert cfg.stream_output is True
-        assert cfg.provider.type == "openrouter"
+        # Default config should have providers
+        assert len(cfg.providers) > 0
 
     def test_load_config_raises_on_invalid_json(self, tmp_path):
         """load_config() raises ConfigError on invalid JSON."""
@@ -249,15 +331,27 @@ class TestLoadConfig:
         """load_config() successfully loads valid JSON config."""
         config_file = tmp_path / "config.json"
         config_file.write_text(
-            '{"stream_output": false, "provider": {"model": "test/model"}}',
+            """{
+                "default_model": "test/model",
+                "stream_output": false,
+                "providers": {
+                    "test": {
+                        "type": "openrouter",
+                        "models": {
+                            "model": {"id": "actual/model-id"}
+                        }
+                    }
+                }
+            }""",
             encoding="utf-8",
         )
 
         cfg = load_config(path=config_file)
         assert cfg.stream_output is False
-        assert cfg.provider.model == "test/model"
-        # Other provider fields should have defaults
-        assert cfg.provider.type == "openrouter"
+        assert cfg.default_model == "test/model"
+        assert "test" in cfg.providers
+        resolved = cfg.resolve_model()
+        assert resolved.model_id == "actual/model-id"
 
     def test_load_config_raises_on_validation_error(self, tmp_path):
         """load_config() raises ConfigError on validation failure."""

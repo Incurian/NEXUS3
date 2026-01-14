@@ -127,7 +127,7 @@ class Dispatcher:
             return make_error_response(request.id, INTERNAL_ERROR, e.message)
 
         except Exception as e:
-            logger.error("Unexpected error dispatching method '%s': %s", method, e, exc_info=True)
+            logger.error("Unexpected error dispatching method '%s': %s", request.method, e, exc_info=True)
             if request.id is None:
                 return None
             return make_error_response(

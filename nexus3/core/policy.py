@@ -47,6 +47,7 @@ class ConfirmationResult(Enum):
 
 
 # Actions that are always destructive (require confirmation or allowance check)
+# NOTE: Use lowercase - requires_confirmation() lowercases before checking
 DESTRUCTIVE_ACTIONS = frozenset({
     "write",
     "delete",
@@ -60,7 +61,8 @@ DESTRUCTIVE_ACTIONS = frozenset({
     "edit_file",
     "append_file",
     "regex_replace",
-    "bash",
+    "bash_safe",
+    "shell_unsafe",  # Tool name is shell_UNSAFE but we check lowercase
     "run_python",
     "nexus_destroy",
     "nexus_shutdown",
@@ -84,8 +86,10 @@ NETWORK_ACTIONS = frozenset({
 })
 
 # Tools completely disabled in SANDBOXED mode (execution and agent management)
+# NOTE: Use lowercase - allows_action() lowercases before checking
 SANDBOXED_DISABLED_TOOLS = frozenset({
-    "bash",
+    "bash_safe",
+    "shell_unsafe",  # Tool name is shell_UNSAFE but we check lowercase
     "run_python",
     "nexus_send",
     "nexus_create",
@@ -293,12 +297,18 @@ class PermissionPolicy:
             return False
 
         # For execution tools, check exec allowances
-        if action_lower in ("bash", "run_python"):
+        if action_lower in ("bash_safe", "shell_unsafe", "run_python"):
+            # shell_UNSAFE ALWAYS requires confirmation - no "allow always" option
+            # This is intentional: the unsafe shell should never be auto-approved
+            if action_lower == "shell_unsafe":
+                return True
+
+            # bash_safe and run_python only allow directory scope, not global
+            # (arbitrary command/code execution is risky, but directory-scoped is reasonable)
             if session_allowances:
-                # Check if tool is allowed in the execution directory
-                if session_allowances.is_exec_allowed(action_lower, exec_cwd):
+                # Only check directory allowances, ignore global
+                if session_allowances.is_exec_directory_allowed(action_lower, exec_cwd):
                     return False
-            # Execution tools in CWD still need confirmation unless explicitly allowed
             return True
 
         # For path-based tools (write_file, edit_file), check path allowances

@@ -58,15 +58,19 @@ class AzureOpenAIProvider(OpenAICompatProvider):
     def __init__(
         self,
         config: ProviderConfig,
+        model_id: str,
         raw_log: RawLogCallback | None = None,
+        reasoning: bool = False,
     ) -> None:
         """Initialize the Azure OpenAI provider.
 
         Args:
             config: Provider configuration with Azure-specific fields.
+            model_id: The model ID to use for API requests.
             raw_log: Optional callback for raw API logging.
+            reasoning: Whether to enable extended thinking/reasoning.
         """
-        super().__init__(config, raw_log)
+        super().__init__(config, model_id, raw_log, reasoning)
 
     def _build_endpoint(self, stream: bool = False) -> str:
         """Build Azure-specific endpoint URL.

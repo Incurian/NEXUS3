@@ -15,9 +15,10 @@ Example:
 
     shared = SharedComponents(
         config=config,
-        provider=provider,
-        prompt_loader=prompt_loader,
+        provider_registry=provider_registry,
         base_log_dir=Path(".nexus3/logs"),
+        base_context=base_context,
+        context_loader=context_loader,
     )
     pool = AgentPool(shared)
 
@@ -46,7 +47,6 @@ from nexus3.core.permissions import (
     AgentPermissions,
     PermissionDelta,
     PermissionPreset,
-    load_custom_presets_from_config,
     resolve_preset,
 )
 from nexus3.mcp.registry import MCPServerRegistry
@@ -58,8 +58,7 @@ from nexus3.skill import ServiceContainer, SkillRegistry
 
 if TYPE_CHECKING:
     from nexus3.config.schema import Config
-    from nexus3.context.prompt_loader import PromptLoader
-    from nexus3.core.interfaces import AsyncProvider
+    from nexus3.provider.registry import ProviderRegistry
 
 
 # Maximum nesting depth for agent creation
@@ -116,26 +115,26 @@ class SharedComponents:
 
     These are immutable resources that all agents can reference but not modify.
     Each agent gets its own copies of mutable state (context, logger, etc.)
-    but shares expensive/singleton resources like the provider.
+    but shares expensive/singleton resources like the provider registry.
 
     Attributes:
         config: The global NEXUS3 configuration.
-        provider: The LLM provider (shared for connection pooling).
-        prompt_loader: Loader for system prompts (personal + project).
+        provider_registry: Registry for managing multiple LLM providers.
         base_log_dir: Base directory for agent logs. Each agent gets a subdirectory.
+        base_context: The loaded context from server startup (for subagent inheritance).
+        context_loader: Loader for reloading context during compaction.
         log_streams: Log streams to enable (defaults to ALL for backwards compatibility).
         custom_presets: Custom permission presets loaded from config.
-        base_context: The loaded context from server startup (for subagent inheritance).
     """
 
     config: Config
-    provider: AsyncProvider
-    prompt_loader: PromptLoader
+    provider_registry: "ProviderRegistry"
     base_log_dir: Path
+    base_context: LoadedContext
+    context_loader: ContextLoader
     log_streams: LogStream = LogStream.ALL
     custom_presets: dict[str, PermissionPreset] = field(default_factory=dict)
     mcp_registry: MCPServerRegistry = field(default_factory=MCPServerRegistry)
-    base_context: LoadedContext | None = None
 
 
 @dataclass
@@ -148,7 +147,7 @@ class AgentConfig:
     Attributes:
         agent_id: Unique identifier for the agent. Auto-generated if None.
         system_prompt: Override the default system prompt. If None, uses
-            the prompt_loader to load personal + project prompts.
+            the base_context.system_prompt from SharedComponents.
         preset: Permission preset name (e.g., "yolo", "trusted", "sandboxed").
             If None, uses default_preset from config.
         cwd: Working directory / sandbox root. For SANDBOXED preset, this is
@@ -258,10 +257,9 @@ class AgentPool:
         # This routes raw API logs to the correct agent based on async context
         self._log_multiplexer = LogMultiplexer()
 
-        # Set the multiplexer on the provider once (if provider supports it)
-        provider = self._shared.provider
-        if hasattr(provider, "set_raw_log_callback"):
-            provider.set_raw_log_callback(self._log_multiplexer)
+        # Set the multiplexer on the provider registry
+        # This will be applied to all providers as they are created
+        self._shared.provider_registry.set_raw_log_callback(self._log_multiplexer)
 
     @property
     def log_multiplexer(self) -> LogMultiplexer:
@@ -270,14 +268,16 @@ class AgentPool:
 
     @property
     def system_prompt_path(self) -> str | None:
-        """Get the system prompt path from the prompt loader.
+        """Get the system prompt path from the loaded context.
 
-        Returns the project path if available, otherwise the personal path.
-        Returns None if neither is set.
+        Returns the most specific prompt source path (local > ancestor > global).
+        Returns None if no sources are set.
         """
-        loader = self._shared.prompt_loader
-        path = loader.project_path or loader.personal_path
-        return str(path) if path else None
+        sources = self._shared.base_context.sources.prompt_sources
+        if not sources:
+            return None
+        # Return the last (most specific) source path
+        return str(sources[-1].path)
 
     async def create(
         self,
@@ -344,9 +344,8 @@ class AgentPool:
                     parent_context=self._shared.base_context,
                 )
             else:
-                # Load from prompt_loader (default server context)
-                loaded_prompt = self._shared.prompt_loader.load(is_repl=False)
-                system_prompt = loaded_prompt.content
+                # Use the base context system prompt (default server context)
+                system_prompt = self._shared.base_context.system_prompt
 
             # Resolve model name/alias to full settings
             resolved_model = self._shared.config.resolve_model(effective_config.model)
@@ -453,9 +452,16 @@ class AgentPool:
 
             context.set_tool_definitions(tool_defs)
 
+            # Get the provider for this model from the registry
+            provider = self._shared.provider_registry.get(
+                resolved_model.provider_name,
+                resolved_model.model_id,
+                resolved_model.reasoning,
+            )
+
             # Create session with context and services for permission enforcement
             session = Session(
-                self._shared.provider,
+                provider,
                 context=context,
                 logger=logger,
                 registry=registry,
@@ -463,7 +469,7 @@ class AgentPool:
                 max_concurrent_tools=self._shared.config.max_concurrent_tools,
                 services=services,
                 config=self._shared.config,
-                prompt_loader=self._shared.prompt_loader,
+                context_loader=self._shared.context_loader,
             )
 
             # Create dispatcher with context for token info and log multiplexer
@@ -603,9 +609,10 @@ class AgentPool:
             # Use system prompt from saved session
             system_prompt = saved.system_prompt
 
-            # Create context manager with configured context window
+            # Create context manager with default model's context window
+            resolved_model = self._shared.config.resolve_model()
             context_config = ContextConfig(
-                max_tokens=self._shared.config.provider.context_window,
+                max_tokens=resolved_model.context_window,
             )
             context = ContextManager(
                 config=context_config,
@@ -673,9 +680,17 @@ class AgentPool:
 
             context.set_tool_definitions(tool_defs)
 
+            # Get the default provider from the registry for restored sessions
+            # TODO: Consider saving/restoring the model choice in SavedSession
+            provider = self._shared.provider_registry.get(
+                resolved_model.provider_name,
+                resolved_model.model_id,
+                resolved_model.reasoning,
+            )
+
             # Create session with context and services for permission enforcement
             session = Session(
-                self._shared.provider,
+                provider,
                 context=context,
                 logger=logger,
                 registry=registry,
@@ -683,7 +698,7 @@ class AgentPool:
                 max_concurrent_tools=self._shared.config.max_concurrent_tools,
                 services=services,
                 config=self._shared.config,
-                prompt_loader=self._shared.prompt_loader,
+                context_loader=self._shared.context_loader,
             )
 
             # Create dispatcher with context for token info and log multiplexer

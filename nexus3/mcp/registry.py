@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 
 from nexus3.mcp.client import MCPClient
 from nexus3.mcp.skill_adapter import MCPSkillAdapter
-from nexus3.mcp.transport import HTTPTransport, MCPTransportError, StdioTransport
+from nexus3.mcp.transport import HTTPTransport, StdioTransport
 
 
 @dataclass

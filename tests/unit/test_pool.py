@@ -46,21 +46,26 @@ class TestSharedComponents:
     def test_shared_components_has_expected_fields(self):
         """SharedComponents has expected fields including mcp_registry and base_context."""
         field_names = {f.name for f in fields(SharedComponents)}
-        expected = {"config", "provider", "prompt_loader", "base_log_dir", "log_streams", "custom_presets", "mcp_registry", "base_context"}
+        expected = {
+            "config", "provider_registry", "base_log_dir", "base_context",
+            "context_loader", "log_streams", "custom_presets", "mcp_registry"
+        }
         assert field_names == expected
 
     def test_shared_components_is_frozen(self):
         """SharedComponents is immutable (frozen=True)."""
         # Create with mocks
         mock_config = MagicMock()
-        mock_provider = MagicMock()
-        mock_prompt_loader = MagicMock()
+        mock_provider_registry = MagicMock()
+        mock_base_context = MagicMock()
+        mock_context_loader = MagicMock()
 
         shared = SharedComponents(
             config=mock_config,
-            provider=mock_provider,
-            prompt_loader=mock_prompt_loader,
+            provider_registry=mock_provider_registry,
             base_log_dir=Path("/tmp/logs"),
+            base_context=mock_base_context,
+            context_loader=mock_context_loader,
         )
 
         # Attempting to modify should raise FrozenInstanceError
@@ -70,21 +75,24 @@ class TestSharedComponents:
     def test_shared_components_stores_values(self):
         """SharedComponents correctly stores provided values."""
         mock_config = MagicMock()
-        mock_provider = MagicMock()
-        mock_prompt_loader = MagicMock()
+        mock_provider_registry = MagicMock()
+        mock_base_context = MagicMock()
+        mock_context_loader = MagicMock()
         log_dir = Path("/tmp/test_logs")
 
         shared = SharedComponents(
             config=mock_config,
-            provider=mock_provider,
-            prompt_loader=mock_prompt_loader,
+            provider_registry=mock_provider_registry,
             base_log_dir=log_dir,
+            base_context=mock_base_context,
+            context_loader=mock_context_loader,
         )
 
         assert shared.config is mock_config
-        assert shared.provider is mock_provider
-        assert shared.prompt_loader is mock_prompt_loader
+        assert shared.provider_registry is mock_provider_registry
         assert shared.base_log_dir == log_dir
+        assert shared.base_context is mock_base_context
+        assert shared.context_loader is mock_context_loader
 
 
 # -----------------------------------------------------------------------------
@@ -138,19 +146,30 @@ def create_mock_shared_components(tmp_path: Path) -> SharedComponents:
     # Provide concrete values for skill timeout and concurrency limit
     mock_config.skill_timeout = 30.0
     mock_config.max_concurrent_tools = 10
-    mock_provider = MagicMock()
+    mock_config.default_provider = None  # Use "default" provider
 
-    # Mock prompt_loader.load() to return a LoadedPrompt-like object
-    mock_prompt_loader = MagicMock()
-    mock_loaded_prompt = MagicMock()
-    mock_loaded_prompt.content = "You are a test assistant."
-    mock_prompt_loader.load.return_value = mock_loaded_prompt
+    # Mock provider registry
+    mock_provider_registry = MagicMock()
+    mock_provider = MagicMock()
+    mock_provider_registry.get.return_value = mock_provider
+
+    # Mock base_context with system_prompt
+    mock_base_context = MagicMock()
+    mock_base_context.system_prompt = "You are a test assistant."
+    mock_base_context.sources.prompt_sources = []
+
+    # Mock context_loader for compaction
+    mock_context_loader = MagicMock()
+    mock_loaded_context = MagicMock()
+    mock_loaded_context.system_prompt = "You are a test assistant."
+    mock_context_loader.load.return_value = mock_loaded_context
 
     return SharedComponents(
         config=mock_config,
-        provider=mock_provider,
-        prompt_loader=mock_prompt_loader,
+        provider_registry=mock_provider_registry,
         base_log_dir=tmp_path / "logs",
+        base_context=mock_base_context,
+        context_loader=mock_context_loader,
     )
 
 

@@ -231,7 +231,6 @@ async def cmd_status(
     parent_id = None
     children: list[str] = []
     if hasattr(agent, "services") and agent.services:
-        from nexus3.core.permissions import AgentPermissions
         permissions: AgentPermissions | None = agent.services.get("permissions")
         parent_id = permissions.parent_agent_id if permissions else None
         child_ids: set[str] | None = agent.services.get("child_agent_ids")

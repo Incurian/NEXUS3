@@ -331,6 +331,59 @@ class TestPermissionPolicyConfirmation:
         assert policy.requires_confirmation("Delete") is True
         assert policy.requires_confirmation("delete") is True
 
+    def test_shell_unsafe_always_requires_confirmation(self):
+        """shell_UNSAFE always requires confirmation in TRUSTED mode, even with allowances."""
+        from nexus3.core.allowances import SessionAllowances
+
+        policy = PermissionPolicy.from_level("trusted")
+        allowances = SessionAllowances()
+        cwd = Path.cwd()
+
+        # Even if we add exec allowances, shell_UNSAFE should still require confirmation
+        allowances.add_exec_global("shell_unsafe")
+        allowances.add_exec_directory("shell_unsafe", cwd)
+
+        # shell_UNSAFE should ALWAYS require confirmation (no allowances work)
+        assert policy.requires_confirmation(
+            "shell_UNSAFE",
+            exec_cwd=cwd,
+            session_allowances=allowances,
+        ) is True
+
+    def test_exec_tools_directory_only_allowance(self):
+        """bash_safe and run_python allow directory scope but not global."""
+        from nexus3.core.allowances import SessionAllowances
+
+        policy = PermissionPolicy.from_level("trusted")
+        cwd = Path.cwd()
+        other_dir = Path("/tmp")
+
+        for tool in ("bash_safe", "run_python"):
+            # Test 1: Global allowance should be IGNORED
+            allowances_global = SessionAllowances()
+            allowances_global.add_exec_global(tool)
+            assert policy.requires_confirmation(
+                tool,
+                exec_cwd=cwd,
+                session_allowances=allowances_global,
+            ) is True  # Still requires confirmation!
+
+            # Test 2: Directory allowance should work
+            allowances_dir = SessionAllowances()
+            allowances_dir.add_exec_directory(tool, cwd)
+            assert policy.requires_confirmation(
+                tool,
+                exec_cwd=cwd,
+                session_allowances=allowances_dir,
+            ) is False  # Now allowed
+
+            # Test 3: Different directory should still require confirmation
+            assert policy.requires_confirmation(
+                tool,
+                exec_cwd=other_dir,
+                session_allowances=allowances_dir,
+            ) is True
+
 
 class TestPermissionPolicyAllowsAction:
     """Tests for allows_action method."""
@@ -373,10 +426,13 @@ class TestPermissionPolicyAllowsAction:
         """allows_action is case-insensitive."""
         policy = PermissionPolicy.from_level("sandboxed")
 
-        # bash is in SANDBOXED_DISABLED_TOOLS
-        assert policy.allows_action("BASH") is False
-        assert policy.allows_action("Bash") is False
-        assert policy.allows_action("bash") is False
+        # bash_safe is in SANDBOXED_DISABLED_TOOLS
+        assert policy.allows_action("BASH_SAFE") is False
+        assert policy.allows_action("Bash_Safe") is False
+        assert policy.allows_action("bash_safe") is False
+        # shell_UNSAFE is also in SANDBOXED_DISABLED_TOOLS
+        assert policy.allows_action("SHELL_UNSAFE") is False
+        assert policy.allows_action("shell_unsafe") is False
 
 
 class TestPermissionPolicyStr:

@@ -76,15 +76,19 @@ class AnthropicProvider(BaseProvider):
     def __init__(
         self,
         config: ProviderConfig,
+        model_id: str,
         raw_log: RawLogCallback | None = None,
+        reasoning: bool = False,
     ) -> None:
         """Initialize the Anthropic provider.
 
         Args:
             config: Provider configuration.
+            model_id: The model ID to use for API requests.
             raw_log: Optional callback for raw API logging.
+            reasoning: Whether to enable extended thinking/reasoning.
         """
-        super().__init__(config, raw_log)
+        super().__init__(config, model_id, raw_log, reasoning)
 
     def _build_headers(self) -> dict[str, str]:
         """Build Anthropic-specific headers.

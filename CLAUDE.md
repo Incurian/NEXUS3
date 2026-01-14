@@ -353,6 +353,49 @@ See `nexus3/provider/README.md` for full documentation and adding new providers.
 }
 ```
 
+### Multi-Provider Configuration
+
+NEXUS3 supports multiple simultaneous providers with named references:
+
+```json
+{
+  "providers": {
+    "openrouter": {
+      "type": "openrouter",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "base_url": "https://openrouter.ai/api/v1"
+    },
+    "anthropic": {
+      "type": "anthropic",
+      "api_key_env": "ANTHROPIC_API_KEY"
+    },
+    "local": {
+      "type": "ollama",
+      "base_url": "http://localhost:11434/v1"
+    }
+  },
+  "default_provider": "openrouter",
+
+  "models": {
+    "oss": { "id": "openai/gpt-oss-120b", "context_window": 131072 },
+    "haiku": { "id": "anthropic/claude-haiku-4.5", "context_window": 200000 },
+    "haiku-native": { "id": "claude-haiku-4.5", "provider": "anthropic", "context_window": 200000 },
+    "llama": { "id": "llama3.2", "provider": "local", "context_window": 128000 }
+  }
+}
+```
+
+**Key concepts:**
+- `providers`: Named provider configs, define once and reference by name
+- `default_provider`: Which provider to use when model doesn't specify one
+- `models[].provider`: Optional - reference a named provider (falls back to default)
+- Backwards compatible: `provider` field still works for single-provider setups
+
+**Implementation (ProviderRegistry):**
+- Lazy initialization: Providers created on first use (avoids connecting to unused APIs)
+- Per-model routing: `resolve_model()` returns provider name alongside model settings
+- SharedComponents holds registry instead of single provider
+
 ### Compaction Config Example
 
 ```json
@@ -541,7 +584,7 @@ Code review completed 2026-01-13 using 24 NEXUS3 subagents. Details in `reviews/
 | 1 | **Bash shell injection** | P0 Critical | 2-3h | **YES** - loses shell features (`\|`, `&&`, `>`) | Switch to `subprocess_exec` + `shlex.split()` |
 | 9 | **Git skill bypass** | P1 High | 2-3h | Minor - stricter filtering | Harden regex, explicit arg parsing |
 | 11 | **Skill param validation** | P2 Medium | 2-4h | No - better error messages | JSON Schema validation before `execute()` |
-| 12 | **Loader unification** | P2 Medium | 2-3h | No - internal cleanup | Deprecate PromptLoader, use context loading |
+| 12 | ~~Loader unification~~ | ~~P2 Medium~~ | ~~2-3h~~ | ~~No - internal cleanup~~ | **DONE** - PromptLoader removed, using ContextLoader |
 | 4 | **RPC decoupling** | P2 Medium | 4-6h | No - same API, less overhead | AgentAPI injection, eliminate HTTP loopback |
 
 ### Completed
@@ -555,6 +598,7 @@ Code review completed 2026-01-13 using 24 NEXUS3 subagents. Details in `reviews/
 - Exception hierarchy (all inherit NexusError)
 - Quick wins (deleted duplicate openrouter.py)
 - Permissions.py split (policy.py, allowances.py, presets.py)
+- **Loader unification** - PromptLoader removed, ContextLoader used everywhere
 
 ### Deferred
 

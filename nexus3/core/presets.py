@@ -133,7 +133,8 @@ def _create_builtin_presets() -> dict[str, PermissionPreset]:
             network_access=False,
             tool_permissions={
                 # Execution tools disabled
-                "bash": ToolPermission(enabled=False),
+                "bash_safe": ToolPermission(enabled=False),
+                "shell_UNSAFE": ToolPermission(enabled=False),
                 "run_python": ToolPermission(enabled=False),
                 # Agent management disabled
                 "nexus_send": ToolPermission(enabled=False),

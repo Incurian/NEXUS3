@@ -119,27 +119,37 @@ class TestLayeredConfigLoading:
         global_nexus = home / ".nexus3"
         global_nexus.mkdir()
         (global_nexus / "config.json").write_text(json.dumps({
-            "provider": {
-                "type": "openrouter",
-                "model": "global-model",
+            "default_model": "test",
+            "providers": {
+                "openrouter": {
+                    "type": "openrouter",
+                    "models": {
+                        "test": {"id": "global-model", "context_window": 100000}
+                    }
+                }
             }
         }))
 
-        # Local overrides just model
+        # Local overrides the model id
         project = tmp_path / "project"
         local_nexus = project / ".nexus3"
         local_nexus.mkdir(parents=True)
         (local_nexus / "config.json").write_text(json.dumps({
-            "provider": {
-                "model": "local-model",
+            "providers": {
+                "openrouter": {
+                    "models": {
+                        "test": {"id": "local-model"}
+                    }
+                }
             }
         }))
 
         config = load_config(cwd=project)
 
-        # Should have local model but global type
-        assert config.provider.model == "local-model"
-        assert config.provider.type == "openrouter"
+        # Should have local model id but preserve provider type
+        resolved = config.resolve_model("test")
+        assert resolved.model_id == "local-model"
+        assert config.providers["openrouter"].type == "openrouter"
 
     def test_ancestor_configs_merged(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test ancestor directory configs are merged."""
@@ -207,14 +217,23 @@ class TestLayeredConfigLoading:
         config_file = tmp_path / "explicit.json"
         config_file.write_text(json.dumps({
             "max_tool_iterations": 99,
+            "default_model": "test",
+            "providers": {
+                "test": {
+                    "type": "openrouter",
+                    "models": {
+                        "test": {"id": "test/model"}
+                    }
+                }
+            }
         }))
 
         config = load_config(path=config_file)
         assert config.max_tool_iterations == 99
 
-    def test_no_configs_uses_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test missing all configs uses Pydantic defaults."""
-        # Point to empty home
+    def test_no_user_configs_uses_package_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test missing user configs uses package defaults."""
+        # Point to empty home (no ~/.nexus3/)
         home = tmp_path / "empty_home"
         home.mkdir()
         monkeypatch.setenv("HOME", str(home))
@@ -222,16 +241,11 @@ class TestLayeredConfigLoading:
         project = tmp_path / "empty_project"
         project.mkdir()
 
-        # Also need to mock the defaults dir
-        import nexus3.config.loader as loader_module
+        # No local .nexus3/ either - should use package defaults
+        config = load_config(cwd=project)
 
-        original_default = loader_module.DEFAULT_CONFIG
-        loader_module.DEFAULT_CONFIG = tmp_path / "nonexistent" / "config.json"
-
-        try:
-            config = load_config(cwd=project)
-            # Should get Pydantic defaults
-            assert config.max_tool_iterations == 10
-            assert config.stream_output is True
-        finally:
-            loader_module.DEFAULT_CONFIG = original_default
+        # Should get package defaults (from nexus3/defaults/config.json)
+        assert config.max_tool_iterations == 10
+        assert config.stream_output is True
+        # Should have providers from defaults
+        assert "openrouter" in config.providers

@@ -66,7 +66,9 @@ PROVIDER_DEFAULTS: dict[str, dict[str, str | AuthMethod]] = {
 
 def create_provider(
     config: "ProviderConfig",
+    model_id: str,
     raw_log: "RawLogCallback | None" = None,
+    reasoning: bool = False,
 ) -> "AsyncProvider":
     """Create a provider instance based on config.provider.type.
 
@@ -77,7 +79,9 @@ def create_provider(
     Args:
         config: Provider configuration. The 'type' field determines which
             provider class is instantiated.
+        model_id: The model ID to use for API requests.
         raw_log: Optional callback for raw API logging.
+        reasoning: Whether to enable extended thinking/reasoning.
 
     Returns:
         Provider instance implementing the AsyncProvider protocol.
@@ -86,24 +90,17 @@ def create_provider(
         ConfigError: If provider type is unknown.
 
     Example:
-        # OpenRouter (default)
-        config = ProviderConfig()
-        provider = create_provider(config)
+        # OpenRouter
+        config = ProviderConfig(type="openrouter")
+        provider = create_provider(config, "anthropic/claude-haiku-4.5")
 
         # Anthropic
-        config = ProviderConfig(
-            type="anthropic",
-            api_key_env="ANTHROPIC_API_KEY",
-            model="claude-sonnet-4-20250514",
-        )
-        provider = create_provider(config)
+        config = ProviderConfig(type="anthropic", api_key_env="ANTHROPIC_API_KEY")
+        provider = create_provider(config, "claude-sonnet-4-20250514")
 
         # Local Ollama
-        config = ProviderConfig(
-            type="ollama",
-            model="llama3.2",
-        )
-        provider = create_provider(config)
+        config = ProviderConfig(type="ollama")
+        provider = create_provider(config, "llama3.2")
     """
     provider_type = config.type.lower()
 
@@ -111,19 +108,19 @@ def create_provider(
     if provider_type in ("openrouter", "openai", "ollama", "vllm"):
         from nexus3.provider.openai_compat import OpenAICompatProvider
 
-        return OpenAICompatProvider(config, raw_log)
+        return OpenAICompatProvider(config, model_id, raw_log, reasoning)
 
     # Azure OpenAI
     if provider_type == "azure":
         from nexus3.provider.azure import AzureOpenAIProvider
 
-        return AzureOpenAIProvider(config, raw_log)
+        return AzureOpenAIProvider(config, model_id, raw_log, reasoning)
 
     # Anthropic
     if provider_type == "anthropic":
         from nexus3.provider.anthropic import AnthropicProvider
 
-        return AnthropicProvider(config, raw_log)
+        return AnthropicProvider(config, model_id, raw_log, reasoning)
 
     # Unknown provider type
     supported = ", ".join(PROVIDER_DEFAULTS.keys())
@@ -134,9 +131,11 @@ def create_provider(
 
 # Backwards compatibility: alias OpenRouterProvider to OpenAICompatProvider
 from nexus3.provider.openai_compat import OpenAICompatProvider as OpenRouterProvider
+from nexus3.provider.registry import ProviderRegistry
 
 __all__ = [
     "create_provider",
     "OpenRouterProvider",
+    "ProviderRegistry",
     "PROVIDER_DEFAULTS",
 ]

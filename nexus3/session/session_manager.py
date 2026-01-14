@@ -69,7 +69,7 @@ class SessionManager:
         try:
             validate_agent_id(name)
         except ValidationError as e:
-            raise SessionManagerError(f"Invalid session name: {e.message}")
+            raise SessionManagerError(f"Invalid session name: {e.message}") from e
         return self.sessions_dir / f"{name}.json"
 
     def _last_session_path(self) -> Path:
@@ -146,8 +146,8 @@ class SessionManager:
         # Avoid TOCTOU race: catch FileNotFoundError instead of checking exists()
         try:
             content = path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            raise SessionNotFoundError(name)
+        except FileNotFoundError as exc:
+            raise SessionNotFoundError(name) from exc
         return SavedSession.from_json(content)
 
     def delete_session(self, name: str) -> bool:
@@ -281,8 +281,8 @@ class SessionManager:
         # Avoid TOCTOU race: catch FileNotFoundError instead of checking exists()
         try:
             content = old_path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            raise SessionNotFoundError(old_name)
+        except FileNotFoundError as exc:
+            raise SessionNotFoundError(old_name) from exc
 
         # Check destination doesn't exist (still a minor race, but acceptable for this use case)
         if new_path.exists():
@@ -320,8 +320,8 @@ class SessionManager:
         # Avoid TOCTOU race: catch FileNotFoundError instead of checking exists()
         try:
             content = src_path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            raise SessionNotFoundError(src_name)
+        except FileNotFoundError as exc:
+            raise SessionNotFoundError(src_name) from exc
 
         # Check destination doesn't exist (still a minor race, but acceptable for this use case)
         if dest_path.exists():

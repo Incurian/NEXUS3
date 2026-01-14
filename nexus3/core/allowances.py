@@ -64,7 +64,7 @@ class SessionAllowances:
         """Check if execution tool is allowed.
 
         Args:
-            tool_name: The tool (e.g., "bash", "run_python")
+            tool_name: The tool (e.g., "bash_safe", "run_python")
             cwd: Working directory for the execution (None = current directory)
 
         Returns:
@@ -75,6 +75,21 @@ class SessionAllowances:
             return True
 
         # Check directory-specific allowance
+        return self.is_exec_directory_allowed(tool_name, cwd)
+
+    def is_exec_directory_allowed(self, tool_name: str, cwd: Path | None = None) -> bool:
+        """Check if execution tool is allowed in a specific directory.
+
+        Unlike is_exec_allowed, this does NOT check global allowances.
+        Used for tools like run_python where global allow is too permissive.
+
+        Args:
+            tool_name: The tool (e.g., "run_python")
+            cwd: Working directory for the execution (None = current directory)
+
+        Returns:
+            True if the tool is allowed in the given directory.
+        """
         if tool_name not in self.exec_directories:
             return False
 

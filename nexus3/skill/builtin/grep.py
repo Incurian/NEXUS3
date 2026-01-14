@@ -3,7 +3,6 @@
 import asyncio
 import fnmatch
 import re
-from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError

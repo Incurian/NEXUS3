@@ -1,16 +1,60 @@
 {
-  "provider": {
-    "type": "openrouter",
-    "api_key_env": "OPENROUTER_API_KEY",
-    "model": "fast",
-    "base_url": "https://openrouter.ai/api/v1",
-    "context_window": 131072,
-    "reasoning": false
-  },
-  "models": {
-    "fast": {
-      "id": "x-ai/grok-4.1-fast",
-      "context_window": 2000000
+  "default_model": "fast",
+  "providers": {
+    "openrouter": {
+      "type": "openrouter",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "base_url": "https://openrouter.ai/api/v1",
+      "models": {
+        "haiku": {
+          "id": "anthropic/claude-haiku-4.5",
+          "context_window": 200000
+        },
+        "sonnet": {
+          "id": "anthropic/claude-sonnet-4.5",
+          "context_window": 200000
+        },
+        "opus": {
+          "id": "anthropic/claude-opus-4.5",
+          "context_window": 200000
+        },
+        "gemini": {
+          "id": "google/gemini-3-flash-preview",
+          "context_window": 1048576
+        },
+        "gpt": {
+          "id": "openai/gpt-5.2",
+          "context_window": 400000
+        },
+        "oss": {
+          "id": "openai/gpt-oss-120b",
+          "context_window": 131072
+        },
+        "fast": {
+          "id": "x-ai/grok-4.1-fast",
+          "context_window": 2000000
+        }
+      }
+    },
+    "anthropic": {
+      "type": "anthropic",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "base_url": "https://api.anthropic.com",
+      "auth_method": "x-api-key",
+      "models": {
+        "haiku-native": {
+          "id": "claude-haiku-4-5",
+          "context_window": 200000
+        },
+        "sonnet-native": {
+          "id": "claude-sonnet-4-5",
+          "context_window": 200000
+        },
+        "opus-native": {
+          "id": "claude-opus-4-5",
+          "context_window": 200000
+        }
+      }
     }
   },
   "stream_output": true,
@@ -20,7 +64,7 @@
   "max_concurrent_tools": 10,
   "compaction": {
     "enabled": true,
-    "model": "x-ai/grok-4.1-fast",
+    "model": "fast",
     "summary_budget_ratio": 0.25,
     "recent_preserve_ratio": 0.25,
     "trigger_threshold": 0.9

@@ -1,36 +1,65 @@
-"""Bash skill for executing shell commands."""
+"""Shell execution skills for NEXUS3.
+
+Two skills with different security models:
+
+- bash_safe: Uses shlex.split() + subprocess_exec (no shell interpretation)
+  - Shell operators (|, &&, >, etc.) do NOT work
+  - Safe from injection attacks
+  - Recommended for most use cases
+
+- shell_UNSAFE: Uses shell=True (full shell interpretation)
+  - Shell operators work (pipes, redirects, etc.)
+  - VULNERABLE to injection if input is not trusted
+  - Name is intentionally alarming to prompt careful consideration
+
+Both skills have identical permission settings:
+- YOLO: No confirmation required
+- TRUSTED: Always requires confirmation
+- SANDBOXED: Completely disabled
+"""
 
 import asyncio
 import os
+import shlex
 from typing import Any
 
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import ExecutionSkill, execution_skill_factory
 
 
-class BashSkill(ExecutionSkill):
-    """Skill that executes shell commands.
+class BashSafeSkill(ExecutionSkill):
+    """Safe shell skill using subprocess_exec (no shell interpretation).
 
-    This is a high-risk skill that allows arbitrary command execution.
-    Permission settings:
-    - YOLO: No confirmation required
-    - TRUSTED: Always requires confirmation (even in CWD)
-    - SANDBOXED: Completely disabled
+    Commands are parsed with shlex.split() and executed directly without
+    a shell. This prevents injection attacks but means shell operators
+    like |, &&, >, $(), etc. do NOT work.
 
-    The skill captures stdout and stderr, enforces timeout,
-    and returns the command output along with exit code.
+    Use this skill for:
+    - Running single commands with arguments
+    - Cases where you don't need shell features
+    - Any situation where input might not be fully trusted
+
+    Examples that WORK:
+    - "ls -la /tmp"
+    - "git status"
+    - "python script.py --arg value"
+
+    Examples that DON'T work:
+    - "ls | grep foo" (pipe)
+    - "cd /tmp && ls" (chaining)
+    - "echo hello > file.txt" (redirect)
+    - "echo $HOME" (variable expansion)
     """
 
-    # Store command for _create_process to use
-    _command: str = ""
+    _args: list[str] = []
 
     @property
     def name(self) -> str:
-        return "bash"
+        return "bash_safe"
 
     @property
     def description(self) -> str:
-        return "Execute a shell command"
+        return "Execute a command safely (no shell operators like | && >)"
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -39,7 +68,7 @@ class BashSkill(ExecutionSkill):
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": "Shell command to execute"
+                    "description": "Command to execute (shell operators like | && > do NOT work)"
                 },
                 "timeout": {
                     "type": "integer",
@@ -58,7 +87,99 @@ class BashSkill(ExecutionSkill):
         self,
         work_dir: str | None
     ) -> asyncio.subprocess.Process:
-        """Create a shell subprocess."""
+        """Create subprocess without shell."""
+        return await asyncio.create_subprocess_exec(
+            *self._args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=work_dir,
+            env={**os.environ},
+        )
+
+    async def execute(
+        self,
+        command: str = "",
+        timeout: int = 30,
+        cwd: str | None = None,
+        **kwargs: Any
+    ) -> ToolResult:
+        """Execute command safely without shell interpretation."""
+        if not command:
+            return ToolResult(error="Command is required")
+
+        # Parse command with shlex - this is the security fix
+        try:
+            self._args = shlex.split(command)
+        except ValueError as e:
+            return ToolResult(error=f"Invalid command syntax: {e}")
+
+        if not self._args:
+            return ToolResult(error="Empty command after parsing")
+
+        return await self._execute_subprocess(
+            timeout=timeout,
+            cwd=cwd,
+            timeout_message="Command timed out after {timeout}s"
+        )
+
+
+class ShellUnsafeSkill(ExecutionSkill):
+    """UNSAFE shell skill using shell=True (full shell interpretation).
+
+    ⚠️  WARNING: This skill is vulnerable to shell injection attacks!
+
+    Commands are passed directly to the shell, which means:
+    - Shell operators work (|, &&, ||, >, >>, <, $(), ``, etc.)
+    - Environment variable expansion works ($HOME, $PATH, etc.)
+    - Glob expansion works (*.py, **/*.txt, etc.)
+    - BUT malicious input can execute arbitrary commands
+
+    Use this skill ONLY when:
+    - You need shell features (pipes, redirects, etc.)
+    - You trust the command source completely
+    - You understand the security implications
+
+    The name "shell_UNSAFE" is intentionally alarming to prompt
+    careful consideration before use.
+    """
+
+    _command: str = ""
+
+    @property
+    def name(self) -> str:
+        return "shell_UNSAFE"
+
+    @property
+    def description(self) -> str:
+        return "Execute shell command with full shell features (pipes, redirects) - USE WITH CAUTION"
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Shell command (supports | && > etc. but UNSAFE with untrusted input)"
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Timeout in seconds (default: 30, max: 300)",
+                    "default": 30
+                },
+                "cwd": {
+                    "type": "string",
+                    "description": "Working directory for command (default: current)"
+                }
+            },
+            "required": ["command"]
+        }
+
+    async def _create_process(
+        self,
+        work_dir: str | None
+    ) -> asyncio.subprocess.Process:
+        """Create shell subprocess."""
         return await asyncio.create_subprocess_shell(
             self._command,
             stdout=asyncio.subprocess.PIPE,
@@ -74,7 +195,7 @@ class BashSkill(ExecutionSkill):
         cwd: str | None = None,
         **kwargs: Any
     ) -> ToolResult:
-        """Execute a shell command."""
+        """Execute shell command with full shell interpretation."""
         if not command:
             return ToolResult(error="Command is required")
 
@@ -86,5 +207,9 @@ class BashSkill(ExecutionSkill):
         )
 
 
-# Factory for dependency injection
-bash_factory = execution_skill_factory(BashSkill)
+# Factories for dependency injection
+bash_safe_factory = execution_skill_factory(BashSafeSkill)
+shell_unsafe_factory = execution_skill_factory(ShellUnsafeSkill)
+
+# Legacy alias for backwards compatibility during transition
+bash_factory = bash_safe_factory

@@ -13,23 +13,23 @@ Skills are the tool system in NEXUS3 - they provide capabilities like
 file reading, command execution, and other actions the agent can perform.
 """
 
-from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Any, Awaitable, Callable, Protocol, TypeVar, runtime_checkable
 import asyncio
 import json
-import os
+from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+
+# Import ServiceContainer type for factory decorator
+# Using TYPE_CHECKING to avoid circular imports
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
 from nexus3.core.paths import validate_path
 from nexus3.core.types import ToolResult
 
-# Import ServiceContainer type for factory decorator
-# Using TYPE_CHECKING to avoid circular imports
-from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from nexus3.skill.services import ServiceContainer
     from nexus3.client import NexusClient
     from nexus3.core.permissions import PermissionLevel
+    from nexus3.skill.services import ServiceContainer
 
 
 @runtime_checkable
@@ -558,10 +558,6 @@ class ExecutionSkill(ABC):
     MAX_TIMEOUT: int = 300
     DEFAULT_TIMEOUT: int = 30
 
-    def __init__(self) -> None:
-        """Initialize ExecutionSkill."""
-        pass
-
     def _enforce_timeout(self, timeout: int) -> int:
         """Enforce timeout limits (1 to MAX_TIMEOUT seconds)."""
         return min(max(timeout, 1), self.MAX_TIMEOUT)
@@ -665,7 +661,7 @@ class ExecutionSkill(ABC):
                     process.communicate(),
                     timeout=timeout
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 process.kill()
                 await process.wait()
                 return ToolResult(error=timeout_message.format(timeout=timeout))
@@ -795,8 +791,9 @@ class FilteredCommandSkill(ABC):
         Returns:
             Tuple of (is_allowed, error_message_or_none)
         """
-        from nexus3.core.permissions import PermissionLevel
         import re
+
+        from nexus3.core.permissions import PermissionLevel
 
         # No permission level set = unrestricted
         if self._permission_level is None:

@@ -19,7 +19,6 @@ from nexus3.rpc.auth import (
 )
 from nexus3.rpc.detection import DetectionResult, detect_server, wait_for_server
 from nexus3.rpc.dispatcher import Dispatcher, InvalidParamsError
-from nexus3.rpc.log_multiplexer import LogMultiplexer
 from nexus3.rpc.http import (
     BIND_HOST,
     DEFAULT_PORT,
@@ -31,6 +30,7 @@ from nexus3.rpc.http import (
     run_http_server,
     send_http_response,
 )
+from nexus3.rpc.log_multiplexer import LogMultiplexer
 from nexus3.rpc.pool import Agent, AgentConfig, AgentPool, SharedComponents
 from nexus3.rpc.protocol import (
     INTERNAL_ERROR,

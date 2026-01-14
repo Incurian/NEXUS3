@@ -14,7 +14,6 @@ import sys
 from datetime import datetime
 from typing import Any
 
-
 # Tool definitions
 TOOLS = [
     {

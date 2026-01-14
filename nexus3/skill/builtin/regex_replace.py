@@ -163,7 +163,7 @@ class RegexReplaceSkill(FileSkill):
                     asyncio.to_thread(do_replace),
                     timeout=REGEX_TIMEOUT
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return ToolResult(
                     error=f"Regex replacement timed out ({REGEX_TIMEOUT}s). "
                     "Pattern may have catastrophic backtracking."

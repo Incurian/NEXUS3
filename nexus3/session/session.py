@@ -28,8 +28,8 @@ from nexus3.core.validation import ValidationError, validate_tool_arguments
 
 if TYPE_CHECKING:
     from nexus3.config.schema import CompactionConfig, Config
+    from nexus3.context.loader import ContextLoader
     from nexus3.context.manager import ContextManager
-    from nexus3.context.prompt_loader import PromptLoader
     from nexus3.core.cancel import CancellationToken
     from nexus3.session.logging import SessionLogger
     from nexus3.skill.registry import SkillRegistry
@@ -82,7 +82,7 @@ class Session:
         services: "ServiceContainer | None" = None,
         on_confirm: ConfirmationCallback | None = None,
         config: "Config | None" = None,
-        prompt_loader: "PromptLoader | None" = None,
+        context_loader: "ContextLoader | None" = None,
     ) -> None:
         """Initialize a new session.
 
@@ -118,8 +118,8 @@ class Session:
             on_confirm: Optional callback for requesting user confirmation on
                        destructive actions. Returns True if confirmed.
             config: Optional Config for compaction settings and other options.
-            prompt_loader: Optional PromptLoader to reload system prompt during
-                          compaction.
+            context_loader: Optional ContextLoader to reload system prompt during
+                           compaction.
         """
         self.provider = provider
         self.context = context
@@ -139,7 +139,7 @@ class Session:
         self._services = services
         self.on_confirm = on_confirm
         self._config = config
-        self._prompt_loader = prompt_loader
+        self._context_loader = context_loader
 
         # Track cancelled tool calls to report on next send()
         self._pending_cancelled_tools: list[tuple[str, str]] = []  # [(tool_id, tool_name), ...]
@@ -299,7 +299,9 @@ class Session:
                 if resolved_model:
                     show_reasoning = resolved_model.reasoning
             elif self._config:
-                show_reasoning = self._config.provider.reasoning
+                # Fallback: resolve default model to get reasoning setting
+                default_model = self._config.resolve_model()
+                show_reasoning = default_model.reasoning
             async for event in self.provider.stream(messages, tools):
                 if isinstance(event, ReasoningDelta):
                     # Notify callback when reasoning starts (only if reasoning enabled)
@@ -502,7 +504,7 @@ class Session:
 
             # Extract path/cwd for permission checks
             target_path = self._extract_path_from_tool_call(tool_call)
-            exec_tools = ("bash", "run_python")
+            exec_tools = ("bash_safe", "shell_UNSAFE", "run_python")
             exec_cwd = (
                 self._extract_exec_cwd_from_tool_call(tool_call)
                 if tool_call.name in exec_tools
@@ -764,9 +766,9 @@ class Session:
 
         # Reload system prompt fresh (picks up NEXUS.md changes)
         new_system_prompt = None
-        if self._prompt_loader:
-            loaded = self._prompt_loader.load(is_repl=True)  # TODO: track is_repl
-            new_system_prompt = loaded.content
+        if self._context_loader:
+            loaded = self._context_loader.load(is_repl=True)  # TODO: track is_repl
+            new_system_prompt = loaded.system_prompt
 
         # Calculate token counts
         original_tokens = usage["messages"]
@@ -803,21 +805,14 @@ class Session:
             # No separate model configured, use main provider
             return self.provider
 
-        # Create a provider with the compaction model
-        from nexus3.config.schema import ProviderConfig
+        # Resolve compaction model alias to get provider and model_id
         from nexus3.provider import create_provider
 
-        compaction_config = ProviderConfig(
-            type=self._config.provider.type,
-            api_key_env=self._config.provider.api_key_env,
-            model=compaction_model,
-            base_url=self._config.provider.base_url,
-            auth_method=self._config.provider.auth_method,
-            extra_headers=self._config.provider.extra_headers,
-            api_version=self._config.provider.api_version,
-            deployment=self._config.provider.deployment,
+        resolved = self._config.resolve_model(compaction_model)
+        provider_config = self._config.get_provider_config(resolved.provider_name)
+        self._compaction_provider = create_provider(
+            provider_config, resolved.model_id
         )
-        self._compaction_provider = create_provider(compaction_config)
         return self._compaction_provider
 
     async def _generate_summary(

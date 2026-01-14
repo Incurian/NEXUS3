@@ -34,12 +34,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from nexus3.config.loader import load_config
-from nexus3.config.schema import ProviderConfig
-from nexus3.context import ContextLoader, PromptLoader
+from nexus3.context import ContextLoader
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
 from nexus3.core.permissions import load_custom_presets_from_config
-from nexus3.provider import create_provider
+from nexus3.provider import ProviderRegistry
 from nexus3.rpc.auth import ServerKeyManager
 from nexus3.rpc.detection import DetectionResult, detect_server
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
@@ -96,25 +95,8 @@ async def run_serve(
         print(f"Error: Port {effective_port} is already in use by another service")
         return
 
-    # Create provider (shared across all agents)
-    # Resolve model alias to actual model ID before creating provider
-    try:
-        resolved = config.resolve_model()
-        provider_config = ProviderConfig(
-            type=config.provider.type,
-            api_key_env=config.provider.api_key_env,
-            model=resolved.model_id,  # Use resolved ID, not alias
-            base_url=config.provider.base_url,
-            context_window=resolved.context_window,
-            reasoning=resolved.reasoning,
-        )
-        provider = create_provider(provider_config)
-    except NexusError as e:
-        print(f"Provider error: {e.message}")
-        return
-
-    # Create prompt loader (shared)
-    prompt_loader = PromptLoader()
+    # Create provider registry (lazy-creates providers on first use)
+    provider_registry = ProviderRegistry(config)
 
     # Base log directory
     base_log_dir = log_dir or Path(".nexus3/logs")
@@ -138,12 +120,12 @@ async def run_serve(
     # Create shared components
     shared = SharedComponents(
         config=config,
-        provider=provider,
-        prompt_loader=prompt_loader,
+        provider_registry=provider_registry,
         base_log_dir=base_log_dir,
+        base_context=base_context,
+        context_loader=context_loader,
         log_streams=log_streams,
         custom_presets=custom_presets,
-        base_context=base_context,
     )
 
     # Create agent pool

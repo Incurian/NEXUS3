@@ -5,7 +5,7 @@ import warnings
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def _normalize_paths(paths: list[str] | None) -> list[str] | None:
@@ -61,21 +61,18 @@ class AuthMethod(str, Enum):
     NONE = "none"  # No auth (local Ollama)
 
 
-class ModelAliasConfig(BaseModel):
-    """Configuration for a model alias.
-
-    Allows defining friendly names for models with their settings.
+class ModelConfig(BaseModel):
+    """Configuration for a model under a provider.
 
     Example in config.json:
-        "models": {
-            "fast": {
-                "id": "x-ai/grok-code-fast-1",
-                "context_window": 131072
-            },
-            "smart": {
-                "id": "anthropic/claude-sonnet-4",
-                "context_window": 200000,
-                "reasoning": true
+        "providers": {
+            "openrouter": {
+                "models": {
+                    "haiku": {
+                        "id": "anthropic/claude-haiku-4.5",
+                        "context_window": 200000
+                    }
+                }
             }
         }
     """
@@ -83,22 +80,20 @@ class ModelAliasConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
-    """Full model identifier (e.g., 'anthropic/claude-sonnet-4')."""
+    """Full model identifier sent to the API (e.g., 'anthropic/claude-sonnet-4')."""
 
-    context_window: int | None = None
-    """Context window size. If None, uses provider default."""
+    context_window: int = 131072
+    """Context window size in tokens."""
 
-    reasoning: bool | None = None
-    """Enable extended thinking. If None, uses provider default."""
+    reasoning: bool = False
+    """Enable extended thinking/reasoning."""
 
 
 class ProviderConfig(BaseModel):
-    """Configuration for LLM provider.
-
-    Supports multiple provider types with configurable authentication.
+    """Configuration for an LLM provider with its models.
 
     Provider types:
-        - openrouter: OpenRouter.ai (default)
+        - openrouter: OpenRouter.ai
         - openai: Direct OpenAI API
         - azure: Azure OpenAI Service
         - anthropic: Anthropic Claude API
@@ -114,17 +109,8 @@ class ProviderConfig(BaseModel):
     api_key_env: str = "OPENROUTER_API_KEY"
     """Environment variable containing API key."""
 
-    model: str = "x-ai/grok-code-fast-1"
-    """Model ID or alias name (resolved via models dict)."""
-
     base_url: str = "https://openrouter.ai/api/v1"
     """Base URL for API requests."""
-
-    context_window: int = 131072
-    """Default context window size in tokens. Used for truncation and compaction."""
-
-    reasoning: bool = False
-    """Default extended thinking/reasoning setting."""
 
     auth_method: AuthMethod = AuthMethod.BEARER
     """How to send the API key (bearer, api-key, x-api-key, none)."""
@@ -146,6 +132,9 @@ class ProviderConfig(BaseModel):
 
     retry_backoff: float = Field(default=1.5, ge=1.0, le=5.0)
     """Exponential backoff multiplier between retries."""
+
+    models: dict[str, ModelConfig] = {}
+    """Model aliases available through this provider."""
 
 
 class ToolPermissionConfig(BaseModel):
@@ -227,7 +216,8 @@ class PermissionsConfig(BaseModel):
     destructive_tools: list[str] = [
         "write_file",
         "edit_file",
-        "bash",
+        "bash_safe",
+        "shell_UNSAFE",
         "run_python",
         "nexus_destroy",
         "nexus_shutdown",
@@ -243,7 +233,7 @@ class CompactionConfig(BaseModel):
     """Whether automatic compaction is enabled."""
 
     model: str | None = None
-    """Model for summarization. None = use main provider.model."""
+    """Model alias for summarization. None = use default_model."""
 
     summary_budget_ratio: float = 0.25
     """Ratio of available budget for the summary (0.25 = 25%)."""
@@ -351,10 +341,10 @@ class MCPServerConfig(BaseModel):
 
 
 class ResolvedModel:
-    """Result of resolving a model name/alias.
+    """Result of resolving a model alias.
 
     Contains the effective model settings after resolving an alias
-    and merging with provider defaults.
+    and finding its provider.
     """
 
     def __init__(
@@ -362,87 +352,194 @@ class ResolvedModel:
         model_id: str,
         context_window: int,
         reasoning: bool,
-        alias: str | None = None,
+        alias: str,
+        provider_name: str,
     ) -> None:
         self.model_id = model_id
         self.context_window = context_window
         self.reasoning = reasoning
-        self.alias = alias  # Original alias if resolved, None if literal
+        self.alias = alias
+        self.provider_name = provider_name
 
 
 class Config(BaseModel):
-    """Root configuration model."""
+    """Root configuration model.
+
+    Example config.json:
+        {
+            "default_model": "openrouter/haiku",
+            "providers": {
+                "openrouter": {
+                    "type": "openrouter",
+                    "api_key_env": "OPENROUTER_API_KEY",
+                    "models": {
+                        "haiku": {"id": "anthropic/claude-haiku-4.5", "context_window": 200000}
+                    }
+                },
+                "anthropic": {
+                    "type": "anthropic",
+                    "api_key_env": "ANTHROPIC_API_KEY",
+                    "models": {
+                        "haiku-native": {"id": "claude-haiku-4-5", "context_window": 200000}
+                    }
+                }
+            }
+        }
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    config_version: int = Field(default=1, ge=1)
-    """Schema version for migration support. Current version: 1."""
+    default_model: str = "haiku"
+    """Default model alias (or 'provider/alias' format)."""
 
-    provider: ProviderConfig = ProviderConfig()
-    models: dict[str, ModelAliasConfig] = {}
-    """Model aliases mapping friendly names to model configs."""
+    providers: dict[str, ProviderConfig] = {}
+    """Provider configurations with their models."""
+
     stream_output: bool = True
-    max_tool_iterations: int = 10  # Maximum iterations of the tool execution loop
-    default_permission_level: str = "trusted"  # yolo, trusted, or sandboxed
-    skill_timeout: float = 30.0  # Seconds, 0 = no timeout
-    max_concurrent_tools: int = 10  # Max parallel tool executions
-    permissions: PermissionsConfig = PermissionsConfig()  # Permission system config
-    compaction: CompactionConfig = CompactionConfig()  # Context compaction config
-    context: ContextConfig = ContextConfig()  # Context loading config
+    max_tool_iterations: int = 10
+    default_permission_level: str = "trusted"
+    skill_timeout: float = 30.0
+    max_concurrent_tools: int = 10
+    permissions: PermissionsConfig = PermissionsConfig()
+    compaction: CompactionConfig = CompactionConfig()
+    context: ContextConfig = ContextConfig()
     mcp_servers: list[MCPServerConfig] = []
-    """MCP server configurations for external tool providers."""
-
     server: ServerConfig = ServerConfig()
-    """HTTP server configuration for --serve mode."""
 
-    def resolve_model(self, name_or_id: str | None = None) -> ResolvedModel:
-        """Resolve a model name/alias to full model settings.
+    @model_validator(mode="after")
+    def validate_unique_aliases(self) -> "Config":
+        """Ensure model aliases are globally unique across all providers."""
+        seen: dict[str, str] = {}  # alias -> provider_name
+        for provider_name, provider_config in self.providers.items():
+            for alias in provider_config.models:
+                if alias in seen:
+                    raise ValueError(
+                        f"Duplicate model alias '{alias}' found in providers "
+                        f"'{seen[alias]}' and '{provider_name}'"
+                    )
+                seen[alias] = provider_name
+        return self
+
+    @model_validator(mode="after")
+    def validate_default_model(self) -> "Config":
+        """Ensure default_model references a valid alias."""
+        if "/" in self.default_model:
+            # Explicit provider/alias format
+            provider_name, alias = self.default_model.split("/", 1)
+            if provider_name not in self.providers:
+                raise ValueError(f"Unknown provider in default_model: {provider_name}")
+            if alias not in self.providers[provider_name].models:
+                raise ValueError(
+                    f"Unknown model alias '{alias}' in provider '{provider_name}'"
+                )
+        else:
+            # Just an alias - look it up across all providers
+            alias = self.default_model
+            found = False
+            for provider_config in self.providers.values():
+                if alias in provider_config.models:
+                    found = True
+                    break
+            if not found:
+                raise ValueError(f"Unknown model alias: {alias}")
+        return self
+
+    def get_provider_config(self, name: str) -> ProviderConfig:
+        """Get provider configuration by name.
 
         Args:
-            name_or_id: Model alias or full model ID. If None, uses provider.model.
+            name: Provider name.
 
         Returns:
-            ResolvedModel with effective model_id, context_window, and reasoning.
+            ProviderConfig for the named provider.
+
+        Raises:
+            KeyError: If provider name not found.
+        """
+        if name in self.providers:
+            return self.providers[name]
+        raise KeyError(f"Unknown provider: {name}")
+
+    def find_model(self, alias: str) -> tuple[str, ModelConfig]:
+        """Find which provider owns a model alias.
+
+        Args:
+            alias: Model alias to find.
+
+        Returns:
+            Tuple of (provider_name, ModelConfig).
+
+        Raises:
+            KeyError: If alias not found in any provider.
+        """
+        for provider_name, provider_config in self.providers.items():
+            if alias in provider_config.models:
+                return provider_name, provider_config.models[alias]
+        raise KeyError(f"Unknown model alias: {alias}")
+
+    def resolve_model(self, alias: str | None = None) -> ResolvedModel:
+        """Resolve a model alias to full model settings.
+
+        Args:
+            alias: Model alias. If None, uses default_model.
+
+        Returns:
+            ResolvedModel with model_id, context_window, reasoning,
+            alias, and provider_name.
 
         Examples:
-            # Use default model from provider config
+            # Use default model
             resolved = config.resolve_model()
 
             # Resolve an alias
-            resolved = config.resolve_model("fast")
+            resolved = config.resolve_model("haiku")
 
-            # Use literal model ID (not in aliases)
-            resolved = config.resolve_model("anthropic/claude-sonnet-4")
+            # Explicit provider/alias format also works
+            resolved = config.resolve_model("anthropic/sonnet")
         """
-        effective_name = name_or_id or self.provider.model
+        if alias is None:
+            # Use default_model (can be "alias" or "provider/alias")
+            alias = self.default_model
 
-        # Check if it's an alias
-        if effective_name in self.models:
-            alias_config = self.models[effective_name]
-            reasoning = (
-                alias_config.reasoning
-                if alias_config.reasoning is not None
-                else self.provider.reasoning
-            )
-            return ResolvedModel(
-                model_id=alias_config.id,
-                context_window=alias_config.context_window or self.provider.context_window,
-                reasoning=reasoning,
-                alias=effective_name,
-            )
+        # Check for explicit provider/alias format
+        if "/" in alias:
+            provider_name, model_alias = alias.split("/", 1)
+            if provider_name in self.providers:
+                if model_alias in self.providers[provider_name].models:
+                    model_config = self.providers[provider_name].models[model_alias]
+                    return ResolvedModel(
+                        model_id=model_config.id,
+                        context_window=model_config.context_window,
+                        reasoning=model_config.reasoning,
+                        alias=model_alias,
+                        provider_name=provider_name,
+                    )
 
-        # Not an alias - treat as literal model ID, use provider defaults
+        # Search for alias across all providers
+        provider_name, model_config = self.find_model(alias)
         return ResolvedModel(
-            model_id=effective_name,
-            context_window=self.provider.context_window,
-            reasoning=self.provider.reasoning,
-            alias=None,
+            model_id=model_config.id,
+            context_window=model_config.context_window,
+            reasoning=model_config.reasoning,
+            alias=alias,
+            provider_name=provider_name,
         )
 
     def list_models(self) -> list[str]:
         """List all available model aliases.
 
         Returns:
-            List of alias names defined in config.
+            List of alias names from all providers.
         """
-        return list(self.models.keys())
+        aliases = []
+        for provider_config in self.providers.values():
+            aliases.extend(provider_config.models.keys())
+        return aliases
+
+    def list_providers(self) -> list[str]:
+        """List all available provider names.
+
+        Returns:
+            List of provider names.
+        """
+        return list(self.providers.keys())

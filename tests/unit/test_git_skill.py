@@ -9,7 +9,7 @@ import pytest
 
 from nexus3.core.permissions import PermissionLevel
 from nexus3.skill.builtin.git import (
-    BLOCKED_PATTERNS,
+    DANGEROUS_FLAGS,
     READ_ONLY_COMMANDS,
     GitSkill,
     git_factory,
@@ -34,8 +34,9 @@ class TestGitSkillValidation:
 
     def test_empty_command_rejected(self, trusted_skill: GitSkill) -> None:
         """Empty command is rejected."""
-        allowed, error = trusted_skill._validate_command("")
+        allowed, args, error = trusted_skill._validate_command("")
         assert not allowed
+        assert args is None
         assert "No git command" in error
 
     def test_read_only_commands_allowed_in_sandboxed(
@@ -43,8 +44,9 @@ class TestGitSkillValidation:
     ) -> None:
         """Read-only commands allowed in SANDBOXED mode."""
         for cmd in READ_ONLY_COMMANDS:
-            allowed, error = sandboxed_skill._validate_command(cmd)
+            allowed, args, error = sandboxed_skill._validate_command(cmd)
             assert allowed, f"Command '{cmd}' should be allowed"
+            assert args is not None
 
     def test_write_commands_blocked_in_sandboxed(
         self, sandboxed_skill: GitSkill
@@ -52,7 +54,7 @@ class TestGitSkillValidation:
         """Write commands blocked in SANDBOXED mode."""
         write_commands = ["add .", "commit -m 'test'", "push", "pull"]
         for cmd in write_commands:
-            allowed, error = sandboxed_skill._validate_command(cmd)
+            allowed, args, error = sandboxed_skill._validate_command(cmd)
             assert not allowed, f"Command '{cmd}' should be blocked"
             assert "read-only" in error.lower()
 
@@ -62,8 +64,9 @@ class TestGitSkillValidation:
         """Write commands allowed in TRUSTED mode."""
         write_commands = ["add .", "commit -m 'test'", "push", "pull"]
         for cmd in write_commands:
-            allowed, error = trusted_skill._validate_command(cmd)
+            allowed, args, error = trusted_skill._validate_command(cmd)
             assert allowed, f"Command '{cmd}' should be allowed"
+            assert args is not None
 
     def test_dangerous_commands_blocked_in_trusted(
         self, trusted_skill: GitSkill
@@ -77,7 +80,7 @@ class TestGitSkillValidation:
             "rebase -i HEAD~3",
         ]
         for cmd in dangerous:
-            allowed, error = trusted_skill._validate_command(cmd)
+            allowed, args, error = trusted_skill._validate_command(cmd)
             assert not allowed, f"Command '{cmd}' should be blocked"
             assert "blocked" in error.lower()
 
@@ -91,8 +94,97 @@ class TestGitSkillValidation:
             "clean -fd",
         ]
         for cmd in dangerous:
-            allowed, error = yolo_skill._validate_command(cmd)
+            allowed, args, error = yolo_skill._validate_command(cmd)
             assert allowed, f"Command '{cmd}' should be allowed in YOLO"
+            assert args is not None
+
+
+class TestGitSkillBypassPrevention:
+    """Tests that quote-based bypass attempts are blocked.
+
+    These tests verify the fix for the vulnerability where validation
+    used regex on raw strings but execution used shlex.split().
+    Attackers could bypass validation with creative quoting.
+    """
+
+    @pytest.fixture
+    def trusted_skill(self) -> GitSkill:
+        return GitSkill(permission_level=PermissionLevel.TRUSTED)
+
+    def test_quoted_force_flag_blocked(self, trusted_skill: GitSkill) -> None:
+        """Quoted --force flag is still blocked after shlex parsing."""
+        bypass_attempts = [
+            'push "--force"',           # Double-quoted
+            "push '--force'",           # Single-quoted
+            'push "--force" origin',    # Quoted with extra args
+            "push origin '--force'",    # Flag after positional
+        ]
+        for cmd in bypass_attempts:
+            allowed, args, error = trusted_skill._validate_command(cmd)
+            assert not allowed, f"Bypass attempt should be blocked: {cmd}"
+            assert "blocked" in error.lower()
+
+    def test_quoted_hard_flag_blocked(self, trusted_skill: GitSkill) -> None:
+        """Quoted --hard flag is still blocked after shlex parsing."""
+        bypass_attempts = [
+            'reset "--hard"',
+            "reset '--hard'",
+            'reset "--hard" HEAD~1',
+        ]
+        for cmd in bypass_attempts:
+            allowed, args, error = trusted_skill._validate_command(cmd)
+            assert not allowed, f"Bypass attempt should be blocked: {cmd}"
+            assert "blocked" in error.lower()
+
+    def test_quoted_short_flag_blocked(self, trusted_skill: GitSkill) -> None:
+        """Quoted short flags (-f, -d) are still blocked."""
+        bypass_attempts = [
+            'push "-f"',
+            "clean '-f'",
+            "clean '-d'",
+            'rebase "-i"',
+        ]
+        for cmd in bypass_attempts:
+            allowed, args, error = trusted_skill._validate_command(cmd)
+            assert not allowed, f"Bypass attempt should be blocked: {cmd}"
+            assert "blocked" in error.lower()
+
+    def test_combined_short_flags_blocked(self, trusted_skill: GitSkill) -> None:
+        """Combined short flags like -fd are blocked when containing dangerous flags."""
+        bypass_attempts = [
+            "clean -fd",     # -f and -d combined
+            "clean -df",     # Same, different order
+            "clean -fxd",    # With extra flag in middle
+        ]
+        for cmd in bypass_attempts:
+            allowed, args, error = trusted_skill._validate_command(cmd)
+            assert not allowed, f"Bypass attempt should be blocked: {cmd}"
+            assert "blocked" in error.lower()
+
+    def test_invalid_shlex_syntax_rejected(self, trusted_skill: GitSkill) -> None:
+        """Malformed quoting that shlex can't parse is rejected."""
+        malformed = [
+            'push "unclosed',
+            "push 'unclosed",
+        ]
+        for cmd in malformed:
+            allowed, args, error = trusted_skill._validate_command(cmd)
+            assert not allowed, f"Malformed command should be rejected: {cmd}"
+            assert "syntax" in error.lower()
+
+    def test_returns_parsed_args(self, trusted_skill: GitSkill) -> None:
+        """Validation returns the parsed args used for execution."""
+        allowed, args, error = trusted_skill._validate_command("log --oneline -5")
+        assert allowed
+        assert args == ["log", "--oneline", "-5"]
+
+    def test_parsed_args_match_execution(self, trusted_skill: GitSkill) -> None:
+        """Returned args are what would be executed (no re-parsing)."""
+        # Command with quotes that shlex will parse
+        allowed, args, error = trusted_skill._validate_command("commit -m 'hello world'")
+        assert allowed
+        # shlex.split removes quotes, combines the message
+        assert args == ["commit", "-m", "hello world"]
 
 
 class TestGitSkillExecution:

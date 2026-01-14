@@ -51,13 +51,17 @@ class BaseProvider(ABC):
     def __init__(
         self,
         config: ProviderConfig,
+        model_id: str,
         raw_log: RawLogCallback | None = None,
+        reasoning: bool = False,
     ) -> None:
         """Initialize the provider.
 
         Args:
             config: Provider configuration.
+            model_id: The model ID to use for API requests.
             raw_log: Optional callback for raw API logging.
+            reasoning: Whether to enable extended thinking/reasoning.
 
         Raises:
             ProviderError: If auth is required but API key is not set.
@@ -65,8 +69,9 @@ class BaseProvider(ABC):
         self._config = config
         self._api_key = self._get_api_key()
         self._base_url = config.base_url.rstrip("/")
-        self._model = config.model
+        self._model = model_id
         self._raw_log = raw_log
+        self._reasoning = reasoning
 
         # Timeout/retry settings from config (with fallbacks to module defaults)
         self._timeout = config.request_timeout

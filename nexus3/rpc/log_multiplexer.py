@@ -29,9 +29,9 @@ Usage:
 
 from __future__ import annotations
 
-from contextvars import ContextVar
 from contextlib import contextmanager
-from typing import Any, TYPE_CHECKING
+from contextvars import ContextVar
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nexus3.core.interfaces import RawLogCallback

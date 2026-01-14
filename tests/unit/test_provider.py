@@ -1,7 +1,7 @@
 """Tests for the OpenRouter provider."""
 
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -21,25 +21,19 @@ class TestProviderInit:
 
     def test_init_missing_api_key(self) -> None:
         """Test that init raises ProviderError when API key env var not set."""
-        config = ProviderConfig(
-            api_key_env="NONEXISTENT_KEY_12345",
-            model="test-model",
-        )
+        config = ProviderConfig(api_key_env="NONEXISTENT_KEY_12345")
         # Ensure the env var doesn't exist
         os.environ.pop("NONEXISTENT_KEY_12345", None)
 
         with pytest.raises(ProviderError, match="API key not found"):
-            OpenRouterProvider(config)
+            OpenRouterProvider(config, "test-model")
 
     def test_init_with_api_key(self) -> None:
         """Test successful init when API key is set."""
-        config = ProviderConfig(
-            api_key_env="TEST_PROVIDER_KEY",
-            model="test-model",
-        )
+        config = ProviderConfig(api_key_env="TEST_PROVIDER_KEY")
         os.environ["TEST_PROVIDER_KEY"] = "test-api-key-123"
         try:
-            provider = OpenRouterProvider(config)
+            provider = OpenRouterProvider(config, "test-model")
             assert provider._api_key == "test-api-key-123"
             assert provider._model == "test-model"
         finally:
@@ -47,14 +41,11 @@ class TestProviderInit:
 
     def test_init_empty_api_key(self) -> None:
         """Test that init raises ProviderError when API key is empty."""
-        config = ProviderConfig(
-            api_key_env="EMPTY_KEY_VAR",
-            model="test-model",
-        )
+        config = ProviderConfig(api_key_env="EMPTY_KEY_VAR")
         os.environ["EMPTY_KEY_VAR"] = ""
         try:
             with pytest.raises(ProviderError, match="API key not found"):
-                OpenRouterProvider(config)
+                OpenRouterProvider(config, "test-model")
         finally:
             del os.environ["EMPTY_KEY_VAR"]
 
@@ -65,12 +56,9 @@ class TestRetryLogic:
     @pytest.fixture
     def provider(self) -> OpenRouterProvider:
         """Create a provider for testing."""
-        config = ProviderConfig(
-            api_key_env="TEST_RETRY_KEY",
-            model="test-model",
-        )
+        config = ProviderConfig(api_key_env="TEST_RETRY_KEY")
         os.environ["TEST_RETRY_KEY"] = "test-key"
-        provider = OpenRouterProvider(config)
+        provider = OpenRouterProvider(config, "test-model")
         os.environ.pop("TEST_RETRY_KEY", None)
         return provider
 
@@ -144,12 +132,9 @@ class TestMessageConversion:
     @pytest.fixture
     def provider(self) -> OpenRouterProvider:
         """Create a provider for testing."""
-        config = ProviderConfig(
-            api_key_env="TEST_MSG_KEY",
-            model="test-model",
-        )
+        config = ProviderConfig(api_key_env="TEST_MSG_KEY")
         os.environ["TEST_MSG_KEY"] = "test-key"
-        provider = OpenRouterProvider(config)
+        provider = OpenRouterProvider(config, "test-model")
         os.environ.pop("TEST_MSG_KEY", None)
         return provider
 
@@ -188,12 +173,9 @@ class TestHeaders:
     @pytest.fixture
     def provider(self) -> OpenRouterProvider:
         """Create a provider for testing."""
-        config = ProviderConfig(
-            api_key_env="TEST_HDR_KEY",
-            model="test-model",
-        )
+        config = ProviderConfig(api_key_env="TEST_HDR_KEY")
         os.environ["TEST_HDR_KEY"] = "my-api-key"
-        provider = OpenRouterProvider(config)
+        provider = OpenRouterProvider(config, "test-model")
         os.environ.pop("TEST_HDR_KEY", None)
         return provider
 
@@ -212,12 +194,9 @@ class TestRawLogCallback:
     @pytest.fixture
     def provider(self) -> OpenRouterProvider:
         """Create a provider for testing."""
-        config = ProviderConfig(
-            api_key_env="TEST_LOG_KEY",
-            model="test-model",
-        )
+        config = ProviderConfig(api_key_env="TEST_LOG_KEY")
         os.environ["TEST_LOG_KEY"] = "test-key"
-        provider = OpenRouterProvider(config)
+        provider = OpenRouterProvider(config, "test-model")
         os.environ.pop("TEST_LOG_KEY", None)
         return provider
 

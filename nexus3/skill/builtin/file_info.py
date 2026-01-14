@@ -3,7 +3,7 @@
 import asyncio
 import json
 import stat
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
@@ -96,7 +96,7 @@ class FileInfoSkill(FileSkill):
                     file_type = "other"
 
                 # Format modification time in ISO format
-                mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc)
+                mtime = datetime.fromtimestamp(st.st_mtime, tz=UTC)
 
                 return {
                     "path": str(p.resolve()),
