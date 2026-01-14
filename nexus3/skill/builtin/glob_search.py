@@ -7,7 +7,7 @@ from typing import Any
 from nexus3.core.errors import PathSecurityError
 from nexus3.core.paths import validate_path
 from nexus3.core.types import ToolResult
-from nexus3.skill.base import FileSkill, file_skill_factory, validate_skill_parameters
+from nexus3.skill.base import FileSkill, file_skill_factory
 
 
 class GlobSkill(FileSkill):
@@ -53,7 +53,6 @@ class GlobSkill(FileSkill):
             "required": ["pattern"]
         }
 
-    @validate_skill_parameters()
     async def execute(
         self,
         pattern: str = "",

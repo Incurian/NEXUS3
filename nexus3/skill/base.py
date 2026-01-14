@@ -156,6 +156,44 @@ def _format_validation_error(error: Any, skill_name: str) -> str:
     return f"{skill_name}: {error.message}"
 
 
+def _wrap_with_validation(skill: "Skill") -> None:
+    """Wrap a skill's execute method with parameter validation.
+
+    This is called by factory functions to automatically add validation
+    to all skills created through the standard factories.
+
+    Args:
+        skill: The skill instance to wrap. Modified in place.
+    """
+    import jsonschema
+
+    original_execute = skill.execute  # Already bound method
+
+    @wraps(original_execute)
+    async def validated_execute(**kwargs: Any) -> ToolResult:
+        schema = skill.parameters
+
+        # Validate against JSON Schema
+        try:
+            jsonschema.validate(kwargs, schema)
+        except jsonschema.ValidationError as e:
+            return ToolResult(error=_format_validation_error(e, skill.name))
+
+        # Get known properties from schema
+        schema_props = set(schema.get("properties", {}).keys())
+
+        # Filter to known properties + allowed internal params
+        validated = {
+            k: v
+            for k, v in kwargs.items()
+            if k in schema_props or k in ALLOWED_INTERNAL_PARAMS
+        }
+
+        return await original_execute(**validated)
+
+    skill.execute = validated_execute  # type: ignore[method-assign]
+
+
 @runtime_checkable
 class Skill(Protocol):
     """Protocol for all skills.
@@ -451,7 +489,9 @@ def file_skill_factory(cls: type[_T]) -> Callable[["ServiceContainer"], _T]:
     """
     def factory(services: "ServiceContainer") -> _T:
         allowed_paths: list[Path] | None = services.get("allowed_paths")
-        return cls(allowed_paths=allowed_paths)
+        skill = cls(allowed_paths=allowed_paths)
+        _wrap_with_validation(skill)
+        return skill
 
     # Also attach as class attribute for convenience
     cls.factory = factory  # type: ignore[attr-defined]
@@ -635,7 +675,9 @@ def nexus_skill_factory(cls: type[_NS]) -> Callable[["ServiceContainer"], _NS]:
         A factory function that creates instances of the skill.
     """
     def factory(services: "ServiceContainer") -> _NS:
-        return cls(services)
+        skill = cls(services)
+        _wrap_with_validation(skill)
+        return skill
 
     cls.factory = factory  # type: ignore[attr-defined]
     return factory
@@ -832,7 +874,9 @@ def execution_skill_factory(cls: type["ExecutionSkill"]) -> Callable[["ServiceCo
         A factory function that creates instances of the skill.
     """
     def factory(services: "ServiceContainer") -> "ExecutionSkill":
-        return cls()
+        skill = cls()
+        _wrap_with_validation(skill)
+        return skill
 
     cls.factory = factory  # type: ignore[attr-defined]
     return factory
@@ -1006,7 +1050,9 @@ def filtered_command_skill_factory(cls: type[_FC]) -> Callable[["ServiceContaine
         from nexus3.core.permissions import PermissionLevel
         allowed_paths: list[Path] | None = services.get("allowed_paths")
         permission_level: PermissionLevel | None = services.get("permission_level")
-        return cls(allowed_paths=allowed_paths, permission_level=permission_level)
+        skill = cls(allowed_paths=allowed_paths, permission_level=permission_level)
+        _wrap_with_validation(skill)
+        return skill
 
     cls.factory = factory  # type: ignore[attr-defined]
     return factory

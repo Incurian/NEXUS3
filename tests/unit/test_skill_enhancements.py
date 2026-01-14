@@ -3,13 +3,24 @@
 import asyncio
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
-from nexus3.skill.builtin.glob_search import GlobSkill
-from nexus3.skill.builtin.grep import GrepSkill
-from nexus3.skill.builtin.read_file import ReadFileSkill
+from nexus3.skill.builtin.glob_search import GlobSkill, glob_factory
+from nexus3.skill.builtin.grep import GrepSkill, grep_factory
+from nexus3.skill.builtin.read_file import ReadFileSkill, read_file_factory
+
+
+class MockServiceContainer:
+    """Mock ServiceContainer for testing skills with factories."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._data = kwargs
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data.get(key, default)
 
 
 class TestReadFileOffsetLimit:
@@ -17,7 +28,9 @@ class TestReadFileOffsetLimit:
 
     @pytest.fixture
     def skill(self) -> ReadFileSkill:
-        return ReadFileSkill()
+        # Use factory to get validation wrapper
+        services = MockServiceContainer(allowed_paths=None)
+        return read_file_factory(services)
 
     @pytest.fixture
     def test_file(self, tmp_path: Path) -> Path:
@@ -90,7 +103,9 @@ class TestGlobExclude:
 
     @pytest.fixture
     def skill(self) -> GlobSkill:
-        return GlobSkill()
+        # Use factory to get validation wrapper
+        services = MockServiceContainer(allowed_paths=None)
+        return glob_factory(services)
 
     @pytest.fixture
     def test_dir(self, tmp_path: Path) -> Path:
@@ -166,7 +181,9 @@ class TestGrepIncludeContext:
 
     @pytest.fixture
     def skill(self) -> GrepSkill:
-        return GrepSkill()
+        # Use factory to get validation wrapper
+        services = MockServiceContainer(allowed_paths=None)
+        return grep_factory(services)
 
     @pytest.fixture
     def test_dir(self, tmp_path: Path) -> Path:
