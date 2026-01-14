@@ -5,7 +5,7 @@ from typing import Any
 
 from nexus3.core.errors import PathSecurityError
 from nexus3.core.types import ToolResult
-from nexus3.skill.base import FileSkill, file_skill_factory
+from nexus3.skill.base import FileSkill, file_skill_factory, validate_skill_parameters
 
 
 class WriteFileSkill(FileSkill):
@@ -44,6 +44,7 @@ class WriteFileSkill(FileSkill):
             "required": ["path", "content"]
         }
 
+    @validate_skill_parameters()
     async def execute(self, path: str = "", content: str = "", **kwargs: Any) -> ToolResult:
         """Write content to the specified file.
 
@@ -55,9 +56,7 @@ class WriteFileSkill(FileSkill):
         Returns:
             ToolResult with success message or error
         """
-        if not path:
-            return ToolResult(error="Path is required")
-
+        # Note: 'path' and 'content' required by schema
         try:
             # Validate path (resolves symlinks, checks allowed_paths if set)
             p = self._validate_path(path)

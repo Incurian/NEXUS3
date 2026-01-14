@@ -17,19 +17,143 @@ import asyncio
 import json
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
+from functools import wraps
 from pathlib import Path
 
 # Import ServiceContainer type for factory decorator
 # Using TYPE_CHECKING to avoid circular imports
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Any, Coroutine, Protocol, TypeVar, runtime_checkable
 
 from nexus3.core.paths import validate_path
 from nexus3.core.types import ToolResult
+from nexus3.core.validation import ALLOWED_INTERNAL_PARAMS, ValidationError
 
 if TYPE_CHECKING:
     from nexus3.client import NexusClient
     from nexus3.core.permissions import PermissionLevel
     from nexus3.skill.services import ServiceContainer
+
+
+# =============================================================================
+# Parameter Validation Decorator
+# =============================================================================
+
+def validate_skill_parameters(
+    strict: bool = False,
+) -> Callable[
+    [Callable[..., Coroutine[Any, Any, ToolResult]]],
+    Callable[..., Coroutine[Any, Any, ToolResult]],
+]:
+    """Decorator for skill execute() methods that validates kwargs against the skill's schema.
+
+    Validates parameters using JSON Schema before calling the decorated method.
+    Returns a ToolResult with error on validation failure instead of raising.
+
+    Args:
+        strict: If True, reject unexpected parameters (beyond ALLOWED_INTERNAL_PARAMS).
+                If False (default), unknown params are filtered out with a warning.
+
+    Usage:
+        class MySkill(FileSkill):
+            @validate_skill_parameters()
+            async def execute(self, path: str = "", **kwargs) -> ToolResult:
+                # 'path' is guaranteed to be valid if we reach here
+                ...
+
+    Notes:
+        - Requires the skill instance to have a `parameters` property (JSON Schema).
+        - This is defense-in-depth; session.py also validates before calling execute().
+        - Useful for testing skills directly without going through session layer.
+    """
+    import jsonschema
+
+    def decorator(
+        func: Callable[..., Coroutine[Any, Any, ToolResult]],
+    ) -> Callable[..., Coroutine[Any, Any, ToolResult]]:
+        @wraps(func)
+        async def wrapper(self: "Skill", **kwargs: Any) -> ToolResult:
+            schema = self.parameters
+
+            # Validate against JSON Schema
+            try:
+                jsonschema.validate(kwargs, schema)
+            except jsonschema.ValidationError as e:
+                # Format a user-friendly error message
+                return ToolResult(error=_format_validation_error(e, self.name))
+
+            # Get known properties from schema
+            schema_props = set(schema.get("properties", {}).keys())
+
+            # Check for unexpected parameters
+            provided = set(kwargs.keys())
+            extras = provided - schema_props - ALLOWED_INTERNAL_PARAMS
+
+            if extras:
+                if strict:
+                    return ToolResult(
+                        error=f"Unexpected parameters for {self.name}: {sorted(extras)}"
+                    )
+                # Non-strict: filter out extras (session.py logs a warning)
+
+            # Filter to known properties + allowed internal params
+            validated = {
+                k: v
+                for k, v in kwargs.items()
+                if k in schema_props or k in ALLOWED_INTERNAL_PARAMS
+            }
+
+            return await func(self, **validated)
+
+        return wrapper
+
+    return decorator
+
+
+def _format_validation_error(error: Any, skill_name: str) -> str:
+    """Format a jsonschema ValidationError into a user-friendly message.
+
+    Args:
+        error: The jsonschema validation error.
+        skill_name: Name of the skill for context.
+
+    Returns:
+        Human-readable error message.
+    """
+    # Extract the path to the problematic field
+    path = ".".join(str(p) for p in error.absolute_path) if error.absolute_path else ""
+
+    # Common error types with friendly messages
+    validator = error.validator
+
+    if validator == "required":
+        # error.message is like "'path' is a required property"
+        return f"{skill_name}: {error.message}"
+
+    if validator == "type":
+        # error.message is like "'foo' is not of type 'integer'"
+        if path:
+            return f"{skill_name}: Parameter '{path}' has wrong type - {error.message}"
+        return f"{skill_name}: {error.message}"
+
+    if validator == "enum":
+        if path:
+            return f"{skill_name}: Parameter '{path}' must be one of {error.validator_value}"
+        return f"{skill_name}: Value must be one of {error.validator_value}"
+
+    if validator == "minimum" or validator == "maximum":
+        if path:
+            return f"{skill_name}: Parameter '{path}' {error.message}"
+        return f"{skill_name}: {error.message}"
+
+    if validator == "minLength" or validator == "maxLength":
+        if path:
+            return f"{skill_name}: Parameter '{path}' {error.message}"
+        return f"{skill_name}: {error.message}"
+
+    # Fallback: use jsonschema's message
+    if path:
+        return f"{skill_name}: Parameter '{path}' - {error.message}"
+    return f"{skill_name}: {error.message}"
 
 
 @runtime_checkable

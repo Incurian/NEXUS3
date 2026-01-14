@@ -5,7 +5,7 @@ from typing import Any
 
 from nexus3.core.errors import PathSecurityError
 from nexus3.core.types import ToolResult
-from nexus3.skill.base import FileSkill, file_skill_factory
+from nexus3.skill.base import FileSkill, file_skill_factory, validate_skill_parameters
 
 
 class ReadFileSkill(FileSkill):
@@ -37,6 +37,7 @@ class ReadFileSkill(FileSkill):
                 "offset": {
                     "type": "integer",
                     "description": "Line number to start reading from (1-indexed, default: 1)",
+                    "minimum": 1,
                     "default": 1
                 },
                 "limit": {
@@ -47,6 +48,7 @@ class ReadFileSkill(FileSkill):
             "required": ["path"]
         }
 
+    @validate_skill_parameters()
     async def execute(
         self,
         path: str = "",
@@ -64,13 +66,7 @@ class ReadFileSkill(FileSkill):
         Returns:
             ToolResult with file contents in output, or error message in error
         """
-        if not path:
-            return ToolResult(error="No path provided")
-
-        # Validate offset
-        if offset < 1:
-            return ToolResult(error="Offset must be at least 1 (1-indexed)")
-
+        # Note: 'path' required by schema, 'offset' minimum:1 enforced by schema
         try:
             # Validate path (resolves symlinks, checks allowed_paths if set)
             p = self._validate_path(path)

@@ -5,7 +5,7 @@ from typing import Any
 
 from nexus3.core.errors import PathSecurityError
 from nexus3.core.types import ToolResult
-from nexus3.skill.base import FileSkill, file_skill_factory
+from nexus3.skill.base import FileSkill, file_skill_factory, validate_skill_parameters
 
 
 class EditFileSkill(FileSkill):
@@ -72,6 +72,7 @@ class EditFileSkill(FileSkill):
             "required": ["path"]
         }
 
+    @validate_skill_parameters()
     async def execute(
         self,
         path: str = "",
@@ -97,9 +98,7 @@ class EditFileSkill(FileSkill):
         Returns:
             ToolResult with success message or error
         """
-        if not path:
-            return ToolResult(error="Path is required")
-
+        # Note: 'path' required by schema
         # Determine which mode to use
         string_mode = old_string is not None
         line_mode = start_line is not None

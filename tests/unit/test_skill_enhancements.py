@@ -81,7 +81,8 @@ class TestReadFileOffsetLimit:
         """Offset less than 1 returns error."""
         result = await skill.execute(path=str(test_file), offset=0)
         assert result.error is not None
-        assert "at least 1" in result.error
+        # JSON Schema validation produces "less than the minimum of 1"
+        assert "minimum" in result.error.lower() or "less than" in result.error.lower()
 
 
 class TestGlobExclude:
