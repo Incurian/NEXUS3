@@ -550,7 +550,7 @@ A comprehensive code review was completed (2026-01-13) using 24 NEXUS3 subagents
 - [x] Provider timeout/retry wiring - config values to httpx client
 
 **Medium (2-4 hours, multiple files):**
-- [ ] Logging completion (`06-logging.md`) - add to client.py (skill execution logging done in session.py)
+- [x] Logging completion (`06-logging.md`) - RPC layer, session.py, client.py all have structured logging
 - [ ] Symlink security (`10-symlink-security.md`) - universal checks in path utilities
 - [ ] Skill validation (`11-skill-validation.md`) - validate params before execute
 - [ ] Exception hierarchy (`13-exception-hierarchy.md`) - unify under NexusError

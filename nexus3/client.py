@@ -1,5 +1,6 @@
 """Async HTTP client for communicating with Nexus JSON-RPC servers."""
 
+import logging
 from typing import Any, cast
 from urllib.parse import urlparse
 
@@ -9,6 +10,8 @@ from nexus3.core.errors import NexusError
 from nexus3.rpc.auth import discover_api_key
 from nexus3.rpc.protocol import ParseError, parse_response, serialize_request
 from nexus3.rpc.types import Request, Response
+
+logger = logging.getLogger(__name__)
 
 
 def _get_default_port() -> int:
@@ -59,6 +62,7 @@ class NexusClient:
         self._api_key = api_key
         self._client: httpx.AsyncClient | None = None
         self._request_id = 0
+        logger.debug("NexusClient initialized: url=%s, timeout=%s", url, timeout)
 
     @classmethod
     def with_auto_auth(
@@ -84,6 +88,10 @@ class NexusClient:
         parsed = urlparse(url)
         port = parsed.port or _get_default_port()
         api_key = discover_api_key(port=port)
+        if api_key:
+            logger.debug("Auto-discovered API key for port %d", port)
+        else:
+            logger.debug("No API key found for port %d", port)
         return cls(url=url, timeout=timeout, api_key=api_key)
 
     async def __aenter__(self) -> "NexusClient":
@@ -130,6 +138,7 @@ class NexusClient:
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
 
+        logger.debug("RPC call: method=%s, id=%s", method, request.id)
         try:
             response = await self._client.post(
                 self._url,
@@ -138,11 +147,14 @@ class NexusClient:
             )
             return parse_response(response.text)
         except httpx.ConnectError as e:
+            logger.warning("Connection failed to %s: %s", self._url, e)
             raise ClientError(f"Connection failed: {e}") from e
         except httpx.TimeoutException as e:
+            logger.warning("Request timed out: method=%s, timeout=%s", method, self._timeout)
             raise ClientError(f"Request timed out: {e}") from e
         except ParseError as e:
             # Server returned non-JSON-RPC response (likely HTTP error)
+            logger.warning("Invalid server response for method=%s: %s", method, e)
             raise ClientError(f"Invalid server response: {e}") from e
 
     def _check(self, response: Response) -> Any:
@@ -160,6 +172,7 @@ class NexusClient:
         if response.error:
             code = response.error.get("code", -1)
             message = response.error.get("message", "Unknown error")
+            logger.warning("RPC error %d: %s", code, message)
             raise ClientError(f"RPC error {code}: {message}")
         return response.result
 
