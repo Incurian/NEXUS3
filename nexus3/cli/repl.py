@@ -558,8 +558,12 @@ async def run_repl(
                     client_args = dict(api_key=api_key, timeout=5.0)
                     async with NexusClient(global_url, **client_args) as shutdown_client:
                         await shutdown_client.call("shutdown_server")
-                    # Give server time to shutdown
-                    await asyncio.sleep(0.5)
+                    # Wait for server to fully release the port
+                    for _ in range(20):  # Up to 2 seconds
+                        await asyncio.sleep(0.1)
+                        result = await detect_server(effective_port)
+                        if result == DetectionResult.NO_SERVER:
+                            break
                 except Exception:
                     pass  # Server might already be gone
                 # Fall through to start new embedded server
@@ -1392,7 +1396,9 @@ async def run_repl(
     http_task.cancel()
     try:
         await http_task
-    except asyncio.CancelledError:
+    except (asyncio.CancelledError, OSError):
+        # CancelledError: normal cancellation
+        # OSError: server failed to start (e.g., port already in use)
         pass
 
     # 3. Delete the API key file

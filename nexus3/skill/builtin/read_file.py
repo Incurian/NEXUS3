@@ -1,36 +1,21 @@
 """Read file skill for reading file contents."""
 
 import asyncio
-from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import normalize_path, validate_sandbox
 from nexus3.core.types import ToolResult
-from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import FileSkill, file_skill_factory
 
 
-class ReadFileSkill:
+class ReadFileSkill(FileSkill):
     """Skill that reads the contents of a file.
 
     Returns the file contents as text, or an error if the file
     cannot be read.
 
-    If allowed_paths is provided, path validation is performed to ensure
-    the file is within the sandbox. Otherwise, any path is allowed.
+    Inherits path validation from FileSkill.
     """
-
-    def __init__(self, allowed_paths: list[Path] | None = None) -> None:
-        """Initialize ReadFileSkill.
-
-        Args:
-            allowed_paths: List of allowed directories for path validation.
-                - None: No sandbox validation (unrestricted access)
-                - []: Empty list means NO paths allowed (all reads denied)
-                - [Path(...)]: Only allow reads within these directories
-        """
-        # None = unrestricted, [] = deny all, [paths...] = only within these
-        self._allowed_paths = allowed_paths
 
     @property
     def name(self) -> str:
@@ -87,11 +72,8 @@ class ReadFileSkill:
             return ToolResult(error="Offset must be at least 1 (1-indexed)")
 
         try:
-            # Validate sandbox if allowed_paths is configured
-            if self._allowed_paths is not None:
-                p = validate_sandbox(path, self._allowed_paths)
-            else:
-                p = normalize_path(path)
+            # Validate path (resolves symlinks, checks allowed_paths if set)
+            p = self._validate_path(path)
 
             # Use async file I/O to avoid blocking
             content = await asyncio.to_thread(p.read_text, encoding="utf-8")
@@ -128,15 +110,5 @@ class ReadFileSkill:
             return ToolResult(error=f"Error reading file: {e}")
 
 
-def read_file_factory(services: ServiceContainer) -> ReadFileSkill:
-    """Factory function for ReadFileSkill.
-
-    Args:
-        services: ServiceContainer for dependency injection. If it contains
-            'allowed_paths', sandbox validation will be enabled.
-
-    Returns:
-        New ReadFileSkill instance
-    """
-    allowed_paths: list[Path] | None = services.get("allowed_paths")
-    return ReadFileSkill(allowed_paths=allowed_paths)
+# Factory for dependency injection
+read_file_factory = file_skill_factory(ReadFileSkill)

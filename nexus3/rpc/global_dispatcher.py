@@ -16,7 +16,8 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 
-from nexus3.core.errors import NexusError
+from nexus3.core.errors import NexusError, PathSecurityError
+from nexus3.core.paths import validate_path
 
 logger = logging.getLogger(__name__)
 from nexus3.rpc.dispatcher import InvalidParamsError
@@ -134,7 +135,7 @@ class GlobalDispatcher:
             return make_error_response(request.id, INTERNAL_ERROR, e.message)
 
         except Exception as e:
-            logger.error("Unexpected error dispatching global method '%s': %s", method, e, exc_info=True)
+            logger.error("Unexpected error dispatching global method '%s': %s", request.method, e, exc_info=True)
             if request.id is None:
                 return None
             return make_error_response(
@@ -245,7 +246,11 @@ class GlobalDispatcher:
                 raise InvalidParamsError(
                     f"cwd must be string, got: {type(cwd_param).__name__}"
                 )
-            cwd_path = Path(cwd_param).resolve()
+            try:
+                # Use validate_path for consistent path resolution (follows symlinks)
+                cwd_path = validate_path(cwd_param, allowed_paths=None)
+            except PathSecurityError as e:
+                raise InvalidParamsError(f"cwd invalid: {e.message}")
             if not cwd_path.exists():
                 raise InvalidParamsError(f"cwd does not exist: {cwd_param}")
             if not cwd_path.is_dir():
@@ -287,16 +292,10 @@ class GlobalDispatcher:
             if cwd_path is not None:
                 parent_allowed = parent_permissions.effective_policy.allowed_paths
                 if parent_allowed is not None:
-                    # Check if cwd is within any of parent's allowed paths
-                    cwd_allowed = False
-                    for allowed in parent_allowed:
-                        try:
-                            cwd_path.relative_to(allowed)
-                            cwd_allowed = True
-                            break
-                        except ValueError:
-                            continue
-                    if not cwd_allowed:
+                    try:
+                        # Use validate_path for consistent containment check
+                        validate_path(cwd_path, allowed_paths=parent_allowed)
+                    except PathSecurityError:
                         raise InvalidParamsError(
                             f"cwd '{cwd_path}' is outside parent's allowed paths"
                         )

@@ -5,31 +5,18 @@ from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import normalize_path, validate_sandbox
+from nexus3.core.paths import validate_path
 from nexus3.core.types import ToolResult
-from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import FileSkill, file_skill_factory
 
 
-class GlobSkill:
+class GlobSkill(FileSkill):
     """Skill that finds files matching a glob pattern.
 
     Supports standard glob patterns like *.py, **/*.txt, etc.
 
-    If allowed_paths is provided, both the base path and all results
-    are validated against the sandbox.
+    Inherits path validation from FileSkill.
     """
-
-    def __init__(self, allowed_paths: list[Path] | None = None) -> None:
-        """Initialize GlobSkill.
-
-        Args:
-            allowed_paths: List of allowed directories for path validation.
-                - None: No sandbox validation (unrestricted access)
-                - []: Empty list means NO paths allowed (all searches denied)
-                - [Path(...)]: Only allow searches within these directories
-        """
-        # None = unrestricted, [] = deny all, [paths...] = only within these
-        self._allowed_paths = allowed_paths
 
     @property
     def name(self) -> str:
@@ -89,11 +76,8 @@ class GlobSkill:
             return ToolResult(error="Pattern is required")
 
         try:
-            # Validate sandbox if allowed_paths is configured
-            if self._allowed_paths is not None:
-                base_path = validate_sandbox(path, self._allowed_paths)
-            else:
-                base_path = normalize_path(path)
+            # Validate path (resolves symlinks, checks allowed_paths if set)
+            base_path = self._validate_path(path)
 
             # Verify base path exists and is a directory
             is_dir = await asyncio.to_thread(base_path.is_dir)
@@ -109,7 +93,7 @@ class GlobSkill:
                     # If sandbox is active, verify each result is within sandbox
                     if self._allowed_paths is not None:
                         try:
-                            validate_sandbox(match, self._allowed_paths)
+                            validate_path(match, allowed_paths=self._allowed_paths)
                         except PathSecurityError:
                             continue  # Skip results outside sandbox
 
@@ -155,15 +139,5 @@ class GlobSkill:
             return ToolResult(error=f"Error searching files: {e}")
 
 
-def glob_factory(services: ServiceContainer) -> GlobSkill:
-    """Factory function for GlobSkill.
-
-    Args:
-        services: ServiceContainer for dependency injection. If it contains
-            'allowed_paths', sandbox validation will be enabled.
-
-    Returns:
-        New GlobSkill instance
-    """
-    allowed_paths: list[Path] | None = services.get("allowed_paths")
-    return GlobSkill(allowed_paths=allowed_paths)
+# Factory for dependency injection
+glob_factory = file_skill_factory(GlobSkill)

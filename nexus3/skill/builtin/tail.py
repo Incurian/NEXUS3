@@ -1,35 +1,21 @@
 """Tail skill for reading last N lines of a file."""
 
 import asyncio
-from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import normalize_path, validate_sandbox
 from nexus3.core.types import ToolResult
-from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import FileSkill, file_skill_factory
 
 
-class TailSkill:
+class TailSkill(FileSkill):
     """Skill that reads the last N lines of a file.
 
     More intuitive than negative offsets for common use cases like
     reading log files or recent output.
 
-    If allowed_paths is provided, path validation is performed to ensure
-    the file is within the sandbox. Otherwise, any path is allowed.
+    Inherits path validation from FileSkill.
     """
-
-    def __init__(self, allowed_paths: list[Path] | None = None) -> None:
-        """Initialize TailSkill.
-
-        Args:
-            allowed_paths: List of allowed directories for path validation.
-                - None: No sandbox validation (unrestricted access)
-                - []: Empty list means NO paths allowed (all reads denied)
-                - [Path(...)]: Only allow reads within these directories
-        """
-        self._allowed_paths = allowed_paths
 
     @property
     def name(self) -> str:
@@ -79,11 +65,8 @@ class TailSkill:
             return ToolResult(error="Lines must be at least 1")
 
         try:
-            # Validate sandbox if allowed_paths is configured
-            if self._allowed_paths is not None:
-                p = validate_sandbox(path, self._allowed_paths)
-            else:
-                p = normalize_path(path)
+            # Validate path (resolves symlinks, checks allowed_paths if set)
+            p = self._validate_path(path)
 
             # Use async file I/O to avoid blocking
             content = await asyncio.to_thread(p.read_text, encoding="utf-8")
@@ -123,15 +106,5 @@ class TailSkill:
             return ToolResult(error=f"Error reading file: {e}")
 
 
-def tail_factory(services: ServiceContainer) -> TailSkill:
-    """Factory function for TailSkill.
-
-    Args:
-        services: ServiceContainer for dependency injection. If it contains
-            'allowed_paths', sandbox validation will be enabled.
-
-    Returns:
-        New TailSkill instance
-    """
-    allowed_paths: list[Path] | None = services.get("allowed_paths")
-    return TailSkill(allowed_paths=allowed_paths)
+# Factory for dependency injection
+tail_factory = file_skill_factory(TailSkill)

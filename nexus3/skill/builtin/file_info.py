@@ -4,13 +4,11 @@ import asyncio
 import json
 import stat
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import normalize_path, validate_sandbox
 from nexus3.core.types import ToolResult
-from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import FileSkill, file_skill_factory
 
 
 def _format_size(size_bytes: int) -> str:
@@ -34,26 +32,14 @@ def _format_permissions(mode: int) -> str:
     return "".join(perms)
 
 
-class FileInfoSkill:
+class FileInfoSkill(FileSkill):
     """Skill that gets file or directory metadata.
 
     Returns information like size, modification time, type, and permissions
     without needing bash access.
 
-    If allowed_paths is provided, path validation is performed to ensure
-    the path is within the sandbox. Otherwise, any path is allowed.
+    Inherits path validation from FileSkill.
     """
-
-    def __init__(self, allowed_paths: list[Path] | None = None) -> None:
-        """Initialize FileInfoSkill.
-
-        Args:
-            allowed_paths: List of allowed directories for path validation.
-                - None: No sandbox validation (unrestricted access)
-                - []: Empty list means NO paths allowed
-                - [Path(...)]: Only allow stat within these directories
-        """
-        self._allowed_paths = allowed_paths
 
     @property
     def name(self) -> str:
@@ -89,11 +75,8 @@ class FileInfoSkill:
             return ToolResult(error="No path provided")
 
         try:
-            # Validate sandbox if allowed_paths is configured
-            if self._allowed_paths is not None:
-                p = validate_sandbox(path, self._allowed_paths)
-            else:
-                p = normalize_path(path)
+            # Validate path (resolves symlinks, checks allowed_paths if set)
+            p = self._validate_path(path)
 
             # Use async to avoid blocking on stat
             def do_stat() -> dict[str, Any]:
@@ -142,15 +125,5 @@ class FileInfoSkill:
             return ToolResult(error=f"Error getting file info: {e}")
 
 
-def file_info_factory(services: ServiceContainer) -> FileInfoSkill:
-    """Factory function for FileInfoSkill.
-
-    Args:
-        services: ServiceContainer for dependency injection. If it contains
-            'allowed_paths', sandbox validation will be enabled.
-
-    Returns:
-        New FileInfoSkill instance
-    """
-    allowed_paths: list[Path] | None = services.get("allowed_paths")
-    return FileInfoSkill(allowed_paths=allowed_paths)
+# Factory for dependency injection
+file_info_factory = file_skill_factory(FileInfoSkill)

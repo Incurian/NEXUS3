@@ -1,16 +1,14 @@
 """Edit file skill for making targeted edits to files."""
 
 import asyncio
-from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import normalize_path, validate_sandbox
 from nexus3.core.types import ToolResult
-from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import FileSkill, file_skill_factory
 
 
-class EditFileSkill:
+class EditFileSkill(FileSkill):
     """Skill that makes targeted edits to files.
 
     Supports two modes:
@@ -20,21 +18,8 @@ class EditFileSkill:
     String replacement is preferred as it's safer for multiple edits.
     Line-based edits should be done bottom-to-top to avoid line drift.
 
-    If allowed_paths is provided, path validation is performed to ensure
-    the file is within the sandbox.
+    Inherits path validation from FileSkill.
     """
-
-    def __init__(self, allowed_paths: list[Path] | None = None) -> None:
-        """Initialize EditFileSkill.
-
-        Args:
-            allowed_paths: List of allowed directories for path validation.
-                - None: No sandbox validation (unrestricted access)
-                - []: Empty list means NO paths allowed (all edits denied)
-                - [Path(...)]: Only allow edits within these directories
-        """
-        # None = unrestricted, [] = deny all, [paths...] = only within these
-        self._allowed_paths = allowed_paths
 
     @property
     def name(self) -> str:
@@ -126,11 +111,8 @@ class EditFileSkill:
             return ToolResult(error="Must provide either old_string (string mode) or start_line (line mode)")
 
         try:
-            # Validate sandbox if allowed_paths is configured
-            if self._allowed_paths is not None:
-                p = validate_sandbox(path, self._allowed_paths)
-            else:
-                p = normalize_path(path)
+            # Validate path (resolves symlinks, checks allowed_paths if set)
+            p = self._validate_path(path)
 
             # Read current content
             try:
@@ -243,15 +225,5 @@ class EditFileSkill:
         return ToolResult(output=result)
 
 
-def edit_file_factory(services: ServiceContainer) -> EditFileSkill:
-    """Factory function for EditFileSkill.
-
-    Args:
-        services: ServiceContainer for dependency injection. If it contains
-            'allowed_paths', sandbox validation will be enabled.
-
-    Returns:
-        New EditFileSkill instance
-    """
-    allowed_paths: list[Path] | None = services.get("allowed_paths")
-    return EditFileSkill(allowed_paths=allowed_paths)
+# Factory for dependency injection
+edit_file_factory = file_skill_factory(EditFileSkill)

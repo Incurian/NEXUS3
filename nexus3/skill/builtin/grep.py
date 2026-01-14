@@ -7,31 +7,18 @@ from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import normalize_path, validate_sandbox
+from nexus3.core.paths import validate_path
 from nexus3.core.types import ToolResult
-from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import FileSkill, file_skill_factory
 
 
-class GrepSkill:
+class GrepSkill(FileSkill):
     """Skill that searches file contents using regular expressions.
 
     Supports searching a single file or recursively searching a directory.
 
-    If allowed_paths is provided, path validation is performed to ensure
-    searches are within the sandbox.
+    Inherits path validation from FileSkill.
     """
-
-    def __init__(self, allowed_paths: list[Path] | None = None) -> None:
-        """Initialize GrepSkill.
-
-        Args:
-            allowed_paths: List of allowed directories for path validation.
-                - None: No sandbox validation (unrestricted access)
-                - []: Empty list means NO paths allowed (all searches denied)
-                - [Path(...)]: Only allow searches within these directories
-        """
-        # None = unrestricted, [] = deny all, [paths...] = only within these
-        self._allowed_paths = allowed_paths
 
     @property
     def name(self) -> str:
@@ -120,11 +107,8 @@ class GrepSkill:
             except re.error as e:
                 return ToolResult(error=f"Invalid regex pattern: {e}")
 
-            # Validate sandbox if allowed_paths is configured
-            if self._allowed_paths is not None:
-                search_path = validate_sandbox(path, self._allowed_paths)
-            else:
-                search_path = normalize_path(path)
+            # Validate path (resolves symlinks, checks allowed_paths if set)
+            search_path = self._validate_path(path)
 
             # Determine files to search
             is_file = await asyncio.to_thread(search_path.is_file)
@@ -176,7 +160,7 @@ class GrepSkill:
                 # Validate each file against sandbox
                 if self._allowed_paths is not None:
                     try:
-                        validate_sandbox(file_path, self._allowed_paths)
+                        validate_path(file_path, allowed_paths=self._allowed_paths)
                     except PathSecurityError:
                         continue
 
@@ -265,15 +249,5 @@ class GrepSkill:
             return ToolResult(error=f"Error searching: {e}")
 
 
-def grep_factory(services: ServiceContainer) -> GrepSkill:
-    """Factory function for GrepSkill.
-
-    Args:
-        services: ServiceContainer for dependency injection. If it contains
-            'allowed_paths', sandbox validation will be enabled.
-
-    Returns:
-        New GrepSkill instance
-    """
-    allowed_paths: list[Path] | None = services.get("allowed_paths")
-    return GrepSkill(allowed_paths=allowed_paths)
+# Factory for dependency injection
+grep_factory = file_skill_factory(GrepSkill)

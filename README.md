@@ -596,7 +596,19 @@ All skills have a configurable timeout (default: 30 seconds). Configure via `ski
 
 ## Adding Custom Skills
 
-NEXUS3's skill system is designed for extensibility. Here's how to add new tools with proper permission integration.
+NEXUS3's skill system is designed for extensibility with specialized base classes that handle common patterns.
+
+### Skill Type Hierarchy
+
+Choose the appropriate base class for your skill:
+
+| Base Class | Use Case | Examples |
+|------------|----------|----------|
+| `FileSkill` | File I/O with sandbox validation | read_file, write_file, glob |
+| `NexusSkill` | Agent control with server communication | nexus_send, nexus_create |
+| `ExecutionSkill` | Subprocess execution with timeout | bash, run_python |
+| `FilteredCommandSkill` | Permission-filtered CLI tools | git |
+| `BaseSkill` | Generic skills without shared infrastructure | sleep |
 
 ### Basic Skill Structure
 
@@ -889,6 +901,7 @@ Extensible tool system:
 
 - **Skill Protocol** - Interface for all skills (name, description, parameters, execute)
 - **BaseSkill** - Convenience base class
+- **Specialized Base Classes** - `FileSkill` (sandbox), `NexusSkill` (server), `ExecutionSkill` (subprocess), `FilteredCommandSkill` (permission-filtered CLI)
 - **SkillRegistry** - Factory-based registration with lazy instantiation
 - **ServiceContainer** - Simple dependency injection
 

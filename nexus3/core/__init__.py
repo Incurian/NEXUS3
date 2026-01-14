@@ -4,7 +4,7 @@ from nexus3.core.cancel import CancellationToken
 from nexus3.core.encoding import ENCODING, ENCODING_ERRORS, configure_stdio
 from nexus3.core.errors import ConfigError, NexusError, PathSecurityError, ProviderError
 from nexus3.core.interfaces import AsyncProvider
-from nexus3.core.paths import get_default_sandbox, validate_sandbox
+from nexus3.core.paths import get_default_sandbox, validate_path, validate_sandbox
 from nexus3.core.permissions import (
     AgentPermissions,
     PermissionDelta,
@@ -49,7 +49,8 @@ __all__ = [
     "ReasoningDelta",
     "ToolCallStarted",
     "StreamComplete",
-    # Path sandbox
+    # Path validation
+    "validate_path",
     "validate_sandbox",
     "get_default_sandbox",
     # URL validation

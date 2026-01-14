@@ -18,15 +18,35 @@ Example:
     tools = registry.get_definitions()
 """
 
-from nexus3.skill.base import BaseSkill, Skill
+from nexus3.skill.base import (
+    BaseSkill,
+    ExecutionSkill,
+    FileSkill,
+    FilteredCommandSkill,
+    NexusSkill,
+    Skill,
+    execution_skill_factory,
+    file_skill_factory,
+    filtered_command_skill_factory,
+    nexus_skill_factory,
+)
 from nexus3.skill.errors import SkillError, SkillExecutionError, SkillNotFoundError
 from nexus3.skill.registry import SkillFactory, SkillRegistry
 from nexus3.skill.services import ServiceContainer
 
 __all__ = [
-    # Protocol and base
+    # Protocol and base classes
     "Skill",
     "BaseSkill",
+    "FileSkill",
+    "NexusSkill",
+    "ExecutionSkill",
+    "FilteredCommandSkill",
+    # Factory decorators
+    "file_skill_factory",
+    "nexus_skill_factory",
+    "execution_skill_factory",
+    "filtered_command_skill_factory",
     # Registry
     "SkillRegistry",
     "SkillFactory",

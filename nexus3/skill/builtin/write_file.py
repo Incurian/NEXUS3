@@ -1,35 +1,20 @@
 """Write file skill for writing content to files."""
 
 import asyncio
-from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import normalize_path, validate_sandbox
 from nexus3.core.types import ToolResult
-from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import FileSkill, file_skill_factory
 
 
-class WriteFileSkill:
+class WriteFileSkill(FileSkill):
     """Skill that writes content to a file.
 
     Creates parent directories if needed. Overwrites existing files.
 
-    If allowed_paths is provided, path validation is performed to ensure
-    the file is within the sandbox. Otherwise, any path is allowed.
+    Inherits path validation from FileSkill.
     """
-
-    def __init__(self, allowed_paths: list[Path] | None = None) -> None:
-        """Initialize WriteFileSkill.
-
-        Args:
-            allowed_paths: List of allowed directories for path validation.
-                - None: No sandbox validation (unrestricted access)
-                - []: Empty list means NO paths allowed (all writes denied)
-                - [Path(...)]: Only allow writes within these directories
-        """
-        # None = unrestricted, [] = deny all, [paths...] = only within these
-        self._allowed_paths = allowed_paths
 
     @property
     def name(self) -> str:
@@ -74,11 +59,8 @@ class WriteFileSkill:
             return ToolResult(error="Path is required")
 
         try:
-            # Validate sandbox if allowed_paths is configured
-            if self._allowed_paths is not None:
-                p = validate_sandbox(path, self._allowed_paths)
-            else:
-                p = normalize_path(path)
+            # Validate path (resolves symlinks, checks allowed_paths if set)
+            p = self._validate_path(path)
 
             # Use async file I/O to avoid blocking
             await asyncio.to_thread(p.parent.mkdir, parents=True, exist_ok=True)
@@ -96,15 +78,5 @@ class WriteFileSkill:
             return ToolResult(error=f"Error writing file: {e}")
 
 
-def write_file_factory(services: ServiceContainer) -> WriteFileSkill:
-    """Factory function for WriteFileSkill.
-
-    Args:
-        services: ServiceContainer for dependency injection. If it contains
-            'allowed_paths', sandbox validation will be enabled.
-
-    Returns:
-        New WriteFileSkill instance
-    """
-    allowed_paths: list[Path] | None = services.get("allowed_paths")
-    return WriteFileSkill(allowed_paths=allowed_paths)
+# Factory for dependency injection
+write_file_factory = file_skill_factory(WriteFileSkill)

@@ -530,44 +530,101 @@ nexus --init-global-force     # Overwrite existing
 
 ---
 
-## Code Review & Remediation Plan
+## Code Review
 
 A comprehensive code review was completed (2026-01-13) using 24 NEXUS3 subagents. Results in `reviews/`:
-- `TRIAGE-SUMMARY.md` - 30 issues identified across security, architecture, quality
+- `TRIAGE-SUMMARY.md` - Issues identified across security, architecture, quality
 - `REMEDIATION-PLAN.md` - Master implementation guide
-- `remediation/*.md` - 17 detailed fix plans with code snippets
+- `remediation/*.md` - Detailed fix plans
 
-### Remediation by Ease (Easy → Hard)
+**Completed remediation:** Config validation, structured logging (RPC layer), port wiring, provider timeout/retry, path validation unification, skill type hierarchy.
 
-**Completed:**
-- [x] Config validation (`07-config-validation.md`) - ServerConfig, timeout/retries, config_version, path validators
-- [x] Delete openrouter.py (`17-quick-wins.md`) - removed duplicate provider
-- [x] Structured logging (`06-logging.md`) - added to RPC layer (http, auth, dispatcher, global_dispatcher)
+**Remaining:** See `reviews/REMEDIATION-PLAN.md` for outstanding items (bash/git security hardening, RPC decoupling).
 
-**Easy (1-2 hours, isolated changes):**
-- [x] Quick wins (`17-quick-wins.md`) - rate limiting, lobby recursion, deprecated executor, delete openrouter.py
-- [x] Port wiring (`02-port-config.md`) - serve/repl, client.py, client_commands.py, all nexus_* skills
-- [x] Provider timeout/retry wiring - config values to httpx client
+---
 
-**Medium (2-4 hours, multiple files):**
-- [x] Logging completion (`06-logging.md`) - RPC layer, session.py, client.py all have structured logging
-- [ ] Symlink security (`10-symlink-security.md`) - universal checks in path utilities
-- [ ] Skill validation (`11-skill-validation.md`) - validate params before execute
-- [ ] Exception hierarchy (`13-exception-hierarchy.md`) - unify under NexusError
-- [ ] Loader unification (`12-loader-unification.md`) - deprecate PromptLoader
+## Skill Type Hierarchy
 
-**Hard (4+ hours, architectural/security-critical):**
-- [ ] Bash skill injection (`01-bash-security.md`) - switch to subprocess list args
-- [ ] Git skill bypass (`09-git-security.md`) - proper arg parsing
-- [ ] RPC coupling (`04-rpc-decoupling.md`) - AgentAPI service injection
-- [ ] Permissions split (`03-permissions-split.md`) - break up monolith
+Skills are organized into base classes that provide shared infrastructure for common patterns. Each base class handles boilerplate so individual skills focus on their unique logic.
 
-**Deferred (low priority):**
-- Token caching (`08-performance.md`) - micro-optimization, tiktoken already fast
-- Compaction cache (`16-compaction-cache.md`) - micro-optimization, ~10ms savings
-- Display hardcoding (`14-display-config.md`) - works fine as-is
-- REPL split (`05-repl-split.md`) - large refactor, stable code
-- Windows ESC key (`15-windows-keys.md`) - platform we don't target
+### Hierarchy Overview
+
+```
+Skill (Protocol)
+├── BaseSkill         # Minimal abstract base (name, description, parameters, execute)
+├── FileSkill         # Path validation + allowed_paths handling
+├── NexusSkill        # Server communication (port discovery, client management)
+├── ExecutionSkill    # Subprocess execution (timeout, output formatting)
+└── FilteredCommandSkill  # Permission-based command filtering
+```
+
+### Base Classes
+
+| Base Class | Purpose | Skills Using It |
+|------------|---------|-----------------|
+| `FileSkill` | Path validation, symlink resolution, allowed_paths | read_file, write_file, edit_file, append_file, tail, file_info, list_directory, mkdir, copy_file, rename, regex_replace, glob, grep |
+| `NexusSkill` | Server URL building, API key discovery, client error handling | nexus_create, nexus_destroy, nexus_send, nexus_status, nexus_cancel, nexus_shutdown |
+| `ExecutionSkill` | Timeout enforcement, working dir resolution, output formatting | bash, run_python |
+| `FilteredCommandSkill` | Read-only command filtering, blocked pattern matching | git |
+
+### Creating New Skills
+
+**File operations** - inherit `FileSkill`:
+```python
+class MyFileSkill(FileSkill):
+    async def execute(self, path: str = "", **kwargs: Any) -> ToolResult:
+        validated = self._validate_path(path)  # Returns Path or ToolResult error
+        if isinstance(validated, ToolResult):
+            return validated
+        # Use validated path...
+
+my_file_skill_factory = file_skill_factory(MyFileSkill)
+```
+
+**Server communication** - inherit `NexusSkill`:
+```python
+class MyNexusSkill(NexusSkill):
+    async def execute(self, agent_id: str = "", port: int | None = None, **kwargs: Any) -> ToolResult:
+        return await self._execute_with_client(
+            port=port,
+            agent_id=agent_id,
+            operation=lambda client: client.some_method()
+        )
+
+my_nexus_skill_factory = nexus_skill_factory(MyNexusSkill)
+```
+
+**Subprocess execution** - inherit `ExecutionSkill`:
+```python
+class MyExecSkill(ExecutionSkill):
+    async def _create_process(self, work_dir: str | None) -> asyncio.subprocess.Process:
+        return await asyncio.create_subprocess_exec(...)
+
+    async def execute(self, timeout: int = 30, cwd: str | None = None, **kwargs: Any) -> ToolResult:
+        return await self._execute_subprocess(timeout=timeout, cwd=cwd, timeout_message="...")
+
+my_exec_skill_factory = execution_skill_factory(MyExecSkill)
+```
+
+**Command filtering** (e.g., docker, kubectl) - inherit `FilteredCommandSkill`:
+```python
+class MyFilteredSkill(FilteredCommandSkill):
+    def get_read_only_commands(self) -> frozenset[str]:
+        return frozenset({"ps", "logs", "inspect"})
+
+    def get_blocked_patterns(self) -> list[tuple[str, str]]:
+        return [("rm\\s+-f", "force remove is dangerous")]
+
+my_filtered_skill_factory = filtered_command_skill_factory(MyFilteredSkill)
+```
+
+**Utility/special logic** - inherit `BaseSkill` directly (catch-all for unique skills):
+```python
+class MySpecialSkill(BaseSkill):
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        # Custom logic without shared infrastructure
+        ...
+```
 
 ---
 

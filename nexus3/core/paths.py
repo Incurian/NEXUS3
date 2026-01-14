@@ -1,8 +1,82 @@
-"""Path normalization utilities for cross-platform path handling."""
+"""Path normalization and validation utilities for cross-platform path handling."""
 
 from pathlib import Path
 
 from nexus3.core.errors import PathSecurityError
+
+
+def validate_path(
+    path: str | Path,
+    allowed_paths: list[Path] | None = None,
+    blocked_paths: list[Path] | None = None,
+) -> Path:
+    """Universal path validation for all permission modes.
+
+    Resolves the path (following all symlinks) and validates against
+    allowed/blocked lists. This is the single entry point for all
+    path validation in the system.
+
+    Args:
+        path: Path to validate (can be relative, contain symlinks, etc.)
+        allowed_paths: If set, resolved path must be within one of these.
+                       None = unrestricted (TRUSTED/YOLO mode).
+                       Empty list [] = nothing allowed (always fails).
+        blocked_paths: Paths always denied regardless of allowed_paths.
+
+    Returns:
+        Resolved absolute path (all symlinks followed).
+
+    Raises:
+        PathSecurityError: If path is outside allowed or in blocked.
+    """
+    # Handle empty/None input
+    if not path:
+        path = "."
+
+    # Normalize and resolve (follows all symlinks)
+    if isinstance(path, str):
+        # Normalize Windows backslashes
+        path = path.replace("\\", "/")
+        path = Path(path)
+
+    try:
+        resolved = path.expanduser().resolve()
+    except (OSError, ValueError) as e:
+        raise PathSecurityError(str(path), f"Cannot resolve path: {e}") from e
+
+    # Check blocked first (applies to all modes)
+    if blocked_paths:
+        for blocked in blocked_paths:
+            try:
+                blocked_resolved = blocked.resolve()
+                if resolved.is_relative_to(blocked_resolved):
+                    raise PathSecurityError(
+                        str(path), f"Path is blocked: {blocked}"
+                    )
+            except (OSError, ValueError):
+                continue
+
+    # Check allowed (None = unrestricted)
+    if allowed_paths is not None:
+        # Empty list = nothing allowed
+        if not allowed_paths:
+            raise PathSecurityError(str(path), "No allowed paths configured")
+
+        for allowed in allowed_paths:
+            try:
+                allowed_resolved = allowed.resolve()
+                if resolved.is_relative_to(allowed_resolved):
+                    return resolved
+            except (OSError, ValueError):
+                continue
+
+        # Not in any allowed path
+        allowed_str = ", ".join(str(p) for p in allowed_paths)
+        raise PathSecurityError(
+            str(path), f"Path outside allowed directories. Allowed: [{allowed_str}]"
+        )
+
+    return resolved
 
 
 def normalize_path(path: str) -> Path:
@@ -11,24 +85,17 @@ def normalize_path(path: str) -> Path:
     Handles:
     - Windows backslashes (\\) converted to forward slashes
     - Tilde expansion (~) for home directory
-    - Resolves to absolute path
+    - Resolves to absolute path (follows symlinks)
+
+    This is a convenience wrapper around validate_path() with no restrictions.
 
     Args:
         path: The path string to normalize
 
     Returns:
-        Normalized Path object
+        Normalized, resolved Path object
     """
-    if not path:
-        return Path(".")
-
-    # Normalize Windows backslashes to forward slashes
-    normalized = path.replace("\\", "/")
-
-    # Create Path and expand user home
-    p = Path(normalized).expanduser()
-
-    return p
+    return validate_path(path, allowed_paths=None, blocked_paths=None)
 
 
 def normalize_path_str(path: str) -> str:
@@ -86,35 +153,11 @@ def get_default_sandbox() -> list[Path]:
     return [Path.cwd()]
 
 
-def _has_symlink_component(path: Path) -> bool:
-    """Check if any component of the path is a symlink.
-
-    Args:
-        path: Resolved absolute path to check
-
-    Returns:
-        True if any parent directory or the path itself is a symlink
-    """
-    # Check each component from root to the path
-    parts = path.parts
-    current = Path(parts[0])  # Start with root
-
-    for part in parts[1:]:
-        current = current / part
-        # Check if this component exists and is a symlink
-        # Use lstat to not follow the symlink
-        try:
-            if current.is_symlink():
-                return True
-        except OSError:
-            # Path component doesn't exist yet, that's okay
-            pass
-
-    return False
-
-
 def validate_sandbox(path: str | Path, allowed_paths: list[Path]) -> Path:
     """Validate path is within sandbox. Raises PathSecurityError if not.
+
+    This is a convenience wrapper around validate_path() for sandboxed mode.
+    Symlinks are allowed as long as they resolve to within allowed_paths.
 
     Args:
         path: Path to validate (can be relative or absolute)
@@ -127,43 +170,6 @@ def validate_sandbox(path: str | Path, allowed_paths: list[Path]) -> Path:
         Resolved absolute path if valid
 
     Raises:
-        PathSecurityError: If path is outside sandbox, involves symlinks,
-            or allowed_paths is empty (nothing allowed)
+        PathSecurityError: If path is outside sandbox or allowed_paths is empty.
     """
-    # [] = nothing allowed, always fails. Caller should skip validation for None.
-    if not allowed_paths:
-        raise PathSecurityError(str(path), "No allowed paths configured")
-
-    # Convert to Path if string
-    if isinstance(path, str):
-        path = Path(path)
-
-    # Resolve to absolute path (this also normalizes .. and .)
-    try:
-        resolved = path.resolve()
-    except (OSError, ValueError) as e:
-        raise PathSecurityError(str(path), f"Cannot resolve path: {e}") from e
-
-    # Block symlinks in any component of the path
-    if _has_symlink_component(resolved):
-        raise PathSecurityError(str(path), "Symlinks not allowed in path")
-
-    # Resolve allowed paths and check containment
-    for allowed in allowed_paths:
-        try:
-            allowed_resolved = allowed.resolve()
-        except (OSError, ValueError):
-            continue
-
-        try:
-            if resolved.is_relative_to(allowed_resolved):
-                return resolved
-        except (ValueError, TypeError):
-            continue
-
-    # Build helpful error message
-    allowed_str = ", ".join(str(p) for p in allowed_paths)
-    raise PathSecurityError(
-        str(path),
-        f"Path outside sandbox. Allowed: [{allowed_str}]"
-    )
+    return validate_path(path, allowed_paths=allowed_paths, blocked_paths=None)

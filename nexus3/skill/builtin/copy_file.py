@@ -2,35 +2,21 @@
 
 import asyncio
 import shutil
-from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import normalize_path, validate_sandbox
 from nexus3.core.types import ToolResult
-from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import FileSkill, file_skill_factory
 
 
-class CopyFileSkill:
+class CopyFileSkill(FileSkill):
     """Skill that copies a file to a new location.
 
     Preserves file metadata (permissions, timestamps) by default.
     Creates parent directories of destination if needed.
 
-    If allowed_paths is provided, both source and destination paths
-    are validated against the sandbox.
+    Inherits path validation from FileSkill.
     """
-
-    def __init__(self, allowed_paths: list[Path] | None = None) -> None:
-        """Initialize CopyFileSkill.
-
-        Args:
-            allowed_paths: List of allowed directories for path validation.
-                - None: No sandbox validation (unrestricted access)
-                - []: Empty list means NO paths allowed (all copies denied)
-                - [Path(...)]: Only allow copies within these directories
-        """
-        self._allowed_paths = allowed_paths
 
     @property
     def name(self) -> str:
@@ -86,13 +72,9 @@ class CopyFileSkill:
             return ToolResult(error="Destination path is required")
 
         try:
-            # Validate sandbox for both paths if configured
-            if self._allowed_paths is not None:
-                src_path = validate_sandbox(source, self._allowed_paths)
-                dst_path = validate_sandbox(destination, self._allowed_paths)
-            else:
-                src_path = normalize_path(source)
-                dst_path = normalize_path(destination)
+            # Validate both paths (resolves symlinks, checks allowed_paths if set)
+            src_path = self._validate_path(source)
+            dst_path = self._validate_path(destination)
 
             # Check source exists
             if not src_path.exists():
@@ -125,15 +107,5 @@ class CopyFileSkill:
             return ToolResult(error=f"Error copying file: {e}")
 
 
-def copy_file_factory(services: ServiceContainer) -> CopyFileSkill:
-    """Factory function for CopyFileSkill.
-
-    Args:
-        services: ServiceContainer for dependency injection. If it contains
-            'allowed_paths', sandbox validation will be enabled.
-
-    Returns:
-        New CopyFileSkill instance
-    """
-    allowed_paths: list[Path] | None = services.get("allowed_paths")
-    return CopyFileSkill(allowed_paths=allowed_paths)
+# Factory for dependency injection
+copy_file_factory = file_skill_factory(CopyFileSkill)

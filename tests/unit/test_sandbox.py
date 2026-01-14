@@ -124,7 +124,7 @@ class TestValidateSandbox:
         with pytest.raises(PathSecurityError) as exc_info:
             validate_sandbox(str(outside_file), [sandbox])
 
-        assert "outside sandbox" in exc_info.value.reason.lower()
+        assert "outside allowed directories" in exc_info.value.reason.lower()
 
     def test_path_traversal_outside_sandbox_raises_error(self, tmp_path):
         """Path traversal attempt outside sandbox raises PathSecurityError."""
@@ -137,7 +137,7 @@ class TestValidateSandbox:
         with pytest.raises(PathSecurityError) as exc_info:
             validate_sandbox(str(traversal_path), [sandbox])
 
-        assert "outside sandbox" in exc_info.value.reason.lower()
+        assert "outside allowed directories" in exc_info.value.reason.lower()
 
     def test_nested_path_traversal_outside_sandbox_raises_error(self, tmp_path):
         """Deeply nested path traversal outside sandbox raises PathSecurityError."""
@@ -150,7 +150,7 @@ class TestValidateSandbox:
         with pytest.raises(PathSecurityError) as exc_info:
             validate_sandbox(str(traversal_path), [sandbox])
 
-        assert "outside sandbox" in exc_info.value.reason.lower()
+        assert "outside allowed directories" in exc_info.value.reason.lower()
 
     def test_symlink_file_within_sandbox_resolves_to_target(self, tmp_path):
         """Symlink to file within sandbox resolves to target path.
@@ -225,7 +225,7 @@ class TestValidateSandbox:
 
         # The error message mentions "outside sandbox" since the resolved path
         # is outside the sandbox
-        assert "outside sandbox" in exc_info.value.reason.lower()
+        assert "outside allowed directories" in exc_info.value.reason.lower()
 
     def test_multiple_allowed_paths_any_valid(self, tmp_path):
         """Multiple allowed paths work - path valid if under ANY allowed path."""
@@ -271,7 +271,7 @@ class TestValidateSandbox:
         with pytest.raises(PathSecurityError) as exc_info:
             validate_sandbox(str(outside_file), [sandbox1, sandbox2])
 
-        assert "outside sandbox" in exc_info.value.reason.lower()
+        assert "outside allowed directories" in exc_info.value.reason.lower()
 
     def test_empty_allowed_paths_rejects_all(self, tmp_path):
         """Empty allowed_paths list rejects all paths."""

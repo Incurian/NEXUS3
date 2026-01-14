@@ -2,20 +2,18 @@
 
 import asyncio
 import re
-from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import normalize_path, validate_sandbox
 from nexus3.core.types import ToolResult
-from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import FileSkill, file_skill_factory
 
 # Safety limits
 MAX_REPLACEMENTS = 10000
 REGEX_TIMEOUT = 5.0  # seconds
 
 
-class RegexReplaceSkill:
+class RegexReplaceSkill(FileSkill):
     """Skill that performs regex-based find/replace in files.
 
     Uses Python's re.sub() with safety limits for catastrophic backtracking.
@@ -24,18 +22,9 @@ class RegexReplaceSkill:
     This is separate from edit_file to keep APIs clean:
     - edit_file: Exact string replacement (simple, fast)
     - regex_replace: Pattern matching (powerful, needs safety guards)
+
+    Inherits path validation from FileSkill.
     """
-
-    def __init__(self, allowed_paths: list[Path] | None = None) -> None:
-        """Initialize RegexReplaceSkill.
-
-        Args:
-            allowed_paths: List of allowed directories for path validation.
-                - None: No sandbox validation (unrestricted access)
-                - []: Empty list means NO paths allowed (all edits denied)
-                - [Path(...)]: Only allow edits within these directories
-        """
-        self._allowed_paths = allowed_paths
 
     @property
     def name(self) -> str:
@@ -135,11 +124,8 @@ class RegexReplaceSkill:
             return ToolResult(error=f"Invalid regex pattern: {e}")
 
         try:
-            # Validate path against sandbox
-            if self._allowed_paths is not None:
-                p = validate_sandbox(path, self._allowed_paths)
-            else:
-                p = normalize_path(path)
+            # Validate path (resolves symlinks, checks allowed_paths if set)
+            p = self._validate_path(path)
 
             # Read file
             try:
@@ -200,14 +186,5 @@ class RegexReplaceSkill:
             return ToolResult(error=f"Error: {e}")
 
 
-def regex_replace_factory(services: ServiceContainer) -> RegexReplaceSkill:
-    """Factory function for RegexReplaceSkill.
-
-    Args:
-        services: ServiceContainer for dependency injection.
-
-    Returns:
-        New RegexReplaceSkill instance
-    """
-    allowed_paths: list[Path] | None = services.get("allowed_paths")
-    return RegexReplaceSkill(allowed_paths=allowed_paths)
+# Factory for dependency injection
+regex_replace_factory = file_skill_factory(RegexReplaceSkill)

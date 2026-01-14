@@ -1,38 +1,22 @@
 """List directory skill for listing files and directories."""
 
 import asyncio
-import os
 import stat
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import normalize_path, validate_sandbox
 from nexus3.core.types import ToolResult
-from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import FileSkill, file_skill_factory
 
 
-class ListDirectorySkill:
+class ListDirectorySkill(FileSkill):
     """Skill that lists contents of a directory.
 
     Returns file names, optionally with metadata (size, mtime, permissions).
 
-    If allowed_paths is provided, path validation is performed to ensure
-    the directory is within the sandbox. Otherwise, any path is allowed.
+    Inherits path validation from FileSkill.
     """
-
-    def __init__(self, allowed_paths: list[Path] | None = None) -> None:
-        """Initialize ListDirectorySkill.
-
-        Args:
-            allowed_paths: List of allowed directories for path validation.
-                - None: No sandbox validation (unrestricted access)
-                - []: Empty list means NO paths allowed (all listings denied)
-                - [Path(...)]: Only allow listings within these directories
-        """
-        # None = unrestricted, [] = deny all, [paths...] = only within these
-        self._allowed_paths = allowed_paths
 
     @property
     def name(self) -> str:
@@ -83,11 +67,8 @@ class ListDirectorySkill:
             ToolResult with directory listing or error message
         """
         try:
-            # Validate sandbox if allowed_paths is configured
-            if self._allowed_paths is not None:
-                p = validate_sandbox(path, self._allowed_paths)
-            else:
-                p = normalize_path(path)
+            # Validate path (resolves symlinks, checks allowed_paths if set)
+            p = self._validate_path(path)
 
             # Verify it's a directory
             is_dir = await asyncio.to_thread(p.is_dir)
@@ -177,15 +158,5 @@ def _format_size(size: int) -> str:
         return f"{size / (1024 * 1024 * 1024):.1f}G"
 
 
-def list_directory_factory(services: ServiceContainer) -> ListDirectorySkill:
-    """Factory function for ListDirectorySkill.
-
-    Args:
-        services: ServiceContainer for dependency injection. If it contains
-            'allowed_paths', sandbox validation will be enabled.
-
-    Returns:
-        New ListDirectorySkill instance
-    """
-    allowed_paths: list[Path] | None = services.get("allowed_paths")
-    return ListDirectorySkill(allowed_paths=allowed_paths)
+# Factory for dependency injection
+list_directory_factory = file_skill_factory(ListDirectorySkill)

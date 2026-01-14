@@ -11,33 +11,11 @@ from nexus3.core.permissions import (
 )
 from nexus3.core.types import ToolResult
 from nexus3.core.url_validator import UrlSecurityError, validate_url
-from nexus3.rpc.auth import discover_api_key
-from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import NexusSkill, nexus_skill_factory
 
 
-def _get_default_port() -> int:
-    """Get default port from config, with fallback to 8765."""
-    try:
-        from nexus3.config.loader import load_config
-        config = load_config()
-        return config.server.port
-    except Exception:
-        return 8765
-
-
-DEFAULT_PORT = _get_default_port()
-
-
-class NexusCreateSkill:
+class NexusCreateSkill(NexusSkill):
     """Skill that creates a new agent on the Nexus server."""
-
-    def __init__(self, services: ServiceContainer) -> None:
-        """Initialize the skill with service container.
-
-        Args:
-            services: ServiceContainer for accessing shared services like api_key.
-        """
-        self._services = services
 
     @property
     def name(self) -> str:
@@ -97,22 +75,6 @@ class NexusCreateSkill:
             "required": ["agent_id"],
         }
 
-    def _get_port(self, port: int | None) -> int:
-        """Get the port to use, checking ServiceContainer first."""
-        if port is not None:
-            return port
-        svc_port: int | None = self._services.get("port")
-        if svc_port is not None:
-            return svc_port
-        return DEFAULT_PORT
-
-    def _get_api_key(self, port: int) -> str | None:
-        """Get API key from ServiceContainer or auto-discover."""
-        api_key: str | None = self._services.get("api_key")
-        if api_key:
-            return api_key
-        return discover_api_key(port=port)
-
     async def execute(
         self,
         agent_id: str = "",
@@ -159,7 +121,7 @@ class NexusCreateSkill:
                     return ToolResult(error=f"Invalid preset: {e}")
 
         actual_port = self._get_port(port)
-        url = f"http://127.0.0.1:{actual_port}"
+        url = self._build_url(actual_port)
         api_key = self._get_api_key(actual_port)
 
         try:
@@ -186,13 +148,5 @@ class NexusCreateSkill:
             return ToolResult(error=str(e))
 
 
-def nexus_create_factory(services: ServiceContainer) -> NexusCreateSkill:
-    """Factory function for NexusCreateSkill.
-
-    Args:
-        services: ServiceContainer for accessing shared services.
-
-    Returns:
-        New NexusCreateSkill instance
-    """
-    return NexusCreateSkill(services)
+# Factory for dependency injection
+nexus_create_factory = nexus_skill_factory(NexusCreateSkill)

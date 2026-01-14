@@ -1,34 +1,20 @@
 """Append file skill for appending content to files."""
 
 import asyncio
-from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import normalize_path, validate_sandbox
 from nexus3.core.types import ToolResult
-from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import FileSkill, file_skill_factory
 
 
-class AppendFileSkill:
+class AppendFileSkill(FileSkill):
     """Skill that appends content to a file.
 
     More atomic than read+concat+write, with smart newline handling.
 
-    If allowed_paths is provided, path validation is performed to ensure
-    the file is within the sandbox. Otherwise, any path is allowed.
+    Inherits path validation from FileSkill.
     """
-
-    def __init__(self, allowed_paths: list[Path] | None = None) -> None:
-        """Initialize AppendFileSkill.
-
-        Args:
-            allowed_paths: List of allowed directories for path validation.
-                - None: No sandbox validation (unrestricted access)
-                - []: Empty list means NO paths allowed (all appends denied)
-                - [Path(...)]: Only allow appends within these directories
-        """
-        self._allowed_paths = allowed_paths
 
     @property
     def name(self) -> str:
@@ -87,11 +73,8 @@ class AppendFileSkill:
             return ToolResult(error="No content provided")
 
         try:
-            # Validate sandbox if allowed_paths is configured
-            if self._allowed_paths is not None:
-                p = validate_sandbox(path, self._allowed_paths)
-            else:
-                p = normalize_path(path)
+            # Validate path (resolves symlinks, checks allowed_paths if set)
+            p = self._validate_path(path)
 
             def do_append() -> int:
                 # Read existing content (or empty if new file)
@@ -121,15 +104,5 @@ class AppendFileSkill:
             return ToolResult(error=f"Error appending to file: {e}")
 
 
-def append_file_factory(services: ServiceContainer) -> AppendFileSkill:
-    """Factory function for AppendFileSkill.
-
-    Args:
-        services: ServiceContainer for dependency injection. If it contains
-            'allowed_paths', sandbox validation will be enabled.
-
-    Returns:
-        New AppendFileSkill instance
-    """
-    allowed_paths: list[Path] | None = services.get("allowed_paths")
-    return AppendFileSkill(allowed_paths=allowed_paths)
+# Factory for dependency injection
+append_file_factory = file_skill_factory(AppendFileSkill)

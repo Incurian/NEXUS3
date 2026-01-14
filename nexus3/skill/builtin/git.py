@@ -6,13 +6,16 @@ import re
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import validate_sandbox
+
+if TYPE_CHECKING:
+    from nexus3.skill.services import ServiceContainer
+from nexus3.core.paths import validate_path
 from nexus3.core.permissions import PermissionLevel
 from nexus3.core.types import ToolResult
-from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import FilteredCommandSkill, filtered_command_skill_factory
 
 
 # Commands safe for read-only (SANDBOXED) mode
@@ -28,7 +31,7 @@ CONFIRM_COMMANDS = frozenset({
 })
 
 # Dangerous patterns - blocked in all modes except YOLO
-BLOCKED_PATTERNS = [
+BLOCKED_PATTERNS: list[tuple[str, str]] = [
     (r"reset\s+--hard", "reset --hard discards uncommitted changes"),
     (r"push\s+(-f|--force)", "force push rewrites remote history"),
     (r"clean\s+-[fd]", "clean -f/-d deletes untracked files"),
@@ -41,7 +44,7 @@ BLOCKED_PATTERNS = [
 GIT_TIMEOUT = 30.0
 
 
-class GitSkill:
+class GitSkill(FilteredCommandSkill):
     """Skill for git operations with permission-based command filtering.
 
     Provides granular git access without requiring full bash access.
@@ -54,22 +57,13 @@ class GitSkill:
     in all modes except YOLO.
     """
 
-    def __init__(
-        self,
-        allowed_paths: list[Path] | None = None,
-        permission_level: PermissionLevel = PermissionLevel.TRUSTED,
-    ) -> None:
-        """Initialize GitSkill.
+    def get_read_only_commands(self) -> frozenset[str]:
+        """Get commands allowed in SANDBOXED mode."""
+        return READ_ONLY_COMMANDS
 
-        Args:
-            allowed_paths: Directories where git operations are allowed.
-                - None: Unrestricted
-                - []: No paths allowed
-                - [Path(...)]: Only within these directories
-            permission_level: Controls which commands are allowed.
-        """
-        self._allowed_paths = allowed_paths
-        self._permission_level = permission_level
+    def get_blocked_patterns(self) -> list[tuple[str, str]]:
+        """Get regex patterns blocked in TRUSTED mode."""
+        return BLOCKED_PATTERNS
 
     @property
     def name(self) -> str:
@@ -203,11 +197,8 @@ class GitSkill:
             return ToolResult(error=error or "Command not allowed")
 
         try:
-            # Validate working directory if sandbox active
-            if self._allowed_paths is not None:
-                work_dir = validate_sandbox(cwd, self._allowed_paths)
-            else:
-                work_dir = Path(cwd).resolve()
+            # Validate working directory (always uses validate_path for consistency)
+            work_dir = validate_path(cwd, allowed_paths=self._allowed_paths)
 
             # Verify directory exists
             if not work_dir.is_dir():
@@ -264,8 +255,11 @@ class GitSkill:
             return ToolResult(error=f"Git error: {e}")
 
 
-def git_factory(services: ServiceContainer) -> GitSkill:
+def git_factory(services: "ServiceContainer") -> GitSkill:
     """Factory function for GitSkill.
+
+    Note: GitSkill has special factory logic to extract permission_level
+    from the permissions object, so it doesn't use filtered_command_skill_factory.
 
     Args:
         services: ServiceContainer for dependency injection.

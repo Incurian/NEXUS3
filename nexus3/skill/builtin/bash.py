@@ -2,14 +2,13 @@
 
 import asyncio
 import os
-from pathlib import Path
 from typing import Any
 
 from nexus3.core.types import ToolResult
-from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import ExecutionSkill, execution_skill_factory
 
 
-class BashSkill:
+class BashSkill(ExecutionSkill):
     """Skill that executes shell commands.
 
     This is a high-risk skill that allows arbitrary command execution.
@@ -22,13 +21,8 @@ class BashSkill:
     and returns the command output along with exit code.
     """
 
-    def __init__(self) -> None:
-        """Initialize BashSkill.
-
-        Unlike file skills, bash does not use allowed_paths for sandbox.
-        Instead, it is completely disabled in SANDBOXED mode via permissions.
-        """
-        pass
+    # Store command for _create_process to use
+    _command: str = ""
 
     @property
     def name(self) -> str:
@@ -60,6 +54,19 @@ class BashSkill:
             "required": ["command"]
         }
 
+    async def _create_process(
+        self,
+        work_dir: str | None
+    ) -> asyncio.subprocess.Process:
+        """Create a shell subprocess."""
+        return await asyncio.create_subprocess_shell(
+            self._command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=work_dir,
+            env={**os.environ},
+        )
+
     async def execute(
         self,
         command: str = "",
@@ -67,89 +74,17 @@ class BashSkill:
         cwd: str | None = None,
         **kwargs: Any
     ) -> ToolResult:
-        """Execute a shell command.
-
-        Args:
-            command: Shell command to execute
-            timeout: Timeout in seconds (max 300)
-            cwd: Working directory (default: current)
-
-        Returns:
-            ToolResult with command output or error message
-        """
+        """Execute a shell command."""
         if not command:
             return ToolResult(error="Command is required")
 
-        # Enforce timeout limits
-        timeout = min(max(timeout, 1), 300)
-
-        # Resolve working directory
-        work_dir: str | None = None
-        if cwd:
-            work_path = Path(cwd).expanduser()
-            if not work_path.is_absolute():
-                work_path = Path.cwd() / work_path
-            if not work_path.is_dir():
-                return ToolResult(error=f"Working directory not found: {cwd}")
-            work_dir = str(work_path)
-
-        try:
-            # Create subprocess
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=work_dir,
-                env={**os.environ},  # Inherit environment
-            )
-
-            # Wait for completion with timeout
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(),
-                    timeout=timeout
-                )
-            except asyncio.TimeoutError:
-                process.kill()
-                await process.wait()
-                return ToolResult(error=f"Command timed out after {timeout}s")
-
-            # Decode output
-            stdout_str = stdout.decode("utf-8", errors="replace").strip()
-            stderr_str = stderr.decode("utf-8", errors="replace").strip()
-            exit_code = process.returncode
-
-            # Build output
-            parts = []
-            if stdout_str:
-                parts.append(stdout_str)
-            if stderr_str:
-                if stdout_str:
-                    parts.append(f"\n[stderr]\n{stderr_str}")
-                else:
-                    parts.append(f"[stderr]\n{stderr_str}")
-
-            output = "\n".join(parts) if parts else "(no output)"
-
-            # Include exit code if non-zero
-            if exit_code != 0:
-                output += f"\n\n[exit code: {exit_code}]"
-
-            return ToolResult(output=output)
-
-        except OSError as e:
-            return ToolResult(error=f"Failed to execute command: {e}")
-        except Exception as e:
-            return ToolResult(error=f"Error executing command: {e}")
+        self._command = command
+        return await self._execute_subprocess(
+            timeout=timeout,
+            cwd=cwd,
+            timeout_message="Command timed out after {timeout}s"
+        )
 
 
-def bash_factory(services: ServiceContainer) -> BashSkill:
-    """Factory function for BashSkill.
-
-    Args:
-        services: ServiceContainer (not used, but required by protocol)
-
-    Returns:
-        New BashSkill instance
-    """
-    return BashSkill()
+# Factory for dependency injection
+bash_factory = execution_skill_factory(BashSkill)
