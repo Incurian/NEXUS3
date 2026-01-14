@@ -158,11 +158,9 @@ async def handle_request(request: dict[str, Any]) -> dict[str, Any] | None:
 
 async def run_server() -> None:
     """Main server loop - read from stdin, write to stdout."""
-    loop = asyncio.get_event_loop()
-
     while True:
-        # Read line from stdin (blocking, run in executor)
-        line = await loop.run_in_executor(None, sys.stdin.readline)
+        # Read line from stdin (blocking, run in thread)
+        line = await asyncio.to_thread(sys.stdin.readline)
         if not line:
             break
 

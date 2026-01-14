@@ -181,8 +181,8 @@ async def show_lobby(
                 if choice_enum == LobbyChoice.SELECT:
                     selected = await show_session_list(session_manager, console)
                     if selected is None:
-                        # User cancelled, show lobby again
-                        return await show_lobby(session_manager, console)
+                        # User cancelled - loop back to prompt (no recursion)
+                        continue
                     return LobbyResult(choice=LobbyChoice.SELECT, session_name=selected)
 
                 return LobbyResult(choice=choice_enum, session_name=session_name)
