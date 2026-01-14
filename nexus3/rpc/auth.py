@@ -193,6 +193,28 @@ class ServerKeyManager:
             logger.debug("Failed to read key file %s: %s", self.key_path, e)
             return None
 
+    def load_or_generate(self) -> str:
+        """Load existing API key or generate a new one.
+
+        This method provides key persistence across server restarts:
+        - If a valid key file exists, use it (prevents auth mismatches)
+        - If no key exists, generate and save a new one
+
+        This is preferred over generate_and_save() for server startup
+        because it prevents auth errors when a server is restarted
+        while clients still have the old key cached.
+
+        Returns:
+            The API key (existing or newly generated).
+        """
+        existing_key = self.load()
+        if existing_key and existing_key.startswith(API_KEY_PREFIX):
+            logger.debug("Using existing API key from %s", self.key_path)
+            return existing_key
+
+        logger.debug("Generating new API key")
+        return self.generate_and_save()
+
     def delete(self) -> None:
         """Delete the key file if it exists.
 

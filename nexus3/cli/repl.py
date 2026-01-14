@@ -638,9 +638,9 @@ async def run_repl(
     # Create global dispatcher for agent management
     global_dispatcher = GlobalDispatcher(pool)
 
-    # Generate and save API key
+    # Load existing API key or generate new one (persistence prevents auth mismatches)
     key_manager = ServerKeyManager(port=effective_port)
-    api_key = key_manager.generate_and_save()
+    api_key = key_manager.load_or_generate()
 
     # Create session manager for auto-restore of saved sessions
     session_manager = SessionManager()
