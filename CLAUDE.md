@@ -579,11 +579,13 @@ nexus --init-global-force     # Overwrite existing
 
 ### Active Items (from 2026-01-14 Review)
 
-| Priority | Issue | Status |
-|----------|-------|--------|
-| **CRITICAL** | ExecutionSkill cwd sandbox escape | Pending |
-| **HIGH** | Input validation gaps (agent IDs, slash args) | Pending |
-| **HIGH** | Global cwd affects all agents | Pending |
+All critical and high priority items from the review are now complete.
+
+### Completed (2026-01-15 - Security Hardening)
+
+- **ExecutionSkill cwd sandbox escape** - Added `__init__(services)` to ExecutionSkill, `_allowed_paths` property, sandbox validation in `_resolve_working_directory()`; updated factory and subclasses (bash_safe, shell_UNSAFE, run_python)
+- **Input validation at REPL boundary** - `validate_agent_id()` now called for all slash commands taking agent/session names (/agent, /whisper, /create, /destroy, /send, /status, /cancel, /save, /clone, /rename, /delete)
+- **Per-agent cwd isolation** - cwd stored in ServiceContainer per-agent instead of global `os.chdir()`; FileSkill and ExecutionSkill resolve relative paths against agent's cwd; `/cwd` command updates only current agent
 
 ### Completed (2026-01-15 - Safe & Easy Fixes)
 

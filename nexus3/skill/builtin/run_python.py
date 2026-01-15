@@ -3,10 +3,13 @@
 import asyncio
 import os
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import ExecutionSkill, execution_skill_factory
+
+if TYPE_CHECKING:
+    from nexus3.skill.services import ServiceContainer
 
 
 class RunPythonSkill(ExecutionSkill):
@@ -23,8 +26,10 @@ class RunPythonSkill(ExecutionSkill):
     and returns the output.
     """
 
-    # Store code for _create_process to use
-    _code: str = ""
+    def __init__(self, services: "ServiceContainer") -> None:
+        """Initialize RunPythonSkill with ServiceContainer."""
+        super().__init__(services)
+        self._code: str = ""
 
     @property
     def name(self) -> str:

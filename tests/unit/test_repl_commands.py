@@ -53,6 +53,13 @@ class MockServices:
     def register(self, name: str, value: Any) -> None:
         self._services[name] = value
 
+    def get_cwd(self) -> Path:
+        """Get agent's working directory."""
+        cwd = self._services.get("cwd")
+        if cwd is not None:
+            return Path(cwd)
+        return Path.cwd()
+
 
 class MockAgent:
     """Mock Agent for testing REPL commands."""
@@ -401,48 +408,60 @@ class TestCmdOver:
 
 
 class TestCmdCwd:
-    """Tests for /cwd [path] - working directory management."""
+    """Tests for /cwd [path] - working directory management.
+
+    Note: cmd_cwd now uses per-agent cwd stored in ServiceContainer,
+    not the global os.chdir(). This ensures agent isolation.
+    """
 
     @pytest.mark.asyncio
-    async def test_show_current_directory(self, ctx: CommandContext):
+    async def test_show_current_directory(
+        self, ctx_with_agent: CommandContext, mock_pool: MockAgentPool
+    ):
         """Shows current working directory with no args."""
-        output = await cmd_cwd(ctx, path=None)
+        output = await cmd_cwd(ctx_with_agent, path=None)
 
         assert output.result == CommandResult.SUCCESS
-        assert output.data["cwd"] == os.getcwd()
+        # Returns agent's cwd (defaults to Path.cwd() if not set)
         assert "Working directory" in output.message
 
     @pytest.mark.asyncio
-    async def test_change_directory(self, ctx: CommandContext, tmp_path: Path):
-        """Changes to valid directory."""
-        output = await cmd_cwd(ctx, path=str(tmp_path))
+    async def test_change_directory(
+        self, ctx_with_agent: CommandContext, mock_pool: MockAgentPool, tmp_path: Path
+    ):
+        """Changes to valid directory (per-agent, not global)."""
+        output = await cmd_cwd(ctx_with_agent, path=str(tmp_path))
 
         assert output.result == CommandResult.SUCCESS
-        assert os.getcwd() == str(tmp_path)
         assert "Changed" in output.message
+        # Verify agent's cwd was updated
+        agent = mock_pool.get("main")
+        assert agent.services.get("cwd") == tmp_path
 
     @pytest.mark.asyncio
-    async def test_change_directory_nonexistent(self, ctx: CommandContext):
+    async def test_change_directory_nonexistent(self, ctx_with_agent: CommandContext):
         """Error for nonexistent directory."""
-        output = await cmd_cwd(ctx, path="/nonexistent/path/xyz")
+        output = await cmd_cwd(ctx_with_agent, path="/nonexistent/path/xyz")
 
         assert output.result == CommandResult.ERROR
         assert "does not exist" in output.message
 
     @pytest.mark.asyncio
-    async def test_change_directory_to_file(self, ctx: CommandContext, tmp_path: Path):
+    async def test_change_directory_to_file(
+        self, ctx_with_agent: CommandContext, tmp_path: Path
+    ):
         """Error when path is a file, not directory."""
         file_path = tmp_path / "test.txt"
         file_path.write_text("test")
 
-        output = await cmd_cwd(ctx, path=str(file_path))
+        output = await cmd_cwd(ctx_with_agent, path=str(file_path))
 
         assert output.result == CommandResult.ERROR
         assert "Not a directory" in output.message
 
     @pytest.mark.asyncio
     async def test_change_directory_expands_home(
-        self, ctx: CommandContext, tmp_path: Path, monkeypatch
+        self, ctx_with_agent: CommandContext, tmp_path: Path, monkeypatch
     ):
         """Expands ~ to home directory."""
         # Create a dir in tmp and pretend it's home
@@ -450,9 +469,17 @@ class TestCmdCwd:
         home_dir.mkdir()
         monkeypatch.setenv("HOME", str(home_dir))
 
-        output = await cmd_cwd(ctx, path="~")
+        output = await cmd_cwd(ctx_with_agent, path="~")
 
         assert output.result == CommandResult.SUCCESS
+
+    @pytest.mark.asyncio
+    async def test_no_current_agent(self, ctx: CommandContext):
+        """Error when no current agent."""
+        output = await cmd_cwd(ctx, path=None)
+
+        assert output.result == CommandResult.ERROR
+        assert "No current agent" in output.message
 
 
 # -----------------------------------------------------------------------------

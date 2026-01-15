@@ -435,12 +435,15 @@ class AgentPool:
                 permissions.parent_agent_id = effective_config.parent_agent_id
                 permissions.depth = effective_config.parent_permissions.depth + 1
 
-            # Register agent_id, permissions, allowed_paths, model, and MCP registry
+            # Register agent_id, permissions, allowed_paths, model, cwd, and MCP registry
             services.register("agent_id", effective_id)
             services.register("permissions", permissions)
             services.register("allowed_paths", permissions.effective_policy.allowed_paths)
             services.register("model", resolved_model)  # ResolvedModel for model hotswapping
             services.register("mcp_registry", self._shared.mcp_registry)
+            # Per-agent cwd for isolation (avoids global os.chdir)
+            agent_cwd = effective_config.cwd or Path.cwd()
+            services.register("cwd", agent_cwd)
 
             # Register AgentAPI for in-process communication (bypasses HTTP)
             if self._global_dispatcher is not None:
@@ -670,11 +673,14 @@ class AgentPool:
                 delta = PermissionDelta(disable_tools=saved.disabled_tools)
                 permissions = permissions.apply_delta(delta)
 
-            # Register agent_id, permissions, allowed_paths, and MCP registry
+            # Register agent_id, permissions, allowed_paths, cwd, and MCP registry
             services.register("agent_id", agent_id)
             services.register("permissions", permissions)
             services.register("allowed_paths", permissions.effective_policy.allowed_paths)
             services.register("mcp_registry", self._shared.mcp_registry)
+            # Per-agent cwd for isolation (restored from saved session)
+            agent_cwd = Path(saved.working_directory) if saved.working_directory else Path.cwd()
+            services.register("cwd", agent_cwd)
 
             # Register AgentAPI for in-process communication (bypasses HTTP)
             if self._global_dispatcher is not None:

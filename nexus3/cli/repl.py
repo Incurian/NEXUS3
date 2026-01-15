@@ -49,6 +49,7 @@ from nexus3.context import ContextLoader
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
 from nexus3.core.permissions import ConfirmationResult, load_custom_presets_from_config
+from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.core.types import ToolCall
 from nexus3.display import Activity, StreamingDisplay, get_console
 from nexus3.display.streaming import ToolState
@@ -990,7 +991,11 @@ async def run_repl(
         elif cmd_name == "whisper":
             if not cmd_args:
                 return CommandOutput.error("Usage: /whisper <agent>")
-            return await repl_commands.cmd_whisper(ctx, whisper, cmd_args)
+            try:
+                target = validate_agent_id(cmd_args.strip())
+            except ValidationError as e:
+                return CommandOutput.error(f"Invalid agent name: {e}")
+            return await repl_commands.cmd_whisper(ctx, whisper, target)
         elif cmd_name == "over":
             return await repl_commands.cmd_over(ctx, whisper)
         elif cmd_name == "cwd":
@@ -1015,7 +1020,10 @@ async def run_repl(
             if not cmd_args:
                 return CommandOutput.error("Usage: /create <name> [--perm]")
             create_parts = cmd_args.split()
-            name = create_parts[0]
+            try:
+                name = validate_agent_id(create_parts[0])
+            except ValidationError as e:
+                return CommandOutput.error(f"Invalid agent name: {e}")
             perm = "trusted"
             for p in create_parts[1:]:
                 if p.lower() in ("--yolo", "-y"):
@@ -1030,35 +1038,74 @@ async def run_repl(
         elif cmd_name == "destroy":
             if not cmd_args:
                 return CommandOutput.error("Usage: /destroy <name>")
-            return await unified_cmd.cmd_destroy(ctx, cmd_args)
+            try:
+                agent_name = validate_agent_id(cmd_args.strip())
+            except ValidationError as e:
+                return CommandOutput.error(f"Invalid agent name: {e}")
+            return await unified_cmd.cmd_destroy(ctx, agent_name)
         elif cmd_name == "send":
             send_parts = cmd_args.split(None, 1)
             if len(send_parts) < 2:
                 return CommandOutput.error("Usage: /send <agent> <message>")
-            return await unified_cmd.cmd_send(ctx, send_parts[0], send_parts[1])
+            try:
+                agent_name = validate_agent_id(send_parts[0])
+            except ValidationError as e:
+                return CommandOutput.error(f"Invalid agent name: {e}")
+            return await unified_cmd.cmd_send(ctx, agent_name, send_parts[1])
         elif cmd_name == "status":
-            return await unified_cmd.cmd_status(ctx, cmd_args or None)
+            if cmd_args:
+                try:
+                    agent_name = validate_agent_id(cmd_args.strip())
+                except ValidationError as e:
+                    return CommandOutput.error(f"Invalid agent name: {e}")
+                return await unified_cmd.cmd_status(ctx, agent_name)
+            return await unified_cmd.cmd_status(ctx, None)
         elif cmd_name == "cancel":
             cancel_parts = cmd_args.split() if cmd_args else []
-            agent_id_arg = cancel_parts[0] if cancel_parts else None
+            agent_id_arg = None
+            if cancel_parts:
+                try:
+                    agent_id_arg = validate_agent_id(cancel_parts[0])
+                except ValidationError as e:
+                    return CommandOutput.error(f"Invalid agent name: {e}")
             req_id = cancel_parts[1] if len(cancel_parts) > 1 else None
             return await unified_cmd.cmd_cancel(ctx, agent_id_arg, req_id)
         elif cmd_name == "save":
-            return await unified_cmd.cmd_save(ctx, cmd_args or None)
+            if cmd_args:
+                try:
+                    session_name = validate_agent_id(cmd_args.strip())
+                except ValidationError as e:
+                    return CommandOutput.error(f"Invalid session name: {e}")
+                return await unified_cmd.cmd_save(ctx, session_name)
+            return await unified_cmd.cmd_save(ctx, None)
         elif cmd_name == "clone":
             clone_parts = cmd_args.split()
             if len(clone_parts) != 2:
                 return CommandOutput.error("Usage: /clone <src> <dest>")
-            return await unified_cmd.cmd_clone(ctx, clone_parts[0], clone_parts[1])
+            try:
+                src_name = validate_agent_id(clone_parts[0])
+                dest_name = validate_agent_id(clone_parts[1])
+            except ValidationError as e:
+                return CommandOutput.error(f"Invalid session name: {e}")
+            return await unified_cmd.cmd_clone(ctx, src_name, dest_name)
         elif cmd_name == "rename":
             rename_parts = cmd_args.split()
             if len(rename_parts) != 2:
                 return CommandOutput.error("Usage: /rename <old> <new>")
-            return await unified_cmd.cmd_rename(ctx, rename_parts[0], rename_parts[1])
+            try:
+                old_name = validate_agent_id(rename_parts[0])
+                new_name = validate_agent_id(rename_parts[1])
+            except ValidationError as e:
+                return CommandOutput.error(f"Invalid session name: {e}")
+            return await unified_cmd.cmd_rename(ctx, old_name, new_name)
         elif cmd_name == "delete":
             if not cmd_args:
                 return CommandOutput.error("Usage: /delete <name>")
-            return await unified_cmd.cmd_delete(ctx, cmd_args)
+            try:
+                session_name = validate_agent_id(cmd_args.strip())
+            except ValidationError as e:
+                return CommandOutput.error(f"Invalid session name: {e}")
+            return await unified_cmd.cmd_delete(ctx, session_name)
         elif cmd_name == "shutdown":
             return await unified_cmd.cmd_shutdown(ctx)
 

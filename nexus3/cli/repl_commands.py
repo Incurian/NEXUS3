@@ -32,6 +32,7 @@ from nexus3.core.permissions import (
     get_builtin_presets,
     resolve_preset,
 )
+from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.rpc.pool import is_temp_agent
 
 if TYPE_CHECKING:
@@ -176,7 +177,10 @@ async def cmd_agent(
         return await _show_agent_status(ctx)
 
     parts = args.strip().split()
-    agent_name = parts[0]
+    try:
+        agent_name = validate_agent_id(parts[0])
+    except ValidationError as e:
+        return CommandOutput.error(f"Invalid agent name: {e}")
 
     # Parse permission flag if present
     permission: str | None = None
@@ -344,6 +348,9 @@ async def cmd_cwd(
 ) -> CommandOutput:
     """Show or set working directory for current agent.
 
+    The working directory is stored per-agent, not globally.
+    This ensures agent isolation in multi-agent scenarios.
+
     Args:
         ctx: Command context with pool access.
         path: New working directory path, or None to show current.
@@ -351,15 +358,22 @@ async def cmd_cwd(
     Returns:
         CommandOutput with current/new working directory.
     """
+    if ctx.current_agent_id is None:
+        return CommandOutput.error("No current agent")
+
+    agent = ctx.pool.get(ctx.current_agent_id)
+    if agent is None:
+        return CommandOutput.error(f"Agent not found: {ctx.current_agent_id}")
+
     if path is None:
-        # Show current working directory
-        cwd = os.getcwd()
+        # Show current working directory for THIS agent
+        cwd = agent.services.get_cwd()
         return CommandOutput.success(
             message=f"Working directory: {cwd}",
-            data={"cwd": cwd},
+            data={"cwd": str(cwd)},
         )
 
-    # Set new working directory
+    # Set new working directory for THIS agent only
     try:
         new_path = Path(path).expanduser().resolve()
         if not new_path.exists():
@@ -367,7 +381,19 @@ async def cmd_cwd(
         if not new_path.is_dir():
             return CommandOutput.error(f"Not a directory: {path}")
 
-        os.chdir(new_path)
+        # Validate against agent's allowed_paths if sandboxed
+        permissions: AgentPermissions | None = agent.services.get("permissions")
+        if permissions and permissions.effective_policy.allowed_paths:
+            from nexus3.core.paths import validate_path
+            from nexus3.core.errors import PathSecurityError
+            try:
+                validate_path(new_path, allowed_paths=permissions.effective_policy.allowed_paths)
+            except PathSecurityError as e:
+                return CommandOutput.error(f"Directory outside sandbox: {e}")
+
+        # Update ONLY this agent's cwd
+        agent.services.register("cwd", new_path)
+
         return CommandOutput.success(
             message=f"Changed working directory to: {new_path}",
             data={"cwd": str(new_path)},

@@ -23,8 +23,13 @@ import os
 import shlex
 from typing import Any
 
+from typing import TYPE_CHECKING
+
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import ExecutionSkill, execution_skill_factory
+
+if TYPE_CHECKING:
+    from nexus3.skill.services import ServiceContainer
 
 
 class BashSafeSkill(ExecutionSkill):
@@ -51,7 +56,10 @@ class BashSafeSkill(ExecutionSkill):
     - "echo $HOME" (variable expansion)
     """
 
-    _args: list[str] = []
+    def __init__(self, services: "ServiceContainer") -> None:
+        """Initialize BashSafeSkill with ServiceContainer."""
+        super().__init__(services)
+        self._args: list[str] = []
 
     @property
     def name(self) -> str:
@@ -143,7 +151,10 @@ class ShellUnsafeSkill(ExecutionSkill):
     careful consideration before use.
     """
 
-    _command: str = ""
+    def __init__(self, services: "ServiceContainer") -> None:
+        """Initialize ShellUnsafeSkill with ServiceContainer."""
+        super().__init__(services)
+        self._command: str = ""
 
     @property
     def name(self) -> str:

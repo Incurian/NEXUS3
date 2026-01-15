@@ -441,6 +441,9 @@ class FileSkill(ABC):
         resolves per-tool path overrides (e.g., write_file may have
         different allowed_paths than read_file).
 
+        Relative paths are resolved against the agent's cwd (not the
+        process cwd) to ensure proper isolation in multi-agent scenarios.
+
         Args:
             path: The path to validate.
 
@@ -450,6 +453,12 @@ class FileSkill(ABC):
         Raises:
             PathSecurityError: If path is outside allowed directories.
         """
+        # Resolve relative paths against agent's cwd (not process cwd)
+        if isinstance(path, str):
+            path = Path(path)
+        if not path.is_absolute():
+            agent_cwd = self._services.get_cwd()
+            path = agent_cwd / path
         return validate_path(path, allowed_paths=self._allowed_paths)
 
     @property
@@ -742,7 +751,10 @@ class ExecutionSkill(ABC):
     """Base class for skills that execute subprocesses.
 
     Provides common functionality for timeout enforcement, working directory
-    resolution, subprocess output capture, and result formatting.
+    resolution with sandbox validation, subprocess output capture, and result formatting.
+
+    Security: Working directory is validated against allowed_paths from the
+    ServiceContainer's permissions. This prevents sandbox escape via cwd parameter.
 
     Used by bash and run_python skills.
 
@@ -775,27 +787,66 @@ class ExecutionSkill(ABC):
     MAX_TIMEOUT: int = 300
     DEFAULT_TIMEOUT: int = 30
 
+    def __init__(self, services: "ServiceContainer") -> None:
+        """Initialize ExecutionSkill with ServiceContainer.
+
+        Args:
+            services: ServiceContainer for accessing permissions and resolving
+                allowed_paths at validation time.
+        """
+        self._services = services
+
+    @property
+    def _allowed_paths(self) -> list[Path] | None:
+        """Get effective allowed_paths for this skill.
+
+        Resolves per-tool path overrides via ServiceContainer.
+
+        Returns:
+            List of allowed Path objects, or None for unrestricted access.
+        """
+        return self._services.get_tool_allowed_paths(self.name)
+
     def _enforce_timeout(self, timeout: int) -> int:
         """Enforce timeout limits (1 to MAX_TIMEOUT seconds)."""
         return min(max(timeout, 1), self.MAX_TIMEOUT)
 
     def _resolve_working_directory(self, cwd: str | None) -> tuple[str | None, str | None]:
-        """Resolve and validate working directory.
+        """Resolve and validate working directory against allowed_paths.
+
+        Relative paths are resolved against the agent's cwd (not process cwd).
+        The resolved path is validated against allowed_paths to prevent
+        sandbox escape via the cwd parameter.
 
         Args:
-            cwd: Working directory path (or None for current)
+            cwd: Working directory path (or None for agent's default cwd)
 
         Returns:
             Tuple of (resolved_path_or_none, error_message_or_none)
         """
+        # Get agent's cwd as default
+        agent_cwd = self._services.get_cwd()
+
         if not cwd:
-            return None, None
+            # Use agent's cwd as default
+            return str(agent_cwd), None
 
         work_path = Path(cwd).expanduser()
         if not work_path.is_absolute():
-            work_path = Path.cwd() / work_path
+            # Resolve relative paths against agent's cwd (not process cwd)
+            work_path = agent_cwd / work_path
+
         if not work_path.is_dir():
             return None, f"Working directory not found: {cwd}"
+
+        # SECURITY: Validate cwd against allowed_paths (sandbox check)
+        if self._allowed_paths is not None:
+            from nexus3.core.errors import PathSecurityError
+            try:
+                validate_path(work_path, allowed_paths=self._allowed_paths)
+            except PathSecurityError as e:
+                return None, f"Working directory outside sandbox: {e}"
+
         return str(work_path), None
 
     def _format_output(
@@ -922,10 +973,11 @@ def execution_skill_factory(cls: type["ExecutionSkill"]) -> Callable[["ServiceCo
         cls: An ExecutionSkill subclass to create a factory for.
 
     Returns:
-        A factory function that creates instances of the skill.
+        A factory function that creates instances of the skill with
+        ServiceContainer for sandbox validation.
     """
     def factory(services: "ServiceContainer") -> "ExecutionSkill":
-        skill = cls()
+        skill = cls(services)  # Pass services for sandbox validation
         _wrap_with_validation(skill)
         return skill
 
