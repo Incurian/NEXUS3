@@ -112,6 +112,7 @@ class MCPServerRegistry:
         config: MCPServerConfig,
         owner_agent_id: str = "main",
         shared: bool = False,
+        timeout: float = 30.0,
     ) -> ConnectedServer:
         """Connect to an MCP server and create skill adapters.
 
@@ -122,12 +123,14 @@ class MCPServerRegistry:
             config: Server configuration.
             owner_agent_id: ID of the agent creating this connection.
             shared: If True, connection is visible to all agents.
+            timeout: Maximum time to wait for connection. Default 30s.
 
         Returns:
             ConnectedServer instance with active client and skills.
 
         Raises:
             ValueError: If config has neither command nor url.
+            MCPError: If connection times out or fails.
         """
         # Disconnect existing if present
         if config.name in self._servers:
@@ -147,7 +150,7 @@ class MCPServerRegistry:
 
         # Create and initialize client
         client = MCPClient(transport)
-        await client.connect()
+        await client.connect(timeout=timeout)
 
         # List tools and create adapters
         tools = await client.list_tools()

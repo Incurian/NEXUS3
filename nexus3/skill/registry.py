@@ -24,6 +24,7 @@ Example:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -35,6 +36,10 @@ if TYPE_CHECKING:
 
 # Factory type: takes ServiceContainer, returns Skill
 SkillFactory = Callable[[ServiceContainer], Skill]
+
+# Valid tool name pattern: alphanumeric, underscore, hyphen, 1-64 chars
+# Must start with a letter or underscore (like Python identifiers)
+VALID_TOOL_NAME = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_-]{0,63}$")
 
 
 class SkillRegistry:
@@ -84,7 +89,16 @@ class SkillRegistry:
                   the skill's name property.
             factory: A callable that takes a ServiceContainer and returns
                     a Skill instance.
+
+        Raises:
+            ValueError: If the skill name is invalid (must be 1-64 chars,
+                start with letter/underscore, contain only alphanumeric/_/-).
         """
+        if not VALID_TOOL_NAME.match(name):
+            raise ValueError(
+                f"Invalid skill name '{name}': must be 1-64 chars, "
+                "start with letter/underscore, contain only alphanumeric/_/-"
+            )
         self._factories[name] = factory
         # Clear cached instance if re-registering
         self._instances.pop(name, None)

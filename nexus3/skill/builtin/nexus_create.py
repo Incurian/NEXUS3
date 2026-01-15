@@ -108,6 +108,17 @@ class NexusCreateSkill(NexusSkill):
         except ValidationError as e:
             return ToolResult(error=f"Invalid agent_id: {e.message}")
 
+        # Validate model parameter if provided
+        if model:
+            model = model.strip()
+            if not model:
+                return ToolResult(error="Model cannot be empty or whitespace")
+            if len(model) > 128:
+                return ToolResult(error="Model name too long (max 128 chars)")
+            # Disallow suspicious patterns (path traversal, null bytes)
+            if "\x00" in model or ".." in model:
+                return ToolResult(error="Invalid model name")
+
         # Get parent permissions to enforce ceiling (local validation for early feedback)
         parent_perms: AgentPermissions | None = self._services.get("permissions")
 

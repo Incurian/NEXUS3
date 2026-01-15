@@ -9,11 +9,14 @@ MCP uses newline-delimited JSON-RPC 2.0 messages.
 
 import asyncio
 import json
+import logging
 import os
 from abc import ABC, abstractmethod
 from typing import Any
 
 from nexus3.core.errors import NexusError
+
+logger = logging.getLogger(__name__)
 
 
 class MCPTransportError(NexusError):
@@ -197,8 +200,10 @@ class StdioTransport(MCPTransport):
                 line = await self._process.stderr.readline()
                 if not line:
                     break
-                # Could log this somewhere, for now just discard
-                # In future, could emit to a callback
+                # Log at DEBUG level for debugging MCP server issues
+                text = line.decode(errors="replace").rstrip()
+                if text:
+                    logger.debug("MCP stderr [%s]: %s", self._command[0], text)
             except Exception:
                 break
 

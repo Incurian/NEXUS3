@@ -635,6 +635,28 @@ class NexusSkill(ABC):
             return False
         return True
 
+    def _validate_agent_id(self, agent_id: str) -> ToolResult | None:
+        """Validate agent_id parameter, returning ToolResult error if invalid.
+
+        Common pattern used by most nexus_* skills. Returns None if valid,
+        or a ToolResult with error message if invalid.
+
+        Args:
+            agent_id: The agent ID to validate.
+
+        Returns:
+            None if valid, ToolResult(error=...) if invalid.
+        """
+        from nexus3.core.validation import ValidationError, validate_agent_id
+
+        if not agent_id:
+            return ToolResult(error="No agent_id provided")
+        try:
+            validate_agent_id(agent_id)
+        except ValidationError as e:
+            return ToolResult(error=f"Invalid agent_id: {e.message}")
+        return None
+
     async def _execute_with_client(
         self,
         port: int | None,

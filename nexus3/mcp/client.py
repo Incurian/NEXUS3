@@ -14,6 +14,7 @@ Usage:
         result = await client.call_tool("echo", {"message": "hello"})
 """
 
+import asyncio
 from typing import Any
 
 from nexus3.core.errors import NexusError
@@ -69,13 +70,34 @@ class MCPClient:
         self._tools: list[MCPTool] = []
         self._initialized = False
 
-    async def connect(self) -> None:
+    async def connect(self, timeout: float = 30.0) -> None:
         """Connect to the server and perform initialization handshake.
 
         Call this directly when not using the context manager pattern.
+
+        Args:
+            timeout: Maximum time to wait for connection and initialization.
+                     Default 30 seconds. Use 0 for no timeout.
+
+        Raises:
+            MCPError: If connection times out or fails.
         """
-        await self._transport.connect()
-        await self._initialize()
+        async def _do_connect() -> None:
+            await self._transport.connect()
+            await self._initialize()
+
+        if timeout > 0:
+            try:
+                await asyncio.wait_for(_do_connect(), timeout=timeout)
+            except asyncio.TimeoutError:
+                # Try to clean up transport
+                try:
+                    await self._transport.close()
+                except Exception:
+                    pass
+                raise MCPError(f"MCP connection timed out after {timeout}s")
+        else:
+            await _do_connect()
 
     async def close(self) -> None:
         """Close the connection to the server.
