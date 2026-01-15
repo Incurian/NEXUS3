@@ -797,8 +797,8 @@ async def cmd_model(
 ) -> CommandOutput:
     """Show or switch the current agent's model.
 
-    If current context exceeds the new model's context window, prompts
-    for action: truncate, compact, or cancel.
+    If current context exceeds the new model's context window, returns
+    an error with guidance to use /compact first.
 
     Args:
         ctx: Command context with pool access.
