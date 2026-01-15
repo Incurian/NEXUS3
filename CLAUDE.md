@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. The goal is a simpler, more maintainable, end-to-end tested agent with clear architecture.
 
-**Status:** Phase 10 complete. Multi-provider support with factory pattern.
+**Status:** Feature-complete. Multi-provider support, permission system, MCP integration, context compaction.
 
 ---
 
@@ -38,26 +38,6 @@ nexus-rpc destroy researcher
 - If subagents write code, verify their work until confident in their ability
 - Note any errors subagents make so we can fix issues on our end
 - Subagents help manage context window and provide real-world testing
-
----
-
-## Phases Complete
-
-| Phase | Features |
-|-------|----------|
-| **0 - Core** | Message/ToolCall/ToolResult types, Config loader (Pydantic), AsyncProvider + OpenRouter, UTF-8 everywhere |
-| **1 - Display** | Rich.Live streaming, ESC cancellation, Activity phases, Slash commands, Status bar |
-| **1.5 - Logging** | SQLite + Markdown logs, `--verbose`, `--raw-log`, `--log-dir`, Subagent nesting |
-| **2 - Context** | Multi-turn conversations, Token tracking (tiktoken), Truncation strategies, System prompt loading, HTTP JSON-RPC |
-| **3 - Skills** | Skill system with DI, Built-in: read_file/write_file/sleep/nexus_*, Tool execution loop, 8 session callbacks |
-| **4 - Multi-Agent** | AgentPool, GlobalDispatcher, path-based routing, `--connect` mode, NexusClient |
-| **5R - Security** | API key auth, server detection, path sandbox (infra), URL validator (infra), JSON injection fix, provider retry |
-| **6 - Sessions** | Persistence, lobby mode, whisper mode, unified commands, agent naming, auto-restore, permission types |
-| **7 - Integration** | Sandbox → file skills, URL validation → nexus skills, async I/O, skill timeout, concurrency limit, truncation fix |
-| **8 - Permissions** | Permission presets (yolo/trusted/sandboxed/worker), per-tool config, deltas, ceiling inheritance, confirmation prompts |
-| **8+ - Compaction** | LLM-based context compaction, system prompt reloading, `/compact` command, configurable thresholds |
-| **9 - Context Mgmt** | Layered context loading (global→ancestors→local), subagent inheritance, deep config merge, `/init` command, `--init-global` |
-| **10 - Providers** | Multi-provider factory (openrouter/openai/azure/anthropic/ollama/vllm), configurable auth, provider README with extension guide |
 
 ---
 
@@ -478,7 +458,7 @@ Example compaction summary header:
 
 ---
 
-## Context Management (Phase 9)
+## Context Management
 
 Context is loaded from multiple directory layers and merged together. Each layer extends the previous one.
 
@@ -537,7 +517,7 @@ nexus --init-global-force     # Overwrite existing
 /init --global                # Initialize ~/.nexus3/ instead
 ```
 
-### New Config Options
+### Context Config Options
 
 ```json
 {
@@ -580,90 +560,9 @@ nexus --init-global-force     # Overwrite existing
 
 ---
 
-## Remediation Tracking
+## Deferred Work
 
-**Third review completed 2026-01-15** with 10-agent swarm. Full details in `reviews/pre-beta-2026-01-15/CONSOLIDATED-SUMMARY.md`.
-
-### Active Items
-
-**PathResolver + Config/Context Consolidation** (branch: `refactor/path-resolver`)
-
-Fixing DRY violations discovered during multi-agent testing.
-
-**Completed Phases:**
-- [x] Phase 1: `core/constants.py` - Centralized `.nexus3` paths (5 files updated)
-- [x] Phase 2: `core/utils.py` - Unified `deep_merge()` and `find_ancestor_config_dirs()`
-- [x] Phase 3: `core/resolver.py` - PathResolver class created
-- [x] Phase 4: Migrated FileSkill, ExecutionSkill, FilteredCommandSkill to use PathResolver
-- [x] Phase 5: Fixed Path.cwd() bugs (repl.py, commands/core.py, session.py)
-- [x] All 1191 unit tests + 95 integration tests pass
-
-**Bug Found During Integration Test:**
-Sandboxed subagents can't write files. `./session.py` resolves to `/home/inc/repos/NEXUS3/session.py` instead of `/home/inc/repos/NEXUS3/nexus3/session/session.py`. The `nexus3/` segment is being dropped.
-- Agent's cwd is correctly `/home/inc/repos/NEXUS3/nexus3/session`
-- But PathResolver or validate_path() is resolving incorrectly
-- Direct pathlib test shows `(agent_cwd / Path('./session.py')).resolve()` works correctly
-- Bug is somewhere in how cwd is passed/stored between components
-
-Plan details: `.claude-notes/consolidated-refactor-plan.md`
-
-### Completed (2026-01-15 - Permission & Timeout Fixes)
-
-- **NexusSkill timeout** - Increased default from 60s to 300s (5 min) for agent operations that can take a while
-- **CLI send timeout** - Increased `nexus-rpc send` default from 120s to 300s to match NexusSkill
-- **nexus_create ceiling validation** - Fixed local validation to pass `cwd` parameter to `resolve_preset()` for correct allowed_paths resolution
-- **nexus_create cwd inheritance** - Fixed local validation to inherit parent's cwd when not explicitly provided (matches server-side behavior)
-- **Sandboxed write-path containment** - Made write-path containment check unconditional for sandboxed/worker agents (not just subagents)
-- **Expanded write tool overrides** - Extended tool overrides to all write-capable tools (append_file, regex_replace, mkdir, copy_file, rename)
-- **Session sandbox gate** - Modified early sandbox gate in session.py to respect per-tool path overrides
-- **Module READMEs** - Auto-generated comprehensive READMEs for all 12 modules via multi-agent swarm (trusted coordinator + 12 sandboxed workers)
-
-### Completed (2026-01-15 - Pre-Beta Fixes)
-
-- **RPC help text** - Removed false "auto-starts server" claim from `nexus-rpc list/create` help
-- **agent_id validation** - Added `validate_agent_id()` to nexus_create skill for consistency
-- **Bytes vs characters** - append_file now correctly reports "characters" not "bytes"
-- **MCP input validation** - MCPSkillAdapter now validates kwargs against input_schema before calling MCP server
-- **HTTP streaming bounds** - Provider error body reading limited to 10KB to prevent memory exhaustion
-- **Config ancestor depth** - Fixed race where local ancestor_depth wasn't applied before ancestor search
-- **Atomic file writes** - write_file, edit_file, append_file, regex_replace now use temp file + rename pattern
-- **DirectAgentAPI optimization** - nexus_create and nexus_status now use `_execute_with_client()` for in-process performance
-
-### Completed (2026-01-15 - Security Hardening)
-
-- **ExecutionSkill cwd sandbox escape** - Added `__init__(services)` to ExecutionSkill, `_allowed_paths` property, sandbox validation in `_resolve_working_directory()`; updated factory and subclasses (bash_safe, shell_UNSAFE, run_python)
-- **Input validation at REPL boundary** - `validate_agent_id()` now called for all slash commands taking agent/session names (/agent, /whisper, /create, /destroy, /send, /status, /cancel, /save, /clone, /rename, /delete)
-- **Per-agent cwd isolation** - cwd stored in ServiceContainer per-agent instead of global `os.chdir()`; FileSkill and ExecutionSkill resolve relative paths against agent's cwd; `/cwd` command updates only current agent
-- **MCP environment hardening** - MCP servers receive only safe env vars (PATH, HOME, USER, LANG, etc.) by default; use `env` for explicit values or `env_passthrough` for host vars; prevents accidental API key leakage
-- **Server security hardening** - `--serve` requires `NEXUS_DEV=1` env var; `nexus-rpc` commands no longer auto-start servers; embedded server has 30-min idle timeout for auto-shutdown
-
-### Completed (2026-01-15 - Safe & Easy Fixes)
-
-- **BLOCKED_PATTERNS fix** - git.py returns `[]` instead of undefined constant
-- **Atomic file writes** - `_secure_write_file()` helper in session_manager.py and auth.py uses `os.open()` with mode flags to avoid permission race
-- **ServiceContainer typed accessors** - `get_permissions()`, `get_cwd()`, `get_agent_api()`, `get_permission_level()` methods
-- **Standardized factory patterns** - git_factory now uses `filtered_command_skill_factory` decorator; `_permission_level` resolves automatically via typed accessor
-
-### Completed (Phase 1 - 2026-01-13)
-
-- Config validation (ProviderType enum, path validators)
-- Structured logging (RPC layer, root logger, client)
-- Port wiring (ServerConfig to serve/repl/skills)
-- Provider timeout/retry configuration
-- Path validation unification (FileSkill base class)
-- Skill type hierarchy (FileSkill, NexusSkill, ExecutionSkill, FilteredCommandSkill)
-- Exception hierarchy (all inherit NexusError)
-- Quick wins (deleted duplicate openrouter.py)
-- Permissions.py split (policy.py, allowances.py, presets.py)
-- **Loader unification** - PromptLoader removed, ContextLoader used everywhere
-- **Bash shell injection** - Dual skills: `bash_safe` (subprocess_exec) and `shell_UNSAFE` (shell=True)
-- **Git skill bypass** - Parse with shlex FIRST, validate parsed args (prevents quote-based bypasses)
-- **Execution allowance tiers** - shell_UNSAFE per-use only, bash_safe/run_python directory-only
-- **Skill param validation** - `@validate_skill_parameters()` decorator, applied to core FileSkills
-- **RPC decoupling** - DirectAgentAPI bypasses HTTP for in-process agent communication; skills use AgentAPI when available
-- **Per-tool path resolution** - ServiceContainer.get_tool_allowed_paths() resolves per-tool ToolPermission.allowed_paths; enables `--write-path` for RPC workers
-
-### Deferred (Structural)
+### Structural Refactors
 
 | Issue | Reason | Effort |
 |-------|--------|--------|
@@ -674,48 +573,14 @@ Plan details: `.claude-notes/consolidated-refactor-plan.md`
 | Windows ESC key | No Windows users yet | S |
 | HTTP keep-alive | Advanced feature | M |
 
-### Deferred (DRY Cleanups)
+### DRY Cleanups
 
-Identified during 2026-01-15 exploration with 5 subagents. Address after PathResolver refactor.
-
-**Error Handling Consolidation** (Medium Priority)
-| Pattern | Files | Notes |
-|---------|-------|-------|
-| Dispatcher error handling | `dispatcher.py:109-137`, `global_dispatcher.py:118-145` | Identical try/except blocks; extract `dispatch_with_error_handling()` helper |
-| HTTP error send | `http.py` (9 locations) | `make_error_response()` + `send_http_response()` pattern; extract `send_error()` helper |
-| ToolResult file errors | 22 skill files, 114 instances | Repeated `PathSecurityError`, `PermissionError`, `IsADirectoryError` handlers; create `file_errors.py` module |
-| Agent ID error handling | 21 call sites | Inconsistent `{e}` vs `{e.message}` formatting; standardize via helper |
-
-**Validation Consolidation** (Low Priority)
-| Pattern | Files | Notes |
-|---------|-------|-------|
-| `NexusSkill._validate_agent_id()` | `base.py:638-658` | Duplicates `core/validation.py` logic; remove wrapper, use core directly |
-| Git double timeout | `git.py:273-285` | `subprocess.run(timeout)` + `asyncio.wait_for()` redundant; simplify to single timeout |
-
-**Already Well Unified** (No Action Needed)
-- Path validation via FileSkill - gold standard
-- ServiceContainer typed accessors - consistent usage
-- ExecutionSkill subprocess handling - good consolidation
-- Permission checking - centralized in AgentPermissions
-
-### Review Artifacts
-
-```
-reviews/pre-beta-2026-01-15/    # Latest pre-beta review (10-agent swarm)
-├── CONSOLIDATED-SUMMARY.md     # Overview + action items
-├── security-review.md          # Auth, sandbox, input validation
-├── security-injection-network.md
-├── documentation-review.md
-├── skills-file-exec-review.md
-├── skills-nexus-utils-review.md
-├── rpc-client-review.md
-├── cli-repl-review.md
-├── config-context-review.md
-├── provider-mcp-review.md
-└── core-types-review.md
-
-.archive/reviews-2026-01-14/    # Previous review artifacts (archived)
-```
+| Pattern | Notes |
+|---------|-------|
+| Dispatcher error handling | `dispatcher.py` and `global_dispatcher.py` have identical try/except blocks |
+| HTTP error send | `http.py` has 9 similar `make_error_response()` + `send_http_response()` calls |
+| ToolResult file errors | 22 skill files with repeated error handlers |
+| Git double timeout | `subprocess.run(timeout)` + `asyncio.wait_for()` is redundant |
 
 ---
 
