@@ -1,16 +1,14 @@
 """Nexus create skill for creating new agents on the server."""
 
-import json
 from typing import Any
 
-from nexus3.client import ClientError, NexusClient
 from nexus3.core.permissions import (
     AgentPermissions,
     get_builtin_presets,
     resolve_preset,
 )
 from nexus3.core.types import ToolResult
-from nexus3.core.url_validator import UrlSecurityError, validate_url
+from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.skill.base import NexusSkill, nexus_skill_factory
 
 
@@ -105,10 +103,16 @@ class NexusCreateSkill(NexusSkill):
         if not agent_id:
             return ToolResult(error="No agent_id provided")
 
-        # Get parent permissions to enforce ceiling
+        try:
+            validate_agent_id(agent_id)
+        except ValidationError as e:
+            return ToolResult(error=f"Invalid agent_id: {e.message}")
+
+        # Get parent permissions to enforce ceiling (local validation for early feedback)
         parent_perms: AgentPermissions | None = self._services.get("permissions")
 
         # Validate ceiling if parent has permissions and preset is specified
+        # Note: Server also validates, this provides early feedback to user
         if parent_perms and preset:
             builtin = get_builtin_presets()
             if preset in builtin:
@@ -120,32 +124,28 @@ class NexusCreateSkill(NexusSkill):
                 except ValueError as e:
                     return ToolResult(error=f"Invalid preset: {e}")
 
-        actual_port = self._get_port(port)
-        url = self._build_url(actual_port)
-        api_key = self._get_api_key(actual_port)
+        # Get parent agent ID for server-side ceiling enforcement lookup
+        parent_agent_id: str | None = self._services.get("agent_id")
 
-        try:
-            validated_url = validate_url(url, allow_localhost=True)
-        except UrlSecurityError as e:
-            return ToolResult(error=f"URL validation failed: {e}")
+        # Use _execute_with_client for DirectAgentAPI optimization
+        # agent_id=None for global method (POST /)
+        async def create_op(client: Any) -> dict[str, Any]:
+            return await client.create_agent(
+                agent_id,
+                preset=preset,
+                disable_tools=disable_tools,
+                parent_agent_id=parent_agent_id,
+                cwd=cwd,
+                allowed_write_paths=allowed_write_paths,
+                model=model,
+                initial_message=initial_message,
+            )
 
-        try:
-            async with NexusClient(validated_url, api_key=api_key) as client:
-                # Pass parent agent ID for server-side ceiling enforcement lookup
-                parent_agent_id: str | None = self._services.get("agent_id")
-                result = await client.create_agent(
-                    agent_id,
-                    preset=preset,
-                    disable_tools=disable_tools,
-                    parent_agent_id=parent_agent_id,
-                    cwd=cwd,
-                    allowed_write_paths=allowed_write_paths,
-                    model=model,
-                    initial_message=initial_message,
-                )
-                return ToolResult(output=json.dumps(result))
-        except ClientError as e:
-            return ToolResult(error=str(e))
+        return await self._execute_with_client(
+            port=port,
+            operation=create_op,
+            agent_id=None,  # Global method, not agent-specific
+        )
 
 
 # Factory for dependency injection

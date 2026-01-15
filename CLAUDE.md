@@ -16,7 +16,9 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ```bash
 # Start server if not running
-nexus-rpc detect || nexus --serve &
+# Start REPL if not already running (server is embedded)
+# Note: --serve is disabled by default (requires NEXUS_DEV=1)
+nexus &
 
 # Create a subagent for research
 nexus-rpc create researcher
@@ -127,20 +129,20 @@ nexus3 --serve
 ## CLI Modes
 
 ```bash
-# Unified REPL (auto-starts embedded server)
+# Unified REPL (auto-starts embedded server with 30-min idle timeout)
 nexus                    # Default: lobby mode for session selection
 nexus --fresh            # Skip lobby, start new temp session
 nexus --resume           # Resume last session
 nexus --session NAME     # Load specific saved session
 nexus --template PATH    # Use custom system prompt
 
-# HTTP server (headless multi-agent)
-nexus --serve [PORT]
+# HTTP server (headless, dev-only - requires NEXUS_DEV=1)
+NEXUS_DEV=1 nexus --serve [PORT]
 
 # Client mode (connect to existing server)
 nexus --connect [URL] --agent [ID]
 
-# RPC commands (see "NEXUS3 Command Aliases" below for full list)
+# RPC commands (require server to be running - no auto-start)
 nexus-rpc create worker-1
 nexus-rpc send worker-1 "Hello"
 nexus-rpc shutdown
@@ -247,13 +249,13 @@ Two aliases are installed in `~/.local/bin/`:
 ```bash
 # Interactive modes
 nexus                        # REPL with embedded server (default)
-nexus --serve [PORT]         # Headless server mode
-nexus --connect [URL]        # Connect to existing server
+NEXUS_DEV=1 nexus --serve [PORT]  # Headless server (dev-only)
+nexus --connect [URL]             # Connect to existing server
 
-# Programmatic RPC operations
+# Programmatic RPC operations (require server running)
 nexus-rpc detect             # Check if server is running
-nexus-rpc list               # List agents (auto-starts server)
-nexus-rpc create ID          # Create agent (auto-starts server)
+nexus-rpc list               # List agents
+nexus-rpc create ID          # Create agent
 nexus-rpc create ID -M "msg" # Create agent and send initial message
 nexus-rpc destroy ID         # Destroy agent
 nexus-rpc send AGENT MSG     # Send message to agent
@@ -263,7 +265,9 @@ nexus-rpc cancel AGENT ID    # Cancel in-progress request
 ```
 
 **Key behaviors:**
-- `nexus-rpc list` and `nexus-rpc create` auto-start a server if none running
+- **Security:** `--serve` requires `NEXUS_DEV=1` env var (prevents unattended servers)
+- **Security:** `nexus-rpc` commands do NOT auto-start servers (start `nexus` manually)
+- **Idle timeout:** Embedded server auto-shuts down after 30 min of no RPC activity
 - `nexus-rpc send/status/destroy/shutdown` require server to be running
 - All commands use `--port N` to specify non-default port (default: 8765)
 - All commands support `--api-key KEY` for explicit authentication (auto-discovered by default)
@@ -575,17 +579,30 @@ nexus --init-global-force     # Overwrite existing
 
 ## Remediation Tracking
 
-**Second review completed 2026-01-14** using dual swarms (5 Claude Code + 5 NEXUS3 agents) with cross-verification. Full details in `reviews/CONSOLIDATED-REVIEW.md` and `reviews/REMEDIATION-PLAN.md`.
+**Third review completed 2026-01-15** with 10-agent swarm. Full details in `reviews/pre-beta-2026-01-15/CONSOLIDATED-SUMMARY.md`.
 
-### Active Items (from 2026-01-14 Review)
+### Active Items
 
-All critical and high priority items from the review are now complete.
+All critical and high priority items from pre-beta review are now complete.
+
+### Completed (2026-01-15 - Pre-Beta Fixes)
+
+- **RPC help text** - Removed false "auto-starts server" claim from `nexus-rpc list/create` help
+- **agent_id validation** - Added `validate_agent_id()` to nexus_create skill for consistency
+- **Bytes vs characters** - append_file now correctly reports "characters" not "bytes"
+- **MCP input validation** - MCPSkillAdapter now validates kwargs against input_schema before calling MCP server
+- **HTTP streaming bounds** - Provider error body reading limited to 10KB to prevent memory exhaustion
+- **Config ancestor depth** - Fixed race where local ancestor_depth wasn't applied before ancestor search
+- **Atomic file writes** - write_file, edit_file, append_file, regex_replace now use temp file + rename pattern
+- **DirectAgentAPI optimization** - nexus_create and nexus_status now use `_execute_with_client()` for in-process performance
 
 ### Completed (2026-01-15 - Security Hardening)
 
 - **ExecutionSkill cwd sandbox escape** - Added `__init__(services)` to ExecutionSkill, `_allowed_paths` property, sandbox validation in `_resolve_working_directory()`; updated factory and subclasses (bash_safe, shell_UNSAFE, run_python)
 - **Input validation at REPL boundary** - `validate_agent_id()` now called for all slash commands taking agent/session names (/agent, /whisper, /create, /destroy, /send, /status, /cancel, /save, /clone, /rename, /delete)
 - **Per-agent cwd isolation** - cwd stored in ServiceContainer per-agent instead of global `os.chdir()`; FileSkill and ExecutionSkill resolve relative paths against agent's cwd; `/cwd` command updates only current agent
+- **MCP environment hardening** - MCP servers receive only safe env vars (PATH, HOME, USER, LANG, etc.) by default; use `env` for explicit values or `env_passthrough` for host vars; prevents accidental API key leakage
+- **Server security hardening** - `--serve` requires `NEXUS_DEV=1` env var; `nexus-rpc` commands no longer auto-start servers; embedded server has 30-min idle timeout for auto-shutdown
 
 ### Completed (2026-01-15 - Safe & Easy Fixes)
 
@@ -627,28 +644,20 @@ All critical and high priority items from the review are now complete.
 ### Review Artifacts
 
 ```
-reviews/
-├── CONSOLIDATED-REVIEW.md      # Combined findings from both swarms
-├── REMEDIATION-PLAN.md         # Detailed fix plans with code snippets
-├── claude-code/                # Claude Code agent reviews
-│   ├── core-review.md
-│   ├── rpc-review.md
-│   ├── skill-review.md
-│   ├── cli-review.md
-│   ├── misc-review.md
-│   └── cross-verification-by-nexus.md
-├── nexus3/                     # NEXUS3 agent reviews
-│   ├── core-review.md
-│   ├── cli-review.md
-│   ├── skill-review.md
-│   ├── misc-review.md
-│   └── cross-verification-by-cc.md
-└── remediation/                # Detailed fix plans
-    ├── critical-fixes.md
-    ├── security-fixes.md
-    ├── monolithic-refactor.md
-    ├── medium-priority.md
-    └── testing-plan.md
+reviews/pre-beta-2026-01-15/    # Latest pre-beta review (10-agent swarm)
+├── CONSOLIDATED-SUMMARY.md     # Overview + action items
+├── security-review.md          # Auth, sandbox, input validation
+├── security-injection-network.md
+├── documentation-review.md
+├── skills-file-exec-review.md
+├── skills-nexus-utils-review.md
+├── rpc-client-review.md
+├── cli-repl-review.md
+├── config-context-review.md
+├── provider-mcp-review.md
+└── core-types-review.md
+
+.archive/reviews-2026-01-14/    # Previous review artifacts (archived)
 ```
 
 ---

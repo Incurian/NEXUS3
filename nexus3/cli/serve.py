@@ -153,10 +153,13 @@ async def run_serve(
     print("")
 
     # Run the HTTP server
+    # Note: Headless mode (--serve) requires NEXUS_DEV=1 and has no idle timeout.
+    # This is intentional - dev mode servers run until explicitly stopped.
     try:
         await run_http_server(
             pool, global_dispatcher, effective_port, api_key=api_key,
-            session_manager=session_manager
+            session_manager=session_manager,
+            idle_timeout=None,  # No auto-shutdown in headless dev mode
         )
     finally:
         # Clean up token file

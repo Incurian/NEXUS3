@@ -33,11 +33,15 @@ from nexus3.mcp.transport import HTTPTransport, StdioTransport
 class MCPServerConfig:
     """Configuration for an MCP server connection.
 
+    SECURITY: MCP servers receive only safe environment variables by default.
+    Use env for explicit values or env_passthrough for host vars.
+
     Attributes:
         name: Friendly name for the server (used in skill prefixes).
         command: Command to launch server (for stdio transport).
         url: URL for HTTP transport.
-        env: Environment variables for subprocess.
+        env: Explicit environment variables for subprocess.
+        env_passthrough: Names of host env vars to pass to subprocess.
         enabled: Whether this server is enabled.
     """
 
@@ -45,6 +49,7 @@ class MCPServerConfig:
     command: list[str] | None = None
     url: str | None = None
     env: dict[str, str] | None = None
+    env_passthrough: list[str] | None = None
     enabled: bool = True
 
 
@@ -130,7 +135,11 @@ class MCPServerRegistry:
 
         # Create transport based on config
         if config.command:
-            transport = StdioTransport(config.command, env=config.env)
+            transport = StdioTransport(
+                config.command,
+                env=config.env,
+                env_passthrough=config.env_passthrough,
+            )
         elif config.url:
             transport = HTTPTransport(config.url)
         else:

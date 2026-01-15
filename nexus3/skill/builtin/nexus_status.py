@@ -60,26 +60,22 @@ class NexusStatusSkill(NexusSkill):
             context = await client.get_context()
             return {"tokens": tokens, "context": context}
 
-        # Note: _execute_with_client uses json.dumps without indent,
-        # but status benefits from pretty printing, so we override
-        from nexus3.client import ClientError, NexusClient
-        from nexus3.core.url_validator import UrlSecurityError, validate_url
+        # Use _execute_with_client for DirectAgentAPI optimization
+        result = await self._execute_with_client(
+            port=port,
+            operation=get_status,
+            agent_id=agent_id,
+        )
 
-        actual_port = self._get_port(port)
-        url = self._build_url(actual_port, agent_id)
-        api_key = self._get_api_key(actual_port)
+        # Pretty-print the JSON output for readability
+        if result.output:
+            try:
+                data = json.loads(result.output)
+                return ToolResult(output=json.dumps(data, indent=2))
+            except json.JSONDecodeError:
+                pass  # Return as-is if not valid JSON
 
-        try:
-            validated_url = validate_url(url, allow_localhost=True)
-        except UrlSecurityError as e:
-            return ToolResult(error=f"URL validation failed: {e}")
-
-        try:
-            async with NexusClient(validated_url, api_key=api_key) as client:
-                result = await get_status(client)
-                return ToolResult(output=json.dumps(result, indent=2))
-        except ClientError as e:
-            return ToolResult(error=str(e))
+        return result
 
 
 # Factory for dependency injection

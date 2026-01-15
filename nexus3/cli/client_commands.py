@@ -3,12 +3,13 @@
 These commands are thin wrappers around NexusClient, designed to be called
 from repl.py. Each function prints JSON to stdout and returns an exit code.
 
-Commands that require a server will auto-start one if none is running.
+All commands require a server to be running - start one with 'nexus'.
+Commands do NOT auto-start servers for security reasons.
 
 All commands are accessed via the `nexus3 rpc` subcommand group:
     nexus3 rpc detect           # Check if server is running
-    nexus3 rpc list             # List agents (auto-starts server)
-    nexus3 rpc create ID        # Create agent (auto-starts server)
+    nexus3 rpc list             # List agents
+    nexus3 rpc create ID        # Create agent
     nexus3 rpc destroy ID       # Remove agent from pool
     nexus3 rpc send AGENT MSG   # Send message to agent
     nexus3 rpc cancel AGENT ID  # Cancel request
@@ -17,13 +18,12 @@ All commands are accessed via the `nexus3 rpc` subcommand group:
 """
 
 import json
-import subprocess
 import sys
 from typing import Any
 
 from nexus3.client import ClientError, NexusClient
 from nexus3.rpc.auth import discover_rpc_token
-from nexus3.rpc.detection import DetectionResult, detect_server, wait_for_server
+from nexus3.rpc.detection import DetectionResult, detect_server
 
 
 def _get_default_port() -> int:
@@ -55,10 +55,13 @@ def _print_info(message: str) -> None:
     print(message, file=sys.stderr)
 
 
-async def _ensure_server(port: int = DEFAULT_PORT) -> bool:
-    """Ensure a NEXUS3 server is running, starting one if needed.
+async def _check_server(port: int = DEFAULT_PORT) -> bool:
+    """Check if a NEXUS3 server is running.
 
-    Returns True if server is ready, False if failed to start.
+    Security: Does NOT auto-start a server. User must run 'nexus' manually.
+    This prevents scripts/malware from spinning up unattended servers.
+
+    Returns True if server is ready, False otherwise.
     """
     result = await detect_server(port)
 
@@ -67,27 +70,11 @@ async def _ensure_server(port: int = DEFAULT_PORT) -> bool:
 
     if result == DetectionResult.OTHER_SERVICE:
         _print_error(f"Port {port} is in use by another service")
-        return False
-
-    # No server - start one in the background
-    _print_info(f"Starting NEXUS3 server on port {port}...")
-
-    # Start server as detached subprocess
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "nexus3", "--serve", str(port)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,  # Detach from parent
-    )
-
-    # Wait for server to be ready
-    if await wait_for_server(port, timeout=10.0):
-        _print_info(f"Server started (PID: {proc.pid})")
-        return True
     else:
-        _print_error("Server failed to start within 10 seconds")
-        proc.terminate()
-        return False
+        _print_error(f"No NEXUS3 server running on port {port}")
+        _print_info("Start a server with: nexus")
+
+    return False
 
 
 def _get_api_key(port: int, api_key: str | None) -> str | None:
@@ -260,7 +247,7 @@ async def cmd_shutdown(
 
 
 # =============================================================================
-# Agent Management Commands (with auto-start)
+# Agent Management Commands
 # =============================================================================
 
 
@@ -270,7 +257,7 @@ async def cmd_list(
 ) -> int:
     """List all agents on the server.
 
-    Auto-starts a server if none is running.
+    Requires a server to be running - start one with 'nexus'.
 
     Args:
         port: Server port (default 8765).
@@ -279,7 +266,7 @@ async def cmd_list(
     Returns:
         Exit code: 0 on success, 1 on error.
     """
-    if not await _ensure_server(port):
+    if not await _check_server(port):
         return 1
 
     url = f"http://127.0.0.1:{port}"
@@ -331,7 +318,7 @@ async def cmd_create(
 ) -> int:
     """Create a new agent on the server.
 
-    Auto-starts a server if none is running.
+    Requires a server to be running - start one with 'nexus'.
 
     Args:
         agent_id: ID for the new agent.
@@ -348,7 +335,7 @@ async def cmd_create(
     Returns:
         Exit code: 0 on success, 1 on error.
     """
-    if not await _ensure_server(port):
+    if not await _check_server(port):
         return 1
 
     url = f"http://127.0.0.1:{port}"

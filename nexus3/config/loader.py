@@ -145,8 +145,19 @@ def load_config(path: Path | None = None, cwd: Path | None = None) -> Config:
         loaded_from.append(global_config)
 
     # Layer 3: Ancestor directories
-    # Get ancestor depth from current merged config (or default 2)
-    ancestor_depth = merged.get("context", {}).get("ancestor_depth", 2)
+    # Determine ancestor_depth by checking all layers (local takes precedence)
+    # Check local first, then global, then merged defaults - use first found
+    local_config = effective_cwd / ".nexus3" / "config.json"
+    local_depth = None
+    if local_config.exists():
+        local_data_peek = _load_json_file(local_config)
+        if local_data_peek:
+            local_depth = local_data_peek.get("context", {}).get("ancestor_depth")
+    ancestor_depth = (
+        local_depth
+        if local_depth is not None
+        else merged.get("context", {}).get("ancestor_depth", 2)
+    )
     ancestor_dirs = _find_ancestor_config_dirs(effective_cwd, ancestor_depth)
 
     for ancestor_dir in ancestor_dirs:

@@ -293,7 +293,10 @@ class BaseProvider(ABC):
                         # Retryable server errors - retry with backoff
                         if self._is_retryable_error(response.status_code):
                             error_body = await response.aread()
-                            error_msg = error_body.decode()
+                            # Limit error body to 10KB to prevent memory exhaustion
+                            if len(error_body) > 10000:
+                                error_body = error_body[:10000]
+                            error_msg = error_body.decode(errors="replace")
                             last_error = ProviderError(
                                 f"API request failed ({response.status_code}): {error_msg}"
                             )
@@ -306,7 +309,10 @@ class BaseProvider(ABC):
                         # Other client errors (400, etc.) - fail immediately
                         if response.status_code >= 400:
                             error_body = await response.aread()
-                            error_msg = error_body.decode()
+                            # Limit error body to 10KB to prevent memory exhaustion
+                            if len(error_body) > 10000:
+                                error_body = error_body[:10000]
+                            error_msg = error_body.decode(errors="replace")
                             raise ProviderError(
                                 f"API request failed ({response.status_code}): {error_msg}"
                             )

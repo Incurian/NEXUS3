@@ -4,6 +4,7 @@ import asyncio
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
+from nexus3.core.paths import atomic_write_text
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
 
@@ -62,7 +63,8 @@ class WriteFileSkill(FileSkill):
 
             # Use async file I/O to avoid blocking
             await asyncio.to_thread(p.parent.mkdir, parents=True, exist_ok=True)
-            await asyncio.to_thread(p.write_text, content, encoding="utf-8")
+            # Atomic write: temp file + rename to prevent partial writes on crash
+            await asyncio.to_thread(atomic_write_text, p, content)
             return ToolResult(output=f"Successfully wrote {len(content)} bytes to {path}")
         except PathSecurityError as e:
             return ToolResult(error=str(e))

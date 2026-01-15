@@ -294,14 +294,14 @@ class TestAppendFileSkill:
             outside.unlink()
 
     @pytest.mark.asyncio
-    async def test_reports_bytes_written(self, skill: AppendFileSkill, tmp_path: Path) -> None:
-        """Reports number of bytes written."""
+    async def test_reports_characters_written(self, skill: AppendFileSkill, tmp_path: Path) -> None:
+        """Reports number of characters written."""
         file = tmp_path / "test.txt"
         file.write_text("")
 
         result = await skill.execute(path=str(file), content="12345")
         assert not result.error
-        assert "5 bytes" in result.output
+        assert "5 characters" in result.output
 
     def test_factory_creates_skill(self) -> None:
         """Factory creates skill with proper configuration."""

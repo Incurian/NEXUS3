@@ -308,11 +308,21 @@ class MCPServerConfig(BaseModel):
     agents can use. Each server is configured with either a command
     (for stdio transport) or URL (for HTTP transport).
 
+    SECURITY: MCP servers receive only safe environment variables by default
+    (PATH, HOME, USER, etc.). To pass additional vars:
+    - Use `env` for explicit key-value pairs (e.g., secrets from config)
+    - Use `env_passthrough` to copy vars from host environment
+
     Example in config.json:
         "mcp_servers": [
             {
                 "name": "test",
                 "command": ["python", "-m", "nexus3.mcp.test_server"]
+            },
+            {
+                "name": "github",
+                "command": ["npx", "-y", "@anthropic/mcp-server-github"],
+                "env_passthrough": ["GITHUB_TOKEN"]
             },
             {
                 "name": "postgres",
@@ -334,7 +344,10 @@ class MCPServerConfig(BaseModel):
     """URL for HTTP transport (not yet implemented)."""
 
     env: dict[str, str] | None = None
-    """Environment variables for subprocess."""
+    """Explicit environment variables for subprocess (highest priority)."""
+
+    env_passthrough: list[str] | None = None
+    """Names of host env vars to pass to subprocess (e.g., ["GITHUB_TOKEN"])."""
 
     enabled: bool = True
     """Whether this server is enabled."""

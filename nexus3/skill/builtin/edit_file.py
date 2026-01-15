@@ -4,6 +4,7 @@ import asyncio
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
+from nexus3.core.paths import atomic_write_text
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
 
@@ -128,8 +129,8 @@ class EditFileSkill(FileSkill):
             if result.error:
                 return result
 
-            # Write updated content
-            await asyncio.to_thread(p.write_text, result.output, encoding="utf-8")
+            # Write updated content atomically (temp file + rename)
+            await asyncio.to_thread(atomic_write_text, p, result.output)
 
             # Return success message (not the content)
             if string_mode:

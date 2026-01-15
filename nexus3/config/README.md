@@ -111,13 +111,18 @@ Context loading settings.
 
 MCP (Model Context Protocol) server configs for external tools.
 
-| Field     | Type              | Default | Description |
-|-----------|-------------------|---------|-------------|
-| `name`    | `str`             | -       | Server name (skill prefix) |
-| `command` | `list[str] \| None` | `None` | Stdio command |
-| `url`     | `str \| None`     | `None`  | HTTP URL (future) |
-| `env`     | `dict[str, str] \| None` | `None` | Env vars |
-| `enabled` | `bool`            | `True`  | Enabled |
+**SECURITY:** MCP servers receive only safe environment variables by default (PATH, HOME, USER, LANG, etc.). This prevents accidental API key leakage. To pass additional vars:
+- Use `env` for explicit key-value pairs (e.g., secrets from config)
+- Use `env_passthrough` to copy specific vars from host environment
+
+| Field           | Type              | Default | Description |
+|-----------------|-------------------|---------|-------------|
+| `name`          | `str`             | -       | Server name (skill prefix) |
+| `command`       | `list[str] \| None` | `None` | Stdio command |
+| `url`           | `str \| None`     | `None`  | HTTP URL (future) |
+| `env`           | `dict[str, str] \| None` | `None` | Explicit env vars (highest priority) |
+| `env_passthrough` | `list[str] \| None` | `None` | Host env vars to pass through |
+| `enabled`       | `bool`            | `True`  | Enabled |
 
 ### `Config` (schema.py)
 
@@ -191,6 +196,11 @@ Load config with search fallback.
       "name": "postgres",
       "command": ["npx", "-y", "@anthropic/mcp-server-postgres"],
       "env": { "DATABASE_URL": "postgresql://localhost/db" }
+    },
+    {
+      "name": "github",
+      "command": ["npx", "-y", "@anthropic/mcp-server-github"],
+      "env_passthrough": ["GITHUB_TOKEN"]
     }
   ]
 }

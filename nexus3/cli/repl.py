@@ -318,18 +318,18 @@ def parse_args() -> argparse.Namespace:
     )
     add_port_arg(detect_parser)
 
-    # rpc list - List agents (auto-starts server)
+    # rpc list - List agents (requires running server)
     list_parser = rpc_subparsers.add_parser(
         "list",
-        help="List all agents (auto-starts server)",
+        help="List all agents (requires running server)",
     )
     add_port_arg(list_parser)
     add_api_key_arg(list_parser)
 
-    # rpc create - Create agent (auto-starts server)
+    # rpc create - Create agent (requires running server)
     create_parser = rpc_subparsers.add_parser(
         "create",
-        help="Create an agent (auto-starts server)",
+        help="Create an agent (requires running server)",
     )
     create_parser.add_argument("agent_id", help="ID for the new agent")
     create_parser.add_argument(
@@ -817,10 +817,13 @@ async def run_repl(
             pass  # Don't fail on save errors
 
     # Start HTTP server as a background task
+    # Idle timeout: 30 min (1800s) - server auto-shuts down if no RPC activity
+    # This ensures servers don't linger after user walks away
     http_task = asyncio.create_task(
         run_http_server(
             pool, global_dispatcher, effective_port, api_key=api_key,
-            session_manager=session_manager
+            session_manager=session_manager,
+            idle_timeout=1800.0,
         ),
         name="http_server",
     )
@@ -1630,6 +1633,14 @@ def main() -> None:
 
         # Handle serve mode
         if args.serve is not None:
+            # Security: headless server mode requires NEXUS_DEV=1
+            # This prevents scripts/malware from spinning up unattended servers
+            if os.environ.get("NEXUS_DEV") != "1":
+                print("Error: Headless server mode disabled for security.")
+                print("Set NEXUS_DEV=1 to enable (development only).")
+                print("For normal use, run 'nexus' which starts an embedded server.")
+                raise SystemExit(1)
+
             if args.reload:
                 # Use watchfiles for auto-reload
                 _run_with_reload(args)

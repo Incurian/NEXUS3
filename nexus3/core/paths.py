@@ -1,8 +1,40 @@
 """Path normalization and validation utilities for cross-platform path handling."""
 
+import os
+import tempfile
 from pathlib import Path
 
 from nexus3.core.errors import PathSecurityError
+
+
+def atomic_write_text(path: Path, content: str, encoding: str = "utf-8") -> None:
+    """Write content to a file atomically using temp file + rename.
+
+    This ensures the file is never left in a partial state on crash or interruption.
+    The temp file is created in the same directory to ensure same-filesystem rename.
+
+    Args:
+        path: Path to write to.
+        content: Content to write.
+        encoding: Text encoding (default: utf-8).
+
+    Raises:
+        OSError: If the file cannot be written.
+    """
+    # Create temp file in same directory for atomic rename (same filesystem)
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".tmp_", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding=encoding) as f:
+            f.write(content)
+        # Atomic rename (on POSIX; Windows may not be truly atomic)
+        os.replace(tmp_path, str(path))
+    except Exception:
+        # Clean up temp file on error
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def validate_path(

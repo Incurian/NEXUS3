@@ -14,6 +14,7 @@ Usage:
 from typing import Any
 
 from nexus3.core.types import ToolResult
+from nexus3.core.validation import validate_tool_arguments
 from nexus3.mcp.client import MCPClient
 from nexus3.mcp.protocol import MCPTool
 from nexus3.skill.base import BaseSkill
@@ -61,14 +62,21 @@ class MCPSkillAdapter(BaseSkill):
         """
         Execute the underlying MCP tool.
 
-        Calls client.call_tool() and converts MCPToolResult to ToolResult.
+        Validates kwargs against input_schema, then calls client.call_tool()
+        and converts MCPToolResult to ToolResult.
 
         Returns:
             ToolResult with output (success) or error.
         """
+        # Validate parameters against input_schema before calling MCP server
+        try:
+            validated_args = validate_tool_arguments(kwargs, self._parameters)
+        except ValueError as e:
+            return ToolResult(error=f"Invalid parameters for {self.name}: {e}")
+
         try:
             mcp_result = await self._client.call_tool(
-                self._original_name, kwargs
+                self._original_name, validated_args
             )
             text_content = mcp_result.to_text()
             if mcp_result.is_error:

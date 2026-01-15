@@ -20,6 +20,64 @@ class MCPTransportError(NexusError):
     """Error in MCP transport layer."""
 
 
+# Environment variables always safe to pass to MCP servers.
+# These are essential for subprocess execution but don't contain secrets.
+SAFE_ENV_KEYS: frozenset[str] = frozenset({
+    "PATH",       # Find executables
+    "HOME",       # User home directory (config files)
+    "USER",       # Current username
+    "LOGNAME",    # Login name (same as USER on most systems)
+    "LANG",       # Locale (character encoding)
+    "LC_ALL",     # Locale override
+    "LC_CTYPE",   # Character classification locale
+    "TERM",       # Terminal type
+    "SHELL",      # Default shell
+    "TMPDIR",     # Temporary directory
+    "TMP",        # Windows temp directory
+    "TEMP",       # Windows temp directory
+})
+
+
+def build_safe_env(
+    explicit_env: dict[str, str] | None = None,
+    passthrough: list[str] | None = None,
+) -> dict[str, str]:
+    """Build a safe environment dict for MCP server subprocesses.
+
+    SECURITY: MCP servers receive only:
+    1. Safe system variables (PATH, HOME, etc.)
+    2. Explicitly declared env vars from mcp.json
+    3. Explicitly passthrough vars from mcp.json
+
+    This prevents accidental leakage of secrets like API keys.
+
+    Args:
+        explicit_env: Explicit env vars declared in config (merged last).
+        passthrough: Env var names to copy from host environment.
+
+    Returns:
+        Safe environment dict for subprocess.
+    """
+    env: dict[str, str] = {}
+
+    # 1. Always include safe system variables
+    for key in SAFE_ENV_KEYS:
+        if key in os.environ:
+            env[key] = os.environ[key]
+
+    # 2. Add passthrough vars from host (user explicitly opted in)
+    if passthrough:
+        for key in passthrough:
+            if key in os.environ:
+                env[key] = os.environ[key]
+
+    # 3. Explicit env vars override everything (highest priority)
+    if explicit_env:
+        env.update(explicit_env)
+
+    return env
+
+
 class MCPTransport(ABC):
     """Abstract base class for MCP transports.
 
@@ -67,9 +125,18 @@ class StdioTransport(MCPTransport):
     launched as a subprocess with JSON-RPC messages exchanged via
     newline-delimited JSON on stdin/stdout.
 
+    SECURITY: By default, MCP servers receive only safe environment variables
+    (PATH, HOME, USER, etc.) - NOT the full host environment. This prevents
+    accidental leakage of API keys and secrets.
+
+    To pass additional env vars to the server:
+    - Use `env` parameter for explicit key-value pairs
+    - Use `env_passthrough` for vars to copy from host environment
+
     Attributes:
         command: Command and arguments to launch the server.
-        env: Additional environment variables for the subprocess.
+        env: Explicit environment variables for the subprocess.
+        env_passthrough: Names of host env vars to copy to subprocess.
         cwd: Working directory for the subprocess.
     """
 
@@ -77,26 +144,31 @@ class StdioTransport(MCPTransport):
         self,
         command: list[str],
         env: dict[str, str] | None = None,
+        env_passthrough: list[str] | None = None,
         cwd: str | None = None,
     ):
         """Initialize StdioTransport.
 
         Args:
             command: Command and arguments to launch the MCP server.
-            env: Additional environment variables (merged with current env).
+            env: Explicit environment variables (highest priority).
+            env_passthrough: Names of host env vars to pass through.
             cwd: Working directory for the subprocess.
         """
         self._command = command
-        self._extra_env = env or {}
+        self._explicit_env = env
+        self._env_passthrough = env_passthrough
         self._cwd = cwd
         self._process: asyncio.subprocess.Process | None = None
         self._stderr_task: asyncio.Task[None] | None = None
 
     async def connect(self) -> None:
         """Start the subprocess."""
-        # Merge environment
-        env = os.environ.copy()
-        env.update(self._extra_env)
+        # Build safe environment (explicit vars + passthrough + safe defaults)
+        env = build_safe_env(
+            explicit_env=self._explicit_env,
+            passthrough=self._env_passthrough,
+        )
 
         try:
             self._process = await asyncio.create_subprocess_exec(

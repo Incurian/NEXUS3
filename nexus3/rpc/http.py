@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -416,11 +417,12 @@ async def run_http_server(
     api_key: str | None = None,
     session_manager: SessionManager | None = None,
     max_concurrent: int = 32,
+    idle_timeout: float | None = None,
 ) -> None:
     """Run the HTTP server for JSON-RPC requests with path-based routing.
 
-    This function runs indefinitely until cancelled or the pool
-    signals shutdown.
+    This function runs indefinitely until cancelled, the pool signals shutdown,
+    or the idle timeout is reached.
 
     Routing:
         - POST / or /rpc → global_dispatcher
@@ -443,6 +445,9 @@ async def run_http_server(
                         When provided, requests to inactive but saved agents will
                         trigger automatic session restoration.
         max_concurrent: Maximum concurrent connections to prevent DoS. Defaults to 32.
+        idle_timeout: Optional idle timeout in seconds. If no RPC connections are
+                     received within this duration, the server will shut down.
+                     None means no idle timeout (server runs indefinitely).
     """
     # Security: Force localhost binding
     if host not in ("127.0.0.1", "localhost", "::1"):
@@ -453,10 +458,15 @@ async def run_http_server(
     # Rate limiting: limit concurrent connections
     semaphore = asyncio.Semaphore(max_concurrent)
 
+    # Track last activity time for idle timeout
+    last_activity = time.time()
+
     async def client_handler(
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
     ) -> None:
+        nonlocal last_activity
+        last_activity = time.time()  # Reset idle timer on each connection
         async with semaphore:
             await handle_connection(
                 reader, writer, pool, global_dispatcher, api_key, session_manager
@@ -470,11 +480,24 @@ async def run_http_server(
 
     addr = server.sockets[0].getsockname() if server.sockets else (host, port)
     logger.info("JSON-RPC HTTP server running at http://%s:%s/", addr[0], addr[1])
+    if idle_timeout is not None:
+        logger.info("Idle timeout: %s seconds", idle_timeout)
 
     async with server:
         # Check for shutdown periodically
         # Exit if: all agents want shutdown OR explicit shutdown_server was called
+        # OR idle timeout reached
         while not pool.should_shutdown and not global_dispatcher.shutdown_requested:
+            # Check idle timeout
+            if idle_timeout is not None:
+                idle_duration = time.time() - last_activity
+                if idle_duration > idle_timeout:
+                    logger.info(
+                        "Idle timeout reached (%.0fs without RPC activity), shutting down",
+                        idle_duration,
+                    )
+                    break
+
             await asyncio.sleep(0.1)
 
         # Graceful shutdown

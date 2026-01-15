@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
+from nexus3.core.paths import atomic_write_text
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
 
@@ -173,8 +174,8 @@ class RegexReplaceSkill(FileSkill):
             if new_content == content:
                 return ToolResult(output="Pattern matched but replacement produced no changes")
 
-            # Write result
-            await asyncio.to_thread(p.write_text, new_content, encoding="utf-8")
+            # Write result atomically (temp file + rename)
+            await asyncio.to_thread(atomic_write_text, p, new_content)
 
             return ToolResult(
                 output=f"Replaced {actual_count} match(es) in {path}"

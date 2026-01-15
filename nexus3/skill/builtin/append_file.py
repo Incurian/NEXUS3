@@ -4,6 +4,7 @@ import asyncio
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
+from nexus3.core.paths import atomic_write_text
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
 
@@ -87,12 +88,12 @@ class AppendFileSkill(FileSkill):
                 if newline and existing and not existing.endswith("\n"):
                     to_write = "\n" + content
 
-                # Append to file
-                p.write_text(existing + to_write, encoding="utf-8")
+                # Append to file atomically (temp file + rename)
+                atomic_write_text(p, existing + to_write)
                 return len(to_write)
 
-            bytes_written = await asyncio.to_thread(do_append)
-            return ToolResult(output=f"Appended {bytes_written} bytes to {path}")
+            chars_written = await asyncio.to_thread(do_append)
+            return ToolResult(output=f"Appended {chars_written} characters to {path}")
 
         except PathSecurityError as e:
             return ToolResult(error=str(e))
