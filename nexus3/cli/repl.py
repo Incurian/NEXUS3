@@ -1056,13 +1056,28 @@ async def run_repl(
                 return CommandOutput.error(f"Invalid agent name: {e}")
             return await unified_cmd.cmd_send(ctx, agent_name, send_parts[1])
         elif cmd_name == "status":
-            if cmd_args:
-                try:
-                    agent_name = validate_agent_id(cmd_args.strip())
-                except ValidationError as e:
-                    return CommandOutput.error(f"Invalid agent name: {e}")
-                return await unified_cmd.cmd_status(ctx, agent_name)
-            return await unified_cmd.cmd_status(ctx, None)
+            # Parse flags: --tools, --tokens, --all/-a, and optional agent_id
+            status_args = cmd_args.split() if cmd_args else []
+            show_tools = False
+            show_tokens = False
+            agent_name = None
+
+            for arg in status_args:
+                if arg == "--tools":
+                    show_tools = True
+                elif arg == "--tokens":
+                    show_tokens = True
+                elif arg in ("--all", "-a"):
+                    show_tools = True
+                    show_tokens = True
+                elif not arg.startswith("-"):
+                    # Assume it's an agent ID
+                    try:
+                        agent_name = validate_agent_id(arg)
+                    except ValidationError as e:
+                        return CommandOutput.error(f"Invalid agent name: {e}")
+
+            return await unified_cmd.cmd_status(ctx, agent_name, show_tools, show_tokens)
         elif cmd_name == "cancel":
             cancel_parts = cmd_args.split() if cmd_args else []
             agent_id_arg = None

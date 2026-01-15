@@ -114,7 +114,7 @@ Agent Management:
   /create <name>      Create agent without switching
   /destroy <name>     Remove active agent from pool
   /send <agent> <msg> One-shot message to another agent
-  /status [agent]     Get agent status (default: current agent)
+  /status [agent] [--tools] [--tokens] [-a]  Get agent status (-a: all details)
   /cancel [agent]     Cancel in-progress request
 
 Session Management:

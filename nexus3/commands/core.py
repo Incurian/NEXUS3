@@ -201,18 +201,25 @@ async def cmd_send(
 async def cmd_status(
     ctx: CommandContext,
     agent_id: str | None = None,
+    show_tools: bool = False,
+    show_tokens: bool = False,
 ) -> CommandOutput:
     """Get agent status information.
 
-    Returns token usage and context information for the agent.
+    Returns comprehensive status including tokens, model, permissions,
+    paths, MCP servers, and optionally full tool list and token breakdown.
 
     Args:
         ctx: Command context with pool and session_manager.
         agent_id: Agent to get status for. Uses current agent if None.
+        show_tools: If True, include full list of available tools.
+        show_tokens: If True, include detailed token breakdown.
 
     Returns:
         CommandOutput with status info in data field.
     """
+    from pathlib import Path
+
     # Resolve agent ID
     effective_id = agent_id or ctx.current_agent_id
     if effective_id is None:
@@ -227,39 +234,174 @@ async def cmd_status(
     tokens = agent.context.get_token_usage()
     message_count = len(agent.context.messages)
 
-    # Get parent/child info from services (if available)
+    # Calculate context usage percentage
+    total = tokens.get("total", 0)
+    budget = tokens.get("budget", 1)
+    context_usage_pct = round((total / budget) * 100, 1) if budget > 0 else 0
+
+    # Get info from services
+    permissions: AgentPermissions | None = None
+    model_info: dict | None = None
+    cwd: Path | None = None
+    allowed_paths: list[Path] | None = None
+    mcp_registry = None
     parent_id = None
     children: list[str] = []
+
     if hasattr(agent, "services") and agent.services:
-        permissions: AgentPermissions | None = agent.services.get("permissions")
-        parent_id = permissions.parent_agent_id if permissions else None
+        permissions = agent.services.get("permissions")
+        resolved_model = agent.services.get("model")
+        cwd = agent.services.get("cwd")
+        allowed_paths = agent.services.get("allowed_paths")
+        mcp_registry = agent.services.get("mcp_registry")
+
+        if permissions:
+            parent_id = permissions.parent_agent_id
         child_ids: set[str] | None = agent.services.get("child_agent_ids")
         children = list(child_ids) if child_ids else []
 
+        if resolved_model:
+            model_info = {
+                "model_id": resolved_model.model_id,
+                "alias": resolved_model.alias,
+                "context_window": resolved_model.context_window,
+                "provider": resolved_model.provider_name,
+            }
+
+    # Get permission info
+    perm_level = None
+    preset_name = None
+    disabled_tools: list[str] = []
+    write_paths: list[str] = []
+
+    if permissions:
+        perm_level = permissions.effective_policy.level.name
+        preset_name = permissions.base_preset
+        # Get disabled tools and write paths from tool permissions
+        for tool_name, tool_perm in permissions.tool_permissions.items():
+            if not tool_perm.enabled:
+                disabled_tools.append(tool_name)
+            # Check write tools for per-tool allowed_paths
+            if tool_name in ("write_file", "edit_file") and tool_perm.allowed_paths:
+                for p in tool_perm.allowed_paths:
+                    p_str = str(p)
+                    if p_str not in write_paths:
+                        write_paths.append(p_str)
+
+    # Get MCP server info
+    mcp_servers: list[dict] = []
+    if mcp_registry:
+        for name in mcp_registry.list_servers(effective_id):
+            server = mcp_registry.get(name, effective_id)
+            if server:
+                mcp_servers.append({
+                    "name": name,
+                    "tool_count": len(server.skills),
+                    "shared": server.shared,
+                })
+
+    # Get compaction config from session
+    compaction_info: dict | None = None
+    if hasattr(agent, "session") and hasattr(agent.session, "_config"):
+        comp_cfg = agent.session._config.compaction
+        compaction_info = {
+            "enabled": comp_cfg.enabled,
+            "trigger_threshold": comp_cfg.trigger_threshold,
+            "model": comp_cfg.model,
+        }
+
+    # Get tool list if requested
+    tool_list: list[str] | None = None
+    if show_tools and hasattr(agent, "registry"):
+        tool_list = sorted(agent.registry.names)
+
+    # Build status data
     status_data = {
         "agent_id": effective_id,
         "is_temp": is_temp_agent(effective_id),
         "created_at": agent.created_at.isoformat(),
         "message_count": message_count,
-        "tokens": tokens,
+        "context_usage_pct": context_usage_pct,
+        "tokens": tokens if show_tokens else {"total": total, "budget": budget},
+        "model": model_info,
+        "permission_level": perm_level,
+        "preset": preset_name,
+        "cwd": str(cwd) if cwd else None,
+        "allowed_paths": [str(p) for p in allowed_paths] if allowed_paths else None,
+        "allowed_write_paths": write_paths if write_paths else None,
+        "disabled_tools": disabled_tools if disabled_tools else None,
+        "mcp_servers": mcp_servers if mcp_servers else None,
+        "compaction": compaction_info,
         "parent_agent_id": parent_id,
-        "children": children,
+        "children": children if children else None,
     }
+
+    if tool_list is not None:
+        status_data["tools"] = tool_list
 
     # Format message
     lines = [
         f"Agent: {effective_id}",
         f"  Type: {'temp' if is_temp_agent(effective_id) else 'named'}",
         f"  Created: {agent.created_at.isoformat()}",
-        f"  Messages: {message_count}",
-        f"  Tokens: {tokens.get('total', 0)} total",
     ]
+
+    # Model info
+    if model_info:
+        alias_str = f" ({model_info['alias']})" if model_info.get("alias") else ""
+        lines.append(f"  Model: {model_info['model_id']}{alias_str}")
+
+    # Permission info
+    if perm_level:
+        preset_str = f" (preset: {preset_name})" if preset_name else ""
+        lines.append(f"  Permissions: {perm_level}{preset_str}")
+
+    # Context usage
+    lines.append(f"  Context: {total:,} / {budget:,} tokens ({context_usage_pct}%)")
+    lines.append(f"  Messages: {message_count}")
+
+    # Paths
+    if cwd:
+        lines.append(f"  CWD: {cwd}")
+    if write_paths:
+        lines.append(f"  Write paths: {', '.join(write_paths)}")
+
+    # Disabled tools
+    if disabled_tools:
+        lines.append(f"  Disabled tools: {', '.join(sorted(disabled_tools))}")
+
+    # MCP servers
+    if mcp_servers:
+        mcp_str = ", ".join(f"{s['name']} ({s['tool_count']} tools)" for s in mcp_servers)
+        lines.append(f"  MCP servers: {mcp_str}")
+
+    # Compaction
+    if compaction_info and compaction_info["enabled"]:
+        lines.append(f"  Compaction: enabled (threshold: {compaction_info['trigger_threshold']})")
+
+    # Hierarchy
     if parent_id:
         lines.append(f"  Parent: {parent_id}")
     if children:
         lines.append(f"  Children: {', '.join(children)}")
-    message = "\n".join(lines)
 
+    # Detailed token breakdown (if requested)
+    if show_tokens:
+        lines.append("  Token breakdown:")
+        lines.append(f"    System: {tokens.get('system', 0):,}")
+        lines.append(f"    Tools: {tokens.get('tools', 0):,}")
+        lines.append(f"    Messages: {tokens.get('messages', 0):,}")
+        lines.append(f"    Available: {tokens.get('available', 0):,}")
+
+    # Tool list (if requested)
+    if tool_list:
+        lines.append(f"  Tools ({len(tool_list)}):")
+        # Group into rows of 4 for readability
+        for i in range(0, len(tool_list), 4):
+            chunk = tool_list[i:i+4]
+            lines.append(f"    {', '.join(chunk)}")
+
+    message = "\n".join(lines)
     return CommandOutput.success(message=message, data=status_data)
 
 
