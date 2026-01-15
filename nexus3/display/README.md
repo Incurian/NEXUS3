@@ -1,310 +1,142 @@
 # NEXUS3 Display Module
 
-Terminal display system for NEXUS3, providing Rich-based output with gumball status indicators, animated streaming display, batch tool progress tracking, and a pluggable summary bar.
+Terminal display system for NEXUS3, providing Rich-based inline printing with gumball status indicators, a pluggable animated summary bar, streaming display for responses and tool batches, centralized management, consistent theming, and cancellation support.
 
 ## Purpose
 
-This module handles all terminal output for NEXUS3:
-- Inline scrolling output with gumball status prefixes (`InlinePrinter`)
-- Fixed summary bar with animated spinners and task counts (`SummaryBar`)
-- Full-screen streaming display for responses and tool batches (`StreamingDisplay`)
-- Centralized coordination (`DisplayManager`)
-- Shared `Console` singleton and `Theme` for consistent styling
-- Activity state tracking and cancellation support
+Handles all terminal output in NEXUS3:
+- **Inline scrolling output** (`InlinePrinter`): Gumballs, tasks, thinking traces, errors (uses Rich.Console).
+- **Fixed summary bar** (`SummaryBar`): Live-updating segments (activity spinner, task counts, ESC hint) at bottom.
+- **Full-screen streaming** (`StreamingDisplay`): Rich.Live for responses + batch tool progress (truncates to 20 lines).
+- **Coordination** (`DisplayManager`): Printer + summary + tasks + cancellation token.
+- **Consistency**: Shared `Console`, customizable `Theme`.
+- Supports activity states (IDLE, WAITING, THINKING, etc.) and ESC cancellation.
 
-The architecture separates **scrolling content** (inline printing) from **fixed UI** (summary bar), allowing coexistence without conflicts. `StreamingDisplay` provides an alternative full-Rich.Live mode for streaming.
+Separates scrolling content from fixed UI to coexist without conflicts. Streaming mode optional for full Live.
 
-## File Overview
+## Modules & Key Exports
 
-| File | Description |
-|------|-------------|
-| [`__init__.py`](__init__.py) | Public exports: all classes, enums, functions |
-| [`console.py`](console.py) | Shared `Rich.Console` singleton: `get_console()`, `set_console()` |
-| [`theme.py`](theme.py) | `Status`, `Activity` enums; `Theme` dataclass; `load_theme()` |
-| [`printer.py`](printer.py) | `InlinePrinter`: scrolling output with gumballs |
-| [`segments.py`](segments.py) | `SummarySegment` protocol; `ActivitySegment`, `TaskCountSegment`, `CancelHintSegment` |
-| [`summary.py`](summary.py) | `SummaryBar`: composes and animates segments via `Rich.Live` |
-| [`streaming.py`](streaming.py) | `StreamingDisplay`: accumulates and renders streamed content + tool batches |
-| [`manager.py`](manager.py) | `DisplayManager`: orchestrates printer, summary bar, tasks, cancellation |
+From [`__init__.py`](__init__.py):
 
-## Key Types
+**Console**: `get_console()`, `set_console()`
+**Manager**: `DisplayManager`
+**Printer**: `InlinePrinter`
+**Streaming**: `StreamingDisplay`
+**Summary**: `SummaryBar`
+**Segments**: `ActivitySegment`, `CancelHintSegment`, `SummarySegment` (protocol), `TaskCountSegment`
+**Theme**: `Activity`, `Status`, `Theme`, `load_theme()`
 
-### Enums
+### File Overview
 
-#### `Status` (`theme.py`)
-Gumball status indicators.
+| File | Size | Modified | Description |
+|------|------|----------|-------------|
+| [`__init__.py`](__init__.py) | 953B | 2026-01-07 | Exports |
+| [`console.py`](console.py) | 968B | 2026-01-09 | Shared Console singleton |
+| [`manager.py`](manager.py) | 5.8K | 2026-01-07 | `DisplayManager`: Orchestrates all |
+| [`printer.py`](printer.py) | 3.4K | 2026-01-07 | `InlinePrinter`: Scrolling + gumballs |
+| [`segments.py`](segments.py) | 3.3K | 2026-01-07 | Segments: Activity, Tasks, CancelHint |
+| [`streaming.py`](streaming.py) | 13.8K | 2026-01-12 | `StreamingDisplay`: Live streaming + tools |
+| [`summary.py`](summary.py) | 3.6K | 2026-01-07 | `SummaryBar`: Composes Live segments |
+| [`theme.py`](theme.py) | 1.9K | 2026-01-07 | Enums, `Theme` dataclass |
 
-| Value | Description |
-|-------|-------------|
-| `ACTIVE` | In-progress |
-| `PENDING` | Queued/waiting |
-| `COMPLETE` | Successful |
-| `ERROR` | Failed |
-| `CANCELLED` | User-cancelled |
+## Key Classes & Functions
 
-#### `Activity` (`theme.py`)
-Current system activity for summary/activity segments.
+### Enums (`theme.py`)
+- **`Status`**: ACTIVE, PENDING, COMPLETE, ERROR, CANCELLED (gumballs).
+- **`Activity`**: IDLE, WAITING, THINKING, RESPONDING, TOOL_CALLING.
+- **`ToolState` (streaming)**: PENDING, ACTIVE, SUCCESS, ERROR, HALTED, CANCELLED.
 
-| Value | Description |
-|-------|-------------|
-| `IDLE` | No operation |
-| `WAITING` | Awaiting first API byte |
-| `THINKING` | Model reasoning (tags detected) |
-| `RESPONDING` | Streaming content |
-| `TOOL_CALLING` | Executing tools |
+### `Theme` (`theme.py`)
+Configures gumballs (e.g., `[cyan]●[/]`), styles, spinners. `load_theme()`.
 
-#### `ToolState` (`streaming.py`)
-Tool execution states in a batch.
-
-| Value | Description |
-|-------|-------------|
-| `PENDING` | Queued |
-| `ACTIVE` | Running |
-| `SUCCESS` | Completed OK |
-| `ERROR` | Failed |
-| `HALTED` | Skipped (prior error) |
-| `CANCELLED` | User-cancelled |
-
-### Data Classes
-
-#### `Theme` (`theme.py`)
-Centralizes all visual styles.
-
+### `DisplayManager` (`manager.py`) - Central Hub
 ```python
-@dataclass
-class Theme:
-    gumballs: dict[Status, str]  # e.g., "[cyan]●[/]"
-    spinner_frames: str = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-    thinking: str = "dim italic"
-    thinking_collapsed: str = "dim"
-    response: str = ""
-    error: str = "bold red"
-    user_input: str = "bold"
-    summary_style: str = ""
-    summary_separator: str = " | "
-
-    def gumball(self, status: Status) -> str:
-        return self.gumballs.get(status, "○")
+display = DisplayManager()  # Auto console/theme/segments
+async with display.live_session():  # Starts summary Live + token
+    display.set_activity(Activity.THINKING)
+    display.add_task()  # Updates TaskCountSegment
+    display.print_gumball(Status.ACTIVE, "Task starting")
+    if display.is_cancelled: break
+display.stop_live()  # Before raw streaming
+display.print_streaming(chunk)  # Raw stdout
 ```
 
-**Default Gumballs:**
-| Status | Markup |
-|--------|--------|
-| `ACTIVE` | `[cyan]●[/]` |
-| `PENDING` | `[dim]○[/]` |
-| `COMPLETE` | `[green]●[/]` |
-| `ERROR` | `[red]●[/]` |
-| `CANCELLED` | `[yellow]●[/]` |
+Methods: `print*()`, `set_activity()`, task tracking, `cancel_token`.
 
-`load_theme(overrides=None) -> Theme`: Returns default `Theme()` (overrides scaffolded).
+### `InlinePrinter` (`printer.py`)
+Gumball-prefixed scrolling: `print_gumball()`, `print_task_start/end()`, `print_thinking()`, `print_streaming_chunk()` (raw).
 
-#### `ToolStatus` (`streaming.py`)
+### `SummaryBar` (`summary.py`) + Segments (`segments.py`)
+Pluggable: `register_segment(ActivitySegment(theme))`. `with bar.live():`.
+
+### `StreamingDisplay` (`streaming.py`)
 ```python
-@dataclass
-class ToolStatus:
-    name: str
-    tool_id: str
-    state: ToolState = ToolState.PENDING
-    params: str = ""  # Truncated primary arg (e.g., path)
-    error: str = ""
-    start_time: float = 0.0
+display = StreamingDisplay(theme)
+with Live(display):  # Auto-refreshes
+    display.add_chunk(chunk)
+    display.start_batch([("read_file", "id1", "path.py")])
+    display.set_tool_active("id1")
 ```
 
-## Core Classes
+Tracks tool batches, thinking duration, errors, timers.
 
-### Console (`console.py`)
-Shared `Rich.Console` for consistency.
-
-```python
-def get_console() -> Console: ...
-def set_console(console: Console) -> None: ...
-```
-
-**Config:** `highlight=False`, `markup=True`, `force_terminal=True`.
-
-### InlinePrinter (`printer.py`)
-Scrolling output with styled gumballs/tasks.
-
-```python
-class InlinePrinter:
-    def __init__(self, console: Console, theme: Theme) -> None: ...
-    def print(self, content: str, style: str | None = None, end: str = "\n") -> None: ...
-    def print_gumball(self, status: Status, message: str, indent: int = 0) -> None: ...
-    def print_thinking(self, content: str, collapsed: bool = True) -> None: ...
-    def print_task_start(self, task_type: str, label: str, indent: int = 2) -> None: ...
-    def print_task_end(self, task_type: str, success: bool, indent: int = 2) -> None: ...
-    def print_error(self, message: str) -> None: ...
-    def print_cancelled(self, message: str = "Cancelled") -> None: ...
-    def print_streaming_chunk(self, chunk: str) -> None:  # Raw stdout
-    def finish_streaming(self) -> None:  # Newline
-```
-
-### Summary Segments (`segments.py`)
-`SummarySegment(Protocol)`: `@property visible() -> bool`, `render() -> Text`.
-
-**Built-ins:**
-- `ActivitySegment`: Spinner + activity name.
-- `TaskCountSegment`: Counts with gumballs (active/pending/done/failed).
-  - Methods: `add_task()`, `start_task()`, `complete_task(success=True)`, `reset()`.
-- `CancelHintSegment`: `"ESC cancel"` (set `show: bool`).
-
-### SummaryBar (`summary.py`)
-Composes/animates segments.
-
-```python
-class SummaryBar:
-    def __init__(self, console: Console, theme: Theme) -> None: ...
-    def register_segment(self, segment: SummarySegment, position: int = -1) -> None: ...
-    def unregister_segment(self, segment: SummarySegment) -> None: ...
-    def live(self) -> Generator[None, None, None]: ...  # Context mgr
-    def start(self) -> None: ...
-    def stop(self) -> None: ...
-    def refresh(self) -> None: ...
-    @property def is_live(self) -> bool: ...
-```
-
-Renders visible segments joined by `theme.summary_separator`.
-
-### StreamingDisplay (`streaming.py`)
-Rich.Live renderable for streaming + tool batches. Limits to last 20 lines.
-
-```python
-class StreamingDisplay:
-    MAX_DISPLAY_LINES = 20
-    TOOL_TIMER_THRESHOLD = 3.0
-
-    def __init__(self, theme: Theme) -> None: ...
-    def __rich__(self) -> RenderableType: ...  # Live refresh
-
-    # Activity
-    def set_activity(self, activity: Activity) -> None: ...
-    def start_activity_timer(self) -> None: ...
-    def get_activity_duration(self) -> float: ...
-
-    # Content
-    def add_chunk(self, chunk: str) -> None: ...
-    def reset(self) -> None: ...
-
-    # Cancel
-    def cancel(self) -> None: ...
-    def cancel_all_tools(self) -> None: ...
-    @property def is_cancelled(self) -> bool: ...
-
-    # Thinking
-    def start_thinking(self) -> None: ...
-    def end_thinking(self) -> tuple[bool, float]: ...
-    def get_total_thinking_duration(self) -> float: ...
-    def clear_thinking_duration(self) -> None: ...
-    @property def thinking_duration(self) -> float: ...
-
-    # Errors
-    def mark_error(self) -> None: ...
-    def clear_error_state(self) -> None: ...
-    @property def had_errors(self) -> bool: ...
-
-    # Tools (batch)
-    def add_tool_call(self, name: str, tool_id: str) -> None:  # Legacy/stream
-    def start_batch(self, tools: list[tuple[str, str, str]]) -> None:  # (name,id,params)
-    def set_tool_active(self, tool_id: str) -> None: ...
-    def set_tool_complete(self, tool_id: str, success: bool, error: str = "") -> None: ...
-    def halt_remaining_tools(self) -> None: ...
-    def complete_tool_call(self, tool_id: str) -> None:  # Legacy
-    def get_batch_results(self) -> list[ToolStatus]: ...
-    def clear_tools(self) -> None: ...
-```
-
-**Render Order:** Response (truncated) → Tools → Activity/timer → Status bar.
-
-### DisplayManager (`manager.py`)
-Orchestrates all components + cancellation.
-
-```python
-class DisplayManager:
-    def __init__(self, console: Console | None = None, theme: Theme | None = None) -> None: ...
-
-    @property def cancel_token(self) -> CancellationToken | None: ...
-    @property def is_cancelled(self) -> bool: ...
-    def cancel(self) -> None: ...
-
-    async def live_session(self) -> AsyncGenerator[None, None]: ...  # Auto start/stop + token
-    def stop_live(self) -> None: ...
-
-    # Activity
-    def set_activity(self, activity: Activity) -> None: ...
-
-    # Tasks (via TaskCountSegment)
-    def add_task(self) -> None: ...
-    def start_task(self) -> None: ...
-    def complete_task(self, success: bool = True) -> None: ...
-    def reset_tasks(self) -> None: ...
-
-    # Printing (delegates)
-    def print(self, content: str, style: str | None = None) -> None: ...
-    def print_gumball(self, status: Status, message: str, indent: int = 0) -> None: ...
-    def print_thinking(self, content: str, collapsed: bool = True) -> None: ...
-    def print_task_start(self, task_type: str, label: str) -> None: ...
-    def print_task_end(self, task_type: str, success: bool) -> None: ...
-    def print_error(self, message: str) -> None: ...
-    def print_cancelled(self, message: str = "Cancelled") -> None: ...
-    def print_streaming(self, chunk: str) -> None: ...
-    def finish_streaming(self) -> None: ...
-```
-
-**Defaults:** Registers `ActivitySegment`, `TaskCountSegment`, `CancelHintSegment`.
+## Dependencies
+- **rich**: Console, Live, Text, Group.
+- **nexus3.core.cancel**: `CancellationToken`.
+- Python stdlib: `time`, `dataclasses`, `enum`, `contextlib`, `collections.abc`, `sys`.
 
 ## Usage Examples
 
-### DisplayManager (Recommended)
+### 1. Standard Workflow (`DisplayManager`)
 ```python
 from nexus3.display import DisplayManager, Activity
 
-async def handle_request():
-    display = DisplayManager()
-    async with display.live_session():
-        display.set_activity(Activity.WAITING)
-        display.stop_live()  # Before streaming
-        async for chunk in stream:
-            if display.is_cancelled: break
-            display.print_streaming(chunk)
-        display.finish_streaming()
+async def process():
+    dm = DisplayManager()
+    async with dm.live_session():
+        dm.set_activity(Activity.WAITING)
+        dm.stop_live()  # Safe for streaming
+        async for chunk in api.stream():
+            if dm.is_cancelled: break
+            dm.print_streaming(chunk)
+        dm.finish_streaming()
+        dm.set_activity(Activity.IDLE)
 ```
 
-### StreamingDisplay + Tools
+### 2. Custom Summary Bar
 ```python
-from rich.live import Live
-from nexus3.display.streaming import StreamingDisplay
-from nexus3.display import load_theme
-
-display = StreamingDisplay(load_theme())
-with Live(display, refresh_per_second=10):
-    display.set_activity(Activity.WAITING)
-    # Stream chunks...
-    display.start_batch([("read_file", "id1", "file.py"), ...])
-    # Update tools...
-```
-
-### Custom SummaryBar
-```python
-from nexus3.display import SummaryBar, get_console, load_theme, SummarySegment
-from rich.text import Text
-
-class MySegment(SummarySegment):
-    @property
-    def visible(self) -> bool: return True
-    def render(self) -> Text: return Text("custom")
+from nexus3.display import SummaryBar, get_console, load_theme, ActivitySegment, TaskCountSegment
 
 bar = SummaryBar(get_console(), load_theme())
-bar.register_segment(MySegment())
-with bar.live(): ...
+bar.register_segment(ActivitySegment(load_theme()))
+bar.register_segment(TaskCountSegment(load_theme()))
+with bar.live():
+    # Update segments...
+    bar.refresh()
 ```
 
-## Architecture Notes
-- **Live Conflicts:** Stop `SummaryBar`/`live_session()` before streaming (uses raw stdout).
-- **Overflow Prevention:** `StreamingDisplay` truncates to 20 lines.
-- **Timers:** Activity ≥1s; tools ≥3s.
-- **Cancellation:** `DisplayManager.cancel()` propagates to token/segments.
-- **Exports:** All public API from `nexus3.display`.
+### 3. Streaming + Tools
+```python
+from rich.live import Live
+from nexus3.display.streaming import StreamingDisplay, load_theme
 
-## Dependencies
-- **Rich:** `Console`, `Live`, `Text`, `Group`.
-- **Internal:** `nexus3.core.cancel.CancellationToken`.
+sd = StreamingDisplay(load_theme())
+with Live(sd, refresh_per_second=10):
+    sd.set_activity(Activity.TOOL_CALLING)
+    sd.start_batch([("glob", "t1", "*.py"), ("read_file", "t2", "file.py")])
+    sd.set_tool_active("t1")
+    sd.set_tool_complete("t1", True)
+    sd.add_chunk("Response text...")
+```
+
+## Architecture Summary
+- **Layers**: Theme → Console → Printer/SummaryBar/StreamingDisplay → Manager.
+- **Live Management**: Only `SummaryBar` uses Rich.Live (8Hz); streaming raw or full Live.
+- **State Tracking**: Activities, tasks (pending/active/done/failed), tools (per-batch), thinking time, errors.
+- **Cancellation**: ESC → `Manager.cancel()` → token + UI updates.
+- **Conflicts Avoided**: `stop_live()` before raw print_streaming.
+- **Extensible**: Add segments; theme overrides; StreamingDisplay for complex UIs.
+- **Performance**: Truncates streaming (20 lines); efficient renders.
+
+Exports everything for `from nexus3.display import *`.
+

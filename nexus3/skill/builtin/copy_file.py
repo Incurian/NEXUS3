@@ -97,7 +97,7 @@ class CopyFileSkill(FileSkill):
 
             return ToolResult(output=f"Copied {source} to {destination}")
 
-        except PathSecurityError as e:
+        except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except PermissionError as e:
             return ToolResult(error=f"Permission denied: {e}")

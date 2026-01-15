@@ -1006,18 +1006,20 @@ See [CLAUDE.md](CLAUDE.md) for detailed development guidelines and implementatio
 
 Each module has its own README with detailed documentation:
 
-| Module | README |
-|--------|--------|
-| Core types and protocols | [nexus3/core/README.md](nexus3/core/README.md) |
-| Configuration | [nexus3/config/README.md](nexus3/config/README.md) |
-| Context management | [nexus3/context/README.md](nexus3/context/README.md) |
-| Session and logging | [nexus3/session/README.md](nexus3/session/README.md) |
-| Skill system | [nexus3/skill/README.md](nexus3/skill/README.md) |
-| Display system | [nexus3/display/README.md](nexus3/display/README.md) |
-| CLI interface | [nexus3/cli/README.md](nexus3/cli/README.md) |
-| RPC and multi-agent | [nexus3/rpc/README.md](nexus3/rpc/README.md) |
-| MCP integration | [nexus3/mcp/README.md](nexus3/mcp/README.md) |
-| Provider (LLM APIs) | [nexus3/provider/README.md](nexus3/provider/README.md) |
+| Module | Description | README |
+|--------|-------------|--------|
+| `core` | Foundational types, interfaces, errors, paths, permissions | [nexus3/core/README.md](nexus3/core/README.md) |
+| `config` | Pydantic schema, layered config loading, permission presets | [nexus3/config/README.md](nexus3/config/README.md) |
+| `provider` | Multi-provider LLM support (OpenRouter/OpenAI/Azure/Anthropic/Ollama/vLLM) | [nexus3/provider/README.md](nexus3/provider/README.md) |
+| `context` | Context management, token counting, truncation, compaction | [nexus3/context/README.md](nexus3/context/README.md) |
+| `session` | Session coordination, SQLite logging, persistence | [nexus3/session/README.md](nexus3/session/README.md) |
+| `skill` | Skill/tool system, registry, dependency injection, 23 built-in skills | [nexus3/skill/README.md](nexus3/skill/README.md) |
+| `display` | Rich-based terminal UI, streaming display, summary bar | [nexus3/display/README.md](nexus3/display/README.md) |
+| `cli` | Interactive REPL, HTTP server, RPC client, slash commands | [nexus3/cli/README.md](nexus3/cli/README.md) |
+| `rpc` | JSON-RPC 2.0 protocol, multi-agent pool, HTTP server | [nexus3/rpc/README.md](nexus3/rpc/README.md) |
+| `mcp` | Model Context Protocol client, external tool integration | [nexus3/mcp/README.md](nexus3/mcp/README.md) |
+| `commands` | Unified command infrastructure for CLI and REPL | [nexus3/commands/README.md](nexus3/commands/README.md) |
+| `defaults` | Default configuration and system prompts | [nexus3/defaults/README.md](nexus3/defaults/README.md) |
 
 ---
 

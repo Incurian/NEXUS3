@@ -145,7 +145,7 @@ class EditFileSkill(FileSkill):
                 else:
                     return ToolResult(output=f"Replaced line {start_line} in {path}")
 
-        except PathSecurityError as e:
+        except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except Exception as e:
             return ToolResult(error=f"Error editing file: {e}")

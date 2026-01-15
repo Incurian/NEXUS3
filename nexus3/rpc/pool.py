@@ -567,6 +567,8 @@ class AgentPool:
             agent_id=temp_id,
             system_prompt=effective_config.system_prompt,
             preset=effective_config.preset,
+            cwd=effective_config.cwd,
+            model=effective_config.model,
             delta=effective_config.delta,
             parent_permissions=effective_config.parent_permissions,
             parent_agent_id=effective_config.parent_agent_id,

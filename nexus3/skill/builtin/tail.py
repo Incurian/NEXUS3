@@ -92,7 +92,7 @@ class TailSkill(FileSkill):
 
             return ToolResult(output="".join(numbered))
 
-        except PathSecurityError as e:
+        except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except FileNotFoundError:
             return ToolResult(error=f"File not found: {path}")

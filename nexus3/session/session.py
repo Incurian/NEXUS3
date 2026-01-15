@@ -38,7 +38,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Confirmation callback type - returns ConfirmationResult for allow once/always UI
-ConfirmationCallback = Callable[["ToolCall", "Path | None"], Awaitable[ConfirmationResult]]
+# Args: (tool_call, target_path, agent_cwd) where agent_cwd is the agent's working directory
+ConfirmationCallback = Callable[["ToolCall", "Path | None", "Path"], Awaitable[ConfirmationResult]]
 
 
 # Callback types for notifications
@@ -185,7 +186,9 @@ class Session:
             # No confirmation callback = no way to get user approval
             # Deny by default to enforce TRUSTED semantics in server mode
             return ConfirmationResult.DENY
-        return await self.on_confirm(tool_call, path)
+        # Pass agent's cwd for accurate preview display
+        agent_cwd = self._services.get_cwd() if self._services else Path.cwd()
+        return await self.on_confirm(tool_call, path, agent_cwd)
 
     async def send(
         self,
@@ -443,8 +446,12 @@ class Session:
         # Tools that have path arguments
         path_arg = tool_call.arguments.get("path")
         if path_arg:
-            # Resolve to absolute path for consistent comparison with allowed_paths
-            return Path(path_arg).resolve()
+            # Resolve relative paths against agent's cwd, not process cwd
+            p = Path(path_arg).expanduser()
+            if not p.is_absolute():
+                agent_cwd = self._services.get_cwd() if self._services else Path.cwd()
+                p = agent_cwd / p
+            return p.resolve()
         return None
 
     def _extract_exec_cwd_from_tool_call(self, tool_call: "ToolCall") -> Path:
@@ -456,11 +463,14 @@ class Session:
             tool_call: The tool call to extract cwd from.
 
         Returns:
-            The execution working directory (defaults to current cwd).
+            The execution working directory (defaults to agent's cwd).
         """
         cwd_arg = tool_call.arguments.get("cwd")
         if cwd_arg:
             return Path(cwd_arg)
+        # Use agent's cwd instead of process cwd
+        if self._services:
+            return self._services.get_cwd()
         return Path.cwd()
 
     async def _execute_single_tool(self, tool_call: "ToolCall") -> ToolResult:
@@ -547,12 +557,15 @@ class Session:
 
                 # ALLOW_ONCE just continues without adding to allowances
 
-            # For SANDBOXED: Additional path check (sandbox enforcement)
+            # For SANDBOXED: Sandbox enforcement only if no per-tool override
             if target_path is not None:
-                if not permissions.effective_policy.can_write_path(target_path):
-                    return ToolResult(
-                        error=f"Path '{target_path}' is outside the allowed sandbox"
-                    )
+                tool_perm = permissions.tool_permissions.get(tool_call.name)
+                # Only apply policy check if tool has no explicit path override
+                if tool_perm is None or tool_perm.allowed_paths is None:
+                    if not permissions.effective_policy.can_write_path(target_path):
+                        return ToolResult(
+                            error=f"Path '{target_path}' is outside the allowed sandbox"
+                        )
 
             # Per-tool path restrictions (for write_file/edit_file with allowed_write_paths)
             if target_path is not None and tool_perm and tool_perm.allowed_paths is not None:

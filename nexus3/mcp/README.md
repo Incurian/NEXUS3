@@ -1,147 +1,154 @@
 # nexus3/mcp
 
-MCP (Model Context Protocol) client implementation for NEXUS3.
+## Purpose
 
-This module provides client-side support for connecting NEXUS3 agents to external MCP servers and using their tools as native skills.
+The `nexus3.mcp` module provides a complete **client-side implementation** of the **Model Context Protocol (MCP)** for the NEXUS3 agent framework. It enables NEXUS3 agents to connect to external MCP servers (local subprocess or remote HTTP) and use their tools seamlessly as native NEXUS3 skills.
 
-**MCP Spec**: [2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25)
+**Key Goals:**
+- Secure integration of external tools (permissioned, sandboxed env vars).
+- Persistent multi-server management (per-agent visibility).
+- Automatic tool discovery and skill adaptation.
+- Full support for [MCP Specification 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25).
 
-## Features
+## Dependencies
 
-- Full MCP protocol support (initialize, tools/list, tools/call)
-- `StdioTransport`: Launch local servers as subprocesses (supports `env`, `cwd`)
-- `HTTPTransport`: Connect to remote HTTP MCP servers (requires `httpx`)
-- `MCPServerRegistry`: Manage multiple servers with persistent connections (shared/private per-agent visibility)
-  - Auto-disconnects existing servers on reconnect
-  - Health checks (`check_connections()`)
-  - Skill lookup by prefixed name
-- `MCPSkillAdapter`: Integrate MCP tools as NEXUS3 skills (prefixed `mcp_{server}_{tool}`)
-- Permissions: YOLO/TRUSTED agents only; confirmation prompts for TRUSTED on new servers (`mcp:{server_name}`)
+**Core (Python stdlib):**
+- `asyncio`, `dataclasses`, `json`, `logging`, `os`, `typing`
 
-## Quick Start
+**External (optional):**
+- `httpx` (for `HTTPTransport`)
 
+**NEXUS3 Internal:**
+- `nexus3.core.errors` (`NexusError`)
+- `nexus3.core.permissions` (`AgentPermissions`, `PermissionLevel`)
+- `nexus3.core.types` (`ToolResult`)
+- `nexus3.core.validation` (`validate_tool_arguments`)
+- `nexus3.skill.base` (`BaseSkill`)
+
+## Key Components
+
+| Module | Key Classes/Functions | Description |
+|--------|-----------------------|-------------|
+| `client.py` | `MCPClient`, `MCPError` | Core MCP lifecycle: connect, init handshake, `list_tools()`, `call_tool()`. Context manager support. |
+| `protocol.py` | `MCPTool`, `MCPToolResult`, `MCPServerInfo`, `MCPClientInfo`, `PROTOCOL_VERSION="2025-11-25"` | Dataclasses for MCP protocol messages/schemas. |
+| `permissions.py` | `can_use_mcp()`, `requires_mcp_confirmation()` | Permission checks: YOLO/TRUSTED only; prompts for new servers. |
+| `registry.py` | `MCPServerConfig`, `ConnectedServer`, `MCPServerRegistry` | Multi-server registry: connect/disconnect, agent-visible skills, health checks. |
+| `skill_adapter.py` | `MCPSkillAdapter` | Wraps `MCPTool` as `BaseSkill` (prefixed: `mcp_{server}_{tool}`). |
+| `transport.py` | `MCPTransport` (ABC), `StdioTransport`, `HTTPTransport`, `build_safe_env()` | JSON-RPC transports; secure subprocess env (SAFE_ENV_KEYS). |
+| `__init__.py` | All public exports | Convenient imports. |
+
+## Architecture Summary
+
+```
+┌─────────────────────┐    ┌─────────────────────┐
+│   NEXUS3 Agent      │    │   MCP Server        │
+│                     │    │                     │
+│  ┌──────────────┐   │◄──►│  (stdio/HTTP)       │
+│  │ MCPSkill-    │   │    │                     │
+│  │ Adapter      │   │    │  ┌──────────────┐   │
+│  │ (BaseSkill)  │   │    │  │ Tools (echo,  │   │
+│  └──────┬───────┘   │    │  │ add, etc.)    │   │
+│         │            │    │  └──────────────┘   │
+│  ┌──────▼──────┐   │    └─────────────────────┘
+│  │ MCPServer-  │   │
+│  │ Registry    │   │
+│  │ (multi-conn)│   │
+│  └──────┬───────┘   │
+│         │            │
+│  ┌──────▼──────┐   │
+│  │ MCPClient   │   │
+│  │ (per-server)│   │
+│  └──────┬───────┘   │
+│         │            │
+│  ┌──────▼──────┐   │
+│  │ MCPTransport│   │  ┌──────────────┐
+│  │ (Stdio/HTTP)│   │  │ Permissions  │
+│  └──────────────┘   │  │ (YOLO/TRUST) │
+└─────────────────────┘  └──────────────┘
+```
+
+**Flow:**
+1. **Registry** manages `ConnectedServer` instances (shared/private).
+2. **Permissions** checked before connect (`requires_mcp_confirmation`).
+3. **Transport** handles JSON-RPC (secure env for stdio).
+4. **Client** performs init → tool discovery → calls.
+5. **Adapters** expose tools as prefixed skills (`mcp_test_echo`).
+
+**Security Highlights:**
+- Stdio: Restricted env vars (`SAFE_ENV_KEYS` + explicit/passthrough).
+- Visibility: Per-agent (`owner_agent_id`, `shared`).
+- Health: `check_connections()` removes dead stdio processes.
+
+## Usage Examples
+
+### 1. Direct Client (Quick Test)
 ```python
 from nexus3.mcp import MCPClient, StdioTransport
 
-# Connect to test server
 transport = StdioTransport(["python", "-m", "nexus3.mcp.test_server"])
 async with MCPClient(transport) as client:
     tools = await client.list_tools()
-    result = await client.call_tool("echo", {"message": "hello"})
-    print(result.to_text())  # "hello"
+    result = await client.call_tool("echo", {"message": "hello world"})
+    print(result.to_text())  # "hello world"
 ```
 
-## Components
-
-### `MCPClient`
-
-Core client for MCP lifecycle.
-
-- Context manager: `async with MCPClient(transport) as client:`
-- Explicit: `await client.connect()` / `await client.close()`
-- `await client.list_tools() → list[MCPTool]` (caches tools)
-- `await client.call_tool(name, arguments) → MCPToolResult`
-- Properties: `server_info`, `tools`, `is_initialized`
-
-Raises `MCPError` on protocol/server errors.
-
-### Transports (`MCPTransport`)
-
-Abstract base for JSON-RPC over various protocols. Support `async with transport:`.
-
-- **`StdioTransport(command, env=None, cwd=None)`**
-  - Launches subprocess via stdin/stdout (newline-delimited JSON).
-  - Graceful shutdown with timeout/kill fallback.
-  - `is_connected` property.
-
-- **`HTTPTransport(url, headers=None, timeout=30)`**
-  - POST JSON-RPC (synchronous request/response).
-  - `pip install httpx`.
-  - `is_connected` property.
-
-### `MCPServerRegistry`
-
-Singleton-like manager for multiple persistent servers.
-
+### 2. Server Registry (Production)
 ```python
-registry = MCPServerRegistry()
+from nexus3.mcp import MCPServerRegistry, MCPServerConfig
 
+registry = MCPServerRegistry()
 config = MCPServerConfig(
     name="test",
-    command=["python", "-m", "nexus3.mcp.test_server"]  # or url="http://..."
+    command=["python", "-m", "nexus3.mcp.test_server"],
+    # env={"MY_VAR": "value"}, env_passthrough=["API_KEY"]
 )
-server = await registry.connect(config, owner_agent_id="main", shared=False)
+server = await registry.connect(config, owner_agent_id="worker-1", shared=True)
+skills = registry.get_all_skills("worker-1")  # List[MCPSkillAdapter]
 
-# Agent-visible skills
-skills = registry.get_all_skills("main")
-
+# Later...
+dead_servers = await registry.check_connections()
 await registry.close_all()
 ```
 
-Key methods:
-- `connect(config, owner_agent_id="main", shared=False) → ConnectedServer`
-- `get(name, agent_id=None) → ConnectedServer | None` (visibility-checked)
-- `list_servers(agent_id=None) → list[str]`
-- `get_all_skills(agent_id=None) → list[MCPSkillAdapter]`
-- `get_server_for_skill(skill_name) → ConnectedServer | None`
-- `check_connections() → list[str]` (removes dead stdio servers)
-- `disconnect(name) → bool`
-- `close_all()`
-- `len(registry)`: Connected server count
-
-`ConnectedServer`: `client`, `skills`, `is_visible_to(agent_id)`, `is_alive()`.
-
-### `MCPSkillAdapter`
-
-Wraps `MCPTool` as `nexus3.skill.base.BaseSkill`.
-
+### 3. Permissions Check
 ```python
-adapter = MCPSkillAdapter(client, tool, server_name="test")
-# name = "mcp_test_echo", description/inputSchema preserved
+from nexus3.mcp.permissions import requires_mcp_confirmation
+# Prompt if needed: session_allowances.add("mcp:test")
 ```
-
-`async execute(**kwargs) → ToolResult(output|error)` (uses `to_text()`).
-
-### Permissions (`permissions.py`)
-
-- `can_use_mcp(permissions) → bool`: `YOLO`/`TRUSTED`/None only
-- `requires_mcp_confirmation(permissions, server_name, session_allowances) → bool`: Prompts TRUSTED for new servers
 
 ## Test Servers
 
-Development/testing servers in `nexus3/mcp/test_server/`:
+Local test servers in `./test_server/`:
 
 ```bash
-# Stdio (subprocess)
+# Stdio mode
 python -m nexus3.mcp.test_server
 
-# HTTP
+# HTTP mode
 python -m nexus3.mcp.test_server.http_server --port 9000
 ```
 
-**Tools**: `echo` (string echo), `get_time` (current datetime), `add` (numbers).
+**Tools provided:** `echo` (string), `get_time` (datetime), `add` (numbers).
 
-Access: `http://localhost:9000` (JSON-RPC POST).
+HTTP endpoint: `POST http://localhost:9000` (JSON-RPC).
 
-## API Reference
+## Public API
 
-Public API (from `__init__.py`):
-
+From `__init__.py`:
 ```python
 from nexus3.mcp import (
-    ConnectedServer, HTTPTransport, MCPClient, MCPError,
-    MCPServerConfig, MCPServerInfo, MCPServerRegistry, MCPSkillAdapter,
-    MCPTool, MCPToolResult, MCPTransport, StdioTransport
+    ConnectedServer, HTTPTransport, MCPClient, MCPError, MCPServerConfig,
+    MCPServerInfo, MCPServerRegistry, MCPSkillAdapter, MCPTool,
+    MCPToolResult, MCPTransport, StdioTransport
 )
 ```
 
-Full types/docs in source files. Protocol: `2025-11-25`.
+## Integration Notes
 
-## Integration
-
-- Skills auto-discovered/registered in NEXUS3 agents via registry.
-- Permissions enforced before connect/call.
-- Prefixed names prevent native skill conflicts.
+- Register `registry.get_all_skills(agent_id)` in NEXUS3 agent skill loader.
+- Skill names prefixed to avoid conflicts.
+- `MCPToolResult.to_text()` extracts output.
+- Errors: `MCPError` wraps server/protocol issues.
 
 ---
-*Part of NEXUS3 agent framework.*
+*Updated: 2026-01-15 | Part of NEXUS3 agent framework.*

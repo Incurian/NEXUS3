@@ -38,6 +38,36 @@ if TYPE_CHECKING:
 # Parameter Validation Decorator
 # =============================================================================
 
+def handle_file_errors(
+    func: Callable[..., Coroutine[Any, Any, ToolResult]],
+) -> Callable[..., Coroutine[Any, Any, ToolResult]]:
+    """Decorator that converts PathSecurityError and ValueError to ToolResult errors.
+
+    Use this decorator on FileSkill.execute() methods to automatically handle
+    path validation errors without explicit isinstance() checks.
+
+    Example:
+        @handle_file_errors
+        async def execute(self, path: str = "", **kwargs: Any) -> ToolResult:
+            p = self._validate_path(path)  # Now guaranteed to be Path
+            content = p.read_text()
+            return ToolResult(output=content)
+    """
+    from nexus3.core.errors import PathSecurityError
+
+    @wraps(func)
+    async def wrapper(*args: Any, **kwargs: Any) -> ToolResult:
+        try:
+            return await func(*args, **kwargs)
+        except PathSecurityError as e:
+            return ToolResult(error=str(e))
+        except ValueError as e:
+            # Catches "No path provided" and similar validation errors
+            return ToolResult(error=str(e))
+
+    return wrapper
+
+
 def validate_skill_parameters(
     strict: bool = False,
 ) -> Callable[
@@ -405,9 +435,10 @@ class FileSkill(ABC):
         ...             "required": ["path"]
         ...         }
         ...
+        ...     @handle_file_errors
         ...     async def execute(self, path: str = "", **kwargs: Any) -> ToolResult:
-        ...         validated = self._validate_path(path)
-        ...         content = validated.read_text()
+        ...         p = self._validate_path(path)  # Returns Path, raises on error
+        ...         content = p.read_text()
         ...         return ToolResult(output=content)
     """
 
@@ -433,33 +464,34 @@ class FileSkill(ABC):
         """
         return self._services.get_tool_allowed_paths(self.name)
 
-    def _validate_path(self, path: str | Path) -> Path:
-        """Validate and resolve a path against allowed_paths.
+    def _validate_path(self, path: str) -> Path:
+        """Validate and resolve a path for file operations.
 
-        Resolves symlinks and checks that the resolved path is within
-        allowed directories. Uses the _allowed_paths property which
-        resolves per-tool path overrides (e.g., write_file may have
-        different allowed_paths than read_file).
+        Uses PathResolver for unified path resolution that:
+        - Resolves relative paths against agent's cwd (not process cwd)
+        - Applies per-tool allowed_paths restrictions
+        - Follows symlinks and validates containment
 
-        Relative paths are resolved against the agent's cwd (not the
-        process cwd) to ensure proper isolation in multi-agent scenarios.
+        Use @handle_file_errors decorator on execute() to convert exceptions
+        to ToolResult errors automatically.
 
         Args:
-            path: The path to validate.
+            path: Path string to validate.
 
         Returns:
-            The validated, resolved Path.
+            Resolved Path if valid.
 
         Raises:
-            PathSecurityError: If path is outside allowed directories.
+            ValueError: If path is empty.
+            PathSecurityError: If path validation fails.
         """
-        # Resolve relative paths against agent's cwd (not process cwd)
-        if isinstance(path, str):
-            path = Path(path)
-        if not path.is_absolute():
-            agent_cwd = self._services.get_cwd()
-            path = agent_cwd / path
-        return validate_path(path, allowed_paths=self._allowed_paths)
+        from nexus3.core.resolver import PathResolver
+
+        if not path:
+            raise ValueError("No path provided")
+
+        resolver = PathResolver(self._services)
+        return resolver.resolve(path, tool_name=self.name)
 
     @property
     @abstractmethod
@@ -563,6 +595,7 @@ class NexusSkill(ABC):
     """
 
     _default_port: int | None = None  # Class-level cache
+    DEFAULT_TIMEOUT: float = 300.0  # 5 minutes - agent operations can take a while
 
     def __init__(self, services: "ServiceContainer") -> None:
         """Initialize NexusSkill with service container.
@@ -711,7 +744,9 @@ class NexusSkill(ABC):
             return ToolResult(error=f"URL validation failed: {e}")
 
         try:
-            async with NexusClient(validated_url, api_key=api_key) as client:
+            async with NexusClient(
+                validated_url, api_key=api_key, timeout=self.DEFAULT_TIMEOUT
+            ) as client:
                 result = await operation(client)
                 return ToolResult(output=json.dumps(result))
         except ClientError as e:
@@ -834,42 +869,25 @@ class ExecutionSkill(ABC):
         return min(max(timeout, 1), self.MAX_TIMEOUT)
 
     def _resolve_working_directory(self, cwd: str | None) -> tuple[str | None, str | None]:
-        """Resolve and validate working directory against allowed_paths.
+        """Resolve working directory for subprocess execution.
 
-        Relative paths are resolved against the agent's cwd (not process cwd).
-        The resolved path is validated against allowed_paths to prevent
-        sandbox escape via the cwd parameter.
+        Uses PathResolver for unified path resolution that:
+        - Returns agent's cwd if no cwd specified
+        - Resolves relative paths against agent's cwd
+        - Validates against per-tool allowed_paths
+        - Ensures path exists and is a directory
 
         Args:
-            cwd: Working directory path (or None for agent's default cwd)
+            cwd: Working directory path or None for agent's default.
 
         Returns:
-            Tuple of (resolved_path_or_none, error_message_or_none)
+            Tuple of (resolved_cwd_string, error_message).
+            If error_message is not None, resolved_cwd will be None.
         """
-        # Get agent's cwd as default
-        agent_cwd = self._services.get_cwd()
+        from nexus3.core.resolver import PathResolver
 
-        if not cwd:
-            # Use agent's cwd as default
-            return str(agent_cwd), None
-
-        work_path = Path(cwd).expanduser()
-        if not work_path.is_absolute():
-            # Resolve relative paths against agent's cwd (not process cwd)
-            work_path = agent_cwd / work_path
-
-        if not work_path.is_dir():
-            return None, f"Working directory not found: {cwd}"
-
-        # SECURITY: Validate cwd against allowed_paths (sandbox check)
-        if self._allowed_paths is not None:
-            from nexus3.core.errors import PathSecurityError
-            try:
-                validate_path(work_path, allowed_paths=self._allowed_paths)
-            except PathSecurityError as e:
-                return None, f"Working directory outside sandbox: {e}"
-
-        return str(work_path), None
+        resolver = PathResolver(self._services)
+        return resolver.resolve_cwd(cwd, tool_name=self.name)
 
     def _format_output(
         self,
@@ -1075,23 +1093,29 @@ class FilteredCommandSkill(ABC):
         return self._services.get_permission_level()
 
     def _validate_cwd(self, cwd: str) -> tuple[Path, str | None]:
-        """Validate working directory against allowed paths.
+        """Validate working directory for filtered command execution.
+
+        Uses PathResolver for unified path resolution that:
+        - Resolves relative paths against agent's cwd
+        - Validates against per-tool allowed_paths
+        - Ensures path exists and is a directory
 
         Args:
-            cwd: Working directory path
+            cwd: Working directory path to validate.
 
         Returns:
-            Tuple of (resolved_path, error_message_or_none)
+            Tuple of (resolved_Path, error_message).
+            If error_message is not None, the Path value should not be used.
         """
         from nexus3.core.errors import PathSecurityError
+        from nexus3.core.resolver import PathResolver
 
+        resolver = PathResolver(self._services)
         try:
-            work_dir = validate_path(cwd, allowed_paths=self._allowed_paths)
-            if not work_dir.is_dir():
-                return work_dir, f"Not a directory: {cwd}"
-            return work_dir, None
+            resolved = resolver.resolve(cwd, tool_name=self.name, must_exist=True, must_be_dir=True)
+            return resolved, None
         except PathSecurityError as e:
-            return Path(cwd), str(e)
+            return Path(cwd), str(e)  # Return original path with error for logging
 
     def _is_command_allowed(self, command: str) -> tuple[bool, str | None]:
         """Check if command is allowed based on permission level.

@@ -13,8 +13,8 @@ from nexus3.context.loader import (
     ContextSources,
     LoadedContext,
     MCPServerWithOrigin,
-    deep_merge,
 )
+from nexus3.core.utils import deep_merge, find_ancestor_config_dirs
 
 
 class TestDeepMerge:
@@ -137,8 +137,7 @@ class TestContextLoader:
         (tmp_path / "a" / ".nexus3").mkdir()
         (tmp_path / "a" / "b" / ".nexus3").mkdir()
 
-        loader = ContextLoader(cwd=deep_dir, context_config=ContextConfig(ancestor_depth=3))
-        ancestors = loader._find_ancestor_dirs()
+        ancestors = find_ancestor_config_dirs(deep_dir, max_depth=3)
 
         assert len(ancestors) == 2
         # Should be in order: furthest first
@@ -157,8 +156,7 @@ class TestContextLoader:
         (tmp_path / "a" / "b" / "c" / ".nexus3").mkdir()
 
         # With depth 1, only immediate parent should be found
-        loader = ContextLoader(cwd=deep_dir, context_config=ContextConfig(ancestor_depth=1))
-        ancestors = loader._find_ancestor_dirs()
+        ancestors = find_ancestor_config_dirs(deep_dir, max_depth=1)
 
         assert len(ancestors) == 1
         assert ancestors[0] == tmp_path / "a" / "b" / "c" / ".nexus3"
@@ -331,7 +329,11 @@ class TestContextLoaderSubagent:
         loader = ContextLoader(cwd=subagent_cwd)
         prompt = loader.load_for_subagent(parent_context=parent_context)
 
-        assert prompt == "Parent prompt content"
+        # Parent content is preserved
+        assert "Parent prompt content" in prompt
+        # Subagent gets its own environment info with correct cwd
+        assert "# Environment" in prompt
+        assert f"Working directory: {subagent_cwd}" in prompt
 
     def test_subagent_adds_local_context(self, tmp_path: Path) -> None:
         """Test subagent adds its local NEXUS.md to parent context."""

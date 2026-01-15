@@ -91,7 +91,7 @@ class ReadFileSkill(FileSkill):
                 return ToolResult(output="".join(numbered))
 
             return ToolResult(output=content)
-        except PathSecurityError as e:
+        except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except FileNotFoundError:
             return ToolResult(error=f"File not found: {path}")

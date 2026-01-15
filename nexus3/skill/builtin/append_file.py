@@ -95,7 +95,7 @@ class AppendFileSkill(FileSkill):
             chars_written = await asyncio.to_thread(do_append)
             return ToolResult(output=f"Appended {chars_written} characters to {path}")
 
-        except PathSecurityError as e:
+        except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except PermissionError:
             return ToolResult(error=f"Permission denied: {path}")

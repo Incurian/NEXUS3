@@ -1,5 +1,6 @@
 """Nexus create skill for creating new agents on the server."""
 
+from pathlib import Path
 from typing import Any
 
 from nexus3.core.permissions import (
@@ -42,14 +43,18 @@ class NexusCreateSkill(NexusSkill):
                 },
                 "cwd": {
                     "type": "string",
-                    "description": "Working directory / sandbox root for the agent. "
+                    "description": "Working directory for the agent. "
+                    "Relative paths resolve against parent's cwd. "
+                    "Defaults to parent's cwd if not specified. "
                     "For sandboxed agents, this is the only path they can access.",
                 },
                 "allowed_write_paths": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Paths where write_file/edit_file are allowed. "
-                    "Must be within cwd. Defaults to empty (read-only) for sandboxed.",
+                    "Relative paths resolve against the agent's cwd. "
+                    "Must be within cwd for sandboxed agents. "
+                    "Defaults to empty (read-only) for sandboxed preset.",
                 },
                 "disable_tools": {
                     "type": "array",
@@ -128,7 +133,14 @@ class NexusCreateSkill(NexusSkill):
             builtin = get_builtin_presets()
             if preset in builtin:
                 try:
-                    requested = resolve_preset(preset)
+                    # Resolve cwd for ceiling validation, matching server-side logic:
+                    # - If cwd provided: use it
+                    # - If not: inherit from parent (server does this too)
+                    if cwd:
+                        cwd_path: Path | None = Path(cwd)
+                    else:
+                        cwd_path = self._services.get("cwd")  # Inherit parent's cwd
+                    requested = resolve_preset(preset, cwd=cwd_path)
                     if not parent_perms.can_grant(requested):
                         msg = f"Cannot create agent with '{preset}': exceeds ceiling"
                         return ToolResult(error=msg)

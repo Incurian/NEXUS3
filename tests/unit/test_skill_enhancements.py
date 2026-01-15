@@ -26,6 +26,10 @@ class MockServiceContainer:
         """Return allowed_paths from data (used by FileSkill._validate_path)."""
         return self._data.get("allowed_paths")
 
+    def get_cwd(self) -> Path:
+        """Return cwd from data, or current directory as default."""
+        return self._data.get("cwd", Path.cwd())
+
 
 class TestReadFileOffsetLimit:
     """Tests for read_file offset and limit parameters."""

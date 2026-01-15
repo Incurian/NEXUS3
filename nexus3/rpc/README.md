@@ -1,335 +1,221 @@
 # NEXUS3 RPC Module
 
-JSON-RPC 2.0 protocol implementation for NEXUS3 headless mode. Enables programmatic control of NEXUS3 via HTTP for automation, testing, and integration with external tools.
+JSON-RPC 2.0 protocol implementation for NEXUS3 HTTP server mode. Enables programmatic control of NEXUS3 via HTTP for automation, multi-agent workflows, testing, and integration.
 
 ## Purpose
 
-This module provides the protocol layer for `nexus3 --serve` mode. Instead of interactive REPL input/output, it runs an HTTP server that accepts JSON-RPC 2.0 requests and returns responses. This enables:
+The RPC module powers `nexus3 --serve` (HTTP server on port 8765), transforming the interactive REPL into a headless JSON-RPC 2.0 API server. Key capabilities:
+- **Multi-Agent Management**: Dynamic creation/destruction of isolated agents with independent context, logs, and permissions.
+- **Permission Hierarchies**: Parent/child agents with permission ceilings (max depth 5), sandboxing via `cwd`/`allowed_write_paths`.
+- **Cross-Session Persistence**: Auto-restore inactive agents from saved sessions on incoming requests.
+- **In-Process Optimization**: `DirectAgentAPI` bypasses HTTP for same-process calls (~10x faster).
+- **Secure & Local**: Localhost-only binding, API key auth (`nxk_` tokens), 1MB body limits.
+- **Observability**: Per-agent logging (files/DB), token/context queries, cancellation support.
 
-- Automated testing without human interaction
-- Integration with external AI orchestrators (e.g., Claude Code)
-- Multi-agent scenarios with dynamic agent creation/destruction
-- Subagent communication (parent/child agents with permission ceilings)
-- Scripted automation pipelines
-- Multi-turn conversations with persistent context per agent
-- Cross-session auto-restoration from saved sessions
-- Permission-controlled agent hierarchies (max depth 5)
+Use cases: scripted pipelines, external orchestrators (e.g., Claude), multi-turn agent swarms, integration testing.
 
-## Architecture
-
-```
-                                    +-----------------+
-                                    |  GlobalDispatcher |
-                                    |  (create/destroy/ |
-                                    |   list/shutdown)  |
-                                    +-----------------+
-                                           ^
-                                           | POST / or /rpc
-                                           |
-HTTP POST --> read_http_request() --> Path Router --> dispatch()
-                  |                        |
-                  | API Key Auth           | POST /agent/{id}
-                  |                        v
-                  |                  +-----------------+
-                  |                  |   AgentPool     |
-                  |                  |   .get(id) or   |
-                  |                  |   .restore()    |
-                  |                  +-----------------+
-                  |                        |
-                  |                        v
-                  |                  +-----------------+
-                  |                  |   Agent         |
-                  |                  |   .dispatcher   |
-                  |                  +-----------------+
-                  |                        |
-                  |                        v
-                  |                  +-----------------+
-                  |                  |   Dispatcher    |
-                  |                  |   (send/cancel/ |
-                  |                  |    shutdown)    |
-                  |                  +-----------------+
-```
-
-### Multi-Agent Architecture
+## Architecture Summary
 
 ```
-+-------------+                                     +-----------------+
-|   Caller    |  POST /                             |  GlobalDispatcher|
-| (any tool)  | ----------------------------------> | create_agent     |
-|             | <---------------------------------- | (cwd, model,     |
-|             |                                     |  write_paths)    |
-+-------------+                                     +-----------------+
-      |                                             +-----------------+
-      |         POST /agent/{id}                    |     AgentPool    |
-      | ------------------------------------------> |  (permissions,   |
-      | <------------------------------------------ |   MCP tools)     |
-      |                                             +-----------------+
-      |                                             +-----------------+
-      |                                             |     Agent       |
-      |                                             |   Dispatcher    |
-      |                                             |  send/cancel/   |
-      |                                             |  get_tokens/... |
-                                                    +-----------------+
+External Client (curl/Python) ──POST──> HTTP Server (localhost:8765)
+                                    │
+                                    ├─ Auth (Bearer nxk_...) ── OK ── Path Router
+                                    │                                 │
+                                    │                                 ├─ /, /rpc ──> GlobalDispatcher
+                                    │                                 │             ├── create_agent(preset=sandboxed, cwd, model)
+                                    │                                 │             ├── destroy_agent(id)
+                                    │                                 │             ├── list_agents() ──> [{"agent_id", "parent_id", "child_count"}]
+                                    │                                 │             └── shutdown_server()
+                                    │                                 │
+                                    │                                 └─ /agent/{id} ──> AgentPool.get(id) or restore() ──> Agent.dispatcher
+                                    │                                                           │
+                                    └─ Error (401/404/500)              └── send(content), cancel(req_id), get_tokens(), shutdown()
 ```
 
-## Module Files
+**Core Layers**:
+1. **HTTP (http.py)**: Pure asyncio server, path routing, auto-session restore.
+2. **Pool (pool.py)**: `AgentPool` manages `Agent` lifecycle (create/temp/restore/destroy).
+3. **Dispatchers**:
+   - `GlobalDispatcher`: Agent lifecycle.
+   - `Dispatcher`: Per-agent RPC (send/cancel/get_tokens).
+4. **Shared (pool.py)**: `SharedComponents` (config/providers/logs/MCP).
+5. **Logging (log_multiplexer.py)**: Contextvars routes API logs to correct agent.
+6. **Auth/Detection (auth.py/detection.py)**: Tokens, server probing.
 
-| File | Purpose |
-|------|---------|
-| `types.py` | JSON-RPC 2.0 Request/Response dataclasses |
-| `protocol.py` | Parsing, serialization, error codes |
-| `auth.py` | API key generation/validation/storage |
-| `detection.py` | Server detection/wait utilities |
-| `dispatcher.py` | Per-agent method dispatcher (send/cancel/shutdown/get_tokens) |
-| `global_dispatcher.py` | Global methods (create/destroy/list/shutdown agents) |
-| `log_multiplexer.py` | Contextvars-based multi-agent log routing |
-| `pool.py` | AgentPool, Agent, SharedComponents, AgentConfig (cwd/model support) |
-| `http.py` | HTTP server with path routing + auto-session restore |
-| `__init__.py` | Public exports |
+**Data Flow (create_agent → send)**:
+```
+create_agent(preset=worker, cwd=/tmp/sandbox, allowed_write_paths=[...])
+  ↓ AgentPool.create() ──> permissions.resolve() ──> services (permissions, cwd, model)
+  ↓ Session/Context/Skills (tools filtered by perms + MCP)
+  ↓ /agent/worker ──> send("Analyze code") ──> accumulate chunks ──> {"content": response}
+```
 
-## Key Types
+## Key Modules & Classes
 
-### `Request` / `Response` (types.py)
+| Module/File | Key Classes/Functions | Role |
+|-------------|-----------------------|------|
+| `__init__.py` | All exports | Public API |
+| `types.py` | `Request`, `Response` | JSON-RPC dataclasses |
+| `protocol.py` | `parse_request()`, `make_error_response()` | Serialization/parsing |
+| `auth.py` | `ServerTokenManager`, `discover_rpc_token()` | `nxk_` tokens (~/.nexus3/rpc.token) |
+| `detection.py` | `detect_server()`, `wait_for_server()` | Port probing (list_agents fingerprint) |
+| `dispatcher.py` | `Dispatcher` | Per-agent: `send`, `cancel`, `get_tokens`, `shutdown` |
+| `global_dispatcher.py` | `GlobalDispatcher` | Global: `create_agent`, `destroy_agent`, `list_agents` |
+| `http.py` | `run_http_server()`, `handle_connection()` | Asyncio HTTP/1.1, routing, auto-restore |
+| `log_multiplexer.py` | `LogMultiplexer` | Routes provider logs via contextvars |
+| `pool.py` | `AgentPool`, `Agent`, `AgentConfig`, `SharedComponents` | Lifecycle, isolation, MCP integration |
+| `agent_api.py` | `DirectAgentAPI`, `AgentScopedAPI`, `ClientAdapter` | In-process API (bypasses HTTP) |
 
-Unchanged from previous.
-
-### `HttpRequest` (http.py)
-
-Unchanged.
-
-### `Agent` (pool.py)
-
+**Agent Structure** (`pool.py`):
 ```python
 @dataclass
 class Agent:
-    agent_id: str
-    logger: SessionLogger
-    context: ContextManager
-    services: ServiceContainer  # Includes permissions, model, mcp_registry
-    registry: SkillRegistry
-    session: Session
-    dispatcher: Dispatcher
+    agent_id: str                  # e.g., "worker-1" or ".1" (temp)
+    logger: SessionLogger          # Per-agent logs
+    context: ContextManager        # History/tokens
+    services: ServiceContainer     # perms, cwd, model, agent_api
+    registry: SkillRegistry        # Tools (filtered)
+    session: Session               # LLM coord
+    dispatcher: Dispatcher         # RPC handler
     created_at: datetime
 ```
 
-### `AgentConfig` (pool.py)
-
-Per-agent options:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `agent_id` | `str \| None` | Auto-gen if None |
-| `system_prompt` | `str \| None` | Override default |
-| `preset` | `str \| None` | e.g. "sandboxed" |
-| `cwd` | `Path \| None` | Sandbox root |
-| `delta` | `PermissionDelta \| None` | Tool overrides |
-| `parent_permissions` | `AgentPermissions \| None` | Ceiling |
-| `parent_agent_id` | `str \| None` | Lineage tracking |
-| `model` | `str \| None` | Model alias/ID |
-
-### `SharedComponents` (pool.py)
-
-Immutable shared resources:
-
-| Field | Description |
-|-------|-------------|
-| `config` | Global Config |
-| `provider` | AsyncProvider (shared) |
-| `prompt_loader` | System prompts |
-| `base_log_dir` | Agent subdirs |
-| `log_streams` | Enabled streams |
-| `custom_presets` | From config |
-| `mcp_registry` | MCP servers |
-
-## Authentication (auth.py)
-
-Token format: `nxk_` + b64. Storage: `~/.nexus3/rpc.token`.
-
-## Server Detection (detection.py)
-
-Unchanged.
-
-## Log Multiplexer (log_multiplexer.py)
-
-Unchanged.
-
-## Agent Pool (pool.py)
-
-Manages lifecycle, permissions (depth <=5), MCP tools (TRUSTED+).
-
-### Key Methods
-
-| Method | Description |
-|--------|-------------|
-| `create(agent_id?, config?)` | Full agent init w/ permissions/MCP |
-| `create_temp(config?)` | Temp ID (`.1`, `.2`) |
-| `restore_from_saved(saved)` | Auto-restore w/ history |
-| `destroy(id)` | Cancel requests, cleanup |
-| `get(id)` / `list()` | Access/list |
-| `get_children(id)` | Child IDs |
-| `should_shutdown` | All agents shutdown? |
-
-`list()` returns:
-
-```python
-[{"agent_id", "is_temp", "created_at", "message_count", "should_shutdown",
-  "parent_agent_id", "child_count"}, ...]
-```
-
-Temp agents: ID starts w/ `.`, excluded from saves.
-
-## Global Dispatcher
-
-Agent lifecycle.
-
-### Methods
-
-| Method | Params | Returns | Notes |
-|--------|--------|---------|-------|
-| `create_agent` | `agent_id?`, `system_prompt?`, `preset?`, `disable_tools?`, `parent_agent_id?`, `cwd?`, `allowed_write_paths?`, `model?` | `{"agent_id", "url"}` | Sandbox write logic |
-| `destroy_agent` | `{"agent_id"}` | `{"success", "agent_id"}` | Cancels requests |
-| `list_agents` | - | `{"agents": [...]}` | w/ parent/child info |
-| `shutdown_server` | - | `{"success", "message"}` | Graceful exit |
-
-**create_agent** sandboxing (`sandboxed`/`worker` presets):
-- `allowed_write_paths?`: explicit write dirs (else read-only)
-- `cwd?`: must be in parent paths
-- `disable_tools` → `PermissionDelta`
-
-Defaults `preset="sandboxed"` for tool overrides.
-
-## Dispatcher (per-agent)
-
-| Method | Params | Returns | Notes |
-|--------|--------|---------|-------|
-| `send` | `{"content", "request_id?"}` | `{"content", "request_id"}` | Non-streaming |
-| `cancel` | `{"request_id"}` | `{"cancelled", "request_id?", "reason?"}` | Cooperative |
-| `shutdown` | - | `{"success"}` | Agent flag |
-| `get_tokens` | - | Token breakdown | If context |
-| `get_context` | - | `{"message_count", "system_prompt"}` | If context |
-
-## HTTP Server (http.py)
-
-Pure asyncio, localhost-only.
-
-**Routing**:
-- `POST /`, `/rpc` → Global
-- `POST /agent/{id}` → Agent (auto-restore if saved)
-
-**Security**:
-- Localhost bind
-- API key (Bearer)
-- 1MB body limit, 30s timeouts
-- Agent ID validation (no traversal)
-
-**Auto-Restore**: If `session_manager` provided, inactive saved agents auto-restored on request.
-
-## Protocol / Errors
-
-Unchanged.
-
-## Data Flow
-
-Updated for auto-restore, cancel.
-
 ## Dependencies
 
-Add `nexus3.mcp.*` for MCP tools.
+**Internal** (nexus3.*):
+- `nexus3.core.*`: Errors, paths, permissions, validation.
+- `nexus3.session.*`: Session/Context/Logger.
+- `nexus3.skill.*`: Skills/Tools/Services.
+- `nexus3.context.*`: ContextManager/Loader.
+- `nexus3.mcp.*`: MCP tool integration (TRUSTED+).
+- `nexus3.provider.*`: LLM providers.
+- `nexus3.config.*`: Config/Models.
+
+**External**:
+- `httpx` (detection.py).
+- Stdlib: `asyncio`, `json`, `pathlib`, `secrets`, `hmac`.
+
+## RPC Methods
+
+### Global (`POST /` or `/rpc`)
+| Method | Params | Returns | Notes |
+|--------|--------|---------|-------|
+| `create_agent` | `{agent_id?, preset?, disable_tools?, parent_agent_id?, cwd?, allowed_write_paths?, model?, initial_message?}` | `{"agent_id": "...", "url": "/agent/..."}` | Sandboxing: read-only unless `allowed_write_paths`; inherits parent perms |
+| `destroy_agent` | `{"agent_id": "..."}` | `{"success": true, "agent_id": "..."}` | Cancels requests |
+| `list_agents` | `{}` | `{"agents": [{"agent_id", "is_temp", "created_at", "message_count", "should_shutdown", "parent_agent_id", "child_count"}]}` | Hierarchy info |
+| `shutdown_server` | `{}` | `{"success": true, "message": "..."}` | Graceful exit |
+
+**Presets**: `trusted`/`sandboxed`/`worker` (RPC-only; no `yolo`).
+
+### Per-Agent (`POST /agent/{id}`)
+| Method | Params | Returns | Notes |
+|--------|--------|---------|-------|
+| `send` | `{"content": "...", "request_id?": "..."}` | `{"content": "...", "request_id": "..."}` | Non-streaming (accumulates chunks) |
+| `cancel` | `{"request_id": "..."}` | `{"cancelled": bool, "request_id": "...", "reason?": "..."}` | Cooperative via tokens |
+| `get_tokens` | `{}` | Token usage dict | Prompt/completion/total |
+| `get_context` | `{}` | `{"message_count": N, "system_prompt": bool}` | Context state |
+| `shutdown` | `{}` | `{"success": true}` | Sets agent flag |
 
 ## Usage Examples
 
-### Create Sandboxed Agent w/ Writes
-
+### 1. Start Server
 ```bash
-curl -X POST http://localhost:8765/ \\
-  -H "Authorization: Bearer nxk_..." \\
-  -d '{\"jsonrpc\":\"2.0\",\"method\":\"create_agent\",\"params\":{\"agent_id\":\"worker\",\"preset\":\"sandboxed\",\"cwd\":\"/tmp/sandbox\",\"allowed_write_paths\":[\"/tmp/sandbox\"] },\"id\":1}'
+nexus3 --serve  # Generates ~/.nexus3/rpc.token
+token=$(nexus3 rpc token)  # Or cat ~/.nexus3/rpc.token
 ```
 
-### Create w/ Model + Disable Tool
-
+### 2. Create Sandboxed Worker
 ```bash
-curl ... -d '{\"params\":{\"agent_id\":\"coder\",\"model\":\"gpt-4o-mini\",\"disable_tools\":[\"write_file\"]}}'
+curl -X POST http://localhost:8765/rpc \
+  -H "Authorization: Bearer $token" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "create_agent",
+    "params": {
+      "agent_id": "worker",
+      "preset": "sandboxed",
+      "cwd": "/tmp/sandbox",
+      "allowed_write_paths": ["/tmp/sandbox"],
+      "model": "gpt-4o-mini",
+      "initial_message": "You are a code analyst."
+    },
+    "id": 1
+  }'
+# {"jsonrpc":"2.0","id":1,"result":{"agent_id":"worker","url":"/agent/worker"}}
 ```
 
-### List w/ Hierarchy
-
+### 3. Send Message & List
 ```bash
-curl ... -d '{\"method\":\"list_agents\",\"id\":2}'
-# [{"agent_id":"coordinator","parent_agent_id":null,"child_count":1}, {"agent_id":"worker","parent_agent_id":"coordinator","child_count":0}]
+curl -X POST http://localhost:8765/rpc/agent/worker ... -d '{
+  "jsonrpc": "2.0", "method": "send", "params": {"content": "Analyze this Python code..."}, "id": 2
+}'
+curl ... -d '{"jsonrpc":"2.0","method":"list_agents","id":3}'
 ```
 
-### Cancel Request
-
+### 4. Tokens/Context/Cancel
 ```bash
-# T1: send w/ request_id
-curl .../agent/worker -d '{\"method\":\"send\",\"params\":{\"content\":\"Long task\",\"request_id\":\"req1\"}}'
-
-# T2: cancel
-curl .../agent/worker -d '{\"method\":\"cancel\",\"params\":{\"request_id\":\"req1\"}}'
+curl .../agent/worker -d '{"method":"get_tokens","id":4}'  # Token breakdown
+curl .../agent/worker -d '{"method":"cancel","params":{"request_id":"abc123"},"id":5}'
 ```
 
-More examples unchanged.
-
-## Command Line / Client
-
-Unchanged.
-
-## Summary of RPC Methods
-
-**Global**:
-- `create_agent` (enhanced)
-- `destroy_agent`
-- `list_agents` (hierarchy)
-- `shutdown_server`
-
-**Agent**:
-- `send`
-- `cancel` (new)
-- `shutdown`
-- `get_tokens`
-- `get_context`
-
-## In-Process AgentAPI
-
-For same-process agent communication, `DirectAgentAPI` bypasses HTTP by calling dispatchers directly:
-
-```
-nexus_send skill
-    → _execute_with_client()
-        → if agent_api in services:
-            → ClientAdapter(DirectAgentAPI, AgentScopedAPI)
-                → dispatcher.dispatch(Request)  # Direct call
-        → else:
-            → NexusClient (HTTP fallback)
-```
-
-### Classes
-
-| Class | Purpose |
-|-------|---------|
-| `DirectAgentAPI` | Global methods (create_agent, destroy_agent, list_agents, shutdown_server) |
-| `AgentScopedAPI` | Agent methods (send, cancel, get_tokens, etc.) for a specific agent |
-| `ClientAdapter` | Wraps both to match NexusClient interface |
-
-### Usage
-
-Skills get `agent_api` via ServiceContainer. When available and port matches default, the HTTP path is skipped:
-
+### 5. Python Client
 ```python
-# In NexusSkill._execute_with_client():
-if self._can_use_direct_api(port):
-    api = self._services.get("agent_api")
-    scoped = api.for_agent(agent_id) if agent_id else None
-    adapter = ClientAdapter(api, scoped)
-    result = await operation(adapter)  # Direct call
-else:
-    async with NexusClient(url, api_key) as client:
-        result = await operation(client)  # HTTP
+import httpx
+from nexus3.rpc.detection import discover_rpc_token, detect_server
+from nexus3.rpc.protocol import serialize_request
+from nexus3.rpc.types import Request
+
+token = discover_rpc_token()
+if detect_server() == "nexus_server":
+    async with httpx.AsyncClient() as client:
+        req = Request(method="list_agents", id=1)
+        resp = await client.post("http://localhost:8765/rpc", json=req.dict(), headers={"Authorization": f"Bearer {token}"})
 ```
 
-### Benefits
+### 6. Multi-Agent Hierarchy
+```bash
+# Coordinator (trusted)
+curl ... -d '{"method":"create_agent","params":{"agent_id":"coord","preset":"trusted"},"id":1}'
+# Worker (inherits coord perms)
+curl ... -d '{"method":"create_agent","params":{"agent_id":"worker","parent_agent_id":"coord","preset":"sandboxed"},"id":2}'
+```
 
-- ~10x faster for in-process calls (no HTTP serialization)
-- Same interface (skills unchanged)
-- Automatic fallback to HTTP for external servers
+## Authentication
+
+- **Tokens**: `nxk_` + 32B b64 (`generate_api_key()`).
+- **Storage**: `~/.nexus3/rpc.token` (0o600 perms).
+- **Discovery**: `discover_rpc_token()` checks ENV/file.
+- **Validation**: Constant-time `hmac.compare_digest()`.
+
+## Temp Agents
+
+- IDs: `.1`, `.2` (auto-increment, excluded from saves).
+- `pool.create_temp()` for quick tasks.
+
+## In-Process Direct API (agent_api.py)
+
+Skills use `DirectAgentAPI` via `services.get("agent_api")`:
+```python
+api = DirectAgentAPI(pool, global_dispatcher)
+scoped = api.for_agent("worker-1")
+resp = await scoped.send("Hello")  # Direct dispatcher.dispatch()
+```
+`ClientAdapter` matches `NexusClient` interface (HTTP fallback).
+
+## Security Features
+
+- **Localhost-only** bind (`127.0.0.1`).
+- **Path validation**: `is_valid_agent_id()` prevents traversal.
+- **Permission ceilings**: Subagents can't exceed parent perms.
+- **Sandboxing**: `cwd`/write_paths; tools filtered at init.
+- **Cooperative cancel**: No hard kills.
+- **Rate limits**: Semaphore (32 concurrent).
+
+## Server Lifecycle
+
+- **Startup**: `run_http_server(pool, global_dispatcher, api_key)`.
+- **Shutdown**: `shutdown_server()` or all agents `shutdown` + idle timeout.
+- **Detection**: `wait_for_server(8765)` for scripts/tests.
+
+Generated/updated: 2026-01-15 from source code analysis.

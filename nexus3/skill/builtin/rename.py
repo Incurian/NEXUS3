@@ -112,7 +112,7 @@ class RenameSkill(FileSkill):
             item_type = "directory" if dst_path.is_dir() else "file"
             return ToolResult(output=f"Renamed {item_type}: {source} -> {destination}")
 
-        except PathSecurityError as e:
+        except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except PermissionError as e:
             return ToolResult(error=f"Permission denied: {e}")

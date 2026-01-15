@@ -24,7 +24,6 @@ Example:
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
 from nexus3.commands.protocol import CommandContext, CommandOutput
@@ -510,7 +509,7 @@ async def cmd_save(
         messages=agent.context.messages,
         system_prompt=agent.context.system_prompt or "",
         system_prompt_path=ctx.pool.system_prompt_path,
-        working_directory=os.getcwd(),
+        working_directory=str(agent.services.get_cwd()),
         permission_level=perm_level,
         token_usage=agent.context.get_token_usage(),
         provenance="user",

@@ -27,6 +27,10 @@ class MockServiceContainer:
         """Return allowed_paths from data."""
         return self._data.get("allowed_paths")
 
+    def get_cwd(self) -> Path:
+        """Return cwd from data, or current directory as default."""
+        return self._data.get("cwd", Path.cwd())
+
 
 class TestRegexReplaceBasic:
     """Basic tests for regex_replace skill."""

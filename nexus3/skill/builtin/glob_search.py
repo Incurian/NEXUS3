@@ -131,7 +131,7 @@ class GlobSkill(FileSkill):
 
             return ToolResult(output=result)
 
-        except PathSecurityError as e:
+        except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except Exception as e:
             return ToolResult(error=f"Error searching files: {e}")

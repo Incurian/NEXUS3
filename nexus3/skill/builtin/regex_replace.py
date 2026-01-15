@@ -181,7 +181,7 @@ class RegexReplaceSkill(FileSkill):
                 output=f"Replaced {actual_count} match(es) in {path}"
             )
 
-        except PathSecurityError as e:
+        except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except Exception as e:
             return ToolResult(error=f"Error: {e}")

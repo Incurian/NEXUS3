@@ -120,7 +120,7 @@ class ListDirectorySkill(FileSkill):
 
             return ToolResult(output=output)
 
-        except PathSecurityError as e:
+        except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except PermissionError:
             return ToolResult(error=f"Permission denied: {path}")

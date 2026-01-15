@@ -19,9 +19,9 @@ from nexus3.context.loader import (
     LoadedContext,
     MCPServerWithOrigin,
     PromptSource,
-    deep_merge,
     get_system_info,
 )
+from nexus3.core.utils import deep_merge
 from nexus3.context.manager import ContextConfig, ContextManager
 from nexus3.context.token_counter import (
     SimpleTokenCounter,

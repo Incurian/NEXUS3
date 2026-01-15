@@ -66,7 +66,7 @@ class WriteFileSkill(FileSkill):
             # Atomic write: temp file + rename to prevent partial writes on crash
             await asyncio.to_thread(atomic_write_text, p, content)
             return ToolResult(output=f"Successfully wrote {len(content)} bytes to {path}")
-        except PathSecurityError as e:
+        except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except PermissionError:
             return ToolResult(error=f"Permission denied: {path}")

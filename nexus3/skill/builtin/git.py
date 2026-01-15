@@ -5,14 +5,12 @@ import json
 import re
 import shlex
 import subprocess
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nexus3.core.errors import PathSecurityError
 
 if TYPE_CHECKING:
-    from nexus3.skill.services import ServiceContainer
-from nexus3.core.paths import validate_path
+    pass
 from nexus3.core.permissions import PermissionLevel
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FilteredCommandSkill, filtered_command_skill_factory
@@ -262,12 +260,11 @@ class GitSkill(FilteredCommandSkill):
             return ToolResult(error=error or "Command not allowed")
 
         try:
-            # Validate working directory (always uses validate_path for consistency)
-            work_dir = validate_path(cwd, allowed_paths=self._allowed_paths)
-
-            # Verify directory exists
-            if not work_dir.is_dir():
-                return ToolResult(error=f"Directory not found: {cwd}")
+            # Validate working directory using base class method
+            # (resolves relative paths against agent's cwd for multi-agent isolation)
+            work_dir, error = self._validate_cwd(cwd)
+            if error:
+                return ToolResult(error=error)
 
             # Build command using pre-parsed args (not re-parsing!)
             cmd_parts = ["git"] + parsed_args
@@ -310,7 +307,7 @@ class GitSkill(FilteredCommandSkill):
 
             return ToolResult(output=json.dumps(output_data, indent=2))
 
-        except PathSecurityError as e:
+        except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except subprocess.TimeoutExpired:
             return ToolResult(error=f"Git command timed out after {GIT_TIMEOUT}s")

@@ -4,284 +4,190 @@ Configuration loading and validation module for NEXUS3.
 
 ## Purpose
 
-This module provides fail-fast configuration loading with Pydantic validation. It supports layered configuration with deep merging:
+This module provides robust, fail-fast configuration loading with Pydantic validation. It supports **layered configuration merging**:
 
-**Load Order (earlier layers are base, later override):**
-1. **Shipped defaults** (`nexus3/defaults/config.json`)
-2. **Global user** (`~/.nexus3/config.json`)
-3. **Ancestor directories** (up to N levels above CWD, configurable)
-4. **Project local** (`CWD/.nexus3/config.json`)
+**Load Order (base → override):**
+1. Shipped defaults (`&lt;install_dir&gt;/defaults/config.json`)
+2. Global user (`~/.nexus3/config.json`)
+3. Ancestor directories (up to `context.ancestor_depth` levels above CWD)
+4. Project local (`CWD/.nexus3/config.json`)
 
-**Merge behavior:**
-- Dicts are recursively merged (local keys override, global preserved)
-- Lists are concatenated (not replaced)
-- Other values are overwritten by later layers
+**Merge behavior** (via `deep_merge`):
+- Dicts: Recursive merge (later overrides earlier)
+- Lists: Concatenation
+- Scalars: Overwrite
 
-## Key Types/Classes
+Validation occurs post-merge. Invalid JSON or schema errors raise `ConfigError`.
 
-### `ModelAliasConfig` (schema.py)
+## Key Modules & Exports
 
-Model aliases for friendly names.
+### `__init__.py`
+Exports all key symbols for `from nexus3.config import *`.
 
-| Field            | Type     | Default | Description |
-|------------------|----------|---------|-------------|
-| `id`             | `str`    | -       | Full model identifier (e.g., `x-ai/grok-code-fast-1`) |
-| `context_window` | `int \| None` | `None` | Context window size (uses provider default if None) |
-| `reasoning`      | `bool \| None` | `None` | Enable extended thinking (uses provider default if None) |
+### `loader.py`
+- `DEFAULTS_DIR`: Path to shipped defaults.
+- `DEFAULT_CONFIG`: `DEFAULTS_DIR / "config.json"`.
+- `load_config(path: Path | None = None, cwd: Path | None = None) -> Config`: Main entrypoint.
 
-### `ProviderConfig` (schema.py)
+### `schema.py`
+Pydantic models (partial list):
 
-LLM provider configuration. Supports multiple provider types with configurable authentication.
+| Model | Description |
+|-------|-------------|
+| `Config` | Root config. Key methods: `resolve_model()`, `find_model()`, `list_models()`. |
+| `ProviderConfig` | LLM providers (openrouter/openai/azure/anthropic/ollama/vllm). |
+| `ModelConfig` | Per-model aliases (`id`, `context_window`, `reasoning`). |
+| `PermissionsConfig` / `PermissionPresetConfig` / `ToolPermissionConfig` | Fine-grained tool/path permissions. |
+| `MCPServerConfig` | External MCP tool servers. |
+| `ContextConfig` / `CompactionConfig` / `ServerConfig` | Context, compaction, server settings. |
 
-| Field            | Type            | Default                  | Description |
-|------------------|-----------------|--------------------------|-------------|
-| `type`           | `str`           | `openrouter`             | Provider type: openrouter, openai, azure, anthropic, ollama, vllm |
-| `api_key_env`    | `str`           | `OPENROUTER_API_KEY`     | Env var for API key |
-| `model`          | `str`           | `x-ai/grok-code-fast-1`  | Default model ID or alias |
-| `base_url`       | `str`           | `https://openrouter.ai/api/v1` | API base URL |
-| `context_window` | `int`           | `131072`                 | Default context window |
-| `reasoning`      | `bool`          | `False`                  | Default reasoning mode |
-| `auth_method`    | `AuthMethod`    | `bearer`                 | How to send API key: bearer, api-key, x-api-key, none |
-| `extra_headers`  | `dict[str,str]` | `{}`                     | Additional HTTP headers |
-| `api_version`    | `str \| None`   | `None`                   | API version (for Azure) |
-| `deployment`     | `str \| None`   | `None`                   | Deployment name (for Azure) |
+**AuthMethod enum**: `bearer`, `api-key`, `x-api-key`, `none`.
 
-**AuthMethod enum:** `bearer` (Authorization: Bearer), `api-key` (api-key header), `x-api-key` (x-api-key header), `none` (no auth)
+**ProviderType**: `"openrouter" \| "openai" \| "azure" \| "anthropic" \| "ollama" \| "vllm"`.
 
-### `ToolPermissionConfig` (schema.py)
+## Dependencies
 
-Per-tool permissions.
+- **External**: `pydantic`
+- **Internal**: `nexus3.core.{constants, errors, utils}`
+- **Stdlib**: `json`, `pathlib`, `typing`, `os`, `warnings`, `enum`
 
-| Field                  | Type              | Default | Description |
-|------------------------|-------------------|---------|-------------|
-| `enabled`              | `bool`            | `True`  | Enable tool |
-| `allowed_paths`        | `list[str] \| None` | `None` | Paths tool can access (`None`=inherit, `[]`=deny all) |
-| `timeout`              | `float \| None`   | `None`  | Tool timeout (inherits preset/global) |
-| `requires_confirmation`| `bool \| None`    | `None`  | Override confirmation prompt |
-
-**`allowed_paths` semantics:** `None`/omitted=inherit, `[]`=deny all, `["path", ...]`=restrict to these dirs.
-
-### `PermissionPresetConfig` (schema.py)
-
-Custom permission presets.
-
-| Field                  | Type              | Default | Description |
-|------------------------|-------------------|---------|-------------|
-| `extends`              | `str \| None`     | `None`  | Base preset to extend |
-| `description`          | `str`             | `""`    | Description |
-| `allowed_paths`        | `list[str] \| None` | `None` | Allowed paths (`None`=unrestricted, `[]`=deny all) |
-| `blocked_paths`        | `list[str]`       | `[]`    | Explicitly blocked paths |
-| `network_access`       | `bool \| None`    | `None`  | Network access (derived from level) |
-| `tool_permissions`     | `dict[str, ToolPermissionConfig]` | `{}` | Per-tool overrides |
-| `default_tool_timeout` | `float \| None`   | `None`  | Preset default timeout |
-
-### `PermissionsConfig` (schema.py)
-
-Top-level permissions.
-
-| Field             | Type                            | Default                                                                 | Description |
-|-------------------|---------------------------------|-------------------------------------------------------------------------|-------------|
-| `default_preset`  | `str`                           | `trusted`                                                               | Default for new agents |
-| `presets`         | `dict[str, PermissionPresetConfig]` | `{}`                                                                    | Custom presets |
-| `destructive_tools` | `list[str]`                  | `["write_file", "edit_file", "bash", "run_python", "nexus_destroy", "nexus_shutdown"]` | Tools needing confirmation |
-
-### `CompactionConfig` (schema.py)
-
-Context compaction settings.
-
-| Field                  | Type     | Default | Description |
-|------------------------|----------|---------|-------------|
-| `enabled`              | `bool`   | `True`  | Enable auto-compaction |
-| `model`                | `str \| None` | `None` | Compaction model (uses provider.model if None) |
-| `summary_budget_ratio` | `float`  | `0.25`  | Budget ratio for summary |
-| `recent_preserve_ratio`| `float`  | `0.25`  | Ratio of recent messages to preserve |
-| `trigger_threshold`    | `float`  | `0.9`   | Compact when context > this budget ratio |
-
-### `ContextConfig` (schema.py)
-
-Context loading settings.
-
-| Field                  | Type     | Default | Description |
-|------------------------|----------|---------|-------------|
-| `ancestor_depth`       | `int`    | `2`     | How many parent dirs to check for .nexus3/ (0-10) |
-| `include_readme`       | `bool`   | `False` | Always include README.md in context |
-| `readme_as_fallback`   | `bool`   | `True`  | Use README.md when no NEXUS.md exists |
-
-### `MCPServerConfig` (schema.py)
-
-MCP (Model Context Protocol) server configs for external tools.
-
-**SECURITY:** MCP servers receive only safe environment variables by default (PATH, HOME, USER, LANG, etc.). This prevents accidental API key leakage. To pass additional vars:
-- Use `env` for explicit key-value pairs (e.g., secrets from config)
-- Use `env_passthrough` to copy specific vars from host environment
-
-| Field           | Type              | Default | Description |
-|-----------------|-------------------|---------|-------------|
-| `name`          | `str`             | -       | Server name (skill prefix) |
-| `command`       | `list[str] \| None` | `None` | Stdio command |
-| `url`           | `str \| None`     | `None`  | HTTP URL (future) |
-| `env`           | `dict[str, str] \| None` | `None` | Explicit env vars (highest priority) |
-| `env_passthrough` | `list[str] \| None` | `None` | Host env vars to pass through |
-| `enabled`       | `bool`            | `True`  | Enabled |
-
-### `Config` (schema.py)
-
-Root config.
-
-| Field                  | Type                            | Default             | Description |
-|------------------------|---------------------------------|---------------------|-------------|
-| `provider`             | `ProviderConfig`                | `ProviderConfig()`  | LLM provider |
-| `models`               | `dict[str, ModelAliasConfig]`   | `{}`                | Model aliases |
-| `stream_output`        | `bool`                          | `True`              | Stream responses |
-| `max_tool_iterations`  | `int`                           | `10`                | Max tool loop iterations |
-| `default_permission_level` | `str`                      | `trusted`           | Default level (yolo/trusted/sandboxed) |
-| `skill_timeout`        | `float`                         | `30.0`              | Global timeout (0=no) |
-| `max_concurrent_tools` | `int`                           | `10`                | Max parallel tools |
-| `permissions`          | `PermissionsConfig`             | `PermissionsConfig()` | Permissions |
-| `compaction`           | `CompactionConfig`              | `CompactionConfig()` | Compaction |
-| `mcp_servers`          | `list[MCPServerConfig]`         | `[]`                | MCP servers |
-
-**Key methods:**
-- `resolve_model(name_or_id: str | None) -> ResolvedModel`: Resolve alias or use defaults.
-- `list_models() -> list[str]`: List aliases.
-
-### `load_config(path: Path | None = None) -> Config` (loader.py)
-
-Load config with search fallback.
-
-**Search order (path=None):**
-1. `.nexus3/config.json` (project-local)
-2. `~/.nexus3/config.json` (user global)
-3. `<install>/defaults/config.json` (shipped)
-
-**Raises:** `ConfigError` on invalid file.
-
-## Full Schema Example
-
-```json
-{
-  "provider": {
-    "type": "openrouter",
-    "model": "x-ai/grok-code-fast-1",
-    "context_window": 131072,
-    "reasoning": false
-  },
-  "models": {
-    "fast": { "id": "x-ai/grok-code-fast-1", "context_window": 131072 },
-    "smart": { "id": "anthropic/claude-sonnet-4", "context_window": 200000, "reasoning": true }
-  },
-  "stream_output": true,
-  "max_tool_iterations": 10,
-  "default_permission_level": "trusted",
-  "skill_timeout": 30.0,
-  "max_concurrent_tools": 10,
-  "permissions": {
-    "default_preset": "trusted",
-    "presets": {
-      "dev": {
-        "extends": "trusted",
-        "description": "Project access",
-        "allowed_paths": ["/home/user/project"],
-        "tool_permissions": { "nexus_shutdown": { "enabled": false } }
-      }
-    }
-  },
-  "compaction": {
-    "enabled": true,
-    "model": "fast",
-    "summary_budget_ratio": 0.25
-  },
-  "mcp_servers": [
-    {
-      "name": "postgres",
-      "command": ["npx", "-y", "@anthropic/mcp-server-postgres"],
-      "env": { "DATABASE_URL": "postgresql://localhost/db" }
-    },
-    {
-      "name": "github",
-      "command": ["npx", "-y", "@anthropic/mcp-server-github"],
-      "env_passthrough": ["GITHUB_TOKEN"]
-    }
-  ]
-}
-```
-
-## Loading Logic
+## Architecture Summary
 
 ```
-load_config(path)
-    |
-    +-- path? --> _load_from_path(path)
-    |
-    +-- search: .nexus3/config.json → ~/.nexus3/config.json → defaults/config.json
-                        |
-                        +-- found & valid --> return Config
-                        +-- invalid --> raise ConfigError
-                        +-- none found --> Config() defaults
+load_config()
+├── path provided? ── YES ──> _load_from_path(path) ──> Config()
+└── NO ──> Merge layers:
+    ├── 1. DEFAULT_CONFIG (shipped)
+    ├── 2. ~/.nexus3/config.json (global)
+    ├── 3. Ancestors (find_ancestor_config_dirs(cwd, depth))
+    └── 4. cwd/.nexus3/config.json (local)
+    └── deep_merge(all) ──> Config.model_validate()
 ```
+
+**Model Resolution**:
+```
+alias ("haiku" or "openrouter/haiku")
+├── "/" ? ──> provider/alias lookup
+└── Search providers.models ──> ResolvedModel(model_id, context_window, ...)
+```
+
+**Permissions**:
+- Presets: `yolo`/`trusted`/`sandboxed` (built-in, extendable).
+- `allowed_paths`: `None`=inherit/unrestricted, `[]`=deny-all, `["/dir"]`=restrict.
+- Paths normalized to absolute (with warnings).
 
 ## Usage Examples
 
+### Basic Loading
 ```python
+from pathlib import Path
 from nexus3.config import load_config, Config
 
-# Load (project → global → defaults → pydantic defaults)
-config = load_config()
+# Layered load (recommended)
+config = load_config()  # Merges all layers → validated Config
 
-# Explicit path
+# Explicit file
 config = load_config(Path("myconfig.json"))
 
-# Model resolution
-resolved = config.resolve_model("fast")  # Uses models['fast']
-print(resolved.model_id, resolved.context_window)
+# No files → pydantic defaults
+config = load_config()  # Config(default_model="haiku", ...)
+```
 
-# List aliases
-print(config.list_models())  # ['fast', 'smart']
+### Model Resolution
+```python
+# Default model
+resolved = config.resolve_model()  # Uses config.default_model
 
-# Provider access
-print(config.provider.model)
+# Alias
+resolved = config.resolve_model("haiku")
 
-# Compaction
-print(config.compaction.enabled)
+# Provider/alias
+resolved = config.resolve_model("openrouter/haiku")
 
-# MCP servers
+print(resolved.model_id)  # e.g., "anthropic/claude-haiku-4.5"
+print(resolved.context_window)  # e.g., 200000
+```
+
+### List Models/Providers
+```python
+print(config.list_models())  # ["haiku", "sonnet"]
+print(config.list_providers())  # ["openrouter", "anthropic"]
+```
+
+### Permissions & MCP
+```python
+print(config.permissions.default_preset)  # "trusted"
+
 for server in config.mcp_servers:
-    print(server.name)
+    print(f"{server.name}: {' '.join(server.command or [])}")
 ```
 
 ### Error Handling
-
 ```python
 from nexus3.core.errors import ConfigError
 
 try:
     config = load_config()
 except ConfigError as e:
-    print(f"Config error: {e}")
+    print(f"Config failed: {e}")
 ```
 
-## Module Exports (`__init__.py`)
+## Full Config Schema Example
 
-- `Config`, `ProviderConfig`, `ToolPermissionConfig`, `PermissionPresetConfig`, `PermissionsConfig`, `MCPServerConfig`
-- `load_config`
-- `DEFAULT_CONFIG`, `DEFAULTS_DIR`
+```json
+{
+  "default_model": "haiku",
+  "providers": {
+    "openrouter": {
+      "type": "openrouter",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "base_url": "https://openrouter.ai/api/v1",
+      "auth_method": "bearer",
+      "models": {
+        "haiku": {
+          "id": "anthropic/claude-haiku-4.5",
+          "context_window": 200000,
+          "reasoning": false
+        }
+      }
+    }
+  },
+  "permissions": {
+    "default_preset": "trusted",
+    "presets": {
+      "project": {
+        "extends": "trusted",
+        "description": "Project-only access",
+        "allowed_paths": ["/home/user/project"],
+        "tool_permissions": {
+          "write_file": {"enabled": false}
+        }
+      }
+    }
+  },
+  "context": {
+    "ancestor_depth": 2,
+    "include_readme": true
+  },
+  "mcp_servers": [
+    {
+      "name": "github",
+      "command": ["npx", "-y", "@anthropic/mcp-server-github"],
+      "env_passthrough": ["GITHUB_TOKEN"]
+    }
+  ],
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8765
+  }
+}
+```
 
-## Built-in Presets (defined in `core/permissions.py`)
+## Security Notes
 
-| Preset     | Level     | Access |
-|------------|-----------|--------|
-| `yolo`     | YOLO      | Full, no confirms |
-| `trusted`  | TRUSTED   | CWD auto-allowed, prompts others |
-| `sandboxed`| SANDBOXED | Read-only CWD, no exec/network |
+- **Paths**: Normalized to absolute; non-existent dirs warned.
+- **MCP Servers**: Safe env vars only (PATH, HOME, etc.). Use `env`/`env_passthrough` explicitly.
+- **Destructive Tools**: `write_file`, `bash_safe`, etc. require confirmation (configurable).
+- **Validation**: Ensures unique model aliases, valid default_model.
 
-Custom presets extend via `extends`.
-
-## `allowed_paths` Semantics
-
-| JSON     | Python     | Meaning |
-|----------|------------|---------|
-| `null`/omit | `None` | Unrestricted (preset) / inherit (tool) |
-| `[]`     | `[]`     | Deny all |
-| `["/dir"]` | `["/dir"]` | Restrict to dir(s) |
-
-Applies to presets/tools.
+See `nexus3/core/permissions.py` for built-in presets.

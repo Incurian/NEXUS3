@@ -12,36 +12,13 @@ from typing import Any
 from pydantic import ValidationError
 
 from nexus3.config.schema import Config
+from nexus3.core.constants import get_defaults_dir, get_nexus_dir
 from nexus3.core.errors import ConfigError
+from nexus3.core.utils import deep_merge, find_ancestor_config_dirs
 
 # Path to shipped defaults in the install directory
-DEFAULTS_DIR = Path(__file__).parent.parent / "defaults"
+DEFAULTS_DIR = get_defaults_dir()
 DEFAULT_CONFIG = DEFAULTS_DIR / "config.json"
-
-
-def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merge dicts. Override values take precedence.
-
-    - Dicts are recursively merged
-    - Lists are extended (not replaced)
-    - Other values are overwritten
-
-    Args:
-        base: Base dictionary.
-        override: Dictionary with values to overlay.
-
-    Returns:
-        New merged dictionary.
-    """
-    result = base.copy()
-    for key, value in override.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            result[key] = _deep_merge(result[key], value)
-        elif key in result and isinstance(result[key], list) and isinstance(value, list):
-            result[key] = result[key] + value  # Extend lists
-        else:
-            result[key] = value
-    return result
 
 
 def _load_json_file(path: Path) -> dict[str, Any] | None:
@@ -76,32 +53,6 @@ def _load_json_file(path: Path) -> dict[str, Any] | None:
         raise ConfigError(f"Invalid JSON in config file {path}: {e}") from e
 
 
-def _find_ancestor_config_dirs(cwd: Path, max_depth: int = 2) -> list[Path]:
-    """Find .nexus3 directories in ancestor paths.
-
-    Args:
-        cwd: Starting directory.
-        max_depth: Maximum number of ancestor levels to check.
-
-    Returns:
-        List of ancestor config directories in order from
-        furthest (grandparent) to nearest (parent).
-    """
-    ancestors = []
-    current = cwd.parent
-
-    for _ in range(max_depth):
-        if current == current.parent:  # Reached root
-            break
-        config_dir = current / ".nexus3"
-        if config_dir.is_dir():
-            ancestors.append(config_dir)
-        current = current.parent
-
-    # Return in order: grandparent first, then parent (for correct merge order)
-    return list(reversed(ancestors))
-
-
 def load_config(path: Path | None = None, cwd: Path | None = None) -> Config:
     """Load configuration from file with layered merging.
 
@@ -134,14 +85,14 @@ def load_config(path: Path | None = None, cwd: Path | None = None) -> Config:
     # Layer 1: Shipped defaults
     default_data = _load_json_file(DEFAULT_CONFIG)
     if default_data:
-        merged = _deep_merge(merged, default_data)
+        merged = deep_merge(merged, default_data)
         loaded_from.append(DEFAULT_CONFIG)
 
     # Layer 2: Global user config
-    global_config = Path.home() / ".nexus3" / "config.json"
+    global_config = get_nexus_dir() / "config.json"
     global_data = _load_json_file(global_config)
     if global_data:
-        merged = _deep_merge(merged, global_data)
+        merged = deep_merge(merged, global_data)
         loaded_from.append(global_config)
 
     # Layer 3: Ancestor directories
@@ -158,20 +109,20 @@ def load_config(path: Path | None = None, cwd: Path | None = None) -> Config:
         if local_depth is not None
         else merged.get("context", {}).get("ancestor_depth", 2)
     )
-    ancestor_dirs = _find_ancestor_config_dirs(effective_cwd, ancestor_depth)
+    ancestor_dirs = find_ancestor_config_dirs(effective_cwd, ancestor_depth)
 
     for ancestor_dir in ancestor_dirs:
         ancestor_config = ancestor_dir / "config.json"
         ancestor_data = _load_json_file(ancestor_config)
         if ancestor_data:
-            merged = _deep_merge(merged, ancestor_data)
+            merged = deep_merge(merged, ancestor_data)
             loaded_from.append(ancestor_config)
 
     # Layer 4: Project local config
     local_config = effective_cwd / ".nexus3" / "config.json"
     local_data = _load_json_file(local_config)
     if local_data:
-        merged = _deep_merge(merged, local_data)
+        merged = deep_merge(merged, local_data)
         loaded_from.append(local_config)
 
     # Validate merged config

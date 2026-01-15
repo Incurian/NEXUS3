@@ -7,7 +7,8 @@ This module provides:
 
 from pathlib import Path
 
-import nexus3
+from nexus3.core.constants import get_defaults_dir as _get_defaults_dir
+from nexus3.core.constants import get_nexus_dir
 
 # Template files
 NEXUS_MD_TEMPLATE = """# Project Configuration
@@ -45,7 +46,7 @@ MCP_JSON_TEMPLATE = """{
 
 def get_defaults_dir() -> Path:
     """Get the path to the defaults directory in the package."""
-    return Path(nexus3.__file__).parent / "defaults"
+    return _get_defaults_dir()
 
 
 def init_global(force: bool = False) -> tuple[bool, str]:
@@ -59,7 +60,7 @@ def init_global(force: bool = False) -> tuple[bool, str]:
     Returns:
         Tuple of (success, message).
     """
-    global_dir = Path.home() / ".nexus3"
+    global_dir = get_nexus_dir()
     defaults_dir = get_defaults_dir()
 
     if global_dir.exists() and not force:

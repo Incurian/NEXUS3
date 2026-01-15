@@ -5,33 +5,34 @@ from pathlib import Path
 
 import pytest
 
-from nexus3.config.loader import _deep_merge, _find_ancestor_config_dirs, load_config
+from nexus3.config.loader import load_config
 from nexus3.config.schema import Config
 from nexus3.core.errors import ConfigError
+from nexus3.core.utils import deep_merge, find_ancestor_config_dirs
 
 
 class TestDeepMerge:
-    """Tests for _deep_merge function."""
+    """Tests for deep_merge function."""
 
     def test_simple_merge(self) -> None:
         """Test basic key merging."""
         base = {"a": 1, "b": 2}
         override = {"b": 3, "c": 4}
-        result = _deep_merge(base, override)
+        result = deep_merge(base, override)
         assert result == {"a": 1, "b": 3, "c": 4}
 
     def test_nested_merge(self) -> None:
         """Test nested dict merging preserves base keys."""
         base = {"provider": {"model": "a", "type": "openrouter"}}
         override = {"provider": {"model": "b"}}
-        result = _deep_merge(base, override)
+        result = deep_merge(base, override)
         assert result == {"provider": {"model": "b", "type": "openrouter"}}
 
     def test_list_extension(self) -> None:
         """Test lists are concatenated."""
         base = {"items": [1, 2]}
         override = {"items": [3, 4]}
-        result = _deep_merge(base, override)
+        result = deep_merge(base, override)
         assert result == {"items": [1, 2, 3, 4]}
 
 
@@ -48,7 +49,7 @@ class TestAncestorDiscovery:
         (tmp_path / "a" / ".nexus3").mkdir()
         (tmp_path / "a" / "b" / ".nexus3").mkdir()
 
-        ancestors = _find_ancestor_config_dirs(project, max_depth=4)
+        ancestors = find_ancestor_config_dirs(project, max_depth=4)
 
         assert len(ancestors) == 2
         # Should be ordered: furthest first (a before b)
@@ -64,14 +65,14 @@ class TestAncestorDiscovery:
         (tmp_path / "a" / "b" / ".nexus3").mkdir()
         (tmp_path / "a" / "b" / "c" / ".nexus3").mkdir()
 
-        ancestors = _find_ancestor_config_dirs(project, max_depth=1)
+        ancestors = find_ancestor_config_dirs(project, max_depth=1)
 
         assert len(ancestors) == 1
         assert ancestors[0] == tmp_path / "a" / "b" / "c" / ".nexus3"
 
     def test_stops_at_root(self, tmp_path: Path) -> None:
         """Test doesn't go beyond filesystem root."""
-        ancestors = _find_ancestor_config_dirs(tmp_path, max_depth=100)
+        ancestors = find_ancestor_config_dirs(tmp_path, max_depth=100)
         # Shouldn't crash, just return whatever it finds
         assert isinstance(ancestors, list)
 

@@ -35,6 +35,10 @@ class MockServiceContainer:
         """Return permission_level from data."""
         return self._data.get("permission_level")
 
+    def get_cwd(self) -> Path:
+        """Return cwd from data, or current directory as default."""
+        return self._data.get("cwd", Path.cwd())
+
 
 class TestGitSkillValidation:
     """Tests for git command validation."""

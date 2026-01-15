@@ -68,7 +68,7 @@ class MkdirSkill(FileSkill):
             else:
                 return ToolResult(output=f"Created directory: {path}")
 
-        except PathSecurityError as e:
+        except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except PermissionError:
             return ToolResult(error=f"Permission denied: {path}")

@@ -122,7 +122,9 @@ def format_tool_params(arguments: dict, max_length: int = 70) -> str:
     return result
 
 
-async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> ConfirmationResult:
+async def confirm_tool_action(
+    tool_call: ToolCall, target_path: Path | None, agent_cwd: Path
+) -> ConfirmationResult:
     """Prompt user for confirmation of destructive action with allow once/always options.
 
     This callback is invoked by Session when a tool requires user confirmation
@@ -143,6 +145,7 @@ async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> 
     Args:
         tool_call: The tool call requiring confirmation.
         target_path: The path being accessed (for write ops) or None.
+        agent_cwd: The agent's working directory (for accurate preview display).
 
     Returns:
         ConfirmationResult indicating user's decision.
@@ -179,7 +182,8 @@ async def confirm_tool_action(tool_call: ToolCall, target_path: Path | None) -> 
             console.print(f"  [dim]Server:[/] {server_name}")
             console.print(f"  [dim]Arguments:[/] {args_preview}")
         elif is_exec_tool:
-            cwd = tool_call.arguments.get("cwd", str(Path.cwd()))
+            # Use agent's cwd as default, not process cwd
+            cwd = tool_call.arguments.get("cwd", str(agent_cwd))
             command = tool_call.arguments.get("command", tool_call.arguments.get("code", ""))
             preview = command[:50] + "..." if len(command) > 50 else command
             console.print(f"\n[yellow]Execute {tool_name}?[/]")
@@ -387,8 +391,8 @@ def parse_args() -> argparse.Namespace:
     send_parser.add_argument(
         "--timeout", "-t",
         type=float,
-        default=120.0,
-        help="Request timeout in seconds (default: 120)",
+        default=300.0,
+        help="Request timeout in seconds (default: 300)",
     )
     add_port_arg(send_parser)
     add_api_key_arg(send_parser)
@@ -767,7 +771,7 @@ async def run_repl(
             messages=main_agent.context.messages,
             system_prompt=main_agent.context.system_prompt or "",
             system_prompt_path=get_system_prompt_path(),
-            working_directory=os.getcwd(),
+            working_directory=str(main_agent.services.get_cwd()),
             permission_level=perm_level,
             token_usage=main_agent.context.get_token_usage(),
             provenance="user",
@@ -804,7 +808,7 @@ async def run_repl(
                     messages=agent.context.messages,
                     system_prompt=agent.context.system_prompt or "",
                     system_prompt_path=get_system_prompt_path(),
-                    working_directory=os.getcwd(),
+                    working_directory=str(agent.services.get_cwd()),
                     permission_level=perm_level,
                     token_usage=agent.context.get_token_usage(),
                     provenance="user",
@@ -1442,7 +1446,7 @@ async def run_repl(
                         messages=save_agent.context.messages,
                         system_prompt=save_agent.context.system_prompt or "",
                         system_prompt_path=get_system_prompt_path(),
-                        working_directory=os.getcwd(),
+                        working_directory=str(save_agent.services.get_cwd()),
                         permission_level=perm_level,
                         token_usage=save_agent.context.get_token_usage(),
                         provenance="user",

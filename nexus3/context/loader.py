@@ -14,13 +14,16 @@ from pathlib import Path
 from typing import Any
 
 from nexus3.config.schema import ContextConfig, MCPServerConfig
+from nexus3.core.constants import get_defaults_dir, get_nexus_dir
+from nexus3.core.utils import deep_merge, find_ancestor_config_dirs
 
 
-def get_system_info(is_repl: bool = True) -> str:
+def get_system_info(is_repl: bool = True, cwd: Path | None = None) -> str:
     """Generate system environment information for context injection.
 
     Args:
         is_repl: Whether running in interactive REPL mode.
+        cwd: Working directory to report. Defaults to Path.cwd() if not provided.
 
     Returns:
         Formatted string with system information.
@@ -30,9 +33,9 @@ def get_system_info(is_repl: bool = True) -> str:
     # Note: Current date/time is injected dynamically per-request in ContextManager
     # to ensure accuracy throughout the session
 
-    # Working directory
-    cwd = Path.cwd()
-    parts.append(f"Working directory: {cwd}")
+    # Working directory (use agent's cwd if provided, not process cwd)
+    effective_cwd = cwd if cwd is not None else Path.cwd()
+    parts.append(f"Working directory: {effective_cwd}")
 
     # Operating system detection with WSL handling
     system = platform.system()
@@ -143,27 +146,6 @@ class LoadedContext:
     sources: ContextSources
 
 
-def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merge dicts. Lists are extended, not replaced.
-
-    Args:
-        base: Base dictionary.
-        override: Dictionary with values to overlay.
-
-    Returns:
-        New merged dictionary.
-    """
-    result = base.copy()
-    for key, value in override.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            result[key] = deep_merge(result[key], value)
-        elif key in result and isinstance(result[key], list) and isinstance(value, list):
-            result[key] = result[key] + value  # Extend lists
-        else:
-            result[key] = value
-    return result
-
-
 class ContextLoader:
     """Unified loader for all context types with layered merging.
 
@@ -200,34 +182,11 @@ class ContextLoader:
 
     def _get_global_dir(self) -> Path:
         """Get the global config directory."""
-        return Path.home() / ".nexus3"
+        return get_nexus_dir()
 
     def _get_defaults_dir(self) -> Path:
         """Get the install defaults directory."""
-        import nexus3
-
-        return Path(nexus3.__file__).parent / "defaults"
-
-    def _find_ancestor_dirs(self) -> list[Path]:
-        """Find .nexus3 directories in ancestor paths.
-
-        Returns:
-            List of ancestor config directories in order from
-            furthest (grandparent) to nearest (parent).
-        """
-        ancestors = []
-        current = self._cwd.parent
-
-        for _ in range(self._config.ancestor_depth):
-            if current == current.parent:  # Reached root
-                break
-            config_dir = current / ".nexus3"
-            if config_dir.is_dir():
-                ancestors.append(config_dir)
-            current = current.parent
-
-        # Return in order: grandparent first, then parent (for correct merge order)
-        return list(reversed(ancestors))
+        return get_defaults_dir()
 
     def _load_file(self, path: Path) -> str | None:
         """Load a text file if it exists.
@@ -459,7 +418,7 @@ Source: {source_path}
                 sources.config_sources.append(global_layer.path / "config.json")
 
         # 2. Load ancestors
-        ancestor_dirs = self._find_ancestor_dirs()
+        ancestor_dirs = find_ancestor_config_dirs(self._cwd, self._config.ancestor_depth)
         sources.ancestor_dirs = [d.parent for d in ancestor_dirs]
 
         for ancestor_dir in ancestor_dirs:
@@ -500,8 +459,8 @@ Source: {source_path}
         else:
             combined_prompt = "You are a helpful AI assistant."
 
-        # Add system info
-        combined_prompt += "\n\n" + get_system_info(is_repl=is_repl)
+        # Add system info (pass cwd so agent sees its own working directory)
+        combined_prompt += "\n\n" + get_system_info(is_repl=is_repl, cwd=self._cwd)
 
         return LoadedContext(
             system_prompt=combined_prompt,
@@ -542,6 +501,17 @@ Source: {source_path}
             # Already loaded by parent - use parent context as-is
             return parent_context.system_prompt
 
+        # Build subagent prompt with its own environment info
+        # (parent's environment shows parent's cwd, not subagent's)
+        env_info = get_system_info(is_repl=False, cwd=self._cwd)
+
+        # Strip parent's environment section to avoid duplication
+        parent_prompt = parent_context.system_prompt
+        if "# Environment" in parent_prompt:
+            # Remove parent's environment section (we'll add subagent's)
+            env_start = parent_prompt.find("# Environment")
+            parent_prompt = parent_prompt[:env_start].rstrip()
+
         # Load agent's local NEXUS.md and prepend
         if local_nexus.is_file():
             agent_prompt = local_nexus.read_text(encoding="utf-8")
@@ -550,7 +520,11 @@ Source: {local_nexus}
 
 {agent_prompt.strip()}
 
-{parent_context.system_prompt}"""
+{parent_prompt}
 
-        # No local NEXUS.md - use parent context
-        return parent_context.system_prompt
+{env_info}"""
+
+        # No local NEXUS.md - use parent context with subagent's environment
+        return f"""{parent_prompt}
+
+{env_info}"""

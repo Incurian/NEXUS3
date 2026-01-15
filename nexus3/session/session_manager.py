@@ -13,6 +13,7 @@ from pathlib import Path
 # Secure file permissions: owner read/write only (0o600)
 _SECURE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
 
+from nexus3.core.constants import get_nexus_dir
 from nexus3.core.errors import NexusError
 
 
@@ -80,7 +81,7 @@ class SessionManager:
         Args:
             nexus_dir: Base nexus directory. Defaults to ~/.nexus3.
         """
-        self.nexus_dir = nexus_dir or Path.home() / ".nexus3"
+        self.nexus_dir = nexus_dir or get_nexus_dir()
         self.sessions_dir = self.nexus_dir / "sessions"
 
     def _ensure_dirs(self) -> None:

@@ -37,7 +37,7 @@ from pathlib import Path
 
 from nexus3.core.permissions import AgentPermissions, PermissionDelta, ToolPermission
 from nexus3.core.validation import ValidationError, validate_agent_id
-from nexus3.rpc.pool import AgentConfig
+from nexus3.rpc.pool import Agent, AgentConfig
 
 # Type alias for handler functions
 Handler = Callable[[dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
@@ -239,6 +239,27 @@ class GlobalDispatcher:
                 f"initial_message must be string, got: {type(initial_message).__name__}"
             )
 
+        # Validate and look up parent_agent_id FIRST (needed for cwd resolution)
+        # SECURITY: Look up parent permissions from pool instead of trusting RPC data
+        parent_agent: Agent | None = None
+        parent_permissions: AgentPermissions | None = None
+        parent_cwd: Path | None = None
+        if parent_agent_id is not None:
+            if not isinstance(parent_agent_id, str):
+                raise InvalidParamsError(
+                    f"parent_agent_id must be string, got: {type(parent_agent_id).__name__}"
+                )
+            parent_agent = self._pool.get(parent_agent_id)
+            if parent_agent is None:
+                raise InvalidParamsError(f"Parent agent not found: {parent_agent_id}")
+            parent_permissions = parent_agent.services.get("permissions")
+            if parent_permissions is None:
+                raise InvalidParamsError(
+                    f"Parent agent '{parent_agent_id}' has no permissions configured"
+                )
+            # Get parent's cwd for resolving relative paths
+            parent_cwd = parent_agent.services.get("cwd")
+
         # Validate cwd if provided
         cwd_path: Path | None = None
         if cwd_param is not None:
@@ -246,6 +267,10 @@ class GlobalDispatcher:
                 raise InvalidParamsError(
                     f"cwd must be string, got: {type(cwd_param).__name__}"
                 )
+            # Resolve relative cwd against parent's cwd (not server's cwd)
+            cwd_input = Path(cwd_param)
+            if not cwd_input.is_absolute() and parent_cwd is not None:
+                cwd_param = str(parent_cwd / cwd_input)
             try:
                 # Use validate_path for consistent path resolution (follows symlinks)
                 cwd_path = validate_path(cwd_param, allowed_paths=None)
@@ -255,6 +280,21 @@ class GlobalDispatcher:
                 raise InvalidParamsError(f"cwd does not exist: {cwd_param}")
             if not cwd_path.is_dir():
                 raise InvalidParamsError(f"cwd is not a directory: {cwd_param}")
+        elif parent_cwd is not None:
+            # Inherit cwd from parent if not specified
+            cwd_path = parent_cwd
+
+        # SECURITY: Validate cwd is within parent's allowed paths
+        if cwd_path is not None and parent_permissions is not None:
+            parent_allowed = parent_permissions.effective_policy.allowed_paths
+            if parent_allowed is not None:
+                try:
+                    # Use validate_path for consistent containment check
+                    validate_path(cwd_path, allowed_paths=parent_allowed)
+                except PathSecurityError as e:
+                    raise InvalidParamsError(
+                        f"cwd '{cwd_path}' is outside parent's allowed paths"
+                    ) from e
 
         # Validate allowed_write_paths if provided
         write_paths: list[Path] | None = None
@@ -269,47 +309,25 @@ class GlobalDispatcher:
                     raise InvalidParamsError(
                         f"allowed_write_paths[{i}] must be string, got: {type(wp).__name__}"
                     )
-                write_paths.append(Path(wp).resolve())
+                # Resolve relative paths against agent's effective cwd
+                wp_path = Path(wp)
+                if not wp_path.is_absolute():
+                    base = cwd_path if cwd_path is not None else Path.cwd()
+                    wp_path = base / wp_path
+                write_paths.append(wp_path.resolve())
 
-        # Validate and look up parent_agent_id if provided
-        # SECURITY: Look up parent permissions from pool instead of trusting RPC data
-        parent_permissions: AgentPermissions | None = None
-        if parent_agent_id is not None:
-            if not isinstance(parent_agent_id, str):
-                raise InvalidParamsError(
-                    f"parent_agent_id must be string, got: {type(parent_agent_id).__name__}"
-                )
-            parent_agent = self._pool.get(parent_agent_id)
-            if parent_agent is None:
-                raise InvalidParamsError(f"Parent agent not found: {parent_agent_id}")
-            parent_permissions = parent_agent.services.get("permissions")
-            if parent_permissions is None:
-                raise InvalidParamsError(
-                    f"Parent agent '{parent_agent_id}' has no permissions configured"
-                )
-
-            # SECURITY: Validate cwd is within parent's allowed paths
-            if cwd_path is not None:
-                parent_allowed = parent_permissions.effective_policy.allowed_paths
-                if parent_allowed is not None:
-                    try:
-                        # Use validate_path for consistent containment check
-                        validate_path(cwd_path, allowed_paths=parent_allowed)
-                    except PathSecurityError as e:
-                        raise InvalidParamsError(
-                            f"cwd '{cwd_path}' is outside parent's allowed paths"
-                        ) from e
-
-            # SECURITY: Validate write paths are within cwd (or parent's paths if no cwd)
-            if write_paths:
-                sandbox_root = cwd_path or Path.cwd()
-                for wp in write_paths:
-                    try:
-                        wp.relative_to(sandbox_root)
-                    except ValueError as e:
-                        raise InvalidParamsError(
-                            f"allowed_write_path '{wp}' is outside sandbox root '{sandbox_root}'"
-                        ) from e
+        # SECURITY: Validate write paths are within cwd (sandbox root)
+        # Applies to ALL sandboxed/worker agents, not just subagents
+        effective_preset = preset or "sandboxed"
+        if effective_preset in ("sandboxed", "worker") and write_paths:
+            sandbox_root = cwd_path if cwd_path is not None else Path.cwd()
+            for wp in write_paths:
+                try:
+                    wp.relative_to(sandbox_root)
+                except ValueError as e:
+                    raise InvalidParamsError(
+                        f"allowed_write_path '{wp}' is outside sandbox root '{sandbox_root}'"
+                    ) from e
 
         # Build delta from parameters (disable_tools and write permissions)
         delta: PermissionDelta | None = None
@@ -324,25 +342,43 @@ class GlobalDispatcher:
         # Build tool_overrides for write permissions
         # For sandboxed preset: read-only by default, write only to explicit paths
         # Note: preset defaults to "sandboxed" for RPC mode if not specified
-        effective_preset = preset or "sandboxed"
+        # Note: effective_preset already defined above during write_paths validation
+
+        # All tools that can modify the filesystem
+        WRITE_FILE_TOOLS = ("write_file", "edit_file", "append_file", "regex_replace", "mkdir")
+        MIXED_FILE_TOOLS = ("copy_file", "rename")  # Read source, write destination
+
         if effective_preset in ("sandboxed", "worker"):
             tool_overrides: dict[str, ToolPermission] = {}
-            # If write_paths provided (even empty), use them; otherwise disable writes
-            if write_paths is not None:
-                for tool_name in ("write_file", "edit_file"):
+
+            if write_paths is not None and write_paths:
+                # Enable write tools with explicit allowed paths
+                for tool_name in WRITE_FILE_TOOLS:
+                    tool_overrides[tool_name] = ToolPermission(
+                        enabled=True,
+                        allowed_paths=write_paths,
+                    )
+                # Mixed tools: also restrict to write paths
+                for tool_name in MIXED_FILE_TOOLS:
                     tool_overrides[tool_name] = ToolPermission(
                         enabled=True,
                         allowed_paths=write_paths,
                     )
             else:
-                # No write paths = read-only (disable write tools)
-                for tool_name in ("write_file", "edit_file"):
+                # No write paths = disable all write-capable tools
+                for tool_name in WRITE_FILE_TOOLS + MIXED_FILE_TOOLS:
                     tool_overrides[tool_name] = ToolPermission(enabled=False)
+
             delta_kwargs["tool_overrides"] = tool_overrides
         elif write_paths is not None:
             # For non-sandboxed presets, only apply if explicitly provided
             tool_overrides = {}
-            for tool_name in ("write_file", "edit_file"):
+            for tool_name in WRITE_FILE_TOOLS:
+                tool_overrides[tool_name] = ToolPermission(
+                    enabled=True,
+                    allowed_paths=write_paths,
+                )
+            for tool_name in MIXED_FILE_TOOLS:
                 tool_overrides[tool_name] = ToolPermission(
                     enabled=True,
                     allowed_paths=write_paths,

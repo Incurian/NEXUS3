@@ -38,13 +38,12 @@ import secrets
 import stat
 from pathlib import Path
 
+from nexus3.core.constants import get_nexus_dir
+
 logger = logging.getLogger(__name__)
 
 # API key prefix for identification
 API_KEY_PREFIX = "nxk_"
-
-# Default NEXUS3 directory
-DEFAULT_NEXUS_DIR = Path.home() / ".nexus3"
 
 
 def generate_api_key() -> str:
@@ -128,7 +127,7 @@ class ServerTokenManager:
                        ~/.nexus3 if not specified.
         """
         self._port = port
-        self._nexus_dir = nexus_dir or DEFAULT_NEXUS_DIR
+        self._nexus_dir = nexus_dir or get_nexus_dir()
 
     @property
     def port(self) -> int:
@@ -261,7 +260,7 @@ def discover_rpc_token(
         else:
             print("No token found. Use --api-key flag.")
     """
-    nexus_dir = nexus_dir or DEFAULT_NEXUS_DIR
+    nexus_dir = nexus_dir or get_nexus_dir()
 
     # 1. Check environment variable (backwards compatible name)
     env_token = os.environ.get("NEXUS3_API_KEY")

@@ -111,7 +111,7 @@ class FileInfoSkill(FileSkill):
             info = await asyncio.to_thread(do_stat)
             return ToolResult(output=json.dumps(info, indent=2))
 
-        except PathSecurityError as e:
+        except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except FileNotFoundError:
             # Return structured response for non-existent paths
