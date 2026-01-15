@@ -14,6 +14,33 @@ from pathlib import Path
 _SECURE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
 
 from nexus3.core.errors import NexusError
+
+
+def _secure_write_file(path: Path, content: str) -> None:
+    """Write content to a file with secure permissions atomically.
+
+    Uses os.open() with O_CREAT | O_TRUNC to set permissions at creation time,
+    avoiding the race window between write and chmod where the file could be
+    world-readable.
+
+    Args:
+        path: Path to write to.
+        content: Content to write.
+
+    Raises:
+        OSError: If the file cannot be written.
+    """
+    fd = os.open(
+        str(path),
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        _SECURE_FILE_MODE,
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+    except Exception:
+        # fd is closed by fdopen, even on error
+        raise
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.session.persistence import SavedSession, SessionSummary
 
@@ -125,9 +152,7 @@ class SessionManager:
 
         path = self._session_path(saved.agent_id)
         content = saved.to_json()
-        path.write_text(content, encoding="utf-8")
-        # Set secure permissions (owner read/write only)
-        os.chmod(path, _SECURE_FILE_MODE)
+        _secure_write_file(path, content)
         return path
 
     def load_session(self, name: str) -> SavedSession:
@@ -192,15 +217,11 @@ class SessionManager:
         # Save session data
         path = self._last_session_path()
         content = saved.to_json()
-        path.write_text(content, encoding="utf-8")
-        # Set secure permissions (owner read/write only)
-        os.chmod(path, _SECURE_FILE_MODE)
+        _secure_write_file(path, content)
 
         # Save session name
         name_path = self._last_session_name_path()
-        name_path.write_text(name, encoding="utf-8")
-        # Set secure permissions (owner read/write only)
-        os.chmod(name_path, _SECURE_FILE_MODE)
+        _secure_write_file(name_path, name)
 
     def load_last_session(self) -> tuple[SavedSession, str] | None:
         """Load the last session (for resume).
@@ -293,9 +314,7 @@ class SessionManager:
         session.agent_id = new_name
         session.modified_at = datetime.now()
 
-        new_path.write_text(session.to_json(), encoding="utf-8")
-        # Set secure permissions (owner read/write only)
-        os.chmod(new_path, _SECURE_FILE_MODE)
+        _secure_write_file(new_path, session.to_json())
         old_path.unlink()
 
         return new_path
@@ -334,8 +353,6 @@ class SessionManager:
         session.created_at = now
         session.modified_at = now
 
-        dest_path.write_text(session.to_json(), encoding="utf-8")
-        # Set secure permissions (owner read/write only)
-        os.chmod(dest_path, _SECURE_FILE_MODE)
+        _secure_write_file(dest_path, session.to_json())
 
         return dest_path

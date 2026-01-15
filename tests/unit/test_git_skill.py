@@ -31,6 +31,10 @@ class MockServiceContainer:
         """Return allowed_paths from data."""
         return self._data.get("allowed_paths")
 
+    def get_permission_level(self) -> PermissionLevel | None:
+        """Return permission_level from data."""
+        return self._data.get("permission_level")
+
 
 class TestGitSkillValidation:
     """Tests for git command validation."""

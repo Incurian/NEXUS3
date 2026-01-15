@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 from nexus3.core.paths import validate_path
 from nexus3.core.permissions import PermissionLevel
 from nexus3.core.types import ToolResult
-from nexus3.skill.base import FilteredCommandSkill
+from nexus3.skill.base import FilteredCommandSkill, filtered_command_skill_factory
 
 # Commands safe for read-only (SANDBOXED) mode
 READ_ONLY_COMMANDS = frozenset({
@@ -76,8 +76,13 @@ class GitSkill(FilteredCommandSkill):
         return READ_ONLY_COMMANDS
 
     def get_blocked_patterns(self) -> list[tuple[str, str]]:
-        """Get regex patterns blocked in TRUSTED mode."""
-        return BLOCKED_PATTERNS
+        """Get regex patterns blocked in TRUSTED mode.
+
+        Git uses DANGEROUS_FLAGS + _check_dangerous_flags() for security
+        instead of regex patterns. This returns empty list to satisfy
+        the FilteredCommandSkill interface.
+        """
+        return []
 
     @property
     def name(self) -> str:
@@ -315,29 +320,6 @@ class GitSkill(FilteredCommandSkill):
             return ToolResult(error=f"Git error: {e}")
 
 
-def git_factory(services: "ServiceContainer") -> GitSkill:
-    """Factory function for GitSkill.
-
-    Note: GitSkill has special factory logic to extract permission_level
-    from the permissions object and register it in services for the skill to use.
-
-    Args:
-        services: ServiceContainer for dependency injection.
-
-    Returns:
-        New GitSkill instance configured based on services.
-    """
-    # Get permission level from permissions object and register it
-    # so FilteredCommandSkill._permission_level can access it
-    if not services.has("permission_level"):
-        permissions = services.get("permissions")
-        if permissions:
-            level = permissions.effective_policy.level
-        else:
-            level = PermissionLevel.TRUSTED
-        services.register("permission_level", level)
-
-    from nexus3.skill.base import _wrap_with_validation
-    skill = GitSkill(services)
-    _wrap_with_validation(skill)
-    return skill
+# Apply standard factory decorator - permission_level is now resolved
+# automatically via ServiceContainer.get_permission_level()
+git_factory = filtered_command_skill_factory(GitSkill)

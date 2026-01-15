@@ -27,7 +27,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from nexus3.core.permissions import AgentPermissions
+    from nexus3.core.permissions import AgentPermissions, PermissionLevel
+    from nexus3.rpc.agent_api import DirectAgentAPI
 
 
 @dataclass
@@ -131,6 +132,58 @@ class ServiceContainer:
             List of registered service names.
         """
         return list(self._services.keys())
+
+    # =========================================================================
+    # Typed accessors for common services
+    # =========================================================================
+
+    def get_permissions(self) -> "AgentPermissions | None":
+        """Get the agent's permissions.
+
+        Returns:
+            AgentPermissions object if registered, None otherwise.
+        """
+        return self.get("permissions")
+
+    def get_cwd(self) -> Path:
+        """Get the agent's working directory.
+
+        Returns:
+            Agent's cwd if set, otherwise the process current working directory.
+        """
+        cwd = self.get("cwd")
+        if cwd is not None:
+            return Path(cwd)
+        return Path.cwd()
+
+    def get_agent_api(self) -> "DirectAgentAPI | None":
+        """Get the DirectAgentAPI for in-process agent communication.
+
+        Returns:
+            DirectAgentAPI if available, None otherwise.
+        """
+        return self.get("agent_api")
+
+    def get_permission_level(self) -> "PermissionLevel | None":
+        """Get the agent's permission level.
+
+        Checks for explicit 'permission_level' first, then falls back to
+        extracting from 'permissions' if available.
+
+        Returns:
+            The permission level, or None if not determinable.
+        """
+        # Check for explicit level first
+        level = self.get("permission_level")
+        if level is not None:
+            return level
+
+        # Fall back to extracting from permissions
+        permissions = self.get_permissions()
+        if permissions is not None:
+            return permissions.effective_policy.level
+
+        return None
 
     def get_tool_allowed_paths(self, tool_name: str) -> list[Path] | None:
         """Get effective allowed_paths for a specific tool.

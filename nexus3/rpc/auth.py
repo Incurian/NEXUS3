@@ -157,7 +157,8 @@ class ServerTokenManager:
         """Save a token to the token file with secure permissions.
 
         Creates the NEXUS3 directory if it doesn't exist. The token file
-        is created with mode 0o600 (readable only by owner).
+        is created with mode 0o600 (readable only by owner) atomically
+        to avoid race conditions.
 
         Args:
             token: The token to save.
@@ -168,11 +169,20 @@ class ServerTokenManager:
         # Ensure directory exists
         self._nexus_dir.mkdir(parents=True, exist_ok=True)
 
-        # Write token with restrictive permissions
-        self.token_path.write_text(token, encoding="utf-8")
-
-        # Set file permissions to 0o600 (owner read/write only)
-        os.chmod(self.token_path, stat.S_IRUSR | stat.S_IWUSR)
+        # Write token with restrictive permissions atomically
+        # Using os.open() to set permissions at creation time avoids the
+        # race window between write and chmod
+        fd = os.open(
+            str(self.token_path),
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            stat.S_IRUSR | stat.S_IWUSR,
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(token)
+        except Exception:
+            # fd is closed by fdopen, even on error
+            raise
 
     def load(self) -> str | None:
         """Load the token from the token file.

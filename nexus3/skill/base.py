@@ -992,10 +992,13 @@ class FilteredCommandSkill(ABC):
     def _permission_level(self) -> "PermissionLevel | None":
         """Get permission level from ServiceContainer.
 
+        Uses the typed accessor which automatically resolves from
+        permissions if not directly set.
+
         Returns:
-            The permission level, or None if not set.
+            The permission level, or None if not determinable.
         """
-        return self._services.get("permission_level")
+        return self._services.get_permission_level()
 
     def _validate_cwd(self, cwd: str) -> tuple[Path, str | None]:
         """Validate working directory against allowed paths.

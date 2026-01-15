@@ -575,13 +575,24 @@ nexus --init-global-force     # Overwrite existing
 
 ## Remediation Tracking
 
-Code review completed 2026-01-13 using 24 NEXUS3 subagents. Details in `reviews/REMEDIATION-PLAN.md`.
+**Second review completed 2026-01-14** using dual swarms (5 Claude Code + 5 NEXUS3 agents) with cross-verification. Full details in `reviews/CONSOLIDATED-REVIEW.md` and `reviews/REMEDIATION-PLAN.md`.
 
-### Active Items
+### Active Items (from 2026-01-14 Review)
 
-All remediation items completed.
+| Priority | Issue | Status |
+|----------|-------|--------|
+| **CRITICAL** | ExecutionSkill cwd sandbox escape | Pending |
+| **HIGH** | Input validation gaps (agent IDs, slash args) | Pending |
+| **HIGH** | Global cwd affects all agents | Pending |
 
-### Completed
+### Completed (2026-01-15 - Safe & Easy Fixes)
+
+- **BLOCKED_PATTERNS fix** - git.py returns `[]` instead of undefined constant
+- **Atomic file writes** - `_secure_write_file()` helper in session_manager.py and auth.py uses `os.open()` with mode flags to avoid permission race
+- **ServiceContainer typed accessors** - `get_permissions()`, `get_cwd()`, `get_agent_api()`, `get_permission_level()` methods
+- **Standardized factory patterns** - git_factory now uses `filtered_command_skill_factory` decorator; `_permission_level` resolves automatically via typed accessor
+
+### Completed (Phase 1 - 2026-01-13)
 
 - Config validation (ProviderType enum, path validators)
 - Structured logging (RPC layer, root logger, client)
@@ -600,23 +611,43 @@ All remediation items completed.
 - **RPC decoupling** - DirectAgentAPI bypasses HTTP for in-process agent communication; skills use AgentAPI when available
 - **Per-tool path resolution** - ServiceContainer.get_tool_allowed_paths() resolves per-tool ToolPermission.allowed_paths; enables `--write-path` for RPC workers
 
-### Deferred
+### Deferred (Structural)
 
-| # | Issue | Reason |
-|---|-------|--------|
-| 5 | Repl.py split | Large refactor, low priority |
-| 14 | Display config | Polish, no current need |
-| 15 | Windows ESC key | No Windows users yet |
-| 17 | BaseSkill underutilization | Cosmetic |
-| 22 | CLI tests | Task not remediation |
-| 23 | SimpleTokenCounter accuracy | Minor |
-| 25 | Model-specific tokenizers | Future feature |
-| 28 | ServiceContainer typing | Polish |
-| 29 | HTTP keep-alive | Advanced feature |
+| Issue | Reason | Effort |
+|-------|--------|--------|
+| Repl.py split (1661 lines) | Large refactor | L |
+| Session.py split (842 lines) | Large refactor | M |
+| Pool.py split (880 lines) | Large refactor | M |
+| Display config | Polish, no current need | S |
+| Windows ESC key | No Windows users yet | S |
+| HTTP keep-alive | Advanced feature | M |
 
-### Remaining Work
+### Review Artifacts
 
-All remediation items completed.
+```
+reviews/
+├── CONSOLIDATED-REVIEW.md      # Combined findings from both swarms
+├── REMEDIATION-PLAN.md         # Detailed fix plans with code snippets
+├── claude-code/                # Claude Code agent reviews
+│   ├── core-review.md
+│   ├── rpc-review.md
+│   ├── skill-review.md
+│   ├── cli-review.md
+│   ├── misc-review.md
+│   └── cross-verification-by-nexus.md
+├── nexus3/                     # NEXUS3 agent reviews
+│   ├── core-review.md
+│   ├── cli-review.md
+│   ├── skill-review.md
+│   ├── misc-review.md
+│   └── cross-verification-by-cc.md
+└── remediation/                # Detailed fix plans
+    ├── critical-fixes.md
+    ├── security-fixes.md
+    ├── monolithic-refactor.md
+    ├── medium-priority.md
+    └── testing-plan.md
+```
 
 ---
 
