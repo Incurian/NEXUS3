@@ -378,215 +378,228 @@ class AgentPool:
             ValueError: If an agent with the given ID already exists.
         """
         async with self._lock:
-            # Resolve agent_id from config or parameter
-            effective_config = config or AgentConfig()
-            effective_id = effective_config.agent_id or agent_id or uuid4().hex[:8]
+            return await self._create_unlocked(agent_id=agent_id, config=config)
 
-            # Validate agent ID for path traversal attacks (P0.5 security fix)
-            validate_agent_id(effective_id)
+    async def _create_unlocked(
+        self,
+        agent_id: str | None = None,
+        config: AgentConfig | None = None,
+    ) -> Agent:
+        """Internal agent creation - caller MUST hold self._lock.
 
-            # Check for duplicate
-            if effective_id in self._agents:
-                raise ValueError(f"Agent already exists: {effective_id}")
+        This is the actual agent creation logic, factored out to allow
+        create_temp() to hold the lock while generating the temp ID AND
+        creating the agent (P1.9 race condition fix).
+        """
+        # Resolve agent_id from config or parameter
+        effective_config = config or AgentConfig()
+        effective_id = effective_config.agent_id or agent_id or uuid4().hex[:8]
 
-            # Create agent log directory
-            agent_log_dir = self._shared.base_log_dir / effective_id
+        # Validate agent ID for path traversal attacks (P0.5 security fix)
+        validate_agent_id(effective_id)
 
-            # Create session logger
-            log_config = LogConfig(
-                base_dir=agent_log_dir,
-                streams=self._shared.log_streams,
-                mode="agent",
+        # Check for duplicate
+        if effective_id in self._agents:
+            raise ValueError(f"Agent already exists: {effective_id}")
+
+        # Create agent log directory
+        agent_log_dir = self._shared.base_log_dir / effective_id
+
+        # Create session logger
+        log_config = LogConfig(
+            base_dir=agent_log_dir,
+            streams=self._shared.log_streams,
+            mode="agent",
+        )
+        logger = SessionLogger(log_config)
+
+        # Register raw logging callback with the multiplexer
+        # The multiplexer routes logs to correct agent based on async context
+        raw_callback = logger.get_raw_log_callback()
+        if raw_callback is not None:
+            self._log_multiplexer.register(effective_id, raw_callback)
+
+        # Determine system prompt
+        if effective_config.system_prompt is not None:
+            system_prompt = effective_config.system_prompt
+        elif effective_config.cwd is not None:
+            # Subagent with custom cwd - use ContextLoader for per-directory context
+            context_loader = ContextLoader(
+                cwd=effective_config.cwd,
+                context_config=self._shared.config.context,
             )
-            logger = SessionLogger(log_config)
-
-            # Register raw logging callback with the multiplexer
-            # The multiplexer routes logs to correct agent based on async context
-            raw_callback = logger.get_raw_log_callback()
-            if raw_callback is not None:
-                self._log_multiplexer.register(effective_id, raw_callback)
-
-            # Determine system prompt
-            if effective_config.system_prompt is not None:
-                system_prompt = effective_config.system_prompt
-            elif effective_config.cwd is not None:
-                # Subagent with custom cwd - use ContextLoader for per-directory context
-                context_loader = ContextLoader(
-                    cwd=effective_config.cwd,
-                    context_config=self._shared.config.context,
-                )
-                system_prompt = context_loader.load_for_subagent(
-                    parent_context=self._shared.base_context,
-                )
-            else:
-                # Use the base context system prompt (default server context)
-                system_prompt = self._shared.base_context.system_prompt
-
-            # Resolve model name/alias to full settings
-            resolved_model = self._shared.config.resolve_model(effective_config.model)
-
-            # Create context manager with model's context window
-            context_config = ContextConfig(
-                max_tokens=resolved_model.context_window,
+            system_prompt = context_loader.load_for_subagent(
+                parent_context=self._shared.base_context,
             )
-            context = ContextManager(
-                config=context_config,
-                logger=logger,
+        else:
+            # Use the base context system prompt (default server context)
+            system_prompt = self._shared.base_context.system_prompt
+
+        # Resolve model name/alias to full settings
+        resolved_model = self._shared.config.resolve_model(effective_config.model)
+
+        # Create context manager with model's context window
+        context_config = ContextConfig(
+            max_tokens=resolved_model.context_window,
+        )
+        context = ContextManager(
+            config=context_config,
+            logger=logger,
+        )
+        context.set_system_prompt(system_prompt)
+
+        # Add session start timestamp as first message in history
+        context.add_session_start_message()
+
+        # Create skill registry with services
+        # Import here to avoid circular import (skills -> client -> rpc -> pool)
+        from nexus3.skill.builtin import register_builtin_skills
+
+        services = ServiceContainer()
+
+        # Resolve permissions from preset (using custom presets from config if available)
+        preset_name = effective_config.preset or self._shared.config.permissions.default_preset
+        try:
+            permissions = resolve_preset(
+                preset_name,
+                self._shared.custom_presets,
+                cwd=effective_config.cwd,
             )
-            context.set_system_prompt(system_prompt)
+        except ValueError:
+            # Fall back to trusted if preset not found
+            permissions = resolve_preset(
+                "trusted",
+                self._shared.custom_presets,
+                cwd=effective_config.cwd,
+            )
 
-            # Add session start timestamp as first message in history
-            context.add_session_start_message()
-
-            # Create skill registry with services
-            # Import here to avoid circular import (skills -> client -> rpc -> pool)
-            from nexus3.skill.builtin import register_builtin_skills
-
-            services = ServiceContainer()
-
-            # Resolve permissions from preset (using custom presets from config if available)
-            preset_name = effective_config.preset or self._shared.config.permissions.default_preset
-            try:
-                permissions = resolve_preset(
-                    preset_name,
-                    self._shared.custom_presets,
-                    cwd=effective_config.cwd,
+        # SECURITY: Check ceiling BEFORE applying delta
+        # This ensures the base preset is allowed, then we check the delta result
+        if effective_config.parent_permissions is not None:
+            # Check recursion depth limit
+            if effective_config.parent_permissions.depth >= MAX_AGENT_DEPTH:
+                raise PermissionError(
+                    f"Cannot create agent: max nesting depth ({MAX_AGENT_DEPTH}) exceeded"
                 )
-            except ValueError:
-                # Fall back to trusted if preset not found
-                permissions = resolve_preset(
-                    "trusted",
-                    self._shared.custom_presets,
-                    cwd=effective_config.cwd,
+            # First check: base preset must be allowed
+            if not effective_config.parent_permissions.can_grant(permissions):
+                raise PermissionError(
+                    f"Requested preset '{preset_name}' exceeds parent ceiling"
                 )
 
-            # SECURITY: Check ceiling BEFORE applying delta
-            # This ensures the base preset is allowed, then we check the delta result
+        # Apply delta if provided
+        if effective_config.delta:
+            permissions = permissions.apply_delta(effective_config.delta)
+            # Second check: delta result must also be allowed
             if effective_config.parent_permissions is not None:
-                # Check recursion depth limit
-                if effective_config.parent_permissions.depth >= MAX_AGENT_DEPTH:
-                    raise PermissionError(
-                        f"Cannot create agent: max nesting depth ({MAX_AGENT_DEPTH}) exceeded"
-                    )
-                # First check: base preset must be allowed
                 if not effective_config.parent_permissions.can_grant(permissions):
                     raise PermissionError(
-                        f"Requested preset '{preset_name}' exceeds parent ceiling"
+                        "Permission delta would exceed parent ceiling"
                     )
 
-            # Apply delta if provided
-            if effective_config.delta:
-                permissions = permissions.apply_delta(effective_config.delta)
-                # Second check: delta result must also be allowed
-                if effective_config.parent_permissions is not None:
-                    if not effective_config.parent_permissions.can_grant(permissions):
-                        raise PermissionError(
-                            "Permission delta would exceed parent ceiling"
-                        )
+        # Set ceiling reference and depth after all checks pass
+        # SECURITY FIX: Use deepcopy to prevent shared references
+        # If parent permissions are mutated later, child's ceiling shouldn't change
+        if effective_config.parent_permissions is not None:
+            permissions.ceiling = copy.deepcopy(effective_config.parent_permissions)
+            # SECURITY FIX: Store actual parent agent ID, not preset name
+            permissions.parent_agent_id = effective_config.parent_agent_id
+            permissions.depth = effective_config.parent_permissions.depth + 1
 
-            # Set ceiling reference and depth after all checks pass
-            # SECURITY FIX: Use deepcopy to prevent shared references
-            # If parent permissions are mutated later, child's ceiling shouldn't change
-            if effective_config.parent_permissions is not None:
-                permissions.ceiling = copy.deepcopy(effective_config.parent_permissions)
-                # SECURITY FIX: Store actual parent agent ID, not preset name
-                permissions.parent_agent_id = effective_config.parent_agent_id
-                permissions.depth = effective_config.parent_permissions.depth + 1
+        # Register agent_id, permissions, allowed_paths, model, cwd, and MCP registry
+        services.register("agent_id", effective_id)
+        services.register("permissions", permissions)
+        services.register("allowed_paths", permissions.effective_policy.allowed_paths)
+        services.register("model", resolved_model)  # ResolvedModel for model hotswapping
+        services.register("mcp_registry", self._shared.mcp_registry)
+        # Per-agent cwd for isolation (avoids global os.chdir)
+        agent_cwd = effective_config.cwd or Path.cwd()
+        services.register("cwd", agent_cwd)
 
-            # Register agent_id, permissions, allowed_paths, model, cwd, and MCP registry
-            services.register("agent_id", effective_id)
-            services.register("permissions", permissions)
-            services.register("allowed_paths", permissions.effective_policy.allowed_paths)
-            services.register("model", resolved_model)  # ResolvedModel for model hotswapping
-            services.register("mcp_registry", self._shared.mcp_registry)
-            # Per-agent cwd for isolation (avoids global os.chdir)
-            agent_cwd = effective_config.cwd or Path.cwd()
-            services.register("cwd", agent_cwd)
+        # Register AgentAPI for in-process communication (bypasses HTTP)
+        if self._global_dispatcher is not None:
+            from nexus3.rpc.agent_api import DirectAgentAPI
+            agent_api = DirectAgentAPI(self, self._global_dispatcher)
+            services.register("agent_api", agent_api)
 
-            # Register AgentAPI for in-process communication (bypasses HTTP)
-            if self._global_dispatcher is not None:
-                from nexus3.rpc.agent_api import DirectAgentAPI
-                agent_api = DirectAgentAPI(self, self._global_dispatcher)
-                services.register("agent_api", agent_api)
+        registry = SkillRegistry(services)
+        register_builtin_skills(registry)
 
-            registry = SkillRegistry(services)
-            register_builtin_skills(registry)
+        # SECURITY FIX: Inject only enabled tool definitions into context
+        # Disabled tools should not be visible to the LLM at all
+        tool_defs = registry.get_definitions_for_permissions(permissions)
 
-            # SECURITY FIX: Inject only enabled tool definitions into context
-            # Disabled tools should not be visible to the LLM at all
-            tool_defs = registry.get_definitions_for_permissions(permissions)
+        # Add MCP tools if agent has MCP permission (TRUSTED/YOLO only)
+        # Only include tools from MCP servers visible to this agent
+        from nexus3.mcp.permissions import can_use_mcp
+        if can_use_mcp(permissions):
+            for mcp_skill in self._shared.mcp_registry.get_all_skills(agent_id=effective_id):
+                # Check if MCP tool is disabled in permissions
+                tool_perm = permissions.tool_permissions.get(mcp_skill.name)
+                if tool_perm is not None and not tool_perm.enabled:
+                    continue
+                tool_defs.append({
+                    "type": "function",
+                    "function": {
+                        "name": mcp_skill.name,
+                        "description": mcp_skill.description,
+                        "parameters": mcp_skill.parameters,
+                    },
+                })
 
-            # Add MCP tools if agent has MCP permission (TRUSTED/YOLO only)
-            # Only include tools from MCP servers visible to this agent
-            from nexus3.mcp.permissions import can_use_mcp
-            if can_use_mcp(permissions):
-                for mcp_skill in self._shared.mcp_registry.get_all_skills(agent_id=effective_id):
-                    # Check if MCP tool is disabled in permissions
-                    tool_perm = permissions.tool_permissions.get(mcp_skill.name)
-                    if tool_perm is not None and not tool_perm.enabled:
-                        continue
-                    tool_defs.append({
-                        "type": "function",
-                        "function": {
-                            "name": mcp_skill.name,
-                            "description": mcp_skill.description,
-                            "parameters": mcp_skill.parameters,
-                        },
-                    })
+        context.set_tool_definitions(tool_defs)
 
-            context.set_tool_definitions(tool_defs)
+        # Get the provider for this model from the registry
+        provider = self._shared.provider_registry.get(
+            resolved_model.provider_name,
+            resolved_model.model_id,
+            resolved_model.reasoning,
+        )
 
-            # Get the provider for this model from the registry
-            provider = self._shared.provider_registry.get(
-                resolved_model.provider_name,
-                resolved_model.model_id,
-                resolved_model.reasoning,
-            )
+        # Create session with context and services for permission enforcement
+        session = Session(
+            provider,
+            context=context,
+            logger=logger,
+            registry=registry,
+            skill_timeout=self._shared.config.skill_timeout,
+            max_concurrent_tools=self._shared.config.max_concurrent_tools,
+            services=services,
+            config=self._shared.config,
+            context_loader=self._shared.context_loader,
+        )
 
-            # Create session with context and services for permission enforcement
-            session = Session(
-                provider,
-                context=context,
-                logger=logger,
-                registry=registry,
-                skill_timeout=self._shared.config.skill_timeout,
-                max_concurrent_tools=self._shared.config.max_concurrent_tools,
-                services=services,
-                config=self._shared.config,
-                context_loader=self._shared.context_loader,
-            )
+        # Create dispatcher with context for token info and log multiplexer
+        dispatcher = Dispatcher(
+            session,
+            context=context,
+            agent_id=effective_id,
+            log_multiplexer=self._log_multiplexer,
+        )
 
-            # Create dispatcher with context for token info and log multiplexer
-            dispatcher = Dispatcher(
-                session,
-                context=context,
-                agent_id=effective_id,
-                log_multiplexer=self._log_multiplexer,
-            )
+        # Create agent instance
+        agent = Agent(
+            agent_id=effective_id,
+            logger=logger,
+            context=context,
+            services=services,
+            registry=registry,
+            session=session,
+            dispatcher=dispatcher,
+        )
 
-            # Create agent instance
-            agent = Agent(
-                agent_id=effective_id,
-                logger=logger,
-                context=context,
-                services=services,
-                registry=registry,
-                session=session,
-                dispatcher=dispatcher,
-            )
+        # Store in pool
+        self._agents[effective_id] = agent
 
-            # Store in pool
-            self._agents[effective_id] = agent
+        # Track child in parent agent's services (for permission-free destroy)
+        if effective_config.parent_agent_id is not None:
+            parent = self._agents.get(effective_config.parent_agent_id)
+            if parent:
+                child_ids: set[str] = parent.services.get("child_agent_ids") or set()
+                child_ids.add(effective_id)
+                parent.services.register("child_agent_ids", child_ids)
 
-            # Track child in parent agent's services (for permission-free destroy)
-            if effective_config.parent_agent_id is not None:
-                parent = self._agents.get(effective_config.parent_agent_id)
-                if parent:
-                    child_ids: set[str] = parent.services.get("child_agent_ids") or set()
-                    child_ids.add(effective_id)
-                    parent.services.register("child_agent_ids", child_ids)
-
-            return agent
+        return agent
 
     async def create_temp(self, config: AgentConfig | None = None) -> Agent:
         """Create a new temp agent with auto-generated ID.
@@ -614,24 +627,27 @@ class AgentPool:
             agent2 = await pool.create_temp()
             print(agent2.agent_id)  # ".2"
         """
-        # Generate temp ID (needs lock to avoid race)
+        # P1.9 SECURITY FIX: Hold lock for entire operation to prevent race condition
+        # Previously, lock was released between generate_temp_id() and create(), allowing
+        # concurrent calls to generate the same ID before either stored it
         async with self._lock:
             temp_id = generate_temp_id(set(self._agents.keys()))
 
-        # Create agent with the temp ID
-        effective_config = config or AgentConfig()
-        # Override any agent_id in config with the temp ID
-        effective_config = AgentConfig(
-            agent_id=temp_id,
-            system_prompt=effective_config.system_prompt,
-            preset=effective_config.preset,
-            cwd=effective_config.cwd,
-            model=effective_config.model,
-            delta=effective_config.delta,
-            parent_permissions=effective_config.parent_permissions,
-            parent_agent_id=effective_config.parent_agent_id,
-        )
-        return await self.create(config=effective_config)
+            # Create agent with the temp ID
+            effective_config = config or AgentConfig()
+            # Override any agent_id in config with the temp ID
+            effective_config = AgentConfig(
+                agent_id=temp_id,
+                system_prompt=effective_config.system_prompt,
+                preset=effective_config.preset,
+                cwd=effective_config.cwd,
+                model=effective_config.model,
+                delta=effective_config.delta,
+                parent_permissions=effective_config.parent_permissions,
+                parent_agent_id=effective_config.parent_agent_id,
+            )
+            # Use _create_unlocked since we already hold the lock
+            return await self._create_unlocked(config=effective_config)
 
     def is_temp(self, agent_id: str) -> bool:
         """Check if an agent ID represents a temp agent.

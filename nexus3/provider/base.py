@@ -2,6 +2,8 @@
 
 This module provides the abstract base class for all LLM providers.
 It handles common functionality like authentication, retries, and logging.
+
+SECURITY: Includes SSRF validation on base_url (P1.6).
 """
 
 from __future__ import annotations
@@ -12,12 +14,16 @@ import random
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import httpx
 
 from nexus3.config.schema import AuthMethod, ProviderConfig
 from nexus3.core.errors import ProviderError
 from nexus3.core.types import Message, StreamEvent
+
+# Hosts that are considered safe for HTTP (non-HTTPS) connections
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
 
 if TYPE_CHECKING:
     from nexus3.core.interfaces import RawLogCallback
@@ -30,6 +36,63 @@ MAX_RETRIES = 3
 MAX_RETRY_DELAY = 10.0  # Maximum delay between retries in seconds
 DEFAULT_RETRY_BACKOFF = 1.5  # Exponential backoff multiplier
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+
+
+def validate_base_url(url: str, allow_insecure: bool = False) -> None:
+    """Validate provider base_url for SSRF protection.
+
+    P1.6 SECURITY FIX: Prevents SSRF attacks where a malicious base_url
+    could make the server send requests to internal services.
+
+    Rules:
+    - HTTPS URLs are always allowed
+    - HTTP URLs are only allowed for loopback addresses (localhost, 127.0.0.1, ::1)
+    - Empty scheme defaults to HTTPS
+    - Other schemes (file://, ftp://, etc.) are rejected
+
+    Args:
+        url: The base URL to validate.
+        allow_insecure: If True, allow HTTP for any host (for development only).
+
+    Raises:
+        ProviderError: If the URL fails validation.
+    """
+    if not url:
+        raise ProviderError("Provider base_url cannot be empty")
+
+    parsed = urlparse(url)
+    scheme = parsed.scheme.lower()
+    host = parsed.hostname or ""
+
+    # HTTPS is always safe
+    if scheme == "https":
+        return
+
+    # HTTP needs special handling
+    if scheme == "http":
+        if allow_insecure:
+            return  # Developer explicitly opted in
+
+        # Only loopback addresses are safe for HTTP
+        if host.lower() in _LOOPBACK_HOSTS:
+            return
+
+        raise ProviderError(
+            f"HTTP base_url '{url}' is not allowed for security reasons. "
+            f"Use HTTPS, or http://localhost for local development. "
+            f"Set allow_insecure_http=true in provider config to override (not recommended)."
+        )
+
+    # No scheme - could be relative, reject
+    if not scheme:
+        raise ProviderError(
+            f"Provider base_url '{url}' must include a scheme (https:// or http://)"
+        )
+
+    # Unknown scheme (file://, ftp://, gopher://, etc.)
+    raise ProviderError(
+        f"Provider base_url scheme '{scheme}' is not allowed. Use https:// or http://localhost."
+    )
 
 
 class BaseProvider(ABC):
@@ -64,9 +127,14 @@ class BaseProvider(ABC):
             reasoning: Whether to enable extended thinking/reasoning.
 
         Raises:
-            ProviderError: If auth is required but API key is not set.
+            ProviderError: If auth is required but API key is not set,
+                          or if base_url fails SSRF validation.
         """
         self._config = config
+
+        # P1.6 SECURITY: Validate base_url before use (SSRF protection)
+        validate_base_url(config.base_url, allow_insecure=config.allow_insecure_http)
+
         self._api_key = self._get_api_key()
         self._base_url = config.base_url.rstrip("/")
         self._model = model_id

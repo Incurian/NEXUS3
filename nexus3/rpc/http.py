@@ -91,6 +91,13 @@ DEFAULT_PORT = 8765
 MAX_BODY_SIZE = 1_048_576  # 1MB
 BIND_HOST = "127.0.0.1"  # Localhost only - NEVER bind to 0.0.0.0
 
+# HTTP header limits (DoS protection)
+MAX_HEADERS_COUNT = 128  # Max number of headers
+MAX_HEADER_NAME_LEN = 1024  # Max header name length (bytes)
+MAX_HEADER_VALUE_LEN = 8192  # Max header value length (bytes)
+MAX_TOTAL_HEADERS_SIZE = 32 * 1024  # 32KB total header size limit
+MAX_REQUEST_LINE_LEN = 8192  # Max request line length
+
 
 @dataclass
 class HttpRequest:
@@ -137,6 +144,10 @@ async def read_http_request(reader: asyncio.StreamReader) -> HttpRequest:
     if not request_line:
         raise HttpParseError("Empty request")
 
+    # Check request line length (DoS protection)
+    if len(request_line) > MAX_REQUEST_LINE_LEN:
+        raise HttpParseError(f"Request line too long: {len(request_line)} > {MAX_REQUEST_LINE_LEN}")
+
     # Parse request line: "POST /rpc HTTP/1.1\r\n"
     try:
         request_line_str = request_line.decode("utf-8").strip()
@@ -147,8 +158,10 @@ async def read_http_request(reader: asyncio.StreamReader) -> HttpRequest:
     except UnicodeDecodeError as e:
         raise HttpParseError(f"Invalid request encoding: {e}") from e
 
-    # Read headers
+    # Read headers (with DoS protection limits)
     headers: dict[str, str] = {}
+    total_headers_size = 0
+
     while True:
         try:
             header_line = await asyncio.wait_for(
@@ -161,6 +174,13 @@ async def read_http_request(reader: asyncio.StreamReader) -> HttpRequest:
         if not header_line or header_line == b"\r\n" or header_line == b"\n":
             break  # End of headers
 
+        # Track total headers size
+        total_headers_size += len(header_line)
+        if total_headers_size > MAX_TOTAL_HEADERS_SIZE:
+            raise HttpParseError(
+                f"Total headers size exceeds limit: {total_headers_size} > {MAX_TOTAL_HEADERS_SIZE}"
+            )
+
         try:
             header_str = header_line.decode("utf-8").strip()
         except UnicodeDecodeError as e:
@@ -170,7 +190,28 @@ async def read_http_request(reader: asyncio.StreamReader) -> HttpRequest:
             continue  # Skip malformed headers
 
         name, value = header_str.split(":", 1)
-        headers[name.strip().lower()] = value.strip()
+        name = name.strip()
+        value = value.strip()
+
+        # Check header name length
+        if len(name) > MAX_HEADER_NAME_LEN:
+            raise HttpParseError(
+                f"Header name too long: {len(name)} > {MAX_HEADER_NAME_LEN}"
+            )
+
+        # Check header value length
+        if len(value) > MAX_HEADER_VALUE_LEN:
+            raise HttpParseError(
+                f"Header value too long: {len(value)} > {MAX_HEADER_VALUE_LEN}"
+            )
+
+        # Check header count
+        if len(headers) >= MAX_HEADERS_COUNT:
+            raise HttpParseError(
+                f"Too many headers: exceeds limit of {MAX_HEADERS_COUNT}"
+            )
+
+        headers[name.lower()] = value
 
     # Read body based on Content-Length
     body = ""

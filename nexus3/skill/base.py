@@ -15,6 +15,8 @@ file reading, command execution, and other actions the agent can perform.
 
 import asyncio
 import json
+import os
+import signal
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from functools import wraps
@@ -970,7 +972,15 @@ class ExecutionSkill(ABC):
                     timeout=timeout
                 )
             except TimeoutError:
-                process.kill()
+                # Kill the entire process group to avoid orphan child processes
+                # On POSIX: start_new_session=True creates new group; killpg kills all
+                # On Windows: Fallback to process.kill() (no process groups)
+                try:
+                    pgid = os.getpgid(process.pid)
+                    os.killpg(pgid, signal.SIGKILL)
+                except (ProcessLookupError, OSError, AttributeError):
+                    # Process already dead, permission error, or Windows (no getpgid)
+                    process.kill()
                 await process.wait()
                 return ToolResult(error=timeout_message.format(timeout=timeout))
 

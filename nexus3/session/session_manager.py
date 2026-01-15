@@ -4,6 +4,7 @@ This module handles persisting sessions to disk and loading them back.
 Sessions are stored as JSON files in ~/.nexus3/sessions/.
 """
 
+import errno
 import json
 import os
 import stat
@@ -18,24 +19,33 @@ from nexus3.core.errors import NexusError
 
 
 def _secure_write_file(path: Path, content: str) -> None:
-    """Write content to a file with secure permissions atomically.
+    """Write content to a file with secure permissions, refusing symlinks.
 
-    Uses os.open() with O_CREAT | O_TRUNC to set permissions at creation time,
-    avoiding the race window between write and chmod where the file could be
-    world-readable.
+    Uses os.open() with O_CREAT | O_TRUNC | O_NOFOLLOW to:
+    1. Set permissions at creation time (avoiding chmod race)
+    2. Refuse to follow symlinks (preventing symlink attacks)
 
     Args:
         path: Path to write to.
         content: Content to write.
 
     Raises:
-        OSError: If the file cannot be written.
+        SessionManagerError: If the path is a symlink (security violation).
+        OSError: If the file cannot be written for other reasons.
     """
-    fd = os.open(
-        str(path),
-        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-        _SECURE_FILE_MODE,
-    )
+    try:
+        fd = os.open(
+            str(path),
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+            _SECURE_FILE_MODE,
+        )
+    except OSError as e:
+        if e.errno == errno.ELOOP:
+            # O_NOFOLLOW detected a symlink - this is a security violation
+            raise SessionManagerError(
+                f"Refusing to write to symlink at {path}: potential attack"
+            ) from e
+        raise
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)

@@ -3,12 +3,40 @@
 This module provides:
 - `--init-global`: Initialize ~/.nexus3/ with default configuration
 - `/init`: Initialize ./.nexus3/ for the current project
+
+SECURITY: All file writes check for symlinks to prevent symlink attacks (P1.8).
 """
 
 from pathlib import Path
 
 from nexus3.core.constants import get_defaults_dir as _get_defaults_dir
 from nexus3.core.constants import get_nexus_dir
+
+
+class InitSymlinkError(Exception):
+    """Raised when init would overwrite a symlink (security violation)."""
+
+    pass
+
+
+def _safe_write_text(path: Path, content: str) -> None:
+    """Write text to a file, refusing to follow symlinks.
+
+    P1.8 SECURITY FIX: Prevents symlink attacks where an attacker creates
+    a symlink at the target path to trick init into overwriting arbitrary files.
+
+    Args:
+        path: Path to write to.
+        content: Content to write.
+
+    Raises:
+        InitSymlinkError: If the path is a symlink.
+    """
+    if path.is_symlink():
+        raise InitSymlinkError(
+            f"Refusing to overwrite symlink at {path}: potential attack"
+        )
+    path.write_text(content, encoding="utf-8")
 
 # Template files
 NEXUS_MD_TEMPLATE = """# Project Configuration
@@ -70,36 +98,39 @@ def init_global(force: bool = False) -> tuple[bool, str]:
         global_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy NEXUS.md from defaults if it exists, otherwise use minimal
+        # P1.8 SECURITY: Use _safe_write_text to prevent symlink attacks
         default_nexus = defaults_dir / "NEXUS.md"
         if default_nexus.exists():
-            (global_dir / "NEXUS.md").write_text(
+            _safe_write_text(
+                global_dir / "NEXUS.md",
                 default_nexus.read_text(encoding="utf-8"),
-                encoding="utf-8",
             )
         else:
-            (global_dir / "NEXUS.md").write_text(
+            _safe_write_text(
+                global_dir / "NEXUS.md",
                 "# Personal Configuration\n\nYou are NEXUS3, an AI-powered CLI assistant.\n",
-                encoding="utf-8",
             )
 
         # Copy config.json from defaults if it exists
         default_config = defaults_dir / "config.json"
         if default_config.exists():
-            (global_dir / "config.json").write_text(
+            _safe_write_text(
+                global_dir / "config.json",
                 default_config.read_text(encoding="utf-8"),
-                encoding="utf-8",
             )
         else:
-            (global_dir / "config.json").write_text("{}", encoding="utf-8")
+            _safe_write_text(global_dir / "config.json", "{}")
 
         # Create empty mcp.json
-        (global_dir / "mcp.json").write_text(MCP_JSON_TEMPLATE, encoding="utf-8")
+        _safe_write_text(global_dir / "mcp.json", MCP_JSON_TEMPLATE)
 
         # Create sessions directory
         (global_dir / "sessions").mkdir(exist_ok=True)
 
         return True, f"Initialized global configuration at {global_dir}"
 
+    except InitSymlinkError as e:
+        return False, f"Security error: {e}"
     except OSError as e:
         return False, f"Failed to create global config: {e}"
 
@@ -124,16 +155,19 @@ def init_local(cwd: Path | None = None, force: bool = False) -> tuple[bool, str]
     try:
         target_dir.mkdir(parents=True, exist_ok=True)
 
+        # P1.8 SECURITY: Use _safe_write_text to prevent symlink attacks
         # Create NEXUS.md template
-        (target_dir / "NEXUS.md").write_text(NEXUS_MD_TEMPLATE, encoding="utf-8")
+        _safe_write_text(target_dir / "NEXUS.md", NEXUS_MD_TEMPLATE)
 
         # Create config.json template
-        (target_dir / "config.json").write_text(CONFIG_JSON_TEMPLATE, encoding="utf-8")
+        _safe_write_text(target_dir / "config.json", CONFIG_JSON_TEMPLATE)
 
         # Create empty mcp.json
-        (target_dir / "mcp.json").write_text(MCP_JSON_TEMPLATE, encoding="utf-8")
+        _safe_write_text(target_dir / "mcp.json", MCP_JSON_TEMPLATE)
 
         return True, f"Initialized project configuration at {target_dir}"
 
+    except InitSymlinkError as e:
+        return False, f"Security error: {e}"
     except OSError as e:
         return False, f"Failed to create project config: {e}"

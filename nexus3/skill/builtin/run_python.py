@@ -73,6 +73,7 @@ class RunPythonSkill(ExecutionSkill):
             stderr=asyncio.subprocess.PIPE,
             cwd=work_dir,
             env=get_safe_env(work_dir),
+            start_new_session=True,  # Create new process group for clean kill
         )
 
     async def execute(

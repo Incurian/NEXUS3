@@ -133,6 +133,10 @@ class ProviderConfig(BaseModel):
     retry_backoff: float = Field(default=1.5, ge=1.0, le=5.0)
     """Exponential backoff multiplier between retries."""
 
+    allow_insecure_http: bool = False
+    """Allow HTTP (non-HTTPS) for non-localhost URLs. SECURITY WARNING: Only enable for
+    development/testing. Enabling this on untrusted networks could expose credentials."""
+
     models: dict[str, ModelConfig] = {}
     """Model aliases available through this provider."""
 

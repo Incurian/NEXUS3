@@ -718,61 +718,44 @@ All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env s
 
 ---
 
-## Current Sprint: Sprint 2 — P1 Hardening
+## Completed: Sprint 2 — P1 Hardening ✅
 
-**Goal:** Remove common local attack primitives (symlink clobbering, DoS via headers/regex, orphan processes).
+**Goal:** Removed common local attack primitives (symlink clobbering, DoS via headers/regex, orphan processes).
 
-### P1.1: Session Save Symlink Defense
-- **Location:** `session/persistence.py` (session save functions)
-- **Bug:** `_secure_write_file()` follows symlinks, allowing attacker to overwrite arbitrary files
-- **Fix:** Use temp+fsync+os.replace pattern; refuse symlink targets
-- **Test:** Symlink detection before write; atomic replacement test
+### P1.1: Session Save Symlink Defense ✅
+- **Location:** `session/session_manager.py:_secure_write_file()`
+- **Fix:** Added `os.O_NOFOLLOW` flag to `os.open()`, raises `SessionManagerError` on symlinks
+- **Test:** `tests/security/test_p1_symlink_defense.py` (6 tests)
 
-### P1.2: HTTP Header Size/Count Limits
-- **Location:** `cli/http.py` (HTTP parser)
-- **Bug:** No limits on header count/size allows DoS via memory exhaustion
-- **Fix:** Add max line length (8KB), max headers (100), total header bytes (64KB)
-- **Test:** Requests exceeding limits return 431 Request Header Fields Too Large
+### P1.2: HTTP Header Size/Count Limits ✅
+- **Location:** `rpc/http.py:read_http_request()`
+- **Fix:** Added limits: `MAX_HEADERS_COUNT=128`, `MAX_HEADER_NAME_LEN=1024`, `MAX_HEADER_VALUE_LEN=8192`, `MAX_TOTAL_HEADERS_SIZE=32KB`
+- **Test:** `tests/security/test_p1_http_header_limits.py` (13 tests)
 
-### P1.4: Kill Subprocess Process Groups on Timeout
-- **Location:** `skill/base.py` (ExecutionSkill._execute_subprocess)
-- **Bug:** Child processes survive parent kill on timeout (orphan processes)
-- **Fix:** Start new process group (`start_new_session=True`), kill group on timeout (`os.killpg`)
-- **Test:** Verify child processes are killed when parent times out (POSIX only)
+### P1.4: Kill Subprocess Process Groups on Timeout ✅
+- **Location:** `skill/base.py:_execute_subprocess()`, `bash.py`, `run_python.py`
+- **Fix:** Added `start_new_session=True` + `os.killpg()` for process group kill
+- **Test:** `tests/security/test_p1_process_group_kill.py` (5 tests)
 
-### P1.5: Regex Replace Timeout Enforcement
-- **Location:** `skill/builtin/regex_replace.py`
-- **Bug:** Asyncio timeout doesn't stop thread - ReDoS possible
-- **Fix:** Move regex to subprocess OR use `regex` library with timeout support
-- **Test:** Catastrophic backtracking patterns complete within timeout
+### P1.5: Regex Replace Timeout Enforcement (Deferred)
+- Deferred to Sprint 3 - requires subprocess or `regex` library changes
 
-### P1.6: Provider base_url SSRF Validation
-- **Location:** `provider/` (all provider classes)
-- **Bug:** No validation on provider base_url allows SSRF
-- **Fix:** Require https by default; allow http://localhost only with explicit opt-in
-- **Test:** http:// non-localhost URLs rejected; https:// accepted
+### P1.6: Provider base_url SSRF Validation ✅
+- **Location:** `provider/base.py:validate_base_url()`
+- **Fix:** Require HTTPS; allow HTTP only for loopback; added `allow_insecure_http` config
+- **Test:** `tests/security/test_p1_provider_ssrf.py` (17 tests)
 
-### P1.8: CLI Init Symlink Defense
-- **Location:** `cli/init_commands.py:70-97`, `:124-135`
-- **Bug:** `--force` flag overwrites symlinks, allowing arbitrary file overwrites
-- **Fix:** Check `path.is_symlink()` before overwrite; refuse or use atomic write
-- **Test:** Symlinked paths refuse to overwrite
+### P1.8: CLI Init Symlink Defense ✅
+- **Location:** `cli/init_commands.py`
+- **Fix:** Added `_safe_write_text()` with symlink check before overwrite
+- **Test:** `tests/security/test_p1_init_symlink_defense.py` (11 tests)
 
-### P1.9: RPC create_temp() Race Condition
-- **Location:** `rpc/pool.py:559-576`
-- **Bug:** ID selection and agent creation not atomic - race condition possible
-- **Fix:** Hold lock across ID selection + creation, or reserve ID before release
-- **Test:** Concurrent create_temp() calls return unique IDs
+### P1.9: RPC create_temp() Race Condition ✅
+- **Location:** `rpc/pool.py`
+- **Fix:** Refactored to `_create_unlocked()`, `create_temp()` holds lock for entire operation
+- **Test:** `tests/security/test_p1_create_temp_race.py` (6 tests)
 
-### Architecture: Public Context Restore API (Arch C2)
-- Add `context.restore_messages(messages)` to eliminate direct `context._messages` mutation
-- Required for safer RPC restore behavior
-
-### Definition of Done
-Each fix must include:
-1. Tests that fail on old behavior, pass on new
-2. Security boundary enforced at correct layer
-3. Doc updates for changed behavior
+**Sprint 2 Test Count:** 58 new security tests, 158 total security tests passing
 
 ---
 
