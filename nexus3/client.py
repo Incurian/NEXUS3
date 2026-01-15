@@ -64,6 +64,16 @@ class NexusClient:
         self._request_id = 0
         logger.debug("NexusClient initialized: url=%s, timeout=%s", url, timeout)
 
+    # Hosts considered safe for auto-auth (local token discovery)
+    _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+    @classmethod
+    def _is_loopback(cls, host: str | None) -> bool:
+        """Check if host is a loopback address (safe for auto-auth)."""
+        if host is None:
+            return True  # Default URL will be localhost
+        return host.lower() in cls._LOOPBACK_HOSTS
+
     @classmethod
     def with_auto_auth(
         cls,
@@ -72,26 +82,45 @@ class NexusClient:
     ) -> "NexusClient":
         """Create a client with auto-discovered API key.
 
-        Attempts to discover the API key from:
+        For loopback URLs (localhost, 127.0.0.1, ::1), attempts to discover
+        the API key from:
         1. NEXUS3_API_KEY environment variable
         2. ~/.nexus3/rpc-{port}.token (port-specific)
         3. ~/.nexus3/rpc.token (default)
+
+        For non-loopback URLs, auto-discovery is disabled to prevent token
+        exfiltration. Use explicit api_key parameter for remote connections.
 
         Args:
             url: Base URL of the JSON-RPC server.
             timeout: Request timeout in seconds.
 
         Returns:
-            NexusClient configured with discovered API key (or None if not found).
+            NexusClient configured with discovered API key (or None if not found
+            or if URL is non-loopback).
         """
-        # Extract port from URL for key discovery
-        parsed = urlparse(url)
-        port = parsed.port or _get_default_port()
-        api_key = discover_rpc_token(port=port)
-        if api_key:
-            logger.debug("Auto-discovered API key for port %d", port)
+        # Extract host and port from URL for safety check and key discovery
+        parsed = urlparse(url) if url else None
+        host = parsed.hostname if parsed else None
+        port = (parsed.port if parsed else None) or _get_default_port()
+
+        api_key: str | None = None
+
+        # SECURITY: Only auto-discover tokens for loopback addresses
+        # This prevents token exfiltration to remote servers via --connect
+        if cls._is_loopback(host):
+            api_key = discover_rpc_token(port=port)
+            if api_key:
+                logger.debug("Auto-discovered API key for port %d", port)
+            else:
+                logger.debug("No API key found for port %d", port)
         else:
-            logger.debug("No API key found for port %d", port)
+            logger.warning(
+                "Auto-auth disabled for non-loopback host '%s'. "
+                "Use explicit api_key for remote connections.",
+                host,
+            )
+
         return cls(url=url, timeout=timeout, api_key=api_key)
 
     async def __aenter__(self) -> "NexusClient":

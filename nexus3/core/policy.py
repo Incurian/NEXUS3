@@ -374,7 +374,7 @@ class PermissionPolicy:
         allowed = data.get("allowed_paths")
         return cls(
             level=PermissionLevel(data["level"]),
-            allowed_paths=[Path(p) for p in allowed] if allowed else None,
+            allowed_paths=[Path(p) for p in allowed] if allowed is not None else None,
             blocked_paths=[Path(p) for p in data.get("blocked_paths", [])],
             cwd=Path(data.get("cwd", ".")),
             frozen=data.get("frozen", False),

@@ -2,13 +2,14 @@
 
 import json
 import os
-import stat
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-# Secure file permissions: owner read/write only (0o600)
-_SECURE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
+from nexus3.core.secure_io import SECURE_FILE_MODE, secure_mkdir, secure_write_new
+
+# Backwards compatibility alias
+_SECURE_FILE_MODE = SECURE_FILE_MODE
 
 
 class MarkdownWriter:
@@ -26,31 +27,39 @@ class MarkdownWriter:
         self.verbose_path = session_dir / "verbose.md"
         self.verbose_enabled = verbose_enabled
 
-        # Ensure directory exists
-        session_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure directory exists with secure permissions (0o700)
+        secure_mkdir(session_dir)
 
-        # Initialize files with headers
+        # Initialize files with headers (atomically with secure permissions)
         self._init_context_file()
         if verbose_enabled:
             self._init_verbose_file()
 
     def _init_context_file(self) -> None:
-        """Initialize context.md with header."""
-        if not self.context_path.exists():
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            header = f"# Session Log\n\nStarted: {timestamp}\n\n---\n\n"
-            self.context_path.write_text(header, encoding="utf-8")
-            # Set secure permissions (owner read/write only)
-            os.chmod(self.context_path, _SECURE_FILE_MODE)
+        """Initialize context.md with header atomically with secure permissions."""
+        if self.context_path.exists():
+            return
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        header = f"# Session Log\n\nStarted: {timestamp}\n\n---\n\n"
+        try:
+            # Atomic creation with 0o600 permissions - no TOCTOU race
+            secure_write_new(self.context_path, header)
+        except FileExistsError:
+            # Race condition: another process created it - that's fine
+            pass
 
     def _init_verbose_file(self) -> None:
-        """Initialize verbose.md with header."""
-        if not self.verbose_path.exists():
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            header = f"# Verbose Log\n\nStarted: {timestamp}\n\n---\n\n"
-            self.verbose_path.write_text(header, encoding="utf-8")
-            # Set secure permissions (owner read/write only)
-            os.chmod(self.verbose_path, _SECURE_FILE_MODE)
+        """Initialize verbose.md with header atomically with secure permissions."""
+        if self.verbose_path.exists():
+            return
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        header = f"# Verbose Log\n\nStarted: {timestamp}\n\n---\n\n"
+        try:
+            # Atomic creation with 0o600 permissions - no TOCTOU race
+            secure_write_new(self.verbose_path, header)
+        except FileExistsError:
+            # Race condition: another process created it - that's fine
+            pass
 
     def _append(self, path: Path, content: str) -> None:
         """Append content to a file."""

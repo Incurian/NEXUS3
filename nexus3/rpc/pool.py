@@ -70,6 +70,61 @@ MAX_AGENT_DEPTH = 5
 # === Agent Naming Helpers ===
 
 
+# Path traversal patterns to reject in agent IDs (security)
+_FORBIDDEN_AGENT_ID_PATTERNS: frozenset[str] = frozenset({
+    "/",      # Unix path separator
+    "\\",     # Windows path separator
+    "..",     # Parent directory traversal
+    "%2f",    # URL-encoded /
+    "%2F",    # URL-encoded / (uppercase)
+    "%5c",    # URL-encoded \
+    "%5C",    # URL-encoded \ (uppercase)
+})
+
+# Maximum allowed agent ID length
+_MAX_AGENT_ID_LENGTH = 128
+
+
+def validate_agent_id(agent_id: str) -> None:
+    """Validate agent ID for security (path traversal prevention).
+
+    Rejects agent IDs that could be used for path traversal attacks when
+    used to create log directories (base_log_dir / agent_id).
+
+    Valid examples: "worker-1", ".temp", "a1b2c3d4", "my-agent_v2"
+    Invalid examples: "../etc", "/root", "foo/bar", "%2f..%2f"
+
+    Args:
+        agent_id: The agent identifier to validate.
+
+    Raises:
+        ValueError: If the agent_id is empty, too long, or contains
+            path traversal patterns.
+    """
+    # Empty or too long
+    if not agent_id:
+        raise ValueError("Agent ID cannot be empty")
+    if len(agent_id) > _MAX_AGENT_ID_LENGTH:
+        raise ValueError(
+            f"Agent ID too long: {len(agent_id)} chars "
+            f"(max {_MAX_AGENT_ID_LENGTH})"
+        )
+
+    # Check for forbidden patterns (case-insensitive for encoded variants)
+    agent_id_lower = agent_id.lower()
+    for pattern in _FORBIDDEN_AGENT_ID_PATTERNS:
+        if pattern in agent_id or pattern in agent_id_lower:
+            raise ValueError(
+                f"Invalid agent ID '{agent_id}': contains forbidden pattern '{pattern}'"
+            )
+
+    # Reject absolute paths and explicit relative traversal
+    if agent_id.startswith(("/", "\\", "./")):
+        raise ValueError(
+            f"Invalid agent ID '{agent_id}': looks like a path"
+        )
+
+
 def is_temp_agent(agent_id: str) -> bool:
     """Return True if agent_id starts with '.' (temp/drone).
 
@@ -326,6 +381,9 @@ class AgentPool:
             # Resolve agent_id from config or parameter
             effective_config = config or AgentConfig()
             effective_id = effective_config.agent_id or agent_id or uuid4().hex[:8]
+
+            # Validate agent ID for path traversal attacks (P0.5 security fix)
+            validate_agent_id(effective_id)
 
             # Check for duplicate
             if effective_id in self._agents:
@@ -613,6 +671,9 @@ class AgentPool:
         """
         async with self._lock:
             agent_id = saved.agent_id
+
+            # Validate agent ID for path traversal attacks (P0.5 security fix)
+            validate_agent_id(agent_id)
 
             # Check for duplicate
             if agent_id in self._agents:

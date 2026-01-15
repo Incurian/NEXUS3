@@ -675,6 +675,107 @@ class MySpecialSkill(BaseSkill):
 
 ---
 
+## Security Review (2026-01-15)
+
+A comprehensive code review by 7 GPT-5.2 agents identified critical and high-priority issues. Full details in `reviews/MASTER-PLAN.md`.
+
+### Critical (P0) - Fix Before Deployment
+
+| Issue | Location | Summary |
+|-------|----------|---------|
+| **Deserialization privilege escalation** | `policy.py:374-378`, `presets.py:55-59` | `allowed_paths=[]` becomes `None` (unrestricted) after JSON roundtrip |
+| **Token leakage on --connect** | `repl.py:1493-1514` | Auto-auth sends local token to remote URLs |
+| **Subprocess env leaks secrets** | `bash.py:99-105`, `run_python.py:69-75` | Full `os.environ` passed to subprocesses |
+| **Session files insecure permissions** | `markdown.py:37-54`, `logging.py:37-43` | Write-then-chmod race; DB created 0644 |
+| **Agent ID path traversal** | `pool.py:328-336` | AgentPool doesn't validate IDs internally |
+
+### High Priority (P1)
+
+| Issue | Summary |
+|-------|---------|
+| Process group not killed on timeout | Child processes survive parent kill |
+| Regex replace timeout ineffective | Thread continues after asyncio timeout |
+| Symlink attacks on session save | `_secure_write_file()` follows symlinks |
+| HTTP header parsing unbounded | No limits on header count/size |
+| MCP server/tool name injection | Unsanitized names in skill IDs |
+
+### Remediation Roadmap
+
+See `reviews/MASTER-PLAN.md` for 8-sprint phased plan with:
+- Security fixes paired with tests
+- Architecture refactors (Session decomposition, RPC layering, REPL modularization)
+- Test harness and CI setup
+
+**Sprint 1 (P0 patch):** Deserialization fix, token exfil prevention, env sanitization, secure file perms, agent ID validation.
+
+---
+
+## Completed: Sprint 1 — P0 Security Patch ✅
+
+**Branch:** `security/sprint-1-p0-fixes` | **Tests:** 100 security tests, 1386 total passing
+
+All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env sanitization, P0.4 session perms, P0.5 agent ID validation.
+
+---
+
+## Current Sprint: Sprint 2 — P1 Hardening
+
+**Goal:** Remove common local attack primitives (symlink clobbering, DoS via headers/regex, orphan processes).
+
+### P1.1: Session Save Symlink Defense
+- **Location:** `session/persistence.py` (session save functions)
+- **Bug:** `_secure_write_file()` follows symlinks, allowing attacker to overwrite arbitrary files
+- **Fix:** Use temp+fsync+os.replace pattern; refuse symlink targets
+- **Test:** Symlink detection before write; atomic replacement test
+
+### P1.2: HTTP Header Size/Count Limits
+- **Location:** `cli/http.py` (HTTP parser)
+- **Bug:** No limits on header count/size allows DoS via memory exhaustion
+- **Fix:** Add max line length (8KB), max headers (100), total header bytes (64KB)
+- **Test:** Requests exceeding limits return 431 Request Header Fields Too Large
+
+### P1.4: Kill Subprocess Process Groups on Timeout
+- **Location:** `skill/base.py` (ExecutionSkill._execute_subprocess)
+- **Bug:** Child processes survive parent kill on timeout (orphan processes)
+- **Fix:** Start new process group (`start_new_session=True`), kill group on timeout (`os.killpg`)
+- **Test:** Verify child processes are killed when parent times out (POSIX only)
+
+### P1.5: Regex Replace Timeout Enforcement
+- **Location:** `skill/builtin/regex_replace.py`
+- **Bug:** Asyncio timeout doesn't stop thread - ReDoS possible
+- **Fix:** Move regex to subprocess OR use `regex` library with timeout support
+- **Test:** Catastrophic backtracking patterns complete within timeout
+
+### P1.6: Provider base_url SSRF Validation
+- **Location:** `provider/` (all provider classes)
+- **Bug:** No validation on provider base_url allows SSRF
+- **Fix:** Require https by default; allow http://localhost only with explicit opt-in
+- **Test:** http:// non-localhost URLs rejected; https:// accepted
+
+### P1.8: CLI Init Symlink Defense
+- **Location:** `cli/init_commands.py:70-97`, `:124-135`
+- **Bug:** `--force` flag overwrites symlinks, allowing arbitrary file overwrites
+- **Fix:** Check `path.is_symlink()` before overwrite; refuse or use atomic write
+- **Test:** Symlinked paths refuse to overwrite
+
+### P1.9: RPC create_temp() Race Condition
+- **Location:** `rpc/pool.py:559-576`
+- **Bug:** ID selection and agent creation not atomic - race condition possible
+- **Fix:** Hold lock across ID selection + creation, or reserve ID before release
+- **Test:** Concurrent create_temp() calls return unique IDs
+
+### Architecture: Public Context Restore API (Arch C2)
+- Add `context.restore_messages(messages)` to eliminate direct `context._messages` mutation
+- Required for safer RPC restore behavior
+
+### Definition of Done
+Each fix must include:
+1. Tests that fail on old behavior, pass on new
+2. Security boundary enforced at correct layer
+3. Doc updates for changed behavior
+
+---
+
 ## Known Issues
 
 - ~~**WSL Terminal**: Bash may close after `nexus` exits.~~ Fixed in d276c70.

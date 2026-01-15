@@ -6,6 +6,7 @@ from pathlib import Path
 from time import time
 from typing import TYPE_CHECKING, Any
 
+from nexus3.core.secure_io import secure_mkdir
 from nexus3.core.types import Message, Role, ToolCall, ToolResult
 from nexus3.session.markdown import MarkdownWriter, RawWriter
 from nexus3.session.storage import SessionStorage
@@ -34,8 +35,8 @@ class SessionLogger:
             mode=config.mode,
         )
 
-        # Ensure session directory exists
-        self.info.session_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure session directory exists with secure permissions (0o700)
+        secure_mkdir(self.info.session_dir)
 
         # Initialize storage (always on for context)
         self.storage = SessionStorage(self.info.session_dir / "session.db")

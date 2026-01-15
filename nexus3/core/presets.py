@@ -55,7 +55,7 @@ class ToolPermission:
         allowed = data.get("allowed_paths")
         return cls(
             enabled=data.get("enabled", True),
-            allowed_paths=[Path(p) for p in allowed] if allowed else None,
+            allowed_paths=[Path(p) for p in allowed] if allowed is not None else None,
             timeout=data.get("timeout"),
             requires_confirmation=data.get("requires_confirmation"),
         )

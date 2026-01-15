@@ -1,11 +1,14 @@
 """SQLite storage for session data."""
 
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from time import time
 from typing import Any
+
+from nexus3.core.secure_io import SECURE_FILE_MODE, secure_mkdir
 
 # Schema version for future migrations
 SCHEMA_VERSION = 2
@@ -167,15 +170,29 @@ class SessionStorage:
         self._ensure_schema()
 
     def _get_conn(self) -> sqlite3.Connection:
-        """Get or create database connection."""
+        """Get or create database connection with secure permissions."""
         if self._conn is None:
-            # Ensure parent directory exists
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            # Ensure parent directory exists with secure permissions (0o700)
+            secure_mkdir(self.db_path.parent)
+
+            # If DB doesn't exist, pre-create with secure permissions to avoid
+            # sqlite3.connect creating it with default umask (TOCTOU fix)
+            if not self.db_path.exists():
+                # Create empty file with 0o600 permissions atomically
+                fd = os.open(
+                    str(self.db_path),
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                    SECURE_FILE_MODE,
+                )
+                os.close(fd)
 
             self._conn = sqlite3.connect(self.db_path)
             self._conn.row_factory = sqlite3.Row
             # Enable foreign keys
             self._conn.execute("PRAGMA foreign_keys = ON")
+
+            # Ensure permissions are correct (handles existing DBs)
+            os.chmod(self.db_path, SECURE_FILE_MODE)
 
         return self._conn
 

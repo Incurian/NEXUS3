@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING
 
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import ExecutionSkill, execution_skill_factory
+from nexus3.skill.builtin.env import get_safe_env
 
 if TYPE_CHECKING:
     from nexus3.skill.services import ServiceContainer
@@ -101,7 +102,7 @@ class BashSafeSkill(ExecutionSkill):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=work_dir,
-            env={**os.environ},
+            env=get_safe_env(work_dir),
         )
 
     async def execute(
@@ -196,7 +197,7 @@ class ShellUnsafeSkill(ExecutionSkill):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=work_dir,
-            env={**os.environ},
+            env=get_safe_env(work_dir),
         )
 
     async def execute(
