@@ -349,7 +349,8 @@ async def cmd_status(
     # Model info
     if model_info:
         alias_str = f" ({model_info['alias']})" if model_info.get("alias") else ""
-        lines.append(f"  Model: {model_info['model_id']}{alias_str}")
+        provider_str = f" via {model_info['provider']}" if model_info.get("provider") else ""
+        lines.append(f"  Model: {model_info['model_id']}{alias_str}{provider_str}")
 
     # Permission info
     if perm_level:
