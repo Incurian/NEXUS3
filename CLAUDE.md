@@ -759,6 +759,51 @@ All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env s
 
 ---
 
+## In Progress: Sprint 3 — P2 Security Hardening
+
+**Goal:** Close medium-severity gaps, establish core security primitives.
+
+### P2.1: validate_url() Safe Default ✅
+- **Location:** `core/url_validator.py:validate_url()`
+- **Fix:** Default changed from `allow_localhost=True` to `False`
+- **Test:** `tests/security/test_p2_url_localhost_default.py` (10 tests)
+
+### P2.2: DNS Rebinding/TOCTOU Documentation ✅
+- **Location:** `core/url_validator.py` module docstring
+- **Status:** Documented as known limitation with existing mitigations
+
+### P2.3: blocked_paths in PathResolver ✅
+- **Location:** `core/resolver.py:resolve()`, `skill/services.py`
+- **Fix:** PathResolver now passes blocked_paths to validate_path()
+- **Test:** `tests/security/test_p2_blocked_paths.py` (9 tests)
+
+### P2.4: Path Traversal Bug Fix ✅
+- **Location:** `core/resolver.py:resolve()`, `skill/services.py`
+- **Fix:** BUG - resolve() skipped allowed_paths check when tool_name=None
+- **Test:** `tests/security/test_p2_exec_cwd_normalization.py` (9 tests)
+
+### P2.6: append_file True Append ✅
+- **Location:** `skill/builtin/append_file.py`
+- **Fix:** Uses `open(file, 'a')` instead of read+concat+rewrite
+- **Test:** `tests/security/test_p2_append_file.py` (12 tests)
+
+### P2.14: deep_merge() List Replace ✅
+- **Location:** `core/utils.py:deep_merge()`
+- **Fix:** Lists are now REPLACED, not extended (allows local override of blocked_paths)
+- **Test:** `tests/security/test_p2_deep_merge_semantics.py` (11 tests)
+
+### Remaining Sprint 3 Items
+- P2.5: File size/line limits + streaming reads
+- P2.7: Defense-in-depth checks in execution tools
+- P2.8: Token file permission checks
+- P2.9-12: MCP protocol hardening
+- P2.13: Provider error body size caps
+- Arch A1/A2: Tool identifiers and PathDecisionEngine
+
+**Sprint 3 Test Count (so far):** 51 new P2 tests, 209 total security tests passing
+
+---
+
 ## Known Issues
 
 - ~~**WSL Terminal**: Bash may close after `nexus` exits.~~ Fixed in d276c70.
