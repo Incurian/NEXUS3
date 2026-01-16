@@ -910,6 +910,50 @@ All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env s
 
 ---
 
+## Completed: Sprint 4 — Skill Framework Cleanup + Session Decomposition ✅
+
+**Goal:** Remove monkey-patching validation behavior. Make `Session` testable by extracting components.
+
+### B1: Validation Pipeline Unification ✅
+- **Location:** `skill/base.py`
+- **Fix:** Added `base_skill_factory()` decorator for BaseSkill subclasses
+- **Applied to:** `echo.py`, `sleep.py` (previously bypassed validation wrapper)
+- **Result:** All skills now use unified validation pipeline via factory decorators
+
+### B2/B3: SkillSpec Metadata ✅
+- **Location:** `skill/registry.py`
+- **Features:**
+  - `SkillSpec` dataclass: `name`, `description`, `parameters`, `factory`
+  - Registry stores `_specs: dict[str, SkillSpec]` instead of just factories
+  - `get_definitions()` can return metadata WITHOUT instantiation when provided at registration
+- **Test:** `tests/unit/skill/test_skillspec.py` (10 tests)
+
+### C1: Session Component Extraction ✅
+- **Location:** `session/dispatcher.py`, `session/enforcer.py`, `session/confirmation.py` (new modules)
+- **Components:**
+  - `ToolDispatcher` - resolves tool calls to skills (builtin + MCP)
+  - `PermissionEnforcer` - centralizes all permission checks
+  - `ConfirmationController` - handles user confirmation + allowance updates
+- **Result:** `Session._execute_single_tool()` reduced from 207 lines to ~70 lines of orchestration
+- **Public APIs added:** `MCPServerRegistry.find_skill()`, `ContextManager.token_counter`, typed ServiceContainer accessors
+
+### C3: Storage Decoding Robustness ✅
+- **Location:** `session/storage.py`, `session/persistence.py`
+- **Fixes:**
+  - Try/catch around `json.loads()` in `MessageRow.from_row()`, `EventRow.from_row()`
+  - Size validation: `MAX_JSON_FIELD_SIZE=10MB` prevents memory exhaustion
+  - `SessionPersistenceError` for malformed session JSON
+- **Test:** `tests/security/test_storage_corruption.py` (19 tests)
+
+### Test Coverage
+- **test_skillspec.py:** 10 tests (registry no-instantiation)
+- **test_skill_validation.py:** 16 tests (validation uniformity)
+- **test_storage_corruption.py:** 19 tests (corruption handling)
+
+**Sprint 4 Test Count:** 45 new tests, 1812 total passing
+
+---
+
 ## Known Issues
 
 - ~~**WSL Terminal**: Bash may close after `nexus` exits.~~ Fixed in d276c70.

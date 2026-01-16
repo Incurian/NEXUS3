@@ -226,6 +226,47 @@ def _wrap_with_validation(skill: "Skill") -> None:
     skill.execute = validated_execute  # type: ignore[method-assign]
 
 
+# Type variable for base_skill_factory
+_BS = TypeVar("_BS", bound="BaseSkill")
+
+
+def base_skill_factory(cls: type[_BS]) -> type[_BS]:
+    """Factory decorator for BaseSkill subclasses.
+
+    Attaches a .factory method to the class that wraps execute with parameter validation.
+    Use for simple utility skills that don't need FileSkill/ExecutionSkill infrastructure.
+
+    Unlike file_skill_factory (which returns the factory function), this decorator
+    returns the class itself, preserving the ability to instantiate it directly
+    for testing purposes.
+
+    Usage:
+        @base_skill_factory
+        class EchoSkill:
+            ...
+
+        # The decorated class has a .factory attribute:
+        skill = EchoSkill.factory(services)
+
+        # Direct instantiation still works (without validation wrapper):
+        raw_skill = EchoSkill()
+
+    Args:
+        cls: A BaseSkill subclass (or Skill protocol implementer) to create a factory for.
+
+    Returns:
+        The same class with a .factory attribute attached.
+    """
+    def factory(services: "ServiceContainer") -> _BS:
+        skill = cls()
+        _wrap_with_validation(skill)
+        return skill
+
+    # Attach factory to class for convenient access
+    cls.factory = factory  # type: ignore[attr-defined]
+    return cls
+
+
 @runtime_checkable
 class Skill(Protocol):
     """Protocol for all skills.

@@ -3,9 +3,10 @@
 from typing import Any
 
 from nexus3.core.types import ToolResult
-from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import base_skill_factory
 
 
+@base_skill_factory
 class EchoSkill:
     """Simple skill that echoes back the input message.
 
@@ -38,13 +39,5 @@ class EchoSkill:
         return ToolResult(output=message)
 
 
-def echo_skill_factory(services: ServiceContainer) -> EchoSkill:
-    """Factory function for EchoSkill.
-
-    Args:
-        services: ServiceContainer (unused, but required by factory protocol)
-
-    Returns:
-        New EchoSkill instance
-    """
-    return EchoSkill()
+# Export factory for registration
+echo_skill_factory = EchoSkill.factory

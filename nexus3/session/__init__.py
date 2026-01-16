@@ -1,5 +1,8 @@
 """Chat session management and logging."""
 
+from nexus3.session.confirmation import ConfirmationController
+from nexus3.session.dispatcher import ToolDispatcher
+from nexus3.session.enforcer import PermissionEnforcer
 from nexus3.session.logging import RawLogCallbackAdapter, SessionLogger
 from nexus3.session.persistence import (
     SavedSession,
@@ -22,6 +25,9 @@ from nexus3.session.types import LogConfig, LogStream, SessionInfo
 __all__ = [
     "Session",
     "ConfirmationCallback",
+    "ConfirmationController",
+    "ToolDispatcher",
+    "PermissionEnforcer",
     "SessionLogger",
     "SessionStorage",
     "SessionMarkers",

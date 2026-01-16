@@ -124,6 +124,11 @@ class ContextManager:
         return self._system_prompt
 
     @property
+    def token_counter(self) -> TokenCounter:
+        """Get the token counter instance."""
+        return self._counter
+
+    @property
     def messages(self) -> list[Message]:
         """Get all messages (read-only copy)."""
         return self._messages.copy()

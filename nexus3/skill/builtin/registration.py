@@ -3,6 +3,7 @@
 from nexus3.skill.builtin.append_file import append_file_factory
 from nexus3.skill.builtin.bash import bash_safe_factory, shell_unsafe_factory
 from nexus3.skill.builtin.copy_file import copy_file_factory
+from nexus3.skill.builtin.echo import echo_skill_factory
 from nexus3.skill.builtin.edit_file import edit_file_factory
 from nexus3.skill.builtin.file_info import file_info_factory
 from nexus3.skill.builtin.git import git_factory

@@ -31,7 +31,7 @@ from nexus3.skill.base import (
     nexus_skill_factory,
 )
 from nexus3.skill.errors import SkillError, SkillExecutionError, SkillNotFoundError
-from nexus3.skill.registry import SkillFactory, SkillRegistry
+from nexus3.skill.registry import SkillFactory, SkillRegistry, SkillSpec
 from nexus3.skill.services import ServiceContainer
 
 __all__ = [
@@ -50,6 +50,7 @@ __all__ = [
     # Registry
     "SkillRegistry",
     "SkillFactory",
+    "SkillSpec",
     # Services
     "ServiceContainer",
     # Errors

@@ -239,3 +239,19 @@ class ServiceContainer:
             return blocked if blocked is not None else []
 
         return permissions.effective_policy.blocked_paths
+
+    def get_child_agent_ids(self) -> set[str] | None:
+        """Get child agent IDs if set.
+
+        Returns:
+            Set of child agent IDs, or None if not registered.
+        """
+        return self.get("child_agent_ids")
+
+    def get_mcp_registry(self) -> Any | None:
+        """Get MCP registry if available.
+
+        Returns:
+            MCPServerRegistry instance if registered, None otherwise.
+        """
+        return self.get("mcp_registry")

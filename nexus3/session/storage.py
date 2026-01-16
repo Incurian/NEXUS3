@@ -1,6 +1,7 @@
 """SQLite storage for session data."""
 
 import json
+import logging
 import os
 import sqlite3
 from dataclasses import dataclass
@@ -9,6 +10,11 @@ from time import time
 from typing import Any
 
 from nexus3.core.secure_io import SECURE_FILE_MODE, secure_mkdir
+
+logger = logging.getLogger(__name__)
+
+# Maximum JSON field size to prevent memory exhaustion (10MB)
+MAX_JSON_FIELD_SIZE = 10 * 1024 * 1024
 
 # Schema version for future migrations
 SCHEMA_VERSION = 2
@@ -111,7 +117,24 @@ class MessageRow:
         """Create from database row."""
         tool_calls = None
         if row["tool_calls"]:
-            tool_calls = json.loads(row["tool_calls"])
+            raw = row["tool_calls"]
+            if len(raw) > MAX_JSON_FIELD_SIZE:
+                logger.warning(
+                    "Skipping oversized tool_calls in message %s: %d bytes",
+                    row["id"],
+                    len(raw),
+                )
+            else:
+                try:
+                    tool_calls = json.loads(raw)
+                except (json.JSONDecodeError, TypeError) as e:
+                    # Log warning but don't crash - skip malformed tool_calls
+                    logger.warning(
+                        "Skipping malformed tool_calls in message %s: %s",
+                        row["id"],
+                        e,
+                    )
+                    tool_calls = None
 
         summary_of = None
         if row["summary_of"]:
@@ -146,7 +169,24 @@ class EventRow:
         """Create from database row."""
         data = None
         if row["data"]:
-            data = json.loads(row["data"])
+            raw = row["data"]
+            if len(raw) > MAX_JSON_FIELD_SIZE:
+                logger.warning(
+                    "Skipping oversized event data in event %s: %d bytes",
+                    row["id"],
+                    len(raw),
+                )
+            else:
+                try:
+                    data = json.loads(raw)
+                except (json.JSONDecodeError, TypeError) as e:
+                    # Log warning but don't crash - skip malformed event data
+                    logger.warning(
+                        "Skipping malformed event data in event %s: %s",
+                        row["id"],
+                        e,
+                    )
+                    data = None
 
         return cls(
             id=row["id"],

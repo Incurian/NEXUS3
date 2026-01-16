@@ -11,7 +11,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from nexus3.core.errors import NexusError
 from nexus3.core.types import Message, Role, ToolCall
+
+
+class SessionPersistenceError(NexusError):
+    """Raised when session serialization/deserialization fails."""
 
 # Schema version for future migrations
 SESSION_SCHEMA_VERSION = 1
@@ -79,8 +84,15 @@ class SavedSession:
 
     @classmethod
     def from_json(cls, json_str: str) -> "SavedSession":
-        """Deserialize from JSON string."""
-        data = json.loads(json_str)
+        """Deserialize from JSON string.
+
+        Raises:
+            SessionPersistenceError: If the JSON is malformed.
+        """
+        try:
+            data = json.loads(json_str)
+        except json.JSONDecodeError as e:
+            raise SessionPersistenceError(f"Invalid session JSON: {e}") from e
         return cls.from_dict(data)
 
     @classmethod

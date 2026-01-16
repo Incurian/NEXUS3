@@ -4,7 +4,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nexus3.context.compaction import (
     CompactionResult,
@@ -25,8 +25,12 @@ from nexus3.core.types import (
     ToolResult,
 )
 from nexus3.core.validation import ValidationError, validate_tool_arguments
+from nexus3.session.confirmation import ConfirmationController
+from nexus3.session.dispatcher import ToolDispatcher
+from nexus3.session.enforcer import PermissionEnforcer
 
 if TYPE_CHECKING:
+    from nexus3.skill.base import Skill
     from nexus3.config.schema import CompactionConfig, Config
     from nexus3.context.loader import ContextLoader
     from nexus3.context.manager import ContextManager
@@ -142,6 +146,11 @@ class Session:
         self._config = config
         self._context_loader = context_loader
 
+        # Tool execution components
+        self._dispatcher = ToolDispatcher(registry=registry, services=services)
+        self._enforcer = PermissionEnforcer(services=services)
+        self._confirmation = ConfirmationController()
+
         # Track cancelled tool calls to report on next send()
         self._pending_cancelled_tools: list[tuple[str, str]] = []  # [(tool_id, tool_name), ...]
 
@@ -169,26 +178,6 @@ class Session:
             self.context.add_tool_result(tool_id, tool_name, cancelled_result)
 
         self._pending_cancelled_tools.clear()
-
-    async def _request_confirmation(
-        self, tool_call: "ToolCall", path: Path | None = None
-    ) -> ConfirmationResult:
-        """Request user confirmation for destructive action.
-
-        Args:
-            tool_call: The tool call requiring confirmation.
-            path: Optional path being accessed (for path-based allowances).
-
-        Returns:
-            ConfirmationResult indicating user's decision.
-        """
-        if self.on_confirm is None:
-            # No confirmation callback = no way to get user approval
-            # Deny by default to enforce TRUSTED semantics in server mode
-            return ConfirmationResult.DENY
-        # Pass agent's cwd for accurate preview display
-        agent_cwd = self._services.get_cwd() if self._services else Path.cwd()
-        return await self.on_confirm(tool_call, path, agent_cwd)
 
     async def send(
         self,
@@ -431,58 +420,13 @@ class Session:
         # Max iterations reached
         yield "[Max tool iterations reached]"
 
-    def _extract_path_from_tool_call(self, tool_call: "ToolCall") -> Path | None:
-        """Extract the target path from a tool call's arguments.
-
-        Used for path-based permission checks in TRUSTED mode.
-        Path is resolved to absolute for consistent comparison with allowed_paths.
-
-        Args:
-            tool_call: The tool call to extract path from.
-
-        Returns:
-            Resolved absolute Path if the tool has a path argument, None otherwise.
-        """
-        # Tools that have path arguments
-        path_arg = tool_call.arguments.get("path")
-        if path_arg:
-            # Resolve relative paths against agent's cwd, not process cwd
-            p = Path(path_arg).expanduser()
-            if not p.is_absolute():
-                agent_cwd = self._services.get_cwd() if self._services else Path.cwd()
-                p = agent_cwd / p
-            return p.resolve()
-        return None
-
-    def _extract_exec_cwd_from_tool_call(self, tool_call: "ToolCall") -> Path:
-        """Extract the working directory for execution tools.
-
-        Used for exec permission checks in TRUSTED mode.
-
-        Args:
-            tool_call: The tool call to extract cwd from.
-
-        Returns:
-            The execution working directory (defaults to agent's cwd).
-        """
-        cwd_arg = tool_call.arguments.get("cwd")
-        if cwd_arg:
-            return Path(cwd_arg)
-        # Use agent's cwd instead of process cwd
-        if self._services:
-            return self._services.get_cwd()
-        return Path.cwd()
-
     async def _execute_single_tool(self, tool_call: "ToolCall") -> ToolResult:
         """Execute a single tool call with permission checks.
 
-        Permission flow:
-        1. Check if tool is enabled (via tool_permissions)
-        2. For SANDBOXED: Check if action is allowed at all
-        3. For TRUSTED: Check if path is within CWD or write_allowances
-           - If not, request confirmation with allow once/always options
-           - Handle confirmation result (add to allowances if requested)
-        4. Execute the tool
+        Delegates to extracted components:
+        - PermissionEnforcer: Permission checks (enabled, action, path)
+        - ConfirmationController: User confirmation flow
+        - ToolDispatcher: Skill resolution
 
         Args:
             tool_call: The tool call to execute.
@@ -490,164 +434,48 @@ class Session:
         Returns:
             The tool result.
         """
-        # Get permissions from services
-        permissions: AgentPermissions | None = None
-        if self._services:
-            permissions = self._services.get("permissions")
+        permissions = self._services.get_permissions() if self._services else None
 
-        # Default timeout
-        effective_timeout = self.skill_timeout
+        # 1. Permission checks (enabled, action allowed, path restrictions)
+        error = self._enforcer.check_all(tool_call, permissions)
+        if error:
+            return error
 
-        if permissions:
-            tool_perm = permissions.tool_permissions.get(tool_call.name)
+        # 2. Check if confirmation needed
+        if self._enforcer.requires_confirmation(tool_call, permissions):
+            target_path = self._enforcer.extract_target_path(tool_call)
+            exec_cwd = self._enforcer.extract_exec_cwd(tool_call)
+            agent_cwd = self._services.get_cwd() if self._services else Path.cwd()
 
-            # Check if tool is enabled
-            if tool_perm and not tool_perm.enabled:
-                return ToolResult(error=f"Tool '{tool_call.name}' is disabled by permissions")
-
-            # Check if action is allowed at all (SANDBOXED blocks execution tools)
-            if not permissions.effective_policy.allows_action(tool_call.name):
-                level = permissions.effective_policy.level.value
-                return ToolResult(
-                    error=f"Tool '{tool_call.name}' is not allowed in {level} mode"
-                )
-
-            # Extract path/cwd for permission checks
-            target_path = self._extract_path_from_tool_call(tool_call)
-            exec_tools = ("bash_safe", "shell_UNSAFE", "run_python")
-            exec_cwd = (
-                self._extract_exec_cwd_from_tool_call(tool_call)
-                if tool_call.name in exec_tools
-                else None
+            result = await self._confirmation.request(
+                tool_call, target_path, agent_cwd, self.on_confirm
             )
 
-            # Skip confirmation for nexus_destroy of own child agents
-            skip_confirmation = False
-            if tool_call.name == "nexus_destroy":
-                target_agent_id = tool_call.arguments.get("agent_id")
-                child_ids: set[str] | None = (
-                    self._services.get("child_agent_ids") if self._services else None
+            if result == ConfirmationResult.DENY:
+                return ToolResult(error="Action cancelled by user")
+
+            if permissions:
+                self._confirmation.apply_result(
+                    permissions, result, tool_call, target_path, exec_cwd
                 )
-                if target_agent_id and child_ids and target_agent_id in child_ids:
-                    skip_confirmation = True
 
-            # Check if confirmation required (TRUSTED mode with path/exec outside allowances)
-            if not skip_confirmation and permissions.effective_policy.requires_confirmation(
-                tool_call.name,
-                path=target_path,
-                exec_cwd=exec_cwd,
-                session_allowances=permissions.session_allowances,
-            ):
-                result = await self._request_confirmation(tool_call, target_path)
+        # 3. Resolve skill
+        skill, mcp_server_name = self._dispatcher.find_skill(tool_call)
 
-                if result == ConfirmationResult.DENY:
-                    return ToolResult(error="Action cancelled by user")
+        # 4. MCP permission check and confirmation (if MCP skill)
+        if mcp_server_name and permissions:
+            error = await self._handle_mcp_permissions(
+                tool_call, skill, mcp_server_name, permissions
+            )
+            if error:
+                return error
 
-                # Handle "allow always" responses for write operations
-                if result == ConfirmationResult.ALLOW_FILE and target_path is not None:
-                    permissions.add_file_allowance(target_path)
-                elif result == ConfirmationResult.ALLOW_WRITE_DIRECTORY and target_path is not None:
-                    permissions.add_directory_allowance(target_path.parent)
-
-                # Handle "allow always" responses for execution operations
-                elif result == ConfirmationResult.ALLOW_EXEC_CWD and exec_cwd is not None:
-                    permissions.add_exec_cwd_allowance(tool_call.name, exec_cwd)
-                elif result == ConfirmationResult.ALLOW_EXEC_GLOBAL:
-                    permissions.add_exec_global_allowance(tool_call.name)
-
-                # ALLOW_ONCE just continues without adding to allowances
-
-            # For SANDBOXED: Sandbox enforcement only if no per-tool override
-            if target_path is not None:
-                tool_perm = permissions.tool_permissions.get(tool_call.name)
-                # Only apply policy check if tool has no explicit path override
-                if tool_perm is None or tool_perm.allowed_paths is None:
-                    if not permissions.effective_policy.can_write_path(target_path):
-                        return ToolResult(
-                            error=f"Path '{target_path}' is outside the allowed sandbox"
-                        )
-
-            # Per-tool path restrictions (for write_file/edit_file with allowed_write_paths)
-            if target_path is not None and tool_perm and tool_perm.allowed_paths is not None:
-                # Check if target path is within any of the per-tool allowed paths
-                path_allowed = False
-                for allowed_path in tool_perm.allowed_paths:
-                    try:
-                        target_path.relative_to(allowed_path)
-                        path_allowed = True
-                        break
-                    except ValueError:
-                        continue
-                if not path_allowed:
-                    allowed_str = ", ".join(str(p) for p in tool_perm.allowed_paths)
-                    return ToolResult(
-                        error=f"Tool '{tool_call.name}' cannot access '{target_path}'. "
-                        f"Allowed paths: [{allowed_str}]"
-                    )
-
-            # Get per-tool timeout
-            if tool_perm and tool_perm.timeout is not None:
-                effective_timeout = tool_perm.timeout
-
-        # Get the skill (check local registry, then MCP registry for mcp_ tools)
-        skill = self.registry.get(tool_call.name) if self.registry else None
-
-        # MCP fallback: Check MCP registry for tools starting with mcp_
-        mcp_server_name: str | None = None
-        if not skill and tool_call.name.startswith("mcp_") and self._services:
-            from nexus3.mcp.permissions import can_use_mcp
-            from nexus3.mcp.registry import MCPServerRegistry
-
-            mcp_registry: MCPServerRegistry | None = self._services.get("mcp_registry")
-            if mcp_registry:
-                # Permission check: only TRUSTED/YOLO can use MCP
-                if permissions and not can_use_mcp(permissions):
-                    return ToolResult(error="MCP tools require TRUSTED or YOLO permission level")
-
-                # Find the MCP skill adapter and its server
-                for server in mcp_registry._servers.values():
-                    for mcp_skill in server.skills:
-                        if mcp_skill.name == tool_call.name:
-                            skill = mcp_skill
-                            mcp_server_name = server.config.name
-                            break
-                    if skill:
-                        break
-
-                # MCP per-tool confirmation for TRUSTED mode
-                if skill and mcp_server_name and permissions:
-                    from nexus3.core.permissions import PermissionLevel
-
-                    level = permissions.effective_policy.level
-
-                    # YOLO skips confirmation
-                    if level != PermissionLevel.YOLO:
-                        # Check if server is in allow-all mode
-                        allowances = permissions.session_allowances
-                        server_allowed = allowances.is_mcp_server_allowed(mcp_server_name)
-                        # Check if this specific tool is allowed
-                        tool_allowed = allowances.is_mcp_tool_allowed(tool_call.name)
-
-                        if not server_allowed and not tool_allowed:
-                            # Need per-tool confirmation
-                            result = await self._request_confirmation(tool_call, None)
-                            if result == ConfirmationResult.DENY:
-                                return ToolResult(
-                                    error=f"MCP tool '{tool_call.name}' denied by user"
-                                )
-                            elif result == ConfirmationResult.ALLOW_FILE:
-                                # User chose "allow this tool always"
-                                permissions.session_allowances.add_mcp_tool(tool_call.name)
-                            elif result == ConfirmationResult.ALLOW_EXEC_GLOBAL:
-                                # User chose "allow all tools from this server"
-                                permissions.session_allowances.add_mcp_server(mcp_server_name)
-                            # ALLOW_ONCE proceeds without adding to allowances
-
+        # 5. Unknown skill check
         if not skill:
             logger.warning("Unknown skill requested: %s", tool_call.name)
             return ToolResult(error=f"Unknown skill: {tool_call.name}")
 
-        # SECURITY: Validate arguments against skill's JSON schema
+        # 6. Validate arguments
         try:
             args = validate_tool_arguments(
                 tool_call.arguments,
@@ -655,31 +483,99 @@ class Session:
                 logger=self.logger,
             )
         except ValidationError as e:
-            logger.warning("Invalid arguments for skill '%s': %s", tool_call.name, e.message)
             return ToolResult(error=f"Invalid arguments for {tool_call.name}: {e.message}")
 
+        # 7. Execute with timeout
+        effective_timeout = self._enforcer.get_effective_timeout(
+            tool_call.name, permissions, self.skill_timeout
+        )
+
+        return await self._execute_skill(skill, args, effective_timeout)
+
+    async def _handle_mcp_permissions(
+        self,
+        tool_call: "ToolCall",
+        skill: "Skill | None",
+        server_name: str,
+        permissions: AgentPermissions,
+    ) -> ToolResult | None:
+        """Handle MCP-specific permission checks and confirmation.
+
+        Args:
+            tool_call: The MCP tool call.
+            skill: The resolved MCP skill (may be None).
+            server_name: MCP server name.
+            permissions: Agent permissions.
+
+        Returns:
+            ToolResult with error if permission denied, None if allowed.
+        """
+        from nexus3.core.permissions import PermissionLevel
+        from nexus3.mcp.permissions import can_use_mcp
+
+        # Check MCP permission level
+        if not can_use_mcp(permissions):
+            return ToolResult(error="MCP tools require TRUSTED or YOLO permission level")
+
+        if not skill:
+            return None  # Let caller handle unknown skill
+
+        # Check if confirmation needed for this MCP tool/server
+        level = permissions.effective_policy.level
+        if level != PermissionLevel.YOLO:
+            allowances = permissions.session_allowances
+            server_allowed = allowances.is_mcp_server_allowed(server_name)
+            tool_allowed = allowances.is_mcp_tool_allowed(tool_call.name)
+
+            if not server_allowed and not tool_allowed:
+                agent_cwd = self._services.get_cwd() if self._services else Path.cwd()
+                result = await self._confirmation.request(
+                    tool_call, None, agent_cwd, self.on_confirm
+                )
+
+                if result == ConfirmationResult.DENY:
+                    return ToolResult(error="MCP tool action denied by user")
+
+                self._confirmation.apply_mcp_result(
+                    permissions, result, tool_call.name, server_name
+                )
+
+        return None
+
+    async def _execute_skill(
+        self,
+        skill: "Skill",
+        args: dict[str, Any],
+        timeout: float,
+    ) -> ToolResult:
+        """Execute a skill with timeout.
+
+        Args:
+            skill: The skill to execute.
+            args: Validated arguments.
+            timeout: Timeout in seconds (0 = no timeout).
+
+        Returns:
+            The tool result.
+        """
         try:
-            if effective_timeout > 0:
+            if timeout > 0:
                 result = await asyncio.wait_for(
                     skill.execute(**args),
-                    timeout=effective_timeout,
+                    timeout=timeout,
                 )
             else:
                 result = await skill.execute(**args)
 
-            # Log skill errors (non-exception failures)
             if result.error:
-                logger.warning("Skill '%s' returned error: %s", tool_call.name, result.error)
+                logger.warning("Skill '%s' returned error: %s", skill.name, result.error)
 
             return result
         except TimeoutError:
-            logger.warning(
-                "Skill '%s' timed out after %ss", tool_call.name, effective_timeout
-            )
-            msg = f"Skill '{tool_call.name}' timed out after {effective_timeout}s"
-            return ToolResult(error=msg)
+            logger.warning("Skill '%s' timed out after %ss", skill.name, timeout)
+            return ToolResult(error=f"Skill timed out after {timeout}s")
         except Exception as e:
-            logger.error("Skill '%s' raised exception: %s", tool_call.name, e, exc_info=True)
+            logger.error("Skill '%s' raised exception: %s", skill.name, e, exc_info=True)
             return ToolResult(error=f"Skill execution error: {e}")
 
     async def _execute_tools_parallel(

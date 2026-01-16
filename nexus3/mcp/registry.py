@@ -230,6 +230,23 @@ class MCPServerRegistry:
                 skills.extend(server.skills)
         return skills
 
+    def find_skill(self, tool_name: str) -> tuple[MCPSkillAdapter, str] | None:
+        """Find MCP skill by tool name.
+
+        Searches all connected servers for a skill matching the given name.
+
+        Args:
+            tool_name: The skill name to find (e.g., 'mcp_test_echo').
+
+        Returns:
+            Tuple of (skill, server_name) if found, None otherwise.
+        """
+        for server in self._servers.values():
+            for skill in server.skills:
+                if skill.name == tool_name:
+                    return (skill, server.config.name)
+        return None
+
     def get_server_for_skill(self, skill_name: str) -> ConnectedServer | None:
         """Find which server provides a given skill.
 
