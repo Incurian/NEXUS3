@@ -151,6 +151,9 @@ class BaseProvider(ABC):
         self._max_retries = config.max_retries
         self._retry_backoff = config.retry_backoff
 
+        # G1: HTTP client lifecycle - lazily created, instance-owned
+        self._client: httpx.AsyncClient | None = None
+
     def set_raw_log_callback(self, callback: RawLogCallback | None) -> None:
         """Set or clear the raw logging callback.
 
@@ -158,6 +161,29 @@ class BaseProvider(ABC):
             callback: The callback to set, or None to disable raw logging.
         """
         self._raw_log = callback
+
+    async def _ensure_client(self) -> httpx.AsyncClient:
+        """Get or create the HTTP client.
+
+        The client is lazily created on first request and reused for subsequent
+        requests. This improves connection reuse and reduces overhead.
+
+        Returns:
+            The httpx.AsyncClient instance for making HTTP requests.
+        """
+        if self._client is None:
+            self._client = httpx.AsyncClient(timeout=self._timeout)
+        return self._client
+
+    async def aclose(self) -> None:
+        """Close the HTTP client and release resources.
+
+        This method should be called when the provider is no longer needed.
+        It is safe to call multiple times (idempotent).
+        """
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
 
     def _get_api_key(self) -> str | None:
         """Get the API key from environment, or None if auth not required.
@@ -252,53 +278,54 @@ class BaseProvider(ABC):
 
         for attempt in range(self._max_retries):
             try:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    response = await client.post(
-                        url,
-                        headers=self._build_headers(),
-                        json=body,
+                # G1: Use shared client instance for connection reuse
+                client = await self._ensure_client()
+                response = await client.post(
+                    url,
+                    headers=self._build_headers(),
+                    json=body,
+                )
+
+                # Non-retryable client errors - fail immediately
+                if response.status_code == 401:
+                    raise ProviderError("Authentication failed. Check your API key.")
+
+                if response.status_code == 403:
+                    raise ProviderError("Access forbidden. Check your API permissions.")
+
+                if response.status_code == 404:
+                    raise ProviderError("API endpoint not found. Check your configuration.")
+
+                # Retryable server errors - retry with backoff
+                if self._is_retryable_error(response.status_code):
+                    # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
+                    error_body = response.content[:MAX_ERROR_BODY_SIZE]
+                    error_detail = error_body.decode(errors="replace")
+                    last_error = ProviderError(
+                        f"API request failed with status {response.status_code}: {error_detail}"
+                    )
+                    if attempt < self._max_retries - 1:
+                        delay = self._calculate_retry_delay(attempt)
+                        await asyncio.sleep(delay)
+                        continue
+                    raise last_error
+
+                # Other client errors (400, etc.) - fail immediately
+                if response.status_code >= 400:
+                    # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
+                    error_body = response.content[:MAX_ERROR_BODY_SIZE]
+                    error_detail = error_body.decode(errors="replace")
+                    raise ProviderError(
+                        f"API request failed with status {response.status_code}: {error_detail}"
                     )
 
-                    # Non-retryable client errors - fail immediately
-                    if response.status_code == 401:
-                        raise ProviderError("Authentication failed. Check your API key.")
+                data = response.json()
 
-                    if response.status_code == 403:
-                        raise ProviderError("Access forbidden. Check your API permissions.")
+                # Log raw response if callback is set
+                if self._raw_log:
+                    self._raw_log.on_response(response.status_code, data)
 
-                    if response.status_code == 404:
-                        raise ProviderError("API endpoint not found. Check your configuration.")
-
-                    # Retryable server errors - retry with backoff
-                    if self._is_retryable_error(response.status_code):
-                        # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
-                        error_body = response.content[:MAX_ERROR_BODY_SIZE]
-                        error_detail = error_body.decode(errors="replace")
-                        last_error = ProviderError(
-                            f"API request failed with status {response.status_code}: {error_detail}"
-                        )
-                        if attempt < self._max_retries - 1:
-                            delay = self._calculate_retry_delay(attempt)
-                            await asyncio.sleep(delay)
-                            continue
-                        raise last_error
-
-                    # Other client errors (400, etc.) - fail immediately
-                    if response.status_code >= 400:
-                        # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
-                        error_body = response.content[:MAX_ERROR_BODY_SIZE]
-                        error_detail = error_body.decode(errors="replace")
-                        raise ProviderError(
-                            f"API request failed with status {response.status_code}: {error_detail}"
-                        )
-
-                    data = response.json()
-
-                    # Log raw response if callback is set
-                    if self._raw_log:
-                        self._raw_log.on_response(response.status_code, data)
-
-                    return data
+                return data
 
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 # Network errors are retryable
@@ -350,51 +377,52 @@ class BaseProvider(ABC):
 
         for attempt in range(self._max_retries):
             try:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    async with client.stream(
-                        "POST",
-                        url,
-                        headers=self._build_headers(),
-                        json=body,
-                    ) as response:
-                        # Non-retryable client errors - fail immediately
-                        if response.status_code == 401:
-                            raise ProviderError("Authentication failed. Check your API key.")
+                # G1: Use shared client instance for connection reuse
+                client = await self._ensure_client()
+                async with client.stream(
+                    "POST",
+                    url,
+                    headers=self._build_headers(),
+                    json=body,
+                ) as response:
+                    # Non-retryable client errors - fail immediately
+                    if response.status_code == 401:
+                        raise ProviderError("Authentication failed. Check your API key.")
 
-                        if response.status_code == 403:
-                            raise ProviderError("Access forbidden. Check your API permissions.")
+                    if response.status_code == 403:
+                        raise ProviderError("Access forbidden. Check your API permissions.")
 
-                        if response.status_code == 404:
-                            raise ProviderError("API endpoint not found. Check your configuration.")
+                    if response.status_code == 404:
+                        raise ProviderError("API endpoint not found. Check your configuration.")
 
-                        # Retryable server errors - retry with backoff
-                        if self._is_retryable_error(response.status_code):
-                            error_body = await response.aread()
-                            # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
-                            error_body = error_body[:MAX_ERROR_BODY_SIZE]
-                            error_msg = error_body.decode(errors="replace")
-                            last_error = ProviderError(
-                                f"API request failed ({response.status_code}): {error_msg}"
-                            )
-                            if attempt < self._max_retries - 1:
-                                delay = self._calculate_retry_delay(attempt)
-                                await asyncio.sleep(delay)
-                                continue
-                            raise last_error
+                    # Retryable server errors - retry with backoff
+                    if self._is_retryable_error(response.status_code):
+                        error_body = await response.aread()
+                        # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
+                        error_body = error_body[:MAX_ERROR_BODY_SIZE]
+                        error_msg = error_body.decode(errors="replace")
+                        last_error = ProviderError(
+                            f"API request failed ({response.status_code}): {error_msg}"
+                        )
+                        if attempt < self._max_retries - 1:
+                            delay = self._calculate_retry_delay(attempt)
+                            await asyncio.sleep(delay)
+                            continue
+                        raise last_error
 
-                        # Other client errors (400, etc.) - fail immediately
-                        if response.status_code >= 400:
-                            error_body = await response.aread()
-                            # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
-                            error_body = error_body[:MAX_ERROR_BODY_SIZE]
-                            error_msg = error_body.decode(errors="replace")
-                            raise ProviderError(
-                                f"API request failed ({response.status_code}): {error_msg}"
-                            )
+                    # Other client errors (400, etc.) - fail immediately
+                    if response.status_code >= 400:
+                        error_body = await response.aread()
+                        # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
+                        error_body = error_body[:MAX_ERROR_BODY_SIZE]
+                        error_msg = error_body.decode(errors="replace")
+                        raise ProviderError(
+                            f"API request failed ({response.status_code}): {error_msg}"
+                        )
 
-                        # Success - yield the response for streaming
-                        yield response
-                        return
+                    # Success - yield the response for streaming
+                    yield response
+                    return
 
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 # Network errors are retryable

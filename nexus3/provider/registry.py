@@ -13,10 +13,14 @@ Example:
     # Get provider for a model (lazy-created on first access)
     resolved = config.resolve_model("haiku")
     provider = registry.get(resolved.provider_name, resolved.model_id)
+
+    # Clean up when done
+    await registry.aclose()
 """
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from nexus3.provider import create_provider
@@ -24,6 +28,8 @@ from nexus3.provider import create_provider
 if TYPE_CHECKING:
     from nexus3.config.schema import Config
     from nexus3.core.interfaces import AsyncProvider, RawLogCallback
+
+logger = logging.getLogger(__name__)
 
 
 class ProviderRegistry:
@@ -150,3 +156,20 @@ class ProviderRegistry:
             List of provider:model_id keys that have been accessed and cached.
         """
         return list(self._providers.keys())
+
+    async def aclose(self) -> None:
+        """Close all cached providers and release resources.
+
+        This method should be called during server shutdown to properly
+        close all HTTP connections. It is safe to call multiple times.
+
+        Errors during provider close are logged but do not prevent
+        closing other providers.
+        """
+        for cache_key, provider in self._providers.items():
+            if hasattr(provider, "aclose"):
+                try:
+                    await provider.aclose()
+                except Exception as e:
+                    logger.warning("Failed to close provider %s: %s", cache_key, e)
+        self._providers.clear()

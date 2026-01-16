@@ -159,6 +159,11 @@ class MCPClient:
         P2.9 SECURITY: Verifies response ID matches request ID.
         P2.10 SECURITY: Discards notifications while waiting for response.
 
+        Note: We use send()/receive() pattern instead of request() to support
+        notification discarding for stdio transport. HTTP transport's request()
+        returns responses directly and doesn't need this loop, but stdio servers
+        can interleave notifications. This pattern works for both transports.
+
         Args:
             method: RPC method name.
             params: Method parameters.
@@ -297,3 +302,12 @@ class MCPClient:
     def is_initialized(self) -> bool:
         """Check if client has completed initialization."""
         return self._initialized
+
+    @property
+    def is_connected(self) -> bool:
+        """Check if the transport is connected.
+
+        Returns:
+            True if transport exists and is connected.
+        """
+        return self._transport.is_connected if self._transport else False

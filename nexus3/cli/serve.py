@@ -140,3 +140,7 @@ async def run_serve(
         # Cleanup all agents
         for agent_info in pool.list():
             await pool.destroy(agent_info["agent_id"])
+
+        # G1: Close provider HTTP clients
+        if shared and shared.provider_registry:
+            await shared.provider_registry.aclose()

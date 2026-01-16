@@ -115,6 +115,21 @@ class MCPTransport(ABC):
         """
         ...
 
+    async def request(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Send a request and wait for its response.
+
+        Default implementation uses send()/receive() for backwards compatibility.
+        Subclasses may override for better semantics (e.g., HTTP request/response).
+
+        Args:
+            message: JSON-RPC request message (must have 'id' field)
+
+        Returns:
+            JSON-RPC response message
+        """
+        await self.send(message)
+        return await self.receive()
+
     @abstractmethod
     async def close(self) -> None:
         """Close the transport."""
@@ -173,6 +188,8 @@ class StdioTransport(MCPTransport):
         self._cwd = cwd
         self._process: asyncio.subprocess.Process | None = None
         self._stderr_task: asyncio.Task[None] | None = None
+        # Lock for serializing I/O operations (clarity for concurrent callers)
+        self._io_lock = asyncio.Lock()
 
     async def connect(self) -> None:
         """Start the subprocess."""
@@ -218,40 +235,47 @@ class StdioTransport(MCPTransport):
                 break
 
     async def send(self, message: dict[str, Any]) -> None:
-        """Write JSON-RPC message to stdin."""
+        """Write JSON-RPC message to stdin.
+
+        Uses I/O lock to serialize concurrent sends.
+        """
         if self._process is None or self._process.stdin is None:
             raise MCPTransportError("Transport not connected")
 
-        try:
-            data = json.dumps(message, separators=(",", ":")) + "\n"
-            self._process.stdin.write(data.encode("utf-8"))
-            await self._process.stdin.drain()
-        except Exception as e:
-            raise MCPTransportError(f"Failed to send message: {e}") from e
+        async with self._io_lock:
+            try:
+                data = json.dumps(message, separators=(",", ":")) + "\n"
+                self._process.stdin.write(data.encode("utf-8"))
+                await self._process.stdin.drain()
+            except Exception as e:
+                raise MCPTransportError(f"Failed to send message: {e}") from e
 
     async def receive(self) -> dict[str, Any]:
         """Read JSON-RPC message from stdout.
 
         P2.12 SECURITY: Enforces MAX_STDIO_LINE_LENGTH to prevent memory
         exhaustion from extremely long lines.
+
+        Uses I/O lock to serialize concurrent receives.
         """
         if self._process is None or self._process.stdout is None:
             raise MCPTransportError("Transport not connected")
 
-        try:
-            line = await self._read_bounded_line()
-            if not line:
-                # Process ended
-                returncode = self._process.returncode
-                raise MCPTransportError(f"MCP server closed (exit code: {returncode})")
+        async with self._io_lock:
+            try:
+                line = await self._read_bounded_line()
+                if not line:
+                    # Process ended
+                    returncode = self._process.returncode
+                    raise MCPTransportError(f"MCP server closed (exit code: {returncode})")
 
-            return json.loads(line.decode("utf-8"))
-        except json.JSONDecodeError as e:
-            raise MCPTransportError(f"Invalid JSON from server: {e}") from e
-        except MCPTransportError:
-            raise
-        except Exception as e:
-            raise MCPTransportError(f"Failed to receive message: {e}") from e
+                return json.loads(line.decode("utf-8"))
+            except json.JSONDecodeError as e:
+                raise MCPTransportError(f"Invalid JSON from server: {e}") from e
+            except MCPTransportError:
+                raise
+            except Exception as e:
+                raise MCPTransportError(f"Failed to receive message: {e}") from e
 
     async def _read_bounded_line(self) -> bytes:
         """Read a line with bounded length.
@@ -421,6 +445,41 @@ class HTTPTransport(MCPTransport):
         response = self._pending_response
         self._pending_response = None
         return response
+
+    async def request(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Send request and return response directly.
+
+        HTTP is inherently request/response, so this is more natural than
+        send/receive. Unlike send(), this method does NOT use the shared
+        _pending_response slot, making it safe for concurrent requests.
+
+        Args:
+            message: JSON-RPC request message
+
+        Returns:
+            JSON-RPC response message
+
+        Raises:
+            MCPTransportError: If transport not connected, request fails,
+                              or server returns empty response for a request.
+        """
+        if self._client is None:
+            raise MCPTransportError("Transport not connected")
+
+        try:
+            data = json.dumps(message, separators=(",", ":"))
+            response = await self._client.post(self._url, content=data)
+            response.raise_for_status()
+
+            # For requests (messages with 'id'), we expect a response body
+            if response.status_code == 204 or not response.content:
+                raise MCPTransportError("Server returned empty response for request")
+
+            return response.json()
+        except MCPTransportError:
+            raise
+        except Exception as e:
+            raise MCPTransportError(f"HTTP request failed: {e}") from e
 
     async def close(self) -> None:
         """Close HTTP client."""

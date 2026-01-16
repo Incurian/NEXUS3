@@ -1271,6 +1271,10 @@ async def run_repl(
     for agent_info in pool.list():
         await pool.destroy(agent_info["agent_id"])
 
+    # 5. G1: Close provider HTTP clients
+    if shared and shared.provider_registry:
+        await shared.provider_registry.aclose()
+
 
 async def run_repl_client(url: str, agent_id: str) -> None:
     """Run REPL as client to a remote Nexus server.

@@ -268,6 +268,16 @@ def build_mcp_skill_name(server_name: str, tool_name: str) -> str:
         'mcp_my_server_tool'
         >>> build_mcp_skill_name("evil/../path", "../../etc/passwd")
         'mcp_evil_path_etc_passwd'
+
+    Note:
+        Server names containing underscores may create parsing ambiguity.
+        For example, both ``build_mcp_skill_name("trusted_evil", "cmd")`` and
+        ``build_mcp_skill_name("trusted", "evil_cmd")`` produce the same
+        canonical name ``"mcp_trusted_evil_cmd"``. When parsed back with
+        ``parse_mcp_skill_name()``, both return ``("trusted", "evil_cmd")``.
+        Consider using hyphens instead of underscores in server names to
+        avoid this ambiguity (hyphens are normalized to underscores, but
+        at least the source is unambiguous).
     """
     # Normalize server name
     safe_server = normalize_tool_name(server_name)
@@ -294,6 +304,12 @@ def parse_mcp_skill_name(skill_name: str) -> tuple[str, str] | None:
         ('my', 'server_my_tool')  # Note: ambiguous without separator
         >>> parse_mcp_skill_name("read_file")
         None
+
+    Note:
+        Due to underscore ambiguity, parsing may not recover the original
+        server/tool split. For example, ``"mcp_trusted_evil_cmd"`` could have
+        come from either ``("trusted_evil", "cmd")`` or ``("trusted", "evil_cmd")``.
+        The parser always returns the shortest server name (first underscore split).
     """
     if not skill_name.startswith("mcp_"):
         return None

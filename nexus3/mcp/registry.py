@@ -92,8 +92,7 @@ class ConnectedServer:
         Returns:
             True if connection appears alive.
         """
-        transport = self.client._transport
-        return transport.is_connected
+        return self.client.is_connected
 
 
 class MCPServerRegistry:
