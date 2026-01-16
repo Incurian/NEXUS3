@@ -162,9 +162,12 @@ class Dispatcher:
 
         Returns:
             Dict with token usage breakdown.
+
+        Raises:
+            InvalidParamsError: If no context manager is configured.
         """
         if not self._context:
-            return {"error": "No context manager"}
+            raise InvalidParamsError("No context manager configured")
         return self._context.get_token_usage()
 
     async def _handle_get_context(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -177,9 +180,12 @@ class Dispatcher:
 
         Returns:
             Dict with context information.
+
+        Raises:
+            InvalidParamsError: If no context manager is configured.
         """
         if not self._context:
-            return {"error": "No context manager"}
+            raise InvalidParamsError("No context manager configured")
         messages = self._context.messages
         return {
             "message_count": len(messages),

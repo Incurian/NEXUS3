@@ -243,3 +243,45 @@ class TestNexusClient:
             await client.send("third")
 
         assert received_ids == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    async def test_client_cancel_with_request_id_zero(self):
+        """Client cancel() correctly handles request_id=0 (BL-6 fix)."""
+        received_params = []
+
+        def mock_handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            received_params.append(body.get("params"))
+            return httpx.Response(
+                200, json={"jsonrpc": "2.0", "id": body["id"], "result": {"cancelled": True}}
+            )
+
+        transport = httpx.MockTransport(mock_handler)
+
+        async with NexusClient() as client:
+            client._client = httpx.AsyncClient(transport=transport)
+            await client.cancel(request_id=0)
+
+        # request_id=0 should NOT be treated as falsy and omitted
+        assert received_params == [{"request_id": 0}]
+
+    @pytest.mark.asyncio
+    async def test_client_cancel_without_request_id(self):
+        """Client cancel() omits params when request_id is None."""
+        received_params = []
+
+        def mock_handler(request: httpx.Request) -> httpx.Response:
+            body = json.loads(request.content)
+            received_params.append(body.get("params"))
+            return httpx.Response(
+                200, json={"jsonrpc": "2.0", "id": body["id"], "result": {"cancelled": True}}
+            )
+
+        transport = httpx.MockTransport(mock_handler)
+
+        async with NexusClient() as client:
+            client._client = httpx.AsyncClient(transport=transport)
+            await client.cancel()
+
+        # No params when request_id is None
+        assert received_params == [None]

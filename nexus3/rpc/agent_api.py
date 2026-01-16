@@ -95,16 +95,19 @@ class AgentScopedAPI:
 
         Args:
             content: The message content.
-            request_id: Optional request ID (unused, for interface compatibility).
+            request_id: Optional request ID for tracking/cancellation.
 
         Returns:
             The response dict with 'content' and 'request_id' keys.
         """
         dispatcher = self._get_dispatcher()
+        params: dict[str, Any] = {"content": content}
+        if request_id is not None:
+            params["request_id"] = request_id
         request = Request(
             jsonrpc="2.0",
             method="send",
-            params={"content": content},
+            params=params,
             id=1,
         )
         response = await dispatcher.dispatch(request)
@@ -120,7 +123,7 @@ class AgentScopedAPI:
             The cancellation result.
         """
         dispatcher = self._get_dispatcher()
-        params = {"request_id": request_id} if request_id else None
+        params = {"request_id": request_id} if request_id is not None else None
         request = Request(
             jsonrpc="2.0",
             method="cancel",

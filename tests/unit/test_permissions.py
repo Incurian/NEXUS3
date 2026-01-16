@@ -535,3 +535,98 @@ class TestCoreModuleExports:
         """PermissionPolicy is exported from nexus3.core."""
         from nexus3.core import PermissionPolicy as CorePermissionPolicy
         assert CorePermissionPolicy is PermissionPolicy
+
+
+class TestSessionAllowancesFromDict:
+    """Tests for SessionAllowances.from_dict() path normalization."""
+
+    def test_from_dict_normalizes_relative_write_files(self, tmp_path, monkeypatch):
+        """from_dict() resolves relative paths in write_files."""
+        from nexus3.core.allowances import SessionAllowances
+
+        # Change to tmp_path so relative paths resolve there
+        monkeypatch.chdir(tmp_path)
+
+        data = {"write_files": ["./subdir/file.txt", "another.txt"]}
+        allowances = SessionAllowances.from_dict(data)
+
+        # All paths should be absolute (resolved)
+        for p in allowances.write_files:
+            assert p.is_absolute(), f"Path {p} should be absolute"
+
+        # Check specific resolution
+        expected = (tmp_path / "subdir" / "file.txt").resolve()
+        assert expected in allowances.write_files
+
+    def test_from_dict_normalizes_relative_write_directories(self, tmp_path, monkeypatch):
+        """from_dict() resolves relative paths in write_directories."""
+        from nexus3.core.allowances import SessionAllowances
+
+        monkeypatch.chdir(tmp_path)
+
+        data = {"write_directories": ["./subdir", "../other"]}
+        allowances = SessionAllowances.from_dict(data)
+
+        for p in allowances.write_directories:
+            assert p.is_absolute(), f"Path {p} should be absolute"
+
+    def test_from_dict_normalizes_exec_directories(self, tmp_path, monkeypatch):
+        """from_dict() resolves relative paths in exec_directories."""
+        from nexus3.core.allowances import SessionAllowances
+
+        monkeypatch.chdir(tmp_path)
+
+        data = {
+            "exec_directories": {
+                "bash_safe": ["./scripts", "../parent"],
+                "run_python": ["./py"],
+            }
+        }
+        allowances = SessionAllowances.from_dict(data)
+
+        for tool, dirs in allowances.exec_directories.items():
+            for p in dirs:
+                assert p.is_absolute(), f"Path {p} for {tool} should be absolute"
+
+    def test_roundtrip_preserves_resolved_paths(self, tmp_path, monkeypatch):
+        """Roundtrip through to_dict/from_dict preserves resolved paths."""
+        from nexus3.core.allowances import SessionAllowances
+
+        monkeypatch.chdir(tmp_path)
+
+        # Create allowances with absolute paths
+        original = SessionAllowances()
+        original.add_write_file(tmp_path / "file.txt")
+        original.add_write_directory(tmp_path / "dir")
+        original.add_exec_directory("bash_safe", tmp_path / "scripts")
+
+        # Roundtrip
+        data = original.to_dict()
+        restored = SessionAllowances.from_dict(data)
+
+        # Verify paths match
+        assert restored.write_files == original.write_files
+        assert restored.write_directories == original.write_directories
+        assert restored.exec_directories == original.exec_directories
+
+    def test_from_dict_handles_symlink_paths(self, tmp_path, monkeypatch):
+        """from_dict() resolves symlinks in paths."""
+        from nexus3.core.allowances import SessionAllowances
+
+        # Create a real directory and symlink
+        real_dir = tmp_path / "real"
+        real_dir.mkdir()
+        symlink = tmp_path / "link"
+        symlink.symlink_to(real_dir)
+
+        monkeypatch.chdir(tmp_path)
+
+        data = {"write_directories": [str(symlink)]}
+        allowances = SessionAllowances.from_dict(data)
+
+        # The path should be resolved (pointing to real dir)
+        resolved_paths = list(allowances.write_directories)
+        assert len(resolved_paths) == 1
+        assert resolved_paths[0].is_absolute()
+        # resolve() follows symlinks
+        assert resolved_paths[0] == real_dir.resolve()

@@ -276,7 +276,7 @@ class BaseProvider(ABC):
 
         last_error: Exception | None = None
 
-        for attempt in range(self._max_retries):
+        for attempt in range(self._max_retries + 1):
             try:
                 # G1: Use shared client instance for connection reuse
                 client = await self._ensure_client()
@@ -304,7 +304,7 @@ class BaseProvider(ABC):
                     last_error = ProviderError(
                         f"API request failed with status {response.status_code}: {error_detail}"
                     )
-                    if attempt < self._max_retries - 1:
+                    if attempt < self._max_retries:
                         delay = self._calculate_retry_delay(attempt)
                         await asyncio.sleep(delay)
                         continue
@@ -330,17 +330,17 @@ class BaseProvider(ABC):
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 # Network errors are retryable
                 last_error = e
-                if attempt < self._max_retries - 1:
+                if attempt < self._max_retries:
                     delay = self._calculate_retry_delay(attempt)
                     await asyncio.sleep(delay)
                     continue
                 # Final attempt failed
                 if isinstance(e, httpx.ConnectError):
                     raise ProviderError(
-                        f"Failed to connect to API after {self._max_retries} attempts: {e}"
+                        f"Failed to connect to API after {self._max_retries + 1} attempts: {e}"
                     ) from e
                 raise ProviderError(
-                    f"API request timed out after {self._max_retries} attempts: {e}"
+                    f"API request timed out after {self._max_retries + 1} attempts: {e}"
                 ) from e
             except httpx.HTTPError as e:
                 # Other HTTP errors - don't retry
@@ -348,7 +348,7 @@ class BaseProvider(ABC):
 
         # Shouldn't reach here, but handle it
         if last_error:
-            msg = f"Request failed after {self._max_retries} attempts"
+            msg = f"Request failed after {self._max_retries + 1} attempts"
             raise ProviderError(msg) from last_error
         raise ProviderError("Request failed unexpectedly")
 
@@ -375,7 +375,7 @@ class BaseProvider(ABC):
 
         last_error: Exception | None = None
 
-        for attempt in range(self._max_retries):
+        for attempt in range(self._max_retries + 1):
             try:
                 # G1: Use shared client instance for connection reuse
                 client = await self._ensure_client()
@@ -404,7 +404,7 @@ class BaseProvider(ABC):
                         last_error = ProviderError(
                             f"API request failed ({response.status_code}): {error_msg}"
                         )
-                        if attempt < self._max_retries - 1:
+                        if attempt < self._max_retries:
                             delay = self._calculate_retry_delay(attempt)
                             await asyncio.sleep(delay)
                             continue
@@ -427,17 +427,17 @@ class BaseProvider(ABC):
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 # Network errors are retryable
                 last_error = e
-                if attempt < self._max_retries - 1:
+                if attempt < self._max_retries:
                     delay = self._calculate_retry_delay(attempt)
                     await asyncio.sleep(delay)
                     continue
                 # Final attempt failed
                 if isinstance(e, httpx.ConnectError):
                     raise ProviderError(
-                        f"Failed to connect to API after {self._max_retries} attempts: {e}"
+                        f"Failed to connect to API after {self._max_retries + 1} attempts: {e}"
                     ) from e
                 raise ProviderError(
-                    f"API request timed out after {self._max_retries} attempts: {e}"
+                    f"API request timed out after {self._max_retries + 1} attempts: {e}"
                 ) from e
             except httpx.HTTPError as e:
                 # Other HTTP errors - don't retry
@@ -445,7 +445,7 @@ class BaseProvider(ABC):
 
         # Shouldn't reach here
         if last_error:
-            msg = f"Request failed after {self._max_retries} attempts"
+            msg = f"Request failed after {self._max_retries + 1} attempts"
             raise ProviderError(msg) from last_error
 
     # Abstract methods for subclasses to implement

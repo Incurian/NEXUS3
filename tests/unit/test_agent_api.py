@@ -119,6 +119,62 @@ class TestAgentScopedAPI:
         with pytest.raises(ClientError, match="RPC error -32602: Invalid params"):
             await scoped_api.send("Hello")
 
+    async def test_send_includes_request_id_when_provided(self, scoped_api, pool):
+        """Test that send() includes request_id in params when provided."""
+        pool.agents["test-agent"].dispatcher.response = Response(
+            jsonrpc="2.0",
+            id=1,
+            result={"content": "Response", "request_id": 42},
+        )
+
+        await scoped_api.send("Hello", request_id=42)
+
+        call = pool.agents["test-agent"].dispatcher.calls[0]
+        assert call.method == "send"
+        assert call.params == {"content": "Hello", "request_id": 42}
+
+    async def test_send_omits_request_id_when_none(self, scoped_api, pool):
+        """Test that send() omits request_id from params when not provided."""
+        pool.agents["test-agent"].dispatcher.response = Response(
+            jsonrpc="2.0",
+            id=1,
+            result={"content": "Response"},
+        )
+
+        await scoped_api.send("Hello")
+
+        call = pool.agents["test-agent"].dispatcher.calls[0]
+        assert call.method == "send"
+        assert call.params == {"content": "Hello"}
+        assert "request_id" not in call.params
+
+    async def test_send_with_request_id_zero(self, scoped_api, pool):
+        """Test that send() correctly handles request_id=0 (BL-5 fix)."""
+        pool.agents["test-agent"].dispatcher.response = Response(
+            jsonrpc="2.0",
+            id=1,
+            result={"content": "Response", "request_id": 0},
+        )
+
+        await scoped_api.send("Hello", request_id=0)
+
+        call = pool.agents["test-agent"].dispatcher.calls[0]
+        assert call.params == {"content": "Hello", "request_id": 0}
+
+    async def test_cancel_with_request_id_zero(self, scoped_api, pool):
+        """Test that cancel() correctly handles request_id=0 (BL-6 fix)."""
+        pool.agents["test-agent"].dispatcher.response = Response(
+            jsonrpc="2.0",
+            id=1,
+            result={"cancelled": True},
+        )
+
+        await scoped_api.cancel(request_id=0)
+
+        call = pool.agents["test-agent"].dispatcher.calls[0]
+        assert call.method == "cancel"
+        assert call.params == {"request_id": 0}
+
 
 # === DirectAgentAPI Tests ===
 

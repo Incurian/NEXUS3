@@ -128,9 +128,13 @@ class MCPServerRegistry:
             ConnectedServer instance with active client and skills.
 
         Raises:
-            ValueError: If config has neither command nor url.
+            ValueError: If config has neither command nor url, or if server is disabled.
             MCPError: If connection times out or fails.
         """
+        # Check if server is enabled
+        if not config.enabled:
+            raise ValueError(f"MCP server '{config.name}' is disabled in configuration")
+
         # Disconnect existing if present
         if config.name in self._servers:
             await self.disconnect(config.name)

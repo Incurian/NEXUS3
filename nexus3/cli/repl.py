@@ -24,9 +24,12 @@ Architecture in unified mode:
 
 import argparse
 import asyncio
+import logging
 import os
 from contextvars import ContextVar
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 from prompt_toolkit import PromptSession
@@ -388,8 +391,8 @@ async def run_repl(
                     result = await detect_server(effective_port)
                     if result == DetectionResult.NO_SERVER:
                         break
-            except Exception:
-                pass  # Server might already be gone or unreachable
+            except Exception as e:
+                logger.debug("Server cleanup error: %s: %s", type(e).__name__, e)
             # Fall through to start new embedded server
     elif detection_result == DetectionResult.OTHER_SERVICE:
         console.print(f"[red]Error:[/] Port {effective_port} is already in use by another service")
@@ -562,8 +565,8 @@ async def run_repl(
             disabled_tools=disabled_tools,
         )
         session_manager.save_last_session(startup_saved, agent_name)
-    except Exception:
-        pass  # Don't fail on save errors
+    except Exception as e:
+        logger.debug("Failed to save initial session: %s: %s", type(e).__name__, e)
 
     # Phase 6: Agent management state
     current_agent_id = agent_name
@@ -599,8 +602,8 @@ async def run_repl(
                     disabled_tools=disabled_tools,
                 )
                 session_manager.save_last_session(saved, agent_id)
-        except Exception:
-            pass  # Don't fail on save errors
+        except Exception as e:
+            logger.debug("Failed to auto-save session: %s: %s", type(e).__name__, e)
 
     # Start HTTP server as a background task
     # Idle timeout: 30 min (1800s) - server auto-shuts down if no RPC activity

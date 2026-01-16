@@ -12,6 +12,7 @@ from nexus3.context.compaction import (
     create_summary_message,
     select_messages_for_compaction,
 )
+from nexus3.core.errors import sanitize_error_for_agent
 from nexus3.core.interfaces import AsyncProvider
 from nexus3.core.permissions import AgentPermissions, ConfirmationResult
 from nexus3.core.types import (
@@ -568,7 +569,13 @@ class Session:
                 result = await skill.execute(**args)
 
             if result.error:
+                # Log full error for debugging
                 logger.warning("Skill '%s' returned error: %s", skill.name, result.error)
+                # Sanitize for agent
+                sanitized_error = sanitize_error_for_agent(result.error, skill.name)
+                if sanitized_error != result.error:
+                    logger.debug("Sanitized error for agent: %s", sanitized_error)
+                    result = ToolResult(output=result.output, error=sanitized_error)
 
             return result
         except TimeoutError:

@@ -1,7 +1,10 @@
 """Cancellation support for async operations."""
 
+import logging
 from asyncio import CancelledError
 from collections.abc import Callable
+
+logger = logging.getLogger(__name__)
 
 
 class CancellationToken:
@@ -39,8 +42,8 @@ class CancellationToken:
         for callback in self._callbacks:
             try:
                 callback()
-            except Exception:
-                pass  # Don't let callback errors prevent cancellation
+            except Exception as e:
+                logger.debug("Cancellation callback raised %s: %s", type(e).__name__, e)
 
     def on_cancel(self, callback: Callable[[], None]) -> None:
         """Register a callback to be called when cancelled.
@@ -51,8 +54,8 @@ class CancellationToken:
         if self._cancelled:
             try:
                 callback()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Cancellation callback raised %s: %s", type(e).__name__, e)
 
     def raise_if_cancelled(self) -> None:
         """Raise CancelledError if cancellation was requested.

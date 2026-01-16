@@ -92,7 +92,7 @@ class LogMultiplexer:
             None. The context is set for the duration of the with block.
 
         Example:
-            async with multiplexer.agent_context("worker-1"):
+            with multiplexer.agent_context("worker-1"):
                 await session.send(content)  # Logs go to worker-1's logger
         """
         token = _current_agent_id.set(agent_id)

@@ -14,10 +14,13 @@ OpenAI message format and function calling.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from nexus3.core.types import (
     ContentDelta,
@@ -173,7 +176,8 @@ class OpenAICompatProvider(BaseProvider):
             try:
                 arguments = json.loads(arguments_str)
             except json.JSONDecodeError:
-                arguments = {}
+                logger.warning("Failed to parse tool arguments JSON: %.100s", arguments_str)
+                arguments = {"_raw_arguments": arguments_str}
 
             result.append(
                 ToolCall(
@@ -351,13 +355,14 @@ class OpenAICompatProvider(BaseProvider):
 
             acc = tool_calls_by_index[index]
 
-            # Accumulate fields (they come incrementally)
-            if tc_delta.get("id"):
-                acc["id"] += tc_delta["id"]
+            # Set id/name once (they should not be concatenated across deltas)
+            if tc_delta.get("id") and not acc["id"]:
+                acc["id"] = tc_delta["id"]
 
             func = tc_delta.get("function", {})
-            if func.get("name"):
-                acc["name"] += func["name"]
+            if func.get("name") and not acc["name"]:
+                acc["name"] = func["name"]
+            # Arguments ARE accumulated incrementally (correct for streaming)
             if func.get("arguments"):
                 acc["arguments"] += func["arguments"]
 
@@ -391,7 +396,8 @@ class OpenAICompatProvider(BaseProvider):
             try:
                 arguments = json.loads(tc["arguments"]) if tc["arguments"] else {}
             except json.JSONDecodeError:
-                arguments = {}
+                logger.warning("Failed to parse tool arguments JSON: %.100s", tc["arguments"])
+                arguments = {"_raw_arguments": tc["arguments"]}
 
             tool_calls.append(
                 ToolCall(

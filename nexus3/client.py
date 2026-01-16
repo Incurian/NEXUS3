@@ -228,7 +228,7 @@ class NexusClient:
         Returns:
             The cancellation result.
         """
-        params = {"request_id": request_id} if request_id else None
+        params = {"request_id": request_id} if request_id is not None else None
         response = await self._call("cancel", params)
         return cast(dict[str, Any], self._check(response))
 

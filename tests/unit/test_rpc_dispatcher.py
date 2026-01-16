@@ -254,6 +254,61 @@ class TestDispatcherBasics:
         assert response1.result["request_id"] != response2.result["request_id"]
 
 
+class TestNoContextManagerErrors:
+    """Tests for get_tokens/get_context without context manager."""
+
+    @pytest.mark.asyncio
+    async def test_get_tokens_no_context_returns_error_response(self):
+        """get_tokens without context manager returns JSON-RPC error, not success-with-error."""
+        session = MockSession()
+        # Create dispatcher WITHOUT context manager
+        dispatcher = Dispatcher(session, context=None)
+
+        # Manually add the handler to simulate a misconfigured scenario
+        # (normally these handlers aren't added without context, but we test the guard)
+        dispatcher._handlers["get_tokens"] = dispatcher._handle_get_tokens
+
+        request = Request(
+            jsonrpc="2.0",
+            method="get_tokens",
+            params={},
+            id=1,
+        )
+        response = await dispatcher.dispatch(request)
+
+        # Should be a proper JSON-RPC error, not {"result": {"error": "..."}}
+        assert response is not None
+        assert response.error is not None, "Expected error field, not success-with-error"
+        assert response.error["code"] == -32602  # INVALID_PARAMS
+        assert "context manager" in response.error["message"].lower()
+        assert response.result is None
+
+    @pytest.mark.asyncio
+    async def test_get_context_no_context_returns_error_response(self):
+        """get_context without context manager returns JSON-RPC error, not success-with-error."""
+        session = MockSession()
+        # Create dispatcher WITHOUT context manager
+        dispatcher = Dispatcher(session, context=None)
+
+        # Manually add the handler to simulate a misconfigured scenario
+        dispatcher._handlers["get_context"] = dispatcher._handle_get_context
+
+        request = Request(
+            jsonrpc="2.0",
+            method="get_context",
+            params={},
+            id=1,
+        )
+        response = await dispatcher.dispatch(request)
+
+        # Should be a proper JSON-RPC error, not {"result": {"error": "..."}}
+        assert response is not None
+        assert response.error is not None, "Expected error field, not success-with-error"
+        assert response.error["code"] == -32602  # INVALID_PARAMS
+        assert "context manager" in response.error["message"].lower()
+        assert response.result is None
+
+
 class TestInvalidParamsError:
     """Tests for InvalidParamsError handling."""
 

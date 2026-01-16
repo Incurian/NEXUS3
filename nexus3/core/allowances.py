@@ -170,11 +170,11 @@ class SessionAllowances:
     def from_dict(cls, data: dict[str, Any]) -> SessionAllowances:
         """Deserialize from persistence."""
         return cls(
-            write_files={Path(p) for p in data.get("write_files", [])},
-            write_directories={Path(p) for p in data.get("write_directories", [])},
+            write_files={Path(p).resolve() for p in data.get("write_files", [])},
+            write_directories={Path(p).resolve() for p in data.get("write_directories", [])},
             exec_global=set(data.get("exec_global", [])),
             exec_directories={
-                tool: {Path(p) for p in dirs}
+                tool: {Path(p).resolve() for p in dirs}
                 for tool, dirs in data.get("exec_directories", {}).items()
             },
             mcp_servers=set(data.get("mcp_servers", [])),

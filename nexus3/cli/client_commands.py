@@ -107,7 +107,7 @@ async def cmd_send(
         port: Server port (default 8765).
         api_key: Optional API key. If not provided, auto-discovers from
                  environment or key files.
-        timeout: Request timeout in seconds (default 120).
+        timeout: Request timeout in seconds (default 300).
 
     Returns:
         Exit code: 0 on success, 1 on error.
@@ -330,7 +330,7 @@ async def cmd_create(
         model: Model name/alias to use (from config.models or full model ID).
         message: Initial message to send to the agent immediately after creation.
             The agent will process this and the response will be in the result.
-        timeout: Request timeout in seconds (default 120, used when message provided).
+        timeout: Request timeout in seconds (default 300, used when message provided).
 
     Returns:
         Exit code: 0 on success, 1 on error.

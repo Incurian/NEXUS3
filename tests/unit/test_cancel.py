@@ -132,3 +132,44 @@ class TestCancellationToken:
             token.raise_if_cancelled()
 
         assert "cancelled" in str(exc_info.value).lower()
+
+    def test_callback_exception_logged_on_cancel(self, caplog):
+        """Callback exception is logged at debug level during cancel()."""
+        import logging
+
+        token = CancellationToken()
+
+        def raise_error():
+            raise ValueError("test error")
+
+        token.on_cancel(raise_error)
+
+        with caplog.at_level(logging.DEBUG, logger="nexus3.core.cancel"):
+            token.cancel()
+
+        # Verify the exception was logged
+        assert len(caplog.records) == 1
+        record = caplog.records[0]
+        assert record.levelno == logging.DEBUG
+        assert "ValueError" in record.message
+        assert "test error" in record.message
+
+    def test_callback_exception_logged_on_immediate_cancel(self, caplog):
+        """Callback exception is logged when registered on already-cancelled token."""
+        import logging
+
+        token = CancellationToken()
+        token.cancel()
+
+        def raise_error():
+            raise RuntimeError("immediate error")
+
+        with caplog.at_level(logging.DEBUG, logger="nexus3.core.cancel"):
+            token.on_cancel(raise_error)
+
+        # Verify the exception was logged
+        assert len(caplog.records) == 1
+        record = caplog.records[0]
+        assert record.levelno == logging.DEBUG
+        assert "RuntimeError" in record.message
+        assert "immediate error" in record.message
