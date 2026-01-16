@@ -34,12 +34,17 @@ class TestDeepMerge:
         result = deep_merge(base, override)
         assert result == {"outer": {"a": 1, "b": 3, "c": 4}}
 
-    def test_list_extension(self) -> None:
-        """Test list concatenation."""
+    def test_list_replacement(self) -> None:
+        """Test list replacement (P2.14 security fix).
+
+        Lists are now REPLACED, not concatenated. This is critical for
+        security-related config like blocked_paths where local config
+        needs to be able to override global config.
+        """
         base = {"items": [1, 2]}
         override = {"items": [3, 4]}
         result = deep_merge(base, override)
-        assert result == {"items": [1, 2, 3, 4]}
+        assert result == {"items": [3, 4]}
 
     def test_type_override(self) -> None:
         """Test different types override."""

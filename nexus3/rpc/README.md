@@ -14,6 +14,32 @@ The RPC module powers `nexus3 --serve` (HTTP server on port 8765), transforming 
 
 Use cases: scripted pipelines, external orchestrators (e.g., Claude), multi-turn agent swarms, integration testing.
 
+## IMPORTANT: Default Agent Permissions
+
+**RPC-created agents are sandboxed by default (NOT trusted).** Key behaviors:
+
+1. **Default preset is 'sandboxed'** - agents can ONLY read files within their `cwd`
+2. **ALL write tools are DISABLED by default** - `write_file`, `edit_file`, `append_file`, etc. are not available
+3. **To enable writes**, pass `allowed_write_paths` on creation (must be within `cwd` for sandboxed)
+4. **To get trusted access**, explicitly pass `preset: "trusted"` (can then read anywhere)
+5. **Subagents cannot exceed parent permissions** (ceiling enforcement)
+6. **YOLO is REPL-only** - cannot create yolo agents via RPC
+7. **Trusted → sandboxed only** - trusted agents can only spawn sandboxed subagents
+8. **Sandboxed cannot create agents** - nexus tools are disabled for sandboxed agents
+
+```bash
+# Read-only agent (default) - can ONLY read in /tmp/project
+nexus-rpc create reader --cwd /tmp/project
+
+# Agent with write access - can read in cwd, write to output/
+nexus-rpc create writer --cwd /tmp/project --allowed-write-paths /tmp/project/output
+
+# Trusted agent - can read anywhere, writes follow normal rules
+nexus-rpc create coordinator --preset trusted
+```
+
+See CLAUDE.md "RPC Agent Permission Quirks" for full details.
+
 ## Architecture Summary
 
 ```

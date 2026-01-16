@@ -1,10 +1,15 @@
-"""Run Python skill for executing Python code."""
+"""Run Python skill for executing Python code.
+
+P2.7 SECURITY: Defense-in-depth - this skill internally verifies permission
+level and refuses to execute in SANDBOXED mode, even if mistakenly registered.
+"""
 
 import asyncio
 import os
 import sys
 from typing import TYPE_CHECKING, Any
 
+from nexus3.core.permissions import PermissionLevel
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import ExecutionSkill, execution_skill_factory
 from nexus3.skill.builtin.env import get_safe_env
@@ -84,6 +89,14 @@ class RunPythonSkill(ExecutionSkill):
         **kwargs: Any
     ) -> ToolResult:
         """Execute Python code."""
+        # P2.7 SECURITY: Defense-in-depth permission check
+        level = self._services.get_permission_level()
+        if level == PermissionLevel.SANDBOXED:
+            return ToolResult(
+                error=f"{self.name} is disabled in SANDBOXED mode. "
+                "This is a defense-in-depth check - the skill should not be registered for sandboxed agents."
+            )
+
         if not code:
             return ToolResult(error="Code is required")
 

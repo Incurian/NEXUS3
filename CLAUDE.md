@@ -186,8 +186,25 @@ nexus-rpc shutdown
 | One Way | Features go in skills or CLI flags, not scripts. |
 | Explicit Encoding | Always `encoding='utf-8', errors='replace'`. |
 | Test E2E | Every feature gets an integration test. |
+| **Live Test** | **Automated tests are not sufficient. Always live test with real NEXUS3 agents before committing changes.** |
 | Document | Each phase updates this file and module READMEs. |
 | No Dead Code | Delete unused code. Run `ruff check --select F401`. |
+
+### Live Testing Requirement (MANDATORY)
+
+**Automated tests alone are NOT sufficient to commit changes.** Before any commit that affects agent behavior, RPC, skills, or permissions:
+
+1. Start the server: `nexus &`
+2. Create a test agent: `nexus-rpc create test-agent`
+3. Send test messages: `nexus-rpc send test-agent "describe your permissions and what you can do"`
+4. Verify the agent responds correctly and has expected capabilities
+5. Clean up: `nexus-rpc destroy test-agent`
+
+This catches issues that unit/integration tests miss, such as:
+- Permission configuration not propagating correctly
+- Agent tools being incorrectly enabled/disabled
+- RPC message handling edge cases
+- Real-world serialization/deserialization issues
 
 ---
 
@@ -542,6 +559,41 @@ nexus --init-global-force     # Overwrite existing
 | `sandboxed` | SANDBOXED | Limited to CWD, no network, nexus tools disabled |
 | `worker` | SANDBOXED | Minimal: no write_file, no agent management |
 
+### RPC Agent Permission Quirks (IMPORTANT)
+
+**These behaviors are intentional security defaults for RPC-created agents:**
+
+1. **Default agent is sandboxed**: When creating agents via RPC without specifying a preset, they default to `sandboxed` (NOT `trusted`). This is intentional - programmatic agents should be least-privileged by default.
+
+2. **Sandboxed agents can only read in their cwd**: A sandboxed agent's `allowed_paths` is set to `[cwd]` only. They cannot read files outside their working directory.
+
+3. **Sandboxed agents cannot write unless given explicit write paths**: By default, sandboxed agents have all write tools (`write_file`, `edit_file`, `append_file`, `regex_replace`, etc.) **disabled**. To enable writes, you must pass `allowed_write_paths` on creation:
+   ```bash
+   nexus-rpc create worker --cwd /tmp/sandbox --allowed-write-paths /tmp/sandbox
+   ```
+
+4. **Trusted agents must be created explicitly**: To get a trusted agent, you must pass `--preset trusted` explicitly. Trusted is not the default for RPC.
+
+5. **Trusted agents in RPC mode**: Can read anywhere, but destructive operations follow the same confirmation logic (which auto-allows within CWD in non-interactive mode).
+
+6. **YOLO is REPL-only**: You CANNOT create a yolo agent via RPC. The yolo preset is only available in interactive REPL mode.
+
+7. **Trusted agents can only create sandboxed subagents**: A trusted agent cannot spawn another trusted agent - all subagents are sandboxed (ceiling enforcement).
+
+8. **Sandboxed agents cannot create agents at all**: The `nexus_create`, `nexus_destroy`, `nexus_send`, and other nexus tools are completely disabled for sandboxed agents.
+
+**Example secure agent creation:**
+```bash
+# Read-only agent (default) - can only read in its cwd
+nexus-rpc create reader --cwd /path/to/project
+
+# Agent with write access to specific directory
+nexus-rpc create writer --cwd /path/to/project --allowed-write-paths /path/to/project/output
+
+# Trusted agent (explicit - use with care)
+nexus-rpc create coordinator --preset trusted
+```
+
 ### Key Features
 
 - **Per-tool configuration**: Enable/disable tools, per-tool paths, per-tool timeouts
@@ -673,6 +725,8 @@ class MySpecialSkill(BaseSkill):
 
 - [ ] **Portable auto-bootstrap launcher**: Add a launcher script that auto-installs deps (httpx, pydantic, rich, prompt-toolkit, python-dotenv) on first run, enabling "copy folder and go" portability without manual pip install. See packaging investigation for options (shiv/zipapp as alternative).
 
+- [ ] **RPC `compact` method for stuck agents**: When an agent's context exceeds the provider's token/byte limit, the agent becomes stuck (alive but unusable). Need either: (a) RPC method to trigger compaction manually, (b) pre-flight context size check before API calls to auto-compact, or (c) automatic recovery after provider limit errors. Discovered during P2.5 testing - agent accumulated 3.5M tokens, exceeded 2M budget, all subsequent messages fail.
+
 ---
 
 ## Security Review (2026-01-15)
@@ -792,40 +846,28 @@ All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env s
 - **Fix:** Lists are now REPLACED, not extended (allows local override of blocked_paths)
 - **Test:** `tests/security/test_p2_deep_merge_semantics.py` (11 tests)
 
+### P2.5: File Size/Line Limits + Streaming Reads ✅
+- **Location:** `core/constants.py`, `skill/builtin/read_file.py`, `tail.py`, `grep.py`
+- **Fix:** Added streaming reads with limits: MAX_FILE_SIZE_BYTES=10MB, MAX_OUTPUT_BYTES=1MB, MAX_READ_LINES=10000, MAX_GREP_FILE_SIZE=5MB
+- **Test:** `tests/security/test_p2_file_size_limits.py` (14 tests)
+- **Note:** Discovered gap during testing - agents can exceed context limits with no recovery path (see TODO for RPC compact method)
+
+### P2.7: Defense-in-Depth Checks in Execution Tools ✅
+- **Location:** `skill/builtin/bash.py`, `skill/builtin/run_python.py`
+- **Fix:** Added internal permission level checks - bash_safe, shell_UNSAFE, and run_python now refuse to execute in SANDBOXED mode even if mistakenly registered
+- **Test:** `tests/security/test_p2_defense_in_depth.py` (13 tests)
+
+### P2.8: Token File Permission Checks ✅
+- **Location:** `rpc/auth.py`
+- **Fix:** Added `check_token_file_permissions()` function and `InsecureTokenFileError` exception. Both `ServerTokenManager.load()` and `discover_rpc_token()` now check file permissions. Configurable strict mode (refuse) vs warn-only mode (default).
+- **Test:** `tests/security/test_p2_token_file_permissions.py` (20 tests)
+
 ### Remaining Sprint 3 Items
-- P2.5: File size/line limits + streaming reads
-- P2.7: Defense-in-depth checks in execution tools
-- P2.8: Token file permission checks
 - P2.9-12: MCP protocol hardening
 - P2.13: Provider error body size caps
 - Arch A1/A2: Tool identifiers and PathDecisionEngine
 
-**Sprint 3 Test Count (so far):** 51 new P2 tests, 209 total security tests passing
-
-### Current Session Notes (for continuity after compaction)
-
-**Commits made this session:**
-- `7707358` - security: Sprint 3 P2 hardening (partial) - 6 fixes
-- `a4097ec` - docs: Update CLAUDE.md with Sprint 3 progress
-
-**Key bug found and fixed during P2.4:**
-- `PathResolver.resolve()` was skipping `allowed_paths` check when `tool_name=None`
-- This was a real path traversal vulnerability - test revealed it
-- Fix: Always call `get_tool_allowed_paths()` even without tool_name
-
-**Live testing status:**
-- Server is running on port 8765
-- Direct API calls work (tested via curl)
-- `nexus-rpc send` command shows empty output but agents ARE responding (API works)
-- May be a display issue with nexus-rpc CLI, not a security bug
-
-**Remaining Sprint 3 items to implement:**
-- P2.5: File size/line limits + streaming reads
-- P2.7: Defense-in-depth checks in execution tools
-- P2.8: Token file permission checks
-- P2.9-12: MCP protocol hardening
-- P2.13: Provider error body size caps
-- Arch A1/A2: Tool identifiers and PathDecisionEngine
+**Sprint 3 Test Count (so far):** 98 new P2 tests, 256 total security tests passing
 
 ---
 

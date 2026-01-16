@@ -22,9 +22,13 @@ class MockServiceContainer:
     def get(self, key: str, default: Any = None) -> Any:
         return self._data.get(key, default)
 
-    def get_tool_allowed_paths(self, tool_name: str) -> list[Path] | None:
+    def get_tool_allowed_paths(self, tool_name: str | None = None) -> list[Path] | None:
         """Return allowed_paths from data (used by FileSkill._validate_path)."""
         return self._data.get("allowed_paths")
+
+    def get_blocked_paths(self) -> list[Path]:
+        """Return blocked_paths from data (P2.3 security fix)."""
+        return self._data.get("blocked_paths", [])
 
     def get_cwd(self) -> Path:
         """Return cwd from data, or current directory as default."""
@@ -51,13 +55,12 @@ class TestReadFileOffsetLimit:
 
     @pytest.mark.asyncio
     async def test_default_reads_entire_file(self, skill: ReadFileSkill, test_file: Path) -> None:
-        """Default behavior reads entire file without line numbers."""
+        """Default behavior reads entire file with line numbers (P2.5 streaming)."""
         result = await skill.execute(path=str(test_file))
         assert not result.error
-        assert "Line 1" in result.output
-        assert "Line 10" in result.output
-        # No line numbers in default mode
-        assert "1: Line 1" not in result.output
+        # P2.5: Streaming read always uses line numbers
+        assert "1: Line 1" in result.output
+        assert "10: Line 10" in result.output
 
     @pytest.mark.asyncio
     async def test_offset_starts_from_line(self, skill: ReadFileSkill, test_file: Path) -> None:
@@ -92,10 +95,11 @@ class TestReadFileOffsetLimit:
 
     @pytest.mark.asyncio
     async def test_offset_beyond_file_returns_empty(self, skill: ReadFileSkill, test_file: Path) -> None:
-        """Offset beyond file length returns empty."""
+        """Offset beyond file length returns helpful message."""
         result = await skill.execute(path=str(test_file), offset=100)
         assert not result.error
-        assert result.output == ""
+        # P2.5: Returns a helpful message instead of empty string
+        assert "beyond end of file" in result.output or "empty" in result.output
 
     @pytest.mark.asyncio
     async def test_invalid_offset_returns_error(self, skill: ReadFileSkill, test_file: Path) -> None:

@@ -1,11 +1,60 @@
-"""Tail skill for reading last N lines of a file."""
+"""Tail skill for reading last N lines of a file.
+
+P2.5 SECURITY: Implements efficient tail reading with size limits.
+"""
 
 import asyncio
+import os
+from collections import deque
+from pathlib import Path
 from typing import Any
 
+from nexus3.core.constants import MAX_FILE_SIZE_BYTES, MAX_OUTPUT_BYTES
 from nexus3.core.errors import PathSecurityError
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
+
+
+def _tail_lines(
+    filepath: Path,
+    num_lines: int,
+    max_bytes: int = MAX_OUTPUT_BYTES,
+) -> tuple[list[tuple[int, str]], int, bool]:
+    """Read last N lines from a file efficiently.
+
+    P2.5 SECURITY: Uses a deque to only keep last N lines in memory,
+    avoiding loading entire file.
+
+    Args:
+        filepath: Path to the file
+        num_lines: Number of lines from end
+        max_bytes: Maximum total bytes to return
+
+    Returns:
+        Tuple of (list of (line_num, line_content), total_lines, was_truncated)
+    """
+    # Use deque to efficiently keep only last N lines
+    line_buffer: deque[tuple[int, str]] = deque(maxlen=num_lines)
+    total_lines = 0
+
+    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+        for line in f:
+            total_lines += 1
+            line_buffer.append((total_lines, line.rstrip()))
+
+    # Check if output would exceed max_bytes
+    result = list(line_buffer)
+    total_bytes = sum(len(line.encode("utf-8")) + 10 for _, line in result)  # +10 for line number prefix
+
+    truncated = False
+    if total_bytes > max_bytes:
+        # Trim from start until under limit
+        while result and total_bytes > max_bytes:
+            removed = result.pop(0)
+            total_bytes -= len(removed[1].encode("utf-8")) + 10
+            truncated = True
+
+    return result, total_lines, truncated
 
 
 class TailSkill(FileSkill):
@@ -13,6 +62,10 @@ class TailSkill(FileSkill):
 
     More intuitive than negative offsets for common use cases like
     reading log files or recent output.
+
+    P2.5 SECURITY: Uses efficient tail reading that doesn't load entire file.
+    - Files larger than MAX_FILE_SIZE_BYTES are still accepted (tail is safe)
+    - Output is capped at MAX_OUTPUT_BYTES
 
     Inherits path validation from FileSkill.
     """
@@ -68,29 +121,22 @@ class TailSkill(FileSkill):
             # Validate path (resolves symlinks, checks allowed_paths if set)
             p = self._validate_path(path)
 
-            # Use async file I/O to avoid blocking
-            content = await asyncio.to_thread(p.read_text, encoding="utf-8")
+            # P2.5 SECURITY: Efficient tail read (deque keeps only last N lines)
+            result, total_lines, truncated = await asyncio.to_thread(
+                _tail_lines, p, lines
+            )
 
-            # Get last N lines
-            all_lines = content.splitlines(keepends=True)
-            total_lines = len(all_lines)
+            if not result:
+                return ToolResult(output="(File is empty)")
 
-            if lines >= total_lines:
-                # Return entire file with line numbers
-                numbered = [
-                    f"{i + 1}: {line}"
-                    for i, line in enumerate(all_lines)
-                ]
-            else:
-                # Return last N lines with correct line numbers
-                start_idx = total_lines - lines
-                selected_lines = all_lines[start_idx:]
-                numbered = [
-                    f"{start_idx + i + 1}: {line}"
-                    for i, line in enumerate(selected_lines)
-                ]
+            # Format with line numbers
+            numbered = [f"{line_num}: {content}\n" for line_num, content in result]
+            output = "".join(numbered)
 
-            return ToolResult(output="".join(numbered))
+            if truncated:
+                output += f"\n[... output truncated to fit size limit ...]"
+
+            return ToolResult(output=output)
 
         except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))

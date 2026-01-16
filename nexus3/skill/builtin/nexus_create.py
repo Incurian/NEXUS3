@@ -24,7 +24,9 @@ class NexusCreateSkill(NexusSkill):
     def description(self) -> str:
         return (
             "Create a new agent on the Nexus server. "
-            "Use initial_message to send a task immediately after creation."
+            "IMPORTANT: Default preset is 'sandboxed' (read-only in cwd). "
+            "To enable writes, pass allowed_write_paths. "
+            "To get full access, pass preset='trusted' explicitly."
         )
 
     @property
@@ -38,23 +40,23 @@ class NexusCreateSkill(NexusSkill):
                 },
                 "preset": {
                     "type": "string",
-                    "description": "Permission preset: trusted, sandboxed, or worker",
+                    "description": "Permission preset. Default: 'sandboxed' (cwd-only reads, "
+                    "no writes unless allowed_write_paths specified). "
+                    "Use 'trusted' for full read access (writes still need explicit paths or cwd).",
                     "enum": ["trusted", "sandboxed", "worker"],
                 },
                 "cwd": {
                     "type": "string",
-                    "description": "Working directory for the agent. "
-                    "Relative paths resolve against parent's cwd. "
-                    "Defaults to parent's cwd if not specified. "
-                    "For sandboxed agents, this is the only path they can access.",
+                    "description": "Working directory / sandbox root. "
+                    "CRITICAL for sandboxed agents: this is the ONLY path they can read. "
+                    "Defaults to parent's cwd if not specified.",
                 },
                 "allowed_write_paths": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Paths where write_file/edit_file are allowed. "
-                    "Relative paths resolve against the agent's cwd. "
-                    "Must be within cwd for sandboxed agents. "
-                    "Defaults to empty (read-only) for sandboxed preset.",
+                    "description": "REQUIRED for writes on sandboxed agents. "
+                    "Without this, all write tools are DISABLED. "
+                    "Must be within cwd for sandboxed agents.",
                 },
                 "disable_tools": {
                     "type": "array",

@@ -8,6 +8,13 @@ from pathlib import Path
 
 NEXUS_DIR_NAME = ".nexus3"
 
+# P2.5 SECURITY: File I/O limits to prevent memory DoS
+# These limits prevent reading huge files into memory
+MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB - refuse to read files larger than this
+MAX_OUTPUT_BYTES = 1 * 1024 * 1024  # 1 MB - cap tool output size
+MAX_READ_LINES = 10000  # Default max lines to read if no limit specified
+MAX_GREP_FILE_SIZE = 5 * 1024 * 1024  # 5 MB - skip files larger than this in grep
+
 
 def get_nexus_dir() -> Path:
     """Get ~/.nexus3 (global config directory)."""

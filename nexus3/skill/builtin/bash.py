@@ -16,6 +16,9 @@ Both skills have identical permission settings:
 - YOLO: No confirmation required
 - TRUSTED: Always requires confirmation
 - SANDBOXED: Completely disabled
+
+P2.7 SECURITY: Defense-in-depth - these skills internally verify permission
+level and refuse to execute in SANDBOXED mode, even if mistakenly registered.
 """
 
 import asyncio
@@ -25,12 +28,28 @@ from typing import Any
 
 from typing import TYPE_CHECKING
 
+from nexus3.core.permissions import PermissionLevel
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import ExecutionSkill, execution_skill_factory
 from nexus3.skill.builtin.env import get_safe_env
 
 if TYPE_CHECKING:
     from nexus3.skill.services import ServiceContainer
+
+
+def _check_permission_level(services: "ServiceContainer", skill_name: str) -> ToolResult | None:
+    """P2.7 SECURITY: Defense-in-depth permission check.
+
+    Verifies the agent's permission level allows execution skills.
+    Returns an error ToolResult if blocked, or None if allowed.
+    """
+    level = services.get_permission_level()
+    if level == PermissionLevel.SANDBOXED:
+        return ToolResult(
+            error=f"{skill_name} is disabled in SANDBOXED mode. "
+            "This is a defense-in-depth check - the skill should not be registered for sandboxed agents."
+        )
+    return None
 
 
 class BashSafeSkill(ExecutionSkill):
@@ -114,6 +133,10 @@ class BashSafeSkill(ExecutionSkill):
         **kwargs: Any
     ) -> ToolResult:
         """Execute command safely without shell interpretation."""
+        # P2.7 SECURITY: Defense-in-depth permission check
+        if error := _check_permission_level(self._services, self.name):
+            return error
+
         if not command:
             return ToolResult(error="Command is required")
 
@@ -210,6 +233,10 @@ class ShellUnsafeSkill(ExecutionSkill):
         **kwargs: Any
     ) -> ToolResult:
         """Execute shell command with full shell interpretation."""
+        # P2.7 SECURITY: Defense-in-depth permission check
+        if error := _check_permission_level(self._services, self.name):
+            return error
+
         if not command:
             return ToolResult(error="Command is required")
 

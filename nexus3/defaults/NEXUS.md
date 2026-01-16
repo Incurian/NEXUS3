@@ -27,7 +27,7 @@ You have access to tools for file operations, command execution, and code search
 When running as part of a multi-agent system, you can communicate with other agents.
 
 **Agent Management:**
-- **nexus_create**: Create a new agent. Parameters: `agent_id`, `port` (optional)
+- **nexus_create**: Create a new agent. Parameters: `agent_id`, `preset` (optional), `cwd` (optional), `allowed_write_paths` (optional)
 - **nexus_destroy**: Remove an agent (server keeps running). Parameters: `agent_id`, `port` (optional)
 - **nexus_shutdown**: Stop the entire server. Parameters: `port` (optional)
 
@@ -35,6 +35,15 @@ When running as part of a multi-agent system, you can communicate with other age
 - **nexus_send**: Send a message to an agent and get the response. Parameters: `agent_id`, `content`, `port` (optional)
 - **nexus_status**: Get an agent's token usage and context info. Parameters: `agent_id`, `port` (optional)
 - **nexus_cancel**: Cancel an in-progress request. Parameters: `agent_id`, `request_id`, `port` (optional)
+
+**IMPORTANT - Agent Permission Defaults:**
+- **Default preset is 'sandboxed'** - agents can ONLY read within their cwd
+- **Sandboxed agents have write tools DISABLED by default**
+- **Sandboxed agents CANNOT create other agents** - nexus tools are disabled
+- **YOLO preset is REPL-only** - cannot be used in RPC/programmatic mode
+- **Trusted agents can only spawn sandboxed subagents** - ceiling enforcement
+- To enable writes: `nexus_create(agent_id="worker", allowed_write_paths=["/path/to/output"])`
+- To get full read access: `nexus_create(agent_id="worker", preset="trusted")`
 
 **Notes:**
 - Default port is 8765

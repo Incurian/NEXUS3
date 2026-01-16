@@ -126,6 +126,16 @@ Skills: Single-purpose, async `execute(**kwargs) -> ToolResult(output|error)`.
 | `nexus_status`/`nexus_cancel`/`nexus_destroy` | `agent_id`, `request_id`/etc. |
 | `nexus_shutdown` | `port` |
 
+**IMPORTANT - Agent Permission Defaults:**
+- Default preset is `sandboxed` (NOT trusted) - agents can only read in their cwd
+- Sandboxed agents have ALL write tools DISABLED by default
+- **Sandboxed agents CANNOT create other agents** - nexus tools are disabled
+- **YOLO preset is REPL-only** - cannot be used via RPC
+- **Trusted agents can only spawn sandboxed subagents**
+- To enable writes, pass `allowed_write_paths` when creating the agent
+- To get full read access, pass `preset="trusted"` explicitly
+- See CLAUDE.md "RPC Agent Permission Quirks" for full details
+
 **Utility**:
 | Skill | Key Params |
 |-------|------------|

@@ -25,9 +25,13 @@ class MockServiceContainer:
     def get(self, key: str, default: Any = None) -> Any:
         return self._data.get(key, default)
 
-    def get_tool_allowed_paths(self, tool_name: str) -> list[Path] | None:
+    def get_tool_allowed_paths(self, tool_name: str | None = None) -> list[Path] | None:
         """Return allowed_paths from data."""
         return self._data.get("allowed_paths")
+
+    def get_blocked_paths(self) -> list[Path]:
+        """Return blocked_paths from data (P2.3 security fix)."""
+        return self._data.get("blocked_paths", [])
 
     def get_cwd(self) -> Path:
         """Return cwd from data, or current directory as default."""
