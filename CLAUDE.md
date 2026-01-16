@@ -1011,6 +1011,70 @@ All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env s
 
 ---
 
+## Completed: Sprint 6 — Context/Config Cohesion + Prompt Safety ✅
+
+**Branch:** `arch/sprint-5-rpc-cli` | **Tests:** 1979 passing (+150 new)
+
+### F2: Error Type Unification ✅
+- Created `LoadError`, `ContextLoadError`, `MCPConfigError` hierarchy in `core/errors.py`
+- Created `config/load_utils.py` with unified JSON loading
+- Context loader now uses `ContextLoadError` instead of `ValueError`
+
+### F3: Structured Prompt Builder ✅
+- Created `context/prompt_builder.py` with `PromptSection`, `EnvironmentBlock`, `StructuredPrompt`
+- Fixed brittle `str.replace()` datetime injection with `inject_datetime_into_prompt()`
+
+### P2.17: MCP Validation ✅
+- Fixed silent `except Exception: pass` in `_merge_mcp_servers()` - now raises `MCPConfigError`
+- Added `@model_validator` to `MCPServerConfig` for command/url mutual exclusivity
+- Added logging to transport cleanup and stderr reader
+
+### P2.18: README Injection Hardening ✅
+- Changed `readme_as_fallback` default to `False` (safe by default)
+- README content now wrapped with explicit `DOCUMENTATION` boundaries
+
+### P2.19: Compaction Secrets Redaction ✅
+- Created `core/redaction.py` with `SECRET_PATTERNS` for API keys, tokens, passwords
+- Applied redaction in `format_messages_for_summary()` before summarization
+- Added `redact_secrets` config option (default: `True`)
+
+### Files Created
+- `nexus3/core/redaction.py` (~80 lines)
+- `nexus3/config/load_utils.py` (~50 lines)
+- `nexus3/context/prompt_builder.py` (~100 lines)
+
+---
+
+## In Progress: Sprint 7 — Provider/MCP Lifecycle & Transport Redesign
+
+**Goal:** Correct lifecycle management and transport semantics. Improve maintainability and concurrency safety.
+
+### Architecture Scope
+
+| ID | Task | Description |
+|----|------|-------------|
+| G1 | Provider HTTP client lifecycle | Make `BaseProvider` own an `AsyncClient` for instance lifecycle. Expose `aclose()`. Registry closes providers on shutdown. |
+| G2 | MCP HTTP transport redesign | Replace `send()/receive()` with `request()` for HTTP. Add id→future routing or lock for concurrency. |
+| G3 | Encapsulation fixes | Registry uses public client APIs (e.g., `client.is_connected`), not `_transport`. |
+| G4 | Canonical MCP skill IDs | Use tool-name normalization from Arch A1. Store display names separately. |
+
+### Security Tie-ins
+- MCP naming sanitization + collisions (uses Arch A1 identifiers from Sprint 3)
+
+### Tests to Implement
+- Provider client lifecycle tests (§G4)
+- MCP HTTP transport concurrency safety (§G13)
+- MCP name injection/collision tests (§G9)
+
+### Key Files to Modify
+- `nexus3/provider/base.py` - AsyncClient lifecycle
+- `nexus3/mcp/transport.py` - HTTP transport redesign
+- `nexus3/mcp/client.py` - Request API
+- `nexus3/mcp/registry.py` - Encapsulation fixes
+- `nexus3/mcp/skill_adapter.py` - Canonical naming
+
+---
+
 ## Known Issues
 
 - ~~**WSL Terminal**: Bash may close after `nexus` exits.~~ Fixed in d276c70.
