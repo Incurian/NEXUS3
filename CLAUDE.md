@@ -802,6 +802,31 @@ All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env s
 
 **Sprint 3 Test Count (so far):** 51 new P2 tests, 209 total security tests passing
 
+### Current Session Notes (for continuity after compaction)
+
+**Commits made this session:**
+- `7707358` - security: Sprint 3 P2 hardening (partial) - 6 fixes
+- `a4097ec` - docs: Update CLAUDE.md with Sprint 3 progress
+
+**Key bug found and fixed during P2.4:**
+- `PathResolver.resolve()` was skipping `allowed_paths` check when `tool_name=None`
+- This was a real path traversal vulnerability - test revealed it
+- Fix: Always call `get_tool_allowed_paths()` even without tool_name
+
+**Live testing status:**
+- Server is running on port 8765
+- Direct API calls work (tested via curl)
+- `nexus-rpc send` command shows empty output but agents ARE responding (API works)
+- May be a display issue with nexus-rpc CLI, not a security bug
+
+**Remaining Sprint 3 items to implement:**
+- P2.5: File size/line limits + streaming reads
+- P2.7: Defense-in-depth checks in execution tools
+- P2.8: Token file permission checks
+- P2.9-12: MCP protocol hardening
+- P2.13: Provider error body size caps
+- Arch A1/A2: Tool identifiers and PathDecisionEngine
+
 ---
 
 ## Known Issues
