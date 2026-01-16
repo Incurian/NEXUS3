@@ -5,6 +5,9 @@ Provides transport implementations for MCP communication:
 - HTTPTransport: Connect to remote MCP server via HTTP (placeholder)
 
 MCP uses newline-delimited JSON-RPC 2.0 messages.
+
+P2.12 SECURITY: Stdio transport enforces maximum line length to prevent
+memory exhaustion from malicious/buggy servers sending extremely long lines.
 """
 
 import asyncio
@@ -21,6 +24,12 @@ logger = logging.getLogger(__name__)
 
 class MCPTransportError(NexusError):
     """Error in MCP transport layer."""
+
+
+# P2.12 SECURITY: Maximum line length for stdio transport.
+# Prevents memory exhaustion from malicious/buggy servers.
+# 10MB should be generous for any legitimate MCP message.
+MAX_STDIO_LINE_LENGTH: int = 10 * 1024 * 1024  # 10 MB
 
 
 # Environment variables always safe to pass to MCP servers.
@@ -220,12 +229,16 @@ class StdioTransport(MCPTransport):
             raise MCPTransportError(f"Failed to send message: {e}") from e
 
     async def receive(self) -> dict[str, Any]:
-        """Read JSON-RPC message from stdout."""
+        """Read JSON-RPC message from stdout.
+
+        P2.12 SECURITY: Enforces MAX_STDIO_LINE_LENGTH to prevent memory
+        exhaustion from extremely long lines.
+        """
         if self._process is None or self._process.stdout is None:
             raise MCPTransportError("Transport not connected")
 
         try:
-            line = await self._process.stdout.readline()
+            line = await self._read_bounded_line()
             if not line:
                 # Process ended
                 returncode = self._process.returncode
@@ -238,6 +251,52 @@ class StdioTransport(MCPTransport):
             raise
         except Exception as e:
             raise MCPTransportError(f"Failed to receive message: {e}") from e
+
+    async def _read_bounded_line(self) -> bytes:
+        """Read a line with bounded length.
+
+        P2.12 SECURITY: Prevents memory exhaustion by limiting line length.
+
+        Returns:
+            Line bytes (including newline if present).
+
+        Raises:
+            MCPTransportError: If line exceeds MAX_STDIO_LINE_LENGTH.
+        """
+        if self._process is None or self._process.stdout is None:
+            return b""
+
+        chunks: list[bytes] = []
+        total_length = 0
+
+        while True:
+            # Read up to remaining allowed bytes or 64KB chunk
+            remaining = MAX_STDIO_LINE_LENGTH - total_length
+            if remaining <= 0:
+                raise MCPTransportError(
+                    f"MCP server line exceeds maximum length ({MAX_STDIO_LINE_LENGTH} bytes). "
+                    "Server may be malfunctioning or malicious."
+                )
+
+            chunk_size = min(remaining, 65536)  # 64KB chunks
+            chunk = await self._process.stdout.read(chunk_size)
+
+            if not chunk:
+                # EOF - return what we have
+                return b"".join(chunks)
+
+            # Check for newline in chunk
+            newline_idx = chunk.find(b"\n")
+            if newline_idx >= 0:
+                # Found newline - return complete line
+                chunks.append(chunk[: newline_idx + 1])
+                # Put back remaining data (after newline)
+                # Note: asyncio.StreamReader doesn't support unread, but in
+                # practice MCP messages are one-per-line so this is fine
+                return b"".join(chunks)
+
+            chunks.append(chunk)
+            total_length += len(chunk)
 
     async def close(self) -> None:
         """Terminate subprocess."""

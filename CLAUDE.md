@@ -231,12 +231,23 @@ class AsyncProvider(Protocol):
 
 ## Testing
 
+**IMPORTANT: Always use the virtualenv Python.** The system `python` command may not exist or may be a different version. All Python commands must use `.venv/bin/python` or `.venv/bin/pytest`:
+
 ```bash
-pytest tests/ -v                              # All tests
-pytest tests/integration/ -v                  # Integration only
-ruff check nexus3/                            # Linting
-mypy nexus3/                                  # Type checking
+# Tests (use .venv/bin/pytest or .venv/bin/python -m pytest)
+.venv/bin/pytest tests/ -v                    # All tests
+.venv/bin/pytest tests/integration/ -v        # Integration only
+.venv/bin/pytest tests/security/ -v           # Security tests
+
+# Linting/Type checking
+.venv/bin/ruff check nexus3/                  # Linting
+.venv/bin/mypy nexus3/                        # Type checking
+
+# Running Python directly
+.venv/bin/python -c "import nexus3; print(nexus3.__version__)"
 ```
+
+**Never use bare `python` or `pytest` commands** - they will likely fail with "command not found" or use the wrong Python version.
 
 ---
 
@@ -862,12 +873,24 @@ All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env s
 - **Fix:** Added `check_token_file_permissions()` function and `InsecureTokenFileError` exception. Both `ServerTokenManager.load()` and `discover_rpc_token()` now check file permissions. Configurable strict mode (refuse) vs warn-only mode (default).
 - **Test:** `tests/security/test_p2_token_file_permissions.py` (20 tests)
 
+### P2.9-12: MCP Protocol + Transport Hardening ✅
+- **Location:** `mcp/client.py`, `mcp/transport.py`, `mcp/permissions.py`
+- **Fixes:**
+  - P2.9: Response ID matching - verifies response IDs match request IDs
+  - P2.10: Notification discarding - discards server notifications while waiting for response
+  - P2.11: Deny-by-default for `can_use_mcp(None)` - MCP access denied without explicit permissions
+  - P2.12: Stdio line length limits - MAX_STDIO_LINE_LENGTH=10MB prevents memory exhaustion
+- **Test:** `tests/security/test_p2_mcp_hardening.py` (22 tests)
+
+### P2.13: Provider Error Body Size Caps ✅
+- **Location:** `provider/base.py`
+- **Fix:** Added `MAX_ERROR_BODY_SIZE=10KB` constant. Both streaming and non-streaming error paths now truncate error bodies to prevent memory exhaustion from malicious/buggy providers.
+- **Test:** `tests/security/test_p2_provider_error_caps.py` (13 tests)
+
 ### Remaining Sprint 3 Items
-- P2.9-12: MCP protocol hardening
-- P2.13: Provider error body size caps
 - Arch A1/A2: Tool identifiers and PathDecisionEngine
 
-**Sprint 3 Test Count (so far):** 98 new P2 tests, 256 total security tests passing
+**Sprint 3 Test Count (so far):** 133 new P2 tests, 291 total security tests passing
 
 ---
 

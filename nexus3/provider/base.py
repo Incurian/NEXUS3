@@ -4,6 +4,7 @@ This module provides the abstract base class for all LLM providers.
 It handles common functionality like authentication, retries, and logging.
 
 SECURITY: Includes SSRF validation on base_url (P1.6).
+SECURITY: P2.13 - Error body size caps prevent memory exhaustion from large error responses.
 """
 
 from __future__ import annotations
@@ -24,6 +25,10 @@ from nexus3.core.types import Message, StreamEvent
 
 # Hosts that are considered safe for HTTP (non-HTTPS) connections
 _LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
+
+# P2.13 SECURITY: Maximum size for error response bodies
+# Prevents memory exhaustion from malicious/buggy providers returning huge error responses
+MAX_ERROR_BODY_SIZE: int = 10 * 1024  # 10 KB
 
 if TYPE_CHECKING:
     from nexus3.core.interfaces import RawLogCallback
@@ -266,7 +271,9 @@ class BaseProvider(ABC):
 
                     # Retryable server errors - retry with backoff
                     if self._is_retryable_error(response.status_code):
-                        error_detail = response.text
+                        # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
+                        error_body = response.content[:MAX_ERROR_BODY_SIZE]
+                        error_detail = error_body.decode(errors="replace")
                         last_error = ProviderError(
                             f"API request failed with status {response.status_code}: {error_detail}"
                         )
@@ -278,7 +285,9 @@ class BaseProvider(ABC):
 
                     # Other client errors (400, etc.) - fail immediately
                     if response.status_code >= 400:
-                        error_detail = response.text
+                        # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
+                        error_body = response.content[:MAX_ERROR_BODY_SIZE]
+                        error_detail = error_body.decode(errors="replace")
                         raise ProviderError(
                             f"API request failed with status {response.status_code}: {error_detail}"
                         )
@@ -361,9 +370,8 @@ class BaseProvider(ABC):
                         # Retryable server errors - retry with backoff
                         if self._is_retryable_error(response.status_code):
                             error_body = await response.aread()
-                            # Limit error body to 10KB to prevent memory exhaustion
-                            if len(error_body) > 10000:
-                                error_body = error_body[:10000]
+                            # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
+                            error_body = error_body[:MAX_ERROR_BODY_SIZE]
                             error_msg = error_body.decode(errors="replace")
                             last_error = ProviderError(
                                 f"API request failed ({response.status_code}): {error_msg}"
@@ -377,9 +385,8 @@ class BaseProvider(ABC):
                         # Other client errors (400, etc.) - fail immediately
                         if response.status_code >= 400:
                             error_body = await response.aread()
-                            # Limit error body to 10KB to prevent memory exhaustion
-                            if len(error_body) > 10000:
-                                error_body = error_body[:10000]
+                            # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
+                            error_body = error_body[:MAX_ERROR_BODY_SIZE]
                             error_msg = error_body.decode(errors="replace")
                             raise ProviderError(
                                 f"API request failed ({response.status_code}): {error_msg}"

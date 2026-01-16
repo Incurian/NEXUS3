@@ -7,6 +7,12 @@ The MCPClient handles the MCP protocol lifecycle:
 4. Execute tool calls
 5. Clean shutdown
 
+P2.9 SECURITY: Response ID matching - verifies response IDs match request IDs
+to prevent response confusion attacks from malicious/buggy servers.
+
+P2.10 SECURITY: Notification discarding - discards server notifications while
+waiting for RPC responses to prevent response stream poisoning.
+
 Usage:
     transport = StdioTransport(["python", "-m", "some_server"])
     async with MCPClient(transport) as client:
@@ -15,6 +21,7 @@ Usage:
 """
 
 import asyncio
+import logging
 from typing import Any
 
 from nexus3.core.errors import NexusError
@@ -26,6 +33,12 @@ from nexus3.mcp.protocol import (
     MCPToolResult,
 )
 from nexus3.mcp.transport import MCPTransport
+
+logger = logging.getLogger(__name__)
+
+# P2.10 SECURITY: Maximum notifications to discard while waiting for a response.
+# Prevents infinite loop from servers that only send notifications.
+MAX_NOTIFICATIONS_TO_DISCARD: int = 100
 
 
 class MCPError(NexusError):
@@ -143,6 +156,9 @@ class MCPClient:
     async def _call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         """Make JSON-RPC call and wait for response.
 
+        P2.9 SECURITY: Verifies response ID matches request ID.
+        P2.10 SECURITY: Discards notifications while waiting for response.
+
         Args:
             method: RPC method name.
             params: Method parameters.
@@ -151,18 +167,51 @@ class MCPClient:
             The 'result' field from the response.
 
         Raises:
-            MCPError: If the server returns an error.
+            MCPError: If the server returns an error, response ID mismatches,
+                     or too many notifications are received.
         """
         self._request_id += 1
+        expected_id = self._request_id
         request = {
             "jsonrpc": "2.0",
-            "id": self._request_id,
+            "id": expected_id,
             "method": method,
             "params": params,
         }
 
         await self._transport.send(request)
-        response = await self._transport.receive()
+
+        # P2.10 SECURITY: Loop to discard notifications and find our response
+        notifications_discarded = 0
+        while True:
+            response = await self._transport.receive()
+
+            # P2.10 SECURITY: Discard notifications (messages without "id")
+            # Notifications have "method" but no "id" field
+            if "id" not in response and "method" in response:
+                notifications_discarded += 1
+                logger.debug(
+                    "Discarded MCP notification while waiting for response: %s",
+                    response.get("method"),
+                )
+                if notifications_discarded > MAX_NOTIFICATIONS_TO_DISCARD:
+                    raise MCPError(
+                        f"Received too many notifications ({notifications_discarded}) "
+                        f"while waiting for response to request {expected_id}. "
+                        "Server may be malfunctioning."
+                    )
+                continue
+
+            # P2.9 SECURITY: Verify response ID matches request ID
+            response_id = response.get("id")
+            if response_id != expected_id:
+                raise MCPError(
+                    f"Response ID mismatch: expected {expected_id}, got {response_id}. "
+                    "Server may be malfunctioning or malicious."
+                )
+
+            # Found our response
+            break
 
         # Handle error response
         if "error" in response:
