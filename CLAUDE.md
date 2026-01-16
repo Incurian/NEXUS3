@@ -1077,32 +1077,34 @@ All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env s
 
 ---
 
-## Up Next: Sprint 8+ — Cleanup & Polish
+## Completed: Sprint 8 — Cleanup & Polish ✅
 
-**Goal:** Address remaining P3 items, backlog bugs, documentation cleanup, and performance tuning.
+**Branch:** `arch/sprint-5-rpc-cli` | **Tests:** 2104 passing (+94 new)
 
-### P3 Security Items
-- **P3.1:** Terminal escape sequence injection hardening in REPL echo
-- **P3.2:** Reduce sensitive exception detail in tool errors
+### Backlog Fixes (BL-1 through BL-12) ✅
+| ID | Fix |
+|----|-----|
+| BL-1 | `max_retries=0` now makes one attempt |
+| BL-2 | Tool-call id/name set-once (was: appended) |
+| BL-3 | Invalid JSON logged + preserved as `_raw_arguments` |
+| BL-4 | MCP `registry.connect()` checks `config.enabled` |
+| BL-5 | `send()` passes `request_id` to dispatcher |
+| BL-6 | `cancel()` uses `is not None` check |
+| BL-7 | Dispatcher raises error (was: success-with-error) |
+| BL-8 | Docstring: `async with` → `with` |
+| BL-9 | Cancel callbacks logged at debug level |
+| BL-10 | `from_dict()` normalizes paths with `.resolve()` |
+| BL-11 | REPL exceptions logged at debug level |
+| BL-12 | Timeout docstring: 120 → 300 |
 
-### Backlog Items (from reviews)
-| ID | Issue | Location |
-|----|-------|----------|
-| BL-1 | `max_retries=0` causes "failed unexpectedly" | `provider/base.py:180-249` |
-| BL-2 | OpenAI tool-call delta accumulation bug | `provider/openai_compat.py:355-362` |
-| BL-3 | Tool argument parse failures → `{}` silently | `provider/openai_compat.py:391-395` |
-| BL-4 | MCP `enabled` config flag ignored | `mcp/registry.py:110-168` |
-| BL-5 | `DirectAgentAPI.send()` ignores `request_id` param | `rpc/agent_api.py:93-112` |
-| BL-6 | `DirectAgentAPI.cancel()` uses truthiness | `rpc/agent_api.py:123-129` |
-| BL-7 | Dispatcher returns success-with-error | `rpc/dispatcher.py` |
-| BL-8 | `LogMultiplexer.agent_context` docstring wrong | `rpc/log_multiplexer.py:94-97` |
-| BL-9 | Cancel callback exceptions swallowed | `core/cancel.py:39-44` |
-| BL-10 | Allowances `from_dict()` doesn't normalize paths | `core/allowances.py:169-182` |
-| BL-11 | Broad exception swallowing in REPL | `cli/repl.py` |
-| BL-12 | Timeout doc mismatch (120s vs 300s) | `cli/client_commands.py` |
-| BL-13 | ~~Global mutable state for key monitor~~ | ~~`cli/keys.py`~~ (Fixed in Sprint 5 E4) |
-| BL-14 | ~~Uses private `context._counter`~~ | ~~`session/session.py`~~ (Fixed in Sprint 4 C1) |
-| BL-15 | ~~Uses private `mcp_registry._servers`~~ | ~~`session/session.py`~~ (Fixed in Sprint 4 C1) |
+### P3 Security Hardening ✅
+- **P3.1:** Terminal escape sequence sanitization in streaming output
+- **P3.2:** Tool error sanitization (generic messages, paths replaced with `[path]`)
+
+### Previously Fixed
+- BL-13: Sprint 5 E4 (per-REPL key monitor)
+- BL-14: Sprint 4 C1 (`token_counter` property)
+- BL-15: Sprint 4 C1 (`find_skill()` method)
 
 ---
 
