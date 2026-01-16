@@ -954,6 +954,83 @@ All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env s
 
 ---
 
+## In Progress: Sprint 5 — RPC Layering + CLI Modularization
+
+**Goal:** Make RPC/HTTP paths composable and testable. Reduce REPL risk by splitting responsibilities without changing behavior.
+
+### Architecture Scope
+
+**Workstream D: RPC Refactor**
+
+| Item | Description | Status |
+|------|-------------|--------|
+| D1 | **Shared dispatch core** - extract shared dispatch helper/base class for handler lookup, exception→JSON-RPC error mapping, consistent logging. Both `Dispatcher` and `GlobalDispatcher` become thin wrappers. | Pending |
+| D4 | **Request-id correctness** - replace truthiness checks with `is None` checks; standardize request-id type to `str`. | Pending |
+| D2 | **Layered HTTP pipeline** - split `handle_connection()` into: `parse_http_request` → `authenticate` → `route` → `restore_middleware` → `parse_jsonrpc` → `dispatch`. Each layer unit-testable. | Pending |
+| D5 | **Object graph assembly** - replace late `set_global_dispatcher()` injection with constructor injection or dedicated builder/factory. | Pending |
+
+*Note: D3 (public restore API) was completed in Sprint 4 as part of C2.*
+
+**Workstream E: CLI Architecture Cleanup**
+
+| Item | Description | Status |
+|------|-------------|--------|
+| E1 | **Modularize repl.py** - mechanical split into: `cli/args.py`, `cli/unified_runtime.py`, `cli/ui/streaming.py`, `cli/ui/confirmations.py`, `cli/repl_loop.py`. | Pending |
+| E3 | **Unify slash-command routing** - consolidate to one system (`repl_commands.py`), delete/integrate legacy `cli/commands.py`. | Pending |
+| E4 | **Per-REPL key-monitor state** - replace global `_key_monitor_state` with per-instance `asyncio.Event`. | Pending |
+
+*Note: E2 (public APIs for AgentPool, ContextManager) was completed in Sprint 4.*
+
+### Problems Addressed
+
+**RPC (`rpc/`):**
+- Duplicate dispatch logic in `Dispatcher` and `GlobalDispatcher`
+- HTTP handler mixes transport/auth/routing/session restoration/dispatch
+- Request-id "falsy" handling (code-quality correctness issue)
+- Late injection cycle management (`AgentPool.set_global_dispatcher`)
+
+**CLI (`cli/`):**
+- `cli/repl.py` is a 1661-line monolith: parsing, server lifecycle, UI streaming, confirmations, slash routing
+- REPL commands access private internals (`pool._agents`, `agent.context._config`)
+- Legacy/unused `cli/commands.py` duplicates parsing concepts
+- Global mutable state in `keys.py` complicates multi-instance behavior
+
+### Security Tie-ins
+
+- Ensure all auth/routing failures return consistent JSON-RPC error codes (Testing Plan §D6)
+- Confirm "no private attribute access" acceptance criterion across CLI/RPC modules
+- CLI takeover/shutdown must require user confirmation (Testing Plan §F3)
+- CLI agent_id validation before network requests (Testing Plan §F2)
+
+### Tests to Implement
+
+| Test | Section | Description |
+|------|---------|-------------|
+| Request id falsy handling | §D7 | Only `None` is missing; `0`, `""` are valid |
+| JSON-RPC error codes | §D6, §D9 | Auth/routing failures use consistent codes |
+| CLI agent_id validation | §F2 | Reject `../`, `/`, `%2f` before network |
+| CLI takeover confirmation | §F3 | Prompt before shutting down existing server |
+| JSON-RPC compliance | §I4 | Request id handling, error channel correctness |
+
+### Recommended Implementation Order
+
+1. **D1** (shared dispatch) → enables consistent error mapping
+2. **D4** (request-id fix) → small correctness fix
+3. **D2** (HTTP pipeline) → decompose into layers
+4. **D5** (object graph) → clean up late injection
+5. **E1** (repl.py split) → mechanical file moves first
+6. **E3** (routing consolidation) → delete legacy code
+7. **E4** (key monitor state) → per-instance cleanup
+
+### Deliverables
+
+- RPC server code decomposed into unit-testable layers
+- REPL split into modules with unchanged behavior (then iterate)
+- No private attribute access across module boundaries
+- Consistent JSON-RPC error codes for all failure types
+
+---
+
 ## Known Issues
 
 - ~~**WSL Terminal**: Bash may close after `nexus` exits.~~ Fixed in d276c70.
