@@ -717,7 +717,7 @@ async def run_repl(
     console.print(f"Session: {logger.session_dir}", style="dim")
     console.print(f"Server: http://localhost:{effective_port}", style="dim")
     # Show prompt sources (from ContextLoader)
-    for source in base_context.sources.prompt_sources:
+    for source in shared.base_context.sources.prompt_sources:
         console.print(f"Context: {source.path} ({source.layer_name})", style="dim")
     console.print("Commands: /help | ESC to cancel", style="dim")
     console.print("")
