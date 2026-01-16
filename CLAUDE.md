@@ -1014,3 +1014,5 @@ All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env s
 ## Known Issues
 
 - ~~**WSL Terminal**: Bash may close after `nexus` exits.~~ Fixed in d276c70.
+
+- **Relative path resolution uses process cwd**: When an RPC-created agent tries to access a relative path (e.g., `./testfile.txt`), the path resolves against the server process's cwd instead of the agent's configured cwd. Absolute paths work correctly. This affects subagents created with inherited cwd from parent agents. The `PathResolver` correctly uses `services.get_cwd()`, but the cwd may not be properly inherited/registered in the ServiceContainer during agent creation. Investigation needed in `global_dispatcher.py` (cwd inheritance) and `pool.py` (cwd registration).
