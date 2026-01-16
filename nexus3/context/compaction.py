@@ -1,8 +1,10 @@
 """Context compaction via LLM summarization."""
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 
+from nexus3.core.redaction import redact_dict, redact_secrets
 from nexus3.core.types import Message, Role
 
 
@@ -56,14 +58,19 @@ class CompactionResult:
     """Token count after compaction."""
 
 
-def format_messages_for_summary(messages: list[Message]) -> str:
+def format_messages_for_summary(
+    messages: list[Message],
+    redact: bool = True,
+) -> str:
     """Format messages into text for summarization prompt.
 
     Args:
-        messages: Messages to format
+        messages: Messages to format.
+        redact: Whether to redact secrets from message content and tool arguments.
+            Defaults to True for security.
 
     Returns:
-        Formatted conversation text
+        Formatted conversation text with secrets optionally redacted.
     """
     lines = []
     for msg in messages:
@@ -71,12 +78,20 @@ def format_messages_for_summary(messages: list[Message]) -> str:
         if msg.role == Role.TOOL:
             role_name = f"TOOL[{msg.tool_call_id}]"
 
-        lines.append(f"{role_name}: {msg.content}")
+        # Redact secrets from message content
+        content = redact_secrets(msg.content) if redact else msg.content
+        lines.append(f"{role_name}: {content}")
 
         # Include tool calls if present
         if msg.tool_calls:
             for tc in msg.tool_calls:
-                lines.append(f"  → {tc.name}({tc.arguments})")
+                # Redact secrets from tool arguments
+                if redact:
+                    redacted_args = redact_dict(tc.arguments)
+                    args_str = json.dumps(redacted_args)
+                else:
+                    args_str = json.dumps(tc.arguments)
+                lines.append(f"  -> {tc.name}({args_str})")
 
     return "\n\n".join(lines)
 

@@ -177,11 +177,13 @@ class TestContextLoader:
 
     def test_load_json_invalid(self, tmp_path: Path) -> None:
         """Test loading invalid JSON raises error."""
+        from nexus3.core.errors import ContextLoadError
+
         bad_file = tmp_path / "bad.json"
         bad_file.write_text("not json")
 
         loader = ContextLoader(cwd=tmp_path)
-        with pytest.raises(ValueError, match="Invalid JSON"):
+        with pytest.raises(ContextLoadError, match="Invalid JSON"):
             loader._load_json(bad_file)
 
     def test_labeled_sections(self, tmp_path: Path) -> None:

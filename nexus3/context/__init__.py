@@ -21,14 +21,24 @@ from nexus3.context.loader import (
     PromptSource,
     get_system_info,
 )
-from nexus3.core.utils import deep_merge
-from nexus3.context.manager import ContextConfig, ContextManager
+from nexus3.context.manager import (
+    ContextConfig,
+    ContextManager,
+    inject_datetime_into_prompt,
+)
+from nexus3.context.prompt_builder import (
+    EnvironmentBlock,
+    PromptBuilder,
+    PromptSection,
+    StructuredPrompt,
+)
 from nexus3.context.token_counter import (
     SimpleTokenCounter,
     TiktokenCounter,
     TokenCounter,
     get_token_counter,
 )
+from nexus3.core.utils import deep_merge
 
 __all__ = [
     # Compaction
@@ -53,4 +63,10 @@ __all__ = [
     # Context manager
     "ContextManager",
     "ContextConfig",
+    "inject_datetime_into_prompt",
+    # Prompt builder
+    "EnvironmentBlock",
+    "PromptBuilder",
+    "PromptSection",
+    "StructuredPrompt",
 ]

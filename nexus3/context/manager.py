@@ -27,6 +27,65 @@ def get_session_start_str() -> str:
     now = datetime.now()
     return f"[Session started: {now.strftime('%Y-%m-%d %H:%M')} (local)]"
 
+
+def inject_datetime_into_prompt(prompt: str, datetime_line: str) -> str:
+    """Inject datetime line into prompt at the Environment section.
+
+    This function uses explicit section boundary detection rather than
+    simple str.replace() to avoid issues where the marker might appear
+    elsewhere in the prompt content.
+
+    Strategy:
+    1. Find "# Environment" at the start of a line (section header)
+    2. Verify it's a standalone header (followed by newline or EOF)
+    3. Insert datetime_line after the header line
+
+    If no "# Environment" section is found, appends to the end.
+
+    Args:
+        prompt: The system prompt to inject into.
+        datetime_line: The formatted datetime string to inject.
+
+    Returns:
+        Prompt with datetime injected at the appropriate location.
+    """
+    # Look for "# Environment" as a section header (at line start)
+    # This is more robust than str.replace which could match anywhere
+    env_marker = "# Environment"
+    marker_len = len(env_marker)
+
+    # Find the marker at the start of a line
+    search_start = 0
+    while True:
+        pos = prompt.find(env_marker, search_start)
+        if pos == -1:
+            # No marker found - append to end
+            return f"{prompt}\n\n{datetime_line}"
+
+        # Check if this is at the start of a line (pos == 0 or preceded by newline)
+        at_line_start = pos == 0 or prompt[pos - 1] == "\n"
+
+        # Check if it's a standalone header (followed by newline or EOF)
+        # This avoids matching "# Environment Variables" etc.
+        end_pos = pos + marker_len
+        is_standalone = end_pos >= len(prompt) or prompt[end_pos] == "\n"
+
+        if at_line_start and is_standalone:
+            # Found valid section header - find the end of this line
+            newline_pos = prompt.find("\n", pos)
+            if newline_pos == -1:
+                # Header is at EOF - append datetime after it
+                return f"{prompt}\n{datetime_line}"
+
+            # Insert datetime after the header line
+            before = prompt[: newline_pos + 1]
+            after = prompt[newline_pos + 1 :]
+            return f"{before}{datetime_line}\n{after}"
+
+        # Not a valid standalone header - continue searching
+        search_start = pos + 1
+
+
 if TYPE_CHECKING:
     from nexus3.session.logging import SessionLogger
 
@@ -239,15 +298,9 @@ class ContextManager:
             # Inject current date/time at the start of the Environment section
             # or at the end of the prompt if no Environment section exists
             datetime_line = get_current_datetime_str()
-            if "# Environment" in self._system_prompt:
-                # Insert after the "# Environment" header
-                prompt_with_time = self._system_prompt.replace(
-                    "# Environment\n",
-                    f"# Environment\n{datetime_line}\n"
-                )
-            else:
-                # Append to end
-                prompt_with_time = f"{self._system_prompt}\n\n{datetime_line}"
+            prompt_with_time = inject_datetime_into_prompt(
+                self._system_prompt, datetime_line
+            )
             result.append(Message(role=Role.SYSTEM, content=prompt_with_time))
 
         # Get messages that fit (with truncation if needed)

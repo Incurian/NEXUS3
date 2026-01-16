@@ -213,7 +213,8 @@ class StdioTransport(MCPTransport):
                 text = line.decode(errors="replace").rstrip()
                 if text:
                     logger.debug("MCP stderr [%s]: %s", self._command[0], text)
-            except Exception:
+            except Exception as e:
+                logger.debug("Stderr reader stopped: %s", e)
                 break
 
     async def send(self, message: dict[str, Any]) -> None:
@@ -314,8 +315,8 @@ class StdioTransport(MCPTransport):
                 try:
                     self._process.stdin.close()
                     await self._process.stdin.wait_closed()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Stdin close error (expected during shutdown): %s", e)
 
             # Give it a moment to exit
             try:

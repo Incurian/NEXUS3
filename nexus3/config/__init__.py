@@ -1,5 +1,6 @@
 """Configuration loading and validation."""
 
+from nexus3.config.load_utils import load_json_file
 from nexus3.config.loader import DEFAULT_CONFIG, DEFAULTS_DIR, load_config
 from nexus3.config.schema import (
     AuthMethod,
@@ -22,4 +23,5 @@ __all__ = [
     "ProviderConfig",
     "ToolPermissionConfig",
     "load_config",
+    "load_json_file",
 ]

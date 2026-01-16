@@ -24,3 +24,21 @@ class PathSecurityError(NexusError):
         self.path = path
         self.reason = reason
         super().__init__(f"Path security violation for '{path}': {reason}")
+
+
+class LoadError(NexusError):
+    """Base class for loading errors (config, context, files)."""
+
+    pass
+
+
+class ContextLoadError(LoadError):
+    """Context loading issues (JSON, validation, merging)."""
+
+    pass
+
+
+class MCPConfigError(ContextLoadError):
+    """MCP server configuration errors."""
+
+    pass

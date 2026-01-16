@@ -93,7 +93,7 @@ class TestFormatMessagesForSummary:
         # Note: tool calls are appended with \n (single newline) per tool call,
         # then entire message block is joined with \n\n
         assert "ASSISTANT: Let me read that file" in result
-        assert '\u2192 read_file({"path": "/tmp/test.txt"})' in result
+        assert '-> read_file(' in result  # Tool call with redacted args
 
     def test_message_with_multiple_tool_calls(self):
         """Test assistant message with multiple tool calls."""
@@ -111,7 +111,7 @@ class TestFormatMessagesForSummary:
         result = format_messages_for_summary(messages)
         assert "read_file" in result
         assert "write_file" in result
-        assert result.count("\u2192") == 2  # Two tool calls
+        assert result.count("->") == 2  # Two tool calls
 
     def test_full_conversation_with_tools(self):
         """Test a realistic conversation with tool usage."""

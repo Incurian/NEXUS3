@@ -248,6 +248,15 @@ class CompactionConfig(BaseModel):
     trigger_threshold: float = 0.9
     """Compact when context exceeds this ratio of available budget."""
 
+    redact_secrets: bool = Field(
+        default=True,
+        description=(
+            "Redact secrets (API keys, passwords, tokens) from conversation "
+            "history before sending to the summarization LLM."
+        ),
+    )
+    """Whether to redact secrets before summarization."""
+
 
 class ContextConfig(BaseModel):
     """Configuration for context loading.
@@ -275,8 +284,11 @@ class ContextConfig(BaseModel):
         description="Always include README.md in context alongside NEXUS.md",
     )
     readme_as_fallback: bool = Field(
-        default=True,
-        description="Use README.md as context when no NEXUS.md exists",
+        default=False,
+        description=(
+            "Use README.md as context when no NEXUS.md exists. "
+            "Opt-in for security: READMEs may contain untrusted content."
+        ),
     )
 
 
@@ -355,6 +367,15 @@ class MCPServerConfig(BaseModel):
 
     enabled: bool = True
     """Whether this server is enabled."""
+
+    @model_validator(mode="after")
+    def validate_transport(self) -> "MCPServerConfig":
+        """Ensure exactly one of command or url is set."""
+        if self.command and self.url:
+            raise ValueError("MCPServerConfig: Cannot specify both 'command' and 'url'")
+        if not self.command and not self.url:
+            raise ValueError("MCPServerConfig: Must specify either 'command' or 'url'")
+        return self
 
 
 class ResolvedModel:

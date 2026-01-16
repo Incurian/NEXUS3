@@ -106,8 +106,8 @@ class MCPClient:
                 # Try to clean up transport
                 try:
                     await self._transport.close()
-                except Exception:
-                    pass
+                except Exception as cleanup_err:
+                    logger.warning("Failed to close transport during timeout cleanup: %s", cleanup_err)
                 raise MCPError(f"MCP connection timed out after {timeout}s")
         else:
             await _do_connect()
