@@ -13,6 +13,7 @@ Usage:
 
 from typing import Any
 
+from nexus3.core.identifiers import build_mcp_skill_name
 from nexus3.core.types import ToolResult
 from nexus3.core.validation import validate_tool_arguments
 from nexus3.mcp.client import MCPClient
@@ -41,7 +42,7 @@ class MCPSkillAdapter(BaseSkill):
         self._original_name = tool.name
         self._server_name = server_name
 
-        prefixed_name = f"mcp_{server_name}_{tool.name}"
+        prefixed_name = build_mcp_skill_name(server_name, tool.name)
         super().__init__(
             name=prefixed_name,
             description=tool.description,

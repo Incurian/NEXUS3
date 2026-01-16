@@ -824,7 +824,7 @@ All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env s
 
 ---
 
-## In Progress: Sprint 3 — P2 Security Hardening
+## Completed: Sprint 3 — P2 Security Hardening + Architecture ✅
 
 **Goal:** Close medium-severity gaps, establish core security primitives.
 
@@ -887,10 +887,26 @@ All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env s
 - **Fix:** Added `MAX_ERROR_BODY_SIZE=10KB` constant. Both streaming and non-streaming error paths now truncate error bodies to prevent memory exhaustion from malicious/buggy providers.
 - **Test:** `tests/security/test_p2_provider_error_caps.py` (13 tests)
 
-### Remaining Sprint 3 Items
-- Arch A1/A2: Tool identifiers and PathDecisionEngine
+### Arch A1: Canonical Tool Identifiers ✅
+- **Location:** `core/identifiers.py` (new module)
+- **Features:**
+  - `validate_tool_name()` - strict validation with detailed error messages
+  - `normalize_tool_name()` - safe normalization of external input (MCP, config)
+  - `build_mcp_skill_name()` - canonical MCP skill name construction
+  - Unicode normalization, reserved name protection, length limits
+- **Applied to:** `mcp/skill_adapter.py`, `skill/registry.py`
+- **Test:** `tests/security/test_arch_a1_identifiers.py` (121 tests)
 
-**Sprint 3 Test Count (so far):** 133 new P2 tests, 291 total security tests passing
+### Arch A2: PathDecisionEngine ✅
+- **Location:** `core/path_decision.py` (new module)
+- **Features:**
+  - `PathDecisionEngine` - authoritative path access decisions with explicit results
+  - `PathDecision` - result dataclass with reason, detail, matched_rule
+  - `PathDecisionReason` - enum for decision explanations
+  - `from_services()` factory for ServiceContainer integration
+- **Test:** `tests/security/test_arch_a2_path_decision.py` (69 tests)
+
+**Sprint 3 Test Count:** 190 new Arch tests + 133 P2 tests = 323 new tests, 481 total security tests, 1767 total passing
 
 ---
 
