@@ -1,18 +1,47 @@
-"""Append file skill for appending content to files."""
+"""Append file skill for appending content to files.
+
+P2.6 SECURITY: Uses true append mode (O_APPEND) to avoid race conditions.
+Previous implementation read entire file, concatenated, and rewrote - which
+had a TOCTOU race window where concurrent modifications could be lost.
+"""
 
 import asyncio
+import os
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import atomic_write_text
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
+
+
+def _needs_newline_prefix(filepath: os.PathLike[str]) -> bool:
+    """Check if file exists and doesn't end with newline.
+
+    Only reads the last byte (or few bytes for UTF-8 edge cases) to be efficient.
+
+    Returns:
+        True if a newline should be prepended before appending.
+    """
+    try:
+        size = os.path.getsize(filepath)
+        if size == 0:
+            return False  # Empty file - no newline needed
+
+        # Read just the last few bytes to check for newline
+        # (UTF-8 newline is single byte, but be safe)
+        with open(filepath, "rb") as f:
+            f.seek(max(0, size - 4))
+            tail = f.read()
+            return not tail.endswith(b"\n")
+    except (OSError, IOError):
+        return False  # Can't read - will be handled by append
 
 
 class AppendFileSkill(FileSkill):
     """Skill that appends content to a file.
 
-    More atomic than read+concat+write, with smart newline handling.
+    P2.6 SECURITY: Uses true append mode (open with 'a') which is atomic at
+    the OS level and avoids race conditions from read+concat+write.
 
     Inherits path validation from FileSkill.
     """
@@ -57,7 +86,11 @@ class AppendFileSkill(FileSkill):
         newline: bool = True,
         **kwargs: Any
     ) -> ToolResult:
-        """Append content to file.
+        """Append content to file using true append mode.
+
+        P2.6 SECURITY: Uses OS-level append mode to avoid race conditions.
+        The previous implementation that read/concatenated/wrote had a TOCTOU
+        window where concurrent modifications could be lost.
 
         Args:
             path: The path to the file to append to
@@ -78,18 +111,16 @@ class AppendFileSkill(FileSkill):
             p = self._validate_path(path)
 
             def do_append() -> int:
-                # Read existing content (or empty if new file)
-                existing = ""
-                if p.exists():
-                    existing = p.read_text(encoding="utf-8")
-
-                # Smart newline handling
+                # Smart newline handling - only read last byte, not entire file
                 to_write = content
-                if newline and existing and not existing.endswith("\n"):
+                if newline and p.exists() and _needs_newline_prefix(p):
                     to_write = "\n" + content
 
-                # Append to file atomically (temp file + rename)
-                atomic_write_text(p, existing + to_write)
+                # P2.6 FIX: Use true append mode instead of read+rewrite
+                # This is atomic at the OS level and avoids race conditions
+                with open(p, "a", encoding="utf-8") as f:
+                    f.write(to_write)
+
                 return len(to_write)
 
             chars_written = await asyncio.to_thread(do_append)

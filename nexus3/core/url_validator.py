@@ -1,4 +1,23 @@
-"""SSRF protection module for validating URLs before HTTP requests."""
+"""SSRF protection module for validating URLs before HTTP requests.
+
+SECURITY: This module validates URLs against SSRF attacks by checking resolved
+IP addresses against blocked ranges (private networks, cloud metadata, etc.).
+
+KNOWN LIMITATION (P2.2): DNS rebinding / TOCTOU
+    This validation is subject to Time-of-Check-to-Time-of-Use (TOCTOU) issues.
+    A malicious DNS server could return a safe IP during validation, then a
+    dangerous IP (e.g., 169.254.169.254) during the actual HTTP request.
+
+    Mitigations in place:
+    1. ALL returned DNS addresses are validated (not just the first one)
+    2. DNS results with ANY private IP are blocked
+    3. Short-lived DNS cache entries are assumed (typical TTL < 5 minutes)
+
+    For higher security requirements, consider:
+    - Using IP pinning (connect to resolved IP directly)
+    - Network-level egress filtering
+    - Running in isolated network namespace
+"""
 
 import ipaddress
 import socket
@@ -99,16 +118,20 @@ def _is_blocked(
     return False, ""
 
 
-def validate_url(url: str, allow_localhost: bool = True) -> str:
+def validate_url(url: str, allow_localhost: bool = False) -> str:
     """Validate URL is safe for HTTP requests.
 
     Prevents Server-Side Request Forgery (SSRF) attacks by validating
     that URLs don't point to internal services, cloud metadata endpoints,
     or other blocked destinations.
 
+    P2.1 SECURITY: Default changed to allow_localhost=False for safe-by-default.
+    Callers that need localhost access (e.g., NexusSkill connecting to local
+    server) must explicitly pass allow_localhost=True.
+
     Args:
         url: URL to validate
-        allow_localhost: Whether to allow localhost URLs (default True)
+        allow_localhost: Whether to allow localhost URLs (default False)
 
     Returns:
         The validated URL (may be normalized)

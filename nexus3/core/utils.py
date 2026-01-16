@@ -13,8 +13,18 @@ from nexus3.core.constants import NEXUS_DIR_NAME
 def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Recursively merge dicts. Override values take precedence.
 
+    P2.14 SECURITY: Lists are now REPLACED, not extended. This is critical for
+    security-related keys like `blocked_paths` and `disabled_tools`. For example:
+    - Global: `blocked_paths: ["/etc"]`
+    - Local:  `blocked_paths: []`
+    - Result: `[]` (local replaces global)
+
+    If lists were extended, local config couldn't override/clear global lists,
+    which breaks the principle that more specific config takes precedence.
+
+    Merge rules:
     - Dicts are recursively merged
-    - Lists are extended (not replaced)
+    - Lists are REPLACED (override wins completely)
     - Other values are overwritten
 
     Args:
@@ -28,9 +38,9 @@ def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]
     for key, value in override.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
             result[key] = deep_merge(result[key], value)
-        elif key in result and isinstance(result[key], list) and isinstance(value, list):
-            result[key] = result[key] + value
         else:
+            # P2.14 FIX: Lists (and all other types) are replaced, not extended
+            # This ensures local config can override security-related lists
             result[key] = value
     return result
 

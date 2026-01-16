@@ -47,7 +47,11 @@ class PathResolver:
         must_exist: bool = False,
         must_be_dir: bool = False,
     ) -> Path:
-        """Resolve path relative to agent's cwd, validate against allowed_paths.
+        """Resolve path relative to agent's cwd, validate against allowed/blocked paths.
+
+        P2.3 SECURITY: blocked_paths are always enforced and take precedence over
+        allowed_paths. This ensures sensitive paths can never be accessed even if
+        they would otherwise be within allowed_paths.
 
         Args:
             path: Path string or Path object to resolve.
@@ -69,13 +73,17 @@ class PathResolver:
         if not p.is_absolute():
             p = agent_cwd / p
 
-        # 3. Get per-tool allowed_paths
-        allowed = self._services.get_tool_allowed_paths(tool_name) if tool_name else None
+        # 3. Get per-tool allowed_paths (or default allowed_paths if no tool specified)
+        # P2.4 FIX: Always check allowed_paths, even when tool_name is None
+        allowed = self._services.get_tool_allowed_paths(tool_name)
 
-        # 4. Validate via validate_path (follows symlinks, checks containment)
-        resolved = validate_path(p, allowed_paths=allowed)
+        # 4. Get blocked_paths (P2.3: always enforced)
+        blocked = self._services.get_blocked_paths()
 
-        # 5. Existence checks
+        # 5. Validate via validate_path (follows symlinks, checks containment)
+        resolved = validate_path(p, allowed_paths=allowed, blocked_paths=blocked or None)
+
+        # 6. Existence checks
         if must_exist and not resolved.exists():
             raise PathSecurityError(str(path), f"Path not found: {path}")
         if must_be_dir and not resolved.is_dir():

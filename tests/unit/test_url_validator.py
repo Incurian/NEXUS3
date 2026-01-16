@@ -46,58 +46,62 @@ class TestUrlSecurityError:
 
 
 class TestValidateUrlWithLocalhostAllowed:
-    """Tests for validate_url() with allow_localhost=True (default)."""
+    """Tests for validate_url() with allow_localhost=True (explicit).
+
+    Note: P2.1 changed the default to allow_localhost=False, so these tests
+    must explicitly pass allow_localhost=True.
+    """
 
     def test_allows_127_0_0_1(self):
         """http://127.0.0.1:8080 is allowed with localhost enabled."""
-        result = validate_url("http://127.0.0.1:8080")
+        result = validate_url("http://127.0.0.1:8080", allow_localhost=True)
         assert result == "http://127.0.0.1:8080"
 
     def test_allows_localhost_hostname(self):
         """http://localhost:8080 is allowed with localhost enabled."""
-        result = validate_url("http://localhost:8080")
+        result = validate_url("http://localhost:8080", allow_localhost=True)
         assert result == "http://localhost:8080"
 
     def test_allows_https_localhost(self):
         """https://localhost:8080 is allowed with localhost enabled."""
-        result = validate_url("https://localhost:8080")
+        result = validate_url("https://localhost:8080", allow_localhost=True)
         assert result == "https://localhost:8080"
 
     def test_blocks_cloud_metadata_ip(self):
-        """Cloud metadata IP 169.254.169.254 is ALWAYS blocked."""
+        """Cloud metadata IP 169.254.169.254 is ALWAYS blocked, even with localhost allowed."""
         with pytest.raises(UrlSecurityError) as exc_info:
-            validate_url("http://169.254.169.254")
+            validate_url("http://169.254.169.254", allow_localhost=True)
 
         assert exc_info.value.url == "http://169.254.169.254"
         assert "cloud metadata" in exc_info.value.reason.lower()
 
     def test_blocks_cloud_metadata_with_path(self):
-        """Cloud metadata with path is blocked."""
+        """Cloud metadata with path is blocked, even with localhost allowed."""
         with pytest.raises(UrlSecurityError) as exc_info:
-            validate_url("http://169.254.169.254/latest/meta-data/")
+            validate_url("http://169.254.169.254/latest/meta-data/", allow_localhost=True)
 
         assert "cloud metadata" in exc_info.value.reason.lower()
 
     def test_blocks_private_network_10_x(self):
-        """Private network 10.0.0.0/8 is blocked."""
+        """Private network 10.0.0.0/8 is blocked, even with localhost allowed."""
         with pytest.raises(UrlSecurityError) as exc_info:
-            validate_url("http://10.0.0.1")
+            validate_url("http://10.0.0.1", allow_localhost=True)
 
         assert exc_info.value.url == "http://10.0.0.1"
         assert "blocked range" in exc_info.value.reason.lower()
 
     def test_blocks_private_network_172_16_x(self):
-        """Private network 172.16.0.0/12 is blocked."""
+        """Private network 172.16.0.0/12 is blocked, even with localhost allowed."""
         with pytest.raises(UrlSecurityError) as exc_info:
-            validate_url("http://172.16.0.1")
+            validate_url("http://172.16.0.1", allow_localhost=True)
 
         assert exc_info.value.url == "http://172.16.0.1"
         assert "blocked range" in exc_info.value.reason.lower()
 
     def test_blocks_private_network_192_168_x(self):
-        """Private network 192.168.0.0/16 is blocked."""
+        """Private network 192.168.0.0/16 is blocked, even with localhost allowed."""
         with pytest.raises(UrlSecurityError) as exc_info:
-            validate_url("http://192.168.1.1")
+            validate_url("http://192.168.1.1", allow_localhost=True)
 
         assert exc_info.value.url == "http://192.168.1.1"
         assert "blocked range" in exc_info.value.reason.lower()
@@ -105,7 +109,7 @@ class TestValidateUrlWithLocalhostAllowed:
     def test_rejects_invalid_scheme_ftp(self):
         """FTP scheme is rejected."""
         with pytest.raises(UrlSecurityError) as exc_info:
-            validate_url("ftp://localhost")
+            validate_url("ftp://localhost", allow_localhost=True)
 
         assert "invalid scheme" in exc_info.value.reason.lower()
         assert "ftp" in exc_info.value.reason.lower()
@@ -113,7 +117,7 @@ class TestValidateUrlWithLocalhostAllowed:
     def test_rejects_invalid_scheme_file(self):
         """File scheme is rejected."""
         with pytest.raises(UrlSecurityError) as exc_info:
-            validate_url("file:///etc/passwd")
+            validate_url("file:///etc/passwd", allow_localhost=True)
 
         assert "invalid scheme" in exc_info.value.reason.lower()
 
@@ -172,17 +176,17 @@ class TestValidateUrlEdgeCases:
 
     def test_url_with_port_number(self):
         """URL with port number works correctly."""
-        result = validate_url("http://127.0.0.1:9999")
+        result = validate_url("http://127.0.0.1:9999", allow_localhost=True)
         assert result == "http://127.0.0.1:9999"
 
     def test_url_with_path(self):
         """URL with path is validated and returned."""
-        result = validate_url("http://localhost:8080/api/v1/status")
+        result = validate_url("http://localhost:8080/api/v1/status", allow_localhost=True)
         assert result == "http://localhost:8080/api/v1/status"
 
     def test_url_with_query_string(self):
         """URL with query string is validated and returned."""
-        result = validate_url("http://localhost:8080/search?q=test&page=1")
+        result = validate_url("http://localhost:8080/search?q=test&page=1", allow_localhost=True)
         assert result == "http://localhost:8080/search?q=test&page=1"
 
     def test_dns_resolution_failure(self):
@@ -217,9 +221,9 @@ class TestValidateUrlEdgeCases:
         assert "localhost not allowed" in exc_info.value.reason.lower()
 
     def test_blocks_link_local_range(self):
-        """Link-local addresses (169.254.x.x) are blocked."""
+        """Link-local addresses (169.254.x.x) are blocked, even with localhost allowed."""
         with pytest.raises(UrlSecurityError) as exc_info:
-            validate_url("http://169.254.1.1")
+            validate_url("http://169.254.1.1", allow_localhost=True)
 
         assert "blocked range" in exc_info.value.reason.lower()
 
@@ -259,12 +263,12 @@ class TestValidateUrlEdgeCases:
     def test_handles_uppercase_scheme(self):
         """URL with uppercase scheme is handled."""
         # Note: urlparse lowercases the scheme
-        result = validate_url("HTTP://localhost:8080")
+        result = validate_url("HTTP://localhost:8080", allow_localhost=True)
         assert result == "HTTP://localhost:8080"
 
     def test_handles_mixed_case_localhost(self):
         """Mixed case 'LocalHost' is recognized."""
-        result = validate_url("http://LocalHost:8080")
+        result = validate_url("http://LocalHost:8080", allow_localhost=True)
         assert result == "http://LocalHost:8080"
 
 

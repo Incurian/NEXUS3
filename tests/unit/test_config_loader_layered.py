@@ -28,12 +28,16 @@ class TestDeepMerge:
         result = deep_merge(base, override)
         assert result == {"provider": {"model": "b", "type": "openrouter"}}
 
-    def test_list_extension(self) -> None:
-        """Test lists are concatenated."""
+    def test_list_replacement(self) -> None:
+        """Test lists are REPLACED (not concatenated).
+
+        P2.14 SECURITY: Lists must be replaced to allow local config to
+        override global security settings like blocked_paths.
+        """
         base = {"items": [1, 2]}
         override = {"items": [3, 4]}
         result = deep_merge(base, override)
-        assert result == {"items": [1, 2, 3, 4]}
+        assert result == {"items": [3, 4]}
 
 
 class TestAncestorDiscovery:

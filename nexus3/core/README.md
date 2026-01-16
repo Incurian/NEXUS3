@@ -71,7 +71,11 @@ Cooperative cancellation with `is_cancelled`, `cancel()`, `raise_if_cancelled()`
 - `atomic_write_text()`: Atomic file writes
 
 ### `url_validator.py` - SSRF Protection
-- `validate_url(url, allow_localhost=True)`: Blocks private IPs, metadata endpoints
+- `validate_url(url, allow_localhost=False)`: Blocks private IPs, metadata endpoints
+  - P2.1: Default is now `allow_localhost=False` (safe-by-default)
+  - Callers needing localhost must explicitly pass `allow_localhost=True`
+  - P2.2: Known limitation: DNS rebinding/TOCTOU is documented (see module docstring)
+    - Mitigated by validating ALL DNS results, not just the first
 - `UrlSecurityError`
 
 ### `permissions.py` - Agent Permissions (Aggregator)

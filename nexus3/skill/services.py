@@ -185,19 +185,23 @@ class ServiceContainer:
 
         return None
 
-    def get_tool_allowed_paths(self, tool_name: str) -> list[Path] | None:
+    def get_tool_allowed_paths(self, tool_name: str | None = None) -> list[Path] | None:
         """Get effective allowed_paths for a specific tool.
 
         Resolves per-tool path overrides from ToolPermission, falling back
         to the general allowed_paths from the permission policy.
 
+        P2.4 SECURITY: This method should be called even when tool_name is None
+        to ensure the general allowed_paths are still enforced.
+
         Resolution order:
-        1. Check permissions.tool_permissions[tool_name].allowed_paths
+        1. Check permissions.tool_permissions[tool_name].allowed_paths (if tool_name given)
         2. If None (or no override), use permissions.effective_policy.allowed_paths
         3. If no permissions registered, fall back to "allowed_paths" service (for tests)
 
         Args:
-            tool_name: The tool name to get allowed paths for.
+            tool_name: The tool name to get allowed paths for. If None, returns
+                       general allowed_paths (not per-tool overrides).
 
         Returns:
             List of allowed Path objects, or None for unrestricted access.
@@ -209,10 +213,29 @@ class ServiceContainer:
             # Fallback for tests that don't set up full permissions
             return self.get("allowed_paths")
 
-        # Check for per-tool override
-        tool_perm = permissions.tool_permissions.get(tool_name)
-        if tool_perm is not None and tool_perm.allowed_paths is not None:
-            return tool_perm.allowed_paths
+        # Check for per-tool override (only if tool_name provided)
+        if tool_name is not None:
+            tool_perm = permissions.tool_permissions.get(tool_name)
+            if tool_perm is not None and tool_perm.allowed_paths is not None:
+                return tool_perm.allowed_paths
 
         # Fall back to general allowed_paths from policy
         return permissions.effective_policy.allowed_paths
+
+    def get_blocked_paths(self) -> list[Path]:
+        """Get blocked paths from agent's permissions.
+
+        P2.3 SECURITY: Blocked paths are ALWAYS enforced regardless of allowed_paths.
+        This provides a deny-list that takes precedence over any allow-list.
+
+        Returns:
+            List of blocked Path objects, or empty list if none configured.
+        """
+        permissions: "AgentPermissions | None" = self.get("permissions")
+
+        if permissions is None:
+            # Fallback for tests that don't set up full permissions
+            blocked = self.get("blocked_paths")
+            return blocked if blocked is not None else []
+
+        return permissions.effective_policy.blocked_paths
