@@ -38,28 +38,27 @@ from rich.live import Live
 _current_live: ContextVar[Live | None] = ContextVar("_current_live", default=None)
 
 from nexus3.cli import repl_commands
-from nexus3.cli.keys import KeyMonitor, pause_key_monitor, resume_key_monitor
+from nexus3.cli.confirmation_ui import confirm_tool_action, format_tool_params
+from nexus3.cli.keys import KeyMonitor
 from nexus3.cli.lobby import LobbyChoice, show_lobby
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands import core as unified_cmd
 from nexus3.commands.protocol import CommandContext, CommandOutput
 from nexus3.commands.protocol import CommandResult as CmdResult
 from nexus3.config.loader import load_config
-from nexus3.context import ContextLoader
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
-from nexus3.core.permissions import ConfirmationResult, load_custom_presets_from_config
+from nexus3.core.permissions import ConfirmationResult
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.core.types import ToolCall
 from nexus3.display import Activity, StreamingDisplay, get_console
 from nexus3.display.streaming import ToolState
 from nexus3.display.theme import load_theme
-from nexus3.provider import ProviderRegistry
 from nexus3.rpc.auth import ServerTokenManager
+from nexus3.rpc.bootstrap import bootstrap_server_components
 from nexus3.rpc.detection import DetectionResult, detect_server
-from nexus3.rpc.global_dispatcher import GlobalDispatcher
 from nexus3.rpc.http import run_http_server
-from nexus3.rpc.pool import AgentConfig, AgentPool, SharedComponents, generate_temp_id
+from nexus3.rpc.pool import AgentConfig, generate_temp_id
 from nexus3.session import LogStream, SessionManager
 from nexus3.session.persistence import (
     SavedSession,
@@ -72,211 +71,6 @@ configure_stdio()
 
 # Load .env file if present
 load_dotenv()
-
-
-def format_tool_params(arguments: dict, max_length: int = 70) -> str:
-    """Format tool arguments as a truncated string for display.
-
-    Prioritizes path/file arguments (shown first, not truncated individually).
-    Other arguments are truncated if needed.
-
-    Args:
-        arguments: Tool call arguments dictionary.
-        max_length: Maximum length of output string (default 70).
-
-    Returns:
-        Formatted string like 'path=/foo/bar, content="hello..."' truncated to max_length.
-    """
-    if not arguments:
-        return ""
-
-    # Priority keys shown first and not individually truncated
-    priority_keys = ("path", "file", "file_path", "directory", "dir", "cwd", "agent_id")
-    parts = []
-
-    # Add priority arguments first (full value)
-    for key in priority_keys:
-        if key in arguments and arguments[key]:
-            value = str(arguments[key])
-            parts.append(f"{key}={value}")
-
-    # Add remaining arguments (truncated if needed)
-    for key, value in arguments.items():
-        if key in priority_keys or value is None:
-            continue
-        str_val = str(value)
-        # Truncate long non-priority values
-        if len(str_val) > 30:
-            str_val = str_val[:27] + "..."
-        # Quote strings that contain spaces
-        if isinstance(value, str) and " " in str_val:
-            str_val = f'"{str_val}"'
-        parts.append(f"{key}={str_val}")
-
-    result = ", ".join(parts)
-
-    # Truncate overall result (but this should rarely happen with priority keys first)
-    if len(result) > max_length:
-        result = result[: max_length - 3] + "..."
-
-    return result
-
-
-async def confirm_tool_action(
-    tool_call: ToolCall, target_path: Path | None, agent_cwd: Path
-) -> ConfirmationResult:
-    """Prompt user for confirmation of destructive action with allow once/always options.
-
-    This callback is invoked by Session when a tool requires user confirmation
-    (based on permission level). It shows different options based on tool type:
-
-    For write operations (write_file, edit_file):
-        [1] Allow once
-        [2] Allow always for this file
-        [3] Allow always in this directory
-        [4] Deny
-
-    For execution operations (bash, run_python):
-        [1] Allow once
-        [2] Allow always in current directory
-        [3] Allow always (global)
-        [4] Deny
-
-    Args:
-        tool_call: The tool call requiring confirmation.
-        target_path: The path being accessed (for write ops) or None.
-        agent_cwd: The agent's working directory (for accurate preview display).
-
-    Returns:
-        ConfirmationResult indicating user's decision.
-    """
-    console = get_console()
-    tool_name = tool_call.name
-
-    # Determine tool type for appropriate prompting
-    is_exec_tool = tool_name in ("bash_safe", "shell_UNSAFE", "run_python")
-    is_shell_unsafe = tool_name == "shell_UNSAFE"  # Always requires per-use approval
-    is_nexus_tool = tool_name.startswith("nexus_")
-    is_mcp_tool = tool_name.startswith("mcp_")
-
-    # Pause the Live display during confirmation to prevent visual conflicts
-    live = _current_live.get()
-    if live is not None:
-        live.stop()
-
-    # Pause KeyMonitor so it stops consuming stdin and restores terminal mode
-    pause_key_monitor()
-    # Give KeyMonitor time to pause and restore terminal
-    await asyncio.sleep(0.15)
-
-    try:
-        # Build description based on tool type
-        if is_mcp_tool:
-            # Extract server name from mcp_{server}_{tool} format
-            parts = tool_name.split("_", 2)
-            server_name = parts[1] if len(parts) > 1 else "unknown"
-            args_preview = str(tool_call.arguments)[:60]
-            if len(str(tool_call.arguments)) > 60:
-                args_preview += "..."
-            console.print(f"\n[yellow]Allow MCP tool '{tool_name}'?[/]")
-            console.print(f"  [dim]Server:[/] {server_name}")
-            console.print(f"  [dim]Arguments:[/] {args_preview}")
-        elif is_exec_tool:
-            # Use agent's cwd as default, not process cwd
-            cwd = tool_call.arguments.get("cwd", str(agent_cwd))
-            command = tool_call.arguments.get("command", tool_call.arguments.get("code", ""))
-            preview = command[:50] + "..." if len(command) > 50 else command
-            console.print(f"\n[yellow]Execute {tool_name}?[/]")
-            console.print(f"  [dim]Command:[/] {preview}")
-            console.print(f"  [dim]Directory:[/] {cwd}")
-        elif is_nexus_tool:
-            # Nexus tools use agent_id instead of path
-            agent_id = tool_call.arguments.get("agent_id", "unknown")
-            console.print(f"\n[yellow]Allow {tool_name}?[/]")
-            console.print(f"  [dim]Agent:[/] {agent_id}")
-        else:
-            path_str = str(target_path) if target_path else tool_call.arguments.get("path", "unknown")
-            console.print(f"\n[yellow]Allow {tool_name}?[/]")
-            console.print(f"  [dim]Path:[/] {path_str}")
-
-        # Show options based on tool type
-        console.print()
-        if is_mcp_tool:
-            console.print("  [cyan][1][/] Allow once")
-            console.print("  [cyan][2][/] Allow this tool always (this session)")
-            console.print("  [cyan][3][/] Allow all tools from this server (this session)")
-            console.print("  [cyan][4][/] Deny")
-        elif is_shell_unsafe:
-            # shell_UNSAFE always requires per-use approval - no "allow always" options
-            console.print("  [cyan][1][/] Allow once")
-            console.print("  [cyan][2][/] Deny")
-            console.print("  [dim](shell_UNSAFE requires approval each time)[/]")
-        elif is_exec_tool:
-            # bash_safe and run_python allow directory scope but not global
-            console.print("  [cyan][1][/] Allow once")
-            console.print("  [cyan][2][/] Allow always in this directory")
-            console.print("  [cyan][3][/] Deny")
-        else:
-            console.print("  [cyan][1][/] Allow once")
-            console.print("  [cyan][2][/] Allow always for this file")
-            console.print("  [cyan][3][/] Allow always in this directory")
-            console.print("  [cyan][4][/] Deny")
-
-        # Use asyncio.to_thread for blocking input to allow event loop to continue
-        def get_input() -> str:
-            try:
-                if is_shell_unsafe:
-                    prompt = "\n[dim]Choice [1-2]:[/] "
-                elif is_exec_tool:
-                    prompt = "\n[dim]Choice [1-3]:[/] "
-                else:
-                    prompt = "\n[dim]Choice [1-4]:[/] "
-                return console.input(prompt).strip()
-            except (EOFError, KeyboardInterrupt):
-                return ""
-
-        response = await asyncio.to_thread(get_input)
-
-        # shell_UNSAFE only has 2 options: 1=allow once, 2=deny
-        if is_shell_unsafe:
-            if response == "1":
-                return ConfirmationResult.ALLOW_ONCE
-            else:
-                return ConfirmationResult.DENY
-
-        # bash_safe and run_python have 3 options: 1=allow once, 2=allow directory, 3=deny
-        if is_exec_tool:
-            if response == "1":
-                return ConfirmationResult.ALLOW_ONCE
-            elif response == "2":
-                return ConfirmationResult.ALLOW_EXEC_CWD
-            else:
-                return ConfirmationResult.DENY
-
-        if response == "1":
-            return ConfirmationResult.ALLOW_ONCE
-        elif response == "2":
-            if is_mcp_tool:
-                # "Allow this tool always" - we use ALLOW_FILE to signal tool-level
-                return ConfirmationResult.ALLOW_FILE
-            else:
-                return ConfirmationResult.ALLOW_FILE
-        elif response == "3":
-            if is_mcp_tool:
-                # "Allow all tools from this server"
-                return ConfirmationResult.ALLOW_EXEC_GLOBAL
-            else:
-                return ConfirmationResult.ALLOW_WRITE_DIRECTORY
-        else:
-            return ConfirmationResult.DENY
-
-    finally:
-        # Resume KeyMonitor (restores cbreak mode)
-        resume_key_monitor()
-
-        # Resume Live display after confirmation
-        if live is not None:
-            live.start()
 
 
 def parse_args() -> argparse.Namespace:
@@ -603,48 +397,23 @@ async def run_repl(
 
     # Config already loaded above for port resolution
 
-    # Create provider (shared across all agents)
-    # Create provider registry (lazy-creates providers on first use)
-    provider_registry = ProviderRegistry(config)
-
     # Configure logging streams based on CLI flags
-    streams = LogStream.CONTEXT  # Always on for basic functionality
+    log_streams = LogStream.CONTEXT  # Always on for basic functionality
     if verbose:
-        streams |= LogStream.VERBOSE
+        log_streams |= LogStream.VERBOSE
     if raw_log:
-        streams |= LogStream.RAW
+        log_streams |= LogStream.RAW
 
     # Base log directory
     base_log_dir = log_dir or Path(".nexus3/logs")
 
-    # Load custom presets from config
-    custom_presets = load_custom_presets_from_config(
-        {k: v.model_dump() for k, v in config.permissions.presets.items()}
-    )
-
-    # Load base context for subagent inheritance
-    context_loader = ContextLoader(context_config=config.context)
-    base_context = context_loader.load(is_repl=True)
-
-    # Create shared components for the AgentPool
-    shared = SharedComponents(
+    # Bootstrap server components (D5: unified bootstrap)
+    pool, global_dispatcher, shared = await bootstrap_server_components(
         config=config,
-        provider_registry=provider_registry,
         base_log_dir=base_log_dir,
-        base_context=base_context,
-        context_loader=context_loader,
-        log_streams=streams,
-        custom_presets=custom_presets,
+        log_streams=log_streams,
+        is_repl=True,
     )
-
-    # Create agent pool
-    pool = AgentPool(shared)
-
-    # Create global dispatcher for agent management
-    global_dispatcher = GlobalDispatcher(pool)
-
-    # Wire pool and dispatcher for in-process AgentAPI (bypasses HTTP loopback)
-    pool.set_global_dispatcher(global_dispatcher)
 
     # Generate fresh token (we've confirmed no server is running, so any existing token is stale)
     token_manager = ServerTokenManager(port=effective_port)
@@ -652,6 +421,19 @@ async def run_repl(
 
     # Create session manager for auto-restore of saved sessions
     session_manager = SessionManager()
+
+    # Per-REPL pause event for key monitor (E4: replace global state)
+    key_monitor_pause = asyncio.Event()
+
+    # Closure that captures the per-REPL event for confirmation callbacks
+    async def confirm_with_pause(
+        tool_call: ToolCall,
+        target_path: Path | None,
+        agent_cwd: Path,
+    ) -> ConfirmationResult:
+        return await confirm_tool_action(
+            tool_call, target_path, agent_cwd, key_monitor_pause
+        )
 
     # =========================================================================
     # Phase 6: Lobby mode - determine startup mode based on CLI flags
@@ -732,7 +514,7 @@ async def run_repl(
                 return
 
     # Wire up confirmation callback for main agent
-    main_agent.session.on_confirm = confirm_tool_action
+    main_agent.session.on_confirm = confirm_with_pause
 
     # Helper to get permission data from an agent
     def get_permission_data(agent: object) -> tuple[str, str | None, list[str]]:
@@ -1186,7 +968,7 @@ async def run_repl(
                             session.on_batch_progress = on_batch_progress
                             session.on_batch_halt = on_batch_halt
                             session.on_batch_complete = on_batch_complete
-                            session.on_confirm = confirm_tool_action
+                            session.on_confirm = confirm_with_pause
                             # Update last session on switch
                             save_as_last_session(current_agent_id)
                             if not was_whisper:
@@ -1230,7 +1012,7 @@ async def run_repl(
                                     new_agent = pool.get(agent_name_to_restore)
                                     if new_agent:
                                         # Wire up confirmation callback
-                                        new_agent.session.on_confirm = confirm_tool_action
+                                        new_agent.session.on_confirm = confirm_with_pause
                                         restored_msgs = deserialize_messages(saved.messages)
                                         for msg in restored_msgs:
                                             new_agent.context._messages.append(msg)
@@ -1279,7 +1061,7 @@ async def run_repl(
                                         config=agent_config,
                                     )
                                     # Wire up confirmation callback
-                                    new_agent.session.on_confirm = confirm_tool_action
+                                    new_agent.session.on_confirm = confirm_with_pause
                                     console.print(
                                         f"Created agent: {agent_name_to_create}",
                                         style="dim green",
@@ -1382,7 +1164,7 @@ async def run_repl(
                 # Store live reference for confirmation callback to pause/resume
                 token = _current_live.set(live)
                 try:
-                    async with KeyMonitor(on_escape=on_cancel):
+                    async with KeyMonitor(on_escape=on_cancel, pause_event=key_monitor_pause):
                         stream_task = asyncio.create_task(do_stream())
                         # Refresh loop while streaming
                         while not stream_task.done():

@@ -19,7 +19,8 @@ from nexus3.rpc.auth import (
     validate_api_key,
 )
 from nexus3.rpc.detection import DetectionResult, detect_server, wait_for_server
-from nexus3.rpc.dispatcher import Dispatcher, InvalidParamsError
+from nexus3.rpc.dispatch_core import InvalidParamsError
+from nexus3.rpc.dispatcher import Dispatcher
 from nexus3.rpc.http import (
     BIND_HOST,
     DEFAULT_PORT,

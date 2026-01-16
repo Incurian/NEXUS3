@@ -10,28 +10,10 @@ from collections.abc import Callable
 # ESC key code
 ESC = "\x1b"
 
-# Shared flag to pause KeyMonitor during confirmation prompts
-# Using a simple mutable container so it's shared across async tasks
-_key_monitor_state = {"paused": False}
-
-
-def pause_key_monitor() -> None:
-    """Pause the KeyMonitor to allow other input operations."""
-    _key_monitor_state["paused"] = True
-
-
-def resume_key_monitor() -> None:
-    """Resume the KeyMonitor after input operations complete."""
-    _key_monitor_state["paused"] = False
-
-
-def is_key_monitor_paused() -> bool:
-    """Check if KeyMonitor is paused."""
-    return _key_monitor_state["paused"]
-
 
 async def monitor_for_escape(
     on_escape: Callable[[], None],
+    pause_event: asyncio.Event,
     check_interval: float = 0.1,
 ) -> None:
     """Monitor stdin for ESC key and call callback when detected.
@@ -40,6 +22,7 @@ async def monitor_for_escape(
 
     Args:
         on_escape: Callback to invoke when ESC is pressed
+        pause_event: asyncio.Event that signals when key monitoring should pause
         check_interval: How often to check for input (seconds)
 
     Note:
@@ -58,10 +41,10 @@ async def monitor_for_escape(
 
             while True:
                 # Check if paused (for confirmation prompts)
-                if is_key_monitor_paused():
+                if pause_event.is_set():
                     # Restore terminal while paused so other input can work
                     termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-                    while is_key_monitor_paused():
+                    while pause_event.is_set():
                         await asyncio.sleep(check_interval)
                     # Re-enable cbreak mode when resumed
                     tty.setcbreak(sys.stdin.fileno())
@@ -93,17 +76,21 @@ class KeyMonitor:
     """Context manager for monitoring keys during an operation.
 
     Example:
-        async with KeyMonitor(on_escape=token.cancel):
+        pause_event = asyncio.Event()
+        async with KeyMonitor(on_escape=token.cancel, pause_event=pause_event):
             # ESC will trigger token.cancel() while in this block
             await long_operation()
     """
 
-    def __init__(self, on_escape: Callable[[], None]) -> None:
+    def __init__(self, on_escape: Callable[[], None], pause_event: asyncio.Event) -> None:
         self.on_escape = on_escape
+        self.pause_event = pause_event
         self._task: asyncio.Task[None] | None = None
 
     async def __aenter__(self) -> "KeyMonitor":
-        self._task = asyncio.create_task(monitor_for_escape(self.on_escape))
+        self._task = asyncio.create_task(
+            monitor_for_escape(self.on_escape, self.pause_event)
+        )
         return self
 
     async def __aexit__(

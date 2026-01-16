@@ -34,16 +34,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from nexus3.config.loader import load_config
-from nexus3.context import ContextLoader
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
-from nexus3.core.permissions import load_custom_presets_from_config
-from nexus3.provider import ProviderRegistry
 from nexus3.rpc.auth import ServerTokenManager
+from nexus3.rpc.bootstrap import bootstrap_server_components
 from nexus3.rpc.detection import DetectionResult, detect_server
-from nexus3.rpc.global_dispatcher import GlobalDispatcher
 from nexus3.rpc.http import run_http_server
-from nexus3.rpc.pool import AgentPool, SharedComponents
 from nexus3.session import LogStream, SessionManager
 
 # Configure UTF-8 at module load
@@ -95,9 +91,6 @@ async def run_serve(
         print(f"Error: Port {effective_port} is already in use by another service")
         return
 
-    # Create provider registry (lazy-creates providers on first use)
-    provider_registry = ProviderRegistry(config)
-
     # Base log directory
     base_log_dir = log_dir or Path(".nexus3/logs")
 
@@ -108,34 +101,13 @@ async def run_serve(
     if raw_log:
         log_streams |= LogStream.RAW
 
-    # Load custom presets from config
-    custom_presets = load_custom_presets_from_config(
-        {k: v.model_dump() for k, v in config.permissions.presets.items()}
-    )
-
-    # Load base context for subagent inheritance
-    context_loader = ContextLoader(context_config=config.context)
-    base_context = context_loader.load(is_repl=False)
-
-    # Create shared components
-    shared = SharedComponents(
+    # Bootstrap server components (D5: unified bootstrap)
+    pool, global_dispatcher, shared = await bootstrap_server_components(
         config=config,
-        provider_registry=provider_registry,
         base_log_dir=base_log_dir,
-        base_context=base_context,
-        context_loader=context_loader,
         log_streams=log_streams,
-        custom_presets=custom_presets,
+        is_repl=False,
     )
-
-    # Create agent pool
-    pool = AgentPool(shared)
-
-    # Create global dispatcher for agent management
-    global_dispatcher = GlobalDispatcher(pool)
-
-    # Wire pool and dispatcher for in-process AgentAPI (bypasses HTTP loopback)
-    pool.set_global_dispatcher(global_dispatcher)
 
     # Generate fresh token (we've confirmed no server is running, so any existing token is stale)
     token_manager = ServerTokenManager(port=effective_port)

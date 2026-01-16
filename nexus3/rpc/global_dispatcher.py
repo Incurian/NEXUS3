@@ -16,18 +16,11 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 
-from nexus3.core.errors import NexusError, PathSecurityError
+from nexus3.core.errors import PathSecurityError
 from nexus3.core.paths import validate_path
 
 logger = logging.getLogger(__name__)
-from nexus3.rpc.dispatcher import InvalidParamsError
-from nexus3.rpc.protocol import (
-    INTERNAL_ERROR,
-    INVALID_PARAMS,
-    METHOD_NOT_FOUND,
-    make_error_response,
-    make_success_response,
-)
+from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
 from nexus3.rpc.types import Request, Response
 
 if TYPE_CHECKING:
@@ -102,47 +95,7 @@ class GlobalDispatcher:
         Returns:
             A Response object, or None for notifications (requests without id).
         """
-        # Look up handler
-        handler = self._handlers.get(request.method)
-        if handler is None:
-            # Method not found
-            if request.id is None:
-                return None  # Notifications don't get error responses
-            return make_error_response(
-                request.id,
-                METHOD_NOT_FOUND,
-                f"Method not found: {request.method}",
-            )
-
-        # Execute handler
-        try:
-            params = request.params or {}
-            result = await handler(params)
-
-            # Return response (None for notifications)
-            if request.id is None:
-                return None
-            return make_success_response(request.id, result)
-
-        except InvalidParamsError as e:
-            if request.id is None:
-                return None
-            return make_error_response(request.id, INVALID_PARAMS, str(e))
-
-        except NexusError as e:
-            if request.id is None:
-                return None
-            return make_error_response(request.id, INTERNAL_ERROR, e.message)
-
-        except Exception as e:
-            logger.error("Unexpected error dispatching global method '%s': %s", request.method, e, exc_info=True)
-            if request.id is None:
-                return None
-            return make_error_response(
-                request.id,
-                INTERNAL_ERROR,
-                f"Internal error: {type(e).__name__}: {e}",
-            )
+        return await dispatch_request(request, self._handlers, "global method")
 
     async def _handle_create_agent(self, params: dict[str, Any]) -> dict[str, Any]:
         """Create a new agent.

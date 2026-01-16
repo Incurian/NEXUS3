@@ -39,6 +39,8 @@ from nexus3.core.validation import is_valid_agent_id
 from nexus3.rpc.auth import validate_api_key
 from nexus3.rpc.protocol import (
     INTERNAL_ERROR,
+    INVALID_PARAMS,
+    INVALID_REQUEST,
     PARSE_ERROR,
     ParseError,
     make_error_response,
@@ -322,6 +324,142 @@ def _extract_bearer_token(headers: dict[str, str]) -> str | None:
     return None
 
 
+# =============================================================================
+# HTTP Pipeline Layer Functions
+# =============================================================================
+
+
+def _authenticate_request(
+    http_request: HttpRequest,
+    api_key: str | None,
+) -> tuple[Response | None, int]:
+    """Authenticate the HTTP request.
+
+    Layer 3 of the HTTP pipeline: Authentication check.
+
+    Args:
+        http_request: The parsed HTTP request.
+        api_key: Expected API key, or None if auth disabled.
+
+    Returns:
+        (error_response, status_code) if auth fails.
+        (None, 0) if auth succeeds.
+    """
+    if api_key is None:
+        return (None, 0)  # No auth configured
+
+    token = _extract_bearer_token(http_request.headers)
+    if token is None:
+        return (
+            make_error_response(None, INVALID_REQUEST, "Authorization header required"),
+            401,
+        )
+
+    if not validate_api_key(token, api_key):
+        return (
+            make_error_response(None, INVALID_REQUEST, "Invalid API key"),
+            403,
+        )
+
+    return (None, 0)  # Auth succeeded
+
+
+def _route_to_dispatcher(
+    path: str,
+    pool: AgentPool,
+    global_dispatcher: GlobalDispatcher,
+) -> tuple[Dispatcher | None, str | None, Response | None, int]:
+    """Route request path to appropriate dispatcher.
+
+    Layer 4 of the HTTP pipeline: Path-based routing.
+
+    Args:
+        path: HTTP request path.
+        pool: Agent pool for agent lookups.
+        global_dispatcher: Dispatcher for global methods.
+
+    Returns:
+        (dispatcher, agent_id, error_response, status_code)
+        - If routing succeeds to global: (dispatcher, None, None, 0)
+        - If routing succeeds to agent: (dispatcher, agent_id, None, 0)
+        - If agent not found but may exist saved: (None, agent_id, None, 0)
+        - If routing fails: (None, None, error_response, status_code)
+    """
+    # Global routes
+    if path in ("/", "/rpc"):
+        return (global_dispatcher, None, None, 0)
+
+    # Agent routes
+    agent_id = _extract_agent_id(path)
+    if agent_id is None:
+        return (
+            None,
+            None,
+            make_error_response(
+                None, INVALID_PARAMS, "Not found. Use /, /rpc, or /agent/{agent_id}."
+            ),
+            404,
+        )
+
+    # Try to get active agent
+    agent = pool.get(agent_id)
+    if agent is not None:
+        return (agent.dispatcher, agent_id, None, 0)
+
+    # Agent not found - caller should try restore
+    return (None, agent_id, None, 0)
+
+
+async def _restore_agent_if_needed(
+    agent_id: str,
+    pool: AgentPool,
+    session_manager: SessionManager | None,
+) -> tuple[Dispatcher | None, Response | None, int]:
+    """Attempt to restore agent from saved session.
+
+    Layer 5 of the HTTP pipeline: Auto-restore inactive agents.
+
+    Args:
+        agent_id: Agent to restore.
+        pool: Agent pool.
+        session_manager: Session manager for loading saved sessions.
+
+    Returns:
+        (dispatcher, error_response, status_code)
+        - If restore succeeds: (dispatcher, None, 0)
+        - If no saved session or session_manager is None: (None, error_response, 404)
+        - If restore fails: (None, error_response, 500)
+    """
+    if session_manager is None:
+        return (
+            None,
+            make_error_response(None, INVALID_PARAMS, f"Agent not found: {agent_id}"),
+            404,
+        )
+
+    if not session_manager.session_exists(agent_id):
+        return (
+            None,
+            make_error_response(None, INVALID_PARAMS, f"Agent not found: {agent_id}"),
+            404,
+        )
+
+    try:
+        logger.info("Auto-restoring agent '%s' from saved session", agent_id)
+        saved = session_manager.load_session(agent_id)
+        agent = await pool.restore_from_saved(saved)
+        return (agent.dispatcher, None, 0)
+    except Exception as e:
+        logger.error("Failed to restore agent '%s': %s", agent_id, e)
+        return (
+            None,
+            make_error_response(
+                None, INTERNAL_ERROR, f"Failed to restore session: {e}"
+            ),
+            500,
+        )
+
+
 async def handle_connection(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
@@ -332,9 +470,19 @@ async def handle_connection(
 ) -> None:
     """Handle a single HTTP connection with path-based routing.
 
+    This function orchestrates the HTTP pipeline through distinct layers:
+        1. Parse HTTP request
+        2. Validate HTTP method (POST only)
+        3. Authenticate request (if api_key configured)
+        4. Route to dispatcher (global or agent)
+        5. Restore agent if needed (auto-restore from saved session)
+        6. Parse JSON-RPC request
+        7. Dispatch to handler
+        8. Send response
+
     Routing:
-        - POST / or /rpc → global_dispatcher
-        - POST /agent/{agent_id} → agent's dispatcher
+        - POST / or /rpc -> global_dispatcher
+        - POST /agent/{agent_id} -> agent's dispatcher
 
     Cross-Session Auto-Restore:
         When a request targets an agent_id that is not in the active pool but
@@ -351,7 +499,7 @@ async def handle_connection(
         session_manager: Optional SessionManager for auto-restoring saved sessions.
     """
     try:
-        # Parse HTTP request
+        # Layer 1: Parse HTTP request
         try:
             http_request = await read_http_request(reader)
         except HttpParseError as e:
@@ -359,53 +507,47 @@ async def handle_connection(
             await send_http_response(writer, 400, serialize_response(error_response))
             return
 
-        # Only accept POST
+        # Layer 2: Validate HTTP method (POST only)
         if http_request.method != "POST":
-            error_response = make_error_response(None, -32600, "Method not allowed. Use POST.")
+            error_response = make_error_response(
+                None, INVALID_REQUEST, "Method not allowed. Use POST."
+            )
             await send_http_response(writer, 405, serialize_response(error_response))
             return
 
-        # Check authentication if api_key is configured
-        if api_key:
-            provided_token = _extract_bearer_token(http_request.headers)
-            if not provided_token:
-                error_response = make_error_response(None, -32600, "Authorization header required")
-                await send_http_response(writer, 401, serialize_response(error_response))
-                return
-            if not validate_api_key(provided_token, api_key):
-                error_response = make_error_response(None, -32600, "Invalid API key")
-                await send_http_response(writer, 403, serialize_response(error_response))
-                return
-
-        # Route based on path
-        dispatcher: Dispatcher
-        if http_request.path in ("/", "/rpc"):
-            dispatcher = global_dispatcher
-        elif (agent_id := _extract_agent_id(http_request.path)) is not None:
-            agent = pool.get(agent_id)
-            if agent is None:
-                # Agent not in active pool - try auto-restore from saved session
-                if session_manager is not None and session_manager.session_exists(agent_id):
-                    try:
-                        # Log the auto-restore event
-                        logger.info("Auto-restoring agent '%s' from saved session", agent_id)
-                        saved = session_manager.load_session(agent_id)
-                        agent = await pool.restore_from_saved(saved)
-                    except Exception as e:
-                        error_response = make_error_response(None, INTERNAL_ERROR, f"Failed to restore session: {e}")
-                        await send_http_response(writer, 500, serialize_response(error_response))
-                        return
-                else:
-                    error_response = make_error_response(None, -32602, f"Agent not found: {agent_id}")
-                    await send_http_response(writer, 404, serialize_response(error_response))
-                    return
-            dispatcher = agent.dispatcher
-        else:
-            error_response = make_error_response(None, -32602, "Not found. Use /, /rpc, or /agent/{agent_id}.")
-            await send_http_response(writer, 404, serialize_response(error_response))
+        # Layer 3: Authenticate request
+        auth_error, auth_status = _authenticate_request(http_request, api_key)
+        if auth_error is not None:
+            await send_http_response(
+                writer, auth_status, serialize_response(auth_error)
+            )
             return
 
-        # Parse JSON-RPC request
+        # Layer 4: Route to dispatcher
+        dispatcher, agent_id, route_error, route_status = _route_to_dispatcher(
+            http_request.path, pool, global_dispatcher
+        )
+        if route_error is not None:
+            await send_http_response(
+                writer, route_status, serialize_response(route_error)
+            )
+            return
+
+        # Layer 5: Restore agent if needed (dispatcher is None but agent_id is set)
+        if dispatcher is None and agent_id is not None:
+            dispatcher, restore_error, restore_status = await _restore_agent_if_needed(
+                agent_id, pool, session_manager
+            )
+            if restore_error is not None:
+                await send_http_response(
+                    writer, restore_status, serialize_response(restore_error)
+                )
+                return
+
+        # Safety check: dispatcher must be set by now
+        assert dispatcher is not None, "dispatcher should be set after routing/restore"
+
+        # Layer 6: Parse JSON-RPC request
         try:
             rpc_request = parse_request(http_request.body)
         except ParseError as e:
@@ -413,7 +555,7 @@ async def handle_connection(
             await send_http_response(writer, 400, serialize_response(error_response))
             return
 
-        # Dispatch to handler
+        # Layer 7: Dispatch to handler
         try:
             rpc_response = await dispatcher.dispatch(rpc_request)
         except Exception as e:
@@ -426,7 +568,7 @@ async def handle_connection(
             await send_http_response(writer, 500, serialize_response(error_response))
             return
 
-        # Send response
+        # Layer 8: Send response
         if rpc_response is not None:
             await send_http_response(writer, 200, serialize_response(rpc_response))
         else:
@@ -437,10 +579,14 @@ async def handle_connection(
         # Catch-all for any unexpected errors
         logger.error("Unexpected error handling connection: %s", e, exc_info=True)
         try:
-            error_response = make_error_response(None, INTERNAL_ERROR, f"Server error: {type(e).__name__}")
+            error_response = make_error_response(
+                None, INTERNAL_ERROR, f"Server error: {type(e).__name__}"
+            )
             await send_http_response(writer, 500, serialize_response(error_response))
         except Exception as send_err:
-            logger.debug("Failed to send error response (client disconnected?): %s", send_err)
+            logger.debug(
+                "Failed to send error response (client disconnected?): %s", send_err
+            )
 
     finally:
         try:
