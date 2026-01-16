@@ -1045,33 +1045,64 @@ All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env s
 
 ---
 
-## In Progress: Sprint 7 — Provider/MCP Lifecycle & Transport Redesign
+## Completed: Sprint 7 — Provider/MCP Lifecycle & Transport Redesign ✅
 
-**Goal:** Correct lifecycle management and transport semantics. Improve maintainability and concurrency safety.
+**Branch:** `arch/sprint-5-rpc-cli` | **Tests:** 2010 passing (+31 new)
 
-### Architecture Scope
+### G1: Provider HTTP Client Lifecycle ✅
+- BaseProvider now owns httpx.AsyncClient instance (lazy init via `_ensure_client()`)
+- Added `aclose()` method for proper cleanup
+- ProviderRegistry.aclose() closes all cached providers
+- Integrated cleanup into REPL and serve shutdown flows
 
-| ID | Task | Description |
-|----|------|-------------|
-| G1 | Provider HTTP client lifecycle | Make `BaseProvider` own an `AsyncClient` for instance lifecycle. Expose `aclose()`. Registry closes providers on shutdown. |
-| G2 | MCP HTTP transport redesign | Replace `send()/receive()` with `request()` for HTTP. Add id→future routing or lock for concurrency. |
-| G3 | Encapsulation fixes | Registry uses public client APIs (e.g., `client.is_connected`), not `_transport`. |
-| G4 | Canonical MCP skill IDs | Use tool-name normalization from Arch A1. Store display names separately. |
+### G2: MCP HTTP Transport Redesign ✅
+- Added `request()` method to MCPTransport ABC (default: send+receive)
+- HTTPTransport.request() is atomic (no shared `_pending_response` state)
+- StdioTransport now has explicit I/O lock for clarity
 
-### Security Tie-ins
-- MCP naming sanitization + collisions (uses Arch A1 identifiers from Sprint 3)
+### G3: MCP Encapsulation Fix ✅
+- Added `MCPClient.is_connected` property
+- `ConnectedServer.is_alive()` uses public API (no `_transport` reach-through)
 
-### Tests to Implement
-- Provider client lifecycle tests (§G4)
-- MCP HTTP transport concurrency safety (§G13)
-- MCP name injection/collision tests (§G9)
+### G4: Documentation ✅
+- Documented underscore ambiguity limitation in MCP skill naming
 
-### Key Files to Modify
-- `nexus3/provider/base.py` - AsyncClient lifecycle
-- `nexus3/mcp/transport.py` - HTTP transport redesign
-- `nexus3/mcp/client.py` - Request API
-- `nexus3/mcp/registry.py` - Encapsulation fixes
-- `nexus3/mcp/skill_adapter.py` - Canonical naming
+### Files Changed
+- `nexus3/provider/base.py` - Instance-owned AsyncClient, aclose()
+- `nexus3/provider/registry.py` - Registry aclose()
+- `nexus3/mcp/transport.py` - request() method, I/O lock
+- `nexus3/mcp/client.py` - is_connected property
+- `nexus3/mcp/registry.py` - Public API usage
+- `nexus3/cli/repl.py`, `nexus3/cli/serve.py` - Shutdown integration
+
+---
+
+## Up Next: Sprint 8+ — Cleanup & Polish
+
+**Goal:** Address remaining P3 items, backlog bugs, documentation cleanup, and performance tuning.
+
+### P3 Security Items
+- **P3.1:** Terminal escape sequence injection hardening in REPL echo
+- **P3.2:** Reduce sensitive exception detail in tool errors
+
+### Backlog Items (from reviews)
+| ID | Issue | Location |
+|----|-------|----------|
+| BL-1 | `max_retries=0` causes "failed unexpectedly" | `provider/base.py:180-249` |
+| BL-2 | OpenAI tool-call delta accumulation bug | `provider/openai_compat.py:355-362` |
+| BL-3 | Tool argument parse failures → `{}` silently | `provider/openai_compat.py:391-395` |
+| BL-4 | MCP `enabled` config flag ignored | `mcp/registry.py:110-168` |
+| BL-5 | `DirectAgentAPI.send()` ignores `request_id` param | `rpc/agent_api.py:93-112` |
+| BL-6 | `DirectAgentAPI.cancel()` uses truthiness | `rpc/agent_api.py:123-129` |
+| BL-7 | Dispatcher returns success-with-error | `rpc/dispatcher.py` |
+| BL-8 | `LogMultiplexer.agent_context` docstring wrong | `rpc/log_multiplexer.py:94-97` |
+| BL-9 | Cancel callback exceptions swallowed | `core/cancel.py:39-44` |
+| BL-10 | Allowances `from_dict()` doesn't normalize paths | `core/allowances.py:169-182` |
+| BL-11 | Broad exception swallowing in REPL | `cli/repl.py` |
+| BL-12 | Timeout doc mismatch (120s vs 300s) | `cli/client_commands.py` |
+| BL-13 | ~~Global mutable state for key monitor~~ | ~~`cli/keys.py`~~ (Fixed in Sprint 5 E4) |
+| BL-14 | ~~Uses private `context._counter`~~ | ~~`session/session.py`~~ (Fixed in Sprint 4 C1) |
+| BL-15 | ~~Uses private `mcp_registry._servers`~~ | ~~`session/session.py`~~ (Fixed in Sprint 4 C1) |
 
 ---
 
