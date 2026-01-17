@@ -3,6 +3,21 @@
 from nexus3.session.confirmation import ConfirmationController
 from nexus3.session.dispatcher import ToolDispatcher
 from nexus3.session.enforcer import PermissionEnforcer
+from nexus3.session.events import (
+    ContentChunk,
+    IterationCompleted,
+    ReasoningEnded,
+    ReasoningStarted,
+    SessionCancelled,
+    SessionCompleted,
+    SessionEvent,
+    ToolBatchCompleted,
+    ToolBatchHalted,
+    ToolBatchStarted,
+    ToolCompleted,
+    ToolDetected,
+    ToolStarted,
+)
 from nexus3.session.logging import RawLogCallbackAdapter, SessionLogger
 from nexus3.session.persistence import (
     SavedSession,
@@ -47,4 +62,18 @@ __all__ = [
     "SessionManager",
     "SessionManagerError",
     "SessionNotFoundError",
+    # Session Events
+    "SessionEvent",
+    "ContentChunk",
+    "ReasoningStarted",
+    "ReasoningEnded",
+    "ToolDetected",
+    "ToolBatchStarted",
+    "ToolStarted",
+    "ToolCompleted",
+    "ToolBatchHalted",
+    "ToolBatchCompleted",
+    "IterationCompleted",
+    "SessionCompleted",
+    "SessionCancelled",
 ]

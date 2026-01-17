@@ -30,14 +30,29 @@ from nexus3.core.validation import ValidationError, validate_tool_arguments
 from nexus3.session.confirmation import ConfirmationController
 from nexus3.session.dispatcher import ToolDispatcher
 from nexus3.session.enforcer import PermissionEnforcer
+from nexus3.session.events import (
+    ContentChunk,
+    IterationCompleted,
+    ReasoningEnded,
+    ReasoningStarted,
+    SessionCancelled,
+    SessionCompleted,
+    SessionEvent,
+    ToolBatchCompleted,
+    ToolBatchHalted,
+    ToolBatchStarted,
+    ToolCompleted,
+    ToolDetected,
+    ToolStarted,
+)
 
 if TYPE_CHECKING:
-    from nexus3.skill.base import Skill
     from nexus3.config.schema import CompactionConfig, Config
     from nexus3.context.loader import ContextLoader
     from nexus3.context.manager import ContextManager
     from nexus3.core.cancel import CancellationToken
     from nexus3.session.logging import SessionLogger
+    from nexus3.skill.base import Skill
     from nexus3.skill.registry import SkillRegistry
     from nexus3.skill.services import ServiceContainer
 
@@ -274,17 +289,242 @@ class Session:
             elif self.logger:
                 self.logger.log_assistant(final_message.content)
 
+    async def run_turn(
+        self,
+        user_input: str,
+        use_tools: bool = False,
+        cancel_token: "CancellationToken | None" = None,
+    ) -> AsyncIterator[SessionEvent]:
+        """Send a message and yield events during processing.
+
+        This is the event-based alternative to send(). Instead of using callbacks,
+        it yields SessionEvent objects that can be processed by the caller.
+
+        Args:
+            user_input: The user's message text.
+            use_tools: If True, enable tool execution loop. Default False but
+                auto-enables if tools are registered.
+            cancel_token: Optional cancellation token to cancel the operation.
+
+        Yields:
+            SessionEvent objects for content, tool execution, and session lifecycle.
+        """
+        if not self.context:
+            # Single-turn mode not supported for event-based streaming
+            raise RuntimeError("run_turn() requires a context manager")
+
+        # Flush any cancelled tool results from previous turn
+        self._flush_cancelled_tools()
+
+        # Reset iteration state for this turn
+        self._halted_at_iteration_limit = False
+        self._last_iteration_count = 0
+
+        # Add user message to context
+        self.context.add_user_message(user_input)
+
+        # Check if we should use tool mode
+        has_tools = self.registry and self.registry.get_definitions()
+        if use_tools or has_tools:
+            # Use streaming tool execution loop with events
+            async for event in self._execute_tool_loop_events(cancel_token):
+                yield event
+            return
+
+        # No tools - simple streaming mode
+        messages = self.context.build_messages()
+        tools = self.context.get_tool_definitions()
+
+        final_message: Message | None = None
+        async for stream_event in self.provider.stream(messages, tools):
+            if isinstance(stream_event, ContentDelta):
+                yield ContentChunk(text=stream_event.text)
+                if cancel_token and cancel_token.is_cancelled:
+                    yield SessionCancelled()
+                    return
+            elif isinstance(stream_event, ToolCallStarted):
+                yield ToolDetected(name=stream_event.name, tool_id=stream_event.id)
+            elif isinstance(stream_event, StreamComplete):
+                final_message = stream_event.message
+
+        # Store assistant response
+        if final_message:
+            self.context.add_assistant_message(
+                final_message.content, list(final_message.tool_calls)
+            )
+
+        yield SessionCompleted(halted_at_limit=False)
+
+    async def _execute_tool_loop_events(
+        self, cancel_token: "CancellationToken | None" = None
+    ) -> AsyncIterator[SessionEvent]:
+        """Execute tools yielding events, not calling callbacks.
+
+        This is the event-based version of _execute_tool_loop_streaming().
+        Instead of calling callback functions, it yields SessionEvent objects.
+
+        Args:
+            cancel_token: Optional cancellation token to cancel the operation.
+
+        Yields:
+            SessionEvent objects for all tool execution lifecycle events.
+        """
+        for iteration_num in range(self.max_tool_iterations):
+            self._last_iteration_count = iteration_num + 1
+
+            # Check for compaction BEFORE build_messages() to avoid truncation
+            if self._should_compact():
+                compact_result = await self.compact(force=False)
+                if compact_result:
+                    saved = compact_result.original_token_count - compact_result.new_token_count
+                    yield ContentChunk(
+                        text=f"\n[Context compacted: {saved:,} tokens reclaimed]\n\n"
+                    )
+
+            # Type narrowing: run_turn() requires context, so it's guaranteed here
+            assert self.context is not None
+            messages = self.context.build_messages()
+            tools = self.context.get_tool_definitions()
+
+            # Stream response, accumulating content and detecting tool calls
+            final_message: Message | None = None
+            is_reasoning = False
+            show_reasoning = False
+            if self._services:
+                from nexus3.config.schema import ResolvedModel
+                resolved_model: ResolvedModel | None = self._services.get("model")
+                if resolved_model:
+                    show_reasoning = resolved_model.reasoning
+            elif self._config:
+                default_model = self._config.resolve_model()
+                show_reasoning = default_model.reasoning
+
+            async for event in self.provider.stream(messages, tools):
+                if isinstance(event, ReasoningDelta):
+                    if show_reasoning and not is_reasoning:
+                        yield ReasoningStarted()
+                    is_reasoning = True
+                elif isinstance(event, ContentDelta):
+                    if show_reasoning and is_reasoning:
+                        yield ReasoningEnded()
+                    is_reasoning = False
+                    yield ContentChunk(text=event.text)
+                    if cancel_token and cancel_token.is_cancelled:
+                        yield SessionCancelled()
+                        return
+                elif isinstance(event, ToolCallStarted):
+                    if show_reasoning and is_reasoning:
+                        yield ReasoningEnded()
+                    is_reasoning = False
+                    yield ToolDetected(name=event.name, tool_id=event.id)
+                elif isinstance(event, StreamComplete):
+                    if show_reasoning and is_reasoning:
+                        yield ReasoningEnded()
+                    is_reasoning = False
+                    final_message = event.message
+
+            if final_message is None:
+                yield SessionCompleted(halted_at_limit=False)
+                return
+
+            if final_message.tool_calls:
+                # Add assistant message with tool calls
+                self.context.add_assistant_message(
+                    final_message.content, list(final_message.tool_calls)
+                )
+
+                # Yield batch start event
+                yield ToolBatchStarted(tool_calls=final_message.tool_calls)
+
+                # Check if parallel execution requested
+                parallel = any(
+                    tc.arguments.get("_parallel", False)
+                    for tc in final_message.tool_calls
+                )
+
+                if parallel:
+                    if cancel_token and cancel_token.is_cancelled:
+                        yield SessionCancelled()
+                        return
+                    # Parallel execution - all tools active at once
+                    for tc in final_message.tool_calls:
+                        yield ToolStarted(name=tc.name, tool_id=tc.id)
+                    tool_results = await self._execute_tools_parallel(final_message.tool_calls)
+                    for tc, tool_result in zip(final_message.tool_calls, tool_results, strict=True):
+                        self.context.add_tool_result(tc.id, tc.name, tool_result)
+                        yield ToolCompleted(
+                            name=tc.name,
+                            tool_id=tc.id,
+                            success=tool_result.success,
+                            error=tool_result.error,
+                        )
+                else:
+                    # Sequential execution - halts on first error
+                    error_index = -1
+                    for i, tc in enumerate(final_message.tool_calls):
+                        if cancel_token and cancel_token.is_cancelled:
+                            yield SessionCancelled()
+                            return
+                        yield ToolStarted(name=tc.name, tool_id=tc.id)
+                        tool_result = await self._execute_single_tool(tc)
+                        self.context.add_tool_result(tc.id, tc.name, tool_result)
+                        yield ToolCompleted(
+                            name=tc.name,
+                            tool_id=tc.id,
+                            success=tool_result.success,
+                            error=tool_result.error,
+                        )
+                        if not tool_result.success:
+                            error_index = i
+                            yield ToolBatchHalted()
+                            break
+
+                    # Add halted results for remaining tools
+                    if error_index >= 0:
+                        for tc in final_message.tool_calls[error_index + 1:]:
+                            halted_result = ToolResult(
+                                error="Did not execute: halted due to error in previous tool"
+                            )
+                            self.context.add_tool_result(tc.id, tc.name, halted_result)
+
+                # Yield batch complete and iteration complete
+                yield ToolBatchCompleted()
+                yield IterationCompleted(
+                    iteration=iteration_num + 1,
+                    will_continue=True,
+                )
+
+                # Update last action timestamp
+                self._last_action_at = datetime.now()
+            else:
+                # No tool calls - this is the final response
+                self.context.add_assistant_message(final_message.content)
+                self._last_action_at = datetime.now()
+
+                # Check for auto-compaction after response
+                if self._should_compact():
+                    compact_result = await self.compact(force=False)
+                    if compact_result:
+                        saved = compact_result.original_token_count - compact_result.new_token_count
+                        yield ContentChunk(
+                            text=f"\n\n[Context compacted: {saved:,} tokens reclaimed]"
+                        )
+
+                yield SessionCompleted(halted_at_limit=False)
+                return
+
+        # Max iterations reached
+        self._halted_at_iteration_limit = True
+        yield ContentChunk(text="[Max tool iterations reached]")
+        yield SessionCompleted(halted_at_limit=True)
+
     async def _execute_tool_loop_streaming(
         self, cancel_token: "CancellationToken | None" = None
     ) -> AsyncIterator[str]:
         """Execute tools with streaming, yielding content as it arrives.
 
-        This method handles the complete tool execution loop with streaming:
-        1. Stream response from provider
-        2. Yield content chunks as they arrive
-        3. If tool_calls in final message, execute them
-        4. Add results to context and repeat
-        5. Return when no more tool calls
+        This method wraps the event-based _execute_tool_loop_events() and
+        converts events back to callbacks for backward compatibility.
 
         Execution mode:
         - Default: Sequential (safe for dependent operations)
@@ -296,166 +536,41 @@ class Session:
         Yields:
             String chunks of the assistant's response.
         """
-        for iteration_num in range(self.max_tool_iterations):
-            self._last_iteration_count = iteration_num + 1
-
-            # Check for compaction BEFORE build_messages() to avoid truncation
-            if self._should_compact():
-                result = await self.compact(force=False)
-                if result:
-                    saved = result.original_token_count - result.new_token_count
-                    yield f"\n[Context compacted: {saved:,} tokens reclaimed]\n\n"
-
-            messages = self.context.build_messages()
-            # Use context's tool definitions (filtered by permissions) rather than registry
-            tools = self.context.get_tool_definitions()
-
-            # Stream response, accumulating content and detecting tool calls
-            final_message: Message | None = None
-            is_reasoning = False  # Track if we're in reasoning mode
-            # Only show reasoning display if reasoning is enabled for this agent's model
-            show_reasoning = False
-            if self._services:
-                from nexus3.config.schema import ResolvedModel
-                resolved_model: ResolvedModel | None = self._services.get("model")
-                if resolved_model:
-                    show_reasoning = resolved_model.reasoning
-            elif self._config:
-                # Fallback: resolve default model to get reasoning setting
-                default_model = self._config.resolve_model()
-                show_reasoning = default_model.reasoning
-            async for event in self.provider.stream(messages, tools):
-                if isinstance(event, ReasoningDelta):
-                    # Notify callback when reasoning starts (only if reasoning enabled)
-                    if show_reasoning and not is_reasoning and self.on_reasoning:
-                        self.on_reasoning(True)
-                    is_reasoning = True
-                elif isinstance(event, ContentDelta):
-                    # Notify callback when reasoning ends (transition to content)
-                    if show_reasoning and is_reasoning and self.on_reasoning:
-                        self.on_reasoning(False)
-                    is_reasoning = False
-                    yield event.text
-                    if cancel_token and cancel_token.is_cancelled:
-                        return
-                elif isinstance(event, ToolCallStarted):
-                    # End reasoning if we were reasoning
-                    if show_reasoning and is_reasoning and self.on_reasoning:
-                        self.on_reasoning(False)
-                    is_reasoning = False
-                    # Notify callback if set (for display updates)
-                    if self.on_tool_call:
-                        self.on_tool_call(event.name, event.id)
-                elif isinstance(event, StreamComplete):
-                    # End reasoning if stream completes while still reasoning
-                    if show_reasoning and is_reasoning and self.on_reasoning:
-                        self.on_reasoning(False)
-                    is_reasoning = False
-                    final_message = event.message
-
-            if final_message is None:
-                # Should not happen, but handle gracefully
-                return
-
-            if final_message.tool_calls:
-                # Add assistant message with tool calls
-                self.context.add_assistant_message(
-                    final_message.content, list(final_message.tool_calls)
-                )
-
-                # Notify batch start with all tool calls
+        async for event in self._execute_tool_loop_events(cancel_token):
+            # Convert events to callbacks and yield content
+            if isinstance(event, ContentChunk):
+                yield event.text
+            elif isinstance(event, ReasoningStarted):
+                if self.on_reasoning:
+                    self.on_reasoning(True)
+            elif isinstance(event, ReasoningEnded):
+                if self.on_reasoning:
+                    self.on_reasoning(False)
+            elif isinstance(event, ToolDetected):
+                if self.on_tool_call:
+                    self.on_tool_call(event.name, event.tool_id)
+            elif isinstance(event, ToolBatchStarted):
                 if self.on_batch_start:
-                    self.on_batch_start(final_message.tool_calls)
-
-                # Check if parallel execution requested
-                parallel = any(
-                    tc.arguments.get("_parallel", False)
-                    for tc in final_message.tool_calls
-                )
-
-                # Collect results for batch completion
-                batch_results: list[tuple[ToolCall, ToolResult]] = []
-
-                if parallel:
-                    # Check for cancellation before parallel execution
-                    if cancel_token and cancel_token.is_cancelled:
-                        return
-                    # Parallel execution - all tools active at once
-                    if self.on_tool_active:
-                        for tc in final_message.tool_calls:
-                            self.on_tool_active(tc.name, tc.id)
-                    results = await self._execute_tools_parallel(final_message.tool_calls)
-                    for tc, result in zip(final_message.tool_calls, results, strict=True):
-                        self.context.add_tool_result(tc.id, tc.name, result)
-                        batch_results.append((tc, result))
-                        # Progress callback for each completed tool
-                        if self.on_batch_progress:
-                            self.on_batch_progress(tc.name, tc.id, result.success, result.error)
-                        # Legacy callback (deprecated)
-                        if self.on_tool_complete:
-                            self.on_tool_complete(tc.name, tc.id, result.success)
-                else:
-                    # Sequential execution (default - safe for dependent ops)
-                    # Halts on first error
-                    error_index = -1
-                    for i, tc in enumerate(final_message.tool_calls):
-                        # Check for cancellation before executing each tool
-                        if cancel_token and cancel_token.is_cancelled:
-                            return
-                        # Mark tool as active before executing
-                        if self.on_tool_active:
-                            self.on_tool_active(tc.name, tc.id)
-                        result = await self._execute_single_tool(tc)
-                        self.context.add_tool_result(tc.id, tc.name, result)
-                        batch_results.append((tc, result))
-                        # Progress callback for each completed tool
-                        if self.on_batch_progress:
-                            self.on_batch_progress(tc.name, tc.id, result.success, result.error)
-                        # Legacy callback (deprecated)
-                        if self.on_tool_complete:
-                            self.on_tool_complete(tc.name, tc.id, result.success)
-                        # Stop on error for sequential execution
-                        if not result.success:
-                            error_index = i
-                            # Mark remaining tools as halted
-                            if self.on_batch_halt:
-                                self.on_batch_halt()
-                            break
-
-                    # Add halted results for remaining tools
-                    if error_index >= 0:
-                        for tc in final_message.tool_calls[error_index + 1:]:
-                            halted_result = ToolResult(
-                                error="Did not execute: halted due to error in previous tool"
-                            )
-                            self.context.add_tool_result(tc.id, tc.name, halted_result)
-                            batch_results.append((tc, halted_result))
-
-                # Notify batch complete
+                    self.on_batch_start(event.tool_calls)
+            elif isinstance(event, ToolStarted):
+                if self.on_tool_active:
+                    self.on_tool_active(event.name, event.tool_id)
+            elif isinstance(event, ToolCompleted):
+                if self.on_batch_progress:
+                    self.on_batch_progress(
+                        event.name, event.tool_id, event.success, event.error
+                    )
+                # Legacy callback (deprecated)
+                if self.on_tool_complete:
+                    self.on_tool_complete(event.name, event.tool_id, event.success)
+            elif isinstance(event, ToolBatchHalted):
+                if self.on_batch_halt:
+                    self.on_batch_halt()
+            elif isinstance(event, ToolBatchCompleted):
                 if self.on_batch_complete:
                     self.on_batch_complete()
-
-                # Update last action timestamp (agent executed tools)
-                self._last_action_at = datetime.now()
-            else:
-                # No tool calls - this is the final response
-                self.context.add_assistant_message(final_message.content)
-
-                # Update last action timestamp (agent responded)
-                self._last_action_at = datetime.now()
-
-                # Check for auto-compaction after response is complete
-                if self._should_compact():
-                    result = await self.compact(force=False)
-                    if result:
-                        saved = result.original_token_count - result.new_token_count
-                        yield f"\n\n[Context compacted: {saved:,} tokens reclaimed]"
-
-                return
-
-        # Max iterations reached
-        self._halted_at_iteration_limit = True
-        yield "[Max tool iterations reached]"
+            # IterationCompleted and SessionCompleted are internal events
+            # not mapped to callbacks in the original implementation
 
     async def _execute_single_tool(self, tool_call: "ToolCall") -> ToolResult:
         """Execute a single tool call with permission checks.
