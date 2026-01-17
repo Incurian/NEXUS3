@@ -4,82 +4,40 @@ Comprehensive chat session management, structured logging, persistence, and tool
 
 ## Purpose
 
-The `nexus3.session` module powers conversation lifecycles:
-1. **Session** (`session.py`): LLM coordination, streaming tool loops (sequential/parallel), permissions, compaction, cancellation.
-2. **Logging** (`logging.py`): SQLite + Markdown/JSONL exports (`context.md`, `verbose.md`, `raw.jsonl`), subagent nesting.
-3. **Storage** (`storage.py`): SQLite v2 schema for messages/events/metadata/markers.
-4. **Persistence** (`persistence.py`, `session_manager.py`): JSON save/load/rename/clone in `~/.nexus3/sessions/`.
+Powers conversation lifecycles:
+- **Session** coordination: LLM streaming, tool loops (seq/par, max 10 iters), permissions, compaction, cancellation.
+- **Logging**: SQLite + Markdown/JSONL (`context.md`, `verbose.md`, `raw.jsonl`), subagent nesting.
+- **Storage**: SQLite v2 (messages/events/metadata/markers).
+- **Persistence**: JSON save/load/rename/clone in `~/.nexus3/sessions/`.
 
-Supports multi-turn, tools, permissions (YOLO/TRUSTED/SANDBOXED), MCP, auto-compaction.
+Supports multi-turn, tools, perms (YOLO/TRUSTED/SANDBOXED), MCP, auto-compaction.
 
-## Dependencies
+## Key Exports
 
-**Stdlib**: `asyncio`, `dataclasses`, `datetime`, `json`, `logging`, `os`, `pathlib`, `secrets`, `sqlite3`, `typing`.
+From `__init__.py`:
 
-**NEXUS3**:
-- `nexus3.core.*`: types, permissions, validation.
-- `nexus3.context.*`: compaction/manager.
-- `nexus3.config.schema`: Config.
-- `nexus3.skill.*`: registry/services (tools).
-- `nexus3.provider.*`: AsyncProvider.
-- `nexus3.mcp.*`: optional.
-
-No external deps.
-
-## Key Classes/Modules
-
-| File | Key Exports | Role |
-|------|-------------|------|
-| `__init__.py` | All public API | Exports |
-| `session.py` | `Session`, `ConfirmationCallback` | Core + tool loop |
-| `logging.py` | `SessionLogger`, `RawLogCallbackAdapter` | Logging hub |
-| `storage.py` | `SessionStorage`, `SessionMarkers` | SQLite ops |
-| `session_manager.py` | `SessionManager`, `SessionNotFoundError` | Disk persistence |
-| `persistence.py` | `SavedSession`, `serialize_session()` | JSON ser/de |
-| `markdown.py` | `MarkdownWriter`, `RawWriter` | Log writers |
-| `confirmation.py` | `ConfirmationController` | User confirmations |
-| `dispatcher.py` | `ToolDispatcher` | Skill resolution |
-| `enforcer.py` | `PermissionEnforcer` | Permissions |
-| `types.py` | `LogConfig`, `LogStream`, `SessionInfo` | Types |
-
-## Architecture
-
-### Logging
 ```
-.nexus3/logs/YYYY-MM-DD_HHMMSS_{repl/serve/agent}_xxxxxx/
-├── session.db (SQLite v2)
-├── context.md
-├── verbose.md (--verbose)
-├── raw.jsonl (--raw-log)
-└── subagent_xxxxxx/...
+Session, ConfirmationCallback, ConfirmationController
+ToolDispatcher, PermissionEnforcer, SessionLogger
+SessionStorage, SessionMarkers, LogConfig, LogStream, SessionInfo
+RawLogCallbackAdapter
+SavedSession, SessionSummary, serialize_session, deserialize_messages
+SessionManager, SessionManagerError, SessionNotFoundError
 ```
-- Secure 0o600 perms.
-- Markers track type/status/parent for cleanup.
 
-### Session Flow (`Session.send()`)
-```
-user → add_user()
-↓ tools?
-while tool_calls < max_iters(10):
-  compact? → LLM summarize
-  stream(provider) → ContentDelta/ToolCallStarted
-  tools? → check perms/confirm → validate → exec seq/par (sem=10, to=30s)
-  add_tool_results()
-final → add_assistant() → compact?
-```
-- **Parallel**: `_parallel: true`.
-- **Perms**: Enabled/timeout/path; confirm destructive; allowances.
-- **Compaction**: Auto-threshold; preserves recent/system reload.
-
-### Persistence
-- `SavedSession` (JSON v1): msgs/prompt/perms/allowances.
-- `SessionManager`: `~/.nexus3/sessions/{agent_id}.json`, last-session.
+**Core Classes**:
+- `Session`: LLM + tools (perms/confirm/dispatch/exec).
+- `SessionLogger`: Logs to SQLite/MD/JSONL.
+- `SessionManager`: Disk ops (`save_session`, `load_session`).
+- `PermissionEnforcer`: Tool/path checks, multi-path (Fix 1.2).
+- `ConfirmationController`: User confirm + allowances.
+- `ToolDispatcher`: Skill/MCP resolution.
 
 ## Usage Examples
 
-### 1. Basic Session
+### 1. Basic Session + Logging
 ```python
-from nexus3.session import Session, LogConfig, LogStream
+from nexus3.session import Session, LogConfig
 from nexus3.session.logging import SessionLogger
 
 config = LogConfig(streams=LogStream.ALL)
@@ -90,42 +48,44 @@ async for chunk in session.send("Hello!", use_tools=True):
     print(chunk, end="")
 ```
 
-### 2. Save/Load
+### 2. Save/Load Session
 ```python
 from nexus3.session import SessionManager
 from nexus3.session.persistence import serialize_session
 
 mgr = SessionManager()
-saved = serialize_session(agent_id="my-agent", messages=..., ...)
+saved = serialize_session(agent_id="proj", messages=context.messages, ...)
 mgr.save_session(saved)
-loaded = mgr.load_session("my-agent")
+loaded = mgr.load_session("proj")
 ```
 
-### 3. Subagents
+### 3. Permissions (TRUSTED)
 ```python
-child_logger = logger.create_child_logger()
-child_session = Session(..., logger=child_logger)
+async def on_confirm(tc, path, cwd):
+    # UI prompt
+    return ConfirmationResult.ALLOW_FILE  # or ALLOW_EXEC_GLOBAL, etc.
+
+session = Session(..., on_confirm=on_confirm)
 ```
 
-### 4. Permissions (TRUSTED)
-```python
-async def confirm(tc, path, cwd):
-    # UI: "Allow {tc.name} on {path}?"
-    return ConfirmationResult.ALLOW_FILE
-
-session = Session(..., on_confirm=confirm)
-```
-
-### 5. Raw Logging
+### 4. Raw Logging
 ```python
 raw_cb = logger.get_raw_log_callback()
 provider = create_provider(..., raw_callback=raw_cb)
 ```
 
-## Security
-- JSON schema validation.
-- PathDecisionEngine (Arch A2).
-- Secure 0o600 writes (O_NOFOLLOW).
-- Timeouts, max iters, error→ToolResult.
+### 5. Subagents
+```python
+child_logger = logger.create_child_logger()
+child_session = Session(..., logger=child_logger)
+```
+
+## Architecture Highlights
+- **Tool Flow**: Stream → check perms/confirm → validate → exec (sem=10, to=30s) → results.
+- **Parallel**: `"_parallel": true` in args.
+- **Logging Dirs**: `.nexus3/logs/{id}/` (0o600 secure).
+- **Compaction**: Auto on threshold; LLM summary preserves recent.
+
+**Security**: O_NOFOLLOW writes, PathDecisionEngine (Arch A2), timeouts, sanitized errors.
 
 Updated: 2026-01-17

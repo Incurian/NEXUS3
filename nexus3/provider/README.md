@@ -1,28 +1,28 @@
 # NEXUS3 Provider Module
 
-LLM provider implementations for NEXUS3. Unified `AsyncProvider` interface for OpenAI-compatible APIs, Anthropic native, Azure OpenAI, and local servers (Ollama, vLLM). Supports streaming, tools, retries, reasoning, and raw logging.
+LLM provider implementations for NEXUS3. Unified `AsyncProvider` interface for OpenAI-compatible APIs (OpenRouter, OpenAI, Ollama, vLLM), Anthropic native, Azure OpenAI. Supports streaming, tools, retries, reasoning, raw logging.
 
 ## Purpose
 
-Abstracts LLM API differences (endpoints, auth, formats) behind `create_provider()` factory and `ProviderRegistry`. Enables seamless switching between providers/models in NEXUS3 agents.
+Abstracts LLM API differences behind `create_provider()` factory and `ProviderRegistry`. Enables model/provider switching in NEXUS3 agents.
 
-**Supported Providers:**
-- `openrouter` (default), `openai`, `ollama`, `vllm`: OpenAI `/v1/chat/completions`
-- `azure`: Azure OpenAI deployments
-- `anthropic`: Native `/v1/messages` (tools via content blocks)
+**Supported:** `openrouter` (default), `openai`, `ollama`, `vllm` (OpenAI `/v1/chat/completions`); `azure` (deployments); `anthropic` (native `/v1/messages`).
 
-**Defaults:** `PROVIDER_DEFAULTS` dict with base_url, api_key_env, auth_method.
+**Defaults:** `PROVIDER_DEFAULTS` dict (base_url, api_key_env, auth_method).
 
 ## Key Classes/Functions
 
 | Component | Description |
 |-----------|-------------|
-| `create_provider(config, model_id)` | Factory: dispatches by `config.type` |
-| `ProviderRegistry(config)` | Lazy multi-provider cache: `get(provider_name, model_id)`, `get_for_model(alias)` |
-| `BaseProvider` (ABC) | HTTP (httpx), auth, retries (3x on 429/5xx), `complete()`, `stream()` |
-| `OpenAICompatProvider` | OpenAI format: messages, tools, streaming deltas, reasoning |
+| `create_provider(config, model_id)` | Factory by `config.type` |
+| `ProviderRegistry(config)` | Lazy cache: `get(provider, model)`, `get_for_model(alias)` |
+| `BaseProvider` (ABC) | HTTP, auth, retries (3x 429/5xx), `complete()`, `stream()` |
+| `OpenAICompatProvider` | OpenAI format (OpenRouter/OpenAI/Ollama/vLLM), reasoning |
 | `AzureOpenAIProvider` | Extends compat: deployment/api-version |
 | `AnthropicProvider` | Native: content blocks, tool_use/result |
+| `OpenRouterProvider` | Alias for `OpenAICompatProvider` |
+
+**Exports:** `create_provider`, `OpenRouterProvider`, `ProviderRegistry`, `PROVIDER_DEFAULTS`.
 
 ## Usage Examples
 
@@ -33,13 +33,13 @@ from nexus3.config.schema import ProviderConfig
 from nexus3.core.types import Message, Role
 
 config = ProviderConfig(type="anthropic")
-provider = create_provider(config, "claude-3.5-sonnet-20240620")
+provider = create_provider(config, "claude-sonnet-4-20250514")
 
 msg = await provider.complete([Message(role=Role.USER, content="Hello")])
 print(msg.content)
 ```
 
-### 2. Registry (Multi-Model)
+### 2. Registry
 ```python
 from nexus3.provider.registry import ProviderRegistry
 from nexus3.config.schema import Config
@@ -69,7 +69,7 @@ while True:
     messages.append(msg)
     if not msg.tool_calls: break
     for tc in msg.tool_calls:
-        result = await execute_tool(tc)  # impl
+        result = await execute_tool(tc)
         messages.append(Message(role=Role.TOOL, content=str(result), tool_call_id=tc.id))
 ```
 
@@ -77,19 +77,18 @@ while True:
 ```json
 {
   "providers": {
-    "openrouter": {"type": "openrouter", "api_key_env": "OPENROUTER_API_KEY"},
-    "anthropic": {"type": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"}
+    "openrouter": {"type": "openrouter"},
+    "anthropic": {"type": "anthropic"}
   },
   "models": {
-    "claude-sonnet": {"provider": "anthropic", "model_id": "claude-3.5-sonnet-20240620"}
+    "claude-sonnet": {"provider": "anthropic", "model_id": "claude-sonnet-4-20250514"}
   }
 }
 ```
 
-## Security/Features
-- SSRF protection on `base_url`
-- Error body size limits
+## Features
+- SSRF protection, error body limits
 - Exponential backoff retries + jitter
 - Raw logging: `set_raw_log_callback()`
 
-Last updated: 2026-01-17
+Last updated: 2026-01-17 10:01

@@ -1,32 +1,21 @@
 # nexus3/core
 
-Foundational types, interfaces, and utilities for the NEXUS3 framework. This module has zero dependencies on other nexus3 modules and serves as the base layer for the entire system.
+Foundational types, interfaces, security utilities, and permission system for NEXUS3. Zero external dependencies (stdlib + jsonschema).
 
 ## Purpose
 
-The `core` module provides:
-- Immutable data structures for messages and tool interactions (`types.py`)
-- Streaming event types for real-time tool call detection (`types.py`)
-- Protocol definitions for pluggable components (providers, loggers) (`interfaces.py`)
-- A typed exception hierarchy (`errors.py`)
-- UTF-8 encoding utilities for cross-platform consistency (`encoding.py`)
-- Cooperative cancellation support for async operations (`cancel.py`)
-- Path normalization, sandbox validation, and unified resolution (`paths.py`, `resolver.py`, `path_decision.py`)
-- URL validation for SSRF protection (`url_validator.py`)
-- Permission system with presets, per-tool configuration, and ceiling inheritance (`permissions.py`, `policy.py`, `presets.py`, `allowances.py`)
-- Input validation for agent IDs and tool arguments (`validation.py`, `identifiers.py`)
-- Core constants and shared utilities (`constants.py`, `utils.py`)
-- Secure I/O and redaction utilities (`secure_io.py`, `redaction.py`)
+- Immutable message/tool types and structured streaming events
+- Async LLM provider protocol
+- Path sandboxing, SSRF-protected URL validation, atomic I/O
+- Multi-level permissions (YOLO/TRUSTED/SANDBOXED) with per-tool overrides and dynamic allowances
+- Cancellation tokens, encoding utils, input validation, secret redaction
 
-## Public API
-
-All public exports are defined in `__init__.py`:
+## Public API (`__init__.py`)
 
 ```python
 from nexus3.core import (
-    # Data types
+    # Types & Streaming
     Message, Role, ToolCall, ToolResult,
-    # Streaming events
     StreamEvent, ContentDelta, ReasoningDelta, ToolCallStarted, StreamComplete,
     # Protocols
     AsyncProvider,
@@ -36,159 +25,78 @@ from nexus3.core import (
     CancellationToken,
     # Encoding
     ENCODING, ENCODING_ERRORS, configure_stdio,
-    # Path sandbox
+    # Paths
     validate_path, validate_sandbox, get_default_sandbox, PathResolver,
-    # URL validation
+    # URLs
     validate_url,
     # Permissions
-    PermissionLevel, PermissionPolicy, ToolPermission,
-    PermissionPreset, PermissionDelta, AgentPermissions,
+    PermissionLevel, PermissionPolicy, ToolPermission, PermissionPreset, PermissionDelta, AgentPermissions,
     get_builtin_presets, resolve_preset,
 )
 ```
 
-## Key Modules Overview
+## Key Classes/Functions
 
-### `types.py` - Data Structures and Streaming Events
-- **Core Types**: `Role` (enum), `Message`, `ToolCall`, `ToolResult`
-- **Streaming**: `StreamEvent` (base), `ContentDelta`, `ReasoningDelta`, `ToolCallStarted`, `StreamComplete`
+| Module | Key Exports |
+|--------|-------------|
+| `types.py` | `Message`, `ToolCall`, `StreamEvent` subclasses |
+| `interfaces.py` | `AsyncProvider` (LLM streaming protocol) |
+| `permissions.py` | `AgentPermissions`, `resolve_preset("trusted")` |
+| `path_decision.py`/`paths.py`/`resolver.py` | `PathDecisionEngine`, `PathResolver`, `validate_path()` |
+| `policy.py`/`presets.py`/`allowances.py` | `PermissionPolicy`, `SessionAllowances`, presets |
+| `url_validator.py` | `validate_url(url)` |
+| `cancel.py` | `CancellationToken` |
+| Others (internal/public via init) | Encoding, errors, validation, redaction, secure I/O, text safety |
 
-### `interfaces.py` - Protocols
-- `AsyncProvider`: LLM completion and streaming interface
-- `RawLogCallback`: Raw API logging protocol
-
-### `errors.py` - Exception Hierarchy
-- `NexusError` (base), `ConfigError`, `ProviderError`, `PathSecurityError`
-
-### `cancel.py` - CancellationToken
-Cooperative cancellation with `is_cancelled`, `cancel()`, `raise_if_cancelled()`
-
-### `encoding.py` - UTF-8 Utilities
-`ENCODING = "utf-8"`, `ENCODING_ERRORS = "replace"`, `configure_stdio()`
-
-### `paths.py` & `path_decision.py` - Path Handling
-- `validate_path()`: Universal validation with allowed/blocked paths
-- `validate_sandbox()`, `get_default_sandbox()`, `normalize_path()`, `display_path()`
-- `atomic_write_text()`: Atomic file writes
-- Internal decision engine for consistent path checks
-
-### `resolver.py` - PathResolver
-Unified path resolution relative to agent CWD, with per-tool allowed_paths.
-
-### `url_validator.py` - SSRF Protection
-- `validate_url(url, allow_localhost=False)`: Blocks private IPs, metadata endpoints
-- `UrlSecurityError`
-
-### `permissions.py` - Agent Permissions (Aggregator)
-Re-exports from `policy.py`, `allowances.py`, `presets.py`:
-- `PermissionLevel` (YOLO, TRUSTED, SANDBOXED)
-- `PermissionPolicy`, `AgentPermissions`, `resolve_preset()`
-- `SessionAllowances` for dynamic TRUSTED allowances
-- Ceiling inheritance prevents privilege escalation
-
-### `policy.py` - Permission Primitives
-- `DESTRUCTIVE_ACTIONS`, `SAFE_ACTIONS`, `NETWORK_ACTIONS`
-- `PermissionPolicy` path/action checks, `requires_confirmation()`
-
-### `allowances.py` - Dynamic Allowances
-- `SessionAllowances`: Per-session write/exec allowances for TRUSTED mode
-
-### `presets.py` - Permission Presets
-- `PermissionPreset`, `ToolPermission`, `get_builtin_presets()`
-
-### `validation.py` - Input Validation
-- `validate_agent_id()`, `validate_tool_arguments()` with jsonschema
-
-### `constants.py` - Global Paths
-- `get_nexus_dir()` → `~/.nexus3`
-- `get_sessions_dir()`, etc.
-
-### `utils.py` - Shared Utilities
-- `deep_merge()`: Recursive dict merge
-
-### `identifiers.py`, `secure_io.py`, `redaction.py`
-Internal utilities for IDs, secure I/O, and content redaction.
-
-## Dependencies
-
-**Stdlib**: asyncio, dataclasses, enum, ipaddress, pathlib, etc.
-
-**PyPI**: jsonschema (validation)
-
-**Internal**: None
-
-## Data Flow
-
-```
-User → Message(USER) → Provider.stream() → StreamEvent(s) → ToolCall(s) → ToolResult → Message(TOOL)
-                      ↓
-               ContentDelta / ToolCallStarted / StreamComplete(Message(ASSISTANT))
-```
+**Path Semantics**:
+- `allowed_paths=None`: Unrestricted (YOLO/TRUSTED)
+- `allowed_paths=[]`: Deny all
+- `allowed_paths=[dir]`: Sandbox to dir
 
 ## Usage Examples
 
-### Messages and Tool Calls
+### Streaming Completion
 ```python
-from nexus3.core import Message, Role, ToolCall, ToolResult
+from nexus3.core import AsyncProvider, Message, Role, ContentDelta, ToolCallStarted
 
-msg = Message(role=Role.USER, content="Analyze this file.")
-tool_call = ToolCall(id="tc_1", name="read_file", arguments={"path": "data.txt"})
-result = ToolResult(tool_call_id="tc_1", content="File content here...")
-```
+class MyProvider(AsyncProvider):
+    async def stream(self, messages: list[Message], tools=None):
+        yield ContentDelta("Hello")
+        yield ToolCallStarted(index=0, id="tc1", name="read_file")
+        yield StreamComplete(Message(role=Role.ASSISTANT, content="Done"))
 
-### Streaming Events
-```python
-from nexus3.core import StreamEvent, ContentDelta, ToolCallStarted
-
-for event in provider.stream(messages, stream=True):
+async for event in provider.stream([Message(role=Role.USER, content="Hi")]):
     match event:
-        case ContentDelta(content):
-            print(content, end="", flush=True)
-        case ToolCallStarted(call):
-            print(f"Tool call started: {call.name}")
-        case StreamComplete(content):
-            print("Stream complete")
+        case ContentDelta(text): print(text, end="")
+        case ToolCallStarted(name=name): print(f"Calling {name}")
 ```
 
 ### Permissions
 ```python
-from nexus3.core import resolve_preset, PermissionLevel
+from nexus3.core import resolve_preset
 
 perms = resolve_preset("trusted", cwd=Path("/project"))
-if perms.effective_policy.requires_confirmation("write_file", path=Path("output.txt")):
-    # Prompt user for confirmation
-    response = get_user_confirmation(perms, "write_file", path)
-    if response == "allow_file":
-        perms.add_file_allowance(path)
+if perms.effective_policy.requires_confirmation("write_file", path=Path("out.txt")):
+    # User prompt → perms.session_allowances.add_write_file(path)
+    pass
+sub_perms = perms.apply_delta(PermissionDelta(disable_tools=["bash_safe"]))
 ```
 
-### Path Validation
+### Path Resolution
 ```python
-from nexus3.core import validate_path, get_default_sandbox
+from nexus3.core import PathResolver  # Requires ServiceContainer
 
-sandbox = get_default_sandbox()
-safe_path = validate_path("../data.txt", allowed_paths=sandbox)
+resolver = PathResolver(services)
+safe_path = resolver.resolve("data.txt", tool_name="read_file", must_exist=True)
 ```
 
-### Provider Interface
-```python
-from nexus3.core.interfaces import AsyncProvider
-from nexus3.core.types import Message
-
-class MyProvider(AsyncProvider):
-    async def stream(self, messages: list[Message], **kwargs):
-        # Implement streaming logic
-        yield StreamComplete(Message(role=Role.ASSISTANT, content="Hello!"))
+## Data Flow
+```
+User Message → Provider.stream() → ContentDelta | ToolCallStarted → ToolResult → Assistant Message
+                              ↓
+                       Permission/Path Checks → Secure Execution
 ```
 
-## Architecture Summary
-- **Immutability**: Frozen dataclasses
-- **Protocols**: Structural typing
-- **Security**: Sandboxing, SSRF protection, permission ceilings
-- **Streaming**: Structured events
-- **Permissions**: Multi-level, dynamic allowances, RPC-serializable
-
-**allowed_paths Semantics**:
-- `None`: Unrestricted
-- `[]`: Deny all
-- `[Path(...)]`: Restricted to listed dirs
+## Dependencies
+- Stdlib: asyncio, dataclasses, ipaddress, pathlib, etc.
+- PyPI: jsonschema (validation only)

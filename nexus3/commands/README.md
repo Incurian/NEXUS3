@@ -17,14 +17,14 @@ This module provides shared, structured command implementations for both the `ne
 |------|-------------|------|
 | [`__init__.py`](__init__.py) | Re-exports all public APIs. | 1.2K |
 | [`protocol.py`](protocol.py) | Core types: `CommandResult`, `CommandOutput`, `CommandContext`. | 3.8K |
-| [`core.py`](core.py) | Async command functions. | 23.7K |
+| [`core.py`](core.py) | Async command functions. | 24.8K |
 
 ### Types (`protocol.py`)
 - **`CommandResult` (Enum)**: `SUCCESS`, `ERROR`, `QUIT`, `SWITCH_AGENT`, `ENTER_WHISPER`.
 - **`CommandOutput` (dataclass)**: Structured response. Classmethods: `success()`, `error()`, `quit()`, `switch_agent()`, `enter_whisper()`.
 - **`CommandContext` (dataclass)**: `pool` (AgentPool), `session_manager`, `current_agent_id`, `is_repl`.
 
-### Commands (`core.py`)
+### Commands (`core.py`) - Exported via `__all__`
 | Command | Args | Description |
 |---------|------|-------------|
 | `cmd_list` | `(ctx)` | List active agents. |
@@ -71,30 +71,23 @@ send_out = await cmd_send(ctx, "my-agent", "Hello!")
 print(send_out.message)  # Response
 ```
 
-### Status
+### Status & Sessions
 ```python
 await cmd_status(ctx, show_tools=True, show_tokens=True)
-```
-
-### Sessions
-```python
 await cmd_save(ctx, "my-session")
-await cmd_clone(ctx, "my-session", "backup")
 await cmd_shutdown(ctx)
 ```
 
 CLI: `nexus-rpc list`, etc.  
 REPL: `/list`, `/create my-agent`, etc.
 
-## Architecture
-```
-CLI/REPL → CommandContext → cmd_*() → CommandOutput → Render (JSON/Rich)
-                  ↓
-       Shared: AgentPool + SessionManager
+## Exports (`__init__.py`)
+```python
+__all__ = [
+    "CommandContext", "CommandOutput", "CommandResult",
+    "cmd_cancel", "cmd_clone", "cmd_create", "cmd_delete", "cmd_destroy",
+    "cmd_list", "cmd_rename", "cmd_save", "cmd_send", "cmd_shutdown", "cmd_status"
+]
 ```
 
-- **Async**: For I/O ops.
-- **Safe**: REPL protections (no self-destroy).
-- **Extensible**: Add `cmd_*` and export in `__init__.py`.
-
-Generated: 2026-01-17
+Updated: 2026-01-17

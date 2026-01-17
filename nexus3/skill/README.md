@@ -1,94 +1,79 @@
 # nexus3.skill - NEXUS3 Skill (Tool) System
 
-Updated: 2026-01-17
+**Updated: 2026-01-17**
 
-Tool (skill) system for NEXUS3. Provides infrastructure for defining, registering, and executing skills that extend agent capabilities (file I/O, shell, git, Nexus control, etc.).
+Core infrastructure for defining, registering, and executing skills (tools) that extend NEXUS3 agent capabilities.
 
-Skills are single-purpose `async execute(**kwargs) -> ToolResult(output|error)`.
+Skills implement the `Skill` protocol: `name`, `description`, `parameters` (JSON Schema), `async execute(**kwargs) -> ToolResult`.
+
+## Exports (`__all__`)
+
+| Category | Exports |
+|----------|---------|
+| **Protocols/Bases** | `Skill`, `BaseSkill`, `FileSkill`, `NexusSkill`, `ExecutionSkill`, `FilteredCommandSkill` |
+| **Factories** | `file_skill_factory`, `nexus_skill_factory`, `execution_skill_factory`, `filtered_command_skill_factory` |
+| **Registry** | `SkillRegistry`, `SkillFactory`, `SkillSpec` |
+| **Services** | `ServiceContainer` |
+| **Errors** | `SkillError`, `SkillNotFoundError`, `SkillExecutionError` |
 
 ## Key Components
 
-| Component | Description |
-|-----------|-------------|
-| **`Skill`** | `@runtime_checkable Protocol`: `name`, `description`, `parameters` (JSON Schema), `async execute` |
-| **`BaseSkill`** | `ABC`: Set metadata in `__init__`, implement `execute` |
-| **`FileSkill`** | Path validation (`PathResolver`), `@handle_file_errors` |
-| **`NexusSkill`** | In-process API or HTTP to Nexus server |
-| **`ExecutionSkill`** | Subprocess (1-300s timeout, sandbox cwd) |
-| **`FilteredCommandSkill`** | Permission-filtered CLI (YOLO/TRUSTED/SANDBOXED) |
-| **`SkillRegistry`** | `register(name, factory)`, `get(name)`, `get_definitions()`, permission filtering |
-| **`SkillFactory`** | `Callable[[ServiceContainer], Skill]` |
-| **`ServiceContainer`** | DI: permissions, cwd, `allowed_paths`, `agent_api` |
-| **`ToolResult`** | `output=str|None, error=str|None` |
+- **`SkillRegistry`**: Register factories, `get_definitions()` (OpenAI tools), lazy instantiation, permission filtering.
+- **`ServiceContainer`**: DI for permissions, cwd, `allowed_paths`, `agent_api`.
+- **Bases**: `FileSkill` (path validation), `NexusSkill` (API/HTTP), `ExecutionSkill` (subprocess, timeout), `FilteredCommandSkill` (permission filters).
+- **Decorators**: `@validate_skill_parameters()`, `@handle_file_errors()` (auto-applied by factories).
 
-**Decorators** (auto-applied): `@validate_skill_parameters()` (JSON Schema).
-
-## Files
-
-**Root**:
-| File | Description |
-|------|-------------|
-| `__init__.py` | Exports public API |
-| `base.py` | Protocols, bases, factories, decorators |
-| `errors.py` | `SkillError`, `SkillNotFoundError`, `SkillExecutionError` |
-| `registry.py` | `SkillRegistry`, `SkillSpec` |
-| `services.py` | `ServiceContainer` |
-
-**builtin/** (~25 skills + utils):
-- `registration.py`: `register_builtin_skills(registry)`
-- Skills: `append_file`, `bash`, `copy_file`, `edit_file`, `env`, `file_info`, `git`, `glob_search` (`glob`), `grep`, `list_directory`, `mkdir`, `nexus_*` (6), `read_file`, `regex_replace`, `rename`, `run_python`, `sleep`, `tail`, `write_file`
-- Manual: `echo.py`
+Security: Per-tool `allowed_paths`, command whitelists/blocklists (YOLO/TRUSTED/SANDBOXED).
 
 ## Usage
 
-1. **Setup**:
-   ```python
-   from nexus3.skill import SkillRegistry, ServiceContainer
-   from nexus3.skill.builtin.registration import register_builtin_skills  # or .builtin import *
+```python
+from nexus3.skill import SkillRegistry, ServiceContainer
+from nexus3.skill.builtin.registration import register_builtin_skills  # Optional builtins
 
-   services = ServiceContainer()
-   services.register(&quot;permissions&quot;, agent_permissions)
-   services.register(&quot;cwd&quot;, Path(&quot;/sandbox&quot;))
-   registry = SkillRegistry(services)
-   register_builtin_skills(registry)
-   ```
+services = ServiceContainer()
+# services.register("permissions", agent_permissions)
+# services.register("cwd", Path("/sandbox"))
+registry = SkillRegistry(services)
+register_builtin_skills(registry)  # ~25 skills: read_file, bash, git, nexus_*, etc.
 
-2. **Tools for LLM**:
-   ```python
-   tools = registry.get_definitions()  # OpenAI format
-   # Or filtered: registry.get_definitions_for_permissions(permissions)
-   ```
+# LLM tools
+tools = registry.get_definitions()  # List[dict] OpenAI format
 
-3. **Execute**:
-   ```python
-   skill = registry.get(&quot;read_file&quot;)
-   result = await skill.execute(path=&quot;foo.txt&quot;)
-   ```
-
-## Security Features
-
-- **Sandbox**: Per-tool `allowed_paths` (None=unrestricted, []=deny)
-- **Permissions**: Tool disablement, command filters (SANDBOXED=read-only whitelist)
-- **Validation**: JSON Schema, path normalize/resolve symlinks, localhost URLs, timeouts
-- **Isolation**: Per-agent `ServiceContainer`
+# Execute
+skill = registry.get("read_file")
+result = await skill.execute(path="foo.txt")
+print(result.output)
+```
 
 ## Extending
 
-1. Subclass base (e.g., `FileSkill`).
-2. Define `@property name/description/parameters`.
-3. Implement `async execute`.
-4. `@file_skill_factory` (etc.) → `registry.register(&quot;my_skill&quot;, MySkill.factory)`
+```python
+from nexus3.skill import BaseSkill, file_skill_factory
+from nexus3.core.types import ToolResult
+
+@file_skill_factory
+class MySkill(BaseSkill):
+    def __init__(self):
+        super().__init__(
+            name="my_skill",
+            description="Does X",
+            parameters={"type": "object", "properties": {...}, "required": [...]}
+        )
+
+    async def execute(self, **kwargs) -> ToolResult:
+        # Use self._services for DI
+        return ToolResult(output="result")
+
+# Register
+registry.register("my_skill", MySkill.factory)
+```
 
 **Best Practices**:
-- Always return `ToolResult`.
-- Validate early, use decorators.
-- `asyncio.to_thread` for blocking I/O.
+- Subclass appropriate base.
+- Validate early (decorators).
+- `ToolResult(output|error)`.
 - Single responsibility.
+- `asyncio.to_thread` for sync I/O.
 
-## Dependencies
-
-- `nexus3.core`: `ToolResult`, `PathResolver`, permissions, validation
-- `nexus3.client`: `NexusClient`
-- `nexus3.rpc`: `DirectAgentAPI`
-- `jsonschema`
-- Stdlib: `asyncio`, `pathlib`, `subprocess`, etc.
+**Deps**: `nexus3.core`, `jsonschema`, stdlib (`asyncio`, `pathlib`, etc.).
