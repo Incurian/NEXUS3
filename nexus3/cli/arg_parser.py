@@ -147,6 +147,15 @@ def parse_args() -> argparse.Namespace:
     add_port_arg(status_parser)
     add_api_key_arg(status_parser)
 
+    # rpc compact - Force context compaction
+    compact_parser = rpc_subparsers.add_parser(
+        "compact",
+        help="Force context compaction to reclaim token space",
+    )
+    compact_parser.add_argument("agent_id", help="Agent ID")
+    add_port_arg(compact_parser)
+    add_api_key_arg(compact_parser)
+
     # rpc shutdown - Shutdown server
     shutdown_parser = rpc_subparsers.add_parser(
         "shutdown",

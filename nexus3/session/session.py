@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -155,6 +156,13 @@ class Session:
         # Track cancelled tool calls to report on next send()
         self._pending_cancelled_tools: list[tuple[str, str]] = []  # [(tool_id, tool_name), ...]
 
+        # Track tool iteration state for status reporting
+        self._halted_at_iteration_limit: bool = False
+        self._last_iteration_count: int = 0
+
+        # Track last action timestamp (when agent took an action, not received messages)
+        self._last_action_at: datetime | None = None
+
         # Lazy-loaded compaction provider (uses different model if configured)
         self._compaction_provider: AsyncProvider | None = None
 
@@ -180,6 +188,21 @@ class Session:
 
         self._pending_cancelled_tools.clear()
 
+    @property
+    def halted_at_iteration_limit(self) -> bool:
+        """Whether the last send() halted due to max tool iterations."""
+        return self._halted_at_iteration_limit
+
+    @property
+    def last_iteration_count(self) -> int:
+        """Number of tool iterations in the last send() call."""
+        return self._last_iteration_count
+
+    @property
+    def last_action_at(self) -> datetime | None:
+        """Timestamp of the last action taken by the agent (tool call or response)."""
+        return self._last_action_at
+
     async def send(
         self,
         user_input: str,
@@ -203,6 +226,10 @@ class Session:
         if self.context:
             # Flush any cancelled tool results from previous turn
             self._flush_cancelled_tools()
+
+            # Reset iteration state for this send()
+            self._halted_at_iteration_limit = False
+            self._last_iteration_count = 0
 
             # Multi-turn: use context manager
             self.context.add_user_message(user_input)
@@ -269,7 +296,9 @@ class Session:
         Yields:
             String chunks of the assistant's response.
         """
-        for _ in range(self.max_tool_iterations):
+        for iteration_num in range(self.max_tool_iterations):
+            self._last_iteration_count = iteration_num + 1
+
             # Check for compaction BEFORE build_messages() to avoid truncation
             if self._should_compact():
                 result = await self.compact(force=False)
@@ -405,9 +434,15 @@ class Session:
                 # Notify batch complete
                 if self.on_batch_complete:
                     self.on_batch_complete()
+
+                # Update last action timestamp (agent executed tools)
+                self._last_action_at = datetime.now()
             else:
                 # No tool calls - this is the final response
                 self.context.add_assistant_message(final_message.content)
+
+                # Update last action timestamp (agent responded)
+                self._last_action_at = datetime.now()
 
                 # Check for auto-compaction after response is complete
                 if self._should_compact():
@@ -419,6 +454,7 @@ class Session:
                 return
 
         # Max iterations reached
+        self._halted_at_iteration_limit = True
         yield "[Max tool iterations reached]"
 
     async def _execute_single_tool(self, tool_call: "ToolCall") -> ToolResult:

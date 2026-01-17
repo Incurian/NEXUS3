@@ -1,85 +1,79 @@
 # nexus3.session Module
 
-Comprehensive chat session management, structured logging, persistence, and coordination for NEXUS3 AI agents.
+Comprehensive chat session management, structured logging, persistence, and tool coordination for NEXUS3 AI agents.
 
 ## Purpose
 
-The `nexus3.session` module orchestrates the core conversation lifecycle for NEXUS3 agents:
+The `nexus3.session` module powers conversation lifecycles:
+1. **Session** (`session.py`): LLM coordination, streaming tool loops (sequential/parallel), permissions, compaction, cancellation.
+2. **Logging** (`logging.py`): SQLite + Markdown/JSONL exports (`context.md`, `verbose.md`, `raw.jsonl`), subagent nesting.
+3. **Storage** (`storage.py`): SQLite v2 schema for messages/events/metadata/markers.
+4. **Persistence** (`persistence.py`, `session_manager.py`): JSON save/load/rename/clone in `~/.nexus3/sessions/`.
 
-1. **Session Coordination** (`Session`): Manages LLM provider interactions, tool execution loops (sequential/parallel), permission checks, context compaction, and cancellation.
-2. **Structured Logging** (`SessionLogger`): SQLite-backed storage with Markdown exports (`context.md`, `verbose.md`) and raw JSONL traces. Supports subagents.
-3. **Persistence** (`SavedSession`, `SessionManager`): JSON serialization for save/load/rename/clone sessions in `~/.nexus3/sessions/`.
-4. **Storage** (`SessionStorage`): SQLite schema v2 for messages/events/metadata/markers (cleanup tracking).
-
-Enables multi-turn conversations, tool use, permissions (YOLO/TRUSTED/SANDBOXED), MCP tools, and auto-compaction.
+Supports multi-turn, tools, permissions (YOLO/TRUSTED/SANDBOXED), MCP, auto-compaction.
 
 ## Dependencies
 
-### Python Standard Library
-- `asyncio`, `dataclasses`, `datetime`, `enum`, `json`, `logging`, `os`, `pathlib`, `secrets`, `sqlite3`, `stat`, `time`, `typing`
+**Stdlib**: `asyncio`, `dataclasses`, `datetime`, `json`, `logging`, `os`, `pathlib`, `secrets`, `sqlite3`, `typing`.
 
-### Internal NEXUS3 Modules
-- `nexus3.core.*` (types, permissions, validation, interfaces)
-- `nexus3.context.*` (compaction, manager, loader)
-- `nexus3.config.schema` (Config, models)
-- `nexus3.skill.*` (registry, services)
-- `nexus3.provider.*` (AsyncProvider)
-- `nexus3.mcp.*` (permissions, registry; optional)
+**NEXUS3**:
+- `nexus3.core.*`: types, permissions, validation.
+- `nexus3.context.*`: compaction/manager.
+- `nexus3.config.schema`: Config.
+- `nexus3.skill.*`: registry/services (tools).
+- `nexus3.provider.*`: AsyncProvider.
+- `nexus3.mcp.*`: optional.
 
-No external packages required.
+No external deps.
 
-## Key Classes & Modules
+## Key Classes/Modules
 
-| Module/File | Key Exports | Role |
-|-------------|-------------|------|
-| `__init__.py` | All public API | Package exports |
-| `session.py` | `Session`, `ConfirmationCallback` | Core coordinator + tool loop |
-| `logging.py` | `SessionLogger`, `RawLogCallbackAdapter` | Multi-stream logging hub |
-| `storage.py` | `SessionStorage`, `SessionMarkers` | SQLite ops (v2 schema) |
+| File | Key Exports | Role |
+|------|-------------|------|
+| `__init__.py` | All public API | Exports |
+| `session.py` | `Session`, `ConfirmationCallback` | Core + tool loop |
+| `logging.py` | `SessionLogger`, `RawLogCallbackAdapter` | Logging hub |
+| `storage.py` | `SessionStorage`, `SessionMarkers` | SQLite ops |
 | `session_manager.py` | `SessionManager`, `SessionNotFoundError` | Disk persistence |
-| `persistence.py` | `SavedSession`, `serialize_session(...)` | JSON ser/de |
-| `markdown.py` | `MarkdownWriter`, `RawWriter` | Human/raw log writers |
-| `types.py` | `LogConfig`, `LogStream`, `SessionInfo` | Config & types |
+| `persistence.py` | `SavedSession`, `serialize_session()` | JSON ser/de |
+| `markdown.py` | `MarkdownWriter`, `RawWriter` | Log writers |
+| `confirmation.py` | `ConfirmationController` | User confirmations |
+| `dispatcher.py` | `ToolDispatcher` | Skill resolution |
+| `enforcer.py` | `PermissionEnforcer` | Permissions |
+| `types.py` | `LogConfig`, `LogStream`, `SessionInfo` | Types |
 
-**Exported API** (from `__init__.py`): Matches table above.
+## Architecture
 
-## Architecture Overview
-
-### Logging Structure
+### Logging
 ```
-.nexus3/logs/YYYY-MM-DD_HHMMSS_{repl/serve/agent}_xxxxxx/  # SessionInfo.session_dir
-├── session.db                          # SQLite: messages/events/metadata/session_markers
-├── context.md                          # Core chat (always)
-├── verbose.md                          # Thinking/timing/tokens (--verbose)
-├── raw.jsonl                           # API traces (--raw-log)
-└── subagent_xxxxxx/                    # Nested child loggers
-    └── ...
+.nexus3/logs/YYYY-MM-DD_HHMMSS_{repl/serve/agent}_xxxxxx/
+├── session.db (SQLite v2)
+├── context.md
+├── verbose.md (--verbose)
+├── raw.jsonl (--raw-log)
+└── subagent_xxxxxx/...
 ```
-- **Permissions**: Files created 0o600 (owner r/w only).
-- **Markers**: Track `session_type` ('temp'/'saved'/'subagent'), `status` ('active'/'destroyed'/'orphaned'), parent for cleanup.
+- Secure 0o600 perms.
+- Markers track type/status/parent for cleanup.
 
 ### Session Flow (`Session.send()`)
 ```
-user_input → add_user_message()
-↓ (if tools)
-while tool_calls and < max_iters (10):
-  compact? → summarize old msgs
-  stream(provider) → yield ContentDelta/ReasoningDelta
-  if tool_calls:
-    permissions → confirm? → validate args → exec seq/par (semaphore=10)
-    add_tool_results()
-final content → add_assistant_message() → compact?
+user → add_user()
+↓ tools?
+while tool_calls < max_iters(10):
+  compact? → LLM summarize
+  stream(provider) → ContentDelta/ToolCallStarted
+  tools? → check perms/confirm → validate → exec seq/par (sem=10, to=30s)
+  add_tool_results()
+final → add_assistant() → compact?
 ```
-
-- **Tool Execution**: Seq (halt on error), Par (`_parallel: true`). Timeouts (30s default).
-- **Permissions**: Per-tool enabled/timeout/path; TRUSTED confirms destructive ops; SANDBOXED restricts.
-- **Compaction**: Auto > threshold; LLM summary; preserves recent msgs/system prompt reload.
-- **Callbacks**: Batch-aware progress, reasoning start/end, tool events.
+- **Parallel**: `_parallel: true`.
+- **Perms**: Enabled/timeout/path; confirm destructive; allowances.
+- **Compaction**: Auto-threshold; preserves recent/system reload.
 
 ### Persistence
-- **SavedSession** (JSON schema v1): agent_id, messages, prompt, perms, allowances, token_usage.
-- **SessionManager**: `~/.nexus3/sessions/{agent_id}.json` + last-session helpers.
-- Security: `validate_agent_id()`, atomic 0o600 writes, TOCTOU-safe.
+- `SavedSession` (JSON v1): msgs/prompt/perms/allowances.
+- `SessionManager`: `~/.nexus3/sessions/{agent_id}.json`, last-session.
 
 ## Usage Examples
 
@@ -90,55 +84,48 @@ from nexus3.session.logging import SessionLogger
 
 config = LogConfig(streams=LogStream.ALL)
 logger = SessionLogger(config)
-session = Session(provider, context, logger=logger, registry=registry, services=services)
+session = Session(provider, context, logger=logger, registry=registry)
 
 async for chunk in session.send("Hello!", use_tools=True):
-    print(chunk, end="", flush=True)
+    print(chunk, end="")
 ```
 
-### 2. Save/Load Session
+### 2. Save/Load
 ```python
 from nexus3.session import SessionManager
 from nexus3.session.persistence import serialize_session
 
-manager = SessionManager()
-saved = serialize_session(agent_id="my-agent", messages=context.messages, 
-                          system_prompt=prompt, working_directory=cwd,
-                          permission_level="trusted", ...)
-path = manager.save_session(saved)
-loaded = manager.load_session("my-agent")
+mgr = SessionManager()
+saved = serialize_session(agent_id="my-agent", messages=..., ...)
+mgr.save_session(saved)
+loaded = mgr.load_session("my-agent")
 ```
 
-### 3. Subagent Logging
+### 3. Subagents
 ```python
-child_logger = logger.create_child_logger()  # Nests under parent session_dir
+child_logger = logger.create_child_logger()
 child_session = Session(..., logger=child_logger)
 ```
 
-### 4. Raw Logging (Provider Integration)
+### 4. Permissions (TRUSTED)
 ```python
-raw_callback = logger.get_raw_log_callback()  # If LogStream.RAW enabled
-provider = create_provider(config, model="gpt-4o", raw_callback=raw_callback)
-```
-
-### 5. Custom Confirmation (TRUSTED Mode)
-```python
-async def confirm(tool_call: ToolCall, path: Path | None, cwd: Path) -> ConfirmationResult:
-    # UI prompt: \"Allow {tool_call.name} on {path}?\"
-    return ConfirmationResult.ALLOW_FILE  # or DENY/ALLOW_ONCE/etc.
+async def confirm(tc, path, cwd):
+    # UI: "Allow {tc.name} on {path}?"
+    return ConfirmationResult.ALLOW_FILE
 
 session = Session(..., on_confirm=confirm)
 ```
 
-## Multi-Agent Support
-- **AgentPool**: Per-agent `Session`/`Context`/`Logger`; shared `Provider`/`PromptLoader`.
-- **Subagents**: Nested dirs, parent_id tracking, child destruction skip-confirm.
-- **Cleanup**: Markers enable orphaned temp/subagent pruning (Phase 6).
+### 5. Raw Logging
+```python
+raw_cb = logger.get_raw_log_callback()
+provider = create_provider(..., raw_callback=raw_cb)
+```
 
-## Security Features
-- Tool arg JSON schema validation.
-- Permission levels w/ confirmations/allowances.
-- Secure file perms (0o600), path traversal validation.
-- Timeouts, max iters, exception→ToolResult.
+## Security
+- JSON schema validation.
+- PathDecisionEngine (Arch A2).
+- Secure 0o600 writes (O_NOFOLLOW).
+- Timeouts, max iters, error→ToolResult.
 
-Exports match `__init__.py` __all__. See source for full API docs.
+Updated: 2026-01-17

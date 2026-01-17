@@ -11,11 +11,12 @@ The `core` module provides:
 - A typed exception hierarchy (`errors.py`)
 - UTF-8 encoding utilities for cross-platform consistency (`encoding.py`)
 - Cooperative cancellation support for async operations (`cancel.py`)
-- Path normalization, sandbox validation, and unified resolution (`paths.py`, `resolver.py`)
+- Path normalization, sandbox validation, and unified resolution (`paths.py`, `resolver.py`, `path_decision.py`)
 - URL validation for SSRF protection (`url_validator.py`)
 - Permission system with presets, per-tool configuration, and ceiling inheritance (`permissions.py`, `policy.py`, `presets.py`, `allowances.py`)
-- Input validation for agent IDs and tool arguments (`validation.py`)
+- Input validation for agent IDs and tool arguments (`validation.py`, `identifiers.py`)
 - Core constants and shared utilities (`constants.py`, `utils.py`)
+- Secure I/O and redaction utilities (`secure_io.py`, `redaction.py`)
 
 ## Public API
 
@@ -65,17 +66,17 @@ Cooperative cancellation with `is_cancelled`, `cancel()`, `raise_if_cancelled()`
 ### `encoding.py` - UTF-8 Utilities
 `ENCODING = "utf-8"`, `ENCODING_ERRORS = "replace"`, `configure_stdio()`
 
-### `paths.py` - Path Handling
+### `paths.py` & `path_decision.py` - Path Handling
 - `validate_path()`: Universal validation with allowed/blocked paths
 - `validate_sandbox()`, `get_default_sandbox()`, `normalize_path()`, `display_path()`
 - `atomic_write_text()`: Atomic file writes
+- Internal decision engine for consistent path checks
+
+### `resolver.py` - PathResolver
+Unified path resolution relative to agent CWD, with per-tool allowed_paths.
 
 ### `url_validator.py` - SSRF Protection
 - `validate_url(url, allow_localhost=False)`: Blocks private IPs, metadata endpoints
-  - P2.1: Default is now `allow_localhost=False` (safe-by-default)
-  - Callers needing localhost must explicitly pass `allow_localhost=True`
-  - P2.2: Known limitation: DNS rebinding/TOCTOU is documented (see module docstring)
-    - Mitigated by validating ALL DNS results, not just the first
 - `UrlSecurityError`
 
 ### `permissions.py` - Agent Permissions (Aggregator)
@@ -85,60 +86,109 @@ Re-exports from `policy.py`, `allowances.py`, `presets.py`:
 - `SessionAllowances` for dynamic TRUSTED allowances
 - Ceiling inheritance prevents privilege escalation
 
-### `resolver.py` - PathResolver
-Unified path resolution relative to agent CWD, with per-tool allowed_paths.
+### `policy.py` - Permission Primitives
+- `DESTRUCTIVE_ACTIONS`, `SAFE_ACTIONS`, `NETWORK_ACTIONS`
+- `PermissionPolicy` path/action checks, `requires_confirmation()`
+
+### `allowances.py` - Dynamic Allowances
+- `SessionAllowances`: Per-session write/exec allowances for TRUSTED mode
+
+### `presets.py` - Permission Presets
+- `PermissionPreset`, `ToolPermission`, `get_builtin_presets()`
 
 ### `validation.py` - Input Validation
-- `validate_agent_id()`, `is_valid_agent_id()`
-- `validate_tool_arguments()` with jsonschema
+- `validate_agent_id()`, `validate_tool_arguments()` with jsonschema
 
 ### `constants.py` - Global Paths
 - `get_nexus_dir()` → `~/.nexus3`
-- `get_sessions_dir()`, `get_default_config_path()`, `get_rpc_token_path()`
+- `get_sessions_dir()`, etc.
 
 ### `utils.py` - Shared Utilities
 - `deep_merge()`: Recursive dict merge
-- `find_ancestor_config_dirs()`: Locate `.nexus3` in parent dirs
+
+### `identifiers.py`, `secure_io.py`, `redaction.py`
+Internal utilities for IDs, secure I/O, and content redaction.
 
 ## Dependencies
 
-**Stdlib**:
-- `asyncio`, `collections.abc`, `copy`, `dataclasses`, `enum`, `ipaddress`, `pathlib`, `re`, `socket`, `sys`, `typing`, `urllib.parse`
+**Stdlib**: asyncio, dataclasses, enum, ipaddress, pathlib, etc.
 
-**PyPI**:
-- `jsonschema` (validation.py)
+**PyPI**: jsonschema (validation)
 
-**Internal**: None (root module)
+**Internal**: None
 
 ## Data Flow
 
 ```
 User → Message(USER) → Provider.stream() → StreamEvent(s) → ToolCall(s) → ToolResult → Message(TOOL)
-                          ↓
-                   ContentDelta / ToolCallStarted / StreamComplete(Message(ASSISTANT))
+                      ↓
+               ContentDelta / ToolCallStarted / StreamComplete(Message(ASSISTANT))
 ```
 
 ## Usage Examples
 
-See existing detailed examples in the original README for:
-- Messages/ToolCalls
-- Streaming handling
-- Provider implementation
-- Cancellation
-- Path/URL validation
-- Permissions/Presets
+### Messages and Tool Calls
+```python
+from nexus3.core import Message, Role, ToolCall, ToolResult
+
+msg = Message(role=Role.USER, content="Analyze this file.")
+tool_call = ToolCall(id="tc_1", name="read_file", arguments={"path": "data.txt"})
+result = ToolResult(tool_call_id="tc_1", content="File content here...")
+```
+
+### Streaming Events
+```python
+from nexus3.core import StreamEvent, ContentDelta, ToolCallStarted
+
+for event in provider.stream(messages, stream=True):
+    match event:
+        case ContentDelta(content):
+            print(content, end="", flush=True)
+        case ToolCallStarted(call):
+            print(f"Tool call started: {call.name}")
+        case StreamComplete(content):
+            print("Stream complete")
+```
+
+### Permissions
+```python
+from nexus3.core import resolve_preset, PermissionLevel
+
+perms = resolve_preset("trusted", cwd=Path("/project"))
+if perms.effective_policy.requires_confirmation("write_file", path=Path("output.txt")):
+    # Prompt user for confirmation
+    response = get_user_confirmation(perms, "write_file", path)
+    if response == "allow_file":
+        perms.add_file_allowance(path)
+```
+
+### Path Validation
+```python
+from nexus3.core import validate_path, get_default_sandbox
+
+sandbox = get_default_sandbox()
+safe_path = validate_path("../data.txt", allowed_paths=sandbox)
+```
+
+### Provider Interface
+```python
+from nexus3.core.interfaces import AsyncProvider
+from nexus3.core.types import Message
+
+class MyProvider(AsyncProvider):
+    async def stream(self, messages: list[Message], **kwargs):
+        # Implement streaming logic
+        yield StreamComplete(Message(role=Role.ASSISTANT, content="Hello!"))
+```
 
 ## Architecture Summary
-
-- **Immutability**: Frozen dataclasses everywhere
-- **Protocols**: Structural typing for providers/loggers
-- **Security**: Path sandboxing, URL SSRF protection, permission ceilings
-- **Cross-platform**: UTF-8, path normalization
-- **Streaming**: Structured events over raw text
-- **Permissions**: Multi-level (YOLO/TRUSTED/SANDBOXED), dynamic allowances, serializable for RPC
+- **Immutability**: Frozen dataclasses
+- **Protocols**: Structural typing
+- **Security**: Sandboxing, SSRF protection, permission ceilings
+- **Streaming**: Structured events
+- **Permissions**: Multi-level, dynamic allowances, RPC-serializable
 
 **allowed_paths Semantics**:
 - `None`: Unrestricted
 - `[]`: Deny all
 - `[Path(...)]`: Restricted to listed dirs
-

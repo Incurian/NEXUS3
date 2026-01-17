@@ -44,6 +44,7 @@ import stat
 from pathlib import Path
 
 from nexus3.core.constants import get_nexus_dir
+from nexus3.core.secure_io import secure_mkdir
 
 logger = logging.getLogger(__name__)
 
@@ -241,8 +242,8 @@ class ServerTokenManager:
         Raises:
             OSError: If the token file cannot be written.
         """
-        # Ensure directory exists
-        self._nexus_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure directory exists with secure permissions (0o700)
+        secure_mkdir(self._nexus_dir)
 
         # Write token with restrictive permissions atomically
         # Using os.open() to set permissions at creation time avoids the

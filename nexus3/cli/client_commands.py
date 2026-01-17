@@ -211,6 +211,43 @@ async def cmd_status(
         return 1
 
 
+async def cmd_compact(
+    agent_id: str,
+    port: int = DEFAULT_PORT,
+    api_key: str | None = None,
+) -> int:
+    """Force context compaction on an agent.
+
+    Useful for recovering stuck agents that have exceeded their context
+    window. Summarizes old messages to reclaim tokens.
+
+    Args:
+        agent_id: ID of the agent.
+        port: Server port (default 8765).
+        api_key: Optional API key. If not provided, auto-discovers from
+                 environment or key files.
+
+    Returns:
+        Exit code: 0 on success, 1 on error.
+    """
+    # Don't auto-start for compact - server must be running
+    result = await detect_server(port)
+    if result != DetectionResult.NEXUS_SERVER:
+        _print_error(f"No NEXUS3 server running on port {port}")
+        return 1
+
+    url = f"http://127.0.0.1:{port}/agent/{agent_id}"
+    key = _get_api_key(port, api_key)
+    try:
+        async with NexusClient(url, api_key=key) as client:
+            result = await client.compact()
+            _print_json(result)
+            return 0
+    except ClientError as e:
+        _print_error(str(e))
+        return 1
+
+
 async def cmd_shutdown(
     port: int = DEFAULT_PORT,
     api_key: str | None = None,

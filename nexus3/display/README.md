@@ -5,7 +5,7 @@ Terminal display system for NEXUS3, providing Rich-based inline printing with gu
 ## Purpose
 
 Handles all terminal output in NEXUS3:
-- **Inline scrolling output** (`InlinePrinter`): Gumballs, tasks, thinking traces, errors (uses Rich.Console).
+- **Inline scrolling output** (`InlinePrinter`): Gumballs, tasks, thinking traces, errors (uses Rich.Console). Includes ANSI sanitization for safe streaming.
 - **Fixed summary bar** (`SummaryBar`): Live-updating segments (activity spinner, task counts, ESC hint) at bottom.
 - **Full-screen streaming** (`StreamingDisplay`): Rich.Live for responses + batch tool progress (truncates to 20 lines).
 - **Coordination** (`DisplayManager`): Printer + summary + tasks + cancellation token.
@@ -33,7 +33,7 @@ From [`__init__.py`](__init__.py):
 | [`__init__.py`](__init__.py) | 953B | 2026-01-07 | Exports |
 | [`console.py`](console.py) | 968B | 2026-01-09 | Shared Console singleton |
 | [`manager.py`](manager.py) | 5.8K | 2026-01-07 | `DisplayManager`: Orchestrates all |
-| [`printer.py`](printer.py) | 3.4K | 2026-01-07 | `InlinePrinter`: Scrolling + gumballs |
+| [`printer.py`](printer.py) | 4.0K | 2026-01-16 | `InlinePrinter`: Scrolling + gumballs + ANSI sanitization |
 | [`segments.py`](segments.py) | 3.3K | 2026-01-07 | Segments: Activity, Tasks, CancelHint |
 | [`streaming.py`](streaming.py) | 13.8K | 2026-01-12 | `StreamingDisplay`: Live streaming + tools |
 | [`summary.py`](summary.py) | 3.6K | 2026-01-07 | `SummaryBar`: Composes Live segments |
@@ -64,7 +64,7 @@ display.print_streaming(chunk)  # Raw stdout
 Methods: `print*()`, `set_activity()`, task tracking, `cancel_token`.
 
 ### `InlinePrinter` (`printer.py`)
-Gumball-prefixed scrolling: `print_gumball()`, `print_task_start/end()`, `print_thinking()`, `print_streaming_chunk()` (raw).
+Gumball-prefixed scrolling: `print_gumball()`, `print_task_start/end()`, `print_thinking()`, `print_streaming_chunk()` (raw, sanitized).
 
 ### `SummaryBar` (`summary.py`) + Segments (`segments.py`)
 Pluggable: `register_segment(ActivitySegment(theme))`. `with bar.live():`.
@@ -83,7 +83,7 @@ Tracks tool batches, thinking duration, errors, timers.
 ## Dependencies
 - **rich**: Console, Live, Text, Group.
 - **nexus3.core.cancel**: `CancellationToken`.
-- Python stdlib: `time`, `dataclasses`, `enum`, `contextlib`, `collections.abc`, `sys`.
+- Python stdlib: `time`, `dataclasses`, `enum`, `contextlib`, `collections.abc`, `sys`, `re`.
 
 ## Usage Examples
 
@@ -139,4 +139,3 @@ with Live(sd, refresh_per_second=10):
 - **Performance**: Truncates streaming (20 lines); efficient renders.
 
 Exports everything for `from nexus3.display import *`.
-

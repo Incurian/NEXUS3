@@ -23,6 +23,12 @@ class MockSession:
         """
         self._chunks = chunks if chunks is not None else ["Hello", " ", "World"]
         self._delay = delay
+        self._halted_at_iteration_limit = False
+
+    @property
+    def halted_at_iteration_limit(self) -> bool:
+        """Mock property for iteration limit state."""
+        return self._halted_at_iteration_limit
 
     async def send(
         self,

@@ -86,7 +86,10 @@ create_agent(preset=worker, cwd=/tmp/sandbox, allowed_write_paths=[...])
 | `auth.py` | `ServerTokenManager`, `discover_rpc_token()` | `nxk_` tokens (~/.nexus3/rpc.token) |
 | `detection.py` | `detect_server()`, `wait_for_server()` | Port probing (list_agents fingerprint) |
 | `dispatcher.py` | `Dispatcher` | Per-agent: `send`, `cancel`, `get_tokens`, `shutdown` |
-| `global_dispatcher.py` | `GlobalDispatcher` | Global: `create_agent`, `destroy_agent`, `list_agents` |
+| `global_dispatcher.py` | `GlobalDispatcher` | Global: `create_agent`, `destroy_agent`, `list_agents`, `shutdown_server` |
+
+| `bootstrap.py` | `bootstrap_server_components()` | Object graph bootstrap (pool, dispatcher, shared) |
+
 | `http.py` | `run_http_server()`, `handle_connection()` | Asyncio HTTP/1.1, routing, auto-restore |
 | `log_multiplexer.py` | `LogMultiplexer` | Routes provider logs via contextvars |
 | `pool.py` | `AgentPool`, `Agent`, `AgentConfig`, `SharedComponents` | Lifecycle, isolation, MCP integration |
@@ -244,4 +247,4 @@ resp = await scoped.send("Hello")  # Direct dispatcher.dispatch()
 - **Shutdown**: `shutdown_server()` or all agents `shutdown` + idle timeout.
 - **Detection**: `wait_for_server(8765)` for scripts/tests.
 
-Generated/updated: 2026-01-15 from source code analysis.
+Generated/updated: 2026-01-17 from source code analysis.

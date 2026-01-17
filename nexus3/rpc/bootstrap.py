@@ -29,6 +29,47 @@ from nexus3.session import LogStream
 logger = logging.getLogger(__name__)
 
 
+def _format_model_guidance_section(config: Config) -> str | None:
+    """Format model guidance table for system prompt injection.
+
+    Args:
+        config: The loaded NEXUS3 configuration.
+
+    Returns:
+        Formatted markdown section, or None if no models have guidance.
+    """
+    models = config.get_model_guidance_table()
+    if not models:
+        return None
+
+    def format_context(tokens: int) -> str:
+        """Format token count as human-readable string."""
+        if tokens >= 1_000_000:
+            return f"{tokens / 1_000_000:.0f}M"
+        elif tokens >= 1000:
+            return f"{tokens / 1000:.0f}K"
+        return str(tokens)
+
+    lines = [
+        "",
+        "## Available Models",
+        "",
+        "When creating subagents, choose an appropriate model:",
+        "",
+        "| Alias | Context | Guidance |",
+        "|-------|---------|----------|",
+    ]
+
+    for alias, context_window, guidance in models:
+        ctx = format_context(context_window)
+        lines.append(f"| {alias} | {ctx} | {guidance} |")
+
+    lines.append("")
+    lines.append('Example: `nexus_create(agent_id="researcher", model="fast")`')
+
+    return "\n".join(lines)
+
+
 async def bootstrap_server_components(
     config: Config,
     base_log_dir: Path,
@@ -86,6 +127,16 @@ async def bootstrap_server_components(
     # Phase 2: Load context (NEXUS.md files from global/ancestor/local dirs)
     context_loader = ContextLoader(context_config=config.context)
     base_context = context_loader.load(is_repl=is_repl)
+
+    # Phase 2.5: Inject model guidance into system prompt
+    model_guidance = _format_model_guidance_section(config)
+    if model_guidance:
+        # Import here to access the dataclass for replacement
+        from dataclasses import replace
+        base_context = replace(
+            base_context,
+            system_prompt=base_context.system_prompt + model_guidance,
+        )
 
     # Phase 3: Load custom permission presets from config
     custom_presets = load_custom_presets_from_config(

@@ -736,7 +736,7 @@ class MySpecialSkill(BaseSkill):
 
 - [ ] **Portable auto-bootstrap launcher**: Add a launcher script that auto-installs deps (httpx, pydantic, rich, prompt-toolkit, python-dotenv) on first run, enabling "copy folder and go" portability without manual pip install. See packaging investigation for options (shiv/zipapp as alternative).
 
-- [ ] **RPC `compact` method for stuck agents**: When an agent's context exceeds the provider's token/byte limit, the agent becomes stuck (alive but unusable). Need either: (a) RPC method to trigger compaction manually, (b) pre-flight context size check before API calls to auto-compact, or (c) automatic recovery after provider limit errors. Discovered during P2.5 testing - agent accumulated 3.5M tokens, exceeded 2M budget, all subsequent messages fail.
+- [x] **RPC `compact` method for stuck agents**: ~~When an agent's context exceeds the provider's token/byte limit, the agent becomes stuck (alive but unusable).~~ Fixed: Added `nexus-rpc compact <agent_id>` command and `_handle_compact()` RPC method.
 
 ---
 
@@ -1112,7 +1112,7 @@ All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env s
 
 - ~~**WSL Terminal**: Bash may close after `nexus` exits.~~ Fixed in d276c70.
 
-- **Relative path resolution uses process cwd**: When an RPC-created agent tries to access a relative path (e.g., `./testfile.txt`), the path resolves against the server process's cwd instead of the agent's configured cwd. Absolute paths work correctly. This affects subagents created with inherited cwd from parent agents. The `PathResolver` correctly uses `services.get_cwd()`, but the cwd may not be properly inherited/registered in the ServiceContainer during agent creation. Investigation needed in `global_dispatcher.py` (cwd inheritance) and `pool.py` (cwd registration).
+- ~~**Relative path resolution uses process cwd**~~ Fixed in bcb5ed1. `PermissionEnforcer.extract_target_paths()` no longer calls `.resolve()` before passing to PathDecisionEngine - the engine now handles resolution with the correct agent CWD.
 
 ---
 
@@ -1125,13 +1125,13 @@ Nine issues were investigated by explore agents. Full details in `reviews/invest
 | # | Issue | Status | Action |
 |---|-------|--------|--------|
 | 1 | Response not displaying | ❌ **False positive** | No bug - content yields during streaming (line 309), not at end |
-| 2 | Permission prompt hang | ✅ Verified | One-line fix: `confirmation_ui.py` should import `_current_live` from `repl.py` (Sprint 5 extraction duplicated instead of importing) |
-| 3 | MCP SSRF validation | ✅ Verified | Add `validate_url(url, allow_localhost=True)` in `HTTPTransport.__init__()` |
-| 4 | Token storage hardening | ✅ Verified | Use `secure_mkdir()` + `secure_write_atomic()` in `auth.py` |
+| 2 | Permission prompt hang | ✅ **Fixed** | Created `live_state.py` with shared `_current_live` ContextVar |
+| 3 | MCP SSRF validation | ✅ **Fixed** | Added `validate_url(url, allow_localhost=True)` in `HTTPTransport.__init__()` |
+| 4 | Token storage hardening | ✅ **Fixed** | Using `secure_mkdir()` in `auth.py` for token directory |
 | 5 | nxk_ redaction pattern | ✅ **Fixed** | Added to `SECRET_PATTERNS` in `core/redaction.py` with 4 new tests |
-| 6 | Slow grep | ✅ Verified | Batch `asyncio.to_thread()` calls, parallelize with `asyncio.gather()` + semaphore |
-| 7 | PathDecisionEngine unused | ✅ Verified | Built in Sprint 3, never integrated into PermissionEnforcer - see AUDIT section |
-| 8 | RPC compact method | ✅ Verified | Add `_handle_compact()` to `Dispatcher` class |
+| 6 | Slow grep | ✅ **Fixed** | Added `_search_files_parallel()` with semaphore-bounded concurrency in `grep.py` |
+| 7 | PathDecisionEngine unused | ✅ **Fixed** | Integrated shared kernel in `_decide_path()`, routed PathResolver + PermissionEnforcer through it |
+| 8 | RPC compact method | ✅ **Fixed** | Added `_handle_compact()` to Dispatcher, `nexus-rpc compact` CLI command |
 | 9 | Log access for agents | Planned | Add `view_logs` skill + auto-add log dir to trusted `allowed_paths` |
 | 10 | Tool self-knowledge | Planned | Expand NEXUS.md with limits, error recovery, permission matrix |
 | 11 | Second nexus starts new server | By design | Document workarounds: `--connect` or different `--serve` port |
@@ -1146,45 +1146,19 @@ Nine issues were investigated by explore agents. Full details in `reviews/invest
 
 ---
 
-## CURRENT PHASE: Integration Audit (2026-01-17)
+## Completed: Integration Audit (2026-01-17) ✅
 
-### What
+Systematic audit of Sprint 1-8 remediation work. Key fixes:
 
-Systematic audit of Sprint 1-8 remediation work to verify all security fixes and architectural components are **actually integrated into production code paths**, not just built and tested in isolation.
+| Fix | Commit |
+|-----|--------|
+| PathDecisionEngine integration | bcb5ed1 |
+| Shared kernel `_decide_path()` | bcb5ed1 |
+| PermissionEnforcer relative path fix | bcb5ed1 |
+| D4 request-id truthiness | 95edea9 |
+| P2.17 MCP error consistency | 95edea9 |
 
-### Why
-
-Evidence of integration gaps discovered:
-
-| Finding | Concern |
-|---------|---------|
-| **PathDecisionEngine orphaned** | Built in Sprint 3 with 69 tests, but `PermissionEnforcer` uses its own inline path logic |
-| **Issue 1 false positive** | Investigation claimed a bug that doesn't exist - shows analysis can be wrong |
-| **Sprint 5 ContextVar duplication** | Extraction created duplicate instead of importing - integration step was sloppy |
-
-Pattern: Components were built and unit-tested, but integration into real code paths was sometimes skipped or done incorrectly.
-
-### How
-
-For each Sprint (1-8), verify:
-
-1. **Each fix has an integration test** that exercises the PRODUCTION code path, not just the component
-2. **The component is actually imported/called** from production code (grep for usage)
-3. **No orphaned TODOs** or deferred integration notes
-4. **The fix actually fires** when the vulnerability condition occurs
-
-### Audit Scope
-
-| Sprint | Key Deliverables | Integration Check |
-|--------|------------------|-------------------|
-| 1 | P0 security fixes | Are sanitization/validation functions called from skills? |
-| 2 | P1 hardening | Is process group kill used in bash/run_python execution? |
-| 3 | P2 + PathDecisionEngine | **Known gap**: PathDecisionEngine not integrated |
-| 4 | Session decomposition | Is PermissionEnforcer actually used by Session? |
-| 5 | RPC layering | Is dispatch_core used by both dispatchers? |
-| 6 | Redaction + prompt builder | Is redaction applied during compaction? |
-| 7 | Provider lifecycle | Is aclose() called on shutdown? |
-| 8 | Backlog fixes | Are the fixes in the actual code paths? |
+All Sprint 1-8 security components verified integrated. 2108 tests passing.
 
 ---
 

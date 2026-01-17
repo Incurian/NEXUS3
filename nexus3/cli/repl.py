@@ -1147,6 +1147,7 @@ def main() -> None:
         if args.command == "rpc":
             from nexus3.cli.client_commands import (
                 cmd_cancel,
+                cmd_compact,
                 cmd_create,
                 cmd_destroy,
                 cmd_detect,
@@ -1159,7 +1160,7 @@ def main() -> None:
             rpc_cmd = args.rpc_command
             if rpc_cmd is None:
                 print("Usage: nexus3 rpc <command>")
-                print("Commands: detect, list, create, destroy, send, cancel, status, shutdown")
+                print("Commands: detect, list, create, destroy, send, cancel, status, compact, shutdown")
                 raise SystemExit(1)
 
             if rpc_cmd == "detect":
@@ -1190,6 +1191,8 @@ def main() -> None:
                 )
             elif rpc_cmd == "status":
                 exit_code = asyncio.run(cmd_status(args.agent_id, args.port, args.api_key))
+            elif rpc_cmd == "compact":
+                exit_code = asyncio.run(cmd_compact(args.agent_id, args.port, args.api_key))
             elif rpc_cmd == "shutdown":
                 exit_code = asyncio.run(cmd_shutdown(args.port, args.api_key))
             else:

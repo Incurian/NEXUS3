@@ -88,6 +88,9 @@ class ModelConfig(BaseModel):
     reasoning: bool = False
     """Enable extended thinking/reasoning."""
 
+    guidance: str | None = None
+    """Brief usage guidance for this model (e.g., 'Fast, cheap. Good for research.')."""
+
 
 class ProviderConfig(BaseModel):
     """Configuration for an LLM provider with its models.
@@ -392,12 +395,14 @@ class ResolvedModel:
         reasoning: bool,
         alias: str,
         provider_name: str,
+        guidance: str | None = None,
     ) -> None:
         self.model_id = model_id
         self.context_window = context_window
         self.reasoning = reasoning
         self.alias = alias
         self.provider_name = provider_name
+        self.guidance = guidance
 
 
 class Config(BaseModel):
@@ -551,6 +556,7 @@ class Config(BaseModel):
                         reasoning=model_config.reasoning,
                         alias=model_alias,
                         provider_name=provider_name,
+                        guidance=model_config.guidance,
                     )
 
         # Search for alias across all providers
@@ -561,6 +567,7 @@ class Config(BaseModel):
             reasoning=model_config.reasoning,
             alias=alias,
             provider_name=provider_name,
+            guidance=model_config.guidance,
         )
 
     def list_models(self) -> list[str]:
@@ -581,3 +588,24 @@ class Config(BaseModel):
             List of provider names.
         """
         return list(self.providers.keys())
+
+    def get_model_guidance_table(self) -> list[tuple[str, int, str]]:
+        """Get model aliases with context and guidance for prompt injection.
+
+        Returns:
+            List of (alias, context_window, guidance) tuples.
+            Only includes models that have guidance defined.
+            Sorted by context_window descending.
+        """
+        models: list[tuple[str, int, str]] = []
+        for provider_config in self.providers.values():
+            for alias, model_config in provider_config.models.items():
+                if model_config.guidance:
+                    models.append((
+                        alias,
+                        model_config.context_window,
+                        model_config.guidance,
+                    ))
+        # Sort by context_window descending
+        models.sort(key=lambda x: x[1], reverse=True)
+        return models

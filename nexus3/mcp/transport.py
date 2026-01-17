@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from nexus3.core.errors import NexusError
+from nexus3.core.url_validator import UrlSecurityError, validate_url
 
 logger = logging.getLogger(__name__)
 
@@ -390,7 +391,16 @@ class HTTPTransport(MCPTransport):
             url: Base URL of the MCP server.
             headers: Additional HTTP headers (e.g., for auth).
             timeout: Request timeout in seconds.
+
+        Raises:
+            MCPTransportError: If URL is invalid or blocked (SSRF protection).
         """
+        # P1: SSRF validation - allow localhost since MCP servers are often local
+        try:
+            validate_url(url, allow_localhost=True)
+        except UrlSecurityError as e:
+            raise MCPTransportError(f"Invalid MCP server URL: {e}") from e
+
         self._url = url.rstrip("/")
         self._headers = headers or {}
         self._timeout = timeout

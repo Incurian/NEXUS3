@@ -1,12 +1,13 @@
 # NEXUS3 Context Module
 
-Context management for NEXUS3: layered system prompt loading, conversation history, token budgets, truncation, and LLM-based compaction.
+Context management for NEXUS3: layered system prompt loading, conversation history, token budgets, truncation, LLM-based compaction, and structured prompt building.
 
 ## Purpose
 
 This module provides comprehensive context management for NEXUS3 agents and sessions:
 
 - **Layered system prompt loading**: Global (~/.nexus3/), ancestor projects, local (.nexus3/) with merging and labeling.
+- **Structured prompts**: Typed sections and environment blocks for safe dynamic injection (PromptBuilder).
 - **Conversation state**: Tracks messages (user, assistant, tool results) with session timestamps.
 - **Token budgeting**: Pluggable counters (tiktoken preferred) with automatic truncation strategies.
 - **Context preservation**: Truncation (`oldest_first`/`middle_out`) and LLM summarization (compaction).
@@ -21,14 +22,16 @@ Supports both REPL (single ContextManager) and HTTP server (per-agent ContextMan
 | `__init__.py` | All public API via `__all__` | Module entrypoint |
 | `compaction.py` | `CompactionResult`, `select_messages_for_compaction`, `build_summarize_prompt`, `create_summary_message` | LLM summarization of old context |
 | `loader.py` | `ContextLoader`, `LoadedContext`, `ContextLayer`, `ContextSources`, `get_system_info` | Multi-layer prompt/config loading |
-| `manager.py` | `ContextManager`, `ContextConfig` | Runtime context building/truncation |
+| `manager.py` | `ContextManager`, `ContextConfig`, `inject_datetime_into_prompt` | Runtime context building/truncation |
+| `prompt_builder.py` | `PromptSection`, `EnvironmentBlock`, `StructuredPrompt`, `PromptBuilder` | Structured prompt construction with type safety |
 | `token_counter.py` | `TokenCounter` (protocol), `SimpleTokenCounter`, `TiktokenCounter`, `get_token_counter` | Accurate token estimation |
 
 **Public API** (`from nexus3.context import *`):
 ```
 Compaction: CompactionResult, build_summarize_prompt, create_summary_message, select_messages_for_compaction
 Loader: ContextLayer, ContextLoader, ContextSources, LoadedContext, MCPServerWithOrigin, PromptSource, get_system_info, deep_merge
-Manager: ContextManager, ContextConfig
+Manager: ContextManager, ContextConfig, inject_datetime_into_prompt
+Prompt Builder: EnvironmentBlock, PromptBuilder, PromptSection, StructuredPrompt
 Tokens: TokenCounter, SimpleTokenCounter, TiktokenCounter, get_token_counter
 ```
 
@@ -50,7 +53,17 @@ Files per layer: NEXUS.md (prompt), README.md (fallback), config.json, mcp.json
 
 **Subagents**: `load_for_subagent()` prepends local NEXUS.md to parent context.
 
-### 2. Runtime (ContextManager)
+### 2. Structured Prompts (PromptBuilder)
+```
+PromptBuilder()
+  .add_section("Config", content, source)
+  .set_environment(EnvironmentBlock(cwd, os_info, datetime_str))
+  .build() → StructuredPrompt.render() → string prompt
+```
+
+Replaces string-based datetime injection with explicit typed sections.
+
+### 3. Runtime (ContextManager)
 ```
 ContextManager(config, token_counter)
 ├── set_system_prompt(loaded.system_prompt)
@@ -68,14 +81,14 @@ ContextManager(config, token_counter)
 - Fixed: `[Session started: ...]` first message.
 - Compaction: `[CONTEXT SUMMARY - Generated: ...]`.
 
-### 3. Token Management
+### 4. Token Management
 ```
 get_token_counter() → TiktokenCounter (if installed) or SimpleTokenCounter
 - count(text)
 - count_messages([Message])  # Includes tool_calls JSON overhead
 ```
 
-### 4. Truncation (atomic groups)
+### 5. Truncation (atomic groups)
 ```
 Messages grouped: standalone | ASSISTANT(tool_calls) + TOOL results
 Strategies:
@@ -84,7 +97,7 @@ Strategies:
 ```
 `_messages` synced to truncated view (log keeps full history).
 
-### 5. Compaction Flow
+### 6. Compaction Flow
 ```
 if over_budget:
   to_summarize, to_preserve = select_messages_for_compaction(..., ratio=0.25)
@@ -124,7 +137,28 @@ mcp_servers = ctx.mcp_servers
 sub_prompt = loader.load_for_subagent(parent_ctx)
 ```
 
-### 2. ContextManager (Basic)
+### 2. Structured Prompt Building
+```python
+from nexus3.context import PromptBuilder, EnvironmentBlock
+from pathlib import Path
+from datetime import datetime
+
+env = EnvironmentBlock(
+    cwd=Path.cwd(),
+    os_info="Linux (WSL2)",
+    datetime_str=f"Current date: {datetime.now().strftime('%Y-%m-%d')}, Current time: {datetime.now().strftime('%H:%M')} (local)",
+    kernel="6.6.87.2-microsoft-standard-WSL2",
+    mode="HTTP JSON-RPC Server"
+)
+
+prompt = (PromptBuilder()
+          .add_section("Project Config", "You are a code agent.")
+          .set_environment(env)
+          .build())
+print(prompt.render_compat())  # Matches loader.py format
+```
+
+### 3. ContextManager (Basic)
 ```python
 from nexus3.context import ContextManager, ContextConfig, get_token_counter
 
@@ -142,25 +176,16 @@ tools = mgr.get_tool_definitions()
 usage = mgr.get_token_usage()
 ```
 
-### 3. Check/Trigger Compaction
+### 4. Check/Trigger Compaction
 ```python
 if mgr.is_over_budget():
     from nexus3.context.compaction import select_messages_for_compaction
-    counter = mgr._counter  # Or get_token_counter()
+    counter = mgr.token_counter
     to_sum, to_preserve = select_messages_for_compaction(
         mgr.messages, counter, 6000, recent_preserve_ratio=0.25
     )
     # summary = llm(build_summarize_prompt(to_sum)).content
-    # result = CompactionResult(create_summary_message(summary), to_preserve, ...)
-    # mgr.apply_compaction(result.summary_message, result.preserved_messages)
-```
-
-### 4. Per-Agent (AgentPool Integration)
-```python
-# In nexus3/rpc/pool.py (excerpt)
-context = ContextManager(ContextConfig())
-context.set_system_prompt(shared.loader.load(is_repl=False).system_prompt)
-context.set_tool_definitions(registry.get_definitions())
+    # mgr.apply_compaction(create_summary_message(summary), to_preserve)
 ```
 
 ## Integration Points
@@ -173,4 +198,4 @@ context.set_tool_definitions(registry.get_definitions())
 ## Status
 ✅ Complete & production-ready across all components.
 
-Updated: 2026-01-15
+Updated: 2026-01-17

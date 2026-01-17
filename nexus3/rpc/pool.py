@@ -563,6 +563,7 @@ class AgentPool:
             logger=logger,
             registry=registry,
             skill_timeout=self._shared.config.skill_timeout,
+            max_tool_iterations=self._shared.config.max_tool_iterations,
             max_concurrent_tools=self._shared.config.max_concurrent_tools,
             services=services,
             config=self._shared.config,
@@ -924,11 +925,29 @@ class AgentPool:
             - should_shutdown: Whether the agent's dispatcher wants shutdown
             - parent_agent_id: ID of parent agent (None if root)
             - child_count: Number of active child agents
+            - halted_at_iteration_limit: Whether agent hit max tool iterations
+            - model: Model alias being used
+            - last_action_at: ISO timestamp of last agent action (None if no actions yet)
+            - permission_level: Permission level (YOLO, TRUSTED, SANDBOXED)
+            - cwd: Working directory path
+            - write_paths: List of allowed write paths (None = unrestricted)
         """
+        from nexus3.config.schema import ResolvedModel
+
         result: list[dict[str, Any]] = []
         for agent in self._agents.values():
             permissions: AgentPermissions | None = agent.services.get("permissions")
             child_ids: set[str] | None = agent.services.get("child_agent_ids")
+            resolved_model: ResolvedModel | None = agent.services.get("model")
+            cwd: Path | None = agent.services.get("cwd")
+
+            # Get write paths from permissions (check write_file tool permission)
+            write_paths: list[str] | None = None
+            if permissions:
+                write_file_perm = permissions.tool_permissions.get("write_file")
+                if write_file_perm and write_file_perm.allowed_paths is not None:
+                    write_paths = [str(p) for p in write_file_perm.allowed_paths]
+
             result.append({
                 "agent_id": agent.agent_id,
                 "is_temp": is_temp_agent(agent.agent_id),
@@ -937,6 +956,16 @@ class AgentPool:
                 "should_shutdown": agent.dispatcher.should_shutdown,
                 "parent_agent_id": permissions.parent_agent_id if permissions else None,
                 "child_count": len(child_ids) if child_ids else 0,
+                "halted_at_iteration_limit": agent.session.halted_at_iteration_limit,
+                "model": resolved_model.alias if resolved_model else None,
+                "last_action_at": (
+                    agent.session.last_action_at.isoformat()
+                    if agent.session.last_action_at
+                    else None
+                ),
+                "permission_level": permissions.effective_policy.level.name if permissions else None,
+                "cwd": str(cwd) if cwd else None,
+                "write_paths": write_paths,
             })
         return result
 

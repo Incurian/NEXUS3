@@ -1,64 +1,39 @@
 # NEXUS3 Defaults Module
 
 ## Purpose
-The `nexus3.defaults` module provides default configuration files and prompts for the NEXUS3 AI-powered CLI agent. It serves as the foundational setup for NEXUS3 instances, including model providers, tool configurations, and agent behavior guidelines.
+Provides default configuration and system prompts for NEXUS3, an AI-powered CLI agent for software engineering tasks (file ops, commands, git, subagents).
 
-This directory contains:
-- Default `config.json` for LLM providers (OpenRouter, Anthropic), models, streaming, compaction, MCP servers, and context settings.
-- `NEXUS.md`: Core system prompt defining the agent's principles, tools, execution modes, and response formats.
-- `__init__.py`: Package initializer with docstring indicating its role.
+## Key Components
+No Python classes/functions. Contains declarative files:
 
-## Key Files/Modules
-- **`__init__.py`**: Minimal package file. Docstring: `"Default configuration and prompts for NEXUS3."`
-- **`config.json`**: JSON configuration with:
-  - Default model: `"fast"` (x-ai/grok-4.1-fast).
-  - Providers: OpenRouter (haiku, sonnet, opus, gemini, gpt, oss, fast) and Anthropic (native models).
-  - Features: Streaming output, tool limits, permission levels, context compaction, MCP test servers.
-- **`NEXUS.md`**: System prompt for NEXUS3 agents, covering:
-  - Principles (Be Direct, Use Tools Effectively, etc.).
-  - Available tools (file ops, agent comms).
-  - Execution modes (Sequential/Parallel).
-  - Response formats.
-
-No additional Python classes or functions beyond package init.
-
-## Dependencies
-- External APIs: OpenRouter, Anthropic (via API keys: `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`).
-- Python runtime (inferred from MCP server commands).
-- No explicit Python package dependencies in source (runtime uses these defaults).
+- **`__init__.py`**: Package init. Docstring: `"Default configuration and prompts for NEXUS3."`
+- **`config.json`**: LLM providers (OpenRouter, Anthropic), models (haiku, sonnet, etc., default: "fast"), settings (streaming, compaction, MCP servers).
+- **`NEXUS.md`**: Agent system prompt (principles, permissions, tools, logs, execution modes).
 
 ## Usage Examples
-1. **Loading Defaults in NEXUS3**:
-   NEXUS3 automatically loads `config.json` for provider setup and `NEXUS.md` as system prompt.
-
-2. **Customizing Config**:
-   Copy `config.json` and modify:
-   ```json
-   {
-     "default_model": "sonnet",
-     "providers": { ... }
-   }
+1. **NEXUS3 Auto-Loads**:
+   ```
+   nexus3 repl  # Uses defaults/config.json and defaults/NEXUS.md
    ```
 
-3. **MCP Server Integration**:
-   Defaults include test MCP servers:
-   ```bash
-   python3 -m nexus3.mcp.test_server  # Local test server
+2. **Custom Config**:
+   ```
+   cp defaults/config.json myconfig.json
+   # Edit, e.g., "default_model": "sonnet"
+   nexus3 --config myconfig.json
    ```
 
-## Architecture Summary
-- **Flat Structure**: Simple directory treated as a Python package.
-- **Configuration-Driven**: `config.json` centralizes LLM/model settings.
-- **Prompt-Centric**: `NEXUS.md` embeds agent behavior and tool docs.
-- **Extensible**: Easy to override or extend for custom NEXUS3 deployments.
-- **No Runtime Code**: Purely declarative (configs/prompts); logic in core NEXUS3.
+3. **MCP Test Server** (from config.json):
+   ```
+   python3 -m nexus3.mcp.test_server
+   ```
 
-## Directory Contents
+## Files (ls -l)
 ```
-.
-├── __init__.py     (52B)
-├── config.json     (2.0K)
-└── NEXUS.md        (3.1K)
+-rw-r--r--      52B  2026-01-08 16:33  __init__.py
+-rw-r--r--     2.9K  2026-01-17 05:02  config.json
+-rw-r--r--     8.4K  2026-01-17 05:20  NEXUS.md
+-rw-r--r--     2.6K  2026-01-15 13:44  README.md
 ```
 
-For full NEXUS3 documentation, see the main repository.
+Updated: 2026-01-17

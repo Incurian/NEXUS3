@@ -58,6 +58,7 @@ class Dispatcher:
             "send": self._handle_send,
             "shutdown": self._handle_shutdown,
             "cancel": self._handle_cancel,
+            "compact": self._handle_compact,
         }
 
         # Add context-dependent handlers if context is available
@@ -100,7 +101,10 @@ class Dispatcher:
                    Optional 'request_id' for cancellation support.
 
         Returns:
-            Dict with 'content' and 'request_id' keys.
+            Dict with keys:
+            - content: The assistant's response text
+            - request_id: Request identifier for cancellation
+            - halted_at_iteration_limit: True if max tool iterations was reached
 
         Raises:
             InvalidParamsError: If 'content' is missing.
@@ -132,7 +136,11 @@ class Dispatcher:
                     token.raise_if_cancelled()
                     chunks.append(chunk)
 
-            return {"content": "".join(chunks), "request_id": request_id}
+            return {
+                "content": "".join(chunks),
+                "request_id": request_id,
+                "halted_at_iteration_limit": self._session.halted_at_iteration_limit,
+            }
         except asyncio.CancelledError:
             return {"cancelled": True, "request_id": request_id}
         finally:
@@ -173,13 +181,18 @@ class Dispatcher:
     async def _handle_get_context(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle the 'get_context' method.
 
-        Returns context information (message count, system prompt status).
+        Returns context information (message count, system prompt status, iteration state).
 
         Args:
             params: Ignored.
 
         Returns:
-            Dict with context information.
+            Dict with context information including:
+            - message_count: Number of messages in context
+            - system_prompt: Whether system prompt is set
+            - halted_at_iteration_limit: Whether last send() hit max iterations
+            - last_iteration_count: Number of iterations in last send()
+            - max_tool_iterations: Configured max iterations limit
 
         Raises:
             InvalidParamsError: If no context manager is configured.
@@ -190,6 +203,9 @@ class Dispatcher:
         return {
             "message_count": len(messages),
             "system_prompt": bool(self._context.system_prompt),
+            "halted_at_iteration_limit": self._session.halted_at_iteration_limit,
+            "last_iteration_count": self._session.last_iteration_count,
+            "max_tool_iterations": self._session.max_tool_iterations,
         }
 
     async def _handle_cancel(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -218,6 +234,39 @@ class Dispatcher:
             token.cancel()
             return {"cancelled": True, "request_id": request_id}
         return {"cancelled": False, "request_id": request_id, "reason": "not_found_or_completed"}
+
+    async def _handle_compact(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Handle the 'compact' method.
+
+        Forces context compaction/summarization to reclaim token space.
+        This is useful for recovering stuck agents that have exceeded
+        their context window.
+
+        Args:
+            params: Optional 'force' key (default: True for RPC).
+
+        Returns:
+            Dict with compaction result:
+            - compacted: True, tokens_before, tokens_after, tokens_saved
+            OR
+            - compacted: False, reason: why compaction didn't occur
+        """
+        force = params.get("force", True)  # Default to force for RPC
+
+        result = await self._session.compact(force=force)
+
+        if result is None:
+            return {
+                "compacted": False,
+                "reason": "nothing_to_compact",
+            }
+
+        return {
+            "compacted": True,
+            "tokens_before": result.tokens_before,
+            "tokens_after": result.tokens_after,
+            "tokens_saved": result.tokens_before - result.tokens_after,
+        }
 
     async def cancel_all_requests(self) -> dict[str, bool]:
         """Cancel all in-progress requests.

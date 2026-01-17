@@ -250,6 +250,22 @@ class NexusClient:
         response = await self._call("get_context")
         return cast(dict[str, Any], self._check(response))
 
+    async def compact(self, force: bool = True) -> dict[str, Any]:
+        """Force context compaction to reclaim token space.
+
+        Useful for recovering stuck agents that have exceeded their context
+        window. Summarizes old messages to reclaim tokens.
+
+        Args:
+            force: If True (default), compact even if under threshold.
+
+        Returns:
+            Compaction result with tokens_before, tokens_after, tokens_saved,
+            or reason if nothing to compact.
+        """
+        response = await self._call("compact", {"force": force})
+        return cast(dict[str, Any], self._check(response))
+
     async def shutdown(self) -> dict[str, Any]:
         """Request graceful shutdown of the server.
 

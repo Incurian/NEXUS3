@@ -1,20 +1,32 @@
 """Grep skill for searching file contents with regex.
 
 P2.5 SECURITY: Implements file size limits and streaming search.
+Issue 6: Optimized with parallel file search using asyncio.gather + semaphore.
 """
 
 import asyncio
 import fnmatch
-import os
 import re
 from pathlib import Path
 from typing import Any
 
-from nexus3.core.constants import MAX_GREP_FILE_SIZE, MAX_OUTPUT_BYTES
+from nexus3.core.constants import MAX_GREP_FILE_SIZE
 from nexus3.core.errors import PathSecurityError
 from nexus3.core.paths import validate_path
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
+
+# Bounded concurrency for parallel file search
+MAX_CONCURRENT_SEARCHES = 10
+
+
+def _check_path_type(p: Path) -> tuple[bool, bool]:
+    """Check if path is file and/or directory in a single call.
+
+    Returns:
+        (is_file, is_dir)
+    """
+    return p.is_file(), p.is_dir()
 
 
 def _search_file_streaming(
@@ -78,6 +90,71 @@ def _search_file_streaming(
 
     hit_limit = current_matches + len(matches) >= max_matches
     return matches, hit_limit
+
+
+async def _search_files_parallel(
+    files: list[tuple[Path, Path | str]],
+    regex: re.Pattern[str],
+    context: int,
+    max_matches: int,
+    max_concurrent: int = MAX_CONCURRENT_SEARCHES,
+) -> tuple[list[str], int]:
+    """Search multiple files in parallel with bounded concurrency.
+
+    Issue 6: Uses asyncio.gather with semaphore to limit concurrent threads,
+    reducing overhead from 1000+ sequential asyncio.to_thread calls.
+
+    Args:
+        files: List of (file_path, rel_path) tuples to search.
+        regex: Compiled regex pattern.
+        context: Lines of context around matches.
+        max_matches: Maximum matches to return.
+        max_concurrent: Maximum concurrent file searches.
+
+    Returns:
+        (all_matches, files_with_matches_count)
+    """
+    if not files:
+        return [], 0
+
+    semaphore = asyncio.Semaphore(max_concurrent)
+
+    async def search_one(file_path: Path, rel_path: Path | str) -> list[str]:
+        async with semaphore:
+            matches, _ = await asyncio.to_thread(
+                _search_file_streaming,
+                file_path,
+                regex,
+                rel_path,
+                context,
+                max_matches,
+                0,  # current_matches=0, we aggregate later
+            )
+            return matches
+
+    # Create all tasks upfront
+    tasks = [search_one(fp, rp) for fp, rp in files]
+
+    # Run all searches in parallel with bounded concurrency
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Aggregate results, stopping at max_matches
+    all_matches: list[str] = []
+    files_with_matches = 0
+
+    for result in results:
+        if isinstance(result, Exception):
+            # Log silently, don't fail the whole search
+            continue
+        if result:  # Non-empty matches
+            files_with_matches += 1
+            remaining = max_matches - len(all_matches)
+            if remaining > 0:
+                all_matches.extend(result[:remaining])
+            if len(all_matches) >= max_matches:
+                break
+
+    return all_matches, files_with_matches
 
 
 class GrepSkill(FileSkill):
@@ -179,9 +256,8 @@ class GrepSkill(FileSkill):
             # Validate path (resolves symlinks, checks allowed_paths if set)
             search_path = self._validate_path(path)
 
-            # Determine files to search
-            is_file = await asyncio.to_thread(search_path.is_file)
-            is_dir = await asyncio.to_thread(search_path.is_dir)
+            # Issue 6: Combine is_file/is_dir checks into one thread call
+            is_file, is_dir = await asyncio.to_thread(_check_path_type, search_path)
 
             if is_file:
                 files_to_search = [search_path]
@@ -217,16 +293,12 @@ class GrepSkill(FileSkill):
                         if fnmatch.fnmatch(f.name, include)
                     ]
 
-            # Search files
-            matches: list[str] = []
-            files_searched = 0
-            files_with_matches = 0
+            # Issue 6: Pre-filter files before parallel search
+            # This moves validation/size checks out of the hot loop
+            valid_files: list[tuple[Path, Path | str]] = []
             files_skipped_size = 0
 
             for file_path in files_to_search:
-                if len(matches) >= max_matches:
-                    break
-
                 # Validate each file against sandbox
                 if self._allowed_paths is not None:
                     try:
@@ -245,30 +317,20 @@ class GrepSkill(FileSkill):
 
                 # Format relative path
                 try:
-                    rel_path = file_path.relative_to(search_path)
+                    rel_path: Path | str = file_path.relative_to(search_path)
                 except ValueError:
                     rel_path = file_path
 
-                # P2.5 SECURITY: Use streaming search
-                file_matches, hit_limit = await asyncio.to_thread(
-                    _search_file_streaming,
-                    file_path,
-                    regex,
-                    rel_path,
-                    context,
-                    max_matches,
-                    len(matches),
-                )
+                valid_files.append((file_path, rel_path))
 
-                if file_matches:
-                    files_searched += 1
-                    files_with_matches += 1
-                    matches.extend(file_matches)
-                else:
-                    files_searched += 1
-
-                if hit_limit:
-                    break
+            # Issue 6: Parallel search with bounded concurrency
+            files_searched = len(valid_files)
+            matches, files_with_matches = await _search_files_parallel(
+                valid_files,
+                regex,
+                context,
+                max_matches,
+            )
 
             if not matches:
                 skip_note = ""

@@ -40,7 +40,8 @@ async def cmd_list(ctx: CommandContext) -> CommandOutput:
     """List all agents in the pool.
 
     Returns information about all active agents including their ID,
-    type (temp/named), creation time, message count, and child count.
+    model, permission level, cwd, write paths, message count, child count,
+    last action timestamp, and halted status.
 
     Args:
         ctx: Command context with pool and session_manager.
@@ -59,17 +60,50 @@ async def cmd_list(ctx: CommandContext) -> CommandOutput:
             agent_type = "temp" if agent["is_temp"] else "named"
             child_count = agent.get("child_count", 0)
             parent_id = agent.get("parent_agent_id")
+            halted = agent.get("halted_at_iteration_limit", False)
+            model = agent.get("model", "?")
+            perm_level = agent.get("permission_level", "?")
+            cwd = agent.get("cwd", "?")
+            write_paths = agent.get("write_paths")
+            last_action = agent.get("last_action_at")
 
-            # Build info parts
-            info_parts = [f"{agent['message_count']} msgs"]
-            if child_count > 0:
-                info_parts.append(f"{child_count} children")
-            if parent_id:
-                info_parts.append(f"parent: {parent_id}")
+            # Format last action time (just HH:MM:SS if today, else date+time)
+            if last_action:
+                # Just show time portion for readability
+                last_action_str = last_action.split("T")[1][:8] if "T" in last_action else last_action
+            else:
+                last_action_str = "never"
 
+            # Format write paths
+            if write_paths is None:
+                write_str = "any"
+            elif len(write_paths) == 0:
+                write_str = "none"
+            else:
+                # Show just the last component of each path
+                write_str = ",".join(p.split("/")[-1] for p in write_paths)
+
+            # Build main line
+            status = "HALTED " if halted else ""
             lines.append(
-                f"  {agent['agent_id']} ({agent_type}, {', '.join(info_parts)})"
+                f"  {status}{agent['agent_id']} ({agent_type})"
             )
+
+            # Build detail line
+            details = [
+                f"model={model}",
+                f"perm={perm_level}",
+                f"msgs={agent['message_count']}",
+                f"action={last_action_str}",
+            ]
+            if child_count > 0:
+                details.append(f"children={child_count}")
+            if parent_id:
+                details.append(f"parent={parent_id}")
+
+            lines.append(f"    {', '.join(details)}")
+            lines.append(f"    cwd={cwd}, write={write_str}")
+
         message = "\n".join(lines)
 
     return CommandOutput.success(
@@ -457,6 +491,27 @@ async def cmd_cancel(
         return CommandOutput.error(f"Failed to cancel: {e}")
 
 
+async def get_permission_data(agent: object) -> tuple[str, str | None, list[str]]:
+    """Extract permission info from agent for serialization.
+
+    Returns:
+        Tuple of (permission_level, permission_preset, disabled_tools)
+    """
+    perms = agent.services.get("permissions")  # type: ignore[union-attr]
+    if perms:
+        level = perms.effective_policy.level.value
+        preset = perms.base_preset
+        disabled = [
+            name for name, tp in perms.tool_permissions.items()
+            if not tp.enabled
+        ]
+    else:
+        level = "trusted"
+        preset = None
+        disabled = []
+    return level, preset, disabled
+
+
 async def cmd_save(
     ctx: CommandContext,
     name: str | None = None,
@@ -492,16 +547,8 @@ async def cmd_save(
             "Provide a name: /save myname"
         )
 
-    # Get permission data from agent
-    permissions: AgentPermissions | None = agent.services.get("permissions")
-    if permissions:
-        perm_level = permissions.level.value
-        perm_preset = permissions.preset_name
-        disabled_tools = permissions.disabled_tools
-    else:
-        perm_level = "trusted"
-        perm_preset = None
-        disabled_tools = []
+    # FIXED: Extract permission data correctly
+    perm_level, perm_preset, disabled_tools = await get_permission_data(agent)
 
     # Create saved session from agent state
     saved = serialize_session(

@@ -21,7 +21,11 @@ class NexusStatusSkill(NexusSkill):
 
     @property
     def description(self) -> str:
-        return "Get status of a Nexus agent (token usage and context info)"
+        return (
+            "Get status of a Nexus agent. Returns tokens (used/available for context), "
+            "and context info (message count, iteration state, compaction status). "
+            "Use to check if agent is near context limit or halted at max iterations."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -30,14 +34,14 @@ class NexusStatusSkill(NexusSkill):
             "properties": {
                 "agent_id": {
                     "type": "string",
-                    "description": "ID of the agent (e.g., 'worker-1')"
+                    "description": "ID of the agent (e.g., 'worker-1')",
                 },
                 "port": {
                     "type": "integer",
-                    "description": "Server port (default: 8765)"
-                }
+                    "description": "Server port (default: 8765)",
+                },
             },
-            "required": ["agent_id"]
+            "required": ["agent_id"],
         }
 
     async def execute(

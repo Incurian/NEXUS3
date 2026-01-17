@@ -1,5 +1,5 @@
 {
-  "default_model": "gpt",
+  "default_model": "fast",
   "providers": {
     "openrouter": {
       "type": "openrouter",
@@ -8,31 +8,38 @@
       "models": {
         "haiku": {
           "id": "anthropic/claude-haiku-4.5",
-          "context_window": 200000
+          "context_window": 200000,
+          "guidance": "Fast Claude. Good for: quick tasks, summarization, simple edits."
         },
         "sonnet": {
           "id": "anthropic/claude-sonnet-4.5",
-          "context_window": 200000
+          "context_window": 200000,
+          "guidance": "Balanced Claude. Good for: most coding, analysis, writing. Default choice."
         },
         "opus": {
           "id": "anthropic/claude-opus-4.5",
-          "context_window": 200000
+          "context_window": 200000,
+          "guidance": "Most capable Claude. Good for: complex reasoning, architecture. Expensive."
         },
         "gemini": {
           "id": "google/gemini-3-flash-preview",
-          "context_window": 1048576
+          "context_window": 1048576,
+          "guidance": "Google Gemini. Good for: large context tasks, multimodal."
         },
         "gpt": {
           "id": "openai/gpt-5.2",
-          "context_window": 400000
+          "context_window": 400000,
+          "guidance": "OpenAI GPT-5.2. Good for: general tasks, tool use, coding."
         },
         "oss": {
           "id": "openai/gpt-oss-120b",
-          "context_window": 131072
+          "context_window": 131072,
+          "guidance": "Open-source model. Good for: budget tasks, experimentation."
         },
         "fast": {
           "id": "x-ai/grok-4.1-fast",
-          "context_window": 2000000
+          "context_window": 2000000,
+          "guidance": "Huge 2M context. Good for: research, reading many files. Default for subagents."
         }
       }
     },
@@ -44,15 +51,18 @@
       "models": {
         "haiku-native": {
           "id": "claude-haiku-4-5",
-          "context_window": 200000
+          "context_window": 200000,
+          "guidance": "Direct Anthropic API. Same as haiku but native routing."
         },
         "sonnet-native": {
           "id": "claude-sonnet-4-5",
-          "context_window": 200000
+          "context_window": 200000,
+          "guidance": "Direct Anthropic API. Same as sonnet but native routing."
         },
         "opus-native": {
           "id": "claude-opus-4-5",
-          "context_window": 200000
+          "context_window": 200000,
+          "guidance": "Direct Anthropic API. Same as opus but native routing."
         }
       }
     }
