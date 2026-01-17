@@ -842,3 +842,75 @@ Claude Code (Opus) coordinates NEXUS subagents directly:
 - Agents use GPT-5.2 by default (configured in `nexus3/defaults/config.json`)
 
 Do NOT use a NEXUS coordinator agent in the middle - Claude Code is better at coordination.
+
+---
+
+## README Update Procedure
+
+Use a trusted NEXUS coordinator to orchestrate sandboxed subagents for updating module READMEs.
+
+### 1. Start Server
+
+```bash
+NEXUS_DEV=1 nexus --serve 8765 &
+# Or: nexus --fresh &  (REPL with embedded server)
+```
+
+### 2. Create Trusted Coordinator
+
+```bash
+nexus-rpc create coordinator \
+  --preset trusted \
+  --cwd /home/inc/repos/NEXUS3
+```
+
+### 3. Send Coordination Task
+
+```bash
+nexus-rpc send coordinator "You are a coordinator for updating NEXUS3 module README files.
+
+Your task:
+1. Create sandboxed agents for each module to update their README.md
+2. Each agent should have write access ONLY to their module directory
+3. After all updates, read the module READMEs and update the main README.md
+
+The modules are in nexus3/:
+- core, config, provider, context, session, skill, display, cli, rpc, mcp, commands, defaults
+
+For each module, create an agent like:
+nexus_create(
+    agent_id=\"readme-core\",
+    cwd=\"/home/inc/repos/NEXUS3/nexus3/core\",
+    allowed_write_paths=[\"/home/inc/repos/NEXUS3/nexus3/core\"],
+    initial_message=\"Read all .py files in this directory. Update README.md to accurately reflect the current module contents, exports, and usage. Be concise.\"
+)
+
+Start with 3-4 modules in parallel, then continue in batches.
+After all module READMEs are updated, update /home/inc/repos/NEXUS3/README.md with an accurate project overview." --timeout 600
+```
+
+### 4. Monitor Progress
+
+```bash
+nexus-rpc list                    # See all agents
+nexus-rpc status coordinator      # Check coordinator progress
+```
+
+### 5. Continue if Needed
+
+```bash
+nexus-rpc send coordinator "Continue. Update remaining modules, then the main README." --timeout 600
+```
+
+### 6. Cleanup
+
+```bash
+nexus-rpc shutdown
+```
+
+### Key Points
+
+- **Coordinator**: Trusted preset, can read anywhere and create subagents
+- **Subagents**: Sandboxed with `allowed_write_paths` scoped to their module only
+- **Permission ceiling**: Trusted agents can only create sandboxed subagents
+- **Result**: 12 module READMEs + 1 main README updated in ~5 minutes
