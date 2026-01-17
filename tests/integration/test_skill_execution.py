@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from nexus3.context import ContextConfig, ContextManager
+from nexus3.core.permissions import resolve_preset
 from nexus3.core.types import (
     ContentDelta,
     Message,
@@ -26,6 +27,14 @@ from nexus3.session.session import Session
 from nexus3.skill.base import BaseSkill
 from nexus3.skill.registry import SkillRegistry
 from nexus3.skill.services import ServiceContainer
+
+
+def create_services_with_permissions() -> ServiceContainer:
+    """Create a ServiceContainer with YOLO permissions for testing."""
+    services = ServiceContainer()
+    permissions = resolve_preset("yolo")
+    services.register("permissions", permissions)
+    return services
 
 
 class MockProviderWithTools:
@@ -247,10 +256,11 @@ class TestSessionWithEchoTool:
 
         # Create context, registry, and session
         context = ContextManager(config=ContextConfig())
-        registry = SkillRegistry()
+        services = create_services_with_permissions()
+        registry = SkillRegistry(services)
         echo_skill = EchoSkill()
         registry.register("echo", lambda _: echo_skill)
-        session = Session(provider, context=context, registry=registry)
+        session = Session(provider, context=context, registry=registry, services=services)
 
         # Execute
         result = [chunk async for chunk in session.send("Say test")]
@@ -284,10 +294,11 @@ class TestSessionWithEchoTool:
         provider = MockProviderWithTools(responses)
 
         context = ContextManager(config=ContextConfig())
-        registry = SkillRegistry()
+        services = create_services_with_permissions()
+        registry = SkillRegistry(services)
         echo_skill = EchoSkill()
         registry.register("echo", lambda _: echo_skill)
-        session = Session(provider, context=context, registry=registry)
+        session = Session(provider, context=context, registry=registry, services=services)
 
         _ = [chunk async for chunk in session.send("Test")]
 
@@ -359,10 +370,11 @@ class TestToolLoopCompletes:
         provider = MockProviderWithTools(responses)
 
         context = ContextManager(config=ContextConfig())
-        registry = SkillRegistry()
+        services = create_services_with_permissions()
+        registry = SkillRegistry(services)
         echo_skill = EchoSkill()
         registry.register("echo", lambda _: echo_skill)
-        session = Session(provider, context=context, registry=registry)
+        session = Session(provider, context=context, registry=registry, services=services)
 
         result = [chunk async for chunk in session.send("Test")]
 
@@ -397,10 +409,11 @@ class TestToolLoopCompletes:
         provider = MockProviderWithTools(responses)
 
         context = ContextManager(config=ContextConfig())
-        registry = SkillRegistry()
+        services = create_services_with_permissions()
+        registry = SkillRegistry(services)
         echo_skill = EchoSkill()
         registry.register("echo", lambda _: echo_skill)
-        session = Session(provider, context=context, registry=registry)
+        session = Session(provider, context=context, registry=registry, services=services)
 
         result = [chunk async for chunk in session.send("Test")]
 
@@ -436,9 +449,10 @@ class TestToolLoopCompletes:
         provider = MockProviderWithTools(responses)
 
         context = ContextManager(config=ContextConfig())
-        registry = SkillRegistry()
+        services = create_services_with_permissions()
+        registry = SkillRegistry(services)
         registry.register("echo", lambda _: EchoSkill())
-        session = Session(provider, context=context, registry=registry)
+        session = Session(provider, context=context, registry=registry, services=services)
 
         result = [chunk async for chunk in session.send("Test")]
 
@@ -470,9 +484,10 @@ class TestToolLoopCompletes:
         provider = MockProviderWithTools(responses)
 
         context = ContextManager(config=ContextConfig())
-        registry = SkillRegistry()
+        services = create_services_with_permissions()
+        registry = SkillRegistry(services)
         registry.register("failing", lambda _: FailingSkill())
-        session = Session(provider, context=context, registry=registry)
+        session = Session(provider, context=context, registry=registry, services=services)
 
         result = [chunk async for chunk in session.send("Test")]
 
@@ -502,9 +517,10 @@ class TestToolLoopCompletes:
         provider = MockProviderWithTools(responses)
 
         context = ContextManager(config=ContextConfig())
-        registry = SkillRegistry()
+        services = create_services_with_permissions()
+        registry = SkillRegistry(services)
         registry.register("echo", lambda _: EchoSkill())
-        session = Session(provider, context=context, registry=registry)
+        session = Session(provider, context=context, registry=registry, services=services)
 
         result = [chunk async for chunk in session.send("Test")]
 
@@ -533,9 +549,10 @@ class TestToolLoopCompletes:
         provider = MockProviderWithTools(responses)
 
         context = ContextManager(config=ContextConfig())
-        registry = SkillRegistry()
+        services = create_services_with_permissions()
+        registry = SkillRegistry(services)
         registry.register("echo", lambda _: EchoSkill())
-        session = Session(provider, context=context, registry=registry)
+        session = Session(provider, context=context, registry=registry, services=services)
 
         _ = [chunk async for chunk in session.send("Hello")]
 

@@ -77,21 +77,21 @@ class TestPrivateIPsStillBlocked:
         with pytest.raises(UrlSecurityError) as exc_info:
             validate_url("http://10.0.0.1")
 
-        assert "blocked" in str(exc_info.value).lower()
+        assert "private network" in str(exc_info.value).lower()
 
     def test_private_172_16_blocked(self) -> None:
         """Private 172.16.x.x IPs are blocked by default."""
         with pytest.raises(UrlSecurityError) as exc_info:
             validate_url("http://172.16.0.1")
 
-        assert "blocked" in str(exc_info.value).lower()
+        assert "private network" in str(exc_info.value).lower()
 
     def test_private_192_168_blocked(self) -> None:
         """Private 192.168.x.x IPs are blocked by default."""
         with pytest.raises(UrlSecurityError) as exc_info:
             validate_url("http://192.168.1.1")
 
-        assert "blocked" in str(exc_info.value).lower()
+        assert "private network" in str(exc_info.value).lower()
 
     def test_cloud_metadata_blocked(self) -> None:
         """Cloud metadata endpoint is blocked by default."""

@@ -389,7 +389,13 @@ class MockAgentPool:
         self._agents[effective_id] = agent
         return agent
 
-    async def destroy(self, agent_id: str) -> bool:
+    async def destroy(
+        self,
+        agent_id: str,
+        requester_id: str | None = None,
+        *,
+        admin_override: bool = False,
+    ) -> bool:
         """Destroy mock agent."""
         if agent_id in self._agents:
             del self._agents[agent_id]

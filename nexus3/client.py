@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 import httpx
 
 from nexus3.core.errors import NexusError
+from nexus3.core.url_validator import UrlSecurityError, validate_url
 from nexus3.rpc.auth import discover_rpc_token
 from nexus3.rpc.protocol import ParseError, parse_response, serialize_request
 from nexus3.rpc.types import Request, Response
@@ -46,6 +47,7 @@ class NexusClient:
         url: str | None = None,
         timeout: float = 60.0,
         api_key: str | None = None,
+        skip_url_validation: bool = False,
     ) -> None:
         """Initialize the client.
 
@@ -54,9 +56,23 @@ class NexusClient:
             timeout: Request timeout in seconds.
             api_key: Optional API key for authentication. If provided,
                      adds Authorization: Bearer <key> header to all requests.
+            skip_url_validation: If True, skip URL security validation.
+                     Use with caution - only for edge cases where standard
+                     validation blocks legitimate URLs.
+
+        Raises:
+            ValueError: If URL fails security validation (and skip_url_validation=False).
         """
         if url is None:
             url = f"http://127.0.0.1:{_get_default_port()}"
+        elif not skip_url_validation:
+            # Validate URL for SSRF protection
+            # Allow localhost (local server) and private networks (internal deployments)
+            try:
+                validate_url(url, allow_localhost=True, allow_private=True)
+            except UrlSecurityError as e:
+                raise ValueError(f"Invalid server URL: {e}") from e
+
         self._url = url
         self._timeout = timeout
         self._api_key = api_key

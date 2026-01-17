@@ -473,6 +473,13 @@ class Session:
         """
         permissions = self._services.get_permissions() if self._services else None
 
+        # Fail-closed: require permissions for tool execution (H3 fix)
+        if permissions is None:
+            return ToolResult(
+                error="Tool execution denied: permissions not configured. "
+                "This is a programming error - all Sessions should have permissions."
+            )
+
         # 1. Permission checks (enabled, action allowed, path restrictions)
         error = self._enforcer.check_all(tool_call, permissions)
         if error:
@@ -480,20 +487,29 @@ class Session:
 
         # 2. Check if confirmation needed
         if self._enforcer.requires_confirmation(tool_call, permissions):
-            target_path = self._enforcer.extract_target_path(tool_call)
+            # Fix 1.2: Get display path and ALL write paths for multi-path tools
+            display_path, write_paths = self._enforcer.get_confirmation_context(tool_call)
             exec_cwd = self._enforcer.extract_exec_cwd(tool_call)
             agent_cwd = self._services.get_cwd() if self._services else Path.cwd()
 
+            # Show confirmation for the write target (display_path)
             result = await self._confirmation.request(
-                tool_call, target_path, agent_cwd, self.on_confirm
+                tool_call, display_path, agent_cwd, self.on_confirm
             )
 
             if result == ConfirmationResult.DENY:
                 return ToolResult(error="Action cancelled by user")
 
-            if permissions:
+            # Fix 1.2: Apply allowance to ALL write paths (e.g., destination for copy_file)
+            if permissions and write_paths:
+                for write_path in write_paths:
+                    self._confirmation.apply_result(
+                        permissions, result, tool_call, write_path, exec_cwd
+                    )
+            elif permissions:
+                # Fallback for tools without explicit write paths (e.g., exec tools)
                 self._confirmation.apply_result(
-                    permissions, result, tool_call, target_path, exec_cwd
+                    permissions, result, tool_call, display_path, exec_cwd
                 )
 
         # 3. Resolve skill

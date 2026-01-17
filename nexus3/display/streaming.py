@@ -7,6 +7,7 @@ from enum import Enum
 from rich.console import Group, RenderableType
 from rich.text import Text
 
+from nexus3.core.text_safety import strip_terminal_escapes
 from nexus3.display.theme import Activity, Theme
 
 
@@ -223,8 +224,9 @@ class StreamingDisplay:
         return 0.0
 
     def add_chunk(self, chunk: str) -> None:
-        """Add a chunk to the response buffer."""
-        self.response += chunk
+        """Add a chunk to the response buffer (sanitized at source)."""
+        sanitized = strip_terminal_escapes(chunk)
+        self.response += sanitized
         if self.activity == Activity.THINKING:
             self.activity = Activity.RESPONDING
 

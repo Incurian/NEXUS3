@@ -14,6 +14,7 @@ ESC = "\x1b"
 async def monitor_for_escape(
     on_escape: Callable[[], None],
     pause_event: asyncio.Event,
+    pause_ack_event: asyncio.Event,
     check_interval: float = 0.1,
 ) -> None:
     """Monitor stdin for ESC key and call callback when detected.
@@ -22,8 +23,16 @@ async def monitor_for_escape(
 
     Args:
         on_escape: Callback to invoke when ESC is pressed
-        pause_event: asyncio.Event that signals when key monitoring should pause
+        pause_event: asyncio.Event - cleared to request pause, set to resume
+        pause_ack_event: asyncio.Event - set by monitor when paused, cleared when resumed
         check_interval: How often to check for input (seconds)
+
+    Pause Protocol:
+        1. Caller clears pause_event to request pause
+        2. Monitor sets pause_ack_event when it has paused (terminal restored)
+        3. Caller waits for pause_ack_event before taking input
+        4. Caller sets pause_event to signal resume
+        5. Monitor clears pause_ack_event and resumes monitoring
 
     Note:
         This function runs until cancelled. It should be used with
@@ -40,13 +49,16 @@ async def monitor_for_escape(
             tty.setcbreak(sys.stdin.fileno())
 
             while True:
-                # Check if paused (for confirmation prompts)
-                if pause_event.is_set():
+                # Check if pause requested (pause_event cleared means pause)
+                if not pause_event.is_set():
                     # Restore terminal while paused so other input can work
                     termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-                    while pause_event.is_set():
-                        await asyncio.sleep(check_interval)
-                    # Re-enable cbreak mode when resumed
+                    # Signal that we have paused
+                    pause_ack_event.set()
+                    # Wait until resumed (pause_event set again)
+                    await pause_event.wait()
+                    # Clear acknowledgment and re-enable cbreak mode
+                    pause_ack_event.clear()
                     tty.setcbreak(sys.stdin.fileno())
                     continue
 
@@ -69,6 +81,12 @@ async def monitor_for_escape(
         # On Windows, we'd need msvcrt or similar
         # For now, just sleep and let the operation complete normally
         while True:
+            # Still handle pause protocol for consistency
+            if not pause_event.is_set():
+                pause_ack_event.set()
+                await pause_event.wait()
+                pause_ack_event.clear()
+                continue
             await asyncio.sleep(check_interval)
 
 
@@ -77,19 +95,31 @@ class KeyMonitor:
 
     Example:
         pause_event = asyncio.Event()
-        async with KeyMonitor(on_escape=token.cancel, pause_event=pause_event):
+        pause_event.set()  # Start in "running" state
+        pause_ack_event = asyncio.Event()
+        async with KeyMonitor(
+            on_escape=token.cancel,
+            pause_event=pause_event,
+            pause_ack_event=pause_ack_event
+        ):
             # ESC will trigger token.cancel() while in this block
             await long_operation()
     """
 
-    def __init__(self, on_escape: Callable[[], None], pause_event: asyncio.Event) -> None:
+    def __init__(
+        self,
+        on_escape: Callable[[], None],
+        pause_event: asyncio.Event,
+        pause_ack_event: asyncio.Event,
+    ) -> None:
         self.on_escape = on_escape
         self.pause_event = pause_event
+        self.pause_ack_event = pause_ack_event
         self._task: asyncio.Task[None] | None = None
 
     async def __aenter__(self) -> "KeyMonitor":
         self._task = asyncio.create_task(
-            monitor_for_escape(self.on_escape, self.pause_event)
+            monitor_for_escape(self.on_escape, self.pause_event, self.pause_ack_event)
         )
         return self
 

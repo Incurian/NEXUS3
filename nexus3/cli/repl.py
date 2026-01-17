@@ -197,17 +197,21 @@ async def run_repl(
     # Create session manager for auto-restore of saved sessions
     session_manager = SessionManager()
 
-    # Per-REPL pause event for key monitor (E4: replace global state)
+    # Per-REPL pause events for key monitor (E4: replace global state)
+    # pause_event: set = running, cleared = pause requested
+    # pause_ack_event: set when monitor has actually paused
     key_monitor_pause = asyncio.Event()
+    key_monitor_pause.set()  # Start in "running" state
+    key_monitor_pause_ack = asyncio.Event()
 
-    # Closure that captures the per-REPL event for confirmation callbacks
+    # Closure that captures the per-REPL events for confirmation callbacks
     async def confirm_with_pause(
         tool_call: ToolCall,
         target_path: Path | None,
         agent_cwd: Path,
     ) -> ConfirmationResult:
         return await confirm_tool_action(
-            tool_call, target_path, agent_cwd, key_monitor_pause
+            tool_call, target_path, agent_cwd, key_monitor_pause, key_monitor_pause_ack
         )
 
     # =========================================================================
@@ -939,7 +943,11 @@ async def run_repl(
                 # Store live reference for confirmation callback to pause/resume
                 token = _current_live.set(live)
                 try:
-                    async with KeyMonitor(on_escape=on_cancel, pause_event=key_monitor_pause):
+                    async with KeyMonitor(
+                        on_escape=on_cancel,
+                        pause_event=key_monitor_pause,
+                        pause_ack_event=key_monitor_pause_ack,
+                    ):
                         stream_task = asyncio.create_task(do_stream())
                         # Refresh loop while streaming
                         while not stream_task.done():

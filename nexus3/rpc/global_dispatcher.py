@@ -30,7 +30,7 @@ from pathlib import Path
 
 from nexus3.core.permissions import AgentPermissions, PermissionDelta, ToolPermission
 from nexus3.core.validation import ValidationError, validate_agent_id
-from nexus3.rpc.pool import Agent, AgentConfig
+from nexus3.rpc.pool import Agent, AgentConfig, AuthorizationError
 
 # Type alias for handler functions
 Handler = Callable[[dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
@@ -74,6 +74,8 @@ class GlobalDispatcher:
             "list_agents": self._handle_list_agents,
             "shutdown_server": self._handle_shutdown_server,
         }
+        # Requester context set by dispatch() before calling handlers
+        self._current_requester_id: str | None = None
 
     def handles(self, method: str) -> bool:
         """Check if this dispatcher handles the given method.
@@ -86,16 +88,27 @@ class GlobalDispatcher:
         """
         return method in self._handlers
 
-    async def dispatch(self, request: Request) -> Response | None:
+    async def dispatch(
+        self,
+        request: Request,
+        requester_id: str | None = None,
+    ) -> Response | None:
         """Dispatch a request to the appropriate handler.
 
         Args:
             request: The parsed JSON-RPC request.
+            requester_id: ID of the requesting agent (from X-Nexus-Agent header).
+                         None for external clients (CLI, scripts).
 
         Returns:
             A Response object, or None for notifications (requests without id).
         """
-        return await dispatch_request(request, self._handlers, "global method")
+        # Store requester context for handlers (esp. _handle_destroy_agent)
+        self._current_requester_id = requester_id
+        try:
+            return await dispatch_request(request, self._handlers, "global method")
+        finally:
+            self._current_requester_id = None
 
     async def _handle_create_agent(self, params: dict[str, Any]) -> dict[str, Any]:
         """Create a new agent.
@@ -382,6 +395,11 @@ class GlobalDispatcher:
         Removes an agent from the pool and cleans up its resources.
         Any in-progress requests for this agent will be cancelled.
 
+        Authorization Rules:
+        - Self-destruction is allowed (agent destroys itself)
+        - Parent can destroy its children
+        - External clients (requester_id=None) are treated as admin
+
         Args:
             params: Required parameters:
                 - agent_id: str - ID of the agent to destroy
@@ -392,7 +410,8 @@ class GlobalDispatcher:
                 - agent_id: str - The ID of the destroyed agent
 
         Raises:
-            InvalidParamsError: If agent_id is missing or invalid.
+            InvalidParamsError: If agent_id is missing, invalid, or requester
+                               is not authorized to destroy the agent.
         """
         agent_id = params.get("agent_id")
 
@@ -404,8 +423,14 @@ class GlobalDispatcher:
                 f"agent_id must be string, got: {type(agent_id).__name__}"
             )
 
-        # Destroy the agent through the pool
-        success = await self._pool.destroy(agent_id)
+        # Destroy the agent through the pool (with authorization check)
+        try:
+            success = await self._pool.destroy(
+                agent_id,
+                requester_id=self._current_requester_id,
+            )
+        except AuthorizationError as e:
+            raise InvalidParamsError(str(e)) from e
 
         return {
             "success": success,

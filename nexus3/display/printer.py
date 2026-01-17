@@ -1,20 +1,11 @@
 """Inline printing with gumball status indicators."""
 
-import re
 import sys
 
 from rich.console import Console
 
+from nexus3.core.text_safety import strip_terminal_escapes
 from nexus3.display.theme import Status, Theme
-
-# ANSI escape sequence pattern for sanitization
-# Prevents terminal injection from malicious/buggy LLM output
-_ANSI_ESCAPE_PATTERN = re.compile(
-    r'\x1b\[[0-9;]*[mHJKsu]|'  # CSI sequences (colors, cursor)
-    r'\x1b\[\?[0-9;]*[hl]|'    # CSI ? sequences (modes)
-    r'\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|'  # OSC sequences (title, etc)
-    r'\x1b[PX^_][^\x1b]*\x1b\\'  # DCS, SOS, PM, APC sequences
-)
 
 
 class InlinePrinter:
@@ -100,9 +91,9 @@ class InlinePrinter:
         """Print a streaming chunk without newline.
 
         Uses raw stdout to avoid conflicts with Rich.Live.
-        Strips ANSI escape sequences to prevent terminal injection.
+        Strips ANSI escape sequences and control chars to prevent terminal injection.
         """
-        sanitized = _ANSI_ESCAPE_PATTERN.sub('', chunk)
+        sanitized = strip_terminal_escapes(chunk)
         sys.stdout.write(sanitized)
         sys.stdout.flush()
 

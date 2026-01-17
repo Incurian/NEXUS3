@@ -2,6 +2,9 @@
 
 Arch A2 Integration: Uses PathResolver/PathDecisionEngine for consistent
 path validation across all permission checks.
+
+Fix 1.2: Multi-path confirmation using ToolPathSemantics for proper
+handling of copy_file/rename destination paths.
 """
 
 from __future__ import annotations
@@ -11,6 +14,10 @@ from typing import TYPE_CHECKING, Any
 
 from nexus3.core.path_decision import PathDecisionEngine
 from nexus3.core.types import ToolResult
+from nexus3.session.path_semantics import (
+    extract_display_path,
+    extract_write_paths,
+)
 
 if TYPE_CHECKING:
     from nexus3.core.permissions import AgentPermissions
@@ -46,19 +53,20 @@ class PermissionEnforcer:
     def check_all(
         self,
         tool_call: ToolCall,
-        permissions: AgentPermissions | None,
+        permissions: AgentPermissions,
     ) -> ToolResult | None:
         """Run all permission checks.
 
         Arch A2: Checks ALL paths in tool call (e.g., both source and
         destination for copy_file), not just the first one.
 
+        Args:
+            tool_call: The tool call to check.
+            permissions: Agent permissions (required, non-optional).
+
         Returns:
             ToolResult with error if any check fails, None if all pass.
         """
-        if not permissions:
-            return None  # No permissions = no restrictions
-
         # Check tool enabled
         error = self._check_enabled(tool_call.name, permissions)
         if error:
@@ -184,25 +192,72 @@ class PermissionEnforcer:
     def requires_confirmation(
         self,
         tool_call: ToolCall,
-        permissions: AgentPermissions | None,
+        permissions: AgentPermissions,
     ) -> bool:
-        """Check if tool call requires user confirmation."""
-        if not permissions:
-            return False
+        """Check if tool call requires user confirmation.
 
+        Fix 1.2: Checks ALL write paths, not just the first one. For multi-path
+        tools like copy_file/rename, if the destination requires confirmation,
+        this returns True.
+
+        Args:
+            tool_call: The tool call to check.
+            permissions: Agent permissions (required, non-optional).
+
+        Returns:
+            True if confirmation is required for ANY write path, False otherwise.
+        """
         # Special case: nexus_destroy on child agents doesn't need confirmation
         if self._should_skip_confirmation(tool_call):
             return False
 
-        target_path = self.extract_target_path(tool_call)
         exec_cwd = self.extract_exec_cwd(tool_call)
 
-        return permissions.effective_policy.requires_confirmation(
-            tool_call.name,
-            path=target_path,
-            exec_cwd=exec_cwd,
-            session_allowances=permissions.session_allowances,
-        )
+        # Get write paths (what will actually be modified)
+        write_paths = extract_write_paths(tool_call.name, tool_call.arguments)
+
+        # If no write paths, fall back to old behavior (check first target path)
+        if not write_paths:
+            target_path = self.extract_target_path(tool_call)
+            return permissions.effective_policy.requires_confirmation(
+                tool_call.name,
+                path=target_path,
+                exec_cwd=exec_cwd,
+                session_allowances=permissions.session_allowances,
+            )
+
+        # Check if ANY write path requires confirmation
+        for write_path in write_paths:
+            if permissions.effective_policy.requires_confirmation(
+                tool_call.name,
+                path=write_path,
+                exec_cwd=exec_cwd,
+                session_allowances=permissions.session_allowances,
+            ):
+                return True
+
+        return False
+
+    def get_confirmation_context(
+        self,
+        tool_call: ToolCall,
+    ) -> tuple[Path | None, list[Path]]:
+        """Get display path and all write paths for confirmation.
+
+        Fix 1.2: Returns both the path to show in UI and all paths that need
+        allowances applied.
+
+        Args:
+            tool_call: The tool call to get context for.
+
+        Returns:
+            Tuple of (display_path, write_paths) where:
+            - display_path: Path to show in confirmation UI (typically write target)
+            - write_paths: All paths that allowances should be applied to
+        """
+        display_path = extract_display_path(tool_call.name, tool_call.arguments)
+        write_paths = extract_write_paths(tool_call.name, tool_call.arguments)
+        return display_path, write_paths
 
     def _should_skip_confirmation(self, tool_call: ToolCall) -> bool:
         """Check if confirmation should be skipped (e.g., destroying child agents)."""

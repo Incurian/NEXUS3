@@ -60,11 +60,22 @@ if TYPE_CHECKING:
     from nexus3.config.schema import Config
     from nexus3.provider.registry import ProviderRegistry
     from nexus3.rpc.global_dispatcher import GlobalDispatcher
+    from nexus3.session.session_manager import SessionManager
 
 
 # Maximum nesting depth for agent creation
 # 0 = root, 1 = child, 2 = grandchild, etc.
 MAX_AGENT_DEPTH = 5
+
+
+class AuthorizationError(Exception):
+    """Raised when an operation is not authorized.
+
+    Used for pool-level authorization checks, such as verifying that
+    an agent has permission to destroy another agent.
+    """
+
+    pass
 
 
 # === Agent Naming Helpers ===
@@ -517,9 +528,10 @@ class AgentPool:
         services.register("cwd", agent_cwd)
 
         # Register AgentAPI for in-process communication (bypasses HTTP)
+        # Pass effective_id as requester_id for authorization checks (H5 fix)
         if self._global_dispatcher is not None:
             from nexus3.rpc.agent_api import DirectAgentAPI
-            agent_api = DirectAgentAPI(self, self._global_dispatcher)
+            agent_api = DirectAgentAPI(self, self._global_dispatcher, requester_id=effective_id)
             services.register("agent_api", agent_api)
 
         registry = SkillRegistry(services)
@@ -664,6 +676,216 @@ class AgentPool:
         """
         return is_temp_agent(agent_id)
 
+    async def get_or_restore(
+        self,
+        agent_id: str,
+        session_manager: "SessionManager | None" = None,
+    ) -> Agent | None:
+        """Get agent, restoring from saved session if needed.
+
+        This is atomic - concurrent calls for the same agent_id are safe.
+        The lock is held throughout the check-and-restore operation to prevent
+        TOCTOU race conditions where multiple requests could try to restore
+        the same saved session simultaneously.
+
+        Args:
+            agent_id: The ID of the agent to get or restore.
+            session_manager: Optional session manager for loading saved sessions.
+                           If None, only returns active agents.
+
+        Returns:
+            The Agent instance if found or restored, None if not found and
+            cannot be restored.
+
+        Example:
+            # Safe for concurrent requests
+            agent = await pool.get_or_restore("worker-1", session_manager)
+            if agent:
+                response = await agent.dispatcher.dispatch(request)
+        """
+        async with self._lock:
+            # Check 1: Already active?
+            if agent_id in self._agents:
+                return self._agents[agent_id]
+
+            # Check 2: Can restore?
+            if session_manager is not None and session_manager.session_exists(agent_id):
+                saved = session_manager.load_session(agent_id)
+                return await self._restore_unlocked(saved)
+
+            return None
+
+    async def _restore_unlocked(self, saved: SavedSession) -> Agent:
+        """Internal restore logic - caller MUST hold self._lock.
+
+        This is the actual restoration logic, factored out to allow
+        get_or_restore() to hold the lock while both checking for existing
+        agents AND restoring from saved session (TOCTOU race condition fix).
+
+        Args:
+            saved: The SavedSession containing the agent's persisted state.
+
+        Returns:
+            The restored Agent instance with full conversation history.
+
+        Raises:
+            ValueError: If an agent with the saved session's ID already exists.
+        """
+        agent_id = saved.agent_id
+
+        # Validate agent ID for path traversal attacks (P0.5 security fix)
+        validate_agent_id(agent_id)
+
+        # Check for duplicate (caller should have checked, but defense-in-depth)
+        if agent_id in self._agents:
+            raise ValueError(f"Agent already exists: {agent_id}")
+
+        # Create agent log directory
+        agent_log_dir = self._shared.base_log_dir / agent_id
+
+        # Create session logger
+        log_config = LogConfig(
+            base_dir=agent_log_dir,
+            streams=self._shared.log_streams,
+            mode="agent",
+        )
+        logger = SessionLogger(log_config)
+
+        # Register raw logging callback with the multiplexer
+        raw_callback = logger.get_raw_log_callback()
+        if raw_callback is not None:
+            self._log_multiplexer.register(agent_id, raw_callback)
+
+        # Use system prompt from saved session
+        system_prompt = saved.system_prompt
+
+        # Create context manager with default model's context window
+        resolved_model = self._shared.config.resolve_model()
+        context_config = ContextConfig(
+            max_tokens=resolved_model.context_window,
+        )
+        context = ContextManager(
+            config=context_config,
+            logger=logger,
+        )
+        context.set_system_prompt(system_prompt)
+
+        # Restore conversation history from saved session
+        messages = deserialize_messages(saved.messages)
+        for msg in messages:
+            context._messages.append(msg)
+
+        # Create skill registry with services
+        from nexus3.skill.builtin import register_builtin_skills
+
+        services = ServiceContainer()
+
+        # Resolve permissions from saved session or fall back to default
+        preset_name = (
+            saved.permission_preset
+            if saved.permission_preset
+            else self._shared.config.permissions.default_preset
+        )
+        try:
+            permissions = resolve_preset(preset_name, self._shared.custom_presets)
+        except ValueError:
+            # Fall back to trusted if preset not found
+            permissions = resolve_preset("trusted", self._shared.custom_presets)
+
+        # Apply disabled_tools from saved session
+        if saved.disabled_tools:
+            delta = PermissionDelta(disable_tools=saved.disabled_tools)
+            permissions = permissions.apply_delta(delta)
+
+        # Register agent_id, permissions, allowed_paths, cwd, and MCP registry
+        services.register("agent_id", agent_id)
+        services.register("permissions", permissions)
+        services.register("allowed_paths", permissions.effective_policy.allowed_paths)
+        services.register("mcp_registry", self._shared.mcp_registry)
+        # Per-agent cwd for isolation (restored from saved session)
+        agent_cwd = Path(saved.working_directory) if saved.working_directory else Path.cwd()
+        services.register("cwd", agent_cwd)
+
+        # Register AgentAPI for in-process communication (bypasses HTTP)
+        # Pass agent_id as requester_id for authorization checks (H5 fix)
+        if self._global_dispatcher is not None:
+            from nexus3.rpc.agent_api import DirectAgentAPI
+            agent_api = DirectAgentAPI(self, self._global_dispatcher, requester_id=agent_id)
+            services.register("agent_api", agent_api)
+
+        registry = SkillRegistry(services)
+        register_builtin_skills(registry)
+
+        # SECURITY FIX: Inject only enabled tool definitions into context
+        # Disabled tools should not be visible to the LLM at all
+        tool_defs = registry.get_definitions_for_permissions(permissions)
+
+        # Add MCP tools if agent has MCP permission (TRUSTED/YOLO only)
+        # Only include tools from MCP servers visible to this agent
+        from nexus3.mcp.permissions import can_use_mcp
+        if can_use_mcp(permissions):
+            for mcp_skill in self._shared.mcp_registry.get_all_skills(agent_id=agent_id):
+                # Check if MCP tool is disabled in permissions
+                tool_perm = permissions.tool_permissions.get(mcp_skill.name)
+                if tool_perm is not None and not tool_perm.enabled:
+                    continue
+                tool_defs.append({
+                    "type": "function",
+                    "function": {
+                        "name": mcp_skill.name,
+                        "description": mcp_skill.description,
+                        "parameters": mcp_skill.parameters,
+                    },
+                })
+
+        context.set_tool_definitions(tool_defs)
+
+        # Get the default provider from the registry for restored sessions
+        # TODO: Consider saving/restoring the model choice in SavedSession
+        provider = self._shared.provider_registry.get(
+            resolved_model.provider_name,
+            resolved_model.model_id,
+            resolved_model.reasoning,
+        )
+
+        # Create session with context and services for permission enforcement
+        session = Session(
+            provider,
+            context=context,
+            logger=logger,
+            registry=registry,
+            skill_timeout=self._shared.config.skill_timeout,
+            max_concurrent_tools=self._shared.config.max_concurrent_tools,
+            services=services,
+            config=self._shared.config,
+            context_loader=self._shared.context_loader,
+        )
+
+        # Create dispatcher with context for token info and log multiplexer
+        dispatcher = Dispatcher(
+            session,
+            context=context,
+            agent_id=agent_id,
+            log_multiplexer=self._log_multiplexer,
+        )
+
+        # Create agent instance with saved creation time if available
+        agent = Agent(
+            agent_id=agent_id,
+            logger=logger,
+            context=context,
+            services=services,
+            registry=registry,
+            session=session,
+            dispatcher=dispatcher,
+            created_at=saved.created_at,
+        )
+
+        # Store in pool
+        self._agents[agent_id] = agent
+
+        return agent
+
     async def restore_from_saved(self, saved: SavedSession) -> Agent:
         """Restore an agent from a saved session.
 
@@ -671,6 +893,9 @@ class AgentPool:
         conversation history, system prompt, and other configuration.
         This is used for cross-session auto-restore when external requests
         target inactive saved sessions.
+
+        Note: For atomic get-or-restore operations, prefer get_or_restore()
+        which handles the TOCTOU race condition properly.
 
         Args:
             saved: The SavedSession containing the agent's persisted state.
@@ -687,181 +912,67 @@ class AgentPool:
             # Agent now has its full conversation history restored
         """
         async with self._lock:
-            agent_id = saved.agent_id
+            return await self._restore_unlocked(saved)
 
-            # Validate agent ID for path traversal attacks (P0.5 security fix)
-            validate_agent_id(agent_id)
-
-            # Check for duplicate
-            if agent_id in self._agents:
-                raise ValueError(f"Agent already exists: {agent_id}")
-
-            # Create agent log directory
-            agent_log_dir = self._shared.base_log_dir / agent_id
-
-            # Create session logger
-            log_config = LogConfig(
-                base_dir=agent_log_dir,
-                streams=self._shared.log_streams,
-                mode="agent",
-            )
-            logger = SessionLogger(log_config)
-
-            # Register raw logging callback with the multiplexer
-            raw_callback = logger.get_raw_log_callback()
-            if raw_callback is not None:
-                self._log_multiplexer.register(agent_id, raw_callback)
-
-            # Use system prompt from saved session
-            system_prompt = saved.system_prompt
-
-            # Create context manager with default model's context window
-            resolved_model = self._shared.config.resolve_model()
-            context_config = ContextConfig(
-                max_tokens=resolved_model.context_window,
-            )
-            context = ContextManager(
-                config=context_config,
-                logger=logger,
-            )
-            context.set_system_prompt(system_prompt)
-
-            # Restore conversation history from saved session
-            messages = deserialize_messages(saved.messages)
-            for msg in messages:
-                context._messages.append(msg)
-
-            # Create skill registry with services
-            from nexus3.skill.builtin import register_builtin_skills
-
-            services = ServiceContainer()
-
-            # Resolve permissions from saved session or fall back to default
-            preset_name = (
-                saved.permission_preset
-                if saved.permission_preset
-                else self._shared.config.permissions.default_preset
-            )
-            try:
-                permissions = resolve_preset(preset_name, self._shared.custom_presets)
-            except ValueError:
-                # Fall back to trusted if preset not found
-                permissions = resolve_preset("trusted", self._shared.custom_presets)
-
-            # Apply disabled_tools from saved session
-            if saved.disabled_tools:
-                delta = PermissionDelta(disable_tools=saved.disabled_tools)
-                permissions = permissions.apply_delta(delta)
-
-            # Register agent_id, permissions, allowed_paths, cwd, and MCP registry
-            services.register("agent_id", agent_id)
-            services.register("permissions", permissions)
-            services.register("allowed_paths", permissions.effective_policy.allowed_paths)
-            services.register("mcp_registry", self._shared.mcp_registry)
-            # Per-agent cwd for isolation (restored from saved session)
-            agent_cwd = Path(saved.working_directory) if saved.working_directory else Path.cwd()
-            services.register("cwd", agent_cwd)
-
-            # Register AgentAPI for in-process communication (bypasses HTTP)
-            if self._global_dispatcher is not None:
-                from nexus3.rpc.agent_api import DirectAgentAPI
-                agent_api = DirectAgentAPI(self, self._global_dispatcher)
-                services.register("agent_api", agent_api)
-
-            registry = SkillRegistry(services)
-            register_builtin_skills(registry)
-
-            # SECURITY FIX: Inject only enabled tool definitions into context
-            # Disabled tools should not be visible to the LLM at all
-            tool_defs = registry.get_definitions_for_permissions(permissions)
-
-            # Add MCP tools if agent has MCP permission (TRUSTED/YOLO only)
-            # Only include tools from MCP servers visible to this agent
-            from nexus3.mcp.permissions import can_use_mcp
-            if can_use_mcp(permissions):
-                for mcp_skill in self._shared.mcp_registry.get_all_skills(agent_id=agent_id):
-                    # Check if MCP tool is disabled in permissions
-                    tool_perm = permissions.tool_permissions.get(mcp_skill.name)
-                    if tool_perm is not None and not tool_perm.enabled:
-                        continue
-                    tool_defs.append({
-                        "type": "function",
-                        "function": {
-                            "name": mcp_skill.name,
-                            "description": mcp_skill.description,
-                            "parameters": mcp_skill.parameters,
-                        },
-                    })
-
-            context.set_tool_definitions(tool_defs)
-
-            # Get the default provider from the registry for restored sessions
-            # TODO: Consider saving/restoring the model choice in SavedSession
-            provider = self._shared.provider_registry.get(
-                resolved_model.provider_name,
-                resolved_model.model_id,
-                resolved_model.reasoning,
-            )
-
-            # Create session with context and services for permission enforcement
-            session = Session(
-                provider,
-                context=context,
-                logger=logger,
-                registry=registry,
-                skill_timeout=self._shared.config.skill_timeout,
-                max_concurrent_tools=self._shared.config.max_concurrent_tools,
-                services=services,
-                config=self._shared.config,
-                context_loader=self._shared.context_loader,
-            )
-
-            # Create dispatcher with context for token info and log multiplexer
-            dispatcher = Dispatcher(
-                session,
-                context=context,
-                agent_id=agent_id,
-                log_multiplexer=self._log_multiplexer,
-            )
-
-            # Create agent instance with saved creation time if available
-            agent = Agent(
-                agent_id=agent_id,
-                logger=logger,
-                context=context,
-                services=services,
-                registry=registry,
-                session=session,
-                dispatcher=dispatcher,
-                created_at=saved.created_at,
-            )
-
-            # Store in pool
-            self._agents[agent_id] = agent
-
-            return agent
-
-    async def destroy(self, agent_id: str) -> bool:
+    async def destroy(
+        self,
+        agent_id: str,
+        requester_id: str | None = None,
+        *,
+        admin_override: bool = False,
+    ) -> bool:
         """Destroy an agent and clean up its resources.
 
         This method:
-        1. Removes the agent from the pool
-        2. Cancels all in-progress requests
-        3. Closes the agent's logger (flushes buffers, closes DB)
-        4. Removes from parent's child tracking (if applicable)
+        1. Checks authorization (unless admin_override)
+        2. Removes the agent from the pool
+        3. Cancels all in-progress requests
+        4. Closes the agent's logger (flushes buffers, closes DB)
+        5. Removes from parent's child tracking (if applicable)
 
         The agent's log directory is preserved for debugging/auditing.
 
+        Authorization Rules:
+        - Self-destruction is always allowed (agent destroys itself)
+        - Parent can destroy its children
+        - External clients (requester_id=None) are treated as admin
+        - admin_override=True bypasses all checks (for shutdown, etc.)
+
         Args:
             agent_id: The ID of the agent to destroy.
+            requester_id: ID of the requesting agent (None for external clients).
+            admin_override: If True, skip authorization checks (for server shutdown).
 
         Returns:
             True if the agent was found and destroyed, False if not found.
+
+        Raises:
+            AuthorizationError: If requester is not authorized to destroy the agent.
         """
         async with self._lock:
-            agent = self._agents.pop(agent_id, None)
-            if agent is None:
+            if agent_id not in self._agents:
                 return False
+
+            agent = self._agents[agent_id]
+
+            # Authorization check (unless admin override or external client)
+            if not admin_override and requester_id is not None:
+                # Get the target agent's permissions to check parent_agent_id
+                target_permissions: AgentPermissions | None = agent.services.get("permissions")
+
+                # Self-destruction is allowed
+                if requester_id == agent_id:
+                    pass  # Allowed
+                # Parent can destroy children
+                elif target_permissions is not None and target_permissions.parent_agent_id == requester_id:
+                    pass  # Allowed
+                else:
+                    raise AuthorizationError(
+                        f"Agent '{requester_id}' is not authorized to destroy '{agent_id}'"
+                    )
+
+            # Remove from pool
+            self._agents.pop(agent_id)
 
             # Remove from parent's child tracking
             permissions: AgentPermissions | None = agent.services.get("permissions")

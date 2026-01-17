@@ -11,7 +11,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from rich.console import Console
 
-from nexus3.display.printer import InlinePrinter, _ANSI_ESCAPE_PATTERN
+from nexus3.core.text_safety import ANSI_ESCAPE_PATTERN
+from nexus3.display.printer import InlinePrinter
 from nexus3.display.theme import Theme
 
 
@@ -218,34 +219,34 @@ class TestPatternDirectly:
 
     def test_pattern_matches_csi_color(self) -> None:
         """Pattern matches CSI color sequences."""
-        assert _ANSI_ESCAPE_PATTERN.search('\x1b[31m')
-        assert _ANSI_ESCAPE_PATTERN.search('\x1b[0m')
-        assert _ANSI_ESCAPE_PATTERN.search('\x1b[38;5;196m')
+        assert ANSI_ESCAPE_PATTERN.search('\x1b[31m')
+        assert ANSI_ESCAPE_PATTERN.search('\x1b[0m')
+        assert ANSI_ESCAPE_PATTERN.search('\x1b[38;5;196m')
 
     def test_pattern_matches_csi_cursor(self) -> None:
         """Pattern matches CSI cursor sequences."""
-        assert _ANSI_ESCAPE_PATTERN.search('\x1b[2J')
-        assert _ANSI_ESCAPE_PATTERN.search('\x1b[H')
-        assert _ANSI_ESCAPE_PATTERN.search('\x1b[s')
-        assert _ANSI_ESCAPE_PATTERN.search('\x1b[u')
-        assert _ANSI_ESCAPE_PATTERN.search('\x1b[K')
+        assert ANSI_ESCAPE_PATTERN.search('\x1b[2J')
+        assert ANSI_ESCAPE_PATTERN.search('\x1b[H')
+        assert ANSI_ESCAPE_PATTERN.search('\x1b[s')
+        assert ANSI_ESCAPE_PATTERN.search('\x1b[u')
+        assert ANSI_ESCAPE_PATTERN.search('\x1b[K')
 
     def test_pattern_matches_csi_mode(self) -> None:
         """Pattern matches CSI ? mode sequences."""
-        assert _ANSI_ESCAPE_PATTERN.search('\x1b[?25h')
-        assert _ANSI_ESCAPE_PATTERN.search('\x1b[?25l')
-        assert _ANSI_ESCAPE_PATTERN.search('\x1b[?1049h')
+        assert ANSI_ESCAPE_PATTERN.search('\x1b[?25h')
+        assert ANSI_ESCAPE_PATTERN.search('\x1b[?25l')
+        assert ANSI_ESCAPE_PATTERN.search('\x1b[?1049h')
 
     def test_pattern_matches_osc(self) -> None:
         """Pattern matches OSC sequences."""
-        assert _ANSI_ESCAPE_PATTERN.search('\x1b]0;title\x07')
-        assert _ANSI_ESCAPE_PATTERN.search('\x1b]0;title\x1b\\')
+        assert ANSI_ESCAPE_PATTERN.search('\x1b]0;title\x07')
+        assert ANSI_ESCAPE_PATTERN.search('\x1b]0;title\x1b\\')
 
     def test_pattern_does_not_match_normal_text(self) -> None:
         """Pattern does not match normal text."""
-        assert not _ANSI_ESCAPE_PATTERN.search('Hello World')
-        assert not _ANSI_ESCAPE_PATTERN.search('[1, 2, 3]')
-        assert not _ANSI_ESCAPE_PATTERN.search('func[T]()')
+        assert not ANSI_ESCAPE_PATTERN.search('Hello World')
+        assert not ANSI_ESCAPE_PATTERN.search('[1, 2, 3]')
+        assert not ANSI_ESCAPE_PATTERN.search('func[T]()')
 
 
 class TestEdgeCases:

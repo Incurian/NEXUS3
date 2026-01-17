@@ -71,6 +71,12 @@ if TYPE_CHECKING:
 
         def get(self, agent_id: str) -> Agent | None: ...
 
+        async def get_or_restore(
+            self,
+            agent_id: str,
+            session_manager: SessionManager | None = None,
+        ) -> Agent | None: ...
+
         async def restore_from_saved(self, saved: SavedSession) -> Agent: ...
 
     class Agent(Protocol):
@@ -419,6 +425,10 @@ async def _restore_agent_if_needed(
 
     Layer 5 of the HTTP pipeline: Auto-restore inactive agents.
 
+    Uses pool.get_or_restore() for atomic check-and-restore to prevent
+    TOCTOU race conditions where multiple concurrent requests could try
+    to restore the same agent simultaneously.
+
     Args:
         agent_id: Agent to restore.
         pool: Agent pool.
@@ -430,25 +440,20 @@ async def _restore_agent_if_needed(
         - If no saved session or session_manager is None: (None, error_response, 404)
         - If restore fails: (None, error_response, 500)
     """
-    if session_manager is None:
-        return (
-            None,
-            make_error_response(None, INVALID_PARAMS, f"Agent not found: {agent_id}"),
-            404,
-        )
-
-    if not session_manager.session_exists(agent_id):
-        return (
-            None,
-            make_error_response(None, INVALID_PARAMS, f"Agent not found: {agent_id}"),
-            404,
-        )
-
     try:
-        logger.info("Auto-restoring agent '%s' from saved session", agent_id)
-        saved = session_manager.load_session(agent_id)
-        agent = await pool.restore_from_saved(saved)
-        return (agent.dispatcher, None, 0)
+        # Atomic get-or-restore: prevents TOCTOU race condition
+        # If another request already restored this agent, we get that one
+        agent = await pool.get_or_restore(agent_id, session_manager)
+        if agent is not None:
+            logger.info("Agent '%s' restored or retrieved from pool", agent_id)
+            return (agent.dispatcher, None, 0)
+
+        # Agent not found and cannot be restored
+        return (
+            None,
+            make_error_response(None, INVALID_PARAMS, f"Agent not found: {agent_id}"),
+            404,
+        )
     except Exception as e:
         logger.error("Failed to restore agent '%s': %s", agent_id, e)
         return (
@@ -556,8 +561,18 @@ async def handle_connection(
             return
 
         # Layer 7: Dispatch to handler
+        # Extract requester_id from X-Nexus-Agent header (for authorization)
+        requester_id = http_request.headers.get("x-nexus-agent")
+
         try:
-            rpc_response = await dispatcher.dispatch(rpc_request)
+            # Global dispatcher needs requester_id for authorization checks
+            # Agent dispatchers don't need it (they use their own agent context)
+            if agent_id is None:
+                # Global route (/ or /rpc) - pass requester_id
+                rpc_response = await global_dispatcher.dispatch(rpc_request, requester_id)
+            else:
+                # Agent route - use standard dispatch
+                rpc_response = await dispatcher.dispatch(rpc_request)
         except Exception as e:
             # Unexpected error during dispatch
             error_response = make_error_response(

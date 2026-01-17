@@ -13,6 +13,7 @@ from pathlib import Path
 from nexus3.cli.live_state import _current_live
 
 from nexus3.core.permissions import ConfirmationResult
+from nexus3.core.text_safety import escape_rich_markup
 from nexus3.core.types import ToolCall
 from nexus3.display import get_console
 
@@ -22,6 +23,8 @@ def format_tool_params(arguments: dict, max_length: int = 70) -> str:
 
     Prioritizes path/file arguments (shown first, not truncated individually).
     Other arguments are truncated if needed.
+
+    All values are escaped to prevent Rich markup injection attacks.
 
     Args:
         arguments: Tool call arguments dictionary.
@@ -37,13 +40,14 @@ def format_tool_params(arguments: dict, max_length: int = 70) -> str:
     priority_keys = ("path", "file", "file_path", "directory", "dir", "cwd", "agent_id")
     parts = []
 
-    # Add priority arguments first (full value)
+    # Add priority arguments first (full value, escaped for Rich markup)
     for key in priority_keys:
         if key in arguments and arguments[key]:
-            value = str(arguments[key])
-            parts.append(f"{key}={value}")
+            value = escape_rich_markup(str(arguments[key]))
+            safe_key = escape_rich_markup(str(key))
+            parts.append(f"{safe_key}={value}")
 
-    # Add remaining arguments (truncated if needed)
+    # Add remaining arguments (truncated if needed, escaped for Rich markup)
     for key, value in arguments.items():
         if key in priority_keys or value is None:
             continue
@@ -54,7 +58,10 @@ def format_tool_params(arguments: dict, max_length: int = 70) -> str:
         # Quote strings that contain spaces
         if isinstance(value, str) and " " in str_val:
             str_val = f'"{str_val}"'
-        parts.append(f"{key}={str_val}")
+        # Escape both key and value for Rich markup safety
+        safe_key = escape_rich_markup(str(key))
+        safe_val = escape_rich_markup(str_val)
+        parts.append(f"{safe_key}={safe_val}")
 
     result = ", ".join(parts)
 
@@ -70,6 +77,7 @@ async def confirm_tool_action(
     target_path: Path | None,
     agent_cwd: Path,
     pause_event: asyncio.Event,
+    pause_ack_event: asyncio.Event,
 ) -> ConfirmationResult:
     """Prompt user for confirmation of destructive action with allow once/always options.
 
@@ -92,7 +100,8 @@ async def confirm_tool_action(
         tool_call: The tool call requiring confirmation.
         target_path: The path being accessed (for write ops) or None.
         agent_cwd: The agent's working directory (for accurate preview display).
-        pause_event: asyncio.Event to signal KeyMonitor to pause during confirmation.
+        pause_event: asyncio.Event - cleared to request pause, set to resume.
+        pause_ack_event: asyncio.Event - set by KeyMonitor when paused.
 
     Returns:
         ConfirmationResult indicating user's decision.
@@ -112,39 +121,53 @@ async def confirm_tool_action(
         live.stop()
 
     # Pause KeyMonitor so it stops consuming stdin and restores terminal mode
-    pause_event.set()
-    # Give KeyMonitor time to pause and restore terminal
-    await asyncio.sleep(0.15)
+    # Protocol: clear pause_event to signal pause, wait for pause_ack_event
+    pause_event.clear()
+    try:
+        # Wait for KeyMonitor to acknowledge pause (with timeout to prevent deadlock)
+        await asyncio.wait_for(pause_ack_event.wait(), timeout=0.5)
+    except TimeoutError:
+        # KeyMonitor may not be running (e.g., Windows fallback) - proceed anyway
+        pass
 
     try:
+        # Escape tool name for Rich markup safety (MCP tools can have crafted names)
+        safe_tool_name = escape_rich_markup(tool_name)
+
         # Build description based on tool type
         if is_mcp_tool:
             # Extract server name from mcp_{server}_{tool} format
             parts = tool_name.split("_", 2)
             server_name = parts[1] if len(parts) > 1 else "unknown"
+            safe_server_name = escape_rich_markup(server_name)
             args_preview = str(tool_call.arguments)[:60]
             if len(str(tool_call.arguments)) > 60:
                 args_preview += "..."
-            console.print(f"\n[yellow]Allow MCP tool '{tool_name}'?[/]")
-            console.print(f"  [dim]Server:[/] {server_name}")
-            console.print(f"  [dim]Arguments:[/] {args_preview}")
+            safe_args_preview = escape_rich_markup(args_preview)
+            console.print(f"\n[yellow]Allow MCP tool '{safe_tool_name}'?[/]")
+            console.print(f"  [dim]Server:[/] {safe_server_name}")
+            console.print(f"  [dim]Arguments:[/] {safe_args_preview}")
         elif is_exec_tool:
             # Use agent's cwd as default, not process cwd
             cwd = tool_call.arguments.get("cwd", str(agent_cwd))
+            safe_cwd = escape_rich_markup(str(cwd))
             command = tool_call.arguments.get("command", tool_call.arguments.get("code", ""))
             preview = command[:50] + "..." if len(command) > 50 else command
-            console.print(f"\n[yellow]Execute {tool_name}?[/]")
-            console.print(f"  [dim]Command:[/] {preview}")
-            console.print(f"  [dim]Directory:[/] {cwd}")
+            safe_preview = escape_rich_markup(preview)
+            console.print(f"\n[yellow]Execute {safe_tool_name}?[/]")
+            console.print(f"  [dim]Command:[/] {safe_preview}")
+            console.print(f"  [dim]Directory:[/] {safe_cwd}")
         elif is_nexus_tool:
             # Nexus tools use agent_id instead of path
             agent_id = tool_call.arguments.get("agent_id", "unknown")
-            console.print(f"\n[yellow]Allow {tool_name}?[/]")
-            console.print(f"  [dim]Agent:[/] {agent_id}")
+            safe_agent_id = escape_rich_markup(str(agent_id))
+            console.print(f"\n[yellow]Allow {safe_tool_name}?[/]")
+            console.print(f"  [dim]Agent:[/] {safe_agent_id}")
         else:
             path_str = str(target_path) if target_path else tool_call.arguments.get("path", "unknown")
-            console.print(f"\n[yellow]Allow {tool_name}?[/]")
-            console.print(f"  [dim]Path:[/] {path_str}")
+            safe_path_str = escape_rich_markup(str(path_str))
+            console.print(f"\n[yellow]Allow {safe_tool_name}?[/]")
+            console.print(f"  [dim]Path:[/] {safe_path_str}")
 
         # Show options based on tool type
         console.print()
@@ -219,7 +242,8 @@ async def confirm_tool_action(
 
     finally:
         # Resume KeyMonitor (restores cbreak mode)
-        pause_event.clear()
+        # Protocol: set pause_event to signal resume
+        pause_event.set()
 
         # Resume Live display after confirmation
         if live is not None:

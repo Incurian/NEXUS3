@@ -61,6 +61,9 @@ DESTRUCTIVE_ACTIONS = frozenset({
     "edit_file",
     "append_file",
     "regex_replace",
+    "copy_file",     # Fix 1.2: Can overwrite destination files
+    "rename",        # Fix 1.2: Can overwrite destination files
+    "mkdir",         # Fix 1.2: Creates directories
     "bash_safe",
     "shell_unsafe",  # Tool name is shell_UNSAFE but we check lowercase
     "run_python",

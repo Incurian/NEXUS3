@@ -4,9 +4,16 @@ This module provides atomic, race-condition-free file operations with
 proper permission handling for security-sensitive session artifacts.
 """
 
+import errno
 import os
 import stat
 from pathlib import Path
+
+
+class SymlinkError(OSError):
+    """Raised when an operation would follow a symlink."""
+
+    pass
 
 # Secure permissions for session directories (owner only)
 SECURE_DIR_MODE: int = stat.S_IRWXU  # 0o700
@@ -150,3 +157,47 @@ def ensure_secure_dir(path: Path) -> None:
     if not path.exists():
         raise FileNotFoundError(f"Directory not found: {path}")
     os.chmod(path, SECURE_DIR_MODE)
+
+
+def secure_append(path: Path, content: str | bytes, *, encoding: str = "utf-8") -> None:
+    """Append content to file, refusing to follow symlinks.
+
+    Creates file if it doesn't exist (with secure permissions 0o600).
+
+    Args:
+        path: Target file path.
+        content: Content to append (str or bytes).
+        encoding: Encoding for str content (default: utf-8).
+
+    Raises:
+        SymlinkError: If path is a symlink.
+        OSError: On other I/O errors.
+    """
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW
+
+    try:
+        fd = os.open(str(path), flags, SECURE_FILE_MODE)
+    except OSError as e:
+        if e.errno == errno.ELOOP:
+            raise SymlinkError(f"Refusing to append through symlink: {path}") from e
+        raise
+
+    try:
+        if isinstance(content, str):
+            content = content.encode(encoding)
+        os.write(fd, content)
+    finally:
+        os.close(fd)
+
+
+def check_no_symlink(path: Path) -> None:
+    """Raise SymlinkError if path is a symlink.
+
+    Args:
+        path: Path to check.
+
+    Raises:
+        SymlinkError: If path is a symlink.
+    """
+    if path.is_symlink():
+        raise SymlinkError(f"Path is a symlink: {path}")

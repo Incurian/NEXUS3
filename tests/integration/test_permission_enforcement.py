@@ -322,7 +322,7 @@ class TestEnabledToolExecutes:
         registry.register("echo", lambda _: echo_skill)
 
         context = ContextManager(config=ContextConfig())
-        session = Session(provider, context=context, registry=registry)
+        session = Session(provider, context=context, registry=registry, services=services)
 
         result = [chunk async for chunk in session.send("Say hello")]
 
@@ -354,7 +354,7 @@ class TestEnabledToolExecutes:
         registry.register("echo", lambda _: echo_skill)
 
         context = ContextManager(config=ContextConfig())
-        session = Session(provider, context=context, registry=registry)
+        session = Session(provider, context=context, registry=registry, services=services)
 
         _ = [chunk async for chunk in session.send("Test")]
 
@@ -397,6 +397,7 @@ class TestPerToolTimeout:
             provider,
             context=context,
             registry=registry,
+            services=services,
             skill_timeout=0.1,  # Use session-level timeout for now
         )
 
@@ -437,6 +438,7 @@ class TestPerToolTimeout:
             provider,
             context=context,
             registry=registry,
+            services=services,
             skill_timeout=1.0,  # 1 second timeout
         )
 
@@ -524,7 +526,7 @@ class TestConfirmationCallback:
         registry.register("echo", lambda _: echo_skill)
 
         context = ContextManager(config=ContextConfig())
-        session = Session(provider, context=context, registry=registry)
+        session = Session(provider, context=context, registry=registry, services=services)
         session._on_confirm = mock_confirm  # type: ignore[attr-defined]
 
         _ = [chunk async for chunk in session.send("Echo")]
@@ -569,7 +571,7 @@ class TestConfirmationDenied:
         registry.register("write_file", lambda _: write_skill)
 
         context = ContextManager(config=ContextConfig())
-        session = Session(provider, context=context, registry=registry)
+        session = Session(provider, context=context, registry=registry, services=services)
         session._on_confirm = deny_confirm  # type: ignore[attr-defined]
 
         _ = [chunk async for chunk in session.send("Write file")]
@@ -618,7 +620,7 @@ class TestYoloModeSkipsConfirmation:
         registry.register("write_file", lambda _: write_skill)
 
         context = ContextManager(config=ContextConfig())
-        session = Session(provider, context=context, registry=registry)
+        session = Session(provider, context=context, registry=registry, services=services)
         session._on_confirm = mock_confirm  # type: ignore[attr-defined]
 
         _ = [chunk async for chunk in session.send("Write file")]
@@ -643,12 +645,12 @@ class TestYoloModeSkipsConfirmation:
         assert permissions.effective_policy.requires_confirmation("shutdown") is False
 
 
-class TestNoPermissionsIsUnrestricted:
-    """Tests for sessions without permissions being unrestricted."""
+class TestNoPermissionsFailsClosed:
+    """Tests for sessions without permissions using fail-closed behavior (H3 fix)."""
 
     @pytest.mark.asyncio
-    async def test_no_permissions_is_unrestricted(self) -> None:
-        """Session without permissions should allow all tools."""
+    async def test_no_permissions_denies_tool_execution(self) -> None:
+        """Session without permissions should deny all tool execution (fail-closed)."""
         # No permissions registered in services
         write_args = {"path": "/test", "content": "data"}
         responses = [
@@ -665,7 +667,7 @@ class TestNoPermissionsIsUnrestricted:
 
         # Registry without permissions
         services = ServiceContainer()
-        # Note: NOT registering permissions
+        # Note: NOT registering permissions - this should cause fail-closed behavior
         registry = SkillRegistry(services)
         write_skill = WriteFileTestSkill()
         registry.register("write_file", lambda _: write_skill)
@@ -675,19 +677,17 @@ class TestNoPermissionsIsUnrestricted:
 
         _ = [chunk async for chunk in session.send("Write file")]
 
-        # Without permissions, all tools should execute
-        assert write_skill.call_count == 1
-        assert write_skill.written_files == [("/test", "data")]
+        # H3 fix: Without permissions, tool should NOT execute (fail-closed)
+        assert write_skill.call_count == 0
+
+        # Verify the error message is returned
+        tool_results = [m for m in context.messages if m.role == Role.TOOL]
+        assert len(tool_results) == 1
+        assert "permissions not configured" in tool_results[0].content.lower()
 
     @pytest.mark.asyncio
-    async def test_no_permissions_no_confirmation(self) -> None:
-        """Session without permissions should not call confirmation callback."""
-        confirmed_calls: list[str] = []
-
-        async def mock_confirm(tool_call: ToolCall) -> bool:
-            confirmed_calls.append(tool_call.name)
-            return True
-
+    async def test_no_permissions_error_message_is_informative(self) -> None:
+        """Error message for missing permissions should be informative."""
         write_args = {"path": "/test", "content": "data"}
         responses = [
             Message(
@@ -708,13 +708,13 @@ class TestNoPermissionsIsUnrestricted:
 
         context = ContextManager(config=ContextConfig())
         session = Session(provider, context=context, registry=registry)
-        session._on_confirm = mock_confirm  # type: ignore[attr-defined]
 
         _ = [chunk async for chunk in session.send("Write file")]
 
-        # Without permissions, confirmation should not be triggered
-        # (No policy to check against)
-        assert write_skill.call_count == 1
+        # Check that the error message mentions it's a programming error
+        tool_results = [m for m in context.messages if m.role == Role.TOOL]
+        assert len(tool_results) == 1
+        assert "programming error" in tool_results[0].content.lower()
 
 
 class TestMixedPermissions:
@@ -750,7 +750,7 @@ class TestMixedPermissions:
         registry.register("write_file", lambda _: write_skill)
 
         context = ContextManager(config=ContextConfig())
-        session = Session(provider, context=context, registry=registry)
+        session = Session(provider, context=context, registry=registry, services=services)
 
         _ = [chunk async for chunk in session.send("Test both")]
 

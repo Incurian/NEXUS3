@@ -1,12 +1,16 @@
 """Markdown file writers for human-readable session logs."""
 
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from nexus3.core.secure_io import SECURE_FILE_MODE, secure_mkdir, secure_write_new
+from nexus3.core.secure_io import (
+    SECURE_FILE_MODE,
+    secure_append,
+    secure_mkdir,
+    secure_write_new,
+)
 
 # Backwards compatibility alias
 _SECURE_FILE_MODE = SECURE_FILE_MODE
@@ -62,9 +66,8 @@ class MarkdownWriter:
             pass
 
     def _append(self, path: Path, content: str) -> None:
-        """Append content to a file."""
-        with path.open("a", encoding="utf-8") as f:
-            f.write(content)
+        """Append content to a file (symlink-safe)."""
+        secure_append(path, content)
 
     def _format_timestamp(self, ts: float | None = None) -> str:
         """Format a timestamp for display."""
@@ -257,13 +260,5 @@ class RawWriter:
         self._append_jsonl(entry)
 
     def _append_jsonl(self, entry: dict[str, Any]) -> None:
-        """Append a JSON line to the file."""
-        # SECURITY: Avoid TOCTOU (exists-check + chmod). Ensure file exists with
-        # secure permissions (0o600) using atomic create.
-        try:
-            secure_write_new(self.raw_path, b"")
-        except FileExistsError:
-            pass
-
-        with self.raw_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry) + "\n")
+        """Append a JSON line to file (symlink-safe)."""
+        secure_append(self.raw_path, json.dumps(entry) + "\n")

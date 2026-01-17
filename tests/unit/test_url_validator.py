@@ -88,7 +88,7 @@ class TestValidateUrlWithLocalhostAllowed:
             validate_url("http://10.0.0.1", allow_localhost=True)
 
         assert exc_info.value.url == "http://10.0.0.1"
-        assert "blocked range" in exc_info.value.reason.lower()
+        assert "private network" in exc_info.value.reason.lower()
 
     def test_blocks_private_network_172_16_x(self):
         """Private network 172.16.0.0/12 is blocked, even with localhost allowed."""
@@ -96,7 +96,7 @@ class TestValidateUrlWithLocalhostAllowed:
             validate_url("http://172.16.0.1", allow_localhost=True)
 
         assert exc_info.value.url == "http://172.16.0.1"
-        assert "blocked range" in exc_info.value.reason.lower()
+        assert "private network" in exc_info.value.reason.lower()
 
     def test_blocks_private_network_192_168_x(self):
         """Private network 192.168.0.0/16 is blocked, even with localhost allowed."""
@@ -104,7 +104,7 @@ class TestValidateUrlWithLocalhostAllowed:
             validate_url("http://192.168.1.1", allow_localhost=True)
 
         assert exc_info.value.url == "http://192.168.1.1"
-        assert "blocked range" in exc_info.value.reason.lower()
+        assert "private network" in exc_info.value.reason.lower()
 
     def test_rejects_invalid_scheme_ftp(self):
         """FTP scheme is rejected."""
@@ -247,7 +247,7 @@ class TestValidateUrlEdgeCases:
             with pytest.raises(UrlSecurityError) as exc_info:
                 validate_url("http://internal-service.corp")
 
-            assert "blocked range" in exc_info.value.reason.lower()
+            assert "private network" in exc_info.value.reason.lower()
 
     def test_blocks_hostname_resolving_to_metadata(self):
         """Hostname resolving to cloud metadata IP is blocked."""
@@ -300,7 +300,7 @@ class TestDnsRebindingProtection:
             with pytest.raises(UrlSecurityError) as exc_info:
                 validate_url("http://rebinding-attack.example.com")
 
-            assert "blocked range" in exc_info.value.reason.lower()
+            assert "private network" in exc_info.value.reason.lower()
 
     def test_blocks_if_any_address_is_cloud_metadata(self):
         """If DNS returns cloud metadata IP as any address, block."""
@@ -328,7 +328,7 @@ class TestDnsRebindingProtection:
             with pytest.raises(UrlSecurityError) as exc_info:
                 validate_url("http://dual-stack.example.com")
 
-            assert "blocked range" in exc_info.value.reason.lower()
+            assert "private network" in exc_info.value.reason.lower()
 
     def test_allows_when_all_addresses_public(self):
         """If all DNS addresses are public, allow."""

@@ -78,14 +78,35 @@ def _is_localhost(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     return ip == ipaddress.ip_address("::1")
 
 
+def _is_private_network(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Check if IP is in RFC1918 private network ranges.
+
+    RFC1918 ranges:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    """
+    if isinstance(ip, ipaddress.IPv4Address):
+        return (
+            ip in ipaddress.ip_network("10.0.0.0/8")
+            or ip in ipaddress.ip_network("172.16.0.0/12")
+            or ip in ipaddress.ip_network("192.168.0.0/16")
+        )
+    # IPv6 unique local addresses (fc00::/7)
+    return ip in ipaddress.ip_network("fc00::/7")
+
+
 def _is_blocked(
-    ip: ipaddress.IPv4Address | ipaddress.IPv6Address, allow_localhost: bool
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
+    allow_localhost: bool,
+    allow_private: bool = False,
 ) -> tuple[bool, str]:
     """Check if IP is in blocked ranges.
 
     Args:
         ip: IP address to check
         allow_localhost: Whether localhost is permitted
+        allow_private: Whether RFC1918 private networks are permitted
 
     Returns:
         Tuple of (is_blocked, reason)
@@ -100,6 +121,12 @@ def _is_blocked(
             return False, ""
         return True, "localhost not allowed"
 
+    # Check if it's a private network address
+    if _is_private_network(ip):
+        if allow_private:
+            return False, ""
+        return True, "private network address not allowed"
+
     # Check against blocked ranges
     for network in BLOCKED_IP_RANGES:
         # Skip loopback check if localhost is allowed
@@ -107,6 +134,17 @@ def _is_blocked(
             continue
         if allow_localhost and network == ipaddress.ip_network("::1/128"):
             continue
+
+        # Skip private network ranges if allowed
+        if allow_private:
+            if network == ipaddress.ip_network("10.0.0.0/8"):
+                continue
+            if network == ipaddress.ip_network("172.16.0.0/12"):
+                continue
+            if network == ipaddress.ip_network("192.168.0.0/16"):
+                continue
+            if network == ipaddress.ip_network("fc00::/7"):
+                continue
 
         try:
             if ip in network:
@@ -118,7 +156,9 @@ def _is_blocked(
     return False, ""
 
 
-def validate_url(url: str, allow_localhost: bool = False) -> str:
+def validate_url(
+    url: str, allow_localhost: bool = False, allow_private: bool = False
+) -> str:
     """Validate URL is safe for HTTP requests.
 
     Prevents Server-Side Request Forgery (SSRF) attacks by validating
@@ -132,6 +172,9 @@ def validate_url(url: str, allow_localhost: bool = False) -> str:
     Args:
         url: URL to validate
         allow_localhost: Whether to allow localhost URLs (default False)
+        allow_private: Whether to allow RFC1918 private network addresses
+            (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) (default False).
+            Useful for internal deployments where servers run on private networks.
 
     Returns:
         The validated URL (may be normalized)
@@ -188,7 +231,7 @@ def validate_url(url: str, allow_localhost: bool = False) -> str:
                 # Skip invalid IP representations (shouldn't happen, but be defensive)
                 continue
 
-            blocked, reason = _is_blocked(ip, allow_localhost)
+            blocked, reason = _is_blocked(ip, allow_localhost, allow_private)
             if blocked:
                 raise UrlSecurityError(url, reason)
 

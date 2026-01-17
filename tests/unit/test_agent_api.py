@@ -47,9 +47,13 @@ class MockGlobalDispatcher:
     def __init__(self):
         self.calls: list[Request] = []
         self.response: Response | None = None
+        self.requester_ids: list[str | None] = []  # Track requester_ids
 
-    async def dispatch(self, request: Request) -> Response | None:
+    async def dispatch(
+        self, request: Request, requester_id: str | None = None
+    ) -> Response | None:
         self.calls.append(request)
+        self.requester_ids.append(requester_id)
         return self.response
 
 

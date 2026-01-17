@@ -194,6 +194,8 @@ class TestRestoreAgentIfNeeded:
         from nexus3.rpc.http import _restore_agent_if_needed
 
         mock_pool = MagicMock()
+        # get_or_restore returns None when no session manager
+        mock_pool.get_or_restore = AsyncMock(return_value=None)
 
         dispatcher, error, status = await _restore_agent_if_needed(
             "test-agent", mock_pool, session_manager=None
@@ -209,6 +211,8 @@ class TestRestoreAgentIfNeeded:
         from nexus3.rpc.http import _restore_agent_if_needed
 
         mock_pool = MagicMock()
+        # get_or_restore returns None when session doesn't exist
+        mock_pool.get_or_restore = AsyncMock(return_value=None)
         mock_session_manager = MagicMock()
         mock_session_manager.session_exists.return_value = False
 
@@ -219,22 +223,19 @@ class TestRestoreAgentIfNeeded:
         assert dispatcher is None
         assert error is not None
         assert status == 404
-        mock_session_manager.session_exists.assert_called_once_with("nonexistent-agent")
 
     async def test_successful_restore_returns_dispatcher(self) -> None:
         """When restore succeeds, returns agent's dispatcher."""
         from nexus3.rpc.http import _restore_agent_if_needed
 
-        mock_saved = MagicMock()
         mock_agent = MagicMock()
         mock_agent.dispatcher = MagicMock()
 
         mock_pool = MagicMock()
-        mock_pool.restore_from_saved = AsyncMock(return_value=mock_agent)
+        # get_or_restore returns agent when restore succeeds
+        mock_pool.get_or_restore = AsyncMock(return_value=mock_agent)
 
         mock_session_manager = MagicMock()
-        mock_session_manager.session_exists.return_value = True
-        mock_session_manager.load_session.return_value = mock_saved
 
         dispatcher, error, status = await _restore_agent_if_needed(
             "saved-agent", mock_pool, mock_session_manager
@@ -243,21 +244,19 @@ class TestRestoreAgentIfNeeded:
         assert dispatcher is mock_agent.dispatcher
         assert error is None
         assert status == 0
-        mock_session_manager.load_session.assert_called_once_with("saved-agent")
-        mock_pool.restore_from_saved.assert_called_once_with(mock_saved)
+        mock_pool.get_or_restore.assert_called_once_with("saved-agent", mock_session_manager)
 
     async def test_restore_exception_returns_500(self) -> None:
         """When restore fails with exception, returns 500."""
         from nexus3.rpc.http import _restore_agent_if_needed
 
         mock_pool = MagicMock()
-        mock_pool.restore_from_saved = AsyncMock(
+        # get_or_restore raises exception on restore failure
+        mock_pool.get_or_restore = AsyncMock(
             side_effect=Exception("Database error")
         )
 
         mock_session_manager = MagicMock()
-        mock_session_manager.session_exists.return_value = True
-        mock_session_manager.load_session.return_value = MagicMock()
 
         dispatcher, error, status = await _restore_agent_if_needed(
             "broken-agent", mock_pool, mock_session_manager
@@ -308,6 +307,8 @@ class TestPipelineLayerIntegration:
         from nexus3.rpc.protocol import INVALID_PARAMS, INTERNAL_ERROR
 
         mock_pool = MagicMock()
+        # get_or_restore returns None when agent not found
+        mock_pool.get_or_restore = AsyncMock(return_value=None)
 
         # No session manager -> INVALID_PARAMS (not found)
         _, error, _ = await _restore_agent_if_needed("test", mock_pool, None)
@@ -315,15 +316,13 @@ class TestPipelineLayerIntegration:
 
         # Session doesn't exist -> INVALID_PARAMS (not found)
         mock_session_manager = MagicMock()
-        mock_session_manager.session_exists.return_value = False
         _, error, _ = await _restore_agent_if_needed(
             "test", mock_pool, mock_session_manager
         )
         assert error.error["code"] == INVALID_PARAMS
 
         # Restore fails -> INTERNAL_ERROR
-        mock_session_manager.session_exists.return_value = True
-        mock_session_manager.load_session.side_effect = Exception("DB error")
+        mock_pool.get_or_restore = AsyncMock(side_effect=Exception("DB error"))
         _, error, _ = await _restore_agent_if_needed(
             "test", mock_pool, mock_session_manager
         )

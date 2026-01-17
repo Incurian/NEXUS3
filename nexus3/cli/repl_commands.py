@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands.protocol import CommandContext, CommandOutput, CommandResult
+from nexus3.core.secure_io import SymlinkError, check_no_symlink
 from nexus3.core.permissions import (
     AgentPermissions,
     ToolPermission,
@@ -375,7 +376,15 @@ async def cmd_cwd(
 
     # Set new working directory for THIS agent only
     try:
-        new_path = Path(path).expanduser().resolve()
+        expanded_path = Path(path).expanduser()
+
+        # Check for symlink attack before resolving
+        try:
+            check_no_symlink(expanded_path)
+        except SymlinkError:
+            return CommandOutput.error(f"Path is a symlink: {expanded_path}")
+
+        new_path = expanded_path.resolve()
         if not new_path.exists():
             return CommandOutput.error(f"Directory does not exist: {path}")
         if not new_path.is_dir():
@@ -676,7 +685,15 @@ async def cmd_prompt(
 
     # Load and set new system prompt from file
     try:
-        prompt_path = Path(file).expanduser().resolve()
+        expanded_path = Path(file).expanduser()
+
+        # Check for symlink attack before resolving
+        try:
+            check_no_symlink(expanded_path)
+        except SymlinkError:
+            return CommandOutput.error(f"Path is a symlink: {expanded_path}")
+
+        prompt_path = expanded_path.resolve()
         if not prompt_path.exists():
             return CommandOutput.error(f"File not found: {file}")
         if not prompt_path.is_file():

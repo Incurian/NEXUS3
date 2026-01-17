@@ -197,15 +197,19 @@ class DirectAgentAPI:
         self,
         pool: "AgentPool",
         global_dispatcher: "GlobalDispatcher",
+        requester_id: str | None = None,
     ) -> None:
         """Initialize direct agent API.
 
         Args:
             pool: The AgentPool for looking up agents.
             global_dispatcher: The GlobalDispatcher for global methods.
+            requester_id: ID of the agent making requests (for authorization).
+                         Used when calling destroy_agent to verify ownership.
         """
         self._pool = pool
         self._global_dispatcher = global_dispatcher
+        self._requester_id = requester_id
 
     def for_agent(self, agent_id: str) -> AgentScopedAPI:
         """Get an API scoped to a specific agent.
@@ -272,6 +276,9 @@ class DirectAgentAPI:
     async def destroy_agent(self, agent_id: str) -> dict[str, Any]:
         """Destroy an agent.
 
+        Authorization: Only self or parent can destroy an agent. External
+        clients (requester_id=None) are treated as admin.
+
         Args:
             agent_id: The ID of the agent to destroy.
 
@@ -284,7 +291,7 @@ class DirectAgentAPI:
             params={"agent_id": agent_id},
             id=1,
         )
-        response = await self._global_dispatcher.dispatch(request)
+        response = await self._global_dispatcher.dispatch(request, self._requester_id)
         return _extract_result(response)
 
     async def list_agents(self) -> list[str]:
