@@ -208,7 +208,9 @@ class Dispatcher:
             InvalidParamsError: If 'request_id' is missing.
         """
         request_id = params.get("request_id")
-        if not request_id:
+        # D4: Use 'is None' not truthiness - request_id=0 is valid JSON-RPC id
+        # But reject empty string explicitly (almost certainly a user error)
+        if request_id is None or request_id == "":
             raise InvalidParamsError("Missing required parameter: request_id")
 
         token = self._active_requests.get(request_id)

@@ -24,6 +24,7 @@ Usage:
 
 from dataclasses import dataclass, field
 
+from nexus3.core.errors import MCPConfigError
 from nexus3.mcp.client import MCPClient
 from nexus3.mcp.skill_adapter import MCPSkillAdapter
 from nexus3.mcp.transport import HTTPTransport, StdioTransport
@@ -128,12 +129,12 @@ class MCPServerRegistry:
             ConnectedServer instance with active client and skills.
 
         Raises:
-            ValueError: If config has neither command nor url, or if server is disabled.
+            MCPConfigError: If config has neither command nor url, or if server is disabled.
             MCPError: If connection times out or fails.
         """
-        # Check if server is enabled
+        # Check if server is enabled (P2.17: use MCPConfigError for consistency)
         if not config.enabled:
-            raise ValueError(f"MCP server '{config.name}' is disabled in configuration")
+            raise MCPConfigError(f"MCP server '{config.name}' is disabled in configuration")
 
         # Disconnect existing if present
         if config.name in self._servers:
@@ -149,7 +150,8 @@ class MCPServerRegistry:
         elif config.url:
             transport = HTTPTransport(config.url)
         else:
-            raise ValueError(f"Server '{config.name}' must have either 'command' or 'url'")
+            # P2.17: use MCPConfigError for consistency
+            raise MCPConfigError(f"Server '{config.name}' must have either 'command' or 'url'")
 
         # Create and initialize client
         client = MCPClient(transport)

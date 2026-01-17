@@ -5,6 +5,7 @@ Verifies that connect() refuses to connect to disabled servers.
 
 import pytest
 
+from nexus3.core.errors import MCPConfigError
 from nexus3.mcp.registry import MCPServerConfig, MCPServerRegistry
 
 
@@ -13,7 +14,7 @@ class TestRegistryEnabledFlag:
 
     @pytest.mark.asyncio
     async def test_connect_raises_on_disabled_server(self) -> None:
-        """Verify ValueError when enabled=False."""
+        """Verify MCPConfigError when enabled=False."""
         registry = MCPServerRegistry()
         config = MCPServerConfig(
             name="disabled-server",
@@ -21,12 +22,12 @@ class TestRegistryEnabledFlag:
             enabled=False,
         )
 
-        with pytest.raises(ValueError, match="disabled in configuration"):
+        with pytest.raises(MCPConfigError, match="disabled in configuration"):
             await registry.connect(config)
 
     @pytest.mark.asyncio
     async def test_connect_raises_on_disabled_http_server(self) -> None:
-        """Verify ValueError for disabled HTTP server."""
+        """Verify MCPConfigError for disabled HTTP server."""
         registry = MCPServerRegistry()
         config = MCPServerConfig(
             name="disabled-http",
@@ -34,7 +35,7 @@ class TestRegistryEnabledFlag:
             enabled=False,
         )
 
-        with pytest.raises(ValueError, match="'disabled-http' is disabled"):
+        with pytest.raises(MCPConfigError, match="'disabled-http' is disabled"):
             await registry.connect(config)
 
     @pytest.mark.asyncio
@@ -47,7 +48,7 @@ class TestRegistryEnabledFlag:
             enabled=False,
         )
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(MCPConfigError) as exc_info:
             await registry.connect(config)
 
         assert "my-special-server" in str(exc_info.value)
@@ -84,7 +85,7 @@ class TestRegistryEnabledFlag:
             enabled=False,
         )
 
-        with pytest.raises(ValueError, match="disabled"):
+        with pytest.raises(MCPConfigError, match="disabled"):
             await registry.connect(disabled_config)
 
         # The existing server should NOT have been disconnected
