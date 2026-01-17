@@ -914,3 +914,118 @@ nexus-rpc shutdown
 - **Subagents**: Sandboxed with `allowed_write_paths` scoped to their module only
 - **Permission ceiling**: Trusted agents can only create sandboxed subagents
 - **Result**: 12 module READMEs + 1 main README updated in ~5 minutes
+
+---
+
+## Agent-Driven Development Workflow
+
+This workflow proved highly effective for architectural changes. Use it for non-trivial refactors.
+
+### Phase 1: Research (Parallel Explorers)
+
+Spawn multiple Claude Code Explore agents in parallel to map the problem space:
+
+```bash
+# Example: Understanding a refactor target
+# Spawn 3 explorers simultaneously to cover different angles
+```
+
+Each explorer focuses on one aspect:
+- **Explorer 1**: Map existing implementation (callbacks, signatures, call sites)
+- **Explorer 2**: Map consumer code (how REPL/clients use the system)
+- **Explorer 3**: Find existing patterns to model after (similar code in codebase)
+
+### Phase 2: Validate with GPT
+
+Create a trusted GPT agent (uses extended thinking) for deep analysis:
+
+```bash
+nexus-rpc create gpt-reviewer --preset trusted --model gpt --cwd /path/to/project
+nexus-rpc send gpt-reviewer "Read the consolidated findings and validate against codebase..." --timeout 600
+```
+
+GPT's role:
+- Validate explorer findings against actual code
+- Identify false positives
+- Propose architecture (e.g., event bus vs callbacks)
+- Note any issues that block release
+
+**Don't rush GPT.** Check in periodically with "How's it going? Need help?" not "Write report now."
+
+### Phase 3: Implementation (Batched Subagents)
+
+Batch implementation work so agents don't conflict on files:
+
+| Batch | Agent | Files | Task |
+|-------|-------|-------|------|
+| 1 | agent-types | events.py (new) | Create type definitions |
+| 2 | agent-core | session.py | Modify core to emit events |
+| 3 | agent-consumer | repl.py | Migrate consumer (can defer) |
+
+### Phase 4: Verification
+
+Have GPT verify the implementation:
+
+```bash
+nexus-rpc send gpt-reviewer "We fixed X, Y, Z. Verify the changes address your concerns." --timeout 180
+```
+
+GPT identifies remaining issues → fix → re-verify until clean.
+
+### Key Principles
+
+1. **Parallel research, sequential implementation** - Explorers can run in parallel; implementation must be batched by file
+2. **GPT for validation, not coordination** - GPT validates and critiques; Claude Code coordinates
+3. **Reuse agents with context** - Check `nexus-rpc status agent-id` before destroying; reuse if tokens remain
+4. **Don't rush reasoning models** - GPT with `reasoning: true` needs time; ping gently
+5. **Batch by file boundaries** - Never have two agents modify the same file simultaneously
+
+### Example Session (Session Event Bus Refactor)
+
+```
+1. Research Phase:
+   - 3 parallel explorers: callbacks, REPL wiring, existing patterns
+   - ~5 min total
+
+2. GPT Review:
+   - Created trusted GPT agent with --model gpt
+   - Sent consolidated findings + asked for architecture recommendation
+   - GPT recommended "Option A: typed event stream"
+   - ~15 min (let it think)
+
+3. Implementation:
+   - Batch 1: Create events.py (new file, no conflicts)
+   - Batch 2: Modify session.py (add run_turn method)
+   - Batch 3: REPL migration (deferred - backward compat works)
+
+4. Verification:
+   - GPT identified 4 issues (cancellation, unused event, naming, defaults)
+   - Fixed all 4
+   - GPT re-verified: approved
+
+Result: Clean architectural change with typed events, backward compatible.
+```
+
+---
+
+## Current Work In Progress
+
+**Branch:** `refactor/session-event-bus`
+
+**Completed:**
+- Session event system (`nexus3/session/events.py`)
+- `Session.run_turn()` yielding `AsyncIterator[SessionEvent]`
+- Backward compatibility via callback adapter
+- GPT verified implementation
+
+**Remaining from pre-release review:**
+1. Token `strict_permissions` default → `True` (rpc/auth.py + call sites)
+2. Docs standardization: `nexus` → `nexus3` throughout
+3. Session directory permissions → `0700`
+4. REPL migration to event stream (deferred, not blocking)
+
+**Review files:**
+- `reviews/2026-01-17/FINAL-CONSOLIDATED-REVIEW.md` - Consolidated findings
+- `reviews/2026-01-17/GPT-DEEP-REVIEW.md` - GPT's detailed analysis
+
+**Active agent:** `gpt-reviewer` (232k/400k tokens used, still available)
