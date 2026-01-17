@@ -29,7 +29,8 @@
         "gpt": {
           "id": "openai/gpt-5.2",
           "context_window": 400000,
-          "guidance": "OpenAI GPT-5.2. Good for: general tasks, tool use, coding."
+          "reasoning": true,
+          "guidance": "OpenAI GPT-5.2 with extended thinking. Good for: deep analysis, validation, complex reasoning."
         },
         "oss": {
           "id": "openai/gpt-oss-120b",

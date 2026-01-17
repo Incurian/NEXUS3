@@ -1,8 +1,6 @@
 # NEXUS3
 AI Agent Framework for Software Engineering Tasks
 
-[![Tests](https://github.com/your-org/NEXUS3/actions/workflows/test.yml/badge.svg)](https://github.com/your-org/NEXUS3/actions)
-
 **NEXUS3** is a secure, multi-agent CLI framework for AI-powered development workflows. Features streaming REPL, JSON-RPC server (port 8765), sandboxed subagents, MCP integration, structured SQLite/Markdown logging, and 25+ builtin skills (file ops, git, bash, nexus_* API).
 
 **Key Principles**: Async-first, fail-fast validation, zero external deps in `core`, path/URL sandboxing, permission ceilings (YOLO/TRUSTED/SANDBOXED/WORKER).
