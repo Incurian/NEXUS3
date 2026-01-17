@@ -250,7 +250,7 @@ class TestLayeredConfigLoading:
         config = load_config(cwd=project)
 
         # Should get package defaults (from nexus3/defaults/config.json)
-        assert config.max_tool_iterations == 10
+        assert config.max_tool_iterations == 100
         assert config.stream_output is True
         # Should have providers from defaults
         assert "openrouter" in config.providers

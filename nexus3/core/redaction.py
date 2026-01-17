@@ -114,6 +114,11 @@ SECRET_PATTERNS: dict[str, tuple[re.Pattern[str], str]] = {
         ),
         REDACTED,
     ),
+    # NEXUS3 RPC tokens: nxk_... (40+ chars)
+    "nexus_token": (
+        re.compile(r"\b(nxk_[A-Za-z0-9\-_/]{40,})\b"),
+        REDACTED,
+    ),
 }
 
 

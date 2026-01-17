@@ -370,12 +370,44 @@ class PermissionPolicy:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PermissionPolicy:
-        """Deserialize from dict."""
+        """Deserialize from dict.
+
+        BL-10: Resolve paths on load to prevent traversal/normalization mismatches.
+        - cwd: strict (must resolve)
+        - allowed_paths/blocked_paths: lenient (skip entries that fail to resolve)
+        """
         allowed = data.get("allowed_paths")
+
+        # cwd is security-sensitive; if it cannot be resolved, treat as invalid input
+        cwd_raw = Path(data.get("cwd", "."))
+        try:
+            cwd_resolved = cwd_raw.expanduser().resolve()
+        except (OSError, ValueError) as e:
+            raise ValueError(f"Invalid cwd in permission policy: {cwd_raw}: {e}") from e
+
+        allowed_resolved: list[Path] | None
+        if allowed is None:
+            allowed_resolved = None
+        else:
+            allowed_resolved = []
+            for p in allowed:
+                try:
+                    allowed_resolved.append(Path(p).expanduser().resolve())
+                except (OSError, ValueError):
+                    # Lenient: ignore bad entries
+                    continue
+
+        blocked_resolved: list[Path] = []
+        for p in data.get("blocked_paths", []):
+            try:
+                blocked_resolved.append(Path(p).expanduser().resolve())
+            except (OSError, ValueError):
+                continue
+
         return cls(
             level=PermissionLevel(data["level"]),
-            allowed_paths=[Path(p) for p in allowed] if allowed is not None else None,
-            blocked_paths=[Path(p) for p in data.get("blocked_paths", [])],
-            cwd=Path(data.get("cwd", ".")),
+            allowed_paths=allowed_resolved,
+            blocked_paths=blocked_resolved,
+            cwd=cwd_resolved,
             frozen=data.get("frozen", False),
         )

@@ -583,7 +583,9 @@ class Session:
             return ToolResult(error=f"Skill timed out after {timeout}s")
         except Exception as e:
             logger.error("Skill '%s' raised exception: %s", skill.name, e, exc_info=True)
-            return ToolResult(error=f"Skill execution error: {e}")
+            raw = f"Skill execution error: {e}"
+            safe = sanitize_error_for_agent(raw, skill.name)
+            return ToolResult(error=safe or "Skill execution error")
 
     async def _execute_tools_parallel(
         self, tool_calls: "tuple[ToolCall, ...]"
@@ -611,7 +613,9 @@ class Session:
         final_results: list[ToolResult] = []
         for r in results:
             if isinstance(r, Exception):
-                final_results.append(ToolResult(error=f"Execution error: {r}"))
+                raw = f"Execution error: {r}"
+                safe = sanitize_error_for_agent(raw, "")
+                final_results.append(ToolResult(error=safe or "Execution error"))
             else:
                 final_results.append(r)
 

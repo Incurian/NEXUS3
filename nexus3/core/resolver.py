@@ -4,13 +4,16 @@ PathResolver consolidates the path resolution logic scattered across
 FileSkill, ExecutionSkill, FilteredCommandSkill, and global_dispatcher.
 All path operations should go through this class to ensure consistent
 security and resolution behavior.
+
+Arch A2 Integration: PathResolver now routes through PathDecisionEngine,
+ensuring a single source of truth for all path access decisions.
 """
 
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import validate_path
+from nexus3.core.path_decision import PathDecisionEngine
 
 if TYPE_CHECKING:
     from nexus3.skill.services import ServiceContainer
@@ -49,6 +52,7 @@ class PathResolver:
     ) -> Path:
         """Resolve path relative to agent's cwd, validate against allowed/blocked paths.
 
+        Arch A2: Routes through PathDecisionEngine for consistent path decisions.
         P2.3 SECURITY: blocked_paths are always enforced and take precedence over
         allowed_paths. This ensures sensitive paths can never be accessed even if
         they would otherwise be within allowed_paths.
@@ -65,31 +69,12 @@ class PathResolver:
         Raises:
             PathSecurityError: If path fails security validation.
         """
-        # 1. Get agent's cwd (not process cwd)
-        agent_cwd = self._services.get_cwd()
+        # Route through PathDecisionEngine for consistent decisions
+        engine = PathDecisionEngine.from_services(self._services, tool_name=tool_name)
+        decision = engine.check_access(path, must_exist=must_exist, must_be_dir=must_be_dir)
 
-        # 2. Resolve relative paths against agent cwd
-        p = Path(path).expanduser() if isinstance(path, str) else path.expanduser()
-        if not p.is_absolute():
-            p = agent_cwd / p
-
-        # 3. Get per-tool allowed_paths (or default allowed_paths if no tool specified)
-        # P2.4 FIX: Always check allowed_paths, even when tool_name is None
-        allowed = self._services.get_tool_allowed_paths(tool_name)
-
-        # 4. Get blocked_paths (P2.3: always enforced)
-        blocked = self._services.get_blocked_paths()
-
-        # 5. Validate via validate_path (follows symlinks, checks containment)
-        resolved = validate_path(p, allowed_paths=allowed, blocked_paths=blocked or None)
-
-        # 6. Existence checks
-        if must_exist and not resolved.exists():
-            raise PathSecurityError(str(path), f"Path not found: {path}")
-        if must_be_dir and not resolved.is_dir():
-            raise PathSecurityError(str(path), f"Not a directory: {path}")
-
-        return resolved
+        # raise_if_denied() returns the resolved path or raises PathSecurityError
+        return decision.raise_if_denied()
 
     def resolve_cwd(
         self,
@@ -109,22 +94,14 @@ class PathResolver:
             Tuple of (resolved_cwd_string, error_message_or_none).
             If error_message is not None, resolved_cwd will be None.
         """
-        # Get agent's cwd as default
-        agent_cwd = self._services.get_cwd()
+        # Use PathDecisionEngine for cwd validation
+        engine = PathDecisionEngine.from_services(self._services, tool_name=tool_name)
+        decision = engine.check_cwd(cwd, tool_name=tool_name)
 
-        if not cwd:
-            return str(agent_cwd), None
-
-        try:
-            resolved = self.resolve(
-                cwd,
-                tool_name=tool_name,
-                must_exist=True,
-                must_be_dir=True,
-            )
-            return str(resolved), None
-        except PathSecurityError as e:
-            return None, str(e)
+        if decision.allowed:
+            return str(decision.resolved_path), None
+        else:
+            return None, decision.reason_detail
 
     def resolve_or_error(
         self,
@@ -135,8 +112,8 @@ class PathResolver:
     ) -> tuple[Path | None, str | None]:
         """Resolve path, returning error message instead of raising.
 
-        Convenience wrapper around resolve() that catches PathSecurityError
-        and returns it as a string, useful for skill implementations.
+        Convenience wrapper that uses PathDecisionEngine directly and
+        returns error message instead of raising, useful for skill implementations.
 
         Args:
             path: Path string or Path object to resolve.
@@ -148,13 +125,11 @@ class PathResolver:
             Tuple of (resolved_path, error_message).
             If error_message is not None, resolved_path will be None.
         """
-        try:
-            resolved = self.resolve(
-                path,
-                tool_name=tool_name,
-                must_exist=must_exist,
-                must_be_dir=must_be_dir,
-            )
-            return resolved, None
-        except PathSecurityError as e:
-            return None, str(e)
+        # Use PathDecisionEngine directly for non-throwing API
+        engine = PathDecisionEngine.from_services(self._services, tool_name=tool_name)
+        decision = engine.check_access(path, must_exist=must_exist, must_be_dir=must_be_dir)
+
+        if decision.allowed:
+            return decision.resolved_path, None
+        else:
+            return None, decision.reason_detail

@@ -265,6 +265,38 @@ class TestJWTRedaction:
         assert REDACTED in result
 
 
+class TestNexusTokenRedaction:
+    """Tests for NEXUS3 RPC token detection and redaction."""
+
+    def test_redacts_nexus_token_basic(self) -> None:
+        """Standard NEXUS RPC token is redacted."""
+        text = "RPC_TOKEN=nxk_abcdefghijklmnopqrstuvwxyz1234567890ABCD"
+        result = redact_secrets(text)
+        assert "nxk_abcdefghijklmnopqrstuvwxyz" not in result
+        assert REDACTED in result
+
+    def test_redacts_nexus_token_in_message(self) -> None:
+        """NEXUS token in conversation context is redacted."""
+        text = "The token file contains: nxk_Xyz123AbcDefGhiJklMnoPqrStUvWxyz0123456789"
+        result = redact_secrets(text)
+        assert "nxk_Xyz123" not in result
+        assert REDACTED in result
+
+    def test_redacts_nexus_token_with_special_chars(self) -> None:
+        """NEXUS token with dashes, underscores, and slashes is redacted."""
+        text = "token: nxk_abc-def_ghi/jkl-mno_pqr/stu-vwx_yz0123456789"
+        result = redact_secrets(text)
+        assert "nxk_abc-def" not in result
+        assert REDACTED in result
+
+    def test_preserves_short_nxk_prefix(self) -> None:
+        """Short strings starting with 'nxk_' are not redacted (not long enough)."""
+        text = "The variable nxk_short is not a token"
+        result = redact_secrets(text)
+        # nxk_short is only 9 chars after prefix, pattern requires 40+
+        assert "nxk_short" in result
+
+
 class TestFalsePositives:
     """Tests that legitimate text is not over-redacted."""
 
@@ -509,6 +541,7 @@ class TestSecretPatternsCompleteness:
             "private_key_block",
             "connection_string",
             "jwt_token",
+            "nexus_token",
         ]
         for pattern_name in expected:
             assert pattern_name in SECRET_PATTERNS, f"Missing pattern: {pattern_name}"

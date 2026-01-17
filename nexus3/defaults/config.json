@@ -1,5 +1,5 @@
 {
-  "default_model": "fast",
+  "default_model": "gpt",
   "providers": {
     "openrouter": {
       "type": "openrouter",
@@ -58,7 +58,7 @@
     }
   },
   "stream_output": true,
-  "max_tool_iterations": 10,
+  "max_tool_iterations": 100,
   "default_permission_level": "trusted",
   "skill_timeout": 120.0,
   "max_concurrent_tools": 10,

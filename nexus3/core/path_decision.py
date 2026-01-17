@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import validate_path
+from nexus3.core.paths import _DecisionReason, _decide_path
 
 if TYPE_CHECKING:
     from nexus3.skill.services import ServiceContainer
@@ -184,8 +184,8 @@ class PathDecisionEngine:
         """Check whether access to a path is allowed.
 
         This is the main method for making path access decisions. It
-        resolves the path, checks against allowed/blocked lists, and
-        returns an explicit decision with reasoning.
+        uses the shared _decide_path() kernel from paths.py and maps
+        the result to a PathDecision with existence checks.
 
         Args:
             path: Path to check (can be relative to cwd).
@@ -195,78 +195,41 @@ class PathDecisionEngine:
         Returns:
             PathDecision with allowed/denied status and reasoning.
         """
-        original = str(path)
+        # Use the shared kernel for path decision
+        internal = _decide_path(
+            path=path,
+            allowed_paths=self._allowed_paths,
+            blocked_paths=self._blocked_paths,
+            cwd=self._cwd,
+        )
 
-        # Resolve relative paths against cwd
-        p = Path(path).expanduser() if isinstance(path, str) else path.expanduser()
-        if not p.is_absolute():
-            p = self._cwd / p
+        # Map internal reasons to public PathDecisionReason
+        reason_map = {
+            _DecisionReason.ALLOWED_UNRESTRICTED: PathDecisionReason.UNRESTRICTED,
+            _DecisionReason.ALLOWED_WITHIN_PATH: PathDecisionReason.WITHIN_ALLOWED,
+            _DecisionReason.DENIED_BLOCKED: PathDecisionReason.BLOCKED,
+            _DecisionReason.DENIED_OUTSIDE_ALLOWED: PathDecisionReason.OUTSIDE_ALLOWED,
+            _DecisionReason.DENIED_NO_ALLOWED_PATHS: PathDecisionReason.NO_ALLOWED_PATHS,
+            _DecisionReason.DENIED_RESOLUTION_FAILED: PathDecisionReason.RESOLUTION_FAILED,
+        }
 
-        # Try to resolve the path (follows symlinks)
-        try:
-            resolved = p.resolve()
-        except (OSError, ValueError) as e:
+        if not internal.allowed:
             return PathDecision(
                 allowed=False,
                 resolved_path=None,
-                reason=PathDecisionReason.RESOLUTION_FAILED,
-                reason_detail=f"Cannot resolve path: {e}",
-                original_path=original,
+                reason=reason_map[internal.reason],
+                reason_detail=internal.detail,
+                original_path=internal.original_path,
+                matched_rule=internal.matched_rule,
             )
 
-        # Check blocked first (always enforced)
-        for blocked in self._blocked_paths:
-            try:
-                blocked_resolved = blocked.resolve()
-                if resolved.is_relative_to(blocked_resolved):
-                    return PathDecision(
-                        allowed=False,
-                        resolved_path=None,
-                        reason=PathDecisionReason.BLOCKED,
-                        reason_detail=f"Path is blocked: {blocked}",
-                        original_path=original,
-                        matched_rule=blocked,
-                    )
-            except (OSError, ValueError):
-                continue
-
-        # Check allowed paths
-        if self._allowed_paths is not None:
-            # Empty list = nothing allowed
-            if not self._allowed_paths:
-                return PathDecision(
-                    allowed=False,
-                    resolved_path=None,
-                    reason=PathDecisionReason.NO_ALLOWED_PATHS,
-                    reason_detail="No allowed paths configured (access denied)",
-                    original_path=original,
-                )
-
-            # Check if within any allowed path
-            for allowed in self._allowed_paths:
-                try:
-                    allowed_resolved = allowed.resolve()
-                    if resolved.is_relative_to(allowed_resolved):
-                        # Allowed! But check existence constraints
-                        return self._check_existence_constraints(
-                            resolved, original, must_exist, must_be_dir, allowed
-                        )
-                except (OSError, ValueError):
-                    continue
-
-            # Not in any allowed path
-            allowed_str = ", ".join(str(p) for p in self._allowed_paths)
-            return PathDecision(
-                allowed=False,
-                resolved_path=None,
-                reason=PathDecisionReason.OUTSIDE_ALLOWED,
-                reason_detail=f"Path outside allowed directories. Allowed: [{allowed_str}]",
-                original_path=original,
-            )
-
-        # No allowed_paths = unrestricted (TRUSTED/YOLO mode)
+        # Path is allowed - check existence constraints
         return self._check_existence_constraints(
-            resolved, original, must_exist, must_be_dir, None
+            internal.resolved_path,
+            internal.original_path,
+            must_exist,
+            must_be_dir,
+            internal.matched_rule,
         )
 
     def _check_existence_constraints(

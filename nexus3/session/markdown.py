@@ -204,7 +204,8 @@ class RawWriter:
             session_dir: Directory to write raw.jsonl to.
         """
         self.raw_path = session_dir / "raw.jsonl"
-        session_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure directory exists with secure permissions (0o700)
+        secure_mkdir(session_dir)
 
     def write_request(
         self,
@@ -257,9 +258,12 @@ class RawWriter:
 
     def _append_jsonl(self, entry: dict[str, Any]) -> None:
         """Append a JSON line to the file."""
-        is_new = not self.raw_path.exists()
+        # SECURITY: Avoid TOCTOU (exists-check + chmod). Ensure file exists with
+        # secure permissions (0o600) using atomic create.
+        try:
+            secure_write_new(self.raw_path, b"")
+        except FileExistsError:
+            pass
+
         with self.raw_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
-        # Set secure permissions on first write
-        if is_new:
-            os.chmod(self.raw_path, _SECURE_FILE_MODE)

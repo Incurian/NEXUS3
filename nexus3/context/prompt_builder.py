@@ -47,12 +47,18 @@ class EnvironmentBlock:
         os_info: Operating system description
         terminal: Optional terminal info (for REPL mode)
         datetime_str: Pre-formatted datetime string to inject
+        kernel: Optional kernel version (for WSL)
+        mode: Optional mode description ("Interactive REPL" or "HTTP JSON-RPC Server")
+        extra_lines: Additional lines to include (for full get_system_info() compat)
     """
 
     cwd: Path
     os_info: str
     terminal: str | None = None
     datetime_str: str | None = None
+    kernel: str | None = None
+    mode: str | None = None
+    extra_lines: list[str] | None = None
 
     def render(self) -> str:
         """Render environment block as text.
@@ -65,8 +71,14 @@ class EnvironmentBlock:
             lines.append(self.datetime_str)
         lines.append(f"Working directory: {self.cwd}")
         lines.append(f"Operating system: {self.os_info}")
+        if self.kernel:
+            lines.append(f"Kernel: {self.kernel}")
         if self.terminal:
             lines.append(f"Terminal: {self.terminal}")
+        if self.mode:
+            lines.append(f"Mode: {self.mode}")
+        if self.extra_lines:
+            lines.extend(self.extra_lines)
         return "\n".join(lines)
 
 
@@ -107,6 +119,49 @@ class StructuredPrompt:
             parts.append(self.environment.render())
 
         return "\n\n---\n\n".join(parts)
+
+    def render_compat(self) -> str:
+        """Render in compatibility format matching loader.py output.
+
+        This produces output that exactly matches the current loader.py
+        format, ensuring no behavior change when adopting StructuredPrompt.
+
+        Format:
+            # System Configuration
+
+            ## Section Title
+            Source: /path/to/source
+
+            <content>
+
+            ## Another Section
+            ...
+
+            # Environment
+            ...
+
+        Returns:
+            Complete prompt matching loader.py format exactly.
+        """
+        parts: list[str] = []
+
+        # Sections with "# System Configuration" header
+        if self.sections:
+            section_parts = []
+            for section in self.sections:
+                header = f"## {section.title}"
+                if section.source:
+                    header += f"\nSource: {section.source}"
+                section_parts.append(f"{header}\n\n{section.content.strip()}")
+            parts.append("# System Configuration\n\n" + "\n\n".join(section_parts))
+        else:
+            parts.append("You are a helpful AI assistant.")
+
+        # Environment block
+        if self.environment:
+            parts.append(self.environment.render())
+
+        return "\n\n".join(parts)
 
 
 class PromptBuilder:

@@ -1,10 +1,15 @@
-"""Permission enforcement for tool execution."""
+"""Permission enforcement for tool execution.
+
+Arch A2 Integration: Uses PathResolver/PathDecisionEngine for consistent
+path validation across all permission checks.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from nexus3.core.path_decision import PathDecisionEngine
 from nexus3.core.types import ToolResult
 
 if TYPE_CHECKING:
@@ -45,6 +50,9 @@ class PermissionEnforcer:
     ) -> ToolResult | None:
         """Run all permission checks.
 
+        Arch A2: Checks ALL paths in tool call (e.g., both source and
+        destination for copy_file), not just the first one.
+
         Returns:
             ToolResult with error if any check fails, None if all pass.
         """
@@ -61,9 +69,8 @@ class PermissionEnforcer:
         if error:
             return error
 
-        # Check path restrictions
-        target_path = self.extract_target_path(tool_call)
-        if target_path:
+        # Check path restrictions for ALL paths in tool call
+        for target_path in self.extract_target_paths(tool_call):
             error = self._check_path_allowed(tool_call.name, target_path, permissions)
             if error:
                 return error
@@ -97,56 +104,80 @@ class PermissionEnforcer:
         target_path: Path,
         permissions: AgentPermissions,
     ) -> ToolResult | None:
-        """Check path against sandbox and per-tool restrictions."""
-        tool_perm = permissions.tool_permissions.get(tool_name)
+        """Check path against sandbox and per-tool restrictions.
 
-        # Per-tool path restrictions take precedence
-        if tool_perm and tool_perm.allowed_paths is not None:
-            path_allowed = False
-            for allowed_path in tool_perm.allowed_paths:
-                try:
-                    target_path.relative_to(allowed_path)
-                    path_allowed = True
-                    break
-                except ValueError:
-                    continue
-            if not path_allowed:
-                return ToolResult(
-                    error=f"Tool '{tool_name}' cannot access path '{target_path}' - "
-                    f"restricted to: {[str(p) for p in tool_perm.allowed_paths]}"
-                )
+        Arch A2: Uses PathDecisionEngine for consistent path validation
+        that includes blocked_paths enforcement.
+        """
+        # Use PathDecisionEngine for consistent path decisions
+        if self._services:
+            engine = PathDecisionEngine.from_services(self._services, tool_name=tool_name)
         else:
-            # Fall back to policy-level sandbox check
-            if not permissions.effective_policy.can_write_path(target_path):
-                return ToolResult(
-                    error=f"Path '{target_path}' is outside the allowed sandbox"
-                )
+            # Fallback without services - use policy paths directly
+            tool_perm = permissions.tool_permissions.get(tool_name)
+            allowed = tool_perm.allowed_paths if tool_perm and tool_perm.allowed_paths is not None else permissions.effective_policy.allowed_paths
+            blocked = permissions.effective_policy.blocked_paths
+            engine = PathDecisionEngine(
+                allowed_paths=allowed,
+                blocked_paths=blocked,
+            )
+
+        decision = engine.check_access(str(target_path))
+
+        if not decision.allowed:
+            return ToolResult(
+                error=f"Tool '{tool_name}' cannot access path '{target_path}': {decision.reason_detail}"
+            )
 
         return None
 
-    def extract_target_path(self, tool_call: ToolCall) -> Path | None:
-        """Extract target path from tool call arguments."""
-        args = tool_call.arguments
+    def extract_target_paths(self, tool_call: ToolCall) -> list[Path]:
+        """Extract ALL target paths from tool call arguments.
 
-        # Common path parameter names
+        Arch A2: Returns all paths that should be validated, including
+        both source and destination for copy/rename operations.
+
+        NOTE: Paths are returned WITHOUT .resolve() so that PathDecisionEngine
+        can resolve them consistently against the agent's CWD (not process CWD).
+        """
+        args = tool_call.arguments
+        paths: list[Path] = []
+
+        # Common path parameter names - return raw Path objects
+        # PathDecisionEngine.check_access() will handle resolution
         for key in ("path", "source", "destination"):
             if key in args and args[key]:
-                return Path(args[key]).resolve()
+                paths.append(Path(args[key]))
 
-        return None
+        return paths
+
+    def extract_target_path(self, tool_call: ToolCall) -> Path | None:
+        """Extract first target path from tool call arguments.
+
+        Legacy method for backwards compatibility. Prefer extract_target_paths().
+        """
+        paths = self.extract_target_paths(tool_call)
+        return paths[0] if paths else None
 
     def extract_exec_cwd(self, tool_call: ToolCall) -> Path | None:
-        """Extract execution cwd from tool call if applicable."""
+        """Extract execution cwd from tool call if applicable.
+
+        Arch A2: Uses PathDecisionEngine for consistent cwd resolution.
+        """
         if tool_call.name not in EXEC_TOOLS:
             return None
 
         cwd = tool_call.arguments.get("cwd")
         if cwd:
-            base = self._services.get_cwd() if self._services else Path.cwd()
-            cwd_path = Path(cwd)
-            if not cwd_path.is_absolute():
-                cwd_path = base / cwd_path
-            return cwd_path.resolve()
+            # Use PathDecisionEngine for consistent resolution
+            if self._services:
+                engine = PathDecisionEngine.from_services(self._services, tool_name=tool_call.name)
+            else:
+                engine = PathDecisionEngine(cwd=Path.cwd())
+
+            decision = engine.check_cwd(cwd, tool_name=tool_call.name)
+            if decision.allowed and decision.resolved_path:
+                return decision.resolved_path
 
         return None
 

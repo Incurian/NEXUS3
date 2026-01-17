@@ -1113,3 +1113,162 @@ All P0 critical issues fixed: P0.1 deserialization, P0.2 token exfil, P0.3 env s
 - ~~**WSL Terminal**: Bash may close after `nexus` exits.~~ Fixed in d276c70.
 
 - **Relative path resolution uses process cwd**: When an RPC-created agent tries to access a relative path (e.g., `./testfile.txt`), the path resolves against the server process's cwd instead of the agent's configured cwd. Absolute paths work correctly. This affects subagents created with inherited cwd from parent agents. The `PathResolver` correctly uses `services.get_cwd()`, but the cwd may not be properly inherited/registered in the ServiceContainer during agent creation. Investigation needed in `global_dispatcher.py` (cwd inheritance) and `pool.py` (cwd registration).
+
+---
+
+## Investigation Findings (2026-01-17)
+
+Nine issues were investigated by explore agents. Full details in `reviews/investigation-findings-2026-01-17.md`.
+
+### Issue Status Summary
+
+| # | Issue | Status | Action |
+|---|-------|--------|--------|
+| 1 | Response not displaying | ❌ **False positive** | No bug - content yields during streaming (line 309), not at end |
+| 2 | Permission prompt hang | ✅ Verified | One-line fix: `confirmation_ui.py` should import `_current_live` from `repl.py` (Sprint 5 extraction duplicated instead of importing) |
+| 3 | MCP SSRF validation | ✅ Verified | Add `validate_url(url, allow_localhost=True)` in `HTTPTransport.__init__()` |
+| 4 | Token storage hardening | ✅ Verified | Use `secure_mkdir()` + `secure_write_atomic()` in `auth.py` |
+| 5 | nxk_ redaction pattern | ✅ **Fixed** | Added to `SECRET_PATTERNS` in `core/redaction.py` with 4 new tests |
+| 6 | Slow grep | ✅ Verified | Batch `asyncio.to_thread()` calls, parallelize with `asyncio.gather()` + semaphore |
+| 7 | PathDecisionEngine unused | ✅ Verified | Built in Sprint 3, never integrated into PermissionEnforcer - see AUDIT section |
+| 8 | RPC compact method | ✅ Verified | Add `_handle_compact()` to `Dispatcher` class |
+| 9 | Log access for agents | Planned | Add `view_logs` skill + auto-add log dir to trusted `allowed_paths` |
+| 10 | Tool self-knowledge | Planned | Expand NEXUS.md with limits, error recovery, permission matrix |
+| 11 | Second nexus starts new server | By design | Document workarounds: `--connect` or different `--serve` port |
+| 12 | Parallel tools | ✅ Working | Already implemented via `_parallel: true` in tool arguments |
+| 13 | Max tool calls for RPC | By design | Default 10, raised to 100 in config. Client sends new message to continue |
+
+### Key Learnings
+
+1. **Investigation can produce false positives**: Issue 1 was claimed as a bug but code was correct
+2. **Sprint extractions can introduce bugs**: Issue 2 caused by Sprint 5 duplicating a ContextVar instead of importing
+3. **Architecture components can be orphaned**: PathDecisionEngine (Sprint 3) was never integrated - triggered AUDIT phase
+
+---
+
+## CURRENT PHASE: Integration Audit (2026-01-17)
+
+### What
+
+Systematic audit of Sprint 1-8 remediation work to verify all security fixes and architectural components are **actually integrated into production code paths**, not just built and tested in isolation.
+
+### Why
+
+Evidence of integration gaps discovered:
+
+| Finding | Concern |
+|---------|---------|
+| **PathDecisionEngine orphaned** | Built in Sprint 3 with 69 tests, but `PermissionEnforcer` uses its own inline path logic |
+| **Issue 1 false positive** | Investigation claimed a bug that doesn't exist - shows analysis can be wrong |
+| **Sprint 5 ContextVar duplication** | Extraction created duplicate instead of importing - integration step was sloppy |
+
+Pattern: Components were built and unit-tested, but integration into real code paths was sometimes skipped or done incorrectly.
+
+### How
+
+For each Sprint (1-8), verify:
+
+1. **Each fix has an integration test** that exercises the PRODUCTION code path, not just the component
+2. **The component is actually imported/called** from production code (grep for usage)
+3. **No orphaned TODOs** or deferred integration notes
+4. **The fix actually fires** when the vulnerability condition occurs
+
+### Audit Scope
+
+| Sprint | Key Deliverables | Integration Check |
+|--------|------------------|-------------------|
+| 1 | P0 security fixes | Are sanitization/validation functions called from skills? |
+| 2 | P1 hardening | Is process group kill used in bash/run_python execution? |
+| 3 | P2 + PathDecisionEngine | **Known gap**: PathDecisionEngine not integrated |
+| 4 | Session decomposition | Is PermissionEnforcer actually used by Session? |
+| 5 | RPC layering | Is dispatch_core used by both dispatchers? |
+| 6 | Redaction + prompt builder | Is redaction applied during compaction? |
+| 7 | Provider lifecycle | Is aclose() called on shutdown? |
+| 8 | Backlog fixes | Are the fixes in the actual code paths? |
+
+---
+
+## Using NEXUS Subagents for Research
+
+**Updated guidance based on live testing (2026-01-17):**
+
+### Starting the Server
+
+```bash
+# Option 1: Headless server (for CI/automation)
+NEXUS_DEV=1 nexus --serve 8765 &
+
+# Option 2: Check if already running
+nexus-rpc detect
+```
+
+### Creating Research Agents
+
+**Critical: Set CWD correctly for write access**
+
+```bash
+# Trusted agent that can read anywhere, write within CWD
+nexus-rpc create auditor-1 \
+  --preset trusted \
+  --cwd /home/inc/repos/NEXUS3 \
+  --timeout 300
+
+# Agents can read anywhere but writes are auto-denied outside CWD
+# This is intentional security behavior for RPC mode
+```
+
+### Sending Research Tasks
+
+```bash
+# Always use long timeout for research tasks (default 300s, can increase)
+nexus-rpc send auditor-1 "Read session/enforcer.py and check if PathDecisionEngine is imported or used" \
+  --timeout 600
+
+# Check status
+nexus-rpc status auditor-1
+
+# Get response
+nexus-rpc send auditor-1 "continue" --timeout 300
+```
+
+### Key Constraints
+
+| Constraint | Behavior |
+|------------|----------|
+| **Write access** | Only within agent's CWD (set via `--cwd`) |
+| **Read access** | Anywhere (trusted preset) |
+| **Confirmations** | Auto-denied in RPC mode for paths outside CWD |
+| **Tool iterations** | Max 100 (raised from 10) |
+| **Timeouts** | Use `--timeout 300` or higher for research tasks |
+
+### Cleanup
+
+```bash
+nexus-rpc destroy auditor-1
+nexus-rpc shutdown  # When done with all agents
+```
+
+### Reuse Pattern
+
+**Don't destroy researchers immediately.** If an agent has context window remaining after returning findings, reuse it to implement fixes:
+
+```bash
+# Check remaining context
+nexus-rpc status auditor-1
+
+# If tokens are low, destroy and create fresh
+# If tokens are fine, send implementation task
+nexus-rpc send auditor-1 "Now implement the fix you described" --timeout 300
+```
+
+This avoids re-explaining the problem to a fresh agent.
+
+### Coordination Pattern
+
+Claude Code (Opus) coordinates NEXUS subagents directly:
+- Create agents with appropriate CWD and permissions
+- Send focused research tasks
+- Collect and synthesize findings
+- Agents use GPT-5.2 by default (configured in `nexus3/defaults/config.json`)
+
+Do NOT use a NEXUS coordinator agent in the middle - Claude Code is better at coordination.

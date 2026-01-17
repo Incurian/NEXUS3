@@ -2,9 +2,155 @@
 
 import os
 import tempfile
+from dataclasses import dataclass
+from enum import Enum, auto
 from pathlib import Path
 
 from nexus3.core.errors import PathSecurityError
+
+
+class _DecisionReason(Enum):
+    """Internal reasons for path decisions (used by shared kernel)."""
+
+    ALLOWED_UNRESTRICTED = auto()
+    ALLOWED_WITHIN_PATH = auto()
+    DENIED_BLOCKED = auto()
+    DENIED_OUTSIDE_ALLOWED = auto()
+    DENIED_NO_ALLOWED_PATHS = auto()
+    DENIED_RESOLUTION_FAILED = auto()
+
+
+@dataclass(frozen=True)
+class _PathDecisionInternal:
+    """Internal path decision result (used by shared kernel).
+
+    This is the shared result type used by both validate_path() and
+    PathDecisionEngine.check_access(). It contains all information needed
+    to either raise an exception or return a structured PathDecision.
+    """
+
+    allowed: bool
+    resolved_path: Path | None
+    reason: _DecisionReason
+    detail: str
+    original_path: str
+    matched_rule: Path | None = None
+
+
+def _decide_path(
+    path: str | Path,
+    allowed_paths: list[Path] | None = None,
+    blocked_paths: list[Path] | None = None,
+    cwd: Path | None = None,
+) -> _PathDecisionInternal:
+    """Shared kernel for path access decisions.
+
+    This is the single source of truth for path validation logic.
+    Both validate_path() and PathDecisionEngine.check_access() use this.
+
+    Args:
+        path: Path to validate (can be relative, contain symlinks, etc.)
+        allowed_paths: If set, resolved path must be within one of these.
+                       None = unrestricted (TRUSTED/YOLO mode).
+                       Empty list [] = nothing allowed (always fails).
+        blocked_paths: Paths always denied regardless of allowed_paths.
+        cwd: Working directory for resolving relative paths (default: process cwd).
+
+    Returns:
+        _PathDecisionInternal with decision, reason, and resolved path.
+    """
+    original = str(path)
+
+    # Handle empty/None input
+    if not path:
+        path = "."
+
+    # Normalize and expand
+    if isinstance(path, str):
+        path = path.replace("\\", "/")
+        path = Path(path)
+
+    p = path.expanduser()
+
+    # Resolve relative paths against cwd
+    if cwd and not p.is_absolute():
+        p = cwd / p
+
+    # Try to resolve the path (follows symlinks)
+    try:
+        resolved = p.resolve()
+    except (OSError, ValueError) as e:
+        return _PathDecisionInternal(
+            allowed=False,
+            resolved_path=None,
+            reason=_DecisionReason.DENIED_RESOLUTION_FAILED,
+            detail=f"Cannot resolve path: {e}",
+            original_path=original,
+        )
+
+    # Check blocked first (always enforced)
+    if blocked_paths:
+        for blocked in blocked_paths:
+            try:
+                blocked_resolved = blocked.resolve()
+                if resolved.is_relative_to(blocked_resolved):
+                    return _PathDecisionInternal(
+                        allowed=False,
+                        resolved_path=None,
+                        reason=_DecisionReason.DENIED_BLOCKED,
+                        detail=f"Path is blocked: {blocked}",
+                        original_path=original,
+                        matched_rule=blocked,
+                    )
+            except (OSError, ValueError):
+                continue
+
+    # Check allowed paths
+    if allowed_paths is not None:
+        # Empty list = nothing allowed
+        if not allowed_paths:
+            return _PathDecisionInternal(
+                allowed=False,
+                resolved_path=None,
+                reason=_DecisionReason.DENIED_NO_ALLOWED_PATHS,
+                detail="No allowed paths configured",
+                original_path=original,
+            )
+
+        # Check if within any allowed path
+        for allowed in allowed_paths:
+            try:
+                allowed_resolved = allowed.resolve()
+                if resolved.is_relative_to(allowed_resolved):
+                    return _PathDecisionInternal(
+                        allowed=True,
+                        resolved_path=resolved,
+                        reason=_DecisionReason.ALLOWED_WITHIN_PATH,
+                        detail=f"Path within allowed directory: {allowed}",
+                        original_path=original,
+                        matched_rule=allowed,
+                    )
+            except (OSError, ValueError):
+                continue
+
+        # Not in any allowed path
+        allowed_str = ", ".join(str(p) for p in allowed_paths)
+        return _PathDecisionInternal(
+            allowed=False,
+            resolved_path=None,
+            reason=_DecisionReason.DENIED_OUTSIDE_ALLOWED,
+            detail=f"Path outside allowed directories. Allowed: [{allowed_str}]",
+            original_path=original,
+        )
+
+    # No allowed_paths = unrestricted
+    return _PathDecisionInternal(
+        allowed=True,
+        resolved_path=resolved,
+        reason=_DecisionReason.ALLOWED_UNRESTRICTED,
+        detail="Access unrestricted (TRUSTED/YOLO mode)",
+        original_path=original,
+    )
 
 
 def atomic_write_text(path: Path, content: str, encoding: str = "utf-8") -> None:
@@ -41,12 +187,13 @@ def validate_path(
     path: str | Path,
     allowed_paths: list[Path] | None = None,
     blocked_paths: list[Path] | None = None,
+    cwd: Path | None = None,
 ) -> Path:
     """Universal path validation for all permission modes.
 
     Resolves the path (following all symlinks) and validates against
-    allowed/blocked lists. This is the single entry point for all
-    path validation in the system.
+    allowed/blocked lists. This is the exception-raising wrapper around
+    the shared _decide_path() kernel.
 
     Args:
         path: Path to validate (can be relative, contain symlinks, etc.)
@@ -54,6 +201,7 @@ def validate_path(
                        None = unrestricted (TRUSTED/YOLO mode).
                        Empty list [] = nothing allowed (always fails).
         blocked_paths: Paths always denied regardless of allowed_paths.
+        cwd: Working directory for resolving relative paths (default: process cwd).
 
     Returns:
         Resolved absolute path (all symlinks followed).
@@ -61,54 +209,18 @@ def validate_path(
     Raises:
         PathSecurityError: If path is outside allowed or in blocked.
     """
-    # Handle empty/None input
-    if not path:
-        path = "."
+    decision = _decide_path(
+        path=path,
+        allowed_paths=allowed_paths,
+        blocked_paths=blocked_paths,
+        cwd=cwd,
+    )
 
-    # Normalize and resolve (follows all symlinks)
-    if isinstance(path, str):
-        # Normalize Windows backslashes
-        path = path.replace("\\", "/")
-        path = Path(path)
+    if not decision.allowed:
+        raise PathSecurityError(decision.original_path, decision.detail)
 
-    try:
-        resolved = path.expanduser().resolve()
-    except (OSError, ValueError) as e:
-        raise PathSecurityError(str(path), f"Cannot resolve path: {e}") from e
-
-    # Check blocked first (applies to all modes)
-    if blocked_paths:
-        for blocked in blocked_paths:
-            try:
-                blocked_resolved = blocked.resolve()
-                if resolved.is_relative_to(blocked_resolved):
-                    raise PathSecurityError(
-                        str(path), f"Path is blocked: {blocked}"
-                    )
-            except (OSError, ValueError):
-                continue
-
-    # Check allowed (None = unrestricted)
-    if allowed_paths is not None:
-        # Empty list = nothing allowed
-        if not allowed_paths:
-            raise PathSecurityError(str(path), "No allowed paths configured")
-
-        for allowed in allowed_paths:
-            try:
-                allowed_resolved = allowed.resolve()
-                if resolved.is_relative_to(allowed_resolved):
-                    return resolved
-            except (OSError, ValueError):
-                continue
-
-        # Not in any allowed path
-        allowed_str = ", ".join(str(p) for p in allowed_paths)
-        raise PathSecurityError(
-            str(path), f"Path outside allowed directories. Allowed: [{allowed_str}]"
-        )
-
-    return resolved
+    assert decision.resolved_path is not None
+    return decision.resolved_path
 
 
 def normalize_path(path: str) -> Path:

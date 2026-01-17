@@ -8,18 +8,13 @@ for tools that require user approval based on permission level (TRUSTED mode).
 """
 
 import asyncio
-from contextvars import ContextVar
 from pathlib import Path
 
-from rich.live import Live
+from nexus3.cli.live_state import _current_live
 
 from nexus3.core.permissions import ConfirmationResult
 from nexus3.core.types import ToolCall
 from nexus3.display import get_console
-
-
-# Context variable to store the current Live display for pausing during confirmation
-_current_live: ContextVar[Live | None] = ContextVar("_current_live", default=None)
 
 
 def format_tool_params(arguments: dict, max_length: int = 70) -> str:
