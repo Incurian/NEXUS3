@@ -7,7 +7,7 @@ Configuration loading and validation module for NEXUS3.
 Robust, fail-fast configuration loading with Pydantic validation. Supports **layered merging**:
 
 **Load Order (base → override):**
-1. Shipped defaults (`&lt;install_dir&gt;/defaults/config.json`)
+1. Shipped defaults (`<install_dir>/defaults/config.json`)
 2. Global user (`~/.nexus3/config.json`)
 3. Ancestor directories (up to `context.ancestor_depth`, default 2)
 4. Project local (`CWD/.nexus3/config.json`)

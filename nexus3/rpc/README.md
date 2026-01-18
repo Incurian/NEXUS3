@@ -20,7 +20,7 @@ RPC agents default to `sandboxed` (read-only in `cwd`, no writes/tools).
 
 ```bash
 nexus3 rpc create reader --cwd /tmp/project  # Read-only
-nexus3 rpc create writer --cwd /tmp/project --allowed-write-paths /tmp/project/output
+nexus3 rpc create writer --cwd /tmp/project --write-path /tmp/project/output
 nexus3 rpc create coord --preset trusted
 ```
 

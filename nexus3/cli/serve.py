@@ -85,7 +85,7 @@ async def run_serve(
     detection_result = await detect_server(effective_port)
     if detection_result == DetectionResult.NEXUS_SERVER:
         print(f"Error: NEXUS3 server already running on port {effective_port}")
-        print(f"Use 'nexus --connect http://localhost:{effective_port}' to connect to it")
+        print(f"Use 'nexus3 --connect http://localhost:{effective_port}' to connect to it")
         return
     elif detection_result == DetectionResult.OTHER_SERVICE:
         print(f"Error: Port {effective_port} is already in use by another service")

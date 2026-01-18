@@ -1,7 +1,7 @@
 # NEXUS3
 AI Agent Framework for Software Engineering Tasks
 
-**NEXUS3** is a secure, multi-agent CLI framework for AI-powered development workflows. Features streaming REPL, JSON-RPC server (port 8765), sandboxed subagents, MCP integration, structured SQLite/Markdown logging, and 23 builtin skills (file ops, git, bash, nexus_* API).
+**NEXUS3** is a secure, multi-agent CLI framework for AI-powered development workflows. Features streaming REPL, JSON-RPC server (port 8765), sandboxed subagents, MCP integration, structured SQLite/Markdown logging, and 24 builtin skills (file ops, git, bash_safe, nexus_* API).
 
 **Key Principles**: Async-first, fail-fast validation, zero external deps in `core`, path/URL sandboxing, permission ceilings (YOLO/TRUSTED/SANDBOXED/WORKER).
 
@@ -43,7 +43,7 @@ nexus3 rpc status worker
 | Category | Highlights |
 |----------|------------|
 | **Multi-Agent** | RPC `/agent/{id}`; create/destroy/send; hierarchies (ceiling perms); in-process `DirectAgentAPI` |
-| **Skills/Tools** | 23 builtins (read_file, bash, git, nexus_create); parallel exec (max 10); DI via `ServiceContainer` |
+| **Skills/Tools** | 24 builtins (read_file, bash_safe, git, nexus_create); parallel exec (max 10 concurrent); DI via `ServiceContainer` |
 | **Security** | Path sandbox (`allowed_paths`); URL SSRF block; presets (resolve_preset("trusted")); confirm destructive |
 | **Context** | Layered prompts (NEXUS.md); tiktoken budgets; LLM compaction; `ContextManager` |
 | **Display** | Rich Live (gumballs ●○, summary bar, streaming tools); `DisplayManager` |

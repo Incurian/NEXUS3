@@ -3,7 +3,7 @@
 These commands are thin wrappers around NexusClient, designed to be called
 from repl.py. Each function prints JSON to stdout and returns an exit code.
 
-All commands require a server to be running - start one with 'nexus'.
+All commands require a server to be running - start one with 'nexus3'.
 Commands do NOT auto-start servers for security reasons.
 
 All commands are accessed via the `nexus3 rpc` subcommand group:
@@ -58,7 +58,7 @@ def _print_info(message: str) -> None:
 async def _check_server(port: int = DEFAULT_PORT) -> bool:
     """Check if a NEXUS3 server is running.
 
-    Security: Does NOT auto-start a server. User must run 'nexus' manually.
+    Security: Does NOT auto-start a server. User must run 'nexus3' manually.
     This prevents scripts/malware from spinning up unattended servers.
 
     Returns True if server is ready, False otherwise.
@@ -72,7 +72,7 @@ async def _check_server(port: int = DEFAULT_PORT) -> bool:
         _print_error(f"Port {port} is in use by another service")
     else:
         _print_error(f"No NEXUS3 server running on port {port}")
-        _print_info("Start a server with: nexus")
+        _print_info("Start a server with: nexus3")
 
     return False
 
@@ -140,7 +140,7 @@ async def cmd_cancel(
 
     Args:
         agent_id: ID of the agent.
-        request_id: The request ID to cancel (converted to int).
+        request_id: The request ID to cancel (string, e.g. hex token).
         port: Server port (default 8765).
         api_key: Optional API key. If not provided, auto-discovers from
                  environment or key files.
@@ -148,12 +148,6 @@ async def cmd_cancel(
     Returns:
         Exit code: 0 on success, 1 on error.
     """
-    try:
-        rid = int(request_id)
-    except ValueError:
-        _print_error(f"Invalid request_id: {request_id} (must be an integer)")
-        return 1
-
     # Don't auto-start for cancel - server must be running
     result = await detect_server(port)
     if result != DetectionResult.NEXUS_SERVER:
@@ -164,7 +158,7 @@ async def cmd_cancel(
     key = _get_api_key(port, api_key)
     try:
         async with NexusClient(url, api_key=key) as client:
-            result = await client.cancel(rid)
+            result = await client.cancel(request_id)
             _print_json(result)
             return 0
     except ClientError as e:
@@ -294,7 +288,7 @@ async def cmd_list(
 ) -> int:
     """List all agents on the server.
 
-    Requires a server to be running - start one with 'nexus'.
+    Requires a server to be running - start one with 'nexus3'.
 
     Args:
         port: Server port (default 8765).
@@ -355,7 +349,7 @@ async def cmd_create(
 ) -> int:
     """Create a new agent on the server.
 
-    Requires a server to be running - start one with 'nexus'.
+    Requires a server to be running - start one with 'nexus3'.
 
     Args:
         agent_id: ID for the new agent.

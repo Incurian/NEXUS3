@@ -1241,7 +1241,7 @@ def main() -> None:
             if os.environ.get("NEXUS_DEV") != "1":
                 print("Error: Headless server mode disabled for security.")
                 print("Set NEXUS_DEV=1 to enable (development only).")
-                print("For normal use, run 'nexus' which starts an embedded server.")
+                print("For normal use, run 'nexus3' which starts an embedded server.")
                 raise SystemExit(1)
 
             if args.reload:

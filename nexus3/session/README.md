@@ -5,7 +5,7 @@ Comprehensive chat session management, structured logging, persistence, and tool
 ## Purpose
 
 Powers conversation lifecycles:
-- **Session** coordination: LLM streaming, tool loops (seq/par, max 10 iters), permissions, compaction, cancellation.
+- **Session** coordination: LLM streaming, tool loops (seq/par, configurable max iterations), permissions, compaction, cancellation.
 - **Logging**: SQLite + Markdown/JSONL (`context.md`, `verbose.md`, `raw.jsonl`), subagent nesting.
 - **Storage**: SQLite v2 (messages/events/metadata/markers).
 - **Persistence**: JSON save/load/rename/clone in `~/.nexus3/sessions/`.

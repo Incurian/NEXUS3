@@ -50,7 +50,7 @@ nexus3/
 ├── provider/       # AsyncProvider protocol, multi-provider support, retry logic
 ├── context/        # ContextManager, ContextLoader, TokenCounter, compaction
 ├── session/        # Session coordinator, persistence, SessionManager, SQLite logging
-├── skill/          # Skill protocol, SkillRegistry, ServiceContainer, 23 builtin skills
+├── skill/          # Skill protocol, SkillRegistry, ServiceContainer, 24 builtin skills
 ├── display/        # DisplayManager, StreamingDisplay, InlinePrinter, SummaryBar, theme
 ├── cli/            # Unified REPL, lobby, whisper, HTTP server, client commands
 ├── rpc/            # JSON-RPC protocol, Dispatcher, GlobalDispatcher, AgentPool, auth
@@ -151,7 +151,8 @@ nexus3 rpc shutdown
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern (with exclusions) |
 | `grep` | `pattern`, `path`?, `include`?, `context`? | Search file contents with file filter and context lines |
 | `git` | `command`, `cwd`? | Execute git commands (permission-filtered by level) |
-| `bash` | `command`, `timeout`? | Execute shell commands |
+| `bash_safe` | `command`, `timeout`? | Execute shell commands (shlex.split, no shell operators) |
+| `shell_UNSAFE` | `command`, `timeout`? | Execute shell=True (pipes work, but injection-vulnerable) |
 | `run_python` | `code`, `timeout`? | Execute Python code |
 | `sleep` | `seconds`, `label`? | Pause execution (for testing) |
 | `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `model`?, `initial_message`?, `wait_for_initial_response`? | Create agent (initial_message queued by default) |
@@ -578,9 +579,9 @@ nexus3 --init-global-force     # Overwrite existing
 
 2. **Sandboxed agents can only read in their cwd**: A sandboxed agent's `allowed_paths` is set to `[cwd]` only. They cannot read files outside their working directory.
 
-3. **Sandboxed agents cannot write unless given explicit write paths**: By default, sandboxed agents have all write tools (`write_file`, `edit_file`, `append_file`, `regex_replace`, etc.) **disabled**. To enable writes, you must pass `allowed_write_paths` on creation:
+3. **Sandboxed agents cannot write unless given explicit write paths**: By default, sandboxed agents have all write tools (`write_file`, `edit_file`, `append_file`, `regex_replace`, etc.) **disabled**. To enable writes, use `--write-path` (CLI) or `allowed_write_paths` (RPC JSON):
    ```bash
-   nexus3 rpc create worker --cwd /tmp/sandbox --allowed-write-paths /tmp/sandbox
+   nexus3 rpc create worker --cwd /tmp/sandbox --write-path /tmp/sandbox
    ```
 
 4. **Trusted agents must be created explicitly**: To get a trusted agent, you must pass `--preset trusted` explicitly. Trusted is not the default for RPC.
@@ -599,7 +600,7 @@ nexus3 --init-global-force     # Overwrite existing
 nexus3 rpc create reader --cwd /path/to/project
 
 # Agent with write access to specific directory
-nexus3 rpc create writer --cwd /path/to/project --allowed-write-paths /path/to/project/output
+nexus3 rpc create writer --cwd /path/to/project --write-path /path/to/project/output
 
 # Trusted agent (explicit - use with care)
 nexus3 rpc create coordinator --preset trusted
