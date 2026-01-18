@@ -279,8 +279,9 @@ async def run_repl(
         main_agent = await pool.restore_from_saved(saved_session)
         # Note: restored sessions keep their original model, --model flag is ignored
     else:
-        # Create with model if specified
-        agent_config = AgentConfig(model=model) if model else None
+        # Create with trusted preset for REPL (user is interactive)
+        # RPC-created agents default to sandboxed via config.permissions.default_preset
+        agent_config = AgentConfig(model=model, preset="trusted")
         main_agent = await pool.create(agent_id=agent_name, config=agent_config)
         if template:
             # Load custom prompt from template
