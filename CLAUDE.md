@@ -18,19 +18,19 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 # Start server if not running
 # Start REPL if not already running (server is embedded)
 # Note: --serve is disabled by default (requires NEXUS_DEV=1)
-nexus &
+nexus3 &
 
 # Create a subagent for research
-nexus-rpc create researcher
+nexus3 rpc create researcher
 
 # Send research tasks
-nexus-rpc send researcher "Look at nexus3/rpc/ and summarize the JSON-RPC types"
+nexus3 rpc send researcher "Look at nexus3/rpc/ and summarize the JSON-RPC types"
 
 # Check status
-nexus-rpc status researcher
+nexus3 rpc status researcher
 
 # Clean up when done
-nexus-rpc destroy researcher
+nexus3 rpc destroy researcher
 ```
 
 **Guidelines:**
@@ -113,22 +113,22 @@ nexus3 --serve
 
 ```bash
 # Unified REPL (auto-starts embedded server with 30-min idle timeout)
-nexus                    # Default: lobby mode for session selection
-nexus --fresh            # Skip lobby, start new temp session
-nexus --resume           # Resume last session
-nexus --session NAME     # Load specific saved session
-nexus --template PATH    # Use custom system prompt
+nexus3                   # Default: lobby mode for session selection
+nexus3 --fresh            # Skip lobby, start new temp session
+nexus3 --resume           # Resume last session
+nexus3 --session NAME     # Load specific saved session
+nexus3 --template PATH    # Use custom system prompt
 
 # HTTP server (headless, dev-only - requires NEXUS_DEV=1)
-NEXUS_DEV=1 nexus --serve [PORT]
+NEXUS_DEV=1 nexus3 --serve [PORT]
 
 # Client mode (connect to existing server)
-nexus --connect [URL] --agent [ID]
+nexus3 --connect [URL] --agent [ID]
 
 # RPC commands (require server to be running - no auto-start)
-nexus-rpc create worker-1
-nexus-rpc send worker-1 "Hello"
-nexus-rpc shutdown
+nexus3 rpc create worker-1
+nexus3 rpc send worker-1 "Hello"
+nexus3 rpc shutdown
 ```
 
 ---
@@ -161,7 +161,7 @@ nexus-rpc shutdown
 | `nexus_cancel` | `agent_id`, `request_id`, `port`? | Cancel in-progress request |
 | `nexus_shutdown` | `port`? | Shutdown the entire server |
 
-*Note: `port` defaults to 8765. `preset` can be trusted/sandboxed/worker (yolo is REPL-only). Skills mirror `nexus-rpc` CLI commands. Destructive file tools remind agents to read files before modifying.*
+*Note: `port` defaults to 8765. `preset` can be trusted/sandboxed/worker (yolo is REPL-only). Skills mirror `nexus3 rpc` CLI commands. Destructive file tools remind agents to read files before modifying.*
 
 ---
 
@@ -194,11 +194,11 @@ nexus-rpc shutdown
 
 **Automated tests alone are NOT sufficient to commit changes.** Before any commit that affects agent behavior, RPC, skills, or permissions:
 
-1. Start the server: `nexus &`
-2. Create a test agent: `nexus-rpc create test-agent`
-3. Send test messages: `nexus-rpc send test-agent "describe your permissions and what you can do"`
+1. Start the server: `nexus3 &`
+2. Create a test agent: `nexus3 rpc create test-agent`
+3. Send test messages: `nexus3 rpc send test-agent "describe your permissions and what you can do"`
 4. Verify the agent responds correctly and has expected capabilities
-5. Clean up: `nexus-rpc destroy test-agent`
+5. Clean up: `nexus3 rpc destroy test-agent`
 
 This catches issues that unit/integration tests miss, such as:
 - Permission configuration not propagating correctly
@@ -259,27 +259,27 @@ Two aliases are installed in `~/.local/bin/`:
 
 ```bash
 # Interactive modes
-nexus                        # REPL with embedded server (default)
-NEXUS_DEV=1 nexus --serve [PORT]  # Headless server (dev-only)
-nexus --connect [URL]             # Connect to existing server
+nexus3                       # REPL with embedded server (default)
+NEXUS_DEV=1 nexus3 --serve [PORT]  # Headless server (dev-only)
+nexus3 --connect [URL]             # Connect to existing server
 
 # Programmatic RPC operations (require server running)
-nexus-rpc detect             # Check if server is running
-nexus-rpc list               # List agents
-nexus-rpc create ID          # Create agent
-nexus-rpc create ID -M "msg" # Create agent and send initial message
-nexus-rpc destroy ID         # Destroy agent
-nexus-rpc send AGENT MSG     # Send message to agent
-nexus-rpc status AGENT       # Get agent status
-nexus-rpc shutdown           # Stop server (graceful)
-nexus-rpc cancel AGENT ID    # Cancel in-progress request
+nexus3 rpc detect             # Check if server is running
+nexus3 rpc list               # List agents
+nexus3 rpc create ID          # Create agent
+nexus3 rpc create ID -M "msg" # Create agent and send initial message
+nexus3 rpc destroy ID         # Destroy agent
+nexus3 rpc send AGENT MSG     # Send message to agent
+nexus3 rpc status AGENT       # Get agent status
+nexus3 rpc shutdown           # Stop server (graceful)
+nexus3 rpc cancel AGENT ID    # Cancel in-progress request
 ```
 
 **Key behaviors:**
 - **Security:** `--serve` requires `NEXUS_DEV=1` env var (prevents unattended servers)
-- **Security:** `nexus-rpc` commands do NOT auto-start servers (start `nexus` manually)
+- **Security:** `nexus3 rpc` commands do NOT auto-start servers (start `nexus3` manually)
 - **Idle timeout:** Embedded server auto-shuts down after 30 min of no RPC activity
-- `nexus-rpc send/status/destroy/shutdown` require server to be running
+- `nexus3 rpc send/status/destroy/shutdown` require server to be running
 - All commands use `--port N` to specify non-default port (default: 8765)
 - All commands support `--api-key KEY` for explicit authentication (auto-discovered by default)
 
@@ -287,7 +287,7 @@ nexus-rpc cancel AGENT ID    # Cancel in-progress request
 - Sourcing virtualenvs manually
 - Using `python -m nexus3` directly
 - Using full paths to scripts
-- Any invocation that isn't `nexus` or `nexus-rpc`
+- Any invocation that isn't `nexus3` or `nexus3 rpc`
 
 ---
 
@@ -536,8 +536,8 @@ Subagents created with `cwd` parameter get:
 
 ```bash
 # Initialize global config
-nexus --init-global           # Create ~/.nexus3/ with defaults
-nexus --init-global-force     # Overwrite existing
+nexus3 --init-global           # Create ~/.nexus3/ with defaults
+nexus3 --init-global-force     # Overwrite existing
 
 # Initialize local config (REPL)
 /init                         # Create ./.nexus3/ with templates
@@ -580,7 +580,7 @@ nexus --init-global-force     # Overwrite existing
 
 3. **Sandboxed agents cannot write unless given explicit write paths**: By default, sandboxed agents have all write tools (`write_file`, `edit_file`, `append_file`, `regex_replace`, etc.) **disabled**. To enable writes, you must pass `allowed_write_paths` on creation:
    ```bash
-   nexus-rpc create worker --cwd /tmp/sandbox --allowed-write-paths /tmp/sandbox
+   nexus3 rpc create worker --cwd /tmp/sandbox --allowed-write-paths /tmp/sandbox
    ```
 
 4. **Trusted agents must be created explicitly**: To get a trusted agent, you must pass `--preset trusted` explicitly. Trusted is not the default for RPC.
@@ -596,13 +596,13 @@ nexus --init-global-force     # Overwrite existing
 **Example secure agent creation:**
 ```bash
 # Read-only agent (default) - can only read in its cwd
-nexus-rpc create reader --cwd /path/to/project
+nexus3 rpc create reader --cwd /path/to/project
 
 # Agent with write access to specific directory
-nexus-rpc create writer --cwd /path/to/project --allowed-write-paths /path/to/project/output
+nexus3 rpc create writer --cwd /path/to/project --allowed-write-paths /path/to/project/output
 
 # Trusted agent (explicit - use with care)
-nexus-rpc create coordinator --preset trusted
+nexus3 rpc create coordinator --preset trusted
 ```
 
 ### Key Features
@@ -736,7 +736,7 @@ class MySpecialSkill(BaseSkill):
 
 - [ ] **Portable auto-bootstrap launcher**: Add a launcher script that auto-installs deps (httpx, pydantic, rich, prompt-toolkit, python-dotenv) on first run, enabling "copy folder and go" portability without manual pip install. See packaging investigation for options (shiv/zipapp as alternative).
 
-- [x] **RPC `compact` method for stuck agents**: ~~When an agent's context exceeds the provider's token/byte limit, the agent becomes stuck (alive but unusable).~~ Fixed: Added `nexus-rpc compact <agent_id>` command and `_handle_compact()` RPC method.
+- [x] **RPC `compact` method for stuck agents**: ~~When an agent's context exceeds the provider's token/byte limit, the agent becomes stuck (alive but unusable).~~ Fixed: Added `nexus3 rpc compact <agent_id>` command and `_handle_compact()` RPC method.
 
 ---
 
@@ -766,10 +766,10 @@ For historical details, see `reviews/` directory:
 
 ```bash
 # Option 1: Headless server (for CI/automation)
-NEXUS_DEV=1 nexus --serve 8765 &
+NEXUS_DEV=1 nexus3 --serve 8765 &
 
 # Option 2: Check if already running
-nexus-rpc detect
+nexus3 rpc detect
 ```
 
 ### Creating Research Agents
@@ -778,7 +778,7 @@ nexus-rpc detect
 
 ```bash
 # Trusted agent that can read anywhere, write within CWD
-nexus-rpc create auditor-1 \
+nexus3 rpc create auditor-1 \
   --preset trusted \
   --cwd /home/inc/repos/NEXUS3 \
   --timeout 300
@@ -791,14 +791,14 @@ nexus-rpc create auditor-1 \
 
 ```bash
 # Always use long timeout for research tasks (default 300s, can increase)
-nexus-rpc send auditor-1 "Read session/enforcer.py and check if PathDecisionEngine is imported or used" \
+nexus3 rpc send auditor-1 "Read session/enforcer.py and check if PathDecisionEngine is imported or used" \
   --timeout 600
 
 # Check status
-nexus-rpc status auditor-1
+nexus3 rpc status auditor-1
 
 # Get response
-nexus-rpc send auditor-1 "continue" --timeout 300
+nexus3 rpc send auditor-1 "continue" --timeout 300
 ```
 
 ### Key Constraints
@@ -814,8 +814,8 @@ nexus-rpc send auditor-1 "continue" --timeout 300
 ### Cleanup
 
 ```bash
-nexus-rpc destroy auditor-1
-nexus-rpc shutdown  # When done with all agents
+nexus3 rpc destroy auditor-1
+nexus3 rpc shutdown  # When done with all agents
 ```
 
 ### Reuse Pattern
@@ -824,11 +824,11 @@ nexus-rpc shutdown  # When done with all agents
 
 ```bash
 # Check remaining context
-nexus-rpc status auditor-1
+nexus3 rpc status auditor-1
 
 # If tokens are low, destroy and create fresh
 # If tokens are fine, send implementation task
-nexus-rpc send auditor-1 "Now implement the fix you described" --timeout 300
+nexus3 rpc send auditor-1 "Now implement the fix you described" --timeout 300
 ```
 
 This avoids re-explaining the problem to a fresh agent.
@@ -852,14 +852,14 @@ Use a trusted NEXUS coordinator to orchestrate sandboxed subagents for updating 
 ### 1. Start Server
 
 ```bash
-NEXUS_DEV=1 nexus --serve 8765 &
-# Or: nexus --fresh &  (REPL with embedded server)
+NEXUS_DEV=1 nexus3 --serve 8765 &
+# Or: nexus3 --fresh &  (REPL with embedded server)
 ```
 
 ### 2. Create Trusted Coordinator
 
 ```bash
-nexus-rpc create coordinator \
+nexus3 rpc create coordinator \
   --preset trusted \
   --cwd /home/inc/repos/NEXUS3
 ```
@@ -867,7 +867,7 @@ nexus-rpc create coordinator \
 ### 3. Send Coordination Task
 
 ```bash
-nexus-rpc send coordinator "You are a coordinator for updating NEXUS3 module README files.
+nexus3 rpc send coordinator "You are a coordinator for updating NEXUS3 module README files.
 
 Your task:
 1. Create sandboxed agents for each module to update their README.md
@@ -892,20 +892,20 @@ After all module READMEs are updated, update /home/inc/repos/NEXUS3/README.md wi
 ### 4. Monitor Progress
 
 ```bash
-nexus-rpc list                    # See all agents
-nexus-rpc status coordinator      # Check coordinator progress
+nexus3 rpc list                    # See all agents
+nexus3 rpc status coordinator      # Check coordinator progress
 ```
 
 ### 5. Continue if Needed
 
 ```bash
-nexus-rpc send coordinator "Continue. Update remaining modules, then the main README." --timeout 600
+nexus3 rpc send coordinator "Continue. Update remaining modules, then the main README." --timeout 600
 ```
 
 ### 6. Cleanup
 
 ```bash
-nexus-rpc shutdown
+nexus3 rpc shutdown
 ```
 
 ### Key Points
@@ -940,8 +940,8 @@ Each explorer focuses on one aspect:
 Create a trusted GPT agent (uses extended thinking) for deep analysis:
 
 ```bash
-nexus-rpc create gpt-reviewer --preset trusted --model gpt --cwd /path/to/project
-nexus-rpc send gpt-reviewer "Read the consolidated findings and validate against codebase..." --timeout 600
+nexus3 rpc create gpt-reviewer --preset trusted --model gpt --cwd /path/to/project
+nexus3 rpc send gpt-reviewer "Read the consolidated findings and validate against codebase..." --timeout 600
 ```
 
 GPT's role:
@@ -967,7 +967,7 @@ Batch implementation work so agents don't conflict on files:
 Have GPT verify the implementation:
 
 ```bash
-nexus-rpc send gpt-reviewer "We fixed X, Y, Z. Verify the changes address your concerns." --timeout 180
+nexus3 rpc send gpt-reviewer "We fixed X, Y, Z. Verify the changes address your concerns." --timeout 180
 ```
 
 GPT identifies remaining issues → fix → re-verify until clean.
@@ -976,7 +976,7 @@ GPT identifies remaining issues → fix → re-verify until clean.
 
 1. **Parallel research, sequential implementation** - Explorers can run in parallel; implementation must be batched by file
 2. **GPT for validation, not coordination** - GPT validates and critiques; Claude Code coordinates
-3. **Reuse agents with context** - Check `nexus-rpc status agent-id` before destroying; reuse if tokens remain
+3. **Reuse agents with context** - Check `nexus3 rpc status agent-id` before destroying; reuse if tokens remain
 4. **Don't rush reasoning models** - GPT with `reasoning: true` needs time; ping gently
 5. **Batch by file boundaries** - Never have two agents modify the same file simultaneously
 
@@ -1010,22 +1010,20 @@ Result: Clean architectural change with typed events, backward compatible.
 
 ## Current Work In Progress
 
-**Branch:** `refactor/session-event-bus`
+**Branch:** `arch/sprint-5-rpc-cli`
 
 **Completed:**
 - Session event system (`nexus3/session/events.py`)
 - `Session.run_turn()` yielding `AsyncIterator[SessionEvent]`
 - Backward compatibility via callback adapter
-- GPT verified implementation
+- Token `strict_permissions` default → `True` (auth.py)
+- Docs standardization: `nexus` → `nexus3` throughout
+- Session directory permissions → `0700` (session_manager.py, init_commands.py)
+- All 2315 tests pass
 
-**Remaining from pre-release review:**
-1. Token `strict_permissions` default → `True` (rpc/auth.py + call sites)
-2. Docs standardization: `nexus` → `nexus3` throughout
-3. Session directory permissions → `0700`
-4. REPL migration to event stream (deferred, not blocking)
+**Remaining:**
+- REPL migration to event stream (deferred, not blocking)
 
 **Review files:**
 - `reviews/2026-01-17/FINAL-CONSOLIDATED-REVIEW.md` - Consolidated findings
 - `reviews/2026-01-17/GPT-DEEP-REVIEW.md` - GPT's detailed analysis
-
-**Active agent:** `gpt-reviewer` (232k/400k tokens used, still available)

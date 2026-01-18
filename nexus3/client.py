@@ -221,21 +221,23 @@ class NexusClient:
             raise ClientError(f"RPC error {code}: {message}")
         return response.result
 
-    async def send(self, content: str, request_id: int | None = None) -> dict[str, Any]:
+    async def send(self, content: str, request_id: str | int | None = None) -> dict[str, Any]:
         """Send a message to the agent.
 
         Args:
             content: The message content.
-            request_id: Optional request ID (auto-generated if not provided).
+            request_id: Optional request ID for tracking/cancellation.
 
         Returns:
             The response dict with 'content' and optionally 'tokens'.
         """
         params: dict[str, Any] = {"content": content}
+        if request_id is not None:
+            params["request_id"] = request_id
         response = await self._call("send", params)
         return cast(dict[str, Any], self._check(response))
 
-    async def cancel(self, request_id: int | None = None) -> dict[str, Any]:
+    async def cancel(self, request_id: str | int | None = None) -> dict[str, Any]:
         """Cancel the current operation.
 
         Args:
@@ -316,6 +318,7 @@ class NexusClient:
         allowed_write_paths: list[str] | None = None,
         model: str | None = None,
         initial_message: str | None = None,
+        wait_for_initial_response: bool = False,
     ) -> dict[str, Any]:
         """Create a new agent on the server.
 
@@ -337,11 +340,17 @@ class NexusClient:
                 Must be within cwd and parent's allowed paths.
             model: Model name/alias to use (from config.models or full model ID).
             initial_message: Message to send to the agent immediately after creation.
-                The agent will process this message and the response will be included
-                in the result under the 'response' key.
+                By default (wait_for_initial_response=False), the message is queued
+                and the call returns immediately with 'initial_request_id' and
+                'initial_status'='queued'. Set wait_for_initial_response=True to
+                block until the response is ready.
+            wait_for_initial_response: If True, block until initial_message response
+                is ready and include it in result['response']. Default False.
 
         Returns:
-            Creation result with agent_id, url, and optionally response if initial_message provided.
+            Creation result with agent_id and url. If initial_message provided:
+            - wait_for_initial_response=False: includes initial_request_id, initial_status
+            - wait_for_initial_response=True: includes response dict
         """
         params: dict[str, Any] = {"agent_id": agent_id}
         if preset is not None:
@@ -358,6 +367,8 @@ class NexusClient:
             params["model"] = model
         if initial_message is not None:
             params["initial_message"] = initial_message
+        if wait_for_initial_response:
+            params["wait_for_initial_response"] = wait_for_initial_response
         response = await self._call("create_agent", params)
         return cast(dict[str, Any], self._check(response))
 

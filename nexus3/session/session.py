@@ -181,6 +181,11 @@ class Session:
         # Lazy-loaded compaction provider (uses different model if configured)
         self._compaction_provider: AsyncProvider | None = None
 
+    def _log_event(self, event: "SessionEvent") -> None:
+        """Dispatch event to logger (DB always, verbose.md optional)."""
+        if self.logger:
+            self.logger.log_session_event(event)
+
     def add_cancelled_tools(self, tools: list[tuple[str, str]]) -> None:
         """Store cancelled tool calls to report on next send().
 
@@ -433,14 +438,18 @@ class Session:
                     final_message.content, list(final_message.tool_calls)
                 )
 
-                # Yield batch start event
-                yield ToolBatchStarted(tool_calls=final_message.tool_calls)
-
                 # Check if parallel execution requested
                 parallel = any(
                     tc.arguments.get("_parallel", False)
                     for tc in final_message.tool_calls
                 )
+
+                # Yield batch start event with parallel flag
+                batch_start = ToolBatchStarted(
+                    tool_calls=final_message.tool_calls, parallel=parallel
+                )
+                self._log_event(batch_start)
+                yield batch_start
 
                 if parallel:
                     if cancel_token and cancel_token.is_cancelled:
@@ -448,16 +457,20 @@ class Session:
                         return
                     # Parallel execution - all tools active at once
                     for tc in final_message.tool_calls:
-                        yield ToolStarted(name=tc.name, tool_id=tc.id)
+                        tool_start = ToolStarted(name=tc.name, tool_id=tc.id)
+                        self._log_event(tool_start)
+                        yield tool_start
                     tool_results = await self._execute_tools_parallel(final_message.tool_calls)
                     for tc, tool_result in zip(final_message.tool_calls, tool_results, strict=True):
                         self.context.add_tool_result(tc.id, tc.name, tool_result)
-                        yield ToolCompleted(
+                        tool_complete = ToolCompleted(
                             name=tc.name,
                             tool_id=tc.id,
                             success=tool_result.success,
                             error=tool_result.error,
                         )
+                        self._log_event(tool_complete)
+                        yield tool_complete
                 else:
                     # Sequential execution - halts on first error
                     error_index = -1
@@ -465,18 +478,24 @@ class Session:
                         if cancel_token and cancel_token.is_cancelled:
                             yield SessionCancelled()
                             return
-                        yield ToolStarted(name=tc.name, tool_id=tc.id)
+                        tool_start = ToolStarted(name=tc.name, tool_id=tc.id)
+                        self._log_event(tool_start)
+                        yield tool_start
                         tool_result = await self._execute_single_tool(tc)
                         self.context.add_tool_result(tc.id, tc.name, tool_result)
-                        yield ToolCompleted(
+                        tool_complete = ToolCompleted(
                             name=tc.name,
                             tool_id=tc.id,
                             success=tool_result.success,
                             error=tool_result.error,
                         )
+                        self._log_event(tool_complete)
+                        yield tool_complete
                         if not tool_result.success:
                             error_index = i
-                            yield ToolBatchHalted()
+                            batch_halted = ToolBatchHalted()
+                            self._log_event(batch_halted)
+                            yield batch_halted
                             break
 
                     # Add halted results for remaining tools
@@ -488,7 +507,9 @@ class Session:
                             self.context.add_tool_result(tc.id, tc.name, halted_result)
 
                 # Yield batch complete and iteration complete
-                yield ToolBatchCompleted()
+                batch_complete = ToolBatchCompleted()
+                self._log_event(batch_complete)
+                yield batch_complete
                 yield IterationCompleted(
                     iteration=iteration_num + 1,
                     will_continue=True,

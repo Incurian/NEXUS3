@@ -2,7 +2,7 @@
 
 Unified command infrastructure for NEXUS3.
 
-This module provides shared, structured command implementations for both the `nexus-rpc` CLI tool and `/slash` REPL commands. Commands return `CommandOutput` objects for flexible output handling (JSON for CLI, rich text for REPL).
+This module provides shared, structured command implementations for both the `nexus3 rpc` CLI tool and `/slash` REPL commands. Commands return `CommandOutput` objects for flexible output handling (JSON for CLI, rich text for REPL).
 
 ## Purpose
 - **Centralized Logic**: Single source for agent/session management commands.
@@ -78,7 +78,7 @@ await cmd_save(ctx, "my-session")
 await cmd_shutdown(ctx)
 ```
 
-CLI: `nexus-rpc list`, etc.  
+CLI: `nexus3 rpc list`, etc.  
 REPL: `/list`, `/create my-agent`, etc.
 
 ## Exports (`__init__.py`)

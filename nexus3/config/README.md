@@ -53,7 +53,7 @@ print(config.list_models())  # ["haiku", "sonnet"]
 
 ### Permissions/MCP
 ```python
-print(config.permissions.default_preset)  # "trusted"
+print(config.permissions.default_preset)  # "sandboxed"
 for server in config.mcp_servers:
     print(server.name, server.command or server.url)
 ```

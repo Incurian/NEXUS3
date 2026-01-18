@@ -70,7 +70,13 @@ class NexusCreateSkill(NexusSkill):
                 "initial_message": {
                     "type": "string",
                     "description": "Message to send to the agent immediately after creation. "
-                    "The agent will process this and the response will be in the result.",
+                    "By default returns immediately with initial_request_id. "
+                    "Set wait_for_initial_response=true to block for response.",
+                },
+                "wait_for_initial_response": {
+                    "type": "boolean",
+                    "description": "If true, block until initial_message response is ready "
+                    "and include it in result. Default false (returns immediately).",
                 },
                 "port": {
                     "type": "integer",
@@ -90,6 +96,7 @@ class NexusCreateSkill(NexusSkill):
         model: str | None = None,
         initial_message: str | None = None,
         port: int | None = None,
+        wait_for_initial_response: bool = False,
         **kwargs: Any,
     ) -> ToolResult:
         """Create a new agent on the Nexus server.
@@ -164,6 +171,7 @@ class NexusCreateSkill(NexusSkill):
                 allowed_write_paths=allowed_write_paths,
                 model=model,
                 initial_message=initial_message,
+                wait_for_initial_response=wait_for_initial_response,
             )
 
         return await self._execute_with_client(

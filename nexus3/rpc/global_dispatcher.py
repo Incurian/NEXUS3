@@ -31,6 +31,8 @@ from pathlib import Path
 from nexus3.core.permissions import AgentPermissions, PermissionDelta, ToolPermission
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.rpc.pool import Agent, AgentConfig, AuthorizationError
+import asyncio
+import uuid
 
 # Type alias for handler functions
 Handler = Callable[[dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
@@ -200,10 +202,13 @@ class GlobalDispatcher:
             )
 
         # Validate initial_message if provided
-        if initial_message is not None and not isinstance(initial_message, str):
-            raise InvalidParamsError(
-                f"initial_message must be string, got: {type(initial_message).__name__}"
-            )
+        if initial_message is not None:
+            if not isinstance(initial_message, str):
+                raise InvalidParamsError(
+                    f"initial_message must be string, got: {type(initial_message).__name__}"
+                )
+            if not initial_message.strip():
+                raise InvalidParamsError("initial_message cannot be empty")
 
         # Validate and look up parent_agent_id FIRST (needed for cwd resolution)
         # SECURITY: Look up parent permissions from pool instead of trusting RPC data
@@ -372,20 +377,50 @@ class GlobalDispatcher:
             "url": f"/agent/{agent.agent_id}",
         }
 
-        # Send initial message if provided
-        if initial_message:
+        # Handle initial_message if provided
+        if initial_message is not None:
+            wait_for_initial_response = params.get("wait_for_initial_response", False)
+            if not isinstance(wait_for_initial_response, bool):
+                raise InvalidParamsError("wait_for_initial_response must be boolean")
+
+            request_id = str(uuid.uuid4())
             from nexus3.rpc.types import Request as RpcRequest
+
             send_request = RpcRequest(
                 jsonrpc="2.0",
                 method="send",
-                params={"content": initial_message},
+                params={"content": initial_message, "request_id": request_id},
                 id="initial_message",
             )
-            response = await agent.dispatcher.dispatch(send_request)
-            if response and response.result:
-                result["response"] = response.result
-            elif response and response.error:
-                result["response"] = {"error": response.error}
+
+            result["initial_request_id"] = request_id
+
+            if wait_for_initial_response:
+                try:
+                    response = await agent.dispatcher.dispatch(send_request)
+                    if response and response.result:
+                        result["response"] = response.result
+                    elif response and response.error:
+                        result["response"] = {"error": response.error}
+                except Exception as e:
+                    logger.error(f"Initial message failed for {agent.agent_id}: {e}")
+                    result["response"] = {"error": {"message": str(e)}}
+            else:
+                task = asyncio.create_task(
+                    self._send_initial_background(agent, send_request, request_id)
+                )
+
+                def done_callback(t: asyncio.Task[None]) -> None:
+                    try:
+                        if t.exception():
+                            logger.error(
+                                f"Bg initial FAILED {agent.agent_id}/{request_id}: {t.exception()}"
+                            )
+                    except Exception:
+                        pass
+
+                task.add_done_callback(done_callback)
+                result["initial_status"] = "queued"
 
         return result
 
@@ -485,3 +520,12 @@ class GlobalDispatcher:
             True if shutdown_server method has been called, False otherwise.
         """
         return self._shutdown_requested
+
+
+    async def _send_initial_background(self, agent: "Agent", send_request: "Request", request_id: str) -> None:
+        """Fire-and-forget initial message dispatch."""
+        try:
+            await agent.dispatcher.dispatch(send_request)
+            logger.info(f"Background initial_message completed for {agent.agent_id}")
+        except Exception as e:
+            logger.error(f"Background initial_message FAILED for {agent.agent_id}/{request_id}: {e}")

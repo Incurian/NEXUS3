@@ -11,6 +11,7 @@ from pathlib import Path
 
 from nexus3.core.constants import get_defaults_dir as _get_defaults_dir
 from nexus3.core.constants import get_nexus_dir
+from nexus3.core.secure_io import secure_mkdir
 
 
 class InitSymlinkError(Exception):
@@ -95,7 +96,7 @@ def init_global(force: bool = False) -> tuple[bool, str]:
         return False, f"Directory already exists: {global_dir}\nUse --force to overwrite."
 
     try:
-        global_dir.mkdir(parents=True, exist_ok=True)
+        secure_mkdir(global_dir)
 
         # Copy NEXUS.md from defaults if it exists, otherwise use minimal
         # P1.8 SECURITY: Use _safe_write_text to prevent symlink attacks
@@ -124,8 +125,8 @@ def init_global(force: bool = False) -> tuple[bool, str]:
         # Create empty mcp.json
         _safe_write_text(global_dir / "mcp.json", MCP_JSON_TEMPLATE)
 
-        # Create sessions directory
-        (global_dir / "sessions").mkdir(exist_ok=True)
+        # Create sessions directory with secure permissions
+        secure_mkdir(global_dir / "sessions")
 
         return True, f"Initialized global configuration at {global_dir}"
 
@@ -153,7 +154,7 @@ def init_local(cwd: Path | None = None, force: bool = False) -> tuple[bool, str]
         return False, f"Directory already exists: {target_dir}\nUse --force to overwrite."
 
     try:
-        target_dir.mkdir(parents=True, exist_ok=True)
+        secure_mkdir(target_dir)
 
         # P1.8 SECURITY: Use _safe_write_text to prevent symlink attacks
         # Create NEXUS.md template

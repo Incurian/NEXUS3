@@ -10,7 +10,7 @@ Start the NEXUS3 AI agent in various modes.
 ## Usage
 
 ```bash
-nexus [OPTIONS]
+nexus3 [OPTIONS]
 ```
 
 ## Modes
@@ -18,7 +18,7 @@ nexus [OPTIONS]
 ### Default (REPL with Embedded Server)
 
 ```bash
-nexus
+nexus3
 ```
 
 Starts an interactive REPL with an embedded server. This is the most common mode:
@@ -29,28 +29,28 @@ Starts an interactive REPL with an embedded server. This is the most common mode
 ### Session Management
 
 ```bash
-nexus                    # Opens lobby to select session
-nexus --fresh            # Skip lobby, start new temp session
-nexus --resume           # Resume last session (auto-saved)
-nexus --session NAME     # Load specific saved session
-nexus --template PATH    # Use custom system prompt
+nexus3                   # Opens lobby to select session
+nexus3 --fresh            # Skip lobby, start new temp session
+nexus3 --resume           # Resume last session (auto-saved)
+nexus3 --session NAME     # Load specific saved session
+nexus3 --template PATH    # Use custom system prompt
 ```
 
 ### Headless Server
 
 ```bash
-nexus --serve [PORT]
+nexus3 --serve [PORT]
 ```
 
 Starts a headless HTTP server for multi-agent operations:
 - Default port: 8765
 - No interactive REPL - just serves RPC requests
-- Use `nexus-rpc` commands to interact with it
+- Use `nexus3 rpc` commands to interact with it
 
 ### Client Mode
 
 ```bash
-nexus --connect [URL] --agent [ID]
+nexus3 --connect [URL] --agent [ID]
 ```
 
 Connect to an existing server as a REPL client:
@@ -122,27 +122,27 @@ Use `/init` to create local config templates.
 
 Start interactive session:
 ```bash
-nexus
+nexus3
 ```
 
 Start fresh session (skip lobby):
 ```bash
-nexus --fresh
+nexus3 --fresh
 ```
 
 Resume last session:
 ```bash
-nexus --resume
+nexus3 --resume
 ```
 
 Start headless server on port 9000:
 ```bash
-nexus --serve 9000
+nexus3 --serve 9000
 ```
 
 Connect to existing server:
 ```bash
-nexus --connect http://127.0.0.1:8765 --agent worker-1
+nexus3 --connect http://127.0.0.1:8765 --agent worker-1
 ```
 
 ## Keyboard Shortcuts
@@ -157,5 +157,5 @@ nexus --connect http://127.0.0.1:8765 --agent worker-1
 
 - Session logs are saved to `.nexus3/logs/` by default
 - Auto-save creates `~/.nexus3/last-session.json` for `--resume`
-- Use `nexus-rpc` for programmatic operations (create agents, send messages, etc.)
+- Use `nexus3 rpc` for programmatic operations (create agents, send messages, etc.)
 - Context compaction automatically triggers at 90% token usage

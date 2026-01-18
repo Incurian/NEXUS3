@@ -477,9 +477,9 @@ class AgentPool:
                 cwd=effective_config.cwd,
             )
         except ValueError:
-            # Fall back to trusted if preset not found
+            # Fall back to sandboxed if preset not found
             permissions = resolve_preset(
-                "trusted",
+                "sandboxed",
                 self._shared.custom_presets,
                 cwd=effective_config.cwd,
             )
@@ -789,8 +789,8 @@ class AgentPool:
         try:
             permissions = resolve_preset(preset_name, self._shared.custom_presets)
         except ValueError:
-            # Fall back to trusted if preset not found
-            permissions = resolve_preset("trusted", self._shared.custom_presets)
+            # Fall back to sandboxed if preset not found
+            permissions = resolve_preset("sandboxed", self._shared.custom_presets)
 
         # Apply disabled_tools from saved session
         if saved.disabled_tools:

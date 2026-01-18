@@ -3,6 +3,7 @@
 import os
 import stat
 import string
+from pathlib import Path
 
 import pytest
 
@@ -13,6 +14,25 @@ from nexus3.rpc.auth import (
     generate_api_key,
     validate_api_key,
 )
+
+
+def _create_secure_token_file(path: Path, content: str) -> None:
+    """Create a token file with secure permissions (0600).
+
+    Tests need to create token files with proper permissions now that
+    strict_permissions=True is the default.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(
+        str(path),
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+        stat.S_IRUSR | stat.S_IWUSR,  # 0600
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+    except Exception:
+        raise
 
 
 # === generate_api_key() tests ===
@@ -201,9 +221,10 @@ class TestServerTokenManager:
         """load strips whitespace from token file contents."""
         manager = ServerTokenManager(port=8765, nexus_dir=tmp_path)
 
-        # Manually write token with extra whitespace
-        manager.token_path.parent.mkdir(parents=True, exist_ok=True)
-        manager.token_path.write_text("  nxk_testtoken123  \n", encoding="utf-8")
+        # Manually write token with extra whitespace (using secure permissions)
+        _create_secure_token_file(
+            manager.token_path, "  nxk_testtoken123  \n"
+        )
 
         loaded = manager.load()
         assert loaded == "nxk_testtoken123"
@@ -260,10 +281,9 @@ class TestDiscoverRpcToken:
         """discover_rpc_token returns port-specific token file for non-default port."""
         monkeypatch.delenv("NEXUS3_API_KEY", raising=False)
 
-        # Create port-specific token file
+        # Create port-specific token file with secure permissions
         port_token = "nxk_port_specific"
-        port_file = tmp_path / "rpc-9000.token"
-        port_file.write_text(port_token, encoding="utf-8")
+        _create_secure_token_file(tmp_path / "rpc-9000.token", port_token)
 
         result = discover_rpc_token(port=9000, nexus_dir=tmp_path)
         assert result == port_token
@@ -272,10 +292,9 @@ class TestDiscoverRpcToken:
         """discover_rpc_token returns default token file."""
         monkeypatch.delenv("NEXUS3_API_KEY", raising=False)
 
-        # Create default token file
+        # Create default token file with secure permissions
         default_token = "nxk_default_token"
-        default_file = tmp_path / "rpc.token"
-        default_file.write_text(default_token, encoding="utf-8")
+        _create_secure_token_file(tmp_path / "rpc.token", default_token)
 
         result = discover_rpc_token(port=8765, nexus_dir=tmp_path)
         assert result == default_token
@@ -305,8 +324,8 @@ class TestDiscoverRpcToken:
         port_token = "nxk_port_specific"
         default_token = "nxk_default"
 
-        (tmp_path / "rpc-9000.token").write_text(port_token, encoding="utf-8")
-        (tmp_path / "rpc.token").write_text(default_token, encoding="utf-8")
+        _create_secure_token_file(tmp_path / "rpc-9000.token", port_token)
+        _create_secure_token_file(tmp_path / "rpc.token", default_token)
 
         result = discover_rpc_token(port=9000, nexus_dir=tmp_path)
         assert result == port_token
@@ -326,7 +345,7 @@ class TestDiscoverRpcToken:
         monkeypatch.delenv("NEXUS3_API_KEY", raising=False)
 
         default_token = "nxk_default_fallback"
-        (tmp_path / "rpc.token").write_text(default_token, encoding="utf-8")
+        _create_secure_token_file(tmp_path / "rpc.token", default_token)
 
         # Port-specific file doesn't exist
         result = discover_rpc_token(port=9000, nexus_dir=tmp_path)
@@ -336,12 +355,12 @@ class TestDiscoverRpcToken:
         """discover_rpc_token ignores token files that are empty or whitespace-only."""
         monkeypatch.delenv("NEXUS3_API_KEY", raising=False)
 
-        # Create empty port-specific file
-        (tmp_path / "rpc-9000.token").write_text("", encoding="utf-8")
+        # Create empty port-specific file with secure permissions
+        _create_secure_token_file(tmp_path / "rpc-9000.token", "")
 
-        # Create valid default file
+        # Create valid default file with secure permissions
         default_token = "nxk_valid"
-        (tmp_path / "rpc.token").write_text(default_token, encoding="utf-8")
+        _create_secure_token_file(tmp_path / "rpc.token", default_token)
 
         result = discover_rpc_token(port=9000, nexus_dir=tmp_path)
         assert result == default_token
@@ -350,12 +369,12 @@ class TestDiscoverRpcToken:
         """discover_rpc_token ignores whitespace-only token files."""
         monkeypatch.delenv("NEXUS3_API_KEY", raising=False)
 
-        # Create whitespace-only port-specific file
-        (tmp_path / "rpc-9000.token").write_text("   \n  ", encoding="utf-8")
+        # Create whitespace-only port-specific file with secure permissions
+        _create_secure_token_file(tmp_path / "rpc-9000.token", "   \n  ")
 
-        # Create valid default file
+        # Create valid default file with secure permissions
         default_token = "nxk_valid"
-        (tmp_path / "rpc.token").write_text(default_token, encoding="utf-8")
+        _create_secure_token_file(tmp_path / "rpc.token", default_token)
 
         result = discover_rpc_token(port=9000, nexus_dir=tmp_path)
         assert result == default_token

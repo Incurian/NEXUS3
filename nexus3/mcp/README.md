@@ -17,7 +17,6 @@ __all__ = [
     "MCPSkillAdapter", "MCPTool", "MCPToolResult", "MCPTransport", "StdioTransport"
 ]
 ```
-**Utilities:** `permissions.can_use_mcp()`, `permissions.requires_mcp_confirmation()`.
 
 ## Key Classes/Functions
 

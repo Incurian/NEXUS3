@@ -67,7 +67,7 @@ NEXUS_DEV=1 nexus3 --serve 8765 --verbose --reload
 ```bash
 nexus3 rpc detect
 nexus3 rpc list
-nexus3 rpc create worker --sandboxed --message "Hi"
+nexus3 rpc create worker --preset sandboxed --message "Hi"
 nexus3 rpc send worker "Task" -t 600
 nexus3 rpc status worker
 nexus3 rpc shutdown

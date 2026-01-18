@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 from time import time
 from typing import TYPE_CHECKING, Any
 
 from nexus3.core.secure_io import secure_mkdir
+from nexus3.session.events import SessionEvent
 from nexus3.core.types import Message, Role, ToolCall, ToolResult
 from nexus3.session.markdown import MarkdownWriter, RawWriter
 from nexus3.session.storage import SessionStorage
@@ -14,6 +16,21 @@ from nexus3.session.types import LogConfig, LogStream, SessionInfo
 
 if TYPE_CHECKING:
     from nexus3.core.interfaces import RawLogCallback
+
+
+def _json_safe_dict(obj: Any) -> Any:
+    """Recursively convert to JSON-safe (str non-primitives)."""
+    if isinstance(obj, dict):
+        return {k: _json_safe_dict(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe_dict(i) for i in obj]
+    if hasattr(obj, '__dataclass_fields__'):
+        return _json_safe_dict(asdict(obj))
+    if isinstance(obj, Path):
+        return str(obj)
+    if not isinstance(obj, (str, int, float, bool, type(None), dict, list)):
+        return str(obj)
+    return obj
 
 
 class SessionLogger:
@@ -228,6 +245,27 @@ class SessionLogger:
             completion_tokens,
             total_tokens,
         )
+
+    def log_session_event(self, event: SessionEvent) -> None:
+        """Persist SessionEvent to SQLite (always). verbose.md if VERBOSE."""
+        # Use event timestamp if available, otherwise current time
+        ts: float = getattr(event, "timestamp", None) or time.time()
+        event_name: str = type(event).__name__.lower()
+
+        data = asdict(event)
+        if 'tool_calls' in data:
+            data['tool_calls'] = [
+                {'id': tc['id'], 'name': tc['name'], 'arguments': _json_safe_dict(tc['arguments'])}
+                for tc in data['tool_calls']
+            ]
+        safe_data = _json_safe_dict(data)
+
+        # ALWAYS: SQLite
+        self.storage.insert_event(event_type=event_name, data=safe_data, timestamp=ts)
+
+        # CONDITIONAL: verbose.md
+        if self._has_stream(LogStream.VERBOSE):
+            self._md_writer.write_event(event_type=event_name, data=safe_data)
 
     # === Raw Stream ===
 

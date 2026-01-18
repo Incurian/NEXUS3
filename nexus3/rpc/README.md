@@ -19,9 +19,9 @@ RPC agents default to `sandboxed` (read-only in `cwd`, no writes/tools).
 - Subagents ≤ parent perms; no `yolo` via RPC.
 
 ```bash
-nexus-rpc create reader --cwd /tmp/project  # Read-only
-nexus-rpc create writer --cwd /tmp/project --allowed-write-paths /tmp/project/output
-nexus-rpc create coord --preset trusted
+nexus3 rpc create reader --cwd /tmp/project  # Read-only
+nexus3 rpc create writer --cwd /tmp/project --allowed-write-paths /tmp/project/output
+nexus3 rpc create coord --preset trusted
 ```
 
 ## Architecture
@@ -39,20 +39,26 @@ Client → HTTP (http.py) → Auth → Route (/rpc → GlobalDispatcher | /agent
 ```python
 from nexus3.rpc import (
     # Types/Protocol
-    Request, Response, parse_request, serialize_response, make_error_response,
+    Request, Response, HttpRequest, parse_request, serialize_response,
+    make_error_response, make_success_response, serialize_request, parse_response,
     # HTTP
-    run_http_server, DEFAULT_PORT=8765,
+    run_http_server, handle_connection, DEFAULT_PORT, MAX_BODY_SIZE, BIND_HOST,
     # Core
-    AgentPool, Agent, SharedComponents, AgentConfig, Dispatcher, GlobalDispatcher,
+    AgentPool, Agent, SharedComponents, AgentConfig, Dispatcher, LogMultiplexer,
     # In-Process API
-    DirectAgentAPI, AgentScopedAPI,
-    # Auth/Detection
-    discover_rpc_token, detect_server, wait_for_server,
-    # Bootstrap
-    bootstrap_server_components,
-    # Utils
-    LogMultiplexer
+    DirectAgentAPI, AgentScopedAPI, ClientAdapter,
+    # Auth
+    API_KEY_PREFIX, generate_api_key, validate_api_key, ServerTokenManager, discover_rpc_token,
+    # Detection
+    DetectionResult, detect_server, wait_for_server,
+    # Error codes
+    PARSE_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARAMS, INTERNAL_ERROR, SERVER_ERROR,
+    # Exceptions
+    ParseError, InvalidParamsError, HttpParseError,
 )
+# Note: GlobalDispatcher and bootstrap_server_components are in submodules:
+#   from nexus3.rpc.global_dispatcher import GlobalDispatcher
+#   from nexus3.rpc.bootstrap import bootstrap_server_components
 ```
 
 ## RPC Methods

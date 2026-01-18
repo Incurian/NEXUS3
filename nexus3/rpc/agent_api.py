@@ -90,7 +90,7 @@ class AgentScopedAPI:
             raise ClientError(f"Agent not found: {self._agent_id}")
         return agent.dispatcher
 
-    async def send(self, content: str, request_id: int | None = None) -> dict[str, Any]:
+    async def send(self, content: str, request_id: str | int | None = None) -> dict[str, Any]:
         """Send a message to the agent.
 
         Args:
@@ -113,7 +113,7 @@ class AgentScopedAPI:
         response = await dispatcher.dispatch(request)
         return _extract_result(response)
 
-    async def cancel(self, request_id: int | None = None) -> dict[str, Any]:
+    async def cancel(self, request_id: str | int | None = None) -> dict[str, Any]:
         """Cancel an in-progress request.
 
         Args:
@@ -232,6 +232,7 @@ class DirectAgentAPI:
         allowed_write_paths: list[str] | None = None,
         model: str | None = None,
         initial_message: str | None = None,
+        wait_for_initial_response: bool = False,
     ) -> dict[str, Any]:
         """Create a new agent.
 
@@ -263,6 +264,8 @@ class DirectAgentAPI:
             params["model"] = model
         if initial_message is not None:
             params["initial_message"] = initial_message
+        if wait_for_initial_response:
+            params["wait_for_initial_response"] = wait_for_initial_response
 
         request = Request(
             jsonrpc="2.0",
@@ -360,11 +363,11 @@ class ClientAdapter:
 
     # Agent-scoped methods (require agent_api)
 
-    async def send(self, content: str, request_id: int | None = None) -> dict[str, Any]:
+    async def send(self, content: str, request_id: str | int | None = None) -> dict[str, Any]:
         """Send a message to the agent."""
         return await self._require_agent("send").send(content, request_id)
 
-    async def cancel(self, request_id: int | None = None) -> dict[str, Any]:
+    async def cancel(self, request_id: str | int | None = None) -> dict[str, Any]:
         """Cancel an in-progress request."""
         return await self._require_agent("cancel").cancel(request_id)
 
@@ -392,6 +395,7 @@ class ClientAdapter:
         allowed_write_paths: list[str] | None = None,
         model: str | None = None,
         initial_message: str | None = None,
+        wait_for_initial_response: bool = False,
     ) -> dict[str, Any]:
         """Create a new agent."""
         return await self._global.create_agent(
@@ -403,6 +407,7 @@ class ClientAdapter:
             allowed_write_paths=allowed_write_paths,
             model=model,
             initial_message=initial_message,
+            wait_for_initial_response=wait_for_initial_response,
         )
 
     async def destroy_agent(self, agent_id: str) -> dict[str, Any]:

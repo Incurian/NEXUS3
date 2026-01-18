@@ -188,7 +188,7 @@ class ServerTokenManager:
         self,
         port: int = 8765,
         nexus_dir: Path | None = None,
-        strict_permissions: bool = False,
+        strict_permissions: bool = True,
     ) -> None:
         """Initialize the token manager.
 
@@ -330,7 +330,7 @@ class ServerTokenManager:
 def discover_rpc_token(
     port: int = 8765,
     nexus_dir: Path | None = None,
-    strict_permissions: bool = False,
+    strict_permissions: bool = True,
 ) -> str | None:
     """Discover an RPC token for connecting to a NEXUS3 server.
 

@@ -10,7 +10,7 @@ Programmatic commands for NEXUS3 multi-agent operations. Use this for creating a
 ## Usage
 
 ```bash
-nexus-rpc <command> [arguments] [options]
+nexus3 rpc <command> [arguments] [options]
 ```
 
 ## Commands
@@ -20,7 +20,7 @@ nexus-rpc <command> [arguments] [options]
 Check if a NEXUS3 server is running.
 
 ```bash
-nexus-rpc detect [--port PORT]
+nexus3 rpc detect [--port PORT]
 ```
 
 Returns JSON with server status:
@@ -34,7 +34,7 @@ Returns JSON with server status:
 List all agents on the server. **Auto-starts server if needed.**
 
 ```bash
-nexus-rpc list [--port PORT]
+nexus3 rpc list [--port PORT]
 ```
 
 Returns JSON with agent details:
@@ -51,7 +51,7 @@ Returns JSON with agent details:
 Create a new agent. **Auto-starts server if needed.**
 
 ```bash
-nexus-rpc create <agent_id> [options]
+nexus3 rpc create <agent_id> [options]
 ```
 
 **Options:**
@@ -68,16 +68,16 @@ nexus-rpc create <agent_id> [options]
 **Examples:**
 ```bash
 # Basic agent
-nexus-rpc create worker-1
+nexus3 rpc create worker-1
 
 # Agent with initial task (starts immediately)
-nexus-rpc create researcher -M "Search for all TODO comments in nexus3/"
+nexus3 rpc create researcher -M "Search for all TODO comments in nexus3/"
 
 # Sandboxed agent with write access to specific path
-nexus-rpc create writer --preset sandboxed --write-path /tmp/output
+nexus3 rpc create writer --preset sandboxed --write-path /tmp/output
 
 # Worker preset (minimal permissions, no agent management)
-nexus-rpc create minion --preset worker --write-path ./results
+nexus3 rpc create minion --preset worker --write-path ./results
 ```
 
 ### destroy
@@ -85,7 +85,7 @@ nexus-rpc create minion --preset worker --write-path ./results
 Destroy an agent (server keeps running).
 
 ```bash
-nexus-rpc destroy <agent_id> [--port PORT]
+nexus3 rpc destroy <agent_id> [--port PORT]
 ```
 
 ### send
@@ -93,7 +93,7 @@ nexus-rpc destroy <agent_id> [--port PORT]
 Send a message to an agent and wait for response.
 
 ```bash
-nexus-rpc send <agent_id> <content> [--port PORT]
+nexus3 rpc send <agent_id> <content> [--port PORT]
 ```
 
 Returns JSON with response:
@@ -106,7 +106,7 @@ Returns JSON with response:
 Get agent token usage and context info.
 
 ```bash
-nexus-rpc status <agent_id> [--port PORT]
+nexus3 rpc status <agent_id> [--port PORT]
 ```
 
 Returns JSON with status:
@@ -122,7 +122,7 @@ Returns JSON with status:
 Cancel an in-progress request on an agent.
 
 ```bash
-nexus-rpc cancel <agent_id> <request_id> [--port PORT]
+nexus3 rpc cancel <agent_id> <request_id> [--port PORT]
 ```
 
 ### shutdown
@@ -130,7 +130,7 @@ nexus-rpc cancel <agent_id> <request_id> [--port PORT]
 Gracefully shutdown the entire server and all agents.
 
 ```bash
-nexus-rpc shutdown [--port PORT]
+nexus3 rpc shutdown [--port PORT]
 ```
 
 ## Permission Presets
@@ -148,9 +148,9 @@ nexus-rpc shutdown [--port PORT]
 ### Single Agent Task
 
 ```bash
-nexus-rpc create analyzer -M "Analyze nexus3/core/ for security issues"
+nexus3 rpc create analyzer -M "Analyze nexus3/core/ for security issues"
 # Wait for completion, then:
-nexus-rpc destroy analyzer
+nexus3 rpc destroy analyzer
 ```
 
 ### Parallel Agent Swarm
@@ -159,20 +159,20 @@ Create multiple agents working on different tasks:
 
 ```bash
 # Start server if needed
-nexus-rpc detect || nexus --serve &
+nexus3 rpc detect || nexus3 --serve &
 
 # Create swarm with initial tasks
-nexus-rpc create rev-core -M "Review nexus3/core/ for clean architecture"
-nexus-rpc create rev-rpc -M "Review nexus3/rpc/ for security"
-nexus-rpc create rev-skill -M "Review nexus3/skill/ for code quality"
+nexus3 rpc create rev-core -M "Review nexus3/core/ for clean architecture"
+nexus3 rpc create rev-rpc -M "Review nexus3/rpc/ for security"
+nexus3 rpc create rev-skill -M "Review nexus3/skill/ for code quality"
 
 # Monitor progress
-nexus-rpc list
+nexus3 rpc list
 
 # Clean up when done
-nexus-rpc destroy rev-core
-nexus-rpc destroy rev-rpc
-nexus-rpc destroy rev-skill
+nexus3 rpc destroy rev-core
+nexus3 rpc destroy rev-rpc
+nexus3 rpc destroy rev-skill
 ```
 
 ### Worker Pool Pattern
@@ -181,8 +181,8 @@ Create constrained workers for specific tasks:
 
 ```bash
 # Workers can only write to designated output directory
-nexus-rpc create worker-1 --preset worker --write-path ./output -M "Task 1"
-nexus-rpc create worker-2 --preset worker --write-path ./output -M "Task 2"
+nexus3 rpc create worker-1 --preset worker --write-path ./output -M "Task 1"
+nexus3 rpc create worker-2 --preset worker --write-path ./output -M "Task 2"
 ```
 
 ## Auto-Start Behavior
@@ -198,8 +198,8 @@ nexus-rpc create worker-2 --preset worker --write-path ./output -M "Task 2"
 
 | Command | Effect |
 |---------|--------|
-| `nexus-rpc destroy <id>` | Removes ONE agent, server keeps running |
-| `nexus-rpc shutdown` | Stops the entire server and all agents |
+| `nexus3 rpc destroy <id>` | Removes ONE agent, server keeps running |
+| `nexus3 rpc shutdown` | Stops the entire server and all agents |
 
 ## Notes
 

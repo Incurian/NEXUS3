@@ -218,7 +218,7 @@ class PermissionsConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    default_preset: str = "trusted"
+    default_preset: str = "sandboxed"
     presets: dict[str, PermissionPresetConfig] = {}
     destructive_tools: list[str] = [
         "write_file",

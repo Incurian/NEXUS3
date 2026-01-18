@@ -58,18 +58,14 @@ class NexusCancelSkill(NexusSkill):
         if not request_id:
             return ToolResult(error="No request_id provided")
 
-        # Validate request_id format - must be a positive integer
-        try:
-            req_id = int(request_id)
-            if req_id <= 0:
-                return ToolResult(error="Request ID must be a positive integer")
-        except ValueError:
-            return ToolResult(error=f"Invalid request ID format: {request_id}")
+        request_id_stripped = request_id.strip()
+        if not request_id_stripped:
+            return ToolResult(error="Request ID must be a non-empty string")
 
         return await self._execute_with_client(
             port=port,
             agent_id=agent_id,
-            operation=lambda client: client.cancel(req_id)
+            operation=lambda client: client.cancel(request_id_stripped)
         )
 
 

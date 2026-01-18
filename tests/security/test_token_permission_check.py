@@ -85,10 +85,10 @@ class TestGetApiKeyUsesDiscoverRpcToken:
 class TestClientCommandsPermissionCheckIntegration:
     """Integration tests verifying permission checks are performed."""
 
-    def test_insecure_token_file_triggers_warning(
+    def test_insecure_token_file_skipped_in_strict_mode(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """An insecure token file triggers a warning via discover_rpc_token()."""
+        """An insecure token file is skipped in strict mode (default) with warning."""
         # Clear any existing env var
         monkeypatch.delenv("NEXUS3_API_KEY", raising=False)
 
@@ -105,9 +105,9 @@ class TestClientCommandsPermissionCheckIntegration:
             with caplog.at_level(logging.WARNING):
                 result = _get_api_key(port=8765, api_key=None)
 
-        # Token is still returned (non-strict mode)
-        assert result == expected_token
-        # But warning was logged
+        # Token is NOT returned in strict mode (file is skipped)
+        assert result is None
+        # Warning was logged about insecure permissions
         assert "insecure permissions" in caplog.text
 
     def test_secure_token_file_no_warning(

@@ -40,7 +40,7 @@ class TestInitialMessageValidation:
 
     @pytest.mark.asyncio
     async def test_initial_message_string_accepted(self, dispatcher, mock_pool):
-        """Valid string initial_message is accepted."""
+        """Valid string initial_message is accepted with wait_for_initial_response=True."""
         mock_agent = MagicMock()
         mock_agent.agent_id = "test-agent"
         mock_agent.dispatcher = MagicMock()
@@ -53,11 +53,36 @@ class TestInitialMessageValidation:
         result = await dispatcher._handle_create_agent({
             "agent_id": "test",
             "initial_message": "Hello, agent!",
+            "wait_for_initial_response": True,
         })
 
         assert result["agent_id"] == "test-agent"
         assert "response" in result
         assert result["response"]["content"] == "Hello!"
+
+    @pytest.mark.asyncio
+    async def test_initial_message_queued_by_default(self, dispatcher, mock_pool):
+        """By default, initial_message is queued and returns immediately."""
+        mock_agent = MagicMock()
+        mock_agent.agent_id = "test-agent"
+        mock_agent.dispatcher = MagicMock()
+        mock_agent.dispatcher.dispatch = AsyncMock(return_value=MagicMock(
+            result={"content": "Hello!", "request_id": "123"},
+            error=None
+        ))
+        mock_pool.create = AsyncMock(return_value=mock_agent)
+
+        result = await dispatcher._handle_create_agent({
+            "agent_id": "test",
+            "initial_message": "Hello, agent!",
+            # wait_for_initial_response defaults to False
+        })
+
+        assert result["agent_id"] == "test-agent"
+        assert "initial_request_id" in result
+        assert result.get("initial_status") == "queued"
+        # Response is NOT included when not waiting
+        assert "response" not in result
 
     @pytest.mark.asyncio
     async def test_no_initial_message_no_response(self, dispatcher, mock_pool):
@@ -90,8 +115,8 @@ class TestInitialMessageDispatch:
         return GlobalDispatcher(mock_pool)
 
     @pytest.mark.asyncio
-    async def test_initial_message_dispatched_after_create(self, dispatcher, mock_pool):
-        """initial_message is dispatched to agent after creation."""
+    async def test_initial_message_dispatched_when_waiting(self, dispatcher, mock_pool):
+        """initial_message is dispatched to agent when wait_for_initial_response=True."""
         mock_agent = MagicMock()
         mock_agent.agent_id = "worker-1"
         mock_agent.dispatcher = MagicMock()
@@ -105,17 +130,19 @@ class TestInitialMessageDispatch:
         await dispatcher._handle_create_agent({
             "agent_id": "worker-1",
             "initial_message": "Please do something",
+            "wait_for_initial_response": True,
         })
 
         # Verify dispatch was called with a Request object
         mock_dispatch.assert_called_once()
         call_args = mock_dispatch.call_args[0][0]
         assert call_args.method == "send"
-        assert call_args.params == {"content": "Please do something"}
+        assert "content" in call_args.params
+        assert call_args.params["content"] == "Please do something"
 
     @pytest.mark.asyncio
     async def test_initial_message_error_included(self, dispatcher, mock_pool):
-        """Error from initial_message dispatch is included in result."""
+        """Error from initial_message dispatch is included in result when waiting."""
         mock_agent = MagicMock()
         mock_agent.agent_id = "worker-1"
         mock_agent.dispatcher = MagicMock()
@@ -128,6 +155,7 @@ class TestInitialMessageDispatch:
         result = await dispatcher._handle_create_agent({
             "agent_id": "worker-1",
             "initial_message": "Fail please",
+            "wait_for_initial_response": True,
         })
 
         assert "response" in result

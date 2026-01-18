@@ -33,7 +33,7 @@ NEXUS_DEV=1 nexus3 --serve 8765 --reload  # Dev server + token in ~/.nexus3/rpc.
 ### 4. RPC Client
 ```bash
 nexus3 rpc list
-nexus3 rpc create worker --sandboxed --cwd /proj
+nexus3 rpc create worker --preset sandboxed --cwd /proj
 nexus3 rpc send worker "Read src/ and summarize"
 nexus3 rpc status worker
 ```
@@ -68,7 +68,7 @@ Detailed docs in each module:
 | [config](nexus3/config/README.md) | Layered `load_config()`; `Config` Pydantic models |
 | [provider](nexus3/provider/README.md) | `create_provider()`; OpenAI/Anthropic compat; retries |
 | [context](nexus3/context/README.md) | `ContextManager`; compaction; `TokenCounter` |
-| [session](nexus3/session/README.md) | `Session` coord; `SessionLogger`; persistence |
+| [session](nexus3/session/README.md) | `Session` coord; `SessionLogger`; persistence; typed events |
 | [skill](nexus3/skill/README.md) | `SkillRegistry`; bases (`FileSkill`, `ExecutionSkill`); DI |
 | [display](nexus3/display/README.md) | `DisplayManager`; `InlinePrinter`; `SummaryBar` |
 | [cli](nexus3/cli/README.md) | REPL; slash cmds; `--serve`; `nexus3 rpc` |

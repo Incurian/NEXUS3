@@ -6,7 +6,7 @@ Manual test suite for verifying MCP functionality in REPL mode.
 
 1. Start NEXUS3 in REPL mode:
    ```bash
-   nexus --fresh
+   nexus3 --fresh
    ```
 
 2. You need an MCP configuration. Create or verify `~/.nexus3/config.json` has:
@@ -149,7 +149,7 @@ In REPL:
 
 ```bash
 # In terminal (outside REPL)
-nexus-rpc create mcp-tester --preset trusted
+nexus3 rpc create mcp-tester --preset trusted
 ```
 
 **Expected:**
@@ -158,7 +158,7 @@ nexus-rpc create mcp-tester --preset trusted
 ### Test 11: Test MCP Access from RPC Agent
 
 ```bash
-nexus-rpc send mcp-tester "List available MCP servers with /mcp"
+nexus3 rpc send mcp-tester "List available MCP servers with /mcp"
 ```
 
 **Expected:**
@@ -169,10 +169,10 @@ nexus-rpc send mcp-tester "List available MCP servers with /mcp"
 
 ```bash
 # Create sandboxed agent
-nexus-rpc create sandboxed-test --preset sandboxed
+nexus3 rpc create sandboxed-test --preset sandboxed
 
 # Try to use MCP
-nexus-rpc send sandboxed-test "List available MCP servers with /mcp"
+nexus3 rpc send sandboxed-test "List available MCP servers with /mcp"
 ```
 
 **Expected:**
@@ -209,8 +209,8 @@ This is tested automatically - normal MCP messages are well under 10MB.
 
 ```bash
 # Clean up RPC agents
-nexus-rpc destroy mcp-tester
-nexus-rpc destroy sandboxed-test
+nexus3 rpc destroy mcp-tester
+nexus3 rpc destroy sandboxed-test
 
 # Exit REPL
 /exit

@@ -23,15 +23,30 @@ SessionStorage, SessionMarkers, LogConfig, LogStream, SessionInfo
 RawLogCallbackAdapter
 SavedSession, SessionSummary, serialize_session, deserialize_messages
 SessionManager, SessionManagerError, SessionNotFoundError
+
+# Session Events (typed event stream)
+SessionEvent, ContentChunk, ReasoningStarted, ReasoningEnded
+ToolDetected, ToolBatchStarted, ToolStarted, ToolCompleted
+ToolBatchHalted, ToolBatchCompleted, IterationCompleted
+SessionCompleted, SessionCancelled
 ```
 
 **Core Classes**:
-- `Session`: LLM + tools (perms/confirm/dispatch/exec).
+- `Session`: LLM + tools (perms/confirm/dispatch/exec). Methods: `send()`, `run_turn()`.
 - `SessionLogger`: Logs to SQLite/MD/JSONL.
 - `SessionManager`: Disk ops (`save_session`, `load_session`).
 - `PermissionEnforcer`: Tool/path checks, multi-path (Fix 1.2).
 - `ConfirmationController`: User confirm + allowances.
 - `ToolDispatcher`: Skill/MCP resolution.
+
+**Session Events** (typed event stream for UI decoupling):
+- `ContentChunk`: Text content from LLM.
+- `ReasoningStarted/Ended`: Extended thinking blocks.
+- `ToolDetected`: Tool call parsed from stream.
+- `ToolBatchStarted/Completed`: Batch lifecycle.
+- `ToolStarted/Completed`: Individual tool execution.
+- `IterationCompleted`: Tool loop iteration finished.
+- `SessionCompleted/Cancelled`: Terminal events.
 
 ## Usage Examples
 

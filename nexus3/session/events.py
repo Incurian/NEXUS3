@@ -7,8 +7,9 @@ execution, confirmations, and iteration progress.
 Events are frozen dataclasses following the pattern in core/types.py.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+import time
 
 if TYPE_CHECKING:
     from nexus3.core.types import ToolCall
@@ -112,9 +113,13 @@ class ToolBatchStarted(SessionEvent):
 
     Attributes:
         tool_calls: Tuple of ToolCall objects to execute.
+        parallel: True if batch will execute in parallel.
+        timestamp: Unix timestamp when event was created.
     """
 
     tool_calls: "tuple[ToolCall, ...]"
+    parallel: bool = False
+    timestamp: float = field(default_factory=time.time)
 
 
 @dataclass(frozen=True)
@@ -126,10 +131,12 @@ class ToolStarted(SessionEvent):
     Attributes:
         name: Name of the tool.
         tool_id: Unique identifier for this tool call.
+        timestamp: Unix timestamp when event was created.
     """
 
     name: str
     tool_id: str
+    timestamp: float = field(default_factory=time.time)
 
 
 @dataclass(frozen=True)
@@ -143,12 +150,14 @@ class ToolCompleted(SessionEvent):
         tool_id: Unique identifier for this tool call.
         success: True if tool executed without error.
         error: Error message if success is False, empty string otherwise.
+        timestamp: Unix timestamp when event was created.
     """
 
     name: str
     tool_id: str
     success: bool
     error: str = ""
+    timestamp: float = field(default_factory=time.time)
 
 
 @dataclass(frozen=True)
@@ -157,9 +166,12 @@ class ToolBatchHalted(SessionEvent):
 
     Emitted when a tool in a sequential batch fails, causing
     remaining tools in the batch to be skipped.
+
+    Attributes:
+        timestamp: Unix timestamp when event was created.
     """
 
-    pass
+    timestamp: float = field(default_factory=time.time)
 
 
 @dataclass(frozen=True)
@@ -168,9 +180,12 @@ class ToolBatchCompleted(SessionEvent):
 
     Emitted after all tools in a batch have completed (or the batch
     was halted due to error).
+
+    Attributes:
+        timestamp: Unix timestamp when event was created.
     """
 
-    pass
+    timestamp: float = field(default_factory=time.time)
 
 
 # --- Iteration Events ---

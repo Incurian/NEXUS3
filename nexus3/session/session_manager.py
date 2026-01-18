@@ -16,6 +16,7 @@ _SECURE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
 
 from nexus3.core.constants import get_nexus_dir
 from nexus3.core.errors import NexusError
+from nexus3.core.secure_io import secure_mkdir
 
 
 def _secure_write_file(path: Path, content: str) -> None:
@@ -95,8 +96,8 @@ class SessionManager:
         self.sessions_dir = self.nexus_dir / "sessions"
 
     def _ensure_dirs(self) -> None:
-        """Ensure required directories exist."""
-        self.sessions_dir.mkdir(parents=True, exist_ok=True)
+        """Ensure required directories exist with secure permissions (0700)."""
+        secure_mkdir(self.sessions_dir)
 
     def _session_path(self, name: str) -> Path:
         """Get path for a session file.

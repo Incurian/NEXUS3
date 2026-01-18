@@ -34,6 +34,7 @@ from dotenv import load_dotenv
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.styles import Style
+from prompt_toolkit.lexers import SimpleLexer
 from rich.live import Live
 
 from nexus3.cli.arg_parser import parse_args
@@ -521,15 +522,17 @@ async def run_repl(
         else:
             return HTML(f'{square} <style fg="ansigreen">● ready</style>{token_info}')
 
-    # Style to remove default toolbar highlight
-    prompt_style = Style.from_dict({
-        "bottom-toolbar": "noreverse",
+    # Native reverse styling: prompt via HTML, input via lexer
+    lexer = SimpleLexer('class:input-field')
+    style = Style.from_dict({
+        'bottom-toolbar': 'noreverse',
+        'prompt': 'reverse',
+        'input-field': 'reverse',
     })
-
-    # Create prompt session with bottom toolbar
     prompt_session: PromptSession[str] = PromptSession(
+        lexer=lexer,
         bottom_toolbar=get_toolbar,
-        style=prompt_style,
+        style=style,
     )
 
     # Phase 6: Comprehensive slash command handler
@@ -705,7 +708,9 @@ async def run_repl(
                 prompt_text = f"{whisper.target_agent_id}> "
             else:
                 prompt_text = "> "
-            user_input = await prompt_session.prompt_async(prompt_text)
+            user_input = await prompt_session.prompt_async(
+                HTML(f"<style class='prompt'>{prompt_text}</style>")
+            )
 
             # Handle empty input
             if not user_input.strip():
@@ -898,11 +903,8 @@ async def run_repl(
             else:
                 active_session = session
 
-            # Overwrite prompt_toolkit's plain input with highlighted version
-            # Move cursor up one line and overwrite
-            console.print("\033[A\033[K", end="")  # Up one line, clear to end
-            console.print(f"[reverse] {prompt_text}{user_input} [/reverse]")
-            console.print("")  # Blank line after for visual separation
+            # Visual separation before response/streaming
+            console.print("")
 
             # Reset display for new response and clear error/thinking state
             display.reset()
@@ -1076,8 +1078,16 @@ async def run_repl_client(url: str, agent_id: str) -> None:
     console.print("[bold]NEXUS3 Client[/]")
     console.print(f"Connecting to {agent_url}...")
 
-    # Simple prompt session (no bottom toolbar for simplicity)
-    prompt_session: PromptSession[str] = PromptSession()
+    # Simple prompt session with styled input (no bottom toolbar for simplicity)
+    lexer = SimpleLexer('class:input-field')
+    style = Style.from_dict({
+        'prompt': 'reverse',
+        'input-field': 'reverse',
+    })
+    prompt_session: PromptSession[str] = PromptSession(
+        lexer=lexer,
+        style=style,
+    )
 
     async with NexusClient.with_auto_auth(agent_url, timeout=300.0) as client:
         # Test connection
@@ -1093,7 +1103,9 @@ async def run_repl_client(url: str, agent_id: str) -> None:
 
         while True:
             try:
-                user_input = await prompt_session.prompt_async("> ")
+                user_input = await prompt_session.prompt_async(
+                    HTML("<style class='prompt'>> </style>")
+                )
 
                 if not user_input.strip():
                     continue
