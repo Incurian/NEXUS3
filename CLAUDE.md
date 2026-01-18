@@ -154,7 +154,7 @@ nexus3 rpc shutdown
 | `bash` | `command`, `timeout`? | Execute shell commands |
 | `run_python` | `code`, `timeout`? | Execute Python code |
 | `sleep` | `seconds`, `label`? | Pause execution (for testing) |
-| `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `model`?, `initial_message`? | Create agent and optionally send initial message |
+| `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `model`?, `initial_message`?, `wait_for_initial_response`? | Create agent (initial_message queued by default) |
 | `nexus_destroy` | `agent_id`, `port`? | Remove an agent (server keeps running) |
 | `nexus_send` | `agent_id`, `content`, `port`? | Send message to an agent |
 | `nexus_status` | `agent_id`, `port`? | Get agent tokens + context |
@@ -565,9 +565,9 @@ nexus3 --init-global-force     # Overwrite existing
 
 | Preset | Level | Description |
 |--------|-------|-------------|
-| `yolo` | YOLO | Full access, no confirmations |
-| `trusted` | TRUSTED | Confirmations for destructive actions (default) |
-| `sandboxed` | SANDBOXED | Limited to CWD, no network, nexus tools disabled |
+| `yolo` | YOLO | Full access, no confirmations (REPL-only) |
+| `trusted` | TRUSTED | Confirmations for destructive actions |
+| `sandboxed` | SANDBOXED | Limited to CWD, no network, nexus tools disabled (default for RPC) |
 | `worker` | SANDBOXED | Minimal: no write_file, no agent management |
 
 ### RPC Agent Permission Quirks (IMPORTANT)
@@ -1008,21 +1008,30 @@ Result: Clean architectural change with typed events, backward compatible.
 
 ---
 
-## Current Work In Progress
+## Recent Changes (2026-01-18)
 
-**Branch:** `arch/sprint-5-rpc-cli`
+**Merged to master. All 2316 tests pass.**
 
-**Completed:**
-- Session event system (`nexus3/session/events.py`)
-- `Session.run_turn()` yielding `AsyncIterator[SessionEvent]`
-- Backward compatibility via callback adapter
-- Token `strict_permissions` default → `True` (auth.py)
-- Docs standardization: `nexus` → `nexus3` throughout
-- Session directory permissions → `0700` (session_manager.py, init_commands.py)
-- All 2315 tests pass
+### Session Event System
+- New typed event stream API (`nexus3/session/events.py`)
+- `Session.run_turn()` yields `AsyncIterator[SessionEvent]`
+- Tool events now have timestamps persisted to SQLite
+- Backward compatible via callback adapter
 
-**Remaining:**
-- REPL migration to event stream (deferred, not blocking)
+### nexus_create Improvements
+- `initial_message` is now non-blocking by default (queued)
+- Add `wait_for_initial_response=True` to block for response
+- Returns `initial_request_id` for cancellation support
+
+### Security Defaults
+- Default preset changed from `trusted` to `sandboxed`
+- Token `strict_permissions` default → `True`
+- Session directory permissions → `0700`
+
+### Bug Fixes
+- REPL double input display fixed (prompt_toolkit styling)
+- nexus_cancel request_id properly passed as string
+- Empty initial_message validation
 
 **Review files:**
 - `reviews/2026-01-17/FINAL-CONSOLIDATED-REVIEW.md` - Consolidated findings
