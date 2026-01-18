@@ -1,7 +1,7 @@
 # NEXUS3
 AI Agent Framework for Software Engineering Tasks
 
-**NEXUS3** is a secure, multi-agent CLI framework for AI-powered development workflows. Features streaming REPL, JSON-RPC server (port 8765), sandboxed subagents, MCP integration, structured SQLite/Markdown logging, and 25+ builtin skills (file ops, git, bash, nexus_* API).
+**NEXUS3** is a secure, multi-agent CLI framework for AI-powered development workflows. Features streaming REPL, JSON-RPC server (port 8765), sandboxed subagents, MCP integration, structured SQLite/Markdown logging, and 23 builtin skills (file ops, git, bash, nexus_* API).
 
 **Key Principles**: Async-first, fail-fast validation, zero external deps in `core`, path/URL sandboxing, permission ceilings (YOLO/TRUSTED/SANDBOXED/WORKER).
 
@@ -43,7 +43,7 @@ nexus3 rpc status worker
 | Category | Highlights |
 |----------|------------|
 | **Multi-Agent** | RPC `/agent/{id}`; create/destroy/send; hierarchies (ceiling perms); in-process `DirectAgentAPI` |
-| **Skills/Tools** | 25+ builtins (read_file, bash_safe, git, nexus_create); parallel exec (max 10); DI via `ServiceContainer` |
+| **Skills/Tools** | 23 builtins (read_file, bash, git, nexus_create); parallel exec (max 10); DI via `ServiceContainer` |
 | **Security** | Path sandbox (`allowed_paths`); URL SSRF block; presets (resolve_preset("trusted")); confirm destructive |
 | **Context** | Layered prompts (NEXUS.md); tiktoken budgets; LLM compaction; `ContextManager` |
 | **Display** | Rich Live (gumballs ●○, summary bar, streaming tools); `DisplayManager` |
@@ -53,7 +53,7 @@ nexus3 rpc status worker
 | **Config** | Layered JSON (defaults → global → local); Pydantic `Config` |
 
 ## 🛡️ Security & Permissions
-- **Presets**: `yolo` (REPL-only), `trusted` (confirm destructive), `sandboxed` (cwd read-only), `worker` (no write_file)
+- **Presets**: `yolo` (REPL-only), `trusted` (confirm destructive), `sandboxed` (cwd read-only, **RPC default**), `worker` (no write_file)
 - **Paths**: `validate_path()` + `PathResolver`; O_NOFOLLOW writes
 - **URLs**: Private IP/DNS rebinding block; `validate_url()`
 - **RPC**: Localhost + `nxk_` token auth
@@ -99,4 +99,4 @@ mypy nexus3/
 [nexus3/defaults/config.json](nexus3/defaults/config.json) → models/providers/MCP/permissions.
 
 **License**: MIT  
-**Updated**: 2026-01-17
+**Updated**: 2026-01-18
