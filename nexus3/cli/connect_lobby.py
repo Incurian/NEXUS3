@@ -666,3 +666,66 @@ def prompt_for_agent_id(console: Console) -> str | None:
         return None
 
     return agent_id
+
+
+async def detect_sse_capability(
+    server_url: str,
+    agent_id: str,
+    api_key: str | None,
+) -> bool:
+    """Check if SSE is available for the agent.
+
+    Makes a short-lived probe request to the SSE endpoint to detect capability.
+    This allows the REPL to choose between synced mode (with rich UI) and
+    legacy mode (polling-based).
+
+    Args:
+        server_url: Base URL of the server (e.g., "http://127.0.0.1:8765").
+        agent_id: ID of the agent to check.
+        api_key: Optional API key for authentication.
+
+    Returns:
+        True if SSE endpoint responds with 200 + text/event-stream.
+        False for 404/405 (SSE not supported by server).
+
+    Raises:
+        ClientError: For 401/403 (authentication problem) or connection errors.
+    """
+    import httpx
+
+    from nexus3.client import ClientError
+
+    # Build SSE endpoint URL
+    events_url = f"{server_url.rstrip('/')}/agent/{agent_id}/events"
+
+    # Build headers
+    headers: dict[str, str] = {"Accept": "text/event-stream"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    try:
+        # Use a short timeout for the probe - we just need the headers
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            async with client.stream("GET", events_url, headers=headers) as response:
+                status = response.status_code
+                content_type = response.headers.get("content-type", "")
+
+                # Success: SSE is available
+                if status == 200 and "text/event-stream" in content_type:
+                    return True
+
+                # Not found or method not allowed: SSE not supported
+                if status in (404, 405):
+                    return False
+
+                # Auth problems should be raised as errors
+                if status in (401, 403):
+                    raise ClientError(f"SSE authentication failed: {status}")
+
+                # Other errors: treat as SSE not available
+                return False
+
+    except httpx.ConnectError as e:
+        raise ClientError(f"Connection failed: {e}") from e
+    except httpx.TimeoutException as e:
+        raise ClientError(f"Connection timeout: {e}") from e

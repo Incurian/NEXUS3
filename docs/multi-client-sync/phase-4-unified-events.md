@@ -1,6 +1,6 @@
 # Phase 4: Host REPL Uses Events
 
-**Status:** Not started
+**Status:** Complete
 **Complexity:** L
 **Dependencies:** Phase 3
 
@@ -110,16 +110,20 @@ session.on_reasoning = on_reasoning
 
 ## Progress
 
-- [ ] Add in-process event consumption to unified REPL
-- [ ] Remove direct callback wiring
-- [ ] Test host sees own turns via events
-- [ ] Test host sees connected client turns
-- [ ] Verify ESC cancellation still works
+- [x] Add in-process event consumption to unified REPL
+- [x] Remove direct callback wiring (kept on_confirm for confirmation UI)
+- [x] Test host sees own turns via events
+- [x] Verify ESC cancellation works (via dispatcher cancel RPC)
+- [x] Add cancel_requested guard for repeated ESC
+- [x] Add grace window for terminal events after send_task.done()
+- [x] Improve exception handling for send_task
+- [x] GPT review approved (2026-01-19)
 
 ## Review Checklist
 
-- [ ] Single-terminal behavior unchanged
-- [ ] Multi-terminal: all see all turns
-- [ ] No callback/event duplication
-- [ ] Performance acceptable (in-process queue)
-- [ ] GPT review approved
+- [x] Single-terminal behavior unchanged
+- [x] No callback/event duplication
+- [x] Performance acceptable (in-process queue)
+- [x] GPT review approved (2026-01-19)
+
+Note: "Host sees connected client turns" deferred to Phase 5 (shared history).

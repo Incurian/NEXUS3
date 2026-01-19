@@ -24,9 +24,9 @@ Enable multiple REPL terminals to:
 
 | Phase | Description | Complexity | Status |
 |-------|-------------|------------|--------|
-| [Phase 0](phase-0-event-contract.md) | Event schema/contract | S | Not started |
-| [Phase 1](phase-1-sse-endpoint.md) | SSE endpoint + EventHub | M | Not started |
-| [Phase 2](phase-2-publish-events.md) | Publish turn/tool events from dispatcher | M→L | Not started |
+| [Phase 0](phase-0-event-contract.md) | Event schema/contract | S | Complete (defined in Phase 1) |
+| [Phase 1](phase-1-sse-endpoint.md) | SSE endpoint + EventHub | M | **Complete** |
+| [Phase 2](phase-2-publish-events.md) | Publish turn/tool events from dispatcher | M→L | **Complete** |
 | [Phase 3](phase-3-synced-client.md) | Synced REPL client with rich UI | L | Not started |
 | [Phase 4](phase-4-unified-events.md) | Host REPL also event-driven | L | Not started |
 | [Phase 5](phase-5-shared-history.md) | Shared history + background updates | M→L | Not started |

@@ -1,6 +1,6 @@
 # Phase 2: Publish Events from Dispatcher
 
-**Status:** Not started
+**Status:** Complete
 **Complexity:** M→L
 **Dependencies:** Phase 1
 
@@ -16,34 +16,34 @@ SSE subscribers see real-time events during agent turns:
 
 ```
 event: turn_started
-data: {"request_id": "abc", "agent_id": "test"}
+data: {"type": "turn_started", "request_id": "abc", "agent_id": "test"}
 
 event: thinking_started
-data: {"request_id": "abc"}
+data: {"type": "thinking_started", "request_id": "abc", "agent_id": "test"}
 
 event: thinking_ended
-data: {"request_id": "abc", "duration_ms": 2500}
+data: {"type": "thinking_ended", "request_id": "abc", "agent_id": "test", "duration_ms": 2500}
 
 event: content_chunk
-data: {"request_id": "abc", "text": "Let me "}
+data: {"type": "content_chunk", "request_id": "abc", "agent_id": "test", "text": "Let me "}
 
 event: tool_detected
-data: {"request_id": "abc", "name": "read_file", "tool_id": "t1"}
+data: {"type": "tool_detected", "request_id": "abc", "agent_id": "test", "name": "read_file", "tool_id": "t1"}
 
 event: batch_started
-data: {"request_id": "abc", "tools": [{"name": "read_file", "id": "t1", "params": "path.txt"}]}
+data: {"type": "batch_started", "request_id": "abc", "agent_id": "test", "tools": [{"name": "read_file", "id": "t1", "params": "path.txt"}]}
 
 event: tool_started
-data: {"request_id": "abc", "tool_id": "t1"}
+data: {"type": "tool_started", "request_id": "abc", "agent_id": "test", "tool_id": "t1"}
 
 event: tool_completed
-data: {"request_id": "abc", "tool_id": "t1", "success": true}
+data: {"type": "tool_completed", "request_id": "abc", "agent_id": "test", "tool_id": "t1", "success": true}
 
 event: batch_completed
-data: {"request_id": "abc"}
+data: {"type": "batch_completed", "request_id": "abc", "agent_id": "test"}
 
 event: turn_completed
-data: {"request_id": "abc", "content": "Done!", "halted": false}
+data: {"type": "turn_completed", "request_id": "abc", "agent_id": "test", "content": "Done!", "halted": false}
 ```
 
 ## Files to Modify
@@ -131,17 +131,28 @@ nexus3 rpc watch <agent_id>  # Simple event stream viewer
 
 ## Progress
 
-- [ ] Add turn lock to Dispatcher
-- [ ] Switch `_handle_send` to use `run_turn()`
-- [ ] Implement SessionEvent → SSE event mapping
-- [ ] Wire EventHub into Dispatcher
-- [ ] Test event publishing with curl
+- [x] Add turn lock to Dispatcher
+- [x] Switch `_handle_send` to use `run_turn()`
+- [x] Implement SessionEvent → SSE event mapping
+- [x] Wire EventHub into Dispatcher
+- [x] Test event publishing with curl
 - [ ] Optional: Add `nexus3 rpc watch` command
 
 ## Review Checklist
 
-- [ ] All SessionEvent types mapped correctly
-- [ ] Turn lock prevents concurrent sends
-- [ ] Existing JSON-RPC API unchanged
-- [ ] Events include request_id for correlation
-- [ ] GPT review approved
+- [x] All SessionEvent types mapped correctly
+- [x] Turn lock prevents concurrent sends
+- [x] Existing JSON-RPC API unchanged
+- [x] Events include request_id for correlation
+- [x] GPT review approved (2026-01-19)
+
+## GPT Review Fixes (2026-01-19)
+
+Based on GPT review findings:
+
+1. **agent_id enforcement**: Changed `event.setdefault()` to `event[...] = ...` to guarantee canonical agent_id
+2. **Cancellation semantics**: Check cancellation BEFORE emitting turn_started (avoids confusing turn_started→turn_cancelled sequence)
+3. **Tool params whitespace**: Normalize newlines/tabs to spaces in `_format_tool_params` for single-line UI rendering
+4. **Docs consistency**: Added `type` field to all example JSON payloads
+5. **Terminal event guarantee (queued-cancel)**: Emit `turn_cancelled` even for requests cancelled while queued (before turn started)
+6. **Terminal event guarantee (errors)**: Added broad Exception handler that emits `turn_cancelled` before re-raising

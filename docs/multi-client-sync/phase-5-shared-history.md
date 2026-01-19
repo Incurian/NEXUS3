@@ -1,6 +1,6 @@
 # Phase 5: Shared History + Background Updates
 
-**Status:** Not started
+**Status:** Phase 5a Complete (Phase 5b deferred)
 **Complexity:** M→L
 **Dependencies:** Phase 4
 
@@ -9,6 +9,20 @@
 - Messages from other agents (via nexus_send) appear in active REPL
 - While idle at prompt, see other terminals' turns completing
 - New terminals can "attach" and see recent transcript
+
+## GPT Architecture Review (2026-01-19)
+
+### Implementation Order
+Split into two sub-phases:
+1. **Phase 5a (Core)**: get_messages RPC, transcript fetch, background watcher
+2. **Phase 5b (Attribution)**: Message.meta support, nexus_send source tracking
+
+### Key Architecture Decisions
+- **Background safe printing**: Use `prompt_session.app.run_in_terminal()` (not `patch_stdout`)
+- **Event types to show**: Only terminal events (`turn_completed`, `turn_cancelled`)
+- **Request filtering**: Track `active_request_id` to avoid showing own turns twice
+- **Unified vs synced**: Same filtering rules, different event sources (EventHub vs SSE)
+- **Source attribution (Phase 5b)**: Add `Message.meta: dict[str, Any]` field, update persistence
 
 ## User-Visible Behavior
 
@@ -47,77 +61,123 @@ Agent: main
 
 ### Modify: `nexus3/rpc/dispatcher.py`
 
-Add transcript RPC method:
+Add transcript RPC method with validation:
 
 ```python
+# in __init__:
+self._handlers["get_messages"] = self._handle_get_messages
+
 async def _handle_get_messages(self, request: Request) -> Response:
     """Get recent message history for transcript sync."""
-    limit = request.params.get("limit", 20)
-    offset = request.params.get("offset", 0)
+    params = request.params or {}
+    offset = params.get("offset", 0)
+    limit = params.get("limit", 200)
 
-    messages = self._context.messages[offset:offset + limit]
-    serialized = [
-        {
-            "role": msg.role,
+    if not isinstance(offset, int) or offset < 0:
+        raise InvalidParamsError("offset must be a non-negative integer")
+    if not isinstance(limit, int) or limit <= 0 or limit > 2000:
+        raise InvalidParamsError("limit must be an integer between 1 and 2000")
+
+    msgs = self._context.messages
+    total = len(msgs)
+    slice_ = msgs[offset : offset + limit]
+
+    def serialize_message(msg: Message, idx: int) -> dict[str, Any]:
+        out = {
+            "index": idx,
+            "role": msg.role.value,
             "content": msg.content,
-            "timestamp": msg.timestamp.isoformat() if hasattr(msg, "timestamp") else None,
-            "source": getattr(msg, "source", None),  # For nexus_send attribution
+            "tool_call_id": msg.tool_call_id,
         }
-        for msg in messages
-    ]
+        # Phase 5b: include meta if present
+        meta = getattr(msg, "meta", None)
+        if meta:
+            out["meta"] = meta
+        return out
+
+    serialized = [serialize_message(m, offset + i) for i, m in enumerate(slice_)]
 
     return make_success_response(request.id, {
+        "agent_id": self._agent_id,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
         "messages": serialized,
-        "total": len(self._context.messages),
     })
 ```
 
 ### Modify: `nexus3/cli/repl.py` (both modes)
 
-1. **Fetch transcript on connect/start**:
+1. **Transcript fetch on connect** (synced mode):
    ```python
-   # On connect or attach
-   messages = await client.get_messages(agent_id, limit=10)
-   console.print("--- Recent history ---")
-   for msg in messages:
-       print_message_summary(msg)
-   console.print("---")
+   # After "Connected" but before prompt loop
+   try:
+       result = await client.get_messages(offset=0, limit=20)
+       if result.get("messages"):
+           console.print("--- Recent history ---")
+           for msg in result["messages"]:
+               role = msg.get("role", "?")
+               content = (msg.get("content") or "")[:100]
+               console.print(f"[{role}]: {content}...")
+           console.print("---")
+   except Exception:
+       pass  # Older server may not support get_messages
    ```
 
-2. **Background event consumer**:
+2. **Safe printing helper**:
    ```python
-   async def background_event_watcher(event_queue: asyncio.Queue) -> None:
+   async def safe_print(prompt_session: PromptSession, text: str) -> None:
+       """Print to terminal without corrupting prompt."""
+       def _print() -> None:
+           console.print(text)
+       await prompt_session.app.run_in_terminal(_print)
+   ```
+
+3. **Background event watcher (unified mode)**:
+   ```python
+   async def background_watch_unified(
+       agent_id: str,
+       prompt_session: PromptSession,
+       console: Console,
+       active_request_id_getter: Callable[[], str | None],
+   ) -> None:
        """Watch for events while idle at prompt."""
-       while True:
-           try:
-               event = await event_queue.get()
-               # Skip events for our own requests
-               if event.get("request_id") == current_request_id:
+       q = shared.event_hub.subscribe(agent_id)
+       try:
+           while True:
+               ev = await q.get()
+               if ev.get("type") not in ("turn_completed", "turn_cancelled"):
                    continue
-
-               event_type = event.get("type")
-
-               if event_type == "turn_started":
-                   # Show who's talking
-                   source = event.get("source", "another terminal")
-                   print_in_terminal(f"[{source} started turn...]")
-
-               elif event_type == "turn_completed":
-                   # Show brief summary
-                   content = event.get("content", "")[:50]
-                   print_in_terminal(f"[turn completed: {content}...]")
-
-           except asyncio.CancelledError:
-               break
+               if ev.get("request_id") == active_request_id_getter():
+                   continue
+               # Safe print in terminal
+               await prompt_session.app.run_in_terminal(
+                   lambda: console.print(f"[dim cyan]●[/] [{agent_id}] turn {ev['type']}")
+               )
+       finally:
+           shared.event_hub.unsubscribe(agent_id, q)
    ```
 
-3. **Prompt-toolkit safe printing**:
+4. **Background event watcher (synced mode)**:
    ```python
-   from prompt_toolkit.patch_stdout import patch_stdout
-
-   # Use patch_stdout context or run_in_terminal for background prints
-   with patch_stdout():
-       console.print(f"[{source}]: {message}")
+   # Reuse existing SSE pump + add global queue for background events
+   # Don't open a second SSE connection - publish all events to a global queue
+   async def background_watch_synced(
+       global_queue: asyncio.Queue,
+       prompt_session: PromptSession,
+       console: Console,
+       active_request_id_getter: Callable[[], str | None],
+   ) -> None:
+       """Watch SSE events while idle at prompt."""
+       while True:
+           ev = await global_queue.get()
+           if ev.get("type") not in ("turn_completed", "turn_cancelled"):
+               continue
+           if ev.get("request_id") == active_request_id_getter():
+               continue
+           await prompt_session.app.run_in_terminal(
+               lambda: console.print(f"[dim cyan]●[/] turn {ev['type']}")
+           )
    ```
 
 ### Modify: `nexus3/client.py`
@@ -127,48 +187,75 @@ Add `get_messages()` method:
 ```python
 async def get_messages(
     self,
-    agent_id: str,
-    limit: int = 20,
     offset: int = 0,
-) -> list[dict]:
+    limit: int = 200,
+) -> dict[str, Any]:
     """Get recent message history."""
-    response = await self._call(
-        f"/agent/{agent_id}",
-        "get_messages",
-        {"limit": limit, "offset": offset},
-    )
-    return response.get("messages", [])
+    response = await self._call("get_messages", {"offset": offset, "limit": limit})
+    return cast(dict[str, Any], self._check(response))
 ```
 
-### Modify: `nexus3/session/events.py` or context
+### Phase 5b: Source Attribution (deferred)
 
-Add source attribution to messages:
+**Requires schema changes - implement after Phase 5a works.**
 
-```python
-# When nexus_send delivers a message, tag it
-message.source = f"{sender_agent_id} → {receiver_agent_id}"
-```
+1. **Extend Message in `nexus3/core/types.py`**:
+   ```python
+   @dataclass
+   class Message:
+       role: Role
+       content: str
+       tool_calls: list[ToolCall] = field(default_factory=list)
+       tool_call_id: str | None = None
+       meta: dict[str, Any] = field(default_factory=dict)  # NEW
+   ```
+
+2. **Update persistence** (serialize/deserialize to include meta)
+
+3. **Update Session.run_turn()** to accept `user_meta`:
+   ```python
+   async def run_turn(self, user_input: str, ..., user_meta: dict[str, Any] | None = None)
+   ```
+
+4. **Update dispatcher `_handle_send`** to pass source info:
+   ```python
+   source_agent_id = params.get("source_agent_id")
+   # Pass to session.run_turn() as user_meta={"source": "nexus_send", "source_agent_id": source_agent_id}
+   ```
+
+5. **Update nexus_send skill** to include caller's agent_id
 
 ## Implementation Notes
 
-- Use `patch_stdout()` to avoid corrupting prompt during background prints
-- Limit background verbosity (show turn start/end, not every chunk)
-- Transcript fetch uses existing message storage (no new persistence)
+- Use `prompt_session.app.run_in_terminal()` for background prints (not `patch_stdout`)
+- Show only terminal events (`turn_completed`, `turn_cancelled`) in background
+- Track `active_request_id` to avoid showing own turns twice
+- Synced mode: don't open second SSE connection - use global queue from pump
+- Unified mode: subscribe to EventHub directly
 
 ## Progress
 
-- [ ] Add `get_messages` RPC method
-- [ ] Add `get_messages` to NexusClient
-- [ ] Implement transcript fetch on connect
-- [ ] Implement background event watcher
-- [ ] Add prompt-toolkit safe printing
-- [ ] Add source attribution to nexus_send messages
-- [ ] Test multi-terminal history sync
+### Phase 5a (Core) - Complete
+- [x] Add `get_messages` RPC method in dispatcher.py
+- [x] Add `get_messages` to NexusClient
+- [x] Implement transcript fetch on connect (synced mode) - fetches last 20 messages
+- [x] Implement background event watcher (unified mode)
+- [x] Implement background event watcher (synced mode)
+- [x] Add global_queue to EventRouter for synced mode background watching
+- [x] Fix transcript fetch to get last 20 (not first 20)
+- [x] Add exception handling to synced mode run_in_terminal
+- [x] GPT review approved (2026-01-19)
+
+### Phase 5b (Attribution - deferred)
+- [ ] Extend Message type with meta field
+- [ ] Update persistence for meta
+- [ ] Add user_meta to Session.run_turn()
+- [ ] Update nexus_send skill with source attribution
 
 ## Review Checklist
 
-- [ ] Transcript paging works
-- [ ] Background updates don't corrupt prompt
-- [ ] nexus_send messages attributed correctly
-- [ ] Not too verbose (summarized updates)
-- [ ] GPT review approved
+- [x] Transcript paging works (offset/limit)
+- [x] Background updates don't corrupt prompt (run_in_terminal)
+- [x] Own turns not shown twice (request_id filtering)
+- [x] Only terminal events shown in background
+- [x] GPT review approved (2026-01-19)

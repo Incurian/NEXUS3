@@ -9,6 +9,7 @@ import pytest
 
 from nexus3.rpc.dispatcher import Dispatcher, InvalidParamsError
 from nexus3.rpc.types import Request
+from nexus3.session.events import ContentChunk, SessionCompleted, SessionEvent
 
 
 class MockSession:
@@ -43,6 +44,21 @@ class MockSession:
             if cancel_token and cancel_token.is_cancelled:
                 return
             yield chunk
+
+    async def run_turn(
+        self,
+        user_input: str,
+        use_tools: bool = False,
+        cancel_token: Any = None,
+    ) -> AsyncIterator[SessionEvent]:
+        """Yield session events with optional delay (for dispatcher run_turn support)."""
+        for chunk in self._chunks:
+            if self._delay > 0:
+                await asyncio.sleep(self._delay)
+            if cancel_token and cancel_token.is_cancelled:
+                return
+            yield ContentChunk(text=chunk)
+        yield SessionCompleted(halted_at_limit=self._halted_at_iteration_limit)
 
 
 class TestCancelMethod:
@@ -147,6 +163,22 @@ class TestSendRequestId:
                 for i in range(10):
                     await asyncio.sleep(0.05)  # Small delay between chunks
                     yield f"chunk{i}"
+
+            async def run_turn(
+                self,
+                user_input: str,
+                use_tools: bool = False,
+                cancel_token: Any = None,
+            ) -> AsyncIterator[SessionEvent]:
+                from nexus3.session.events import SessionCancelled
+
+                for i in range(10):
+                    await asyncio.sleep(0.05)  # Small delay between chunks
+                    if cancel_token and cancel_token.is_cancelled:
+                        yield SessionCancelled()
+                        return
+                    yield ContentChunk(text=f"chunk{i}")
+                yield SessionCompleted(halted_at_limit=False)
 
         session = SlowYieldingSession()
         dispatcher = Dispatcher(session)

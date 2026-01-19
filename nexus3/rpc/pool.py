@@ -592,6 +592,7 @@ class AgentPool:
             context=context,
             agent_id=effective_id,
             log_multiplexer=self._log_multiplexer,
+            event_hub=self._shared.event_hub,
         )
 
         # Create agent instance
@@ -871,6 +872,7 @@ class AgentPool:
             context=context,
             agent_id=agent_id,
             log_multiplexer=self._log_multiplexer,
+            event_hub=self._shared.event_hub,
         )
 
         # Create agent instance with saved creation time if available

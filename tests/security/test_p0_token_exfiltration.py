@@ -136,3 +136,126 @@ class TestAutoAuthTokenDiscovery:
 
         assert len(discovery_calls) == 1, "Token discovery should be called for default URL"
         assert client._api_key == "test_token"
+
+
+class TestReplClientSseDetectionTokenProtection:
+    """Test that run_repl_client_with_sse_detection doesn't leak tokens to remote hosts.
+
+    This tests the fix for the vulnerability where run_repl_client_with_sse_detection()
+    would auto-discover local tokens and send them to ANY server URL, including remote
+    attacker-controlled servers.
+
+    We test this by mocking discover_rpc_token and verifying it's only called for
+    loopback addresses.
+    """
+
+    @pytest.mark.asyncio
+    async def test_loopback_enables_discovery(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Token discovery enabled for localhost."""
+        discovery_calls: list[int] = []
+
+        def mock_discover(port: int) -> str | None:
+            discovery_calls.append(port)
+            return "test_token"
+
+        # Patch before importing the function to ensure our mock is used
+        monkeypatch.setattr("nexus3.rpc.auth.discover_rpc_token", mock_discover)
+
+        # Force reimport to pick up the mock
+        import importlib
+
+        import nexus3.cli.repl as repl_module
+        importlib.reload(repl_module)
+
+        try:
+            await repl_module.run_repl_client_with_sse_detection(
+                "http://localhost:8765", "main"
+            )
+        except Exception:
+            pass  # Connection will fail, that's OK - we just check discovery
+
+        assert len(discovery_calls) == 1, "Token discovery should be called for localhost"
+
+    @pytest.mark.asyncio
+    async def test_remote_host_disables_discovery(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """CRITICAL: Token discovery disabled for remote hosts.
+
+        This is the security fix for run_repl_client_with_sse_detection() -
+        auto-discover must NOT discover tokens when connecting to non-loopback addresses.
+        """
+        discovery_calls: list[int] = []
+
+        def mock_discover(port: int) -> str | None:
+            discovery_calls.append(port)
+            return "leaked_token"  # Would be leaked if called
+
+        monkeypatch.setattr("nexus3.rpc.auth.discover_rpc_token", mock_discover)
+
+        import importlib
+
+        import nexus3.cli.repl as repl_module
+        importlib.reload(repl_module)
+
+        try:
+            await repl_module.run_repl_client_with_sse_detection(
+                "http://evil.com:8765", "main"
+            )
+        except Exception:
+            pass
+
+        assert len(discovery_calls) == 0, (
+            "SECURITY BUG: Token discovery should NOT be called for remote hosts"
+        )
+
+    @pytest.mark.asyncio
+    async def test_explicit_api_key_skips_discovery(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Explicit API key should skip token discovery entirely."""
+        discovery_calls: list[int] = []
+
+        def mock_discover(port: int) -> str | None:
+            discovery_calls.append(port)
+            return "should_not_be_used"
+
+        monkeypatch.setattr("nexus3.rpc.auth.discover_rpc_token", mock_discover)
+
+        import importlib
+
+        import nexus3.cli.repl as repl_module
+        importlib.reload(repl_module)
+
+        try:
+            await repl_module.run_repl_client_with_sse_detection(
+                "http://evil.com:8765", "main", api_key="explicit_key"
+            )
+        except Exception:
+            pass
+
+        # Discovery should not be called when explicit key is provided
+        assert len(discovery_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_subdomain_trick_blocked(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Subdomain tricks like 'localhost.evil.com' must not bypass check."""
+        discovery_calls: list[int] = []
+
+        def mock_discover(port: int) -> str | None:
+            discovery_calls.append(port)
+            return "leaked_token"
+
+        monkeypatch.setattr("nexus3.rpc.auth.discover_rpc_token", mock_discover)
+
+        import importlib
+
+        import nexus3.cli.repl as repl_module
+        importlib.reload(repl_module)
+
+        try:
+            await repl_module.run_repl_client_with_sse_detection(
+                "http://localhost.evil.com:8765", "main"
+            )
+        except Exception:
+            pass
+
+        assert len(discovery_calls) == 0, (
+            "SECURITY BUG: Subdomain trick bypassed loopback check"
+        )

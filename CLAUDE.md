@@ -26,10 +26,10 @@ nexus3 rpc create researcher
 # Send research tasks
 nexus3 rpc send researcher "Look at nexus3/rpc/ and summarize the JSON-RPC types"
 
-# Check status
+# Check status. Do not bother slow researchers. Check on them to make sure they aren't stuck, offer to run any commands they need. Do not tell them to return products before they are complete.
 nexus3 rpc status researcher
 
-# Clean up when done
+# Ask user permission before cleaning up when done
 nexus3 rpc destroy researcher
 ```
 
@@ -1137,11 +1137,12 @@ Enable multiple REPL terminals to connect to the same agent with:
 |-------|-------------|------------|--------|
 | 0 | Event schema/contract | S | Defined in Phase 1 |
 | 1 | SSE endpoint + EventHub | M | **Complete** |
-| 2 | Publish turn/tool events from dispatcher | M→L | Next |
-| 3 | Synced REPL client with rich UI | L | |
-| 4 | Host REPL also event-driven | L | |
-| 5 | Shared history + background updates | M→L | |
-| 6 | Hardening (ordering, reconnect, backpressure) | M | |
+| 2 | Publish turn/tool events from dispatcher | M→L | **Complete** |
+| 3 | Synced REPL client with rich UI | L | **Complete** |
+| 4 | Host REPL also event-driven | L | **Complete** |
+| 5a | Shared history + background updates | M→L | **Complete** |
+| 5b | Source attribution (nexus_send) | M | Deferred |
+| 6 | Hardening (ordering, reconnect, backpressure) | M | Next |
 | 7 | Multi-client confirmations (optional) | XL | |
 
 ### Phase 1 Implementation (2026-01-19)

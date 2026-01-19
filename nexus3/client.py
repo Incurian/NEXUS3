@@ -1,6 +1,8 @@
 """Async HTTP client for communicating with Nexus JSON-RPC servers."""
 
+import json
 import logging
+from collections.abc import AsyncIterator
 from typing import Any, cast
 from urllib.parse import urlparse
 
@@ -284,6 +286,28 @@ class NexusClient:
         response = await self._call("compact", {"force": force})
         return cast(dict[str, Any], self._check(response))
 
+    async def get_messages(
+        self,
+        offset: int = 0,
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        """Get recent message history for transcript sync.
+
+        Args:
+            offset: Start index (default 0).
+            limit: Number of messages to return (default 200, max 2000).
+
+        Returns:
+            Dict containing:
+                - agent_id: The agent's ID
+                - total: Total messages in context
+                - offset: Requested offset
+                - limit: Requested limit
+                - messages: List of message dicts with index, role, content, tool_call_id
+        """
+        response = await self._call("get_messages", {"offset": offset, "limit": limit})
+        return cast(dict[str, Any], self._check(response))
+
     async def shutdown(self) -> dict[str, Any]:
         """Request graceful shutdown of the server.
 
@@ -292,6 +316,114 @@ class NexusClient:
         """
         response = await self._call("shutdown")
         return cast(dict[str, Any], self._check(response))
+
+    async def iter_events(
+        self,
+        request_id: str | None = None,
+        *,
+        agent_id: str | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Iterate SSE events from the server.
+
+        Opens a long-lived SSE connection and yields parsed event dicts.
+        Use this inside a background task alongside RPC calls on the same client.
+
+        Args:
+            request_id: Optional filter for a specific turn. If provided, only
+                events matching this request_id are yielded.
+            agent_id: If provided, treat self._url as server root and subscribe to
+                /agent/{agent_id}/events. If omitted, append /events to self._url
+                (assumes self._url already points to /agent/{id}).
+
+        Yields:
+            Parsed event dicts containing "type", "agent_id", and optional
+            fields like "request_id", "data", etc.
+
+        Raises:
+            ClientError: On connection error or non-200 response.
+
+        Example:
+            async with NexusClient(url, api_key=key) as client:
+                async for event in client.iter_events(agent_id="main"):
+                    print(event["type"], event.get("request_id"))
+        """
+        if self._client is None:
+            raise ClientError("Client not initialized. Use 'async with' context manager.")
+
+        # Build URL based on whether agent_id is provided
+        if agent_id is not None:
+            # Root-scoped: build /agent/{agent_id}/events from origin
+            parsed = urlparse(self._url)
+            events_url = f"{parsed.scheme}://{parsed.netloc}/agent/{agent_id}/events"
+        else:
+            # Agent-scoped: append /events to existing URL
+            events_url = self._url.rstrip("/") + "/events"
+
+        # Build headers with optional auth
+        headers: dict[str, str] = {"Accept": "text/event-stream"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+
+        logger.debug("Opening SSE stream: url=%s, request_id_filter=%s", events_url, request_id)
+
+        try:
+            # Use timeout=None for long-lived SSE stream
+            async with self._client.stream(
+                "GET",
+                events_url,
+                headers=headers,
+                timeout=None,
+            ) as response:
+                # Check for non-200 responses
+                if response.status_code != 200:
+                    body = await response.aread()
+                    body_text = body.decode("utf-8", errors="replace")[:500]
+                    raise ClientError(
+                        f"SSE connection failed: {response.status_code} {body_text}"
+                    )
+
+                # Parse SSE format: event: and data: fields, blank line delimiter
+                data_lines: list[str] = []
+
+                async for line in response.aiter_lines():
+                    # Blank line signals end of event
+                    if not line:
+                        if data_lines:
+                            # Join multi-line data and parse JSON
+                            data_str = "\n".join(data_lines)
+                            try:
+                                event = json.loads(data_str)
+                            except json.JSONDecodeError:
+                                logger.warning("Invalid SSE JSON data: %s", data_str[:200])
+                                data_lines = []
+                                continue
+
+                            # Filter by request_id if specified
+                            if request_id is None or event.get("request_id") == request_id:
+                                yield event
+
+                        # Reset for next event
+                        data_lines = []
+                        continue
+
+                    # Parse field: value format
+                    # Note: event_type field is ignored; we use type from JSON data
+                    if line.startswith("event:"):
+                        pass  # Event type is in JSON payload
+                    elif line.startswith("data:"):
+                        data_lines.append(line[5:].strip())
+                    elif line.startswith(":"):
+                        # Comment line (e.g., ": heartbeat"), ignore
+                        pass
+                    # Ignore other unknown fields per SSE spec
+
+        except httpx.ConnectError as e:
+            logger.warning("SSE connection failed to %s: %s", events_url, e)
+            raise ClientError(f"SSE connection failed: {e}") from e
+        except httpx.ReadError as e:
+            logger.debug("SSE stream closed: %s", e)
+            # Stream was closed, normal termination
+            return
 
     # Global methods (called on root endpoint, not agent-specific)
 
