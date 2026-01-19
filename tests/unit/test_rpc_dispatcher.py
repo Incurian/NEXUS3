@@ -50,6 +50,7 @@ class MockSession:
         user_input: str,
         use_tools: bool = False,
         cancel_token: Any = None,
+        user_meta: dict[str, str] | None = None,
     ) -> AsyncIterator[SessionEvent]:
         """Yield session events with optional delay (for dispatcher run_turn support)."""
         for chunk in self._chunks:
@@ -169,6 +170,7 @@ class TestSendRequestId:
                 user_input: str,
                 use_tools: bool = False,
                 cancel_token: Any = None,
+                user_meta: dict[str, str] | None = None,
             ) -> AsyncIterator[SessionEvent]:
                 from nexus3.session.events import SessionCancelled
 

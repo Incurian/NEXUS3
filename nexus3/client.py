@@ -223,12 +223,20 @@ class NexusClient:
             raise ClientError(f"RPC error {code}: {message}")
         return response.result
 
-    async def send(self, content: str, request_id: str | int | None = None) -> dict[str, Any]:
+    async def send(
+        self,
+        content: str,
+        request_id: str | int | None = None,
+        source: str | None = None,
+        source_agent_id: str | None = None,
+    ) -> dict[str, Any]:
         """Send a message to the agent.
 
         Args:
             content: The message content.
             request_id: Optional request ID for tracking/cancellation.
+            source: Source of the message (e.g., "nexus_send", "repl").
+            source_agent_id: Agent ID of the sender (for agent-to-agent messages).
 
         Returns:
             The response dict with 'content' and optionally 'tokens'.
@@ -236,6 +244,10 @@ class NexusClient:
         params: dict[str, Any] = {"content": content}
         if request_id is not None:
             params["request_id"] = request_id
+        if source is not None:
+            params["source"] = source
+        if source_agent_id is not None:
+            params["source_agent_id"] = source_agent_id
         response = await self._call("send", params)
         return cast(dict[str, Any], self._check(response))
 

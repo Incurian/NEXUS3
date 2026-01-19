@@ -550,6 +550,7 @@ async def write_sse_event(writer: asyncio.StreamWriter, event: dict) -> None:
     """Write a single SSE event.
 
     Formats the event as SSE and writes to the stream:
+    - id: {seq} (if present)
     - event: {type}
     - data: {json}
     - (blank line to end event)
@@ -560,9 +561,18 @@ async def write_sse_event(writer: asyncio.StreamWriter, event: dict) -> None:
     """
     raw_type = event.get("type", "message")
     event_type = _sanitize_sse_event_type(str(raw_type))
-    data = json.dumps(event)
-    message = f"event: {event_type}\ndata: {data}\n\n"
-    writer.write(message.encode())
+    seq = event.get("seq")
+
+    lines = []
+    if seq is not None:
+        lines.append(f"id: {seq}")
+    lines.append(f"event: {event_type}")
+    lines.append(f"data: {json.dumps(event)}")
+    lines.append("")
+    lines.append("")
+
+    message = "\n".join(lines)
+    writer.write(message.encode("utf-8"))
     await writer.drain()
 
 
@@ -570,12 +580,22 @@ async def handle_sse_subscription(
     writer: asyncio.StreamWriter,
     path: str,
     event_hub: "EventHub",
+    headers: dict[str, str],
 ) -> None:
     """Handle SSE subscription for agent events.
 
     Sends SSE headers, subscribes to the agent's event hub, and streams
     events to the client. Sends heartbeat pings every 15s to detect
     dead connections.
+
+    Supports reconnection via Last-Event-ID header. When a client reconnects
+    with Last-Event-ID, any missed events (still in the ring buffer) are
+    replayed before subscribing to live events.
+
+    Race condition handling: We subscribe FIRST, then replay from history,
+    then drain any events that arrived during replay (deduplicating by seq),
+    then stream live. This ensures no events are missed between replay and
+    subscribe.
 
     This function runs until the client disconnects or an error occurs.
     The connection is NOT wrapped in the semaphore (SSE is long-lived).
@@ -584,6 +604,7 @@ async def handle_sse_subscription(
         writer: The asyncio StreamWriter for the connection.
         path: Request path (e.g., "/agent/test/events").
         event_hub: The EventHub for subscribing to agent events.
+        headers: HTTP request headers dict (lowercase keys).
     """
     agent_id = _extract_agent_id_from_events_path(path)
     if agent_id is None:
@@ -596,8 +617,14 @@ async def handle_sse_subscription(
             pass
         return
 
+    # Parse Last-Event-ID for reconnect
+    last_event_id = headers.get("last-event-id", "")
+    since_seq = 0
+    if last_event_id.isdigit():
+        since_seq = int(last_event_id)
+
     # Send SSE headers
-    headers = [
+    sse_headers = [
         "HTTP/1.1 200 OK",
         "Content-Type: text/event-stream; charset=utf-8",
         "Cache-Control: no-cache",
@@ -606,18 +633,42 @@ async def handle_sse_subscription(
         "",
         "",
     ]
-    writer.write("\r\n".join(headers).encode())
+    writer.write("\r\n".join(sse_headers).encode())
     await writer.drain()
 
-    # Subscribe to events
+    # Subscribe FIRST (before replay) to avoid missing events during replay
+    # Events published between replay and subscribe would be lost otherwise
     queue = event_hub.subscribe(agent_id)
+    last_sent = since_seq
+
     try:
+        # Replay missed events from history
+        if since_seq > 0:
+            for ev in event_hub.get_events_since(agent_id, since_seq):
+                await write_sse_event(writer, ev)
+                last_sent = max(last_sent, ev.get("seq", 0))
+
+        # Drain any events that arrived during replay (avoid duplicates)
+        while True:
+            try:
+                ev = queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            if ev.get("seq", 0) > last_sent:
+                await write_sse_event(writer, ev)
+                last_sent = ev.get("seq", 0)
+
+        # Normal live streaming loop
         while True:
             try:
                 # Wait for event with timeout (for heartbeat)
                 event = await asyncio.wait_for(queue.get(), timeout=15.0)
                 await write_sse_event(writer, event)
             except asyncio.TimeoutError:
+                # Check if we were removed as a slow client
+                if not event_hub.is_subscribed(agent_id, queue):
+                    logger.debug("SSE subscriber removed (slow client), closing connection")
+                    break
                 # Send heartbeat (include agent_id for consistency)
                 await write_sse_event(writer, {"type": "ping", "agent_id": agent_id})
     except (ConnectionResetError, BrokenPipeError, OSError):
@@ -1156,7 +1207,7 @@ async def run_http_server(
 
             # Handle SSE subscription (does NOT hold semaphore)
             # Note: handle_sse_subscription manages its own writer close in finally
-            await handle_sse_subscription(writer, path, event_hub)
+            await handle_sse_subscription(writer, path, event_hub, headers)
             return
 
         # Regular JSON-RPC: acquire semaphore, then read body

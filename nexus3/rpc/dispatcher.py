@@ -325,6 +325,19 @@ class Dispatcher:
         if not isinstance(content, str):
             raise InvalidParamsError(f"content must be string, got: {type(content).__name__}")
 
+        # Extract source attribution params (Phase 5b)
+        source = params.get("source")
+        source_agent_id = params.get("source_agent_id")
+
+        # Build user_meta dict if source params present
+        user_meta: dict[str, str] | None = None
+        if source or source_agent_id:
+            user_meta = {}
+            if source:
+                user_meta["source"] = source
+            if source_agent_id:
+                user_meta["source_agent_id"] = source_agent_id
+
         # Generate or use provided request_id
         request_id = params.get("request_id") or secrets.token_hex(8)
 
@@ -357,7 +370,9 @@ class Dispatcher:
                     # Wrap in agent context for correct raw log routing
                     if self._log_multiplexer and self._agent_id:
                         with self._log_multiplexer.agent_context(self._agent_id):
-                            async for ev in self._session.run_turn(content, cancel_token=token):
+                            async for ev in self._session.run_turn(
+                                content, cancel_token=token, user_meta=user_meta
+                            ):
                                 sse = self._map_session_event_to_sse(
                                     ev, request_id=request_id, turn_state=turn_state
                                 )
@@ -371,7 +386,9 @@ class Dispatcher:
                                 elif isinstance(ev, SessionCancelled):
                                     cancelled = True
                     else:
-                        async for ev in self._session.run_turn(content, cancel_token=token):
+                        async for ev in self._session.run_turn(
+                            content, cancel_token=token, user_meta=user_meta
+                        ):
                             sse = self._map_session_event_to_sse(
                                 ev, request_id=request_id, turn_state=turn_state
                             )

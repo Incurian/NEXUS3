@@ -90,12 +90,21 @@ class AgentScopedAPI:
             raise ClientError(f"Agent not found: {self._agent_id}")
         return agent.dispatcher
 
-    async def send(self, content: str, request_id: str | int | None = None) -> dict[str, Any]:
+    async def send(
+        self,
+        content: str,
+        request_id: str | int | None = None,
+        *,
+        source: str | None = None,
+        source_agent_id: str | None = None,
+    ) -> dict[str, Any]:
         """Send a message to the agent.
 
         Args:
             content: The message content.
             request_id: Optional request ID for tracking/cancellation.
+            source: Source type for attribution (e.g., "nexus_send", "repl", "api").
+            source_agent_id: ID of the agent that sent this message.
 
         Returns:
             The response dict with 'content' and 'request_id' keys.
@@ -104,6 +113,10 @@ class AgentScopedAPI:
         params: dict[str, Any] = {"content": content}
         if request_id is not None:
             params["request_id"] = request_id
+        if source is not None:
+            params["source"] = source
+        if source_agent_id is not None:
+            params["source_agent_id"] = source_agent_id
         request = Request(
             jsonrpc="2.0",
             method="send",
@@ -363,9 +376,18 @@ class ClientAdapter:
 
     # Agent-scoped methods (require agent_api)
 
-    async def send(self, content: str, request_id: str | int | None = None) -> dict[str, Any]:
+    async def send(
+        self,
+        content: str,
+        request_id: str | int | None = None,
+        *,
+        source: str | None = None,
+        source_agent_id: str | None = None,
+    ) -> dict[str, Any]:
         """Send a message to the agent."""
-        return await self._require_agent("send").send(content, request_id)
+        return await self._require_agent("send").send(
+            content, request_id, source=source, source_agent_id=source_agent_id
+        )
 
     async def cancel(self, request_id: str | int | None = None) -> dict[str, Any]:
         """Cancel an in-progress request."""

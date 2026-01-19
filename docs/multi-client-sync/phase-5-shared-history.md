@@ -1,6 +1,6 @@
 # Phase 5: Shared History + Background Updates
 
-**Status:** Phase 5a Complete (Phase 5b deferred)
+**Status:** Complete (5a + 5b)
 **Complexity:** M→L
 **Dependencies:** Phase 4
 
@@ -195,35 +195,130 @@ async def get_messages(
     return cast(dict[str, Any], self._check(response))
 ```
 
-### Phase 5b: Source Attribution (deferred)
+### Phase 5b: Source Attribution
 
-**Requires schema changes - implement after Phase 5a works.**
+**GPT Architecture Review (2026-01-19)**
 
-1. **Extend Message in `nexus3/core/types.py`**:
-   ```python
-   @dataclass
-   class Message:
-       role: Role
-       content: str
-       tool_calls: list[ToolCall] = field(default_factory=list)
-       tool_call_id: str | None = None
-       meta: dict[str, Any] = field(default_factory=dict)  # NEW
-   ```
+Goal: Messages from nexus_send display with source attribution:
+```
+[worker-1 → main]: Task completed
+```
 
-2. **Update persistence** (serialize/deserialize to include meta)
+#### Implementation Order
 
-3. **Update Session.run_turn()** to accept `user_meta`:
-   ```python
-   async def run_turn(self, user_input: str, ..., user_meta: dict[str, Any] | None = None)
-   ```
+**Parallel Track A+B:**
+- (A) Add `Message.meta` + persistence changes
+- (B) Add `user_meta` to Session.run_turn() and ContextManager.add_user_message()
 
-4. **Update dispatcher `_handle_send`** to pass source info:
-   ```python
-   source_agent_id = params.get("source_agent_id")
-   # Pass to session.run_turn() as user_meta={"source": "nexus_send", "source_agent_id": source_agent_id}
-   ```
+**Sequential (depends on A+B):**
+- (C) Dispatcher: accept optional params for meta and pass into Session.run_turn(user_meta=...)
+- (D) DirectAgentAPI: allow passing source params through `send()`
+- (E) `nexus_send` skill: read caller agent id from ServiceContainer and pass source info
 
-5. **Update nexus_send skill** to include caller's agent_id
+#### File Changes
+
+**1. `nexus3/core/types.py` - Add meta to Message**
+```python
+@dataclass(frozen=True)
+class Message:
+    role: Role
+    content: str
+    tool_calls: tuple[ToolCall, ...] = ()
+    tool_call_id: str | None = None
+    meta: dict[str, Any] = field(default_factory=dict)  # NEW
+```
+
+**2. `nexus3/context/manager.py` - Allow meta on user messages**
+```python
+def add_user_message(self, content: str, meta: dict[str, Any] | None = None) -> None:
+    msg = Message(role=Role.USER, content=content, meta=meta or {})
+    self._messages.append(msg)
+```
+
+**3. `nexus3/session/session.py` - Add user_meta param**
+```python
+async def run_turn(
+    self,
+    user_input: str,
+    use_tools: bool = False,
+    cancel_token: CancellationToken | None = None,
+    user_meta: dict[str, Any] | None = None,   # NEW
+) -> AsyncIterator[SessionEvent]:
+    # ...
+    self.context.add_user_message(user_input, meta=user_meta)
+```
+
+**4. `nexus3/session/persistence.py` - Serialize/deserialize meta**
+```python
+def serialize_message(msg: Message) -> dict[str, Any]:
+    data = {"role": msg.role.value, "content": msg.content}
+    # ...
+    if msg.meta:
+        data["meta"] = msg.meta
+    return data
+
+def deserialize_message(data: dict[str, Any]) -> Message:
+    meta = data.get("meta", {}) or {}
+    return Message(role=role, content=content, ..., meta=meta)
+```
+
+**5. `nexus3/rpc/dispatcher.py` - Accept source params in _handle_send**
+```python
+source = params.get("source")
+source_agent_id = params.get("source_agent_id")
+
+user_meta = None
+if source or source_agent_id:
+    user_meta = {"source": source, "source_agent_id": source_agent_id}
+
+async for ev in self._session.run_turn(content, cancel_token=token, user_meta=user_meta):
+    # ...
+```
+
+**6. `nexus3/rpc/agent_api.py` - DirectAgentAPI.send() with source params**
+```python
+async def send(
+    self,
+    content: str,
+    request_id: str | int | None = None,
+    *,
+    source: str | None = None,
+    source_agent_id: str | None = None,
+) -> dict[str, Any]:
+    params = {"content": content}
+    if source is not None: params["source"] = source
+    if source_agent_id is not None: params["source_agent_id"] = source_agent_id
+    # ...
+```
+
+**7. `nexus3/skill/builtin/nexus_send.py` - Include caller agent_id**
+```python
+sender_id = self._services.get("agent_id")  # registered in pool.py
+
+async def send_and_format(client: Any) -> dict[str, Any]:
+    return await client.send(
+        content,
+        source="nexus_send",
+        source_agent_id=sender_id,
+    )
+```
+
+**8. Display formatting (repl.py transcript)**
+```python
+meta = msg.get("meta", {})
+if meta.get("source") == "nexus_send" and meta.get("source_agent_id"):
+    prefix = f"[{meta['source_agent_id']} → {agent_id}] "
+```
+
+#### Edge Cases
+- **Meta dict must be JSON-serializable** (no datetimes, Paths)
+- **Saved sessions**: adding meta requires persistence updates (backward compat: missing meta = {})
+- **Spoofing**: remote HTTP clients could set source_agent_id (acceptable for Phase 5b; harden later)
+
+#### Tests
+1. Message serialization round-trip with meta preserved
+2. Dispatcher passes meta into context via send RPC
+3. nexus_send skill calls send() with source="nexus_send" and source_agent_id
 
 ## Implementation Notes
 
@@ -246,11 +341,17 @@ async def get_messages(
 - [x] Add exception handling to synced mode run_in_terminal
 - [x] GPT review approved (2026-01-19)
 
-### Phase 5b (Attribution - deferred)
-- [ ] Extend Message type with meta field
-- [ ] Update persistence for meta
-- [ ] Add user_meta to Session.run_turn()
-- [ ] Update nexus_send skill with source attribution
+### Phase 5b (Attribution) - Complete
+- [x] Add Message.meta field (types.py)
+- [x] Update persistence serialize/deserialize (persistence.py)
+- [x] Add meta param to ContextManager.add_user_message (manager.py)
+- [x] Add user_meta param to Session.run_turn (session.py)
+- [x] Accept source params in dispatcher._handle_send (dispatcher.py)
+- [x] Add source params to DirectAgentAPI.send (agent_api.py)
+- [x] Update NexusClient.send with source params (client.py)
+- [x] Update nexus_send skill with source attribution (nexus_send.py)
+- [x] Display attribution in transcript (repl.py)
+- [x] GPT review approved (2026-01-19)
 
 ## Review Checklist
 

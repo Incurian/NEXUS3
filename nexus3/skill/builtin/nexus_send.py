@@ -64,9 +64,16 @@ class NexusSendSkill(NexusSkill):
         if not content:
             return ToolResult(error="No content provided")
 
+        # Get caller's agent_id for source attribution (Phase 5b)
+        sender_id = self._services.get("agent_id")  # May be None
+
         async def send_and_format(client: Any) -> dict[str, Any]:
             """Send message and format response with halt warning if needed."""
-            result = await client.send(content)
+            result = await client.send(
+                content,
+                source="nexus_send",
+                source_agent_id=sender_id,
+            )
             return result
 
         # Get raw result from client

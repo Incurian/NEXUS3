@@ -1653,11 +1653,16 @@ async def run_repl_client_synced(
                 for msg in transcript["messages"]:
                     role = msg.get("role", "?")
                     content = msg.get("content") or ""
+                    meta = msg.get("meta", {})
                     # Truncate long content
                     if len(content) > 100:
                         content = content[:100] + "..."
-                    # Format by role
-                    if role == "user":
+                    # Check for nexus_send attribution
+                    if meta.get("source") == "nexus_send" and meta.get("source_agent_id"):
+                        source_agent = meta["source_agent_id"]
+                        # Format as [source → target]: content
+                        rich_console.print(f"[magenta]{source_agent} → {agent_id}[/] {content}")
+                    elif role == "user":
                         rich_console.print(f"[cyan]>[/] {content}")
                     elif role == "assistant":
                         rich_console.print(f"[green]>[/] {content}")

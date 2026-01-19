@@ -299,6 +299,7 @@ class Session:
         user_input: str,
         use_tools: bool = False,
         cancel_token: "CancellationToken | None" = None,
+        user_meta: dict[str, Any] | None = None,
     ) -> AsyncIterator[SessionEvent]:
         """Send a message and yield events during processing.
 
@@ -310,6 +311,7 @@ class Session:
             use_tools: If True, enable tool execution loop. Default False but
                 auto-enables if tools are registered.
             cancel_token: Optional cancellation token to cancel the operation.
+            user_meta: Optional metadata for the user message (e.g., source attribution).
 
         Yields:
             SessionEvent objects for content, tool execution, and session lifecycle.
@@ -326,7 +328,7 @@ class Session:
         self._last_iteration_count = 0
 
         # Add user message to context
-        self.context.add_user_message(user_input)
+        self.context.add_user_message(user_input, meta=user_meta)
 
         # Check if we should use tool mode
         has_tools = self.registry and self.registry.get_definitions()

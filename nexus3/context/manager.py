@@ -194,13 +194,14 @@ class ContextManager:
 
     # === Message Management ===
 
-    def add_user_message(self, content: str) -> None:
+    def add_user_message(self, content: str, meta: dict[str, Any] | None = None) -> None:
         """Add a user message to context.
 
         Args:
             content: User message content
+            meta: Optional metadata dict (e.g., source attribution)
         """
-        msg = Message(role=Role.USER, content=content)
+        msg = Message(role=Role.USER, content=content, meta=meta or {})
         self._messages.append(msg)
         if self._logger:
             self._logger.log_user(content)

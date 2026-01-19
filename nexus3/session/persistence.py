@@ -185,6 +185,9 @@ def serialize_message(msg: Message) -> dict[str, Any]:
     if msg.tool_call_id is not None:
         data["tool_call_id"] = msg.tool_call_id
 
+    if msg.meta:
+        data["meta"] = msg.meta
+
     return data
 
 
@@ -205,12 +208,14 @@ def deserialize_message(data: dict[str, Any]) -> Message:
         tool_calls = tuple(deserialize_tool_call(tc) for tc in data["tool_calls"])
 
     tool_call_id = data.get("tool_call_id")
+    meta = data.get("meta", {}) or {}
 
     return Message(
         role=role,
         content=content,
         tool_calls=tool_calls,
         tool_call_id=tool_call_id,
+        meta=meta,
     )
 
 

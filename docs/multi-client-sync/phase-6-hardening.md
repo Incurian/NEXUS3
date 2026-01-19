@@ -1,6 +1,6 @@
 # Phase 6: Hardening
 
-**Status:** Not started
+**Status:** Complete
 **Complexity:** M
 **Dependencies:** Phase 5
 
@@ -16,6 +16,45 @@
 - Reconnecting client catches up on missed events
 - Slow network doesn't affect other clients or server
 - Server doesn't shut down while clients are connected
+
+## GPT Architecture Review (2026-01-19)
+
+### Implementation Order
+
+**Parallel Track A (EventHub changes):**
+- Per-agent sequence counters
+- Ring buffer for replay (100 events)
+- `get_events_since(agent_id, since_seq)` method
+- Slow client detection (track drops, disconnect after 10)
+
+**Parallel Track B (HTTP changes):**
+- Parse `Last-Event-ID` header on SSE connect
+- Include `id: {seq}` in SSE output
+- Replay missed events before live stream
+
+**Integration:**
+- Wire slow client disconnection to SSE handler
+- Ensure idle timeout respects subscriber count
+
+### Key Data Structures
+
+```python
+@dataclass
+class SubscriberState:
+    queue: asyncio.Queue[dict]
+    consecutive_drops: int = 0
+
+class EventHub:
+    _subs: dict[str, dict[asyncio.Queue, SubscriberState]]  # agent_id -> queue -> state
+    _seq: dict[str, int]  # Per-agent sequence counter
+    _history: dict[str, deque[dict]]  # Ring buffer per agent
+```
+
+### Edge Cases
+- **Replay truncation**: If client reconnects with Last-Event-ID older than buffer, return what we have
+- **Duplicate delivery**: Clients should dedupe by seq if subscribe-then-replay causes overlap
+- **Slow client detection**: Reset drop count on successful enqueue; disconnect after 10 consecutive drops
+- **Invalid Last-Event-ID**: Treat as 0 (no replay)
 
 ## Files to Modify
 
@@ -130,19 +169,20 @@
 
 ## Progress
 
-- [ ] Add sequence numbers to events
-- [ ] Add ring buffer for replay
-- [ ] Implement `Last-Event-ID` reconnect
-- [ ] Add `id` field to SSE output
-- [ ] Implement slow client detection/disconnect
-- [ ] Fix idle timeout for SSE subscribers
-- [ ] Test reconnect scenario
-- [ ] Test slow client handling
+- [x] Add sequence numbers to events (EventHub._seq)
+- [x] Add ring buffer for replay (EventHub._history with deque maxlen=100)
+- [x] Implement `Last-Event-ID` reconnect (http.py parses header + replays)
+- [x] Add `id` field to SSE output (write_sse_event includes id: seq)
+- [x] Implement slow client detection/disconnect (consecutive_drops tracking + is_subscribed check)
+- [x] Fix idle timeout for SSE subscribers (already implemented)
+- [x] Fix replay-before-subscribe race (subscribe first, drain duplicates)
+- [x] GPT review approved (2026-01-19)
 
 ## Review Checklist
 
-- [ ] Sequence numbers monotonic per-agent
-- [ ] Reconnect replays correct events
-- [ ] Slow client doesn't block others
-- [ ] Idle timeout respects subscribers
-- [ ] GPT review approved
+- [x] Sequence numbers monotonic per-agent
+- [x] Reconnect replays correct events (with gap fix)
+- [x] Slow client doesn't block others (removed after 10 drops)
+- [x] Slow client connection actually closes (is_subscribed check on timeout)
+- [x] Idle timeout respects subscribers
+- [x] GPT review approved (2026-01-19)

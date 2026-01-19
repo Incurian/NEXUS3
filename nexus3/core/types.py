@@ -5,7 +5,7 @@ framework: messages, tool calls, tool results, and roles. All dataclasses are
 frozen for immutability.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -43,12 +43,14 @@ class Message:
         content: The text content of the message.
         tool_calls: Tool calls requested by the assistant (if any).
         tool_call_id: ID of the tool call this message is responding to (for tool messages).
+        meta: Optional metadata (e.g., source attribution for multi-client sync).
     """
 
     role: Role
     content: str
     tool_calls: tuple[ToolCall, ...] = ()
     tool_call_id: str | None = None
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
