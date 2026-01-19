@@ -49,9 +49,24 @@ nexus_create(agent_id="researcher", preset="trusted")
 
 ---
 
-## Session Logs
+## Logs
 
-Your logs are stored in `.nexus3/logs/` relative to the working directory.
+Logs are stored in `.nexus3/logs/` relative to the working directory.
+
+### Server Log (server.log)
+
+Server lifecycle events are logged to `server.log` with automatic rotation (5MB max, 3 backups):
+
+| Event | Example |
+|-------|---------|
+| Server start | `JSON-RPC HTTP server running at http://127.0.0.1:8765/` |
+| Agent created | `Agent created: worker-1 (preset=trusted, cwd=/path, model=gpt)` |
+| Agent destroyed | `Agent destroyed: worker-1 (by external)` |
+| Server shutdown | `Server shutdown requested` |
+
+Monitor in real-time: `tail -f .nexus3/logs/server.log`
+
+### Session Logs
 
 ### Directory Naming
 ```

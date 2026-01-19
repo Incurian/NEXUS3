@@ -33,6 +33,7 @@ from nexus3.rpc.http import (
     send_http_response,
 )
 from nexus3.rpc.log_multiplexer import LogMultiplexer
+from nexus3.rpc.bootstrap import configure_server_logging
 from nexus3.rpc.pool import Agent, AgentConfig, AgentPool, SharedComponents
 from nexus3.rpc.protocol import (
     INTERNAL_ERROR,
@@ -92,6 +93,8 @@ __all__ = [
     "AgentConfig",
     "AgentPool",
     "SharedComponents",
+    # Server Logging
+    "configure_server_logging",
     # AgentAPI (in-process communication)
     "DirectAgentAPI",
     "AgentScopedAPI",

@@ -300,11 +300,38 @@ nexus3 rpc cancel AGENT ID    # Cancel in-progress request
 ├── NEXUS.md         # Personal system prompt
 ├── rpc.token        # Auto-generated RPC token (port-specific: rpc-{port}.token)
 ├── sessions/        # Saved session files (JSON)
+├── logs/
+│   └── server.log   # Server lifecycle events (rotating, 5MB x 3 files)
 └── last-session.json  # Auto-saved for --resume
 
 ./NEXUS.md           # Project system prompt (overrides personal)
 .nexus3/logs/        # Session logs (gitignored)
+├── server.log       # Server lifecycle events when started from this directory
+└── <session-id>/    # Per-session conversation logs
+    ├── session.db   # SQLite database of messages
+    └── session.md   # Markdown transcript
 ```
+
+### Server Logging
+
+Server lifecycle events are logged to `.nexus3/logs/server.log`:
+
+| Event | Log Level | Example |
+|-------|-----------|---------|
+| Server start | INFO | `JSON-RPC HTTP server running at http://127.0.0.1:8765/` |
+| Agent created | INFO | `Agent created: worker-1 (preset=trusted, cwd=/path, model=gpt)` |
+| Agent destroyed | INFO | `Agent destroyed: worker-1 (by external)` |
+| Shutdown requested | INFO | `Server shutdown requested` |
+| Idle timeout | INFO | `Idle timeout reached (1800s without RPC activity), shutting down` |
+| Server stopped | INFO | `HTTP server stopped` |
+
+**Log file rotation**: Max 5MB per file, 3 backup files (`server.log.1`, `.2`, `.3`)
+
+**Console output**:
+- Default: WARNING+ only
+- With `--verbose`: DEBUG+
+
+Use `tail -f .nexus3/logs/server.log` to monitor server activity in real-time.
 
 ### Provider Configuration
 

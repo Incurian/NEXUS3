@@ -372,6 +372,14 @@ class GlobalDispatcher:
         )
         agent = await self._pool.create(agent_id=agent_id, config=config)
 
+        logger.info(
+            "Agent created: %s (preset=%s, cwd=%s, model=%s)",
+            agent.agent_id,
+            preset or "default",
+            cwd_path or ".",
+            model or "default",
+        )
+
         result: dict[str, Any] = {
             "agent_id": agent.agent_id,
             "url": f"/agent/{agent.agent_id}",
@@ -467,6 +475,11 @@ class GlobalDispatcher:
         except AuthorizationError as e:
             raise InvalidParamsError(str(e)) from e
 
+        if success:
+            logger.info("Agent destroyed: %s (by %s)", agent_id, self._current_requester_id or "external")
+        else:
+            logger.warning("Agent destroy failed: %s not found", agent_id)
+
         return {
             "success": success,
             "agent_id": agent_id,
@@ -507,6 +520,7 @@ class GlobalDispatcher:
                 - message: str - Confirmation message
         """
         self._shutdown_requested = True
+        logger.info("Server shutdown requested")
         return {
             "success": True,
             "message": "Server shutting down",

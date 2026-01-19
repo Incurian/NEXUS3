@@ -620,6 +620,7 @@ async def run_http_server(
     session_manager: SessionManager | None = None,
     max_concurrent: int = 32,
     idle_timeout: float | None = None,
+    started_event: asyncio.Event | None = None,
 ) -> None:
     """Run the HTTP server for JSON-RPC requests with path-based routing.
 
@@ -650,6 +651,10 @@ async def run_http_server(
         idle_timeout: Optional idle timeout in seconds. If no RPC connections are
                      received within this duration, the server will shut down.
                      None means no idle timeout (server runs indefinitely).
+        started_event: Optional asyncio.Event to set when the server has successfully
+                      bound to the port and is listening. Useful for callers to know
+                      when the server is ready (e.g., to write token files only after
+                      bind success).
     """
     # Security: Force localhost binding
     if host not in ("127.0.0.1", "localhost", "::1"):
@@ -679,6 +684,10 @@ async def run_http_server(
         host=host,
         port=port,
     )
+
+    # Signal that server has successfully bound to port and is listening
+    if started_event:
+        started_event.set()
 
     addr = server.sockets[0].getsockname() if server.sockets else (host, port)
     logger.info("JSON-RPC HTTP server running at http://%s:%s/", addr[0], addr[1])

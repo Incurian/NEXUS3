@@ -227,14 +227,21 @@ def parse_args() -> argparse.Namespace:
         "--connect",
         metavar="URL",
         nargs="?",
-        const="http://localhost:8765",
-        help="Connect to a Nexus server as client (default: http://localhost:8765)",
+        const="DISCOVER",
+        default=None,
+        help="Connect to a Nexus server (no URL = discover servers, URL = connect directly)",
     )
     parser.add_argument(
         "--agent",
         default="main",
         help="Agent ID to connect to (default: main, requires --connect)",
     )
+    parser.add_argument(
+        "--scan",
+        metavar="PORTSPEC",
+        help="Additional ports to scan for servers (e.g., '9000' or '8765,9000-9050')",
+    )
+    add_api_key_arg(parser)
     # Init commands
     parser.add_argument(
         "--init-global",

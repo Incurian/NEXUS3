@@ -7,18 +7,23 @@ This module provides the main interactive REPL for NEXUS3. It supports:
    can connect via HTTP.
 
 2. Client mode (--connect): Connects to an existing NEXUS3 server.
+   - If --connect without URL: Shows connect lobby to discover servers
+   - If --connect URL: Connects directly to specified server
 
 3. Server mode (--serve): Headless HTTP server without REPL (in serve.py).
 
 Architecture in unified mode:
     nexus3 (no flags)
-    +-- detect_server(8765)
-    |   +-- NEXUS_SERVER --> Error: use --connect
-    |   +-- NO_SERVER --> Unified mode:
+    +-- discover_servers(candidate_ports)
+    |   +-- NEXUS_SERVER found --> Show connect lobby
+    |       +-- Connect to existing server
+    |       +-- Or start new embedded server
+    |   +-- NO_SERVER --> Start embedded server directly:
     |       +-- Create SharedComponents
     |       +-- Create AgentPool with "main" agent
-    |       +-- Generate API key --> save to ~/.nexus3/server.key
-    |       +-- Start HTTP server as background task
+    |       +-- Generate API key in memory
+    |       +-- Start HTTP server with started_event
+    |       +-- Save API key only after bind succeeds
     |       +-- REPL loop calling main agent's Session directly
 """
 
@@ -57,10 +62,12 @@ from nexus3.core.types import ToolCall
 from nexus3.display import Activity, StreamingDisplay, get_console
 from nexus3.display.streaming import ToolState
 from nexus3.display.theme import load_theme
-from nexus3.rpc.auth import ServerTokenManager
+from nexus3.rpc.auth import ServerTokenManager, generate_api_key
 from nexus3.rpc.bootstrap import bootstrap_server_components
-from nexus3.rpc.detection import DetectionResult, detect_server
+from nexus3.rpc.detection import DetectionResult
+from nexus3.rpc.discovery import discover_servers, discover_token_ports, parse_port_spec
 from nexus3.rpc.http import run_http_server
+from nexus3.cli.connect_lobby import show_connect_lobby, ConnectAction
 from nexus3.rpc.pool import AgentConfig, generate_temp_id
 from nexus3.session import LogStream, SessionManager
 from nexus3.session.persistence import (
@@ -125,51 +132,136 @@ async def run_repl(
     # Use config port if not specified via CLI
     effective_port = port if port is not None else config.server.port
 
-    # Check for existing server on the port
-    detection_result = await detect_server(effective_port)
-    if detection_result == DetectionResult.NEXUS_SERVER:
-        # Server already running - check if "main" agent exists
-        from nexus3.client import ClientError, NexusClient
+    # =========================================================================
+    # Multi-server discovery and connect lobby
+    # =========================================================================
+    from nexus3.client import NexusClient
 
-        console.print(
-            f"[dim]Server already running on port {effective_port}, checking for main agent...[/]"
-        )
+    # Build candidate ports for discovery
+    candidate_ports: set[int] = {effective_port, 8765}  # Always include default
+    candidate_ports.update(discover_token_ports().keys())
 
-        # Try to connect to main agent
-        agent_url = f"http://localhost:{effective_port}/agent/main"
-        try:
-            async with NexusClient.with_auto_auth(agent_url, timeout=5.0) as client:
-                await client.get_tokens()
-            # Main agent exists, connect normally
-            console.print("[dim]Main agent found, connecting...[/]")
-            await run_repl_client(f"http://localhost:{effective_port}", "main")
-            return
-        except ClientError as e:
-            # Connection failed - shutdown old server and start fresh
-            # This handles: auth errors, agent not found, timeouts, etc.
-            reason = "not found" if "not found" in str(e).lower() else "connection failed"
-            console.print(f"[dim]Main agent {reason}, restarting server...[/]")
+    # Discovery and connect lobby loop
+    while True:
+        # Discover servers on candidate ports
+        servers = await discover_servers(sorted(candidate_ports))
+        nexus_servers = [s for s in servers if s.detection == DetectionResult.NEXUS_SERVER]
 
-            # Try to shutdown the orphaned/incompatible server
-            try:
-                shutdown_token_mgr = ServerTokenManager(port=effective_port)
-                api_key = shutdown_token_mgr.load()
-                global_url = f"http://localhost:{effective_port}"
-                client_args = dict(api_key=api_key, timeout=5.0)
-                async with NexusClient(global_url, **client_args) as shutdown_client:
-                    await shutdown_client.shutdown_server()
-                # Wait for server to fully release the port
-                for _ in range(20):  # Up to 2 seconds
-                    await asyncio.sleep(0.1)
-                    result = await detect_server(effective_port)
-                    if result == DetectionResult.NO_SERVER:
-                        break
-            except Exception as e:
-                logger.debug("Server cleanup error: %s: %s", type(e).__name__, e)
-            # Fall through to start new embedded server
-    elif detection_result == DetectionResult.OTHER_SERVICE:
-        console.print(f"[red]Error:[/] Port {effective_port} is already in use by another service")
-        return
+        if nexus_servers:
+            # Check if the default port already has a NEXUS server
+            default_port_in_use = any(s.port == effective_port for s in nexus_servers)
+            # Show connect lobby
+            result = await show_connect_lobby(
+                console, nexus_servers, effective_port, default_port_in_use=default_port_in_use
+            )
+
+            if result.action == ConnectAction.CONNECT:
+                # Create agent first if requested
+                if result.create_agent and result.agent_id:
+                    try:
+                        from nexus3.client import NexusClient
+                        server_url = result.server_url or f"http://127.0.0.1:{effective_port}"
+                        client = NexusClient.with_auto_auth(
+                            f"{server_url}/",
+                            api_key=result.api_key,
+                        )
+                        await client.create_agent(result.agent_id)
+                        console.print(f"[dim]Created agent: {result.agent_id}[/]")
+                    except Exception as e:
+                        console.print(f"[red]Failed to create agent: {e}[/]")
+                        continue  # Go back to lobby
+                # Connect to selected server+agent
+                await run_repl_client(
+                    result.server_url or f"http://127.0.0.1:{effective_port}",
+                    result.agent_id or "main",
+                    api_key=result.api_key,
+                )
+                return
+
+            elif result.action == ConnectAction.START_NEW_SERVER:
+                # Use the port from result if specified
+                if result.port:
+                    effective_port = result.port
+                # Fall through to start embedded server
+                break
+
+            elif result.action == ConnectAction.START_DIFFERENT_PORT:
+                # User wants to start on a different port (when default is in use)
+                if result.port:
+                    effective_port = result.port
+                # Fall through to start embedded server
+                break
+
+            elif result.action == ConnectAction.SHUTDOWN_AND_REPLACE:
+                # Shutdown selected server, then start new one
+                if result.server_url:
+                    console.print(f"[dim]Shutting down server at {result.server_url}...[/]")
+                    try:
+                        shutdown_token_mgr = ServerTokenManager(port=result.port or effective_port)
+                        shutdown_key = shutdown_token_mgr.load()
+                        async with NexusClient(
+                            result.server_url, api_key=shutdown_key, timeout=5.0
+                        ) as shutdown_client:
+                            await shutdown_client.shutdown_server()
+                        # Wait for server to release the port
+                        for _ in range(20):  # Up to 2 seconds
+                            await asyncio.sleep(0.1)
+                            check_port = result.port or effective_port
+                            check_servers = await discover_servers([check_port])
+                            still_running = any(
+                                s.detection == DetectionResult.NEXUS_SERVER
+                                for s in check_servers
+                            )
+                            if not still_running:
+                                break
+                        console.print("[dim]Server shutdown complete.[/]")
+                    except Exception as e:
+                        logger.debug("Server shutdown error: %s: %s", type(e).__name__, e)
+                        console.print(f"[yellow]Warning: Server shutdown may have failed: {e}[/]")
+                # Use the port from the shutdown server
+                if result.port:
+                    effective_port = result.port
+                # Fall through to start embedded server
+                break
+
+            elif result.action == ConnectAction.RESCAN:
+                # Add new ports and loop back to discovery
+                if result.scan_spec:
+                    try:
+                        new_ports = parse_port_spec(result.scan_spec)
+                        candidate_ports.update(new_ports)
+                        console.print(f"[dim]Scanning {len(new_ports)} additional ports...[/]")
+                    except ValueError as e:
+                        console.print(f"[red]Invalid port specification:[/] {e}")
+                # Loop back to discover with expanded ports
+                continue
+
+            elif result.action == ConnectAction.MANUAL_URL:
+                # Connect to manually entered URL
+                if result.server_url:
+                    await run_repl_client(
+                        result.server_url,
+                        result.agent_id or "main",
+                        api_key=result.api_key,
+                    )
+                    return
+                # No URL provided, loop back
+                continue
+
+            elif result.action == ConnectAction.QUIT:
+                return
+        else:
+            # No servers found - check if our target port is in use by another service
+            for server in servers:
+                is_target = server.port == effective_port
+                is_other_service = server.detection == DetectionResult.OTHER_SERVICE
+                if is_target and is_other_service:
+                    console.print(
+                        f"[red]Error:[/] Port {effective_port} is in use by another service"
+                    )
+                    return
+            # No servers, proceed to start embedded server
+            break
 
     # Config already loaded above for port resolution
 
@@ -191,9 +283,10 @@ async def run_repl(
         is_repl=True,
     )
 
-    # Generate fresh token (we've confirmed no server is running, so any existing token is stale)
+    # Generate token in memory - do NOT write to disk yet
+    # We'll save it only after the server successfully binds
+    api_key = generate_api_key()
     token_manager = ServerTokenManager(port=effective_port)
-    api_key = token_manager.generate_fresh()
 
     # Create session manager for auto-restore of saved sessions
     session_manager = SessionManager()
@@ -383,17 +476,38 @@ async def run_repl(
         except Exception as e:
             logger.debug("Failed to auto-save session: %s: %s", type(e).__name__, e)
 
-    # Start HTTP server as a background task
+    # Start HTTP server as a background task with started_event for safe token lifecycle
     # Idle timeout: 30 min (1800s) - server auto-shuts down if no RPC activity
     # This ensures servers don't linger after user walks away
+    started_event = asyncio.Event()
     http_task = asyncio.create_task(
         run_http_server(
             pool, global_dispatcher, effective_port, api_key=api_key,
             session_manager=session_manager,
             idle_timeout=1800.0,
+            started_event=started_event,
         ),
         name="http_server",
     )
+
+    # Wait for server to bind successfully before saving token
+    try:
+        await asyncio.wait_for(started_event.wait(), timeout=5.0)
+        # Server bound successfully - now safe to write token
+        token_manager.save(api_key)
+    except TimeoutError:
+        # Server failed to start in time
+        http_task.cancel()
+        try:
+            await http_task
+        except asyncio.CancelledError:
+            pass
+        console.print(f"[red]Error:[/] Server failed to start on port {effective_port}")
+        console.print("[dim]The port may be in use by another process.[/]")
+        await pool.destroy(agent_name)
+        if shared and shared.provider_registry:
+            await shared.provider_registry.aclose()
+        return
 
     # Get the session from the main agent for direct REPL access
     session = main_agent.session
@@ -496,7 +610,7 @@ async def run_repl(
     console.print("[bold]NEXUS3 v0.1.0[/bold]")
     console.print(f"Agent: {current_agent_id}", style="dim")
     console.print(f"Session: {logger.session_dir}", style="dim")
-    console.print(f"Server: http://localhost:{effective_port}", style="dim")
+    console.print(f"Server: http://127.0.0.1:{effective_port}", style="dim")
     # Show prompt sources (from ContextLoader)
     for source in shared.base_context.sources.prompt_sources:
         console.print(f"Context: {source.path} ({source.layer_name})", style="dim")
@@ -1062,12 +1176,13 @@ async def run_repl(
         await shared.provider_registry.aclose()
 
 
-async def run_repl_client(url: str, agent_id: str) -> None:
+async def run_repl_client(url: str, agent_id: str, api_key: str | None = None) -> None:
     """Run REPL as client to a remote Nexus server.
 
     Args:
-        url: Base URL of the server (e.g., http://localhost:8765)
+        url: Base URL of the server (e.g., http://127.0.0.1:8765)
         agent_id: ID of the agent to connect to
+        api_key: Optional API key for authentication. If None, uses auto-discovery.
     """
     from nexus3.client import ClientError, NexusClient
 
@@ -1090,7 +1205,17 @@ async def run_repl_client(url: str, agent_id: str) -> None:
         style=style,
     )
 
-    async with NexusClient.with_auto_auth(agent_url, timeout=300.0) as client:
+    # Use provided API key if given, otherwise auto-discover
+    try:
+        if api_key:
+            client_ctx = NexusClient(agent_url, api_key=api_key, timeout=300.0)
+        else:
+            client_ctx = NexusClient.with_auto_auth(agent_url, timeout=300.0)
+    except ValueError as e:
+        console.print(f"[red]Invalid URL:[/] {e}")
+        return
+
+    async with client_ctx as client:
         # Test connection
         try:
             status = await client.get_tokens()
@@ -1147,6 +1272,104 @@ async def run_repl_client(url: str, agent_id: str) -> None:
                 console.print("")
                 console.print("Disconnecting.", style="dim")
                 break
+
+
+async def _run_connect_with_discovery(args: argparse.Namespace) -> None:
+    """Run connect mode with server discovery.
+
+    Discovers servers on candidate ports and shows the connect lobby for
+    server/agent selection.
+
+    Args:
+        args: Parsed command line arguments including scan and api_key.
+    """
+    from nexus3.config.loader import load_config
+
+    console = get_console()
+
+    # Load config to get default port
+    try:
+        config = load_config()
+        effective_port = config.server.port
+    except NexusError:
+        effective_port = 8765
+
+    # Build candidate ports
+    candidate_ports: set[int] = {effective_port, 8765}
+    candidate_ports.update(discover_token_ports().keys())
+    if args.scan:
+        try:
+            candidate_ports.update(parse_port_spec(args.scan))
+        except ValueError as e:
+            console.print(f"[red]Invalid port specification:[/] {e}")
+            return
+
+    # Discovery loop
+    while True:
+        servers = await discover_servers(sorted(candidate_ports))
+        nexus_servers = [s for s in servers if s.detection == DetectionResult.NEXUS_SERVER]
+
+        if not nexus_servers:
+            console.print("[dim]No NEXUS3 servers found.[/]")
+            console.print(f"[dim]Scanned ports: {sorted(candidate_ports)}[/]")
+            return
+
+        # Check if the default port already has a NEXUS server
+        default_port_in_use = any(s.port == effective_port for s in nexus_servers)
+        result = await show_connect_lobby(
+            console, nexus_servers, effective_port, default_port_in_use=default_port_in_use
+        )
+
+        if result.action == ConnectAction.CONNECT:
+            # Create agent first if requested
+            if result.create_agent and result.agent_id:
+                try:
+                    from nexus3.client import NexusClient
+                    server_url = result.server_url or f"http://127.0.0.1:{effective_port}"
+                    client = NexusClient.with_auto_auth(
+                        f"{server_url}/",
+                        api_key=result.api_key or args.api_key,
+                    )
+                    await client.create_agent(result.agent_id)
+                    console.print(f"[dim]Created agent: {result.agent_id}[/]")
+                except Exception as e:
+                    console.print(f"[red]Failed to create agent: {e}[/]")
+                    return  # In connect mode, just exit on failure
+            await run_repl_client(
+                result.server_url or f"http://127.0.0.1:{effective_port}",
+                result.agent_id or "main",
+                api_key=result.api_key or args.api_key,
+            )
+            return
+
+        elif result.action == ConnectAction.RESCAN:
+            if result.scan_spec:
+                try:
+                    new_ports = parse_port_spec(result.scan_spec)
+                    candidate_ports.update(new_ports)
+                    console.print(f"[dim]Scanning {len(new_ports)} additional ports...[/]")
+                except ValueError as e:
+                    console.print(f"[red]Invalid port specification:[/] {e}")
+            continue
+
+        elif result.action == ConnectAction.MANUAL_URL:
+            if result.server_url:
+                await run_repl_client(
+                    result.server_url,
+                    result.agent_id or "main",
+                    api_key=result.api_key or args.api_key,
+                )
+                return
+            continue
+
+        elif result.action == ConnectAction.QUIT:
+            return
+
+        else:
+            # START_NEW_SERVER, SHUTDOWN_AND_REPLACE not applicable in pure connect mode
+            console.print("[dim]This option is not available in connect mode.[/]")
+            console.print("[dim]Use 'nexus3' without --connect to start a server.[/]")
+            continue
 
 
 def main() -> None:
@@ -1232,7 +1455,12 @@ def main() -> None:
 
         # Handle connect mode (REPL as client)
         if args.connect is not None:
-            asyncio.run(run_repl_client(args.connect, args.agent))
+            if args.connect == "DISCOVER":
+                # Show connect lobby to discover servers
+                asyncio.run(_run_connect_with_discovery(args))
+            else:
+                # Direct connection to specified URL
+                asyncio.run(run_repl_client(args.connect, args.agent, api_key=args.api_key))
             return
 
         # Handle serve mode

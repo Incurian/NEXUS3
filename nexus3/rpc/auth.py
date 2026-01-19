@@ -315,6 +315,27 @@ class ServerTokenManager:
         logger.debug("Generated fresh token at %s", self.token_path)
         return token
 
+    def save(self, token: str, overwrite: bool = True) -> None:
+        """Write token to token_path with secure permissions.
+
+        Does NOT generate a new token; just persists the provided one.
+        This is useful when you want to defer token file creation until
+        after the server has successfully bound to a port.
+
+        Args:
+            token: The token string to save.
+            overwrite: If False and file exists, raise FileExistsError.
+
+        Raises:
+            FileExistsError: If overwrite=False and token file already exists.
+            OSError: If the token file cannot be written.
+        """
+        if not overwrite and self.token_path.exists():
+            raise FileExistsError(
+                f"Token file already exists: {self.token_path}"
+            )
+        self._save(token)
+
     def delete(self) -> None:
         """Delete the token file if it exists.
 

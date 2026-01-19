@@ -29,6 +29,7 @@ Example:
         -d '{"jsonrpc":"2.0","method":"send","params":{"content":"Hi"},"id":2}'
 """
 
+import asyncio
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -36,8 +37,8 @@ from dotenv import load_dotenv
 from nexus3.config.loader import load_config
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
-from nexus3.rpc.auth import ServerTokenManager
-from nexus3.rpc.bootstrap import bootstrap_server_components
+from nexus3.rpc.auth import ServerTokenManager, generate_api_key
+from nexus3.rpc.bootstrap import bootstrap_server_components, configure_server_logging
 from nexus3.rpc.detection import DetectionResult, detect_server
 from nexus3.rpc.http import run_http_server
 from nexus3.session import LogStream, SessionManager
@@ -94,6 +95,16 @@ async def run_serve(
     # Base log directory
     base_log_dir = log_dir or Path(".nexus3/logs")
 
+    # Configure server logging to file (INFO to file, WARNING to console)
+    # More verbose if --verbose flag is set
+    import logging
+    console_level = logging.DEBUG if verbose else logging.WARNING
+    server_log_file = configure_server_logging(
+        base_log_dir,
+        level=logging.INFO,
+        console_level=console_level,
+    )
+
     # Configure logging streams based on CLI flags
     log_streams = LogStream.CONTEXT  # Always on for basic functionality
     if verbose:
@@ -109,30 +120,67 @@ async def run_serve(
         is_repl=False,
     )
 
-    # Generate fresh token (we've confirmed no server is running, so any existing token is stale)
+    # Generate token in memory (do NOT write file yet - wait for bind success)
+    # This prevents token clobbering if bind fails
+    api_key = generate_api_key()
     token_manager = ServerTokenManager(port=effective_port)
-    api_key = token_manager.generate_fresh()
+
+    # Delete any stale token file (we've confirmed no server is running)
+    token_manager.delete()
 
     # Create session manager for auto-restore of saved sessions
     session_manager = SessionManager()
 
-    # Print startup info
-    print("NEXUS3 Multi-Agent HTTP Server")
-    print(f"Logs: {base_log_dir}")
-    print(f"Listening on http://localhost:{effective_port}")
-    print(f"Token file: {token_manager.token_path}")
-    print("Press Ctrl+C to stop")
-    print("")
+    # Create event to signal when server has bound successfully
+    started_event = asyncio.Event()
 
-    # Run the HTTP server
-    # Note: Headless mode (--serve) requires NEXUS_DEV=1 and has no idle timeout.
-    # This is intentional - dev mode servers run until explicitly stopped.
-    try:
-        await run_http_server(
+    # Start server as a task so we can wait for bind success
+    server_task = asyncio.create_task(
+        run_http_server(
             pool, global_dispatcher, effective_port, api_key=api_key,
             session_manager=session_manager,
             idle_timeout=None,  # No auto-shutdown in headless dev mode
+            started_event=started_event,
         )
+    )
+
+    try:
+        # Wait for server to bind (with timeout)
+        try:
+            await asyncio.wait_for(started_event.wait(), timeout=5.0)
+        except TimeoutError:
+            server_task.cancel()
+            try:
+                await server_task
+            except asyncio.CancelledError:
+                pass
+            print("Server failed to start (bind timeout)")
+            return
+
+        # Server bound successfully - now write token file
+        token_manager.save(api_key)
+
+        # Print startup info
+        print("NEXUS3 Multi-Agent HTTP Server")
+        print(f"Server: http://127.0.0.1:{effective_port}")
+        print(f"Token file: {token_manager.token_path}")
+        print(f"Server log: {server_log_file}")
+        print(f"Session logs: {base_log_dir}")
+        print("Press Ctrl+C to stop")
+        print("")
+
+        # Wait for server to finish (runs until shutdown)
+        await server_task
+
+    except asyncio.CancelledError:
+        # Handle Ctrl+C gracefully
+        server_task.cancel()
+        try:
+            await server_task
+        except asyncio.CancelledError:
+            pass
+        raise
+
     finally:
         # Clean up token file
         token_manager.delete()

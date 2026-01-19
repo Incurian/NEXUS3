@@ -16,7 +16,11 @@ Usage:
 from __future__ import annotations
 
 import logging
+import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
+from nexus3.core.secure_io import secure_mkdir
 
 from nexus3.config.schema import Config
 from nexus3.context.loader import ContextLoader
@@ -27,6 +31,78 @@ from nexus3.rpc.pool import AgentPool, SharedComponents
 from nexus3.session import LogStream
 
 logger = logging.getLogger(__name__)
+
+
+def configure_server_logging(
+    log_dir: Path,
+    level: int = logging.INFO,
+    console_level: int = logging.WARNING,
+) -> Path:
+    """Configure file-based logging for server lifecycle events.
+
+    Sets up a rotating file handler for the nexus3 namespace that captures:
+    - Agent create/destroy operations
+    - Client connections
+    - Token operations
+    - Errors and warnings
+
+    Logs are written to `{log_dir}/server.log` with automatic rotation
+    (max 5MB per file, 3 backup files).
+
+    Args:
+        log_dir: Directory for server.log file. Created if doesn't exist.
+        level: Logging level for file output (default INFO).
+        console_level: Logging level for console output (default WARNING).
+
+    Returns:
+        Path to the server.log file.
+
+    Example:
+        log_file = configure_server_logging(Path(".nexus3/logs"))
+        # Now INFO+ logs from nexus3.* go to .nexus3/logs/server.log
+    """
+    # Ensure log directory exists with secure permissions
+    secure_mkdir(log_dir)
+
+    log_file = log_dir / "server.log"
+
+    # Create rotating file handler
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=5 * 1024 * 1024,  # 5MB
+        backupCount=3,
+        encoding="utf-8",
+    )
+    file_handler.setLevel(level)
+    file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
+
+    # Create console handler (less verbose)
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setLevel(console_level)
+    console_handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    ))
+
+    # Configure the nexus3 namespace logger
+    nexus_logger = logging.getLogger("nexus3")
+    nexus_logger.setLevel(min(level, console_level))
+
+    # Remove any existing handlers to avoid duplicates on reconfigure
+    nexus_logger.handlers.clear()
+
+    # Add handlers
+    nexus_logger.addHandler(file_handler)
+    nexus_logger.addHandler(console_handler)
+
+    # Don't propagate to root logger
+    nexus_logger.propagate = False
+
+    logger.info("Server logging configured: %s", log_file)
+    return log_file
 
 
 def _format_model_guidance_section(config: Config) -> str | None:
