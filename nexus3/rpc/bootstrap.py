@@ -32,6 +32,84 @@ from nexus3.session import LogStream
 
 logger = logging.getLogger(__name__)
 
+# Dedicated logger for server lifecycle events (separate from main nexus3 logger)
+# This allows REPL to add file logging without affecting console output
+SERVER_LOGGER_NAME = "nexus3.server"
+
+
+def configure_server_file_logging(
+    log_dir: Path,
+    level: int = logging.INFO,
+) -> Path:
+    """Configure file-based logging for server lifecycle events (non-destructive).
+
+    Unlike configure_server_logging(), this function:
+    - Does NOT clear existing handlers
+    - Does NOT alter console logging
+    - Only adds a file handler if one doesn't already exist
+
+    This makes it safe to call from REPL mode without disrupting the CLI's
+    existing logging setup.
+
+    Logs are written to `{log_dir}/server.log` with automatic rotation
+    (max 5MB per file, 3 backup files).
+
+    Server lifecycle events (agent create/destroy, bind, shutdown) should use
+    the nexus3.server logger to ensure they're captured in this file.
+
+    Args:
+        log_dir: Directory for server.log file. Created if doesn't exist.
+        level: Logging level for file output (default INFO).
+
+    Returns:
+        Path to the server.log file.
+
+    Example:
+        log_file = configure_server_file_logging(Path(".nexus3/logs"))
+        server_logger = logging.getLogger("nexus3.server")
+        server_logger.info("Server started on port 8765")
+    """
+    # Ensure log directory exists with secure permissions
+    secure_mkdir(log_dir)
+
+    log_file = log_dir / "server.log"
+    log_file_resolved = log_file.resolve()
+
+    # Get or create the dedicated server logger
+    server_logger = logging.getLogger(SERVER_LOGGER_NAME)
+    server_logger.setLevel(level)
+
+    # Check if we already have a file handler for this file
+    # (prevents duplicate handlers if called multiple times)
+    # Use resolved paths for comparison to handle relative vs absolute paths
+    for handler in server_logger.handlers:
+        if isinstance(handler, RotatingFileHandler):
+            if hasattr(handler, 'baseFilename') and Path(handler.baseFilename).resolve() == log_file_resolved:
+                # Already configured
+                return log_file
+
+    # Create rotating file handler
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=5 * 1024 * 1024,  # 5MB
+        backupCount=3,
+        encoding="utf-8",
+    )
+    file_handler.setLevel(level)
+    file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
+
+    # Add handler (non-destructively)
+    server_logger.addHandler(file_handler)
+
+    # Propagate to parent (nexus3) so messages go to both console and file
+    server_logger.propagate = True
+
+    server_logger.info("Server logging configured: %s", log_file)
+    return log_file
+
 
 def configure_server_logging(
     log_dir: Path,

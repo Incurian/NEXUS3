@@ -1064,3 +1064,44 @@ Result: Clean architectural change with typed events, backward compatible.
 **Review files:**
 - `reviews/2026-01-17/FINAL-CONSOLIDATED-REVIEW.md` - Consolidated findings
 - `reviews/2026-01-17/GPT-DEEP-REVIEW.md` - GPT's detailed analysis
+
+---
+
+## Resolved: REPL Embedded Server Supervision (2026-01-19)
+
+### Problem (Fixed)
+REPL sessions could have their embedded HTTP server exit silently (e.g., false idle timeout from WSL clock sync) with no indication to the user. This broke subagent communication and external RPC commands.
+
+### Root Causes
+1. **WSL clock sync** could cause `time.time()` to jump forward, triggering false idle timeouts
+2. **No server logging** - embedded server didn't log to `server.log`
+3. **Silent background failures** - `http_task` exceptions were invisible
+4. **Stale tokens** - token file wasn't cleaned up when server died
+
+### Fixes Implemented
+
+**http.py - WSL-safe idle timeout:**
+- Changed from `time.time()` to `time.monotonic()` for idle timeout tracking
+- Monotonic clock is immune to NTP sync, WSL time sync, and suspend/resume
+
+**bootstrap.py - Non-destructive server logging:**
+- Added `configure_server_file_logging()` that adds file handler without clearing existing handlers
+- Uses resolved paths for idempotent handler checks
+
+**repl.py - Server supervision:**
+1. **Server logging** - calls `configure_server_file_logging()` so embedded server events appear in `server.log`
+2. **Done-callback** - logs crashes with full traceback, deletes stale token, warns user
+3. **Early failure detection** - uses `asyncio.wait()` to catch http_task dying before `started_event` is set
+4. **Loop closure guard** - prevents edge-case errors during shutdown
+5. **User feedback** - prints server URL and log file path at startup
+
+### User-Visible Changes
+```
+Embedded RPC listening: http://127.0.0.1:8765/
+Server log: .nexus3/logs/server.log
+```
+
+If the server stops unexpectedly:
+```
+Warning: Embedded RPC server stopped. External `nexus3 rpc ...` will not work until restarted.
+```

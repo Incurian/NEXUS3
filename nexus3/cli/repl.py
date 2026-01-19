@@ -63,7 +63,7 @@ from nexus3.display import Activity, StreamingDisplay, get_console
 from nexus3.display.streaming import ToolState
 from nexus3.display.theme import load_theme
 from nexus3.rpc.auth import ServerTokenManager, generate_api_key
-from nexus3.rpc.bootstrap import bootstrap_server_components
+from nexus3.rpc.bootstrap import bootstrap_server_components, configure_server_file_logging, SERVER_LOGGER_NAME
 from nexus3.rpc.detection import DetectionResult
 from nexus3.rpc.discovery import discover_servers, discover_token_ports, parse_port_spec
 from nexus3.rpc.http import run_http_server
@@ -274,6 +274,11 @@ async def run_repl(
 
     # Base log directory
     base_log_dir = log_dir or Path(".nexus3/logs")
+
+    # Configure server lifecycle logging (non-destructive, adds file handler only)
+    # This ensures embedded HTTP server events are logged to server.log
+    server_log_file = configure_server_file_logging(base_log_dir)
+    server_logger = logging.getLogger(SERVER_LOGGER_NAME)
 
     # Bootstrap server components (D5: unified bootstrap)
     pool, global_dispatcher, shared = await bootstrap_server_components(
@@ -490,24 +495,95 @@ async def run_repl(
         name="http_server",
     )
 
-    # Wait for server to bind successfully before saving token
-    try:
-        await asyncio.wait_for(started_event.wait(), timeout=5.0)
-        # Server bound successfully - now safe to write token
-        token_manager.save(api_key)
-    except TimeoutError:
-        # Server failed to start in time
-        http_task.cancel()
+    # Track whether server successfully started (for done-callback use)
+    http_server_started = False
+    loop = asyncio.get_running_loop()
+
+    # Done-callback for http_task: log exit, cleanup token, warn user
+    def _on_http_task_done(task: asyncio.Task) -> None:
+        """Handle http_task completion (crash, idle timeout, or cancellation)."""
         try:
-            await http_task
+            exc = task.exception()
+        except asyncio.CancelledError:
+            server_logger.info("Embedded HTTP server task cancelled")
+            return
+
+        if exc:
+            # Pass proper exc_info tuple for traceback logging
+            server_logger.error(
+                "Embedded HTTP server crashed: %s", exc,
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+        else:
+            server_logger.info("Embedded HTTP server exited (no exception)")
+
+        # Always delete token on server exit (prevents stale discovery/auth)
+        try:
+            token_manager.delete()
+        except Exception as delete_err:
+            server_logger.debug("Failed to delete token on server exit: %s", delete_err)
+
+        # Warn user if server had started (don't warn if it never bound)
+        # Guard against loop closure during shutdown
+        if http_server_started and not loop.is_closed():
+            loop.call_soon_threadsafe(
+                lambda: console.print(
+                    "[yellow]Warning:[/] Embedded RPC server stopped. "
+                    "External `nexus3 rpc ...` will not work until restarted."
+                )
+            )
+
+    http_task.add_done_callback(_on_http_task_done)
+
+    # Wait for server to bind successfully OR detect early failure
+    # Using asyncio.wait() to catch http_task crashing before started_event is set
+    started_wait = asyncio.create_task(started_event.wait(), name="http_server_started_wait")
+    try:
+        done, pending = await asyncio.wait(
+            {http_task, started_wait},
+            timeout=5.0,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        if started_wait in done and started_event.is_set():
+            # Server bound successfully - now safe to write token
+            http_server_started = True
+            token_manager.save(api_key)
+            server_logger.info("Embedded RPC server listening: http://127.0.0.1:%s/", effective_port)
+            console.print(f"[dim]Embedded RPC listening: http://127.0.0.1:{effective_port}/[/]")
+            console.print(f"[dim]Server log: {server_log_file}[/]")
+        elif http_task in done:
+            # Server task exited before setting started_event - get the real exception
+            exc = http_task.exception() if not http_task.cancelled() else None
+            error_msg = f"Embedded server exited during startup: {exc!r}" if exc else "Embedded server exited during startup (no exception)"
+            server_logger.error(error_msg)
+            console.print(f"[red]Error:[/] {error_msg}")
+            console.print("[dim]Check server.log for details.[/]")
+            await pool.destroy(agent_name)
+            if shared and shared.provider_registry:
+                await shared.provider_registry.aclose()
+            return
+        else:
+            # Timeout - neither completed in time
+            http_task.cancel()
+            try:
+                await http_task
+            except asyncio.CancelledError:
+                pass
+            server_logger.error("Server failed to start on port %s (timeout)", effective_port)
+            console.print(f"[red]Error:[/] Server failed to start on port {effective_port}")
+            console.print("[dim]The port may be in use by another process.[/]")
+            await pool.destroy(agent_name)
+            if shared and shared.provider_registry:
+                await shared.provider_registry.aclose()
+            return
+    finally:
+        # Clean up the started_wait task
+        started_wait.cancel()
+        try:
+            await started_wait
         except asyncio.CancelledError:
             pass
-        console.print(f"[red]Error:[/] Server failed to start on port {effective_port}")
-        console.print("[dim]The port may be in use by another process.[/]")
-        await pool.destroy(agent_name)
-        if shared and shared.provider_registry:
-            await shared.provider_registry.aclose()
-        return
 
     # Get the session from the main agent for direct REPL access
     session = main_agent.session

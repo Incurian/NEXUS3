@@ -665,15 +665,16 @@ async def run_http_server(
     # Rate limiting: limit concurrent connections
     semaphore = asyncio.Semaphore(max_concurrent)
 
-    # Track last activity time for idle timeout
-    last_activity = time.time()
+    # Track last activity time for idle timeout using monotonic clock
+    # (immune to wall clock jumps from NTP sync, WSL time sync, suspend/resume)
+    last_activity = time.monotonic()
 
     async def client_handler(
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
     ) -> None:
         nonlocal last_activity
-        last_activity = time.time()  # Reset idle timer on each connection
+        last_activity = time.monotonic()  # Reset idle timer on each connection
         async with semaphore:
             await handle_connection(
                 reader, writer, pool, global_dispatcher, api_key, session_manager
@@ -701,7 +702,7 @@ async def run_http_server(
         while not pool.should_shutdown and not global_dispatcher.shutdown_requested:
             # Check idle timeout
             if idle_timeout is not None:
-                idle_duration = time.time() - last_activity
+                idle_duration = time.monotonic() - last_activity
                 if idle_duration > idle_timeout:
                     logger.info(
                         "Idle timeout reached (%.0fs without RPC activity), shutting down",
