@@ -1105,3 +1105,59 @@ If the server stops unexpectedly:
 ```
 Warning: Embedded RPC server stopped. External `nexus3 rpc ...` will not work until restarted.
 ```
+
+---
+
+## In Progress: Multi-Client REPL Sync
+
+**Branch:** `feat/multi-client-sync`
+**Documentation:** `docs/multi-client-sync/`
+
+### Goal
+
+Enable multiple REPL terminals to connect to the same agent with:
+- Full rich UI (spinner, gumballs, tool phases)
+- Real-time visibility of each other's turns
+- Messages from other agents appearing in chat history
+- Unified conversation history
+
+### Architecture Decisions
+
+| Decision | Choice |
+|----------|--------|
+| Transport | SSE (Server-Sent Events) |
+| EventHub location | Pool/SharedComponents |
+| Event source | `Session.run_turn()` |
+| Client mode selection | Try SSE, fallback |
+| History snapshot | RPC `get_messages` |
+
+### Phases
+
+| Phase | Description | Complexity | Status |
+|-------|-------------|------------|--------|
+| 0 | Event schema/contract | S | Defined in Phase 1 |
+| 1 | SSE endpoint + EventHub | M | **Complete** |
+| 2 | Publish turn/tool events from dispatcher | M→L | Next |
+| 3 | Synced REPL client with rich UI | L | |
+| 4 | Host REPL also event-driven | L | |
+| 5 | Shared history + background updates | M→L | |
+| 6 | Hardening (ordering, reconnect, backpressure) | M | |
+| 7 | Multi-client confirmations (optional) | XL | |
+
+### Phase 1 Implementation (2026-01-19)
+
+**Files:**
+- `nexus3/rpc/event_hub.py` - EventHub class for per-agent pub/sub
+- `nexus3/rpc/http.py` - Two-stage HTTP parsing, SSE endpoint, heartbeat
+
+**Features:**
+- `GET /agent/{id}/events` SSE endpoint with Bearer auth
+- SSE connections bypass connection semaphore (long-lived)
+- 15s heartbeat pings: `{"type":"ping","agent_id":"..."}`
+- Idle timeout respects SSE subscribers
+- Event type sanitization (ASCII only, prevents SSE injection)
+- Connection leak fixes on all error paths
+
+**Test:** `curl -N -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8765/agent/test/events`
+
+See `docs/multi-client-sync/README.md` for full details.

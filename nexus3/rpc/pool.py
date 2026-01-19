@@ -51,6 +51,7 @@ from nexus3.core.permissions import (
 )
 from nexus3.mcp.registry import MCPServerRegistry
 from nexus3.rpc.dispatcher import Dispatcher
+from nexus3.rpc.event_hub import EventHub
 from nexus3.rpc.log_multiplexer import LogMultiplexer
 from nexus3.session import LogConfig, LogStream, Session, SessionLogger
 from nexus3.session.persistence import SavedSession, deserialize_messages
@@ -192,6 +193,8 @@ class SharedComponents:
         context_loader: Loader for reloading context during compaction.
         log_streams: Log streams to enable (defaults to ALL for backwards compatibility).
         custom_presets: Custom permission presets loaded from config.
+        mcp_registry: MCP server registry for external tool integration.
+        event_hub: Event hub for SSE pub/sub (multi-client sync).
     """
 
     config: Config
@@ -202,6 +205,7 @@ class SharedComponents:
     log_streams: LogStream = LogStream.ALL
     custom_presets: dict[str, PermissionPreset] = field(default_factory=dict)
     mcp_registry: MCPServerRegistry = field(default_factory=MCPServerRegistry)
+    event_hub: EventHub = field(default_factory=EventHub)
 
 
 @dataclass

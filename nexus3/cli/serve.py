@@ -141,6 +141,7 @@ async def run_serve(
             session_manager=session_manager,
             idle_timeout=None,  # No auto-shutdown in headless dev mode
             started_event=started_event,
+            event_hub=shared.event_hub,
         )
     )
 

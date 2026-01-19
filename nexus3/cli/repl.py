@@ -491,6 +491,7 @@ async def run_repl(
             session_manager=session_manager,
             idle_timeout=1800.0,
             started_event=started_event,
+            event_hub=shared.event_hub,
         ),
         name="http_server",
     )
