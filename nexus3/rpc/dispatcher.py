@@ -5,31 +5,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-import time
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 
 from nexus3.core.cancel import CancellationToken
-from nexus3.core.text_safety import strip_terminal_escapes
 from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
-from nexus3.rpc.event_hub import EventHub
 from nexus3.rpc.types import Request, Response
 from nexus3.session import Session
-from nexus3.session.events import (
-    ContentChunk,
-    IterationCompleted,
-    ReasoningEnded,
-    ReasoningStarted,
-    SessionCancelled,
-    SessionCompleted,
-    SessionEvent,
-    ToolBatchCompleted,
-    ToolBatchHalted,
-    ToolBatchStarted,
-    ToolCompleted,
-    ToolDetected,
-    ToolStarted,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +39,6 @@ class Dispatcher:
         context: ContextManager | None = None,
         agent_id: str | None = None,
         log_multiplexer: LogMultiplexer | None = None,
-        event_hub: EventHub | None = None,
     ) -> None:
         """Initialize the dispatcher.
 
@@ -66,16 +47,19 @@ class Dispatcher:
             context: Optional ContextManager for token/context info.
             agent_id: The agent's ID for log routing (required if log_multiplexer provided).
             log_multiplexer: Optional multiplexer for routing raw logs to correct agent.
-            event_hub: Optional EventHub for publishing SSE events for this agent.
         """
         self._session = session
         self._context = context
         self._agent_id = agent_id
         self._log_multiplexer = log_multiplexer
-        self._event_hub = event_hub
         self._should_shutdown = False
         self._active_requests: dict[str, CancellationToken] = {}
         self._turn_lock = asyncio.Lock()
+
+        # REPL hook: called when a non-REPL send triggers a turn
+        self.on_incoming_turn: (
+            Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None
+        ) = None
         self._handlers: dict[str, Handler] = {
             "send": self._handle_send,
             "shutdown": self._handle_shutdown,
@@ -113,202 +97,30 @@ class Dispatcher:
         """
         return await dispatch_request(request, self._handlers, "method")
 
-    async def _publish_event(self, event: dict[str, Any]) -> None:
-        """Publish an SSE event for this agent (no-op if not configured)."""
-        if self._event_hub is None:
-            return
-        if not self._agent_id:
-            # Agent dispatchers should always have an agent_id, but fail closed
-            return
-        # Enforce canonical agent_id (overwrite any incorrect value)
-        event["agent_id"] = self._agent_id
-        await self._event_hub.publish(self._agent_id, event)
+    async def _notify_incoming(self, payload: dict[str, Any]) -> None:
+        """Notify the REPL about an incoming turn (non-REPL source).
 
-    @staticmethod
-    def _format_tool_params(arguments: dict[str, Any], max_length: int = 70) -> str:
-        """Format tool arguments as a short human-readable preview.
-
-        NOTE: This intentionally does NOT import REPL-only formatting helpers.
-        Output is used for remote UI tool lines (gumballs/spinner).
+        This is called when a subagent or external client sends a message,
+        allowing the REPL to show tool-like progress indicators.
         """
-        if not arguments:
-            return ""
-
-        # Drop private/meta args (e.g. _parallel) from preview
-        filtered: dict[str, Any] = {}
-        for k, v in arguments.items():
-            if v is None:
-                continue
-            if str(k).startswith("_"):
-                continue
-            filtered[str(k)] = v
-
-        if not filtered:
-            return ""
-
-        # Priority keys (paths/cwd/ids first)
-        priority_keys = (
-            "path",
-            "file",
-            "file_path",
-            "directory",
-            "dir",
-            "cwd",
-            "agent_id",
-            "source",
-            "destination",
-            "src",
-            "dst",
-        )
-
-        parts: list[str] = []
-
-        def _safe_str(x: Any) -> str:
-            # Remove ANSI/control chars and normalize whitespace for single-line UI rendering
-            s = strip_terminal_escapes(str(x))
-            # Normalize all whitespace (newlines, tabs, etc.) to single spaces
-            return " ".join(s.split())
-
-        # Priority args first (full value, but overall string may be truncated later)
-        for key in priority_keys:
-            if key in filtered and filtered[key] not in ("", None):
-                parts.append(f"{key}={_safe_str(filtered[key])}")
-
-        # Remaining args (truncate individual values)
-        for key, value in filtered.items():
-            if key in priority_keys:
-                continue
-            s = _safe_str(value)
-            if len(s) > 30:
-                s = s[:27] + "..."
-            if isinstance(value, str) and " " in s:
-                s = f'"{s}"'
-            parts.append(f"{key}={s}")
-
-        result = ", ".join(parts)
-        if len(result) > max_length:
-            result = result[: max_length - 3] + "..."
-        return result
-
-    def _map_session_event_to_sse(
-        self,
-        event: SessionEvent,
-        *,
-        request_id: str,
-        turn_state: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """Map SessionEvent instances to SSE event dicts (Phase 0 contract)."""
-        if isinstance(event, ContentChunk):
-            return {
-                "type": "content_chunk",
-                "request_id": request_id,
-                "text": event.text,
-            }
-
-        if isinstance(event, ReasoningStarted):
-            turn_state["thinking_started_at"] = time.monotonic()
-            return {
-                "type": "thinking_started",
-                "request_id": request_id,
-            }
-
-        if isinstance(event, ReasoningEnded):
-            started_at = turn_state.get("thinking_started_at")
-            duration_ms = 0
-            if isinstance(started_at, (int, float)):
-                duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
-            turn_state["thinking_started_at"] = None
-            return {
-                "type": "thinking_ended",
-                "request_id": request_id,
-                "duration_ms": duration_ms,
-            }
-
-        if isinstance(event, ToolDetected):
-            return {
-                "type": "tool_detected",
-                "request_id": request_id,
-                "name": event.name,
-                "tool_id": event.tool_id,
-            }
-
-        if isinstance(event, ToolBatchStarted):
-            tools = []
-            for tc in event.tool_calls:
-                tools.append(
-                    {
-                        "name": tc.name,
-                        "id": tc.id,
-                        "params": self._format_tool_params(tc.arguments),
-                    }
-                )
-            return {
-                "type": "batch_started",
-                "request_id": request_id,
-                "tools": tools,
-                # Extra fields (clients may ignore)
-                "parallel": event.parallel,
-                "timestamp": event.timestamp,
-            }
-
-        if isinstance(event, ToolStarted):
-            return {
-                "type": "tool_started",
-                "request_id": request_id,
-                "tool_id": event.tool_id,
-                # Extra fields (clients may ignore)
-                "name": event.name,
-                "timestamp": event.timestamp,
-            }
-
-        if isinstance(event, ToolCompleted):
-            return {
-                "type": "tool_completed",
-                "request_id": request_id,
-                "tool_id": event.tool_id,
-                "success": event.success,
-                # Extra fields (clients may ignore)
-                "name": event.name,
-                "error": event.error,
-                "timestamp": event.timestamp,
-            }
-
-        if isinstance(event, ToolBatchHalted):
-            return {
-                "type": "batch_halted",
-                "request_id": request_id,
-                # Extra fields (clients may ignore)
-                "timestamp": event.timestamp,
-            }
-
-        if isinstance(event, ToolBatchCompleted):
-            return {
-                "type": "batch_completed",
-                "request_id": request_id,
-                # Extra fields (clients may ignore)
-                "timestamp": event.timestamp,
-            }
-
-        # Not in Phase 0 SSE contract (drop for now)
-        if isinstance(event, IterationCompleted):
-            return None
-
-        # Terminal events are handled at Dispatcher level to emit turn_completed/turn_cancelled
-        if isinstance(event, (SessionCompleted, SessionCancelled)):
-            return None
-
-        return None
+        cb = self.on_incoming_turn
+        if cb is None:
+            return
+        try:
+            await cb(payload)
+        except Exception:
+            logger.debug("incoming-turn hook failed", exc_info=True)
 
     async def _handle_send(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle the 'send' method.
 
         Sends a message to the LLM and returns the full response.
-        Non-streaming: accumulates all chunks before returning.
-        Publishes SSE events for real-time UI sync.
+        Uses Session.send() for streaming; accumulates chunks before returning.
 
         Args:
             params: Must contain 'content' key with message text.
                    Optional 'request_id' for cancellation support.
+                   Optional 'source' and 'source_agent_id' for attribution.
 
         Returns:
             Dict with keys:
@@ -323,20 +135,21 @@ class Dispatcher:
         if content is None:
             raise InvalidParamsError("Missing required parameter: content")
         if not isinstance(content, str):
-            raise InvalidParamsError(f"content must be string, got: {type(content).__name__}")
+            raise InvalidParamsError(
+                f"content must be string, got: {type(content).__name__}"
+            )
 
-        # Extract source attribution params (Phase 5b)
-        source = params.get("source")
+        # Source attribution (stored in Message.meta)
+        # Default missing source to "rpc" to ensure external sends have attribution
+        source = params.get("source") or "rpc"
         source_agent_id = params.get("source_agent_id")
 
-        # Build user_meta dict if source params present
+        # Build user_meta for non-repl sends (REPL-originated messages don't need attribution)
         user_meta: dict[str, str] | None = None
-        if source or source_agent_id:
-            user_meta = {}
-            if source:
-                user_meta["source"] = source
+        if source != "repl":
+            user_meta = {"source": source}
             if source_agent_id:
-                user_meta["source_agent_id"] = source_agent_id
+                user_meta["source_agent_id"] = str(source_agent_id)
 
         # Generate or use provided request_id
         request_id = params.get("request_id") or secrets.token_hex(8)
@@ -347,105 +160,79 @@ class Dispatcher:
 
         try:
             async with self._turn_lock:
-                # Check cancellation BEFORE emitting turn_started
-                # (avoids confusing turn_started -> immediate turn_cancelled sequence)
+                # Check cancellation before starting
                 if token.is_cancelled:
-                    # Emit turn_cancelled so SSE consumers always get a terminal event
-                    # (even if the turn never started - they need to know it's done)
-                    await self._publish_event(
-                        {"type": "turn_cancelled", "request_id": request_id}
-                    )
                     return {"cancelled": True, "request_id": request_id}
 
-                await self._publish_event(
-                    {"type": "turn_started", "request_id": request_id}
-                )
+                # Notify REPL when this is an incoming (non-repl) message
+                if source != "repl":
+                    preview = (content[:80] + "...") if len(content) > 80 else content
+                    await self._notify_incoming(
+                        {
+                            "phase": "started",
+                            "request_id": request_id,
+                            "source": source,
+                            "source_agent_id": source_agent_id,
+                            "preview": preview,
+                        }
+                    )
 
                 chunks: list[str] = []
-                halted_at_limit = False
-                cancelled = False
-                turn_state: dict[str, Any] = {"thinking_started_at": None}
-
                 try:
                     # Wrap in agent context for correct raw log routing
                     if self._log_multiplexer and self._agent_id:
                         with self._log_multiplexer.agent_context(self._agent_id):
-                            async for ev in self._session.run_turn(
-                                content, cancel_token=token, user_meta=user_meta
+                            async for chunk in self._session.send(
+                                content,
+                                cancel_token=token,
+                                user_meta=user_meta,
                             ):
-                                sse = self._map_session_event_to_sse(
-                                    ev, request_id=request_id, turn_state=turn_state
-                                )
-                                if sse:
-                                    await self._publish_event(sse)
-
-                                if isinstance(ev, ContentChunk):
-                                    chunks.append(ev.text)
-                                elif isinstance(ev, SessionCompleted):
-                                    halted_at_limit = ev.halted_at_limit
-                                elif isinstance(ev, SessionCancelled):
-                                    cancelled = True
+                                token.raise_if_cancelled()
+                                chunks.append(chunk)
                     else:
-                        async for ev in self._session.run_turn(
-                            content, cancel_token=token, user_meta=user_meta
+                        async for chunk in self._session.send(
+                            content,
+                            cancel_token=token,
+                            user_meta=user_meta,
                         ):
-                            sse = self._map_session_event_to_sse(
-                                ev, request_id=request_id, turn_state=turn_state
-                            )
-                            if sse:
-                                await self._publish_event(sse)
+                            token.raise_if_cancelled()
+                            chunks.append(chunk)
 
-                            if isinstance(ev, ContentChunk):
-                                chunks.append(ev.text)
-                            elif isinstance(ev, SessionCompleted):
-                                halted_at_limit = ev.halted_at_limit
-                            elif isinstance(ev, SessionCancelled):
-                                cancelled = True
+                    # Final check after loop ends (session may have stopped early)
+                    token.raise_if_cancelled()
 
-                except asyncio.CancelledError:
-                    await self._publish_event(
-                        {"type": "turn_cancelled", "request_id": request_id}
-                    )
-                    return {"cancelled": True, "request_id": request_id}
-                except Exception:
-                    # Unexpected error - emit turn_cancelled so SSE consumers get terminal event
-                    await self._publish_event(
-                        {"type": "turn_cancelled", "request_id": request_id}
-                    )
-                    raise  # Re-raise so JSON-RPC returns the error
+                    full = "".join(chunks)
 
-                if cancelled:
-                    # If we were mid-thinking, emit a best-effort thinking_ended
-                    if turn_state.get("thinking_started_at") is not None:
-                        started_at = float(turn_state["thinking_started_at"])
-                        duration_ms = max(0, int((time.monotonic() - started_at) * 1000))
-                        await self._publish_event(
+                    # Notify REPL of completion
+                    if source != "repl":
+                        preview = (full[:80] + "...") if len(full) > 80 else full
+                        await self._notify_incoming(
                             {
-                                "type": "thinking_ended",
+                                "phase": "ended",
                                 "request_id": request_id,
-                                "duration_ms": duration_ms,
+                                "ok": True,
+                                "content_preview": preview,
                             }
                         )
-                    await self._publish_event(
-                        {"type": "turn_cancelled", "request_id": request_id}
-                    )
+
+                    return {
+                        "content": full,
+                        "request_id": request_id,
+                        "halted_at_iteration_limit": self._session.halted_at_iteration_limit,
+                    }
+
+                except asyncio.CancelledError:
+                    if source != "repl":
+                        await self._notify_incoming(
+                            {
+                                "phase": "ended",
+                                "request_id": request_id,
+                                "ok": False,
+                                "cancelled": True,
+                            }
+                        )
                     return {"cancelled": True, "request_id": request_id}
 
-                full_content = "".join(chunks)
-                await self._publish_event(
-                    {
-                        "type": "turn_completed",
-                        "request_id": request_id,
-                        "content": full_content,
-                        "halted": halted_at_limit,
-                    }
-                )
-
-                return {
-                    "content": full_content,
-                    "request_id": request_id,
-                    "halted_at_iteration_limit": halted_at_limit,
-                }
         except asyncio.CancelledError:
             return {"cancelled": True, "request_id": request_id}
         finally:

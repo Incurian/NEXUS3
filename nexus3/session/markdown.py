@@ -82,10 +82,27 @@ class MarkdownWriter:
         md = f"## System\n\n{content}\n\n---\n\n"
         self._append(self.context_path, md)
 
-    def write_user(self, content: str) -> None:
-        """Write user message to context.md."""
+    def write_user(self, content: str, meta: dict[str, Any] | None = None) -> None:
+        """Write user message to context.md.
+
+        Args:
+            content: The user message content.
+            meta: Optional metadata dict for source attribution.
+        """
         timestamp = self._format_timestamp()
-        md = f"## User [{timestamp}]\n\n{content}\n\n"
+        label = "User"
+        if meta:
+            src_agent = meta.get("source_agent_id")
+            src = meta.get("source")
+            if src_agent:
+                # Example: User (from trustedguy via nexus_send)
+                if src:
+                    label = f"User (from {src_agent} via {src})"
+                else:
+                    label = f"User (from {src_agent})"
+            elif src and src != "repl":
+                label = f"User ({src})"
+        md = f"## {label} [{timestamp}]\n\n{content}\n\n"
         self._append(self.context_path, md)
 
     def write_assistant(

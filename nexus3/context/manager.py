@@ -204,7 +204,7 @@ class ContextManager:
         msg = Message(role=Role.USER, content=content, meta=meta or {})
         self._messages.append(msg)
         if self._logger:
-            self._logger.log_user(content)
+            self._logger.log_user(content, meta=meta)
 
     def add_assistant_message(
         self,

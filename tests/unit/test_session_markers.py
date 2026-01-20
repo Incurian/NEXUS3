@@ -75,9 +75,9 @@ class TestSessionStorageMarkers:
         yield storage
         storage.close()
 
-    def test_schema_version_is_2(self):
-        """Schema version is 2 (includes session_markers)."""
-        assert SCHEMA_VERSION == 2
+    def test_schema_version_is_3(self):
+        """Schema version is 3 (includes session_markers and meta column)."""
+        assert SCHEMA_VERSION == 3
 
     def test_session_markers_table_created(self, storage):
         """session_markers table is created in schema."""
@@ -285,10 +285,10 @@ class TestSchemaMigration:
         # Verify migration happened
         conn = storage._get_conn()
 
-        # Check schema version updated
+        # Check schema version updated (migrates through v2 to current v3)
         cursor = conn.execute("SELECT version FROM schema_version")
         version = cursor.fetchone()[0]
-        assert version == 2
+        assert version == 3
 
         # Check session_markers table exists
         cursor = conn.execute(

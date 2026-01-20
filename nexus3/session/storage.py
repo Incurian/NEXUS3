@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 MAX_JSON_FIELD_SIZE = 10 * 1024 * 1024
 
 # Schema version for future migrations
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 -- Schema version tracking
@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
+    meta TEXT,
     name TEXT,
     tool_call_id TEXT,
     tool_calls TEXT,
@@ -104,6 +105,7 @@ class MessageRow:
     id: int
     role: str
     content: str
+    meta: dict[str, Any] | None
     name: str | None
     tool_call_id: str | None
     tool_calls: list[dict[str, Any]] | None
@@ -115,6 +117,19 @@ class MessageRow:
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "MessageRow":
         """Create from database row."""
+        # Parse meta JSON if present (handle both sqlite3.Row and dict-like mocks)
+        meta = None
+        try:
+            raw_meta = row["meta"]
+            if raw_meta and len(raw_meta) <= MAX_JSON_FIELD_SIZE:
+                try:
+                    meta = json.loads(raw_meta)
+                except (json.JSONDecodeError, TypeError):
+                    meta = None
+        except (KeyError, IndexError):
+            # Column doesn't exist (old schema) or missing in mock
+            pass
+
         tool_calls = None
         if row["tool_calls"]:
             raw = row["tool_calls"]
@@ -144,6 +159,7 @@ class MessageRow:
             id=row["id"],
             role=row["role"],
             content=row["content"],
+            meta=meta,
             name=row["name"],
             tool_call_id=row["tool_call_id"],
             tool_calls=tool_calls,
@@ -299,6 +315,16 @@ class SessionStorage:
             conn.execute("UPDATE schema_version SET version = ?", (2,))
             conn.commit()
 
+        if from_version < 3 <= to_version:
+            # Migration 2 -> 3: Add meta column to messages table
+            try:
+                conn.execute("ALTER TABLE messages ADD COLUMN meta TEXT")
+            except sqlite3.OperationalError:
+                # Column may already exist (defensive)
+                pass
+            conn.execute("UPDATE schema_version SET version = ?", (3,))
+            conn.commit()
+
     def close(self) -> None:
         """Close the database connection."""
         if self._conn:
@@ -312,6 +338,7 @@ class SessionStorage:
         role: str,
         content: str,
         *,
+        meta: dict[str, Any] | None = None,
         name: str | None = None,
         tool_call_id: str | None = None,
         tool_calls: list[dict[str, Any]] | None = None,
@@ -321,15 +348,16 @@ class SessionStorage:
         """Insert a message and return its ID."""
         conn = self._get_conn()
 
+        meta_json = json.dumps(meta) if meta else None
         tool_calls_json = json.dumps(tool_calls) if tool_calls else None
         ts = timestamp if timestamp is not None else time()
 
         cursor = conn.execute(
             """
-            INSERT INTO messages (role, content, name, tool_call_id, tool_calls, tokens, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO messages (role, content, meta, name, tool_call_id, tool_calls, tokens, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (role, content, name, tool_call_id, tool_calls_json, tokens, ts),
+            (role, content, meta_json, name, tool_call_id, tool_calls_json, tokens, ts),
         )
         conn.commit()
 

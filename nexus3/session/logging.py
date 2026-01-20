@@ -110,14 +110,20 @@ class SessionLogger:
         self._md_writer.write_system(content)
         return msg_id
 
-    def log_user(self, content: str) -> int:
-        """Log user message. Returns message ID."""
+    def log_user(self, content: str, meta: dict[str, Any] | None = None) -> int:
+        """Log user message. Returns message ID.
+
+        Args:
+            content: The user message content.
+            meta: Optional metadata dict (e.g., source attribution).
+        """
         msg_id = self.storage.insert_message(
             role="user",
             content=content,
+            meta=meta,
             timestamp=time(),
         )
-        self._md_writer.write_user(content)
+        self._md_writer.write_user(content, meta=meta)
         return msg_id
 
     def log_assistant(
