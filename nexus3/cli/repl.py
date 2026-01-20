@@ -939,8 +939,8 @@ async def run_repl(
             if prompt_session.app and prompt_session.app.is_running:
                 try:
                     await prompt_session.app.run_in_terminal(_print)
-                except Exception:
-                    pass  # App may have closed
+                except Exception as e:
+                    logger.debug("run_in_terminal failed (app may have closed): %s", e)
 
     # Start background watcher task
     bg_watcher_task = asyncio.create_task(background_watcher(), name="bg_watcher_unified")
@@ -1746,8 +1746,8 @@ async def run_repl_client_synced(
                 if prompt_session.app and prompt_session.app.is_running:
                     try:
                         await prompt_session.app.run_in_terminal(_print)
-                    except Exception:
-                        pass  # App may have closed
+                    except Exception as e:
+                        logger.debug("run_in_terminal failed (app may have closed): %s", e)
 
         # Start background watcher task
         bg_watcher_task = asyncio.create_task(background_watcher(), name="bg_watcher")

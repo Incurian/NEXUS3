@@ -53,7 +53,7 @@ class EventRouter:
         max_queue_size: Maximum events per subscriber queue before dropping.
     """
 
-    def __init__(self, *, max_queue_size: int = 200) -> None:
+    def __init__(self, *, max_queue_size: int = 2000) -> None:
         """Initialize the EventRouter.
 
         Args:
