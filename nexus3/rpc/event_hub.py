@@ -150,6 +150,11 @@ class EventHub:
             agent_id: The agent to publish to.
             event: The event dict to publish.
         """
+        # Fast path: skip all work if no subscribers (common case for single terminal)
+        subs = self._subscribers.get(agent_id)
+        if not subs:
+            return
+
         # Increment sequence number for this agent
         self._seq[agent_id] += 1
         seq = self._seq[agent_id]
@@ -162,11 +167,6 @@ class EventHub:
         if agent_id not in self._history:
             self._history[agent_id] = deque(maxlen=self._history_size)
         self._history[agent_id].append(event)
-
-        # Use .get() to avoid creating empty keys in defaultdict
-        subs = self._subscribers.get(agent_id)
-        if not subs:
-            return
 
         # Deliver to all subscribers, track slow clients
         for queue, state in list(subs.items()):  # Copy to avoid mutation during iteration
