@@ -32,6 +32,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -717,6 +718,60 @@ async def run_repl(
     # Attach callbacks to the initial session
     _set_display_session(session)
 
+    # =============================================================
+    # Incoming turn notifications (for RPC messages while at prompt)
+    #
+    # When another agent or external client sends a message via RPC,
+    # notify the user so they know processing is happening.
+    # =============================================================
+
+    _current_dispatcher: object | None = None
+
+    async def _on_incoming_turn(payload: dict[str, Any]) -> None:
+        """Handle incoming turn notifications from dispatcher."""
+        phase = payload.get("phase")
+        source = payload.get("source", "rpc")
+        source_agent = payload.get("source_agent_id")
+
+        def _print_notification() -> None:
+            if phase == "started":
+                preview = payload.get("preview", "")[:50]
+                if source_agent:
+                    label = f"[dim cyan]● Incoming from {source_agent}:[/] {preview}..."
+                else:
+                    label = f"[dim cyan]● Incoming ({source}):[/] {preview}..."
+                console.print(label)
+            elif phase == "ended":
+                ok = payload.get("ok", False)
+                if ok:
+                    preview = payload.get("content_preview", "")[:50]
+                    console.print(f"[dim green]● Response ready[/] ({preview}...)")
+                elif payload.get("cancelled"):
+                    console.print("[dim yellow]● Request cancelled[/]")
+
+        # Safely print during prompt using run_in_terminal
+        if prompt_session.app and prompt_session.app.is_running:
+            try:
+                await prompt_session.app.run_in_terminal(_print_notification)
+            except Exception:
+                # App may have closed, fall back to direct print
+                _print_notification()
+        else:
+            _print_notification()
+
+    def _set_incoming_hook(dispatcher: object) -> None:
+        """Set the incoming turn hook on a dispatcher."""
+        nonlocal _current_dispatcher
+        # Clear hook on old dispatcher
+        if _current_dispatcher is not None and _current_dispatcher is not dispatcher:
+            setattr(_current_dispatcher, "on_incoming_turn", None)
+        # Set hook on new dispatcher
+        setattr(dispatcher, "on_incoming_turn", _on_incoming_turn)
+        _current_dispatcher = dispatcher
+
+    # Wire up incoming turn notifications for main agent
+    _set_incoming_hook(main_agent.dispatcher)
+
     # Print welcome message
     console.print("[bold]NEXUS3 v0.1.0[/bold]")
     console.print(f"Agent: {current_agent_id}", style="dim")
@@ -972,6 +1027,7 @@ async def run_repl(
                             logger = new_agent.logger
                             # Detach callbacks from old session, attach to new
                             _set_display_session(session)
+                            _set_incoming_hook(new_agent.dispatcher)
                             session.on_confirm = confirm_with_pause
                             # Update last session on switch
                             save_as_last_session(current_agent_id)
@@ -1031,6 +1087,7 @@ async def run_repl(
                                         logger = new_agent.logger
                                         # Detach callbacks from old session, attach to new
                                         _set_display_session(session)
+                                        _set_incoming_hook(new_agent.dispatcher)
                                         session.on_confirm = confirm_with_pause
                                         # Update last session on restore
                                         save_as_last_session(current_agent_id)
@@ -1074,6 +1131,7 @@ async def run_repl(
                                         logger = new_agent.logger
                                         # Detach callbacks from old session, attach to new
                                         _set_display_session(session)
+                                        _set_incoming_hook(new_agent.dispatcher)
                                         session.on_confirm = confirm_with_pause
                                         # Update last session on create+switch
                                         save_as_last_session(current_agent_id)
