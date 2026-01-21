@@ -872,13 +872,35 @@ async def cmd_compact(ctx: CommandContext) -> CommandOutput:
     try:
         result = await session.compact(force=True)
         if result is None:
-            return CommandOutput.success(
-                message="Nothing to compact",
-                data={"compacted": False, "reason": "nothing_to_compact"},
-            )
+            # Provide informative message about why nothing was compacted
+            usage = session.context.get_token_usage()
+            msg_tokens = usage.get("messages", 0)
+            available = usage.get("available", 0)
+
+            # Get preserve ratio from config
+            config = getattr(session, "_config", None)
+            if config and config.compaction:
+                preserve_ratio = config.compaction.recent_preserve_ratio
+                preserve_budget = int(available * preserve_ratio)
+                return CommandOutput.success(
+                    message=f"Nothing to compact - all {len(messages)} messages "
+                            f"({msg_tokens:,} tokens) fit within preserve budget "
+                            f"({preserve_budget:,} tokens, {int(preserve_ratio*100)}% of available)",
+                    data={
+                        "compacted": False,
+                        "reason": "within_preserve_budget",
+                        "message_tokens": msg_tokens,
+                        "preserve_budget": preserve_budget,
+                    },
+                )
+            else:
+                return CommandOutput.success(
+                    message="Nothing to compact (no compaction config)",
+                    data={"compacted": False, "reason": "no_config"},
+                )
         else:
             return CommandOutput.success(
-                message=f"Compacted: {result.original_token_count} -> {result.new_token_count} tokens",
+                message=f"Compacted: {result.original_token_count:,} -> {result.new_token_count:,} tokens",
                 data={
                     "compacted": True,
                     "original_tokens": result.original_token_count,

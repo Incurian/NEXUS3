@@ -947,7 +947,15 @@ class TestCmdCompact:
         agent = mock_pool.add_agent("main")
         agent.session.context = MagicMock()
         agent.session.context.messages = [MagicMock(), MagicMock()]
-        agent.session.compact = MagicMock(return_value=None)
+        agent.session.context.get_token_usage.return_value = {
+            "messages": 500,
+            "available": 100000,
+        }
+
+        # Mock config with compaction settings
+        mock_config = MagicMock()
+        mock_config.compaction.recent_preserve_ratio = 0.25
+        agent.session._config = mock_config
 
         # Make compact an async mock
         async def mock_compact(force: bool = False):
@@ -964,6 +972,7 @@ class TestCmdCompact:
 
         assert output.result == CommandResult.SUCCESS
         assert "Nothing to compact" in output.message
+        assert "preserve budget" in output.message
         assert output.data["compacted"] is False
 
     @pytest.mark.asyncio
@@ -993,8 +1002,8 @@ class TestCmdCompact:
         output = await cmd_compact(ctx)
 
         assert output.result == CommandResult.SUCCESS
-        assert "5000" in output.message
-        assert "1000" in output.message
+        assert "5,000" in output.message  # Comma-formatted
+        assert "1,000" in output.message  # Comma-formatted
         assert output.data["compacted"] is True
         assert output.data["original_tokens"] == 5000
         assert output.data["new_tokens"] == 1000
