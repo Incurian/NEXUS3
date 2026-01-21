@@ -306,6 +306,7 @@ async def bootstrap_server_components(
         context_loader=context_loader,
         log_streams=log_streams,
         custom_presets=custom_presets,
+        is_repl=is_repl,
     )
 
     # Phase 5: Create AgentPool (without dispatcher initially)

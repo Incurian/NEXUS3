@@ -49,6 +49,7 @@ class TestSharedComponents:
         expected = {
             "config", "provider_registry", "base_log_dir", "base_context",
             "context_loader", "log_streams", "custom_presets", "mcp_registry",
+            "is_repl",
         }
         assert field_names == expected
 

@@ -105,6 +105,7 @@ class Session:
         on_confirm: ConfirmationCallback | None = None,
         config: "Config | None" = None,
         context_loader: "ContextLoader | None" = None,
+        is_repl: bool = False,
     ) -> None:
         """Initialize a new session.
 
@@ -142,6 +143,8 @@ class Session:
             config: Optional Config for compaction settings and other options.
             context_loader: Optional ContextLoader to reload system prompt during
                            compaction.
+            is_repl: Whether running in REPL mode. Affects context loading during
+                    compaction (REPL mode includes terminal info in environment).
         """
         self.provider = provider
         self.context = context
@@ -162,6 +165,7 @@ class Session:
         self.on_confirm = on_confirm
         self._config = config
         self._context_loader = context_loader
+        self._is_repl = is_repl
 
         # Tool execution components
         self._dispatcher = ToolDispatcher(registry=registry, services=services)
@@ -881,7 +885,7 @@ class Session:
         # Reload system prompt fresh (picks up NEXUS.md changes)
         new_system_prompt = None
         if self._context_loader:
-            loaded = self._context_loader.load(is_repl=True)  # TODO: track is_repl
+            loaded = self._context_loader.load(is_repl=self._is_repl)
             new_system_prompt = loaded.system_prompt
 
         # Calculate token counts

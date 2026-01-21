@@ -193,6 +193,7 @@ class SharedComponents:
         log_streams: Log streams to enable (defaults to ALL for backwards compatibility).
         custom_presets: Custom permission presets loaded from config.
         mcp_registry: MCP server registry for external tool integration.
+        is_repl: Whether running in REPL mode (affects context loading during compaction).
     """
 
     config: Config
@@ -203,6 +204,7 @@ class SharedComponents:
     log_streams: LogStream = LogStream.ALL
     custom_presets: dict[str, PermissionPreset] = field(default_factory=dict)
     mcp_registry: MCPServerRegistry = field(default_factory=MCPServerRegistry)
+    is_repl: bool = False
 
 
 @dataclass
@@ -581,6 +583,7 @@ class AgentPool:
             services=services,
             config=self._shared.config,
             context_loader=self._shared.context_loader,
+            is_repl=self._shared.is_repl,
         )
 
         # Create dispatcher with context for token info and log multiplexer
@@ -861,6 +864,7 @@ class AgentPool:
             services=services,
             config=self._shared.config,
             context_loader=self._shared.context_loader,
+            is_repl=self._shared.is_repl,
         )
 
         # Create dispatcher with context for token info and log multiplexer

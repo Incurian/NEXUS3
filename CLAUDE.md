@@ -777,7 +777,7 @@ class MySpecialSkill(BaseSkill):
 
 - [ ] **Portable auto-bootstrap launcher**: Add a launcher script that auto-installs deps (httpx, pydantic, rich, prompt-toolkit, python-dotenv) on first run, enabling "copy folder and go" portability without manual pip install. See packaging investigation for options (shiv/zipapp as alternative).
 
-- [ ] **Track is_repl in context loader**: `session/session.py:884` has `# TODO: track is_repl` - the context loader call hardcodes `is_repl=True` but should track this properly.
+- [x] **Track is_repl in context loader**: ~~`session/session.py:884` hardcoded `is_repl=True`.~~ Fixed: Added `is_repl` to `SharedComponents`, passed through to `Session`, used during compaction.
 
 - [x] **RPC `compact` method for stuck agents**: ~~When an agent's context exceeds the provider's token/byte limit, the agent becomes stuck (alive but unusable).~~ Fixed: Added `nexus3 rpc compact <agent_id>` command and `_handle_compact()` RPC method.
 
