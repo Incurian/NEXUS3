@@ -52,3 +52,6 @@ docs/
 # Archive (plans, reviews, old scripts)
 .archive/
 reviews/
+
+# Project instructions (local only)
+CLAUDE.md
