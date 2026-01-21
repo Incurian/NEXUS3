@@ -1108,71 +1108,41 @@ Warning: Embedded RPC server stopped. External `nexus3 rpc ...` will not work un
 
 ---
 
-## In Progress: Multi-Client REPL Sync
+## Abandoned: Multi-Client REPL Sync
 
-**Branch:** `feat/multi-client-sync`
-**Documentation:** `docs/multi-client-sync/`
+**Status:** Abandoned in favor of single terminal per agent paradigm.
+**Documentation:** `docs/multi-client-sync/` (historical)
 
-### Goal
+### Why Abandoned
 
-Enable multiple REPL terminals to connect to the same agent with:
-- Full rich UI (spinner, gumballs, tool phases)
-- Real-time visibility of each other's turns
-- Messages from other agents appearing in chat history
-- Unified conversation history
+The SSE/EventHub approach worked but added significant complexity for limited benefit. Key issues:
+- Rich's `Live` display doesn't handle concurrent prints well (transient cleanup issues)
+- Multiple terminals viewing the same agent created UX confusion
+- Simpler approach: each agent gets one terminal, use `nexus_send` for inter-agent communication
 
-### Architecture Decisions
+### What Was Built (Now Removed)
 
-| Decision | Choice |
-|----------|--------|
-| Transport | SSE (Server-Sent Events) |
-| EventHub location | Pool/SharedComponents |
-| Event source | `Session.run_turn()` |
-| Client mode selection | Try SSE, fallback |
-| History snapshot | RPC `get_messages` |
+- `nexus3/rpc/event_hub.py` - Per-agent pub/sub (deleted)
+- SSE endpoint `GET /agent/{id}/events` (deleted)
+- SSE client in `connect_lobby.py` (deleted)
 
-### Phases
+### What Replaced It
 
-| Phase | Description | Complexity | Status |
-|-------|-------------|------------|--------|
-| 0 | Event schema/contract | S | Defined in Phase 1 |
-| 1 | SSE endpoint + EventHub | M | **Complete** |
-| 2 | Publish turn/tool events from dispatcher | M→L | **Complete** |
-| 3 | Synced REPL client with rich UI | L | **Complete** |
-| 4 | Host REPL also event-driven | L | **Complete** |
-| 5a | Shared history + background updates | M→L | **Complete** |
-| 5b | Source attribution (nexus_send) | M | Deferred |
-| 6 | Hardening (ordering, reconnect, backpressure) | M | Next |
-| 7 | Multi-client confirmations (optional) | XL | |
-
-### Phase 1 Implementation (2026-01-19)
-
-**Files:**
-- `nexus3/rpc/event_hub.py` - EventHub class for per-agent pub/sub
-- `nexus3/rpc/http.py` - Two-stage HTTP parsing, SSE endpoint, heartbeat
-
-**Features:**
-- `GET /agent/{id}/events` SSE endpoint with Bearer auth
-- SSE connections bypass connection semaphore (long-lived)
-- 15s heartbeat pings: `{"type":"ping","agent_id":"..."}`
-- Idle timeout respects SSE subscribers
-- Event type sanitization (ASCII only, prevents SSE injection)
-- Connection leak fixes on all error paths
-
-**Test:** `curl -N -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8765/agent/test/events`
-
-See `docs/multi-client-sync/README.md` for full details.
+- Direct session callbacks for display updates
+- `dispatcher.on_incoming_turn` hook for RPC message notifications
+- Spinner shows during incoming turns (same as user turns)
+- Source attribution in message history
 
 ---
 
-## CURRENT WORK IN PROGRESS (2026-01-21)
+## Recent Changes (2026-01-21)
 
-**Branch:** `feat/phase-1-6-single-terminal`
-**Decision:** Abandoned multi-terminal sync. New paradigm is single terminal per agent.
+**Merged to master.** Single terminal per agent paradigm - abandoned multi-terminal sync.
 
-### Commits on Branch
+### Commits
 
 ```
+c8e614a refactor: Remove SSE/EventHub multi-terminal sync infrastructure
 1e21478 feat(repl): Incoming RPC turns show spinner and interrupt prompt
 405716a feat(repl): Show nexus_send response content in tool output
 d9eca44 fix(repl): Wire incoming turn notifications for RPC messages
@@ -1180,52 +1150,31 @@ ad2bd20 fix(repl): Callback detachment to prevent cross-agent display leakage
 13a4f9d fix(rpc): Source attribution persistence + incoming notifications
 ```
 
-### Completed Features
+### Features
 
-#### 1. Source Attribution (`13a4f9d`)
+#### 1. Source Attribution
 - Schema v3 with `meta` column in messages table
 - Messages show attribution: `## User (from main via nexus_send)`
 - Dispatcher defaults source to "rpc" for external sends
 
-#### 2. Callback Leak Prevention (`ad2bd20`)
+#### 2. Callback Leak Prevention
 - `_set_display_session()` pattern detaches callbacks from old session on switch
 - Prevents tool calls from agent B appearing in agent A's display
-- Reverted from EventHub to direct Session callbacks
 
-#### 3. Incoming Turn Notifications (`d9eca44`)
-- When RPC message arrives, shows: `▶ INCOMING from agent_name: preview...`
-- When response sent, shows: `✓ Response sent: preview...`
-- Hook: `dispatcher.on_incoming_turn` wired in REPL
-- Updated at all agent switch points
+#### 3. Incoming Turn Notifications
+- When RPC message arrives: `▶ INCOMING from agent_name: preview...`
+- Spinner displays while agent processes
+- When response sent: `✓ Response sent: preview...`
+- Prompt interrupted cleanly using `app.exit()` with sentinel value
 
-#### 4. Outgoing nexus_send Visibility (`405716a`)
+#### 4. Outgoing nexus_send Visibility
 - Added `output` field to `ToolCompleted` event
-- `BatchProgressCallback` now includes tool output
 - When `nexus_send` completes, shows: `↳ Response: preview...`
 
-#### 5. Incoming Turn Spinner (`1e21478`)
-- Incoming RPC turns now show spinner like regular agent turns
-- Prompt interrupted using `app.exit()` with sentinel value
-- ANSI escape sequences clear the prompt line cleanly
-- Main loop detects sentinel, waits for turn to complete
-- Proper visual feedback: notification → spinner → response
+#### 5. SSE/EventHub Removed
+- Deleted `event_hub.py`, `sse_router.py`, related tests
+- Simpler architecture: direct callbacks instead of pub/sub
 
-### Testing Results
+### Known Issues
 
-Agent-to-agent communication fully working:
-1. Sub sends `nexus_send` to main
-2. Main's prompt is interrupted, line cleared
-3. Shows: `▶ INCOMING from sub: message preview...`
-4. Spinner displays while agent processes
-5. Shows: `✓ Response sent: response preview...`
-6. Prompt returns for user input
-7. Sub receives response (no longer cancelled)
-
-### Remaining Work
-
-- Consider adding support for user to see/scroll the full incoming message content
-- Consider adding a way to cancel incoming turn processing (ESC key)
-
-### GPT Reviewer
-
-A GPT reviewer agent (`reviewer` on port 8765) was used extensively for analysis. It provided good diagnosis but tended to timeout on implementation tasks. Use for review/planning, not for writing code.
+**Duplicate gumballs on fast-failing tools**: Rich's `Live` with `transient=True` can leave display artifacts when `console.print()` is called during the Live context (via session callbacks). This is a Rich library limitation - the transient cleanup assumes exclusive control of the terminal region. GPT analysis confirmed this is expected behavior when mixing Live display with console prints. Workaround would require buffering all prints until after Live exits, but this adds complexity.
