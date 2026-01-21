@@ -42,8 +42,12 @@ Thumbs.db
 # NEXUS3 session logs
 .nexus3/
 
-# Claude Code plans (keep skills, ignore plans)
-.claude/plans/
+# Claude Code
+.claude/
+.claude-notes/
+
+# Internal docs
+docs/
 
 # Archive (plans, reviews, old scripts)
 .archive/
