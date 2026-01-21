@@ -1007,6 +1007,18 @@ async def cmd_model(
     if hasattr(agent.context, "_config"):
         agent.context._config.max_tokens = new_model.context_window
 
+    # Update session's provider to use the new model
+    # The provider is cached by provider_name:model_id, so this gets or creates
+    # the appropriate provider for the new model
+    provider_registry = getattr(ctx.pool, "_shared", None)
+    if provider_registry is not None:
+        provider_registry = getattr(provider_registry, "provider_registry", None)
+    if provider_registry is not None:
+        new_provider = provider_registry.get(
+            new_model.provider_name, new_model.model_id, new_model.reasoning
+        )
+        agent.session.provider = new_provider
+
     alias_info = f" (alias: {new_model.alias})" if new_model.alias else ""
     return CommandOutput.success(
         message=f"Switched to model: {new_model.model_id}{alias_info}\n"
