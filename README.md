@@ -305,7 +305,11 @@ nexus3 --model smart      # Use cloud model
 
 ### On-Prem / Self-Signed Certificates
 
-For corporate/on-prem deployments with self-signed certificates:
+For corporate/on-prem deployments where the LLM endpoint uses self-signed certificates or a corporate Certificate Authority (CA), you have two options:
+
+#### Option 1: Disable SSL Verification (Quick but Less Secure)
+
+Use `verify_ssl: false` to skip certificate verification entirely. This works but leaves connections vulnerable to man-in-the-middle attacks. Only use this for trusted internal networks:
 
 ```json
 {
@@ -323,7 +327,9 @@ For corporate/on-prem deployments with self-signed certificates:
 }
 ```
 
-If your company has a corporate CA certificate, use `ssl_ca_cert` instead (more secure):
+#### Option 2: Corporate CA Certificate (Recommended)
+
+If your company has a corporate CA certificate, use `ssl_ca_cert` to point to it. This maintains full SSL verification using your organization's trust chain:
 
 ```json
 {
@@ -332,7 +338,7 @@ If your company has a corporate CA certificate, use `ssl_ca_cert` instead (more 
       "type": "openai",
       "base_url": "https://internal-llm.company.com/v1",
       "api_key_env": "ONPREM_API_KEY",
-      "ssl_ca_cert": "/path/to/corporate-ca.crt",
+      "ssl_ca_cert": "/etc/ssl/certs/corporate-ca.pem",
       "models": {
         "internal": {"id": "llama-3-70b", "context_window": 8192}
       }
@@ -340,6 +346,50 @@ If your company has a corporate CA certificate, use `ssl_ca_cert` instead (more 
   }
 }
 ```
+
+#### Certificate Formats
+
+NEXUS3 expects certificates in **PEM format** (Base64-encoded text starting with `-----BEGIN CERTIFICATE-----`). Corporate certificates may come in various formats:
+
+| Format | Extensions | Description | Works directly? |
+|--------|------------|-------------|-----------------|
+| **PEM** | `.pem`, `.crt`, `.cer` | Base64 text format | Yes |
+| **DER** | `.der`, `.cer` | Binary format (common on Windows) | No - convert first |
+| **PKCS#7** | `.p7b`, `.p7c` | Certificate chain bundle | No - convert first |
+| **PKCS#12** | `.p12`, `.pfx` | Cert + private key (common on Windows) | No - convert first |
+
+**How to identify your certificate format:**
+
+```bash
+# If this works, it's already PEM format - use as-is
+openssl x509 -in corporate-ca.crt -text -noout
+
+# If that fails with "unable to load certificate", try DER format
+openssl x509 -inform DER -in corporate-ca.crt -text -noout
+```
+
+**Converting to PEM format:**
+
+```bash
+# DER to PEM
+openssl x509 -inform DER -in corporate-ca.der -out corporate-ca.pem
+
+# PKCS#7 to PEM (extracts all certs in chain)
+openssl pkcs7 -print_certs -in corporate-ca.p7b -out corporate-ca.pem
+
+# PKCS#12 to PEM (extract CA cert only, will prompt for password)
+openssl pkcs12 -in corporate-ca.p12 -cacerts -nokeys -out corporate-ca.pem
+```
+
+**Common certificate locations:**
+
+| OS | Typical location |
+|----|------------------|
+| Linux | `/etc/ssl/certs/`, `/usr/local/share/ca-certificates/` |
+| macOS | `/etc/ssl/`, Keychain Access app |
+| Windows | `C:\Windows\System32\certsrv\CertEnroll\`, Certificate Manager (`certmgr.msc`) |
+
+Your IT department can provide the corporate CA certificate if you don't have it.
 
 ### Model Options Reference
 
