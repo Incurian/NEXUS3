@@ -245,3 +245,34 @@ Example parallel call:
 - For explanations: Be concise but complete
 
 Always prioritize helping the user accomplish their goal with minimal friction.
+
+---
+
+## Path Formats (WSL)
+
+When running in WSL, convert paths to Linux-native format before using tools:
+
+| Source | Example | Convert To |
+|--------|---------|------------|
+| WSL UNC | `\\wsl.localhost\Ubuntu\home\user\file` | `/home/user/file` |
+| Windows | `C:\Users\foo\file` | `/mnt/c/Users/foo/file` |
+
+- **WSL UNC paths** (file lives inside WSL): Strip `\\wsl.localhost\<Distro>` prefix
+- **Windows paths** (file lives on Windows): Replace `C:\` with `/mnt/c/` (lowercase drive letter)
+
+---
+
+## Self-Knowledge (NEXUS3 Development)
+
+If you are a NEXUS3 agent working on the NEXUS3 codebase itself:
+
+### Searching the Codebase
+- **Always search `./nexus3/`** instead of the repository root
+- The root contains logs, test artifacts, and other large directories that will cause grep/glob to timeout
+- Example: `grep(pattern="SessionLogger", path="./nexus3/")` NOT `grep(pattern="SessionLogger", path=".")`
+
+### Key Directories
+- `nexus3/` - All source code
+- `tests/` - Test files (unit, integration, security)
+- `docs/` - Documentation
+- `.nexus3/logs/` - Session logs (large, avoid searching)
