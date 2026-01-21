@@ -116,6 +116,7 @@ async def cmd_create(
     ctx: CommandContext,
     name: str,
     permission: str = "trusted",
+    model: str | None = None,
 ) -> CommandOutput:
     """Create a new agent without switching to it.
 
@@ -126,10 +127,13 @@ async def cmd_create(
         ctx: Command context with pool and session_manager.
         name: Name for the new agent.
         permission: Permission level ("sandboxed", "trusted", "yolo", "worker").
+        model: Model name/alias to use (None for default).
 
     Returns:
         CommandOutput with created agent info in data field.
     """
+    from nexus3.rpc.pool import AgentConfig
+
     # Validate permission level
     valid_permissions = {"sandboxed", "trusted", "yolo", "worker"}
     if permission not in valid_permissions:
@@ -143,7 +147,12 @@ async def cmd_create(
         return CommandOutput.error(f"Agent already exists: {name}")
 
     try:
-        agent = await ctx.pool.create(agent_id=name)
+        # Create agent with permission preset and optional model
+        agent_config = AgentConfig(
+            preset=permission,
+            model=model,
+        )
+        agent = await ctx.pool.create(agent_id=name, config=agent_config)
         return CommandOutput.success(
             message=f"Created agent: {agent.agent_id}",
             data={
@@ -151,6 +160,7 @@ async def cmd_create(
                 "is_temp": is_temp_agent(agent.agent_id),
                 "created_at": agent.created_at.isoformat(),
                 "permission": permission,
+                "model": model,
             },
         )
     except ValueError as e:

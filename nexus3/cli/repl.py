@@ -960,23 +960,56 @@ async def run_repl(
             return await unified_cmd.cmd_list(ctx)
         elif cmd_name == "create":
             if not cmd_args:
-                return CommandOutput.error("Usage: /create <name> [--perm]")
+                return CommandOutput.error(
+                    "Usage: /create <name> [--yolo|--trusted|--sandboxed] [--model <alias>]"
+                )
             create_parts = cmd_args.split()
             try:
                 name = validate_agent_id(create_parts[0])
             except ValidationError as e:
                 return CommandOutput.error(f"Invalid agent name: {e}")
             perm = "trusted"
-            for p in create_parts[1:]:
-                if p.lower() in ("--yolo", "-y"):
+            model: str | None = None
+            i = 1
+            while i < len(create_parts):
+                p = create_parts[i]
+                p_lower = p.lower()
+                if p_lower in ("--yolo", "-y"):
                     perm = "yolo"
-                elif p.lower() in ("--trusted", "-t"):
+                elif p_lower in ("--trusted", "-t"):
                     perm = "trusted"
-                elif p.lower() in ("--sandboxed", "-s"):
+                elif p_lower in ("--sandboxed", "-s"):
                     perm = "sandboxed"
-                elif p.lower() in ("--worker", "-w"):
+                elif p_lower in ("--worker", "-w"):
                     perm = "worker"
-            return await unified_cmd.cmd_create(ctx, name, perm)
+                elif p_lower in ("--model", "-m"):
+                    if i + 1 >= len(create_parts):
+                        return CommandOutput.error(
+                            f"Flag {p} requires a value.\n"
+                            "Usage: /create <name> --model <alias>"
+                        )
+                    model = create_parts[i + 1]
+                    i += 1
+                elif p_lower.startswith("--model="):
+                    model = p.split("=", 1)[1]
+                    if not model:
+                        return CommandOutput.error("Flag --model= requires a value.")
+                elif p_lower.startswith("-m="):
+                    model = p.split("=", 1)[1]
+                    if not model:
+                        return CommandOutput.error("Flag -m= requires a value.")
+                elif p.startswith("-"):
+                    return CommandOutput.error(
+                        f"Unknown flag: {p}\n"
+                        "Valid flags: --yolo/-y, --trusted/-t, --sandboxed/-s, --model/-m <alias>"
+                    )
+                else:
+                    return CommandOutput.error(
+                        f"Unexpected argument: {p}\n"
+                        "Usage: /create <name> [--yolo|--trusted|--sandboxed] [--model <alias>]"
+                    )
+                i += 1
+            return await unified_cmd.cmd_create(ctx, name, perm, model)
         elif cmd_name == "destroy":
             if not cmd_args:
                 return CommandOutput.error("Usage: /destroy <name>")

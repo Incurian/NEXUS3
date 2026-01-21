@@ -209,7 +209,7 @@ class MockAgentPool:
             for agent in self._agents.values()
         ]
 
-    async def create(self, agent_id: str) -> MockAgent:
+    async def create(self, agent_id: str, config: Any = None) -> MockAgent:
         if agent_id in self._agents:
             raise ValueError(f"Agent already exists: {agent_id}")
         agent = MockAgent(agent_id)

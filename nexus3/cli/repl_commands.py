@@ -114,7 +114,8 @@ Agent Management:
   /over               Exit whisper mode, return to original agent
 
   /list               List all active agents
-  /create <name>      Create agent without switching
+  /create <name> [--preset] [--model <alias>]
+                      Create agent without switching
   /destroy <name>     Remove active agent from pool
   /send <agent> <msg> One-shot message to another agent
   /status [agent] [--tools] [--tokens] [-a]  Get agent status (-a: all details)
