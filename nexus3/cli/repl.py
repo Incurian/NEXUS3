@@ -31,6 +31,7 @@ import argparse
 import asyncio
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -751,38 +752,81 @@ async def run_repl(
     # =============================================================
 
     _current_dispatcher: object | None = None
+    _INCOMING_TURN_SENTINEL = object()  # Sentinel to interrupt prompt
+    _incoming_turn_active = False  # Flag to track if incoming turn in progress
+    _incoming_turn_done: asyncio.Event | None = None  # Signal spinner to stop
+    _incoming_spinner_task: asyncio.Task[None] | None = None  # Spinner task
+    _incoming_end_payload: dict[str, Any] | None = None  # Store end payload for after spinner
+
+    async def _run_incoming_spinner() -> None:
+        """Run the spinner while incoming turn is active."""
+        nonlocal _incoming_turn_active, _incoming_end_payload
+        # Create a fresh display for the incoming turn
+        incoming_display = StreamingDisplay(theme)
+        incoming_display.set_activity(Activity.WAITING)
+        incoming_display.start_activity_timer()
+
+        with Live(incoming_display, console=console, refresh_per_second=10, transient=True) as live:
+            # Refresh loop until turn ends
+            while _incoming_turn_done and not _incoming_turn_done.is_set():
+                live.refresh()
+                await asyncio.sleep(0.1)
+
+        # After spinner stops, print the end notification
+        if _incoming_end_payload:
+            ok = _incoming_end_payload.get("ok", False)
+            if ok:
+                preview = _incoming_end_payload.get("content_preview", "")[:50]
+                console.print(f"[bold green]✓ Response sent:[/] {preview}...")
+            elif _incoming_end_payload.get("cancelled"):
+                console.print("[bold yellow]✗ Request cancelled[/]")
+            _incoming_end_payload = None
+        # Only release main loop AFTER notification is printed
+        _incoming_turn_active = False
 
     async def _on_incoming_turn(payload: dict[str, Any]) -> None:
         """Handle incoming turn notifications from dispatcher."""
+        nonlocal _incoming_turn_active, _incoming_turn_done, _incoming_spinner_task, _incoming_end_payload
         phase = payload.get("phase")
         source = payload.get("source", "rpc")
         source_agent = payload.get("source_agent_id")
 
-        def _print_notification() -> None:
-            if phase == "started":
-                preview = payload.get("preview", "")[:50]
-                if source_agent:
-                    label = f"[dim cyan]● Incoming from {source_agent}:[/] {preview}..."
-                else:
-                    label = f"[dim cyan]● Incoming ({source}):[/] {preview}..."
-                console.print(label)
-            elif phase == "ended":
-                ok = payload.get("ok", False)
-                if ok:
-                    preview = payload.get("content_preview", "")[:50]
-                    console.print(f"[dim green]● Response ready[/] ({preview}...)")
-                elif payload.get("cancelled"):
-                    console.print("[dim yellow]● Request cancelled[/]")
+        if phase == "started":
+            _incoming_turn_active = True
+            preview = payload.get("preview", "")[:50]
 
-        # Safely print during prompt using run_in_terminal
-        if prompt_session.app and prompt_session.app.is_running:
-            try:
-                await prompt_session.app.run_in_terminal(_print_notification)
-            except Exception:
-                # App may have closed, fall back to direct print
-                _print_notification()
-        else:
-            _print_notification()
+            # Interrupt the prompt if active - this makes it "agent's turn"
+            if prompt_session.app and prompt_session.app.is_running:
+                prompt_session.app.exit(result=_INCOMING_TURN_SENTINEL)
+                # Yield to let prompt actually exit before we print
+                await asyncio.sleep(0)
+                # Move up and clear the prompt line (prompt_toolkit adds newline on exit)
+                sys.stdout.write("\033[1A\r\033[2K")  # Up one line, start of line, clear
+                sys.stdout.flush()
+
+            # Print notification
+            if source_agent:
+                console.print(f"[bold cyan]▶ INCOMING from {source_agent}:[/] {preview}...")
+            else:
+                console.print(f"[bold cyan]▶ INCOMING ({source}):[/] {preview}...")
+            console.bell()
+
+            # Start spinner task
+            _incoming_turn_done = asyncio.Event()
+            _incoming_spinner_task = asyncio.create_task(_run_incoming_spinner())
+
+        elif phase == "ended":
+            # Store payload and signal spinner to stop
+            _incoming_end_payload = payload
+            if _incoming_turn_done:
+                _incoming_turn_done.set()
+            # Wait for spinner task to finish (it prints the end notification)
+            if _incoming_spinner_task:
+                try:
+                    await _incoming_spinner_task
+                except Exception:
+                    pass
+                _incoming_spinner_task = None
 
     def _set_incoming_hook(dispatcher: object) -> None:
         """Set the incoming turn hook on a dispatcher."""
@@ -1017,6 +1061,13 @@ async def run_repl(
             user_input = await prompt_session.prompt_async(
                 HTML(f"<style class='prompt'>{prompt_text}</style>")
             )
+
+            # Check if prompt was interrupted by incoming RPC turn
+            if user_input is _INCOMING_TURN_SENTINEL:
+                # Wait for incoming turn to complete before showing prompt again
+                while _incoming_turn_active:
+                    await asyncio.sleep(0.05)
+                continue
 
             # Handle empty input
             if not user_input.strip():
