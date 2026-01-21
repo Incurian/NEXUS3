@@ -1,11 +1,12 @@
 """Unit tests for MCP transport module."""
 
+import asyncio
 import os
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from nexus3.mcp.transport import SAFE_ENV_KEYS, build_safe_env
+from nexus3.mcp.transport import SAFE_ENV_KEYS, StdioTransport, build_safe_env
 
 
 class TestSafeEnvKeys:
@@ -141,3 +142,116 @@ class TestBuildSafeEnv:
             # Should NOT be present
             assert "AWS_SECRET_ACCESS_KEY" not in env
             assert "OPENROUTER_API_KEY" not in env
+
+
+class TestStdioTransportBuffering:
+    """Test stdio transport read buffering.
+
+    These tests verify that _read_bounded_line properly buffers data
+    when multiple responses arrive in a single read() call - common
+    with buffered I/O (especially WSL→Windows subprocess).
+    """
+
+    @pytest.mark.asyncio
+    async def test_multi_response_in_single_read(self):
+        """When read() returns multiple lines, each call gets one line."""
+        transport = StdioTransport(["dummy"])
+        transport._process = MagicMock()
+
+        # Simulate reading two complete JSON-RPC responses in one chunk
+        response1 = b'{"jsonrpc":"2.0","id":1,"result":{}}\n'
+        response2 = b'{"jsonrpc":"2.0","id":2,"result":{"tools":[]}}\n'
+        combined = response1 + response2
+
+        # First read() returns both responses, subsequent reads return empty
+        read_calls = [combined, b""]
+        call_idx = 0
+
+        async def mock_read(n):
+            nonlocal call_idx
+            if call_idx < len(read_calls):
+                result = read_calls[call_idx]
+                call_idx += 1
+                return result
+            return b""
+
+        transport._process.stdout = MagicMock()
+        transport._process.stdout.read = mock_read
+
+        # First call should return first response
+        line1 = await transport._read_bounded_line()
+        assert line1 == response1
+
+        # Second call should return buffered second response (no new read needed)
+        line2 = await transport._read_bounded_line()
+        assert line2 == response2
+
+    @pytest.mark.asyncio
+    async def test_partial_line_in_buffer(self):
+        """Buffer handles partial lines that span multiple reads."""
+        transport = StdioTransport(["dummy"])
+        transport._process = MagicMock()
+
+        # First read: incomplete line, Second read: rest of line + next line
+        chunk1 = b'{"jsonrpc":"2.0",'
+        chunk2 = b'"id":1,"result":{}}\n{"jsonrpc":"2.0","id":2}\n'
+
+        read_calls = [chunk1, chunk2, b""]
+        call_idx = 0
+
+        async def mock_read(n):
+            nonlocal call_idx
+            if call_idx < len(read_calls):
+                result = read_calls[call_idx]
+                call_idx += 1
+                return result
+            return b""
+
+        transport._process.stdout = MagicMock()
+        transport._process.stdout.read = mock_read
+
+        # First call should return complete first response
+        line1 = await transport._read_bounded_line()
+        assert line1 == b'{"jsonrpc":"2.0","id":1,"result":{}}\n'
+
+        # Second call should return buffered second response
+        line2 = await transport._read_bounded_line()
+        assert line2 == b'{"jsonrpc":"2.0","id":2}\n'
+
+    @pytest.mark.asyncio
+    async def test_buffer_cleared_on_close(self):
+        """Close clears any buffered data."""
+        transport = StdioTransport(["dummy"])
+        transport._read_buffer = b"leftover data"
+        transport._process = None  # Already closed
+        transport._stderr_task = None
+
+        await transport.close()
+
+        assert transport._read_buffer == b""
+
+    @pytest.mark.asyncio
+    async def test_complete_line_in_buffer_no_read_needed(self):
+        """If buffer has complete line, no read() is called."""
+        transport = StdioTransport(["dummy"])
+        transport._process = MagicMock()
+
+        # Pre-fill buffer with a complete line
+        transport._read_buffer = b'{"id":1}\n{"id":2}\n'
+
+        # read() should NOT be called
+        read_called = False
+
+        async def mock_read(n):
+            nonlocal read_called
+            read_called = True
+            return b""
+
+        transport._process.stdout = MagicMock()
+        transport._process.stdout.read = mock_read
+
+        line = await transport._read_bounded_line()
+
+        assert line == b'{"id":1}\n'
+        assert not read_called  # Buffer had complete line
+        assert transport._read_buffer == b'{"id":2}\n'  # Rest still buffered

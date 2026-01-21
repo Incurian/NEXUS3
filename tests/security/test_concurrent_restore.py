@@ -85,6 +85,7 @@ class MockSavedSession:
     disabled_tools: list[str] | None = None
     working_directory: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
+    model_alias: str | None = None
 
 
 class MockSessionManager:

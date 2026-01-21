@@ -207,6 +207,22 @@ class MCPClient:
                     )
                 continue
 
+            # Discard error responses with null id (from non-compliant servers
+            # that respond to notifications instead of ignoring them)
+            if response.get("id") is None and "error" in response:
+                notifications_discarded += 1
+                logger.debug(
+                    "Discarded null-id error response (likely notification error): %s",
+                    response.get("error", {}).get("message", "unknown"),
+                )
+                if notifications_discarded > MAX_NOTIFICATIONS_TO_DISCARD:
+                    raise MCPError(
+                        f"Received too many spurious responses ({notifications_discarded}) "
+                        f"while waiting for response to request {expected_id}. "
+                        "Server may be malfunctioning."
+                    )
+                continue
+
             # P2.9 SECURITY: Verify response ID matches request ID
             response_id = response.get("id")
             if response_id != expected_id:

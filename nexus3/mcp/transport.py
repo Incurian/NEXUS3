@@ -191,6 +191,8 @@ class StdioTransport(MCPTransport):
         self._stderr_task: asyncio.Task[None] | None = None
         # Lock for serializing I/O operations (clarity for concurrent callers)
         self._io_lock = asyncio.Lock()
+        # Buffer for data read past newline (fixes multi-response buffering)
+        self._read_buffer: bytes = b""
 
     async def connect(self) -> None:
         """Start the subprocess."""
@@ -283,6 +285,10 @@ class StdioTransport(MCPTransport):
 
         P2.12 SECURITY: Prevents memory exhaustion by limiting line length.
 
+        Properly buffers data read past the newline for subsequent reads.
+        This is critical when multiple responses arrive in quick succession
+        (common with buffered I/O, especially WSL→Windows subprocess).
+
         Returns:
             Line bytes (including newline if present).
 
@@ -294,6 +300,19 @@ class StdioTransport(MCPTransport):
 
         chunks: list[bytes] = []
         total_length = 0
+
+        # Check if we have buffered data from a previous read
+        if self._read_buffer:
+            newline_idx = self._read_buffer.find(b"\n")
+            if newline_idx >= 0:
+                # Complete line in buffer - return it and update buffer
+                line = self._read_buffer[: newline_idx + 1]
+                self._read_buffer = self._read_buffer[newline_idx + 1 :]
+                return line
+            # No complete line in buffer - use it as starting chunk
+            chunks.append(self._read_buffer)
+            total_length = len(self._read_buffer)
+            self._read_buffer = b""
 
         while True:
             # Read up to remaining allowed bytes or 64KB chunk
@@ -316,9 +335,8 @@ class StdioTransport(MCPTransport):
             if newline_idx >= 0:
                 # Found newline - return complete line
                 chunks.append(chunk[: newline_idx + 1])
-                # Put back remaining data (after newline)
-                # Note: asyncio.StreamReader doesn't support unread, but in
-                # practice MCP messages are one-per-line so this is fine
+                # Buffer remaining data (after newline) for next read
+                self._read_buffer = chunk[newline_idx + 1 :]
                 return b"".join(chunks)
 
             chunks.append(chunk)
@@ -326,6 +344,8 @@ class StdioTransport(MCPTransport):
 
     async def close(self) -> None:
         """Terminate subprocess."""
+        self._read_buffer = b""  # Clear any buffered data
+
         if self._stderr_task is not None:
             self._stderr_task.cancel()
             try:

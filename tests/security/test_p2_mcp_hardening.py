@@ -170,6 +170,53 @@ class TestNotificationDiscarding:
         assert "Response ID mismatch" in str(exc_info.value)
 
 
+class TestNullIdErrorDiscarding:
+    """Tests for discarding null-id error responses from non-compliant servers.
+
+    Some MCP servers incorrectly respond to notifications (which should be
+    ignored) with error responses that have id: null. NEXUS3 should discard
+    these to maintain compatibility with non-compliant servers.
+    """
+
+    @pytest.mark.asyncio
+    async def test_null_id_error_discarded(self) -> None:
+        """Error responses with id=null are discarded."""
+        transport = MockTransport([
+            # Initialize succeeds
+            {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}}},
+            # Server incorrectly returns error for notifications/initialized
+            {"jsonrpc": "2.0", "id": None, "error": {"code": -32601, "message": "Method not found"}},
+            # Then tools/list succeeds
+            {"jsonrpc": "2.0", "id": 2, "result": {"tools": []}},
+        ])
+
+        client = MCPClient(transport)
+        await client.connect()
+
+        # Should succeed by discarding the null-id error
+        tools = await client.list_tools()
+        assert tools == []
+
+    @pytest.mark.asyncio
+    async def test_null_id_error_with_matching_result_still_works(self) -> None:
+        """Multiple null-id errors can be discarded before finding the real response."""
+        transport = MockTransport([
+            {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}}},
+            # Multiple spurious null-id errors
+            {"jsonrpc": "2.0", "id": None, "error": {"code": -32601, "message": "Error 1"}},
+            {"jsonrpc": "2.0", "id": None, "error": {"code": -32601, "message": "Error 2"}},
+            # Real response
+            {"jsonrpc": "2.0", "id": 2, "result": {"tools": [{"name": "test_tool"}]}},
+        ])
+
+        client = MCPClient(transport)
+        await client.connect()
+
+        tools = await client.list_tools()
+        assert len(tools) == 1
+        assert tools[0].name == "test_tool"
+
+
 class TestCanUseMcpDenyByDefault:
     """Tests for P2.11: can_use_mcp(None) denies by default."""
 
