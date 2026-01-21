@@ -2,85 +2,470 @@
 
 **A secure, multi-agent CLI framework for AI-powered software engineering.**
 
-NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrating multiple AI agents. Each agent runs in isolation with configurable permissions, enabling safe automation of development tasks through 24 built-in skills (file operations, git, shell execution, inter-agent communication).
+NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrating multiple AI agents. Each agent runs in isolation with configurable permissions, enabling safe automation of development tasks through 26 built-in skills (file operations, git, shell execution, inter-agent communication).
 
-## Key Design Principles
+---
 
-- **One Server, Many Agents**: Run a single NEXUS3 server per project/family. Create multiple agents within it for parallel research, code review, implementation—all coordinated through `nexus_send`. This is more efficient than multiple servers and enables direct inter-agent communication.
-- **Async-First**: Built on asyncio throughout—no threading, predictable concurrency
-- **Fail-Fast**: Errors surface immediately with clear messages—no silent failures
-- **Security by Default**: Sandboxed by default for RPC agents, permission ceilings prevent escalation
-- **Minimal Core**: Zero external dependencies in `nexus3/core` (stdlib + jsonschema only)
+## Table of Contents
+
+- [Key Features](#key-features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [CLI Reference](#cli-reference)
+- [Architecture](#architecture)
+- [Security & Permissions](#security--permissions)
+- [Configuration](#configuration)
+- [Built-in Skills](#built-in-skills)
+- [MCP Integration](#mcp-integration)
+- [Session Management](#session-management)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [License](#license)
+
+---
+
+## Key Features
+
+- **One Server, Many Agents**: Run a single NEXUS3 server per project. Create multiple agents within it for parallel research, code review, implementation—all coordinated through `nexus_send`. More efficient than multiple servers and enables direct inter-agent communication.
+- **Async-First**: Built on asyncio throughout—no threading, predictable concurrency.
+- **Fail-Fast**: Errors surface immediately with clear messages—no silent failures.
+- **Security by Default**: Sandboxed by default for RPC agents, permission ceilings prevent escalation.
+- **Multi-Provider Support**: OpenRouter, Anthropic, OpenAI, Azure, Ollama, vLLM.
+- **Context Compaction**: LLM-powered summarization when context gets full.
+- **MCP Integration**: Connect external tools via Model Context Protocol.
+
+---
+
+## Requirements
+
+### System Requirements
+
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| Python | 3.11+ | **Required.** Use `python3.11` or newer |
+| Operating System | Linux, macOS, WSL2 | Windows requires WSL2 |
+| Terminal | Any modern terminal | 256-color support recommended |
+
+### LLM Provider (At Least One)
+
+You need an API key from at least one provider:
+
+| Provider | Environment Variable | Sign Up |
+|----------|---------------------|---------|
+| OpenRouter (recommended) | `OPENROUTER_API_KEY` | [openrouter.ai](https://openrouter.ai) |
+| Anthropic | `ANTHROPIC_API_KEY` | [anthropic.com](https://anthropic.com) |
+| OpenAI | `OPENAI_API_KEY` | [openai.com](https://openai.com) |
+| Azure OpenAI | `AZURE_OPENAI_KEY` | Azure Portal |
+| Ollama (local) | N/A | [ollama.ai](https://ollama.ai) |
+
+**Why OpenRouter?** Single API key gives access to Claude, GPT-4, Gemini, Llama, and hundreds of other models. Great for experimentation.
+
+---
+
+## Installation
+
+### Step 1: Clone the Repository
+
+```bash
+git clone https://github.com/your-org/nexus3.git
+cd nexus3
+```
+
+### Step 2: Create a Virtual Environment
+
+**Option A: Using `uv` (faster, recommended)**
+```bash
+# Install uv if you don't have it
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create virtualenv with Python 3.11+
+uv venv --python 3.11
+source .venv/bin/activate
+```
+
+**Option B: Using standard `venv`**
+```bash
+# Ensure you have Python 3.11+
+python3.11 --version  # Should print 3.11.x or higher
+
+# Create virtualenv
+python3.11 -m venv .venv
+source .venv/bin/activate
+```
+
+### Step 3: Install Dependencies
+
+**Development installation (recommended):**
+```bash
+# Using uv
+uv pip install -e ".[dev]"
+
+# Or using pip
+pip install -e ".[dev]"
+```
+
+**User installation:**
+```bash
+pip install .
+```
+
+### Step 4: Set Up API Key
+
+**Option A: Environment variable (temporary)**
+```bash
+export OPENROUTER_API_KEY="sk-or-v1-..."
+```
+
+**Option B: `.env` file (persistent, recommended)**
+```bash
+# Create .env file in repo root
+echo 'OPENROUTER_API_KEY=sk-or-v1-...' > .env
+
+# This file is gitignored - never commit API keys!
+```
+
+**Option C: Shell profile (always available)**
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+echo 'export OPENROUTER_API_KEY="sk-or-v1-..."' >> ~/.bashrc
+source ~/.bashrc
+```
+
+### Step 5: Verify Installation
+
+```bash
+# Check Python version
+python --version  # Should show 3.11+
+
+# Check module is importable
+python -c "import nexus3; print('NEXUS3 installed successfully')"
+
+# Check CLI works
+nexus3 --help
+```
+
+### Step 6: Initialize Configuration (Optional)
+
+```bash
+# Create global config directory (~/.nexus3/)
+nexus3 --init-global
+
+# This creates:
+# - ~/.nexus3/config.json (settings)
+# - ~/.nexus3/NEXUS.md (system prompt template)
+# - ~/.nexus3/mcp.json (MCP servers)
+```
+
+### Path Setup (If `nexus3` Command Not Found)
+
+If `nexus3` command is not found after installation:
+
+```bash
+# Option 1: Add ~/.local/bin to PATH
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# Option 2: Use full path
+~/.local/bin/nexus3
+
+# Option 3: Use module directly
+python -m nexus3
+```
+
+---
 
 ## Quick Start
 
-### Installation
+### Interactive REPL (Recommended for Getting Started)
 
 ```bash
-# Create virtual environment (Python 3.11+ required)
-uv venv --python 3.11
-source .venv/bin/activate
+# Launch with session selector (lobby)
+nexus3
 
-# Install with dev dependencies
-uv pip install -e ".[dev]"
+# Skip lobby, start fresh session
+nexus3 --fresh
 
-# Set API key (OpenRouter recommended, or use ANTHROPIC_API_KEY, OPENAI_API_KEY)
-export OPENROUTER_API_KEY="sk-or-..."
+# Resume your last session
+nexus3 --resume
+
+# Load specific saved session
+nexus3 --session myproject
 ```
 
-### Interactive REPL (Recommended)
+Once in the REPL:
+- Type messages naturally to chat with the AI
+- Use `/help` to see all commands
+- Press `ESC` to cancel a response
+- Press `Ctrl+D` or type `/quit` to exit
 
-```bash
-nexus3                    # Launch lobby to select/create session
-nexus3 --fresh            # Skip lobby, start new temporary session
-nexus3 --resume           # Resume last session
-nexus3 --session myproj   # Load or create named session
+### Your First Conversation
+
 ```
+$ nexus3 --fresh
 
-**REPL Features:**
-- `/help` - List all slash commands
-- `/agent list|create|switch` - Manage agents within the session
-- `/whisper` - Send message without tool execution
-- `/permissions` - View/change permission level
-- `/mcp` - List connected MCP servers
-- `ESC` - Cancel current streaming response
-- Logs saved to `.nexus3/logs/{session-id}/`
+NEXUS3 v0.1.0 - Type /help for commands
+
+you> Hello! What can you do?
+
+assistant> I'm NEXUS3, an AI assistant with access to 26 tools for
+software development tasks. I can:
+
+• Read, write, and edit files
+• Run shell commands and Python scripts
+• Use git for version control
+• Search codebases with glob and grep
+• Create and coordinate sub-agents for parallel work
+
+What would you like to work on?
+
+you> /help
+```
 
 ### Multi-Agent Workflows
 
-The REPL includes an embedded RPC server. Create subagents for parallel work:
+NEXUS3 shines when you need multiple agents working together:
 
 ```bash
-# In REPL, create a research agent
-/agent create researcher
+# Terminal 1: Start REPL (includes embedded server)
+nexus3
 
-# Or via CLI (same server)
-nexus3 rpc create reviewer --preset trusted
-nexus3 rpc send reviewer "Review the changes in src/auth.py for security issues"
-nexus3 rpc status reviewer
+# Terminal 2: Create a research agent
+nexus3 rpc create researcher --preset trusted --cwd /path/to/project
+
+# Send it a task
+nexus3 rpc send researcher "Analyze the authentication module and list security concerns"
+
+# Check its progress
+nexus3 rpc status researcher
+
+# When done, clean up
+nexus3 rpc destroy researcher
 ```
 
-**Agents can communicate directly:**
-```python
-# From within an agent's session, send to another agent
-nexus_send(agent_id="reviewer", content="What security issues did you find?")
+**Or manage agents from within the REPL:**
+```
+you> /agent create researcher --trusted
+Created agent 'researcher'
+
+you> /whisper researcher
+researcher> Analyze the test coverage in tests/
+
+(agent works...)
+
+researcher> /over
+you>
 ```
 
-### Headless Server Mode
+---
 
-For automation, CI/CD, or external tooling:
+## CLI Reference
+
+### Main Command: `nexus3`
+
+```
+nexus3 [OPTIONS]
+```
+
+#### Session Modes (Mutually Exclusive)
+
+| Flag | Description |
+|------|-------------|
+| (none) | Show lobby to select/create session |
+| `--fresh` | Start new temporary session |
+| `--resume` | Resume last session automatically |
+| `--session NAME` | Load specific saved session by name |
+
+#### Server Modes
+
+| Flag | Description |
+|------|-------------|
+| `--serve [PORT]` | Run headless HTTP server (requires `NEXUS_DEV=1`) |
+| `--connect [URL]` | Connect to existing server (auto-discovers if no URL) |
+| `--agent ID` | Agent to connect to (default: `main`, requires `--connect`) |
+
+#### Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model NAME` | Config default | Model alias or full ID |
+| `--template PATH` | - | Custom system prompt file |
+| `--verbose` | false | Enable debug logging |
+| `--raw-log` | false | Log raw API JSON |
+| `--log-dir PATH` | `.nexus3/logs` | Log directory |
+| `--port PORT` | 8765 | Server port |
+| `--api-key KEY` | Auto | Explicit API key |
+| `--scan PORTS` | - | Additional ports to scan (e.g., `9000,9001-9010`) |
+
+#### Initialization
+
+| Flag | Description |
+|------|-------------|
+| `--init-global` | Create `~/.nexus3/` with default config |
+| `--init-global-force` | Overwrite existing global config |
+
+### RPC Subcommands: `nexus3 rpc`
+
+All RPC commands require a running server. They do **not** auto-start servers.
+
+#### `nexus3 rpc detect`
+
+Check if a server is running.
 
 ```bash
-# Start headless server (requires NEXUS_DEV=1 for security)
-NEXUS_DEV=1 nexus3 --serve 8765
+nexus3 rpc detect [--port PORT]
+```
 
-# In another terminal, manage agents via RPC
-nexus3 rpc create worker --preset sandboxed --cwd /path/to/project
-nexus3 rpc send worker "Analyze the test coverage in tests/"
-nexus3 rpc list
-nexus3 rpc destroy worker
+Exit code: 0 if running, 1 if not.
+
+#### `nexus3 rpc list`
+
+List all agents on the server.
+
+```bash
+nexus3 rpc list [--port PORT] [--api-key KEY]
+```
+
+#### `nexus3 rpc create`
+
+Create a new agent.
+
+```bash
+nexus3 rpc create AGENT_ID [OPTIONS]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--preset` | `sandboxed` | Permission preset: `trusted`, `sandboxed`, `worker` |
+| `--cwd PATH` | - | Working directory (sandbox root) |
+| `--write-path PATH` | - | Allow writes to path (repeatable) |
+| `--model NAME` | - | Model alias |
+| `-M, --message MSG` | - | Send initial message after creation |
+| `-t, --timeout SEC` | 300 | Request timeout |
+
+**Important:** RPC agents are `sandboxed` by default (read-only). Use `--preset trusted` for full access or `--write-path` for specific directories.
+
+#### `nexus3 rpc send`
+
+Send a message to an agent.
+
+```bash
+nexus3 rpc send AGENT_ID MESSAGE [--timeout SEC]
+```
+
+#### `nexus3 rpc status`
+
+Get agent status (tokens, context info).
+
+```bash
+nexus3 rpc status AGENT_ID
+```
+
+#### `nexus3 rpc destroy`
+
+Remove an agent.
+
+```bash
+nexus3 rpc destroy AGENT_ID
+```
+
+#### `nexus3 rpc compact`
+
+Force context compaction to reclaim tokens.
+
+```bash
+nexus3 rpc compact AGENT_ID
+```
+
+#### `nexus3 rpc cancel`
+
+Cancel an in-progress request.
+
+```bash
+nexus3 rpc cancel AGENT_ID REQUEST_ID
+```
+
+#### `nexus3 rpc shutdown`
+
+Gracefully stop the server.
+
+```bash
 nexus3 rpc shutdown
 ```
+
+### REPL Slash Commands
+
+Available when running interactively.
+
+#### Agent Management
+
+| Command | Description |
+|---------|-------------|
+| `/agent` | Show current agent status |
+| `/agent NAME` | Switch to agent (creates if needed) |
+| `/agent NAME --trusted` | Create trusted agent and switch |
+| `/agent NAME --model ALIAS` | Create agent with specific model |
+| `/list` | List all active agents |
+| `/create NAME [--preset]` | Create agent without switching |
+| `/destroy NAME` | Remove agent |
+| `/send AGENT MESSAGE` | One-shot message to agent |
+| `/status [AGENT] [-a]` | Get agent status (use `-a` for all details) |
+| `/cancel [AGENT]` | Cancel in-progress request |
+
+#### Inter-Agent Communication
+
+| Command | Description |
+|---------|-------------|
+| `/whisper AGENT` | Enter whisper mode (redirect input to agent) |
+| `/over` | Exit whisper mode |
+
+#### Session Management
+
+| Command | Description |
+|---------|-------------|
+| `/save [NAME]` | Save current session |
+| `/clone SRC DEST` | Clone session |
+| `/rename OLD NEW` | Rename session |
+| `/delete NAME` | Delete saved session |
+
+#### Configuration
+
+| Command | Description |
+|---------|-------------|
+| `/cwd [PATH]` | Show or change working directory |
+| `/model [NAME]` | Show or switch model |
+| `/permissions [PRESET]` | Show or change permissions |
+| `/permissions --list-tools` | List all tools and their status |
+| `/prompt [FILE]` | Show or set system prompt |
+| `/compact` | Force context compaction |
+| `/init [--global]` | Initialize project config |
+
+#### MCP (External Tools)
+
+| Command | Description |
+|---------|-------------|
+| `/mcp` | List MCP servers |
+| `/mcp connect NAME` | Connect to MCP server |
+| `/mcp disconnect NAME` | Disconnect from server |
+| `/mcp tools [SERVER]` | List available MCP tools |
+
+#### REPL Control
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show help |
+| `/clear` | Clear screen |
+| `/quit`, `/exit`, `/q` | Exit REPL |
+
+#### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `ESC` | Cancel current response |
+| `Ctrl+C` | Interrupt input |
+| `Ctrl+D` | Exit REPL |
+
+---
 
 ## Architecture
 
@@ -113,148 +498,690 @@ nexus3 rpc shutdown
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Data Flow:**
-1. User message → Session → Provider (streaming LLM response)
-2. Tool calls detected → SkillRegistry → Permission check → Execute
-3. Tool results → Back to LLM → Continue until done
-4. Response displayed → Logged to SQLite + Markdown
+### Data Flow
 
-## Features
+1. **User message** → Session → Provider (streaming LLM response)
+2. **Tool calls detected** → SkillRegistry → Permission check → Execute
+3. **Tool results** → Back to LLM → Continue until done
+4. **Response displayed** → Logged to SQLite + Markdown
 
-### Multi-Agent System
-- **Agent Isolation**: Each agent has its own context, permissions, and conversation history
-- **Permission Ceilings**: Child agents cannot exceed parent's permissions
-- **Direct Communication**: `nexus_send()` for synchronous inter-agent messaging
-- **Session Persistence**: Save/load agent states, auto-restore on reconnect
+### Module Overview
 
-### Security & Permissions
+| Module | Purpose |
+|--------|---------|
+| `core/` | Types, interfaces, errors, encoding, security primitives |
+| `config/` | Pydantic schemas, layered config loading |
+| `provider/` | LLM provider implementations, retry logic |
+| `context/` | Context management, token counting, compaction |
+| `session/` | Session coordinator, event system, persistence |
+| `skill/` | Skill registry, base classes, 26 built-in skills |
+| `display/` | Rich terminal UI, streaming display |
+| `cli/` | REPL, argument parsing, lobby |
+| `rpc/` | JSON-RPC server, agent pool, authentication |
+| `mcp/` | Model Context Protocol client |
+| `commands/` | Unified command infrastructure |
+| `defaults/` | Default configuration and prompts |
 
-| Preset | Level | Description |
-|--------|-------|-------------|
-| `yolo` | YOLO | Full access, no confirmations (REPL-only, not available via RPC) |
-| `trusted` | TRUSTED | Full access, confirms destructive operations |
-| `sandboxed` | SANDBOXED | Read-only in CWD, no network, no agent management (**RPC default**) |
-| `worker` | SANDBOXED | Minimal: read-only, no writes, no agent management |
+---
 
-**Security Features:**
-- Path sandboxing with symlink attack prevention
-- URL validation with SSRF protection (blocks private IPs, DNS rebinding)
-- Localhost-only RPC binding with token authentication
-- Secret redaction in logs and error messages
-- Process group kills on timeout (no orphaned subprocesses)
+## Security & Permissions
 
-### Built-in Skills (24 total)
+NEXUS3 implements a comprehensive security system with three permission levels.
 
-| Category | Skills |
-|----------|--------|
-| **File Read** | `read_file`, `tail`, `file_info`, `list_directory`, `glob`, `grep` |
-| **File Write** | `write_file`, `edit_file`, `append_file`, `regex_replace`, `copy_file`, `mkdir`, `rename` |
-| **Execution** | `bash_safe` (no shell operators), `shell_UNSAFE` (full shell), `run_python` |
-| **Version Control** | `git` (permission-filtered commands) |
-| **Agent Management** | `nexus_create`, `nexus_destroy`, `nexus_send`, `nexus_status`, `nexus_cancel`, `nexus_shutdown` |
-| **Utility** | `sleep` |
+### Permission Levels
 
-### LLM Providers
+| Level | Description | File Access | Execution | Agent Creation |
+|-------|-------------|-------------|-----------|----------------|
+| **YOLO** | Full access, no confirmations | Unrestricted | No prompts | Any preset |
+| **TRUSTED** | Interactive with confirmations | Read anywhere, write prompts outside CWD | Prompts required | Sandboxed only |
+| **SANDBOXED** | Isolated sandbox | CWD only | Disabled | Disabled |
 
-Supports multiple providers with automatic retry and streaming:
+### Permission Presets
 
-| Provider | Configuration |
-|----------|---------------|
-| OpenRouter | `OPENROUTER_API_KEY` (default, access to all models) |
-| Anthropic | `ANTHROPIC_API_KEY` (native Claude API) |
-| OpenAI | `OPENAI_API_KEY` |
-| Azure OpenAI | `AZURE_OPENAI_KEY` + deployment config |
-| Ollama | Local models via `http://localhost:11434` |
-| vLLM | Self-hosted OpenAI-compatible endpoint |
+| Preset | Level | Description | Available Via |
+|--------|-------|-------------|---------------|
+| `yolo` | YOLO | Full access, no confirmations | REPL only |
+| `trusted` | TRUSTED | Confirmations for destructive actions | REPL, RPC |
+| `sandboxed` | SANDBOXED | Read-only in CWD, no execution | REPL, RPC (default) |
 
-### Context Management
-- **Layered Prompts**: NEXUS.md loaded from defaults → global → ancestors → local
-- **Token Budgets**: Automatic tracking with tiktoken
-- **Compaction**: LLM-powered summarization when context gets full
-- **Temporal Awareness**: Agents always know current date/time and session start
+### Key Security Features
 
-### MCP Integration
-Connect external tools via Model Context Protocol:
+#### Permission Ceiling Enforcement
 
-```json
-// .nexus3/mcp.json
-{
-  "servers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@anthropic/mcp-filesystem", "/path/to/allow"]
-    }
-  }
-}
+Child agents cannot exceed parent permissions:
+- YOLO agents can create TRUSTED or SANDBOXED children
+- TRUSTED agents can only create SANDBOXED children
+- SANDBOXED agents cannot create any agents
+
+#### Path Sandboxing
+
+- **Sandboxed agents**: Can only access files within their `cwd`
+- **Symlink protection**: Resolved paths checked for sandbox escape
+- **Per-tool paths**: Individual tools can have their own path restrictions
+
+#### RPC Security
+
+- **Localhost binding**: Server only binds to `127.0.0.1`
+- **Token authentication**: 256-bit tokens with constant-time comparison
+- **Request limits**: Body size (1MB), header limits, timeout protection
+- **Secure tokens**: `0o600` permissions, per-port token files
+
+#### SSRF Protection
+
+URL validation blocks access to:
+- Cloud metadata endpoints (169.254.169.254)
+- Private networks (10.x, 172.16-31.x, 192.168.x)
+- Localhost (unless explicitly allowed)
+- Link-local and multicast addresses
+
+#### Process Isolation
+
+- Process group kills on timeout (no orphaned processes)
+- Environment sanitization (API keys not passed to subprocesses)
+- `bash_safe` uses `shlex.split()` (no shell injection)
+
+### RPC Default Permissions (Important!)
+
+**RPC-created agents are `sandboxed` by default**, not `trusted`. This is intentional:
+
+```bash
+# Default: sandboxed (read-only in cwd)
+nexus3 rpc create worker --cwd /project
+
+# Explicitly trusted (read anywhere)
+nexus3 rpc create worker --preset trusted --cwd /project
+
+# Sandboxed with write access to specific directory
+nexus3 rpc create worker --cwd /project --write-path /project/output
 ```
 
-Tools appear as `mcp_filesystem_*` skills with appropriate permission checks.
+### REPL Confirmation Behavior
 
-## Module Reference
+In TRUSTED mode, destructive operations prompt for confirmation:
 
-| Module | Lines | Purpose |
-|--------|-------|---------|
-| [core](nexus3/core/README.md) | ~800 | Types (`Message`, `StreamEvent`), `AsyncProvider` protocol, permission system, path/URL security, validation utilities |
-| [config](nexus3/config/README.md) | ~470 | Layered configuration loading, Pydantic schemas for all settings |
-| [provider](nexus3/provider/README.md) | ~680 | LLM provider implementations, `ProviderRegistry` for multi-provider setups |
-| [context](nexus3/context/README.md) | ~650 | `ContextManager` for conversation state, token counting, compaction |
-| [session](nexus3/session/README.md) | ~690 | `Session` coordinator, event system, `SessionLogger`, persistence |
-| [skill](nexus3/skill/README.md) | ~950 | `SkillRegistry`, base classes (`FileSkill`, `ExecutionSkill`), all built-in skills |
-| [display](nexus3/display/README.md) | ~650 | `StreamingDisplay` with Rich Live, tool gumballs, summary bar |
-| [cli](nexus3/cli/README.md) | ~580 | REPL implementation, argument parsing, lobby, confirmation UI |
-| [rpc](nexus3/rpc/README.md) | ~880 | JSON-RPC 2.0 server, `AgentPool`, `GlobalDispatcher`, authentication |
-| [mcp](nexus3/mcp/README.md) | ~650 | MCP client, transport implementations, skill adapters |
-| [commands](nexus3/commands/README.md) | ~630 | Unified command infrastructure for CLI and REPL |
-| [defaults](nexus3/defaults/README.md) | ~360 | Default configuration and system prompt templates |
+```
+Tool: write_file
+Path: /etc/hosts
+This path is outside your working directory.
+
+Allow? [y]es / [n]o / [a]llow directory / [s]kip:
+```
+
+Options:
+- **y**: Allow this once
+- **n**: Deny
+- **a**: Allow all operations in this directory for the session
+- **s**: Skip this tool call
+
+---
 
 ## Configuration
 
-Configuration is layered (later overrides earlier):
-1. **Shipped defaults**: `nexus3/defaults/config.json`
-2. **Global**: `~/.nexus3/config.json`
-3. **Ancestors**: Parent directories' `.nexus3/config.json`
-4. **Local**: `./.nexus3/config.json`
+### File Locations
 
-Example multi-provider setup:
+Configuration is loaded from multiple layers (later overrides earlier):
+
+```
+1. Shipped defaults     nexus3/defaults/config.json
+2. Global user          ~/.nexus3/config.json
+3. Ancestor dirs        ../.nexus3/config.json (up to 2 levels)
+4. Project local        ./.nexus3/config.json
+```
+
+### Directory Structure
+
+```
+~/.nexus3/                          # Global (user defaults)
+├── config.json                     # Global settings
+├── NEXUS.md                        # Personal system prompt
+├── mcp.json                        # Personal MCP servers
+├── rpc.token                       # RPC auth token
+├── sessions/                       # Saved sessions
+└── logs/                           # Logs
+    └── server.log                  # Server lifecycle events
+
+./.nexus3/                          # Project-local
+├── config.json                     # Project overrides
+├── NEXUS.md                        # Project system prompt
+├── mcp.json                        # Project MCP servers
+└── logs/                           # Session logs
+    └── {session-id}/
+        ├── session.db              # SQLite message history
+        └── session.md              # Markdown transcript
+```
+
+### Configuration Schema
+
+#### Root Configuration
+
+```json
+{
+  "default_model": "fast",
+  "providers": { ... },
+  "stream_output": true,
+  "max_tool_iterations": 100,
+  "skill_timeout": 120.0,
+  "max_concurrent_tools": 10,
+  "default_permission_level": "trusted",
+  "compaction": { ... },
+  "context": { ... },
+  "mcp_servers": [ ... ],
+  "server": { ... },
+  "permissions": { ... }
+}
+```
+
+#### Provider Configuration
 
 ```json
 {
   "providers": {
     "openrouter": {
       "type": "openrouter",
-      "api_key_env": "OPENROUTER_API_KEY"
+      "api_key_env": "OPENROUTER_API_KEY",
+      "base_url": "https://openrouter.ai/api/v1",
+      "request_timeout": 120.0,
+      "max_retries": 3,
+      "models": {
+        "fast": {
+          "id": "anthropic/claude-haiku-4.5",
+          "context_window": 200000
+        },
+        "smart": {
+          "id": "anthropic/claude-sonnet-4",
+          "context_window": 200000
+        }
+      }
     },
     "anthropic": {
       "type": "anthropic",
-      "api_key_env": "ANTHROPIC_API_KEY"
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "auth_method": "x-api-key",
+      "models": {
+        "claude-native": {
+          "id": "claude-sonnet-4-20250514",
+          "context_window": 200000
+        }
+      }
     }
   },
-  "default_provider": "openrouter",
-  "models": {
-    "fast": {"id": "anthropic/claude-haiku", "context_window": 200000},
-    "smart": {"id": "anthropic/claude-sonnet-4", "context_window": 200000},
-    "native": {"id": "claude-sonnet-4-20250514", "provider": "anthropic"}
-  },
-  "default_model": "smart"
+  "default_provider": "openrouter"
 }
 ```
 
-## Development
+#### Provider Types
+
+| Type | Description | Required Config |
+|------|-------------|-----------------|
+| `openrouter` | OpenRouter.ai (access to all models) | `OPENROUTER_API_KEY` |
+| `anthropic` | Native Anthropic API | `ANTHROPIC_API_KEY` |
+| `openai` | OpenAI API | `OPENAI_API_KEY` |
+| `azure` | Azure OpenAI | `AZURE_OPENAI_KEY`, `deployment`, `api_version` |
+| `ollama` | Local Ollama | `base_url` (default: localhost:11434) |
+| `vllm` | vLLM server | `base_url` |
+
+#### Compaction Configuration
+
+```json
+{
+  "compaction": {
+    "enabled": true,
+    "model": "fast",
+    "trigger_threshold": 0.9,
+    "summary_budget_ratio": 0.25,
+    "recent_preserve_ratio": 0.25
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `true` | Enable automatic compaction |
+| `model` | `"fast"` | Model for summarization |
+| `trigger_threshold` | `0.9` | Trigger when 90% of context used |
+| `summary_budget_ratio` | `0.25` | Max 25% of tokens for summary |
+| `recent_preserve_ratio` | `0.25` | Keep 25% of recent messages verbatim |
+
+#### Context Configuration
+
+```json
+{
+  "context": {
+    "ancestor_depth": 2,
+    "include_readme": false,
+    "readme_as_fallback": false
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `ancestor_depth` | `2` | Parent directories to search (0-10) |
+| `include_readme` | `false` | Always include README.md |
+| `readme_as_fallback` | `false` | Use README.md when no NEXUS.md |
+
+#### Server Configuration
+
+```json
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8765,
+    "log_level": "INFO"
+  }
+}
+```
+
+### Example: Multi-Provider Setup
+
+```json
+{
+  "default_model": "balanced",
+  "providers": {
+    "openrouter": {
+      "type": "openrouter",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "models": {
+        "fast": {"id": "anthropic/claude-haiku-4.5", "context_window": 200000},
+        "balanced": {"id": "anthropic/claude-sonnet-4", "context_window": 200000}
+      }
+    },
+    "local": {
+      "type": "ollama",
+      "base_url": "http://localhost:11434/v1",
+      "auth_method": "none",
+      "models": {
+        "llama": {"id": "llama3.2", "context_window": 128000}
+      }
+    }
+  }
+}
+```
+
+### Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `OPENROUTER_API_KEY` | OpenRouter API key |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `OPENAI_API_KEY` | OpenAI API key |
+| `AZURE_OPENAI_KEY` | Azure OpenAI API key |
+| `NEXUS_DEV=1` | Enable `--serve` headless mode |
+| `NEXUS3_API_KEY` | Override RPC token |
+
+---
+
+## Built-in Skills
+
+NEXUS3 includes 26 built-in skills organized by category.
+
+### File Operations (Read)
+
+| Skill | Description | Key Parameters |
+|-------|-------------|----------------|
+| `read_file` | Read file contents | `path`, `offset`, `limit` |
+| `tail` | Read last N lines | `path`, `lines` (default: 10) |
+| `file_info` | Get file metadata | `path` |
+| `list_directory` | List directory contents | `path`, `all`, `long` |
+| `glob` | Find files by pattern | `pattern`, `path`, `exclude` |
+| `grep` | Search file contents | `pattern`, `path`, `include`, `context` |
+
+### File Operations (Write)
+
+| Skill | Description | Key Parameters |
+|-------|-------------|----------------|
+| `write_file` | Write/create file | `path`, `content` |
+| `edit_file` | Edit with string/line replacement | `path`, `old_string`, `new_string` |
+| `append_file` | Append to file | `path`, `content`, `newline` |
+| `regex_replace` | Regex find/replace | `path`, `pattern`, `replacement` |
+| `copy_file` | Copy file | `source`, `destination`, `overwrite` |
+| `mkdir` | Create directory | `path` |
+| `rename` | Move/rename file | `source`, `destination`, `overwrite` |
+
+### Execution
+
+| Skill | Description | Safety |
+|-------|-------------|--------|
+| `bash_safe` | Execute command (no shell operators) | Safe from injection |
+| `shell_UNSAFE` | Execute with full shell (pipes, redirects) | **Vulnerable to injection** |
+| `run_python` | Execute Python code | Same as bash_safe |
+
+**Important:** `bash_safe` uses `shlex.split()` so shell operators (`|`, `&&`, `>`) do NOT work. Use `shell_UNSAFE` only when you need shell features AND trust the input.
+
+### Version Control
+
+| Skill | Description | Notes |
+|-------|-------------|-------|
+| `git` | Execute git commands | Permission-filtered by level |
+
+Git commands are filtered by permission level:
+- **SANDBOXED**: Read-only (`status`, `diff`, `log`, `show`, `branch`, `blame`, etc.)
+- **TRUSTED**: Read + write, dangerous flags blocked (`--force`, `--hard`)
+- **YOLO**: All commands allowed
+
+### Agent Management
+
+| Skill | Description | Parameters |
+|-------|-------------|------------|
+| `nexus_create` | Create agent | `agent_id`, `preset`, `cwd`, `model`, `initial_message` |
+| `nexus_destroy` | Destroy agent | `agent_id` |
+| `nexus_send` | Send message to agent | `agent_id`, `content` |
+| `nexus_status` | Get agent status | `agent_id` |
+| `nexus_cancel` | Cancel request | `agent_id`, `request_id` |
+| `nexus_shutdown` | Shutdown server | - |
+
+### Utility
+
+| Skill | Description | Parameters |
+|-------|-------------|------------|
+| `echo` | Echo message (testing) | `message` |
+| `sleep` | Pause execution | `seconds`, `label` |
+
+### Skill Availability by Permission Level
+
+| Skill Category | YOLO | TRUSTED | SANDBOXED |
+|----------------|------|---------|-----------|
+| File read | All | All | CWD only |
+| File write | All | Confirmations | Disabled (unless `allowed_write_paths`) |
+| Execution | All | Confirmations | Disabled |
+| Git | All | Write commands | Read-only |
+| Agent management | All | Sandboxed children only | Disabled |
+
+---
+
+## MCP Integration
+
+NEXUS3 supports the Model Context Protocol (MCP) for connecting external tools.
+
+### Configuration
+
+Create `mcp.json` in `~/.nexus3/` (global) or `.nexus3/` (project):
+
+```json
+{
+  "servers": [
+    {
+      "name": "github",
+      "command": ["npx", "-y", "@anthropic/mcp-server-github"],
+      "env_passthrough": ["GITHUB_TOKEN"]
+    },
+    {
+      "name": "filesystem",
+      "command": ["npx", "-y", "@anthropic/mcp-server-filesystem", "/allowed/path"]
+    },
+    {
+      "name": "postgres",
+      "command": ["npx", "-y", "@anthropic/mcp-server-postgres"],
+      "env": {
+        "DATABASE_URL": "postgresql://localhost/mydb"
+      }
+    }
+  ]
+}
+```
+
+### Server Configuration Options
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Friendly name (used in skill names: `mcp_github_*`) |
+| `command` | One of | Command for stdio transport |
+| `url` | One of | URL for HTTP transport |
+| `env` | No | Explicit environment variables |
+| `env_passthrough` | No | Copy these vars from host environment |
+| `cwd` | No | Working directory for subprocess |
+| `enabled` | No | Default: `true` |
+
+### Transport Types
+
+**Stdio (Subprocess):** Most MCP servers use stdio. The server runs as a subprocess with JSON-RPC over stdin/stdout.
+
+**HTTP:** For remote MCP servers (less common).
+
+### Environment Variable Security
+
+MCP servers only receive safe environment variables by default. To pass secrets:
+
+```json
+{
+  "name": "github",
+  "command": ["npx", "-y", "@anthropic/mcp-server-github"],
+  "env_passthrough": ["GITHUB_TOKEN"],
+  "env": {
+    "EXTRA_VAR": "explicit-value"
+  }
+}
+```
+
+### REPL Commands
 
 ```bash
-# Run tests (2300+ tests)
+/mcp                        # List servers and status
+/mcp connect github         # Connect to server
+/mcp connect github --allow-all --shared  # Skip prompts
+/mcp disconnect github      # Disconnect
+/mcp tools                  # List available MCP tools
+```
+
+### Permission Requirements
+
+- **YOLO/TRUSTED**: Can use MCP tools
+- **SANDBOXED**: MCP access blocked
+
+---
+
+## Session Management
+
+### Session Types
+
+- **Temporary sessions**: Auto-created, not saved unless you use `/save`
+- **Named sessions**: Saved to disk, can be resumed with `--session NAME`
+
+### Saving and Resuming
+
+```bash
+# In REPL
+/save myproject           # Save current session
+
+# From command line
+nexus3 --resume           # Resume last session
+nexus3 --session myproject  # Resume specific session
+```
+
+### Session Data
+
+Each session stores:
+- **session.db**: SQLite database with full message history
+- **session.md**: Human-readable Markdown transcript
+- **Session metadata**: Model, permissions, allowances
+
+### Session Files Location
+
+```
+~/.nexus3/sessions/           # Named session files
+  └── myproject.json          # Session state
+
+.nexus3/logs/{session-id}/    # Session logs
+  ├── session.db              # SQLite database
+  └── session.md              # Markdown transcript
+
+~/.nexus3/last-session.json   # Last session (for --resume)
+```
+
+### Context Compaction
+
+When context gets full (90% by default), NEXUS3 automatically:
+1. Preserves recent messages (25%)
+2. Summarizes older messages using a fast model
+3. Reloads NEXUS.md (picking up any changes)
+
+Manual compaction:
+```bash
+/compact                    # REPL
+nexus3 rpc compact AGENT_ID # RPC
+```
+
+---
+
+## Troubleshooting
+
+### Installation Issues
+
+**Problem: `python: command not found`**
+```bash
+# Use explicit Python 3.11
+python3.11 -m nexus3
+
+# Or activate virtualenv
+source .venv/bin/activate
+```
+
+**Problem: `nexus3: command not found`**
+```bash
+# Add to PATH
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+
+# Or use module
+python -m nexus3
+```
+
+**Problem: `ModuleNotFoundError: No module named 'nexus3'`**
+```bash
+# Install the package
+source .venv/bin/activate
+pip install -e .
+```
+
+### API Key Issues
+
+**Problem: `AuthenticationError: API key not found`**
+```bash
+# Check env var
+echo $OPENROUTER_API_KEY
+
+# Set it
+export OPENROUTER_API_KEY="sk-or-v1-..."
+
+# Or use .env file
+echo 'OPENROUTER_API_KEY=sk-or-v1-...' > .env
+```
+
+### Server Issues
+
+**Problem: `Address already in use: 8765`**
+```bash
+# Find and kill existing server
+lsof -i :8765
+kill <PID>
+
+# Or use different port
+nexus3 --serve 9000
+```
+
+**Problem: `Cannot use --serve without NEXUS_DEV=1`**
+```bash
+# This is a security feature
+NEXUS_DEV=1 nexus3 --serve 8765
+```
+
+**Problem: RPC commands fail with "server not running"**
+```bash
+# RPC commands don't auto-start servers
+# Start server first:
+nexus3 &  # REPL with embedded server
+
+# Then use RPC
+nexus3 rpc list
+```
+
+### Agent Issues
+
+**Problem: Sandboxed agent can't write files**
+```bash
+# Sandboxed agents need explicit write paths
+nexus3 rpc create worker --cwd /project --write-path /project/output
+
+# Or use trusted preset
+nexus3 rpc create worker --preset trusted
+```
+
+**Problem: Agent stuck / unresponsive**
+```bash
+# Force context compaction
+nexus3 rpc compact AGENT_ID
+
+# Or destroy and recreate
+nexus3 rpc destroy AGENT_ID
+nexus3 rpc create AGENT_ID --preset trusted
+```
+
+**Problem: Context window full**
+```bash
+# Compact to reclaim space
+/compact  # In REPL
+nexus3 rpc compact AGENT_ID  # RPC
+```
+
+### WSL-Specific Issues
+
+**Problem: Server dies with false idle timeout**
+
+Fixed in recent versions. Uses `time.monotonic()` instead of `time.time()` to avoid clock sync issues.
+
+Monitor with:
+```bash
+tail -f .nexus3/logs/server.log
+```
+
+### Debugging
+
+**Enable verbose logging:**
+```bash
+nexus3 --verbose
+```
+
+**Check server logs:**
+```bash
+tail -f .nexus3/logs/server.log
+```
+
+**Check session logs:**
+```bash
+ls -la .nexus3/logs/
+cat .nexus3/logs/{session-id}/session.md
+```
+
+---
+
+## Development
+
+### Running Tests
+
+```bash
+# All tests (2300+)
 .venv/bin/pytest tests/ -v
+
+# Specific categories
+.venv/bin/pytest tests/unit/ -v
+.venv/bin/pytest tests/integration/ -v
+.venv/bin/pytest tests/security/ -v
+
+# With coverage
+.venv/bin/pytest tests/ --cov=nexus3
+```
+
+### Code Quality
+
+```bash
+# Linting
+.venv/bin/ruff check nexus3/
 
 # Type checking
 .venv/bin/mypy nexus3/
 
-# Linting
-.venv/bin/ruff check nexus3/
-
-# Run specific test categories
-.venv/bin/pytest tests/unit/ -v
-.venv/bin/pytest tests/integration/ -v
-.venv/bin/pytest tests/security/ -v
+# Format check
+.venv/bin/ruff format --check nexus3/
 ```
 
 ### Creating Custom Skills
@@ -285,18 +1212,52 @@ class MySkill(BaseSkill):
         result = do_something(input)
         return ToolResult(output=result)
 
-# Register with factory
+# Factory for dependency injection
 def my_skill_factory(container):
     return MySkill()
 ```
 
-## Known Issues
+### Skill Base Classes
 
-**Duplicate gumballs on fast-failing tools**: When a tool fails very quickly, users may see a stale blue (ACTIVE) gumball artifact above the correct red (ERROR) gumball. This is a Rich `Live` with `transient=True` timing issue and is cosmetic only.
+| Base Class | Use For |
+|------------|---------|
+| `BaseSkill` | Simple tools without file/network/execution |
+| `FileSkill` | File operations with path validation |
+| `ExecutionSkill` | Subprocess execution with timeouts |
+| `NexusSkill` | Agent management via RPC |
+| `FilteredCommandSkill` | Command filtering by permission level |
+
+### Live Testing
+
+Before committing changes that affect agent behavior:
+
+```bash
+# Start server
+nexus3 &
+
+# Create test agent
+nexus3 rpc create test-agent --preset trusted
+
+# Test
+nexus3 rpc send test-agent "Describe your capabilities"
+
+# Verify behavior, then cleanup
+nexus3 rpc destroy test-agent
+```
+
+---
 
 ## License
 
 MIT
+
+---
+
+## Additional Resources
+
+- **CLAUDE.md**: Detailed development documentation and coding guidelines
+- **Module READMEs**: Each `nexus3/*/README.md` has module-specific docs
+- **Tests**: `tests/` directory has comprehensive examples
 
 ---
 
