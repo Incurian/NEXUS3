@@ -1162,3 +1162,70 @@ Enable multiple REPL terminals to connect to the same agent with:
 **Test:** `curl -N -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8765/agent/test/events`
 
 See `docs/multi-client-sync/README.md` for full details.
+
+---
+
+## CURRENT WORK IN PROGRESS (2026-01-21)
+
+**Branch:** `feat/phase-1-6-single-terminal`
+**Decision:** Abandoned multi-terminal sync. New paradigm is single terminal per agent.
+
+### Commits on Branch
+
+```
+1e21478 feat(repl): Incoming RPC turns show spinner and interrupt prompt
+405716a feat(repl): Show nexus_send response content in tool output
+d9eca44 fix(repl): Wire incoming turn notifications for RPC messages
+ad2bd20 fix(repl): Callback detachment to prevent cross-agent display leakage
+13a4f9d fix(rpc): Source attribution persistence + incoming notifications
+```
+
+### Completed Features
+
+#### 1. Source Attribution (`13a4f9d`)
+- Schema v3 with `meta` column in messages table
+- Messages show attribution: `## User (from main via nexus_send)`
+- Dispatcher defaults source to "rpc" for external sends
+
+#### 2. Callback Leak Prevention (`ad2bd20`)
+- `_set_display_session()` pattern detaches callbacks from old session on switch
+- Prevents tool calls from agent B appearing in agent A's display
+- Reverted from EventHub to direct Session callbacks
+
+#### 3. Incoming Turn Notifications (`d9eca44`)
+- When RPC message arrives, shows: `▶ INCOMING from agent_name: preview...`
+- When response sent, shows: `✓ Response sent: preview...`
+- Hook: `dispatcher.on_incoming_turn` wired in REPL
+- Updated at all agent switch points
+
+#### 4. Outgoing nexus_send Visibility (`405716a`)
+- Added `output` field to `ToolCompleted` event
+- `BatchProgressCallback` now includes tool output
+- When `nexus_send` completes, shows: `↳ Response: preview...`
+
+#### 5. Incoming Turn Spinner (`1e21478`)
+- Incoming RPC turns now show spinner like regular agent turns
+- Prompt interrupted using `app.exit()` with sentinel value
+- ANSI escape sequences clear the prompt line cleanly
+- Main loop detects sentinel, waits for turn to complete
+- Proper visual feedback: notification → spinner → response
+
+### Testing Results
+
+Agent-to-agent communication fully working:
+1. Sub sends `nexus_send` to main
+2. Main's prompt is interrupted, line cleared
+3. Shows: `▶ INCOMING from sub: message preview...`
+4. Spinner displays while agent processes
+5. Shows: `✓ Response sent: response preview...`
+6. Prompt returns for user input
+7. Sub receives response (no longer cancelled)
+
+### Remaining Work
+
+- Consider adding support for user to see/scroll the full incoming message content
+- Consider adding a way to cancel incoming turn processing (ESC key)
+
+### GPT Reviewer
+
+A GPT reviewer agent (`reviewer` on port 8765) was used extensively for analysis. It provided good diagnosis but tended to timeout on implementation tasks. Use for review/planning, not for writing code.

@@ -26,7 +26,6 @@ from nexus3.config.schema import Config
 from nexus3.context.loader import ContextLoader
 from nexus3.core.permissions import load_custom_presets_from_config
 from nexus3.provider import ProviderRegistry
-from nexus3.rpc.event_hub import EventHub
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
 from nexus3.rpc.pool import AgentPool, SharedComponents
 from nexus3.session import LogStream
@@ -298,10 +297,7 @@ async def bootstrap_server_components(
         {k: v.model_dump() for k, v in config.permissions.presets.items()}
     )
 
-    # Phase 4: Create EventHub for SSE pub/sub
-    event_hub = EventHub()
-
-    # Phase 5: Create SharedComponents (immutable config bundle for all agents)
+    # Phase 4: Create SharedComponents (immutable config bundle for all agents)
     shared = SharedComponents(
         config=config,
         provider_registry=provider_registry,
@@ -310,19 +306,18 @@ async def bootstrap_server_components(
         context_loader=context_loader,
         log_streams=log_streams,
         custom_presets=custom_presets,
-        event_hub=event_hub,
     )
 
-    # Phase 6: Create AgentPool (without dispatcher initially)
+    # Phase 5: Create AgentPool (without dispatcher initially)
     pool = AgentPool(shared)
 
-    # Phase 7: Create GlobalDispatcher (requires pool for agent operations)
+    # Phase 6: Create GlobalDispatcher (requires pool for agent operations)
     global_dispatcher = GlobalDispatcher(pool)
 
-    # Phase 8: Wire circular dependency (pool needs dispatcher for in-process AgentAPI)
+    # Phase 7: Wire circular dependency (pool needs dispatcher for in-process AgentAPI)
     pool.set_global_dispatcher(global_dispatcher)
 
-    # Phase 9: Validate wiring succeeded
+    # Phase 8: Validate wiring succeeded
     if pool._global_dispatcher is None:
         raise RuntimeError("Failed to wire GlobalDispatcher to AgentPool")
 

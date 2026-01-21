@@ -36,6 +36,7 @@ class MockSession:
         user_input: str,
         use_tools: bool = False,
         cancel_token: Any = None,
+        user_meta: dict[str, Any] | None = None,
     ) -> AsyncIterator[str]:
         """Yield chunks with optional delay."""
         for chunk in self._chunks:
@@ -155,14 +156,21 @@ class TestSendRequestId:
         class SlowYieldingSession:
             """Session that keeps yielding slowly, allowing cancel to be tested."""
 
+            @property
+            def halted_at_iteration_limit(self) -> bool:
+                return False
+
             async def send(
                 self,
                 user_input: str,
                 use_tools: bool = False,
                 cancel_token: Any = None,
+                user_meta: dict[str, Any] | None = None,
             ) -> AsyncIterator[str]:
                 for i in range(10):
                     await asyncio.sleep(0.05)  # Small delay between chunks
+                    if cancel_token and cancel_token.is_cancelled:
+                        return
                     yield f"chunk{i}"
 
             async def run_turn(
