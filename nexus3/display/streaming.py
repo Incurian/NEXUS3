@@ -67,11 +67,16 @@ class StreamingDisplay:
         self._thinking_duration: float = 0.0  # How long thinking lasted
         self._activity_start_time: float = 0.0  # When activity started
         self._had_errors = False  # Track if any errors occurred since last reset
+        # Track text that came before tools started (for correct scrollback order)
+        self._text_before_tools: str = ""
+        self._tools_started: bool = False
+        self._final_render: bool = False  # Skip spinner/status on final render
 
     def __rich__(self) -> RenderableType:
         """Render the streaming display state.
 
         Only used during Live context for streaming phase.
+        Content is rendered in order: text_before_tools → tools → text_after_tools
         """
         parts: list[RenderableType] = []
 
@@ -79,15 +84,15 @@ class StreamingDisplay:
         spinner = self.SPINNER_FRAMES[self._frame % len(self.SPINNER_FRAMES)]
         self._frame += 1
 
-        # Response content (main area) - truncate to last N lines to prevent overflow
-        if self.response:
-            lines = self.response.split("\n")
+        # Text that came before tools (truncated)
+        if self._text_before_tools:
+            lines = self._text_before_tools.split("\n")
             if len(lines) > self.MAX_DISPLAY_LINES:
                 truncated_lines = lines[-self.MAX_DISPLAY_LINES:]
-                visible_response = "...\n" + "\n".join(truncated_lines)
+                visible = "...\n" + "\n".join(truncated_lines)
             else:
-                visible_response = self.response
-            parts.append(Text(visible_response))
+                visible = self._text_before_tools
+            parts.append(Text(visible))
 
         # Render batch tools with status gumballs
         if self._tools:
@@ -95,13 +100,25 @@ class StreamingDisplay:
             for tool in self._tools.values():
                 parts.append(self._render_tool_line(tool))
 
-        # Activity status line with batch progress and timer
-        status = self._render_activity_status()
-        parts.append(Text(f"\n{spinner} {status}", style="dim cyan"))
+        # Text that came after tools (truncated)
+        if self.response:
+            lines = self.response.split("\n")
+            if len(lines) > self.MAX_DISPLAY_LINES:
+                truncated_lines = lines[-self.MAX_DISPLAY_LINES:]
+                visible_response = "...\n" + "\n".join(truncated_lines)
+            else:
+                visible_response = self.response
+            parts.append(Text(""))  # Blank line after tools
+            parts.append(Text(visible_response))
 
-        # Status bar
-        parts.append(Text("\n"))
-        parts.append(self._render_status_bar(spinner))
+        # Activity status line with batch progress and timer (skip on final render)
+        if not self._final_render:
+            status = self._render_activity_status()
+            parts.append(Text(f"\n{spinner} {status}", style="dim cyan"))
+
+            # Status bar
+            parts.append(Text("\n"))
+            parts.append(self._render_status_bar(spinner))
 
         return Group(*parts) if parts else Text("")
 
@@ -254,6 +271,9 @@ class StreamingDisplay:
         self._thinking_start_time = 0.0
         self._thinking_duration = 0.0
         self._activity_start_time = 0.0
+        self._text_before_tools = ""
+        self._tools_started = False
+        self._final_render = False
         # Note: _had_errors persists across resets until cleared explicitly
 
     def clear_error_state(self) -> None:
@@ -312,6 +332,20 @@ class StreamingDisplay:
         """Check if cancelled."""
         return self._cancelled
 
+    @property
+    def text_before_tools(self) -> str:
+        """Get text that came before the first tool batch."""
+        return self._text_before_tools
+
+    @property
+    def text_after_tools(self) -> str:
+        """Get text that came after tools started (alias for response when tools exist)."""
+        return self.response if self._tools_started else ""
+
+    def set_final_render(self, final: bool = True) -> None:
+        """Set final render mode (skip spinner/status bar)."""
+        self._final_render = final
+
     def add_tool_call(self, name: str, tool_id: str) -> None:
         """Track a new tool call (detected in stream).
 
@@ -327,6 +361,12 @@ class StreamingDisplay:
         Args:
             tools: List of (name, tool_id, params) tuples.
         """
+        # Capture any text that came before this tool batch
+        if not self._tools_started and self.response:
+            self._text_before_tools = self.response
+            self.response = ""  # Clear so new text goes to "after tools"
+        self._tools_started = True
+
         self._tools.clear()
         for name, tool_id, params in tools:
             self._tools[tool_id] = ToolStatus(

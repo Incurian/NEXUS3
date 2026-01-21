@@ -669,7 +669,17 @@ async def run_repl(
         display.halt_remaining_tools()
 
     def on_batch_complete() -> None:
-        """Print all results to scrollback when batch finishes."""
+        """Callback when batch finishes - NO-OP during streaming.
+
+        The session calls this during streaming, but we don't want to print
+        to console while Live is active (it would appear above the Live area).
+        Actual printing happens after Live exits via print_tools_to_scrollback().
+        """
+        # Do nothing - printing happens after Live exits
+        pass
+
+    def print_tools_to_scrollback() -> None:
+        """Print tool results to scrollback (call AFTER Live context exits)."""
         import json as _json  # Local import to avoid circular deps
 
         for tool in display.get_batch_results():
@@ -1350,7 +1360,8 @@ async def run_repl(
                     d.add_chunk(chunk)
 
             # Use Live ONLY during streaming (animation works here)
-            with Live(display, console=console, refresh_per_second=10, transient=True) as live:
+            # transient=False keeps content in place; we do a clean final render
+            with Live(display, console=console, refresh_per_second=10, transient=False) as live:
                 # Store live reference for confirmation callback to pause/resume
                 token = _current_live.set(live)
                 try:
@@ -1375,6 +1386,9 @@ async def run_repl(
                     console.print("")  # Visual separation after error
                     display.mark_error()
                 finally:
+                    # Do a clean final render (no spinner/status) before exiting
+                    display.set_final_render(True)
+                    live.refresh()
                     # Clear live reference when exiting Live context
                     _current_live.reset(token)
 
@@ -1382,26 +1396,27 @@ async def run_repl(
             if display.had_errors:
                 toolbar_has_errors = True
 
-            # Print cancelled tools to scrollback and queue for next send
-            if was_cancelled and display.get_batch_results():
-                # Collect cancelled tools for next send
-                cancelled_tools = [
-                    (tool.tool_id, tool.name)
-                    for tool in display.get_batch_results()
-                    if tool.state == ToolState.CANCELLED
-                ]
-                if cancelled_tools:
-                    active_session.add_cancelled_tools(cancelled_tools)
+            # Content stays in place from Live display (transient=False)
+            # We only need to handle bookkeeping here
 
-                on_batch_complete()
-
-            # Print accumulated thinking time (once, before response)
+            # Print thinking time below the Live content
             print_thinking_if_needed()
 
-            # After Live exits, print the final response
-            if display.response:
-                console.print("")  # Visual separation before response
-                console.print(display.response)
+            # Collect cancelled tools for next send
+            if display.get_batch_results():
+                if was_cancelled:
+                    cancelled_tools = [
+                        (tool.tool_id, tool.name)
+                        for tool in display.get_batch_results()
+                        if tool.state == ToolState.CANCELLED
+                    ]
+                    if cancelled_tools:
+                        active_session.add_cancelled_tools(cancelled_tools)
+                # Clear tools from display state (but they're already rendered)
+                display.clear_tools()
+
+            # Add spacing after response
+            if display.response or display.text_before_tools:
                 console.print("")  # Visual separation after response
 
             # Show completion status

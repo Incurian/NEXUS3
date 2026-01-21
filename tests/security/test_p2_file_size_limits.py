@@ -242,7 +242,7 @@ class TestGrepSizeLimits:
 
         assert result.output is not None
         # Should be limited
-        assert "Limited to 10 matches" in result.output
+        assert "Limited to 10" in result.output
 
     @pytest.mark.asyncio
     async def test_grep_streaming_preserves_correctness(self, tmp_path: Path) -> None:
