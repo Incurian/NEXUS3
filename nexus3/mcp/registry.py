@@ -43,6 +43,7 @@ class MCPServerConfig:
         url: URL for HTTP transport.
         env: Explicit environment variables for subprocess.
         env_passthrough: Names of host env vars to pass to subprocess.
+        cwd: Working directory for the server subprocess.
         enabled: Whether this server is enabled.
     """
 
@@ -51,6 +52,7 @@ class MCPServerConfig:
     url: str | None = None
     env: dict[str, str] | None = None
     env_passthrough: list[str] | None = None
+    cwd: str | None = None
     enabled: bool = True
 
 
@@ -146,6 +148,7 @@ class MCPServerRegistry:
                 config.command,
                 env=config.env,
                 env_passthrough=config.env_passthrough,
+                cwd=config.cwd,
             )
         elif config.url:
             transport = HTTPTransport(config.url)

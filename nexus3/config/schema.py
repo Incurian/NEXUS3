@@ -368,6 +368,9 @@ class MCPServerConfig(BaseModel):
     env_passthrough: list[str] | None = None
     """Names of host env vars to pass to subprocess (e.g., ["GITHUB_TOKEN"])."""
 
+    cwd: str | None = None
+    """Working directory for the server subprocess."""
+
     enabled: bool = True
     """Whether this server is enabled."""
 

@@ -1283,6 +1283,7 @@ async def cmd_mcp(
             url=srv_cfg.url,
             env=srv_cfg.env,
             env_passthrough=srv_cfg.env_passthrough,
+            cwd=srv_cfg.cwd,
             enabled=srv_cfg.enabled,
         )
 
