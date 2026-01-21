@@ -14,7 +14,7 @@
         "gpt": {
           "id": "openai/gpt-5.2",
           "context_window": 400000,
-          "reasoning": false,
+          "reasoning": true,
           "guidance": "OpenAI GPT-5.2 with extended thinking. Good for: deep analysis, validation, complex reasoning. This is our go-to architect and reviewer."
         },
         "oss": {

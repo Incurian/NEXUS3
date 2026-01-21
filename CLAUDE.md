@@ -15,6 +15,9 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 **IMPORTANT:** When working on this codebase, use NEXUS3 subagents for research and exploration tasks instead of Claude Code's built-in Task tool. This is dogfooding - we use our own product.
 
 ```bash
+# These examples show user-facing commands. For Claude Code's Bash tool, see
+# "NEXUS3 Command Aliases" section below for the .venv/bin/python -m nexus3 equivalent.
+
 # Start server if not running
 # Start REPL if not already running (server is embedded)
 # Note: --serve is disabled by default (requires NEXUS_DEV=1)
@@ -289,6 +292,16 @@ nexus3 rpc cancel AGENT ID    # Cancel in-progress request
 - Using `python -m nexus3` directly
 - Using full paths to scripts
 - Any invocation that isn't `nexus3` or `nexus3 rpc`
+
+**For Claude Code (Bash tool):** The `nexus3` alias isn't in PATH when running via Bash tool. Use `.venv/bin/python -m nexus3` instead:
+```bash
+# Instead of: nexus3 rpc create worker
+.venv/bin/python -m nexus3 rpc create worker --port 9000
+
+# Instead of: nexus3 rpc send worker "hello"
+.venv/bin/python -m nexus3 rpc send worker "hello" --port 9000
+```
+When the user is running a REPL on the default port (8765), use a different port (e.g., 9000) for headless servers to avoid conflicts.
 
 ---
 
@@ -1177,4 +1190,4 @@ ad2bd20 fix(repl): Callback detachment to prevent cross-agent display leakage
 
 ### Known Issues
 
-**Duplicate gumballs on fast-failing tools**: Rich's `Live` with `transient=True` can leave display artifacts when `console.print()` is called during the Live context (via session callbacks). This is a Rich library limitation - the transient cleanup assumes exclusive control of the terminal region. GPT analysis confirmed this is expected behavior when mixing Live display with console prints. Workaround would require buffering all prints until after Live exits, but this adds complexity.
+**Duplicate gumballs on fast-failing tools**: When a tool fails very quickly, users may see a stale blue (ACTIVE) gumball artifact above the correct red (ERROR) gumball. This is a Rich `Live` with `transient=True` timing issue: the refresh loop may exit before rendering the final ERROR state, leaving the last-rendered ACTIVE frame as an artifact. Multiple fix approaches were attempted (buffering prints, forcing final refresh, clear+refresh in callbacks) but none fully resolved the issue. The artifact is cosmetic and doesn't affect functionality.

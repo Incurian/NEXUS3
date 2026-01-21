@@ -689,9 +689,10 @@ async def run_repl(
                     parsed = _json.loads(result_data["output"])
                     content = parsed.get("content", "")
                     if content:
-                        # Truncate long responses
-                        preview = content[:100] + ("..." if len(content) > 100 else "")
-                        console.print(f"      [dim cyan]↳ Response: {preview}[/]")
+                        # Collapse whitespace/newlines for clean single-line preview
+                        preview = " ".join(content.split())[:100]
+                        ellipsis = "..." if len(content) > 100 else ""
+                        console.print(f"      [dim cyan]↳ Response: {preview}{ellipsis}[/]")
                 except (_json.JSONDecodeError, KeyError):
                     pass  # Silently skip if output isn't valid JSON
 
@@ -776,8 +777,11 @@ async def run_repl(
         if _incoming_end_payload:
             ok = _incoming_end_payload.get("ok", False)
             if ok:
-                preview = _incoming_end_payload.get("content_preview", "")[:50]
-                console.print(f"[bold green]✓ Response sent:[/] {preview}...")
+                # Strip newlines and collapse whitespace for clean single-line preview
+                raw_preview = _incoming_end_payload.get("content_preview", "")
+                preview = " ".join(raw_preview.split())[:50]
+                ellipsis = "..." if len(raw_preview) > 50 else ""
+                console.print(f"[bold green]✓ Response sent:[/] {preview}{ellipsis}")
             elif _incoming_end_payload.get("cancelled"):
                 console.print("[bold yellow]✗ Request cancelled[/]")
             _incoming_end_payload = None
@@ -793,7 +797,9 @@ async def run_repl(
 
         if phase == "started":
             _incoming_turn_active = True
-            preview = payload.get("preview", "")[:50]
+            # Strip newlines for clean single-line preview
+            raw_preview = payload.get("preview", "")
+            preview = " ".join(raw_preview.split())[:50]
 
             # Interrupt the prompt if active - this makes it "agent's turn"
             if prompt_session.app and prompt_session.app.is_running:
