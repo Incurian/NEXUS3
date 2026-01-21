@@ -31,9 +31,7 @@ import argparse
 import asyncio
 import logging
 import os
-import secrets
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +67,8 @@ from nexus3.rpc.bootstrap import bootstrap_server_components, configure_server_f
 from nexus3.rpc.detection import DetectionResult
 from nexus3.rpc.discovery import discover_servers, discover_token_ports, parse_port_spec
 from nexus3.rpc.http import run_http_server
-from nexus3.cli.connect_lobby import show_connect_lobby, ConnectAction, detect_sse_capability
-from nexus3.rpc.dispatcher import Dispatcher
+from nexus3.cli.connect_lobby import show_connect_lobby, ConnectAction
 from nexus3.rpc.pool import AgentConfig, generate_temp_id
-from nexus3.rpc.types import Request
 from nexus3.session import LogStream, SessionManager
 from nexus3.session.persistence import (
     SavedSession,
@@ -175,7 +171,7 @@ async def run_repl(
                         console.print(f"[red]Failed to create agent: {e}[/]")
                         continue  # Go back to lobby
                 # Connect to selected server+agent
-                await run_repl_client_with_sse_detection(
+                await run_repl_client(
                     result.server_url or f"http://127.0.0.1:{effective_port}",
                     result.agent_id or "main",
                     api_key=result.api_key,
@@ -243,7 +239,7 @@ async def run_repl(
             elif result.action == ConnectAction.MANUAL_URL:
                 # Connect to manually entered URL
                 if result.server_url:
-                    await run_repl_client_with_sse_detection(
+                    await run_repl_client(
                         result.server_url,
                         result.agent_id or "main",
                         api_key=result.api_key,
@@ -495,7 +491,6 @@ async def run_repl(
             session_manager=session_manager,
             idle_timeout=1800.0,
             started_event=started_event,
-            event_hub=shared.event_hub,
         ),
         name="http_server",
     )
@@ -677,10 +672,50 @@ async def run_repl(
                 console.print(f"      [red dim]{error_preview}[/]")
         display.clear_tools()
 
-    # NOTE: Session callbacks for streaming (on_tool_call, on_reasoning, etc.)
-    # have been removed. REPL now uses EventHub subscription for event-driven
-    # streaming (Phase 4 multi-client sync). on_confirm is still set on session
-    # for confirmation UI.
+    # =============================================================
+    # Session callback attachment (leak-prevention)
+    #
+    # Problem: If the user switches into another agent, that agent's Session can
+    # end up with REPL callbacks attached. Later, when the current agent calls
+    # nexus_send(target_agent), the target agent runs in-process and its tool
+    # callbacks can render into the current terminal UI ("sleep overwrote send").
+    #
+    # Fix: Attach REPL streaming callbacks only to the currently displayed agent.
+    # On switch, detach callbacks from the previous session.
+    # =============================================================
+
+    _callback_session: object | None = None
+
+    def _detach_repl_callbacks(sess: object) -> None:
+        """Clear streaming callbacks from a session (NOT on_confirm)."""
+        setattr(sess, "on_tool_call", None)
+        setattr(sess, "on_reasoning", None)
+        setattr(sess, "on_batch_start", None)
+        setattr(sess, "on_tool_active", None)
+        setattr(sess, "on_batch_progress", None)
+        setattr(sess, "on_batch_halt", None)
+        setattr(sess, "on_batch_complete", None)
+
+    def _attach_repl_callbacks(sess: object) -> None:
+        """Attach streaming callbacks to a session."""
+        setattr(sess, "on_tool_call", on_tool_call)
+        setattr(sess, "on_reasoning", on_reasoning)
+        setattr(sess, "on_batch_start", on_batch_start)
+        setattr(sess, "on_tool_active", on_tool_active)
+        setattr(sess, "on_batch_progress", on_batch_progress)
+        setattr(sess, "on_batch_halt", on_batch_halt)
+        setattr(sess, "on_batch_complete", on_batch_complete)
+
+    def _set_display_session(new_sess: object) -> None:
+        """Detach callbacks from prior displayed session; attach to new_sess."""
+        nonlocal _callback_session
+        if _callback_session is not None and _callback_session is not new_sess:
+            _detach_repl_callbacks(_callback_session)
+        _attach_repl_callbacks(new_sess)
+        _callback_session = new_sess
+
+    # Attach callbacks to the initial session
+    _set_display_session(session)
 
     # Print welcome message
     console.print("[bold]NEXUS3 v0.1.0[/bold]")
@@ -891,60 +926,6 @@ async def run_repl(
             f"Unknown command: /{cmd_name}. Use /help for available commands."
         )
 
-    # Track active request_id for background event filtering
-    active_request_id: str | None = None
-    bg_current_agent: str | None = None
-    bg_queue: asyncio.Queue[dict[str, Any]] | None = None
-
-    async def background_watcher() -> None:
-        """Watch for other terminals' turn completions while idle."""
-        nonlocal bg_current_agent, bg_queue
-        while True:
-            # Re-subscribe if agent changed
-            if bg_current_agent != current_agent_id:
-                if bg_queue is not None:
-                    shared.event_hub.unsubscribe(bg_current_agent, bg_queue)  # type: ignore[arg-type]
-                bg_current_agent = current_agent_id
-                bg_queue = shared.event_hub.subscribe(current_agent_id)
-
-            try:
-                ev = await asyncio.wait_for(bg_queue.get(), timeout=0.5)
-            except asyncio.TimeoutError:
-                continue
-            except asyncio.CancelledError:
-                break
-
-            # Only show terminal events
-            if ev.get("type") not in ("turn_completed", "turn_cancelled"):
-                continue
-
-            # Skip our own turns
-            if ev.get("request_id") == active_request_id:
-                continue
-
-            # Safe print using run_in_terminal
-            def _print() -> None:
-                ev_type = ev.get("type", "")
-                agent = ev.get("agent_id", "")
-                if ev_type == "turn_completed":
-                    content = (ev.get("content") or "")[:50]
-                    if content:
-                        console.print(f"[dim cyan]\u25cf[/] [{agent}] completed: {content}...")
-                    else:
-                        console.print(f"[dim cyan]\u25cf[/] [{agent}] turn completed")
-                else:
-                    console.print(f"[dim yellow]\u25cf[/] [{agent}] turn cancelled")
-
-            # Only print if we have a running app (user at prompt)
-            if prompt_session.app and prompt_session.app.is_running:
-                try:
-                    await prompt_session.app.run_in_terminal(_print)
-                except Exception as e:
-                    logger.debug("run_in_terminal failed (app may have closed): %s", e)
-
-    # Start background watcher task
-    bg_watcher_task = asyncio.create_task(background_watcher(), name="bg_watcher_unified")
-
     # Main REPL loop
     while True:
         try:
@@ -989,8 +970,8 @@ async def run_repl(
                             current_agent_id = new_id
                             session = new_agent.session
                             logger = new_agent.logger
-                            # NOTE: Session callbacks removed - using EventHub events
-                            # on_confirm still needed for confirmation UI
+                            # Detach callbacks from old session, attach to new
+                            _set_display_session(session)
                             session.on_confirm = confirm_with_pause
                             # Update last session on switch
                             save_as_last_session(current_agent_id)
@@ -1048,7 +1029,9 @@ async def run_repl(
                                         current_agent_id = agent_name_to_restore
                                         session = new_agent.session
                                         logger = new_agent.logger
-                                        # NOTE: Session callbacks removed - using EventHub events
+                                        # Detach callbacks from old session, attach to new
+                                        _set_display_session(session)
+                                        session.on_confirm = confirm_with_pause
                                         # Update last session on restore
                                         save_as_last_session(current_agent_id)
                                         console.print(
@@ -1089,7 +1072,9 @@ async def run_repl(
                                         current_agent_id = agent_name_to_create
                                         session = new_agent.session
                                         logger = new_agent.logger
-                                        # NOTE: Session callbacks removed - using EventHub events
+                                        # Detach callbacks from old session, attach to new
+                                        _set_display_session(session)
+                                        session.on_confirm = confirm_with_pause
                                         # Update last session on create+switch
                                         save_as_last_session(current_agent_id)
                                         console.print(
@@ -1118,14 +1103,9 @@ async def run_repl(
                             console.print(output.message)
                 continue
 
-            # Determine target agent and session (whisper mode may redirect)
+            # Determine target session (whisper mode may redirect)
             if whisper.is_active():
-                target_id_maybe = whisper.target_agent_id
-                if target_id_maybe is None:
-                    console.print("[red]Whisper target not set[/]")
-                    whisper.exit()
-                    continue
-                target_id: str = target_id_maybe
+                target_id = whisper.target_agent_id
                 target_agent = pool.get(target_id)
                 if target_agent is None:
                     console.print(f"[red]Whisper target not found: {target_id}[/]")
@@ -1133,11 +1113,6 @@ async def run_repl(
                     continue
                 active_session = target_agent.session
             else:
-                target_id = current_agent_id
-                target_agent = pool.get(current_agent_id)
-                if target_agent is None:
-                    console.print(f"[red]Current agent not found: {current_agent_id}[/]")
-                    continue
                 active_session = session
 
             # Visual separation before response/streaming
@@ -1152,52 +1127,30 @@ async def run_repl(
             display.set_activity(Activity.WAITING)
             display.start_activity_timer()
 
-            # Phase 4: Event-driven streaming via EventHub + Dispatcher
-            # Generate request_id for this turn
-            request_id = secrets.token_hex(8)
-            active_request_id = request_id
+            # Streaming task that can be cancelled
+            stream_task: asyncio.Task[None] | None = None
             was_cancelled = False
-            cancel_requested = False  # Guard against repeated ESC
-            send_task: asyncio.Task[Any] | None = None
-            send_done_ticks = 0  # Grace window counter for terminal event
-
-            # Subscribe to EventHub for this agent's events
-            event_queue = shared.event_hub.subscribe(target_id)
-
-            # Capture dispatcher reference for on_cancel (target_agent is validated above)
-            agent_dispatcher: Dispatcher = target_agent.dispatcher
 
             def on_cancel(
                 d: StreamingDisplay = display,
-                disp: Dispatcher = agent_dispatcher,
-                rid: str = request_id,
+                get_task: object = lambda: stream_task,
             ) -> None:
-                """Handle ESC key - cancel the current request."""
-                nonlocal was_cancelled, cancel_requested
-                if cancel_requested:
-                    return  # Already sent cancel
-                cancel_requested = True
+                nonlocal was_cancelled
                 was_cancelled = True
                 d.cancel_all_tools()
-                # Send cancel request via dispatcher
-                cancel_req = Request(
-                    jsonrpc="2.0",
-                    method="cancel",
-                    params={"request_id": rid},
-                    id=request_id,  # Use request_id for unique id
-                )
-                asyncio.create_task(disp.dispatch(cancel_req))
+                task = get_task()  # type: ignore[operator]
+                if task is not None:
+                    task.cancel()
 
-            async def do_send() -> dict[str, Any]:
-                """Send message via dispatcher and return response."""
-                send_req = Request(
-                    jsonrpc="2.0",
-                    method="send",
-                    params={"content": user_input, "request_id": request_id},
-                    id=1,
-                )
-                resp = await agent_dispatcher.dispatch(send_req)
-                return resp.result if resp and resp.result else {}
+            async def do_stream(
+                d: StreamingDisplay = display,
+                inp: str = user_input,
+                target_sess: object = active_session,
+            ) -> None:
+                async for chunk in target_sess.send(inp):  # type: ignore[union-attr]
+                    if d.activity == Activity.WAITING:
+                        d.set_activity(Activity.RESPONDING)
+                    d.add_chunk(chunk)
 
             # Use Live ONLY during streaming (animation works here)
             with Live(display, console=console, refresh_per_second=10, transient=True) as live:
@@ -1209,96 +1162,22 @@ async def run_repl(
                         pause_event=key_monitor_pause,
                         pause_ack_event=key_monitor_pause_ack,
                     ):
-                        # Start send via dispatcher
-                        send_task = asyncio.create_task(do_send())
-
-                        # Event consumption loop (same pattern as synced client)
-                        while True:
-                            # Poll for events with short timeout
-                            try:
-                                ev = await asyncio.wait_for(event_queue.get(), timeout=0.1)
-                            except asyncio.TimeoutError:
-                                # Check if send completed - allow grace window for terminal events
-                                if send_task.done():
-                                    send_done_ticks += 1
-                                    if send_done_ticks >= 10:  # ~1 second grace
-                                        break
-                                # Refresh display
-                                live.refresh()
-                                continue
-
-                            # Filter events by request_id
-                            if ev.get("request_id") != request_id:
-                                continue
-
-                            et = ev.get("type", "")
-
-                            if et == "thinking_started":
-                                display.start_thinking()
-                            elif et == "thinking_ended":
-                                display.end_thinking()
-                            elif et == "content_chunk":
-                                if display.activity == Activity.WAITING:
-                                    display.set_activity(Activity.RESPONDING)
-                                display.add_chunk(ev.get("text", ""))
-                            elif et == "tool_detected":
-                                display.add_tool_call(ev.get("name", ""), ev.get("tool_id", ""))
-                            elif et == "batch_started":
-                                # Print any accumulated thinking BEFORE tool calls
-                                print_thinking_if_needed()
-                                tools = [
-                                    (t.get("name", ""), t.get("id", ""), t.get("params", ""))
-                                    for t in ev.get("tools", [])
-                                ]
-                                display.start_batch(tools)
-                            elif et == "tool_started":
-                                display.set_tool_active(ev.get("tool_id", ""))
-                            elif et == "tool_completed":
-                                display.set_tool_complete(
-                                    ev.get("tool_id", ""),
-                                    ev.get("success", True),
-                                    ev.get("error", ""),
-                                )
-                            elif et == "batch_halted":
-                                display.halt_remaining_tools()
-                            elif et == "batch_completed":
-                                on_batch_complete()
-                            elif et == "turn_completed":
-                                break
-                            elif et == "turn_cancelled":
-                                was_cancelled = True
-                                break
-
-                            # Refresh display after processing event
+                        stream_task = asyncio.create_task(do_stream())
+                        # Refresh loop while streaming
+                        while not stream_task.done():
                             live.refresh()
-
-                        # Await send_task to get any exceptions
-                        if send_task and not send_task.done():
-                            try:
-                                await send_task
-                            except asyncio.CancelledError:
-                                pass  # Normal cancellation
-                            except Exception as e:
-                                console.print(f"[red]Send error:[/] {e}")
-                                display.mark_error()
-                        elif send_task:
-                            try:
-                                send_task.result()
-                            except asyncio.CancelledError:
-                                pass  # Normal cancellation
-                            except Exception as e:
-                                console.print(f"[red]Send error:[/] {e}")
-                                display.mark_error()
+                            await asyncio.sleep(0.1)
+                        # Get any exception from the task
+                        try:
+                            stream_task.result()
+                        except asyncio.CancelledError:
+                            pass  # Cancelled by ESC
 
                 except NexusError as e:
                     console.print(f"[red]Error:[/] {e.message}")
                     console.print("")  # Visual separation after error
                     display.mark_error()
                 finally:
-                    # Unsubscribe from EventHub
-                    shared.event_hub.unsubscribe(target_id, event_queue)
-                    # Clear active request_id so background watcher doesn't filter
-                    active_request_id = None
                     # Clear live reference when exiting Live context
                     _current_live.reset(token)
 
@@ -1370,15 +1249,6 @@ async def run_repl(
             break
 
     # Clean up resources
-    # 0. Cancel background watcher
-    bg_watcher_task.cancel()
-    try:
-        await bg_watcher_task
-    except asyncio.CancelledError:
-        pass
-    if bg_queue is not None:
-        shared.event_hub.unsubscribe(bg_current_agent, bg_queue)  # type: ignore[arg-type]
-
     # 1. Signal shutdown to stop the HTTP server
     main_agent.dispatcher.request_shutdown()
 
@@ -1401,77 +1271,6 @@ async def run_repl(
     # 5. G1: Close provider HTTP clients
     if shared and shared.provider_registry:
         await shared.provider_registry.aclose()
-
-
-async def run_repl_client_with_sse_detection(
-    url: str,
-    agent_id: str,
-    api_key: str | None = None,
-) -> None:
-    """Run REPL client with automatic SSE capability detection.
-
-    Probes the server for SSE support. If available, uses the synced REPL
-    (run_repl_client_synced) for rich UI with streaming. Otherwise falls
-    back to the legacy polling-based client (run_repl_client).
-
-    Args:
-        url: Base URL of the server (e.g., http://127.0.0.1:8765)
-        agent_id: ID of the agent to connect to
-        api_key: Optional API key for authentication. If None, uses auto-discovery.
-    """
-    from nexus3.client import ClientError
-
-    console = get_console()
-
-    # Resolve API key for detection (same logic as run_repl_client)
-    effective_api_key = api_key
-    if effective_api_key is None:
-        from urllib.parse import urlparse
-
-        from nexus3.rpc.auth import discover_rpc_token
-
-        parsed = urlparse(url)
-        host = parsed.hostname
-        port = parsed.port or 8765
-
-        # SECURITY: Only auto-discover tokens for loopback addresses
-        # This prevents token exfiltration to remote servers via --connect
-        loopback_hosts = frozenset({"127.0.0.1", "localhost", "::1"})
-        if host is None or host.lower() in loopback_hosts:
-            effective_api_key = discover_rpc_token(port=port)
-        else:
-            logger.warning(
-                "Auto-auth disabled for non-loopback host '%s'. "
-                "Use --api-key for remote connections.",
-                host,
-            )
-
-    # Detect SSE capability
-    try:
-        sse_available = await detect_sse_capability(url, agent_id, effective_api_key)
-    except ClientError as e:
-        # Auth or connection error during detection - fall back to legacy
-        logger.debug("SSE detection failed: %s", e)
-        sse_available = False
-
-    if sse_available:
-        # Check if synced REPL dependencies are available
-        try:
-            from nexus3.cli.sse_router import EventRouter  # noqa: F401
-
-            console.print("[dim](synced mode)[/]")
-            should_fallback = await run_repl_client_synced(url, agent_id, api_key, console)
-            if not should_fallback:
-                # User quit or normal exit - don't fall back
-                return
-            # Pump died or stream error - fall through to legacy
-            logger.info("Synced mode unavailable, falling back to legacy client")
-        except ImportError:
-            # sse_router not yet implemented - fall back to legacy
-            logger.debug("SSE router not available, using legacy client")
-
-    # Fall back to legacy client
-    await run_repl_client(url, agent_id, api_key=api_key)
 
 
 async def run_repl_client(url: str, agent_id: str, api_key: str | None = None) -> None:
@@ -1572,524 +1371,6 @@ async def run_repl_client(url: str, agent_id: str, api_key: str | None = None) -
                 break
 
 
-async def run_repl_client_synced(
-    server_url: str,
-    agent_id: str,
-    api_key: str | None,
-    console: object,  # Rich Console
-) -> bool:
-    """Run REPL client with SSE sync for rich streaming UI.
-
-    This function provides the same streaming experience as unified mode by
-    using Server-Sent Events to receive real-time updates during agent turns.
-    It uses a single long-lived SSE stream with request-based routing to avoid
-    missing early events.
-
-    Args:
-        server_url: Base URL of the server (e.g., http://127.0.0.1:8765)
-        agent_id: ID of the agent to connect to
-        api_key: Optional API key for authentication. If None, uses auto-discovery.
-        console: Rich Console instance for output.
-
-    Returns:
-        True if caller should fall back to legacy client (pump died, stream error).
-        False if user quit normally (no fallback needed).
-    """
-    import secrets
-    from rich.console import Console
-
-    from nexus3.cli.sse_router import EventRouter
-    from nexus3.client import ClientError, NexusClient
-
-    # Cast console for proper typing
-    rich_console: Console = console  # type: ignore[assignment]
-
-    # Build agent URL
-    agent_url = f"{server_url.rstrip('/')}/agent/{agent_id}"
-
-    rich_console.print("[bold]NEXUS3 Client (synced)[/]")
-    rich_console.print(f"Connecting to {agent_url}...")
-
-    # Simple prompt session with styled input
-    lexer = SimpleLexer('class:input-field')
-    style = Style.from_dict({
-        'prompt': 'reverse',
-        'input-field': 'reverse',
-    })
-    prompt_session: PromptSession[str] = PromptSession(
-        lexer=lexer,
-        style=style,
-    )
-
-    # Use provided API key if given, otherwise auto-discover
-    try:
-        if api_key:
-            client_ctx = NexusClient(agent_url, api_key=api_key, timeout=300.0)
-        else:
-            client_ctx = NexusClient.with_auto_auth(agent_url, timeout=300.0)
-    except ValueError as e:
-        rich_console.print(f"[red]Invalid URL:[/] {e}")
-        return False  # Don't fallback - user needs to fix URL
-
-    async with client_ctx as client:
-        # Test connection
-        try:
-            status = await client.get_tokens()
-            rich_console.print(f"Connected. Tokens: {status.get('total', 0)}/{status.get('budget', 0)}")
-        except ClientError as e:
-            rich_console.print(f"[red]Connection failed:[/] {e}")
-            return False  # Don't fallback - connection error
-
-        # Fetch recent transcript for context (last 20 messages)
-        try:
-            # First get total count, then fetch last 20
-            context_info = await client.get_context()
-            total_messages = context_info.get("message_count", 0)
-            offset = max(0, total_messages - 20)
-            transcript = await client.get_messages(offset=offset, limit=20)
-            if transcript.get("messages"):
-                rich_console.print("")
-                rich_console.print("[dim]--- Recent history ---[/]")
-                for msg in transcript["messages"]:
-                    role = msg.get("role", "?")
-                    content = msg.get("content") or ""
-                    meta = msg.get("meta", {})
-                    # Truncate long content
-                    if len(content) > 100:
-                        content = content[:100] + "..."
-                    # Check for nexus_send attribution
-                    if meta.get("source") == "nexus_send" and meta.get("source_agent_id"):
-                        source_agent = meta["source_agent_id"]
-                        # Format as [source → target]: content
-                        rich_console.print(f"[magenta]{source_agent} → {agent_id}[/] {content}")
-                    elif role == "user":
-                        rich_console.print(f"[cyan]>[/] {content}")
-                    elif role == "assistant":
-                        rich_console.print(f"[green]>[/] {content}")
-                    else:
-                        rich_console.print(f"[dim]{role}:[/] {content}")
-                rich_console.print("[dim]---[/]")
-                rich_console.print("")
-        except Exception:
-            pass  # Server may not support get_messages yet
-
-        # Create router and start pump task for SSE events
-        router = EventRouter()
-        pump_task = asyncio.create_task(
-            router.pump(client.iter_events()),
-            name="sse_pump",
-        )
-
-        # Track pump task errors
-        pump_error: Exception | None = None
-
-        def _on_pump_done(task: asyncio.Task[None]) -> None:
-            nonlocal pump_error
-            try:
-                exc = task.exception()
-                if exc:
-                    pump_error = exc
-            except asyncio.CancelledError:
-                pass
-
-        pump_task.add_done_callback(_on_pump_done)
-
-        # Load theme and create streaming display
-        theme = load_theme()
-        display = StreamingDisplay(theme)
-
-        # Create pause events for KeyMonitor
-        key_monitor_pause = asyncio.Event()
-        key_monitor_pause.set()  # Start in "running" state
-        key_monitor_pause_ack = asyncio.Event()
-
-        rich_console.print("Commands: /help | /quit | /status | /compact | /clear")
-        rich_console.print("Press ESC during turns to cancel.")
-        rich_console.print("")
-
-        # Track active request_id for filtering background events
-        active_request_id: str | None = None
-
-        async def background_watcher() -> None:
-            """Watch for other terminals' turn completions while idle."""
-            nonlocal active_request_id
-            while True:
-                try:
-                    ev = await router.global_queue.get()
-                except asyncio.CancelledError:
-                    break
-
-                # Only show terminal events
-                if ev.get("type") not in ("turn_completed", "turn_cancelled"):
-                    continue
-
-                # Skip our own turns
-                if ev.get("request_id") == active_request_id:
-                    continue
-
-                # Safe print using run_in_terminal
-                def _print() -> None:
-                    ev_type = ev.get("type", "")
-                    agent = ev.get("agent_id", "")
-                    if ev_type == "turn_completed":
-                        content = (ev.get("content") or "")[:50]
-                        if content:
-                            rich_console.print(
-                                f"[dim cyan]>[/] [{agent}] turn completed: {content}..."
-                            )
-                        else:
-                            rich_console.print(f"[dim cyan]>[/] [{agent}] turn completed")
-                    else:
-                        rich_console.print(f"[dim yellow]>[/] [{agent}] turn cancelled")
-
-                # Only print if we have a running app (user at prompt)
-                if prompt_session.app and prompt_session.app.is_running:
-                    try:
-                        await prompt_session.app.run_in_terminal(_print)
-                    except Exception as e:
-                        logger.debug("run_in_terminal failed (app may have closed): %s", e)
-
-        # Start background watcher task
-        bg_watcher_task = asyncio.create_task(background_watcher(), name="bg_watcher")
-
-        try:
-            while True:
-                # Check if pump died (router.pump() calls close() before returning,
-                # so we check pump_task.done() directly rather than router.is_closed)
-                if pump_task.done():
-                    if pump_error:
-                        rich_console.print(f"[yellow]Warning: SSE stream error: {pump_error}[/]")
-                    rich_console.print("[dim]Falling back to non-streaming mode.[/]")
-                    # Return True to let wrapper call legacy client
-                    return True
-
-                try:
-                    user_input = await prompt_session.prompt_async(
-                        HTML("<style class='prompt'>> </style>")
-                    )
-
-                    if not user_input.strip():
-                        continue
-
-                    # Handle local commands
-                    if user_input.strip() in ("/quit", "/q", "/exit"):
-                        rich_console.print("Disconnecting.", style="dim")
-                        break
-
-                    if user_input.strip() == "/help":
-                        rich_console.print("[bold]Commands:[/]")
-                        rich_console.print("  /help    - Show this help")
-                        rich_console.print("  /quit    - Disconnect from server")
-                        rich_console.print("  /clear   - Clear screen")
-                        rich_console.print("  /status  - Show token usage")
-                        rich_console.print("  /compact - Force context compaction")
-                        rich_console.print("  /cancel  - Cancel current request")
-                        rich_console.print("  ESC      - Cancel during turn")
-                        continue
-
-                    if user_input.strip() == "/clear":
-                        rich_console.clear()
-                        continue
-
-                    if user_input.strip() == "/status":
-                        try:
-                            tokens = await client.get_tokens()
-                            context = await client.get_context()
-                            rich_console.print(f"Tokens: {tokens}")
-                            rich_console.print(f"Context: {context}")
-                        except ClientError as e:
-                            rich_console.print(f"[red]Error:[/] {e}")
-                        continue
-
-                    if user_input.strip() == "/compact":
-                        try:
-                            result = await client.compact(force=True)
-                            if "tokens_saved" in result:
-                                rich_console.print(
-                                    f"[green]Compacted:[/] {result.get('tokens_before', 0)} -> "
-                                    f"{result.get('tokens_after', 0)} "
-                                    f"(saved {result.get('tokens_saved', 0)} tokens)"
-                                )
-                            else:
-                                rich_console.print(f"[dim]Compact result: {result}[/]")
-                        except ClientError as e:
-                            rich_console.print(f"[red]Error:[/] {e}")
-                        continue
-
-                    if user_input.strip() == "/cancel" or user_input.strip().startswith("/cancel "):
-                        # /cancel at prompt has nothing to cancel (use ESC during turns)
-                        rich_console.print("[dim]No request to cancel. Use ESC during turns.[/]")
-                        continue
-
-                    # Send message with SSE streaming
-                    rich_console.print("")  # Visual separation
-
-                    # Generate request_id for this turn
-                    request_id = secrets.token_hex(8)
-                    active_request_id = request_id
-
-                    # Subscribe BEFORE send to avoid missing early events
-                    q = await router.subscribe(request_id)
-
-                    # Start send task (runs concurrently with event consumption)
-                    send_task = asyncio.create_task(
-                        client.send(user_input, request_id=request_id),
-                        name="send",
-                    )
-
-                    # Reset display for new turn
-                    display.reset()
-                    display.set_activity(Activity.WAITING)
-                    display.start_activity_timer()
-
-                    # Track state for this turn
-                    turn_result: str | None = None
-                    was_cancelled = False
-                    thinking_printed = False
-
-                    def print_thinking_if_needed() -> None:
-                        """Print accumulated thinking time once (if any)."""
-                        nonlocal thinking_printed
-                        if thinking_printed:
-                            return
-                        duration = display.get_total_thinking_duration()
-                        if duration > 0:
-                            thinking_printed = True
-                            display_duration = max(1, int(duration))
-                            rich_console.print(f"  [dim cyan]●[/] [dim]Thought for {display_duration}s[/]")
-
-                    def print_batch_results() -> None:
-                        """Print gumballs to scrollback when batch finishes."""
-                        for tool in display.get_batch_results():
-                            if tool.state == ToolState.SUCCESS:
-                                gumball = "[green]●[/]"
-                                suffix = ""
-                            elif tool.state == ToolState.HALTED:
-                                gumball = "[dark_orange]●[/]"
-                                suffix = " [dark_orange](halted)[/]"
-                            elif tool.state == ToolState.CANCELLED:
-                                gumball = "[bright_yellow]●[/]"
-                                suffix = " [bright_yellow](cancelled)[/]"
-                            else:  # ERROR
-                                gumball = "[red]●[/]"
-                                suffix = " [red](error)[/]"
-
-                            if tool.params:
-                                rich_console.print(f"  {gumball} {tool.name}: {tool.params}{suffix}")
-                            else:
-                                rich_console.print(f"  {gumball} {tool.name}{suffix}")
-
-                            # Error message on next line (first 70 chars)
-                            if tool.state == ToolState.ERROR and tool.error:
-                                error_preview = tool.error[:70] + ("..." if len(tool.error) > 70 else "")
-                                rich_console.print(f"      [red dim]{error_preview}[/]")
-                        display.clear_tools()
-
-                    # ESC cancellation callback
-                    def on_cancel() -> None:
-                        nonlocal was_cancelled
-                        was_cancelled = True
-                        display.cancel_all_tools()
-                        # Cancel via RPC
-                        asyncio.create_task(
-                            _safe_cancel(client, request_id),
-                            name="cancel_request",
-                        )
-
-                    try:
-                        # Use Live display with KeyMonitor for rich streaming UI
-                        async with KeyMonitor(
-                            on_escape=on_cancel,
-                            pause_event=key_monitor_pause,
-                            pause_ack_event=key_monitor_pause_ack,
-                        ):
-                            with Live(display, console=rich_console, refresh_per_second=10, transient=True):
-                                # Event consumption loop with 0.1s polling for UI refresh
-                                while True:
-                                    try:
-                                        # Short timeout for responsive UI
-                                        event = await asyncio.wait_for(q.get(), timeout=0.1)
-                                    except asyncio.TimeoutError:
-                                        # No event yet - check pump health
-                                        if pump_task.done():
-                                            break
-                                        # Check if send task failed
-                                        if send_task.done():
-                                            try:
-                                                send_task.result()
-                                            except ClientError:
-                                                break
-                                            except asyncio.CancelledError:
-                                                break
-                                        continue
-
-                                    event_type = event.get("type", "")
-
-                                    # Handle thinking events
-                                    if event_type == "thinking_started":
-                                        display.start_thinking()
-                                        continue
-
-                                    if event_type == "thinking_ended":
-                                        display.end_thinking()
-                                        continue
-
-                                    # Handle content chunks
-                                    if event_type == "content_chunk":
-                                        if display.activity == Activity.WAITING:
-                                            display.set_activity(Activity.RESPONDING)
-                                        chunk = event.get("text", "")
-                                        if chunk:
-                                            display.add_chunk(chunk)
-                                        continue
-
-                                    # Handle tool detection (from stream)
-                                    if event_type == "tool_detected":
-                                        name = event.get("name", "unknown")
-                                        tool_id = event.get("tool_id", "")
-                                        display.add_tool_call(name, tool_id)
-                                        continue
-
-                                    # Handle batch start (all tools in batch)
-                                    if event_type == "batch_started":
-                                        # Print thinking before tools
-                                        print_thinking_if_needed()
-                                        tools_data = event.get("tools", [])
-                                        tools = []
-                                        for t in tools_data:
-                                            name = t.get("name", "unknown")
-                                            tool_id = t.get("id", "")  # Phase 2 uses "id" not "tool_id"
-                                            params = t.get("params", "")
-                                            tools.append((name, tool_id, params))
-                                        display.start_batch(tools)
-                                        continue
-
-                                    # Handle tool started (active)
-                                    if event_type == "tool_started":
-                                        tool_id = event.get("tool_id", "")
-                                        display.set_tool_active(tool_id)
-                                        continue
-
-                                    # Handle tool completed
-                                    if event_type == "tool_completed":
-                                        tool_id = event.get("tool_id", "")
-                                        success = event.get("success", True)
-                                        error = event.get("error", "")
-                                        display.set_tool_complete(tool_id, success, error)
-                                        continue
-
-                                    # Handle batch halted (error stopped sequence)
-                                    if event_type == "batch_halted":
-                                        display.halt_remaining_tools()
-                                        continue
-
-                                    # Handle batch completed - print gumballs
-                                    if event_type == "batch_completed":
-                                        print_batch_results()
-                                        continue
-
-                                    # Terminal events
-                                    if event_type == "turn_completed":
-                                        turn_result = event.get("content") or display.response
-                                        break
-
-                                    if event_type == "turn_cancelled":
-                                        was_cancelled = True
-                                        # Show any partial response before cancellation marker
-                                        if display.response:
-                                            turn_result = display.response
-                                        break
-
-                                    if event_type == "stream_error":
-                                        error = event.get("error", "Unknown stream error")
-                                        rich_console.print(f"[yellow]Stream error: {error}[/]")
-                                        break
-
-                        # Wait for send task to complete
-                        try:
-                            send_result = await send_task
-                        except ClientError as e:
-                            rich_console.print(f"[red]Error:[/] {e}")
-                            rich_console.print("")
-                            continue
-                        except asyncio.CancelledError:
-                            send_result = {}
-
-                        # If we didn't get content from events, use send result
-                        if turn_result is None:
-                            if "content" in send_result:
-                                turn_result = send_result["content"]
-                            elif "cancelled" in send_result:
-                                # Show partial response if any, marker shown separately
-                                if display.response:
-                                    turn_result = display.response
-                                was_cancelled = True
-
-                        # Print any remaining thinking time
-                        print_thinking_if_needed()
-
-                        # Print final response (after Live exits)
-                        if turn_result:
-                            rich_console.print("")  # Visual separation before response
-                            rich_console.print(turn_result)
-                            rich_console.print("")  # Visual separation after response
-
-                        if was_cancelled:
-                            rich_console.print("[bright_yellow]Cancelled[/]")
-                            rich_console.print("")
-
-                    finally:
-                        # Always unsubscribe and clear active request
-                        await router.unsubscribe(request_id, q)
-                        active_request_id = None
-
-                        # Defensive cleanup: cancel send task if an exception occurred
-                        # before we could await it (normal path awaits send_task above)
-                        if not send_task.done():
-                            send_task.cancel()
-                            try:
-                                await send_task
-                            except asyncio.CancelledError:
-                                pass
-
-                except KeyboardInterrupt:
-                    rich_console.print("")
-                    rich_console.print("Use /quit to exit.", style="dim")
-                    continue
-                except EOFError:
-                    rich_console.print("")
-                    rich_console.print("Disconnecting.", style="dim")
-                    break
-
-        finally:
-            # Clean up background watcher task
-            bg_watcher_task.cancel()
-            try:
-                await bg_watcher_task
-            except asyncio.CancelledError:
-                pass
-
-            # Clean up pump task
-            pump_task.cancel()
-            try:
-                await pump_task
-            except asyncio.CancelledError:
-                pass
-
-    # Normal exit (user quit) - don't fallback
-    return False
-
-
-async def _safe_cancel(client: object, request_id: str) -> None:
-    """Safely cancel a request, ignoring errors."""
-    from nexus3.client import ClientError, NexusClient
-    try:
-        if isinstance(client, NexusClient):
-            await client.cancel(request_id)
-    except (ClientError, Exception):
-        pass  # Ignore cancel errors
-
-
 async def _run_connect_with_discovery(args: argparse.Namespace) -> None:
     """Run connect mode with server discovery.
 
@@ -2151,7 +1432,7 @@ async def _run_connect_with_discovery(args: argparse.Namespace) -> None:
                 except Exception as e:
                     console.print(f"[red]Failed to create agent: {e}[/]")
                     return  # In connect mode, just exit on failure
-            await run_repl_client_with_sse_detection(
+            await run_repl_client(
                 result.server_url or f"http://127.0.0.1:{effective_port}",
                 result.agent_id or "main",
                 api_key=result.api_key or args.api_key,
@@ -2170,7 +1451,7 @@ async def _run_connect_with_discovery(args: argparse.Namespace) -> None:
 
         elif result.action == ConnectAction.MANUAL_URL:
             if result.server_url:
-                await run_repl_client_with_sse_detection(
+                await run_repl_client(
                     result.server_url,
                     result.agent_id or "main",
                     api_key=result.api_key or args.api_key,
@@ -2276,11 +1557,7 @@ def main() -> None:
                 asyncio.run(_run_connect_with_discovery(args))
             else:
                 # Direct connection to specified URL
-                asyncio.run(
-                    run_repl_client_with_sse_detection(
-                        args.connect, args.agent, api_key=args.api_key
-                    )
-                )
+                asyncio.run(run_repl_client(args.connect, args.agent, api_key=args.api_key))
             return
 
         # Handle serve mode
