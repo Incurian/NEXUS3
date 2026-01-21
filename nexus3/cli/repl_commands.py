@@ -103,10 +103,12 @@ NEXUS3 REPL Commands
 ====================
 
 Agent Management:
-  /agent              Show current agent's detailed status
+  /agent              Show current agent's detailed status (model, tokens, etc.)
   /agent <name>       Switch to agent (prompts to create if doesn't exist)
   /agent <name> --yolo|--trusted|--sandboxed
                       Create agent with permission level and switch to it
+  /agent <name> --model <alias>
+                      Create agent with specific model (use with preset flags)
 
   /whisper <agent>    Enter whisper mode - redirect all input to target agent
   /over               Exit whisper mode, return to original agent
@@ -164,6 +166,7 @@ async def cmd_agent(
     - /agent           Show current agent detailed status
     - /agent foo       Switch to foo, prompt to create if doesn't exist
     - /agent foo --yolo Create with permission level and switch
+    - /agent foo --model gemini  Create with specific model
 
     Args:
         ctx: Command context with pool and session_manager.
@@ -183,17 +186,60 @@ async def cmd_agent(
     except ValidationError as e:
         return CommandOutput.error(f"Invalid agent name: {e}")
 
-    # Parse permission flag if present
+    # Parse flags - strict validation (reject unknown flags)
     permission: str | None = None
-    for part in parts[1:]:
+    model: str | None = None
+    valid_flags = {
+        "--yolo", "-y", "--trusted", "-t", "--sandboxed", "-s",
+        "--model", "-m",
+    }
+    i = 1
+    while i < len(parts):
+        part = parts[i]
         part_lower = part.lower()
+
         if part_lower in ("--yolo", "-y"):
             permission = "yolo"
         elif part_lower in ("--trusted", "-t"):
             permission = "trusted"
         elif part_lower in ("--sandboxed", "-s"):
             permission = "sandboxed"
-        # Note: "worker" preset was removed; use "sandboxed" with tool deltas instead
+        elif part_lower in ("--model", "-m"):
+            if i + 1 >= len(parts):
+                return CommandOutput.error(
+                    f"Flag {part} requires a value.\n"
+                    f"Usage: /agent <name> --model <model_alias>"
+                )
+            model = parts[i + 1]
+            i += 1  # Skip the model value
+        elif part_lower.startswith("--model="):
+            model = part.split("=", 1)[1]
+            if not model:
+                return CommandOutput.error(
+                    "Flag --model= requires a value.\n"
+                    "Usage: /agent <name> --model=<model_alias>"
+                )
+        elif part_lower.startswith("-m="):
+            model = part.split("=", 1)[1]
+            if not model:
+                return CommandOutput.error(
+                    "Flag -m= requires a value.\n"
+                    "Usage: /agent <name> -m=<model_alias>"
+                )
+        elif part.startswith("-"):
+            # Unknown flag - reject with helpful error
+            return CommandOutput.error(
+                f"Unknown flag: {part}\n"
+                f"Valid flags: --yolo/-y, --trusted/-t, --sandboxed/-s, --model/-m <alias>\n"
+                f"Usage: /agent <name> [--preset] [--model <alias>]"
+            )
+        else:
+            # Unknown positional argument after agent name
+            return CommandOutput.error(
+                f"Unexpected argument: {part}\n"
+                f"Usage: /agent <name> [--yolo|--trusted|--sandboxed] [--model <alias>]"
+            )
+        i += 1
 
     # Check if agent exists in pool (active)
     if agent_name in ctx.pool:
@@ -219,14 +265,20 @@ async def cmd_agent(
 
     # Agent doesn't exist anywhere - prompt to create
     # The REPL handles the actual confirmation prompt
-    perm_str = f" with --{permission}" if permission else ""
+    flags = []
+    if permission:
+        flags.append(f"--{permission}")
+    if model:
+        flags.append(f"--model {model}")
+    flags_str = f" with {' '.join(flags)}" if flags else ""
     return CommandOutput(
         result=CommandResult.ERROR,
-        message=f"Agent '{agent_name}' doesn't exist. Create it{perm_str}? (y/n)",
+        message=f"Agent '{agent_name}' doesn't exist. Create it{flags_str}? (y/n)",
         data={
             "action": "prompt_create",
             "agent_name": agent_name,
             "permission": permission or "trusted",
+            "model": model,
         },
     )
 
@@ -240,6 +292,8 @@ async def _show_agent_status(ctx: CommandContext) -> CommandOutput:
     Returns:
         CommandOutput with agent status information.
     """
+    from nexus3.config.schema import ResolvedModel
+
     if ctx.current_agent_id is None:
         return CommandOutput.error("No current agent")
 
@@ -252,16 +306,39 @@ async def _show_agent_status(ctx: CommandContext) -> CommandOutput:
     message_count = len(agent.context.messages)
     agent_type = "temp" if is_temp_agent(agent.agent_id) else "named"
 
+    # Get model info
+    current_model: ResolvedModel | None = agent.services.get("model")
+    if current_model:
+        model_display = current_model.alias or current_model.model_id
+        model_id = current_model.model_id
+        context_window = current_model.context_window
+    else:
+        # Fall back to config default
+        config = getattr(getattr(ctx.pool, "_shared", None), "config", None)
+        if config:
+            default_model = config.resolve_model()
+            model_display = f"{default_model.alias or default_model.model_id} (default)"
+            model_id = default_model.model_id
+            context_window = default_model.context_window
+        else:
+            model_display = "unknown"
+            model_id = "unknown"
+            context_window = tokens.get("budget", 0)
+
     # Format detailed output
     lines = [
         f"Agent: {agent.agent_id}",
         f"  Type: {agent_type}",
+        f"  Model: {model_display}",
+        f"    ID: {model_id}",
+        f"    Context: {context_window:,} tokens",
         f"  Created: {agent.created_at.isoformat()}",
         f"  Messages: {message_count}",
         "  Tokens:",
-        f"    Total: {tokens.get('total', 0)}",
-        f"    Budget: {tokens.get('budget', 0)}",
-        f"  System Prompt: {len(agent.context.system_prompt or '')} chars",
+        f"    Total: {tokens.get('total', 0):,}",
+        f"    Available: {tokens.get('available', 0):,}",
+        f"    Remaining: {tokens.get('remaining', 0):,}",
+        f"  System Prompt: {len(agent.context.system_prompt or ''):,} chars",
     ]
 
     return CommandOutput.success(
@@ -269,6 +346,9 @@ async def _show_agent_status(ctx: CommandContext) -> CommandOutput:
         data={
             "agent_id": agent.agent_id,
             "type": agent_type,
+            "model_alias": current_model.alias if current_model else None,
+            "model_id": model_id,
+            "context_window": context_window,
             "created_at": agent.created_at.isoformat(),
             "message_count": message_count,
             "tokens": tokens,

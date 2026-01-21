@@ -61,6 +61,17 @@ class MockServices:
         return Path.cwd()
 
 
+class MockResolvedModel:
+    """Mock ResolvedModel for testing."""
+
+    def __init__(self):
+        self.alias = "default"
+        self.model_id = "test/model"
+        self.context_window = 8000
+        self.reasoning = False
+        self.provider_name = "test-provider"
+
+
 class MockAgent:
     """Mock Agent for testing REPL commands."""
 
@@ -73,6 +84,12 @@ class MockAgent:
         self.context.messages = []
         self.context.system_prompt = "Test system prompt content"
         self.context.get_token_summary.return_value = {"total": 500, "budget": 8000}
+        self.context.get_token_usage.return_value = {
+            "total": 500,
+            "budget": 8000,
+            "available": 6000,
+            "remaining": 5500,
+        }
 
         # Mock session
         self.session = MagicMock()
@@ -81,8 +98,9 @@ class MockAgent:
         self.dispatcher = MagicMock()
         self.dispatcher.should_shutdown = False
 
-        # Mock services
+        # Mock services (with model)
         self.services = MockServices()
+        self.services.register("model", MockResolvedModel())
 
         # Mock registry for permission-based tool filtering
         self.registry = MagicMock()
@@ -276,15 +294,40 @@ class TestCmdAgentCreate:
 
     @pytest.mark.asyncio
     async def test_prompt_create_with_short_flags(self, ctx: CommandContext):
-        """Parses short permission flags."""
-        output_y = await cmd_agent(ctx, args="new --y")
-        output_t = await cmd_agent(ctx, args="new --t")
-        output_s = await cmd_agent(ctx, args="new --s")
+        """Parses short permission flags (-y, -t, -s)."""
+        output_y = await cmd_agent(ctx, args="new -y")
+        output_t = await cmd_agent(ctx, args="new -t")
+        output_s = await cmd_agent(ctx, args="new -s")
 
-        # Short flags are not implemented, should default to trusted
-        assert output_y.data["permission"] == "trusted"
+        # Short flags -y, -t, -s are recognized
+        assert output_y.data["permission"] == "yolo"
         assert output_t.data["permission"] == "trusted"
-        assert output_s.data["permission"] == "trusted"
+        assert output_s.data["permission"] == "sandboxed"
+
+    @pytest.mark.asyncio
+    async def test_rejects_unknown_flags(self, ctx: CommandContext):
+        """Unknown flags produce helpful error message."""
+        output = await cmd_agent(ctx, args="new --unknown")
+
+        assert output.result == CommandResult.ERROR
+        assert "Unknown flag" in output.message
+        assert "--unknown" in output.message
+
+    @pytest.mark.asyncio
+    async def test_rejects_unexpected_positional(self, ctx: CommandContext):
+        """Unexpected positional arguments produce helpful error."""
+        output = await cmd_agent(ctx, args="new extraarg")
+
+        assert output.result == CommandResult.ERROR
+        assert "Unexpected argument" in output.message
+
+    @pytest.mark.asyncio
+    async def test_model_flag_requires_value(self, ctx: CommandContext):
+        """--model flag without value produces error."""
+        output = await cmd_agent(ctx, args="new --model")
+
+        assert output.result == CommandResult.ERROR
+        assert "requires a value" in output.message
 
     @pytest.mark.asyncio
     async def test_default_permission_is_trusted(self, ctx: CommandContext):

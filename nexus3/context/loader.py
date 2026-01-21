@@ -265,21 +265,41 @@ class ContextLoader:
         return layer
 
     def _load_global_layer(self) -> ContextLayer | None:
-        """Load the global layer with fallback to defaults."""
+        """Load the global layer with fallback to defaults for missing components.
+
+        If global dir exists and has config/mcp but no prompt, falls back to
+        defaults for the prompt while keeping global's config/mcp. This ensures
+        the defaults NEXUS.md is always loaded even when user has partial
+        global configuration.
+        """
         global_dir = self._get_global_dir()
-
-        if global_dir.is_dir():
-            layer = self._load_layer(global_dir, "global")
-            # If global has content, use it
-            if layer.prompt or layer.config or layer.mcp:
-                return layer
-
-        # Fall back to install defaults
         defaults_dir = self._get_defaults_dir()
-        if defaults_dir.is_dir():
-            return self._load_layer(defaults_dir, "defaults")
 
-        return None
+        global_layer: ContextLayer | None = None
+        defaults_layer: ContextLayer | None = None
+
+        # Load global layer if exists
+        if global_dir.is_dir():
+            global_layer = self._load_layer(global_dir, "global")
+
+        # Load defaults layer if exists
+        if defaults_dir.is_dir():
+            defaults_layer = self._load_layer(defaults_dir, "defaults")
+
+        # Merge strategy: global takes precedence, but fall back to defaults for missing
+        if global_layer is not None:
+            # If global has no prompt, use defaults prompt
+            if not global_layer.prompt and defaults_layer and defaults_layer.prompt:
+                global_layer.prompt = defaults_layer.prompt
+                # Update layer name to indicate merged source
+                global_layer.name = "global+defaults"
+
+            # Return global if it has any content
+            if global_layer.prompt or global_layer.config or global_layer.mcp:
+                return global_layer
+
+        # Fall back to defaults entirely if no global content
+        return defaults_layer
 
     def _format_readme_section(self, content: str, source_path: Path) -> str:
         """Format README with explicit documentation boundaries.

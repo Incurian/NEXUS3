@@ -267,10 +267,12 @@ async def cmd_status(
     tokens = agent.context.get_token_usage()
     message_count = len(agent.context.messages)
 
-    # Calculate context usage percentage
+    # Calculate context usage percentage (based on available, not budget, to match is_over_budget())
     total = tokens.get("total", 0)
     budget = tokens.get("budget", 1)
-    context_usage_pct = round((total / budget) * 100, 1) if budget > 0 else 0
+    available = tokens.get("available", budget)
+    remaining = tokens.get("remaining", 0)
+    context_usage_pct = round((total / available) * 100, 1) if available > 0 else 0
 
     # Get info from services
     permissions: AgentPermissions | None = None
@@ -355,7 +357,7 @@ async def cmd_status(
         "created_at": agent.created_at.isoformat(),
         "message_count": message_count,
         "context_usage_pct": context_usage_pct,
-        "tokens": tokens if show_tokens else {"total": total, "budget": budget},
+        "tokens": tokens if show_tokens else {"total": total, "available": available, "remaining": remaining},
         "model": model_info,
         "permission_level": perm_level,
         "preset": preset_name,
@@ -390,8 +392,8 @@ async def cmd_status(
         preset_str = f" (preset: {preset_name})" if preset_name else ""
         lines.append(f"  Permissions: {perm_level}{preset_str}")
 
-    # Context usage
-    lines.append(f"  Context: {total:,} / {budget:,} tokens ({context_usage_pct}%)")
+    # Context usage (shows available, not full budget, to match is_over_budget threshold)
+    lines.append(f"  Context: {total:,} / {available:,} tokens ({context_usage_pct}%) - {remaining:,} remaining")
     lines.append(f"  Messages: {message_count}")
 
     # Paths
@@ -550,6 +552,13 @@ async def cmd_save(
     # FIXED: Extract permission data correctly
     perm_level, perm_preset, disabled_tools = await get_permission_data(agent)
 
+    # Get model alias for persistence
+    try:
+        model = agent.services.get("model")
+        model_alias = model.alias if model else None
+    except Exception:
+        model_alias = None
+
     # Create saved session from agent state
     saved = serialize_session(
         agent_id=save_name,
@@ -563,6 +572,7 @@ async def cmd_save(
         created_at=agent.created_at,
         permission_preset=perm_preset,
         disabled_tools=disabled_tools,
+        model_alias=model_alias,
     )
 
     try:

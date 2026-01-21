@@ -777,7 +777,22 @@ class MySpecialSkill(BaseSkill):
 
 - [ ] **Portable auto-bootstrap launcher**: Add a launcher script that auto-installs deps (httpx, pydantic, rich, prompt-toolkit, python-dotenv) on first run, enabling "copy folder and go" portability without manual pip install. See packaging investigation for options (shiv/zipapp as alternative).
 
+- [ ] **Track is_repl in context loader**: `session/session.py:884` has `# TODO: track is_repl` - the context loader call hardcodes `is_repl=True` but should track this properly.
+
 - [x] **RPC `compact` method for stuck agents**: ~~When an agent's context exceeds the provider's token/byte limit, the agent becomes stuck (alive but unusable).~~ Fixed: Added `nexus3 rpc compact <agent_id>` command and `_handle_compact()` RPC method.
+
+- [x] **Model persistence in sessions**: ~~Sessions didn't save/restore model choice, reverting to default on resume.~~ Fixed: Added `model_alias` field to `SavedSession`, captured during save, restored on resume.
+
+- [x] **Token calculation consistency**: ~~Token display showed `total/budget` but `is_over_budget()` used `available` (budget minus reserve).~~ Fixed: Added `remaining` field to token usage, percentage now uses `available`, display shows `remaining` explicitly.
+
+- [x] **NEXUS.md not loading when global config exists**: ~~If `~/.nexus3/` had ANY content (config.json with mcp_servers), fallback to defaults/NEXUS.md never happened.~~ Fixed: Global layer now merges with defaults - keeps global's config/mcp but uses defaults' prompt if global has none.
+
+- [x] **/agent --model flag not working**: ~~The `/agent` command was updated to parse `--model` flag but silently accepted invalid flags.~~ Fixed:
+  1. Added strict flag validation - unknown flags now rejected with helpful error
+  2. `/agent` status now shows model alias, ID, and context window
+  3. Verified model is passed through `AgentConfig` → `pool.create()` → `services.register("model")`
+
+- [x] **Show model in agent status**: ~~`/agent` (no args) didn't show model info.~~ Fixed: Now displays model alias, ID, context window, and token usage (total/available/remaining).
 
 ---
 

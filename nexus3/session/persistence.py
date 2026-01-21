@@ -57,6 +57,7 @@ class SavedSession:
     permission_preset: str | None = None
     disabled_tools: list[str] = field(default_factory=list)
     session_allowances: dict[str, Any] = field(default_factory=dict)
+    model_alias: str | None = None  # Model alias used for this session (e.g., "haiku", "gpt")
     schema_version: int = SESSION_SCHEMA_VERSION
 
     def to_json(self) -> str:
@@ -78,6 +79,7 @@ class SavedSession:
             "permission_preset": self.permission_preset,
             "disabled_tools": self.disabled_tools,
             "session_allowances": self.session_allowances,
+            "model_alias": self.model_alias,
             "token_usage": self.token_usage,
             "provenance": self.provenance,
         }
@@ -110,6 +112,7 @@ class SavedSession:
             permission_preset=data.get("permission_preset"),
             disabled_tools=data.get("disabled_tools", []),
             session_allowances=data.get("session_allowances", {}),
+            model_alias=data.get("model_alias"),
             token_usage=data.get("token_usage", {}),
             provenance=data.get("provenance", "user"),
             schema_version=data.get("schema_version", 1),
@@ -256,6 +259,7 @@ def serialize_session(
     permission_preset: str | None = None,
     disabled_tools: list[str] | None = None,
     session_allowances: dict[str, Any] | None = None,
+    model_alias: str | None = None,
 ) -> SavedSession:
     """Create a SavedSession from runtime state.
 
@@ -272,6 +276,7 @@ def serialize_session(
         permission_preset: Permission preset name (e.g., "yolo", "trusted", "sandboxed").
         disabled_tools: List of tool names that are disabled for this agent.
         session_allowances: Dynamic allowances (write paths, exec permissions) for TRUSTED mode.
+        model_alias: Model alias for this session (e.g., "haiku", "gpt").
 
     Returns:
         SavedSession ready for disk storage.
@@ -291,4 +296,5 @@ def serialize_session(
         permission_preset=permission_preset,
         disabled_tools=disabled_tools or [],
         session_allowances=session_allowances or {},
+        model_alias=model_alias,
     )

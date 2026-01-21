@@ -760,8 +760,8 @@ class AgentPool:
         # Use system prompt from saved session
         system_prompt = saved.system_prompt
 
-        # Create context manager with default model's context window
-        resolved_model = self._shared.config.resolve_model()
+        # Create context manager with saved model's context window (or default if not saved)
+        resolved_model = self._shared.config.resolve_model(saved.model_alias)
         context_config = ContextConfig(
             max_tokens=resolved_model.context_window,
         )
@@ -798,11 +798,12 @@ class AgentPool:
             delta = PermissionDelta(disable_tools=saved.disabled_tools)
             permissions = permissions.apply_delta(delta)
 
-        # Register agent_id, permissions, allowed_paths, cwd, and MCP registry
+        # Register agent_id, permissions, allowed_paths, cwd, model and MCP registry
         services.register("agent_id", agent_id)
         services.register("permissions", permissions)
         services.register("allowed_paths", permissions.effective_policy.allowed_paths)
         services.register("mcp_registry", self._shared.mcp_registry)
+        services.register("model", resolved_model)  # ResolvedModel for /model command
         # Per-agent cwd for isolation (restored from saved session)
         agent_cwd = Path(saved.working_directory) if saved.working_directory else Path.cwd()
         services.register("cwd", agent_cwd)
@@ -841,8 +842,8 @@ class AgentPool:
 
         context.set_tool_definitions(tool_defs)
 
-        # Get the default provider from the registry for restored sessions
-        # TODO: Consider saving/restoring the model choice in SavedSession
+        # Get the provider from the registry for restored sessions
+        # Model alias is now persisted in SavedSession and restored here
         provider = self._shared.provider_registry.get(
             resolved_model.provider_name,
             resolved_model.model_id,

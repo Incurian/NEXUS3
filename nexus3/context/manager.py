@@ -324,12 +324,26 @@ class ContextManager:
         """Get current token usage breakdown.
 
         Returns:
-            Dict with keys: system, tools, messages, total, budget, available
+            Dict with keys: system, tools, messages, total, budget, available, remaining
+            - budget: Full context window size
+            - available: Budget minus reserve tokens (what's usable for context)
+            - remaining: Available minus total (how much space is left)
         """
-        system_tokens = self._counter.count(self._system_prompt)
+        # Count system prompt WITH injected datetime (matches what build_messages sends)
+        if self._system_prompt:
+            datetime_line = get_current_datetime_str()
+            prompt_with_time = inject_datetime_into_prompt(
+                self._system_prompt, datetime_line
+            )
+            system_tokens = self._counter.count(prompt_with_time)
+        else:
+            system_tokens = 0
+
         tools_tokens = self._count_tools_tokens()
         message_tokens = self._counter.count_messages(self._messages)
         total = system_tokens + tools_tokens + message_tokens
+        available = self.config.max_tokens - self.config.reserve_tokens
+        remaining = max(0, available - total)
 
         return {
             "system": system_tokens,
@@ -337,7 +351,8 @@ class ContextManager:
             "messages": message_tokens,
             "total": total,
             "budget": self.config.max_tokens,
-            "available": self.config.max_tokens - self.config.reserve_tokens,
+            "available": available,
+            "remaining": remaining,
         }
 
     def _count_tools_tokens(self) -> int:

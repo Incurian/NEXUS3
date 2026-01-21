@@ -70,7 +70,7 @@ from nexus3.rpc.detection import DetectionResult
 from nexus3.rpc.discovery import discover_servers, discover_token_ports, parse_port_spec
 from nexus3.rpc.http import run_http_server
 from nexus3.cli.connect_lobby import show_connect_lobby, ConnectAction
-from nexus3.rpc.pool import AgentConfig, generate_temp_id
+from nexus3.rpc.pool import Agent, AgentConfig, generate_temp_id
 from nexus3.session import LogStream, SessionManager
 from nexus3.session.persistence import (
     SavedSession,
@@ -426,6 +426,14 @@ async def run_repl(
             return None
         return str(sources[-1].path)
 
+    def get_model_alias(agent: Agent) -> str | None:
+        """Get the model alias from an agent's services."""
+        try:
+            model = agent.services.get("model")
+            return model.alias if model else None
+        except Exception:
+            return None
+
     # Update last-session immediately after startup (so resume works after quit)
     try:
         perm_level, perm_preset, disabled_tools = get_permission_data(main_agent)
@@ -441,6 +449,7 @@ async def run_repl(
             created_at=main_agent.created_at,
             permission_preset=perm_preset,
             disabled_tools=disabled_tools,
+            model_alias=get_model_alias(main_agent),
         )
         session_manager.save_last_session(startup_saved, agent_name)
     except Exception as e:
@@ -478,6 +487,7 @@ async def run_repl(
                     created_at=agent.created_at,
                     permission_preset=perm_preset,
                     disabled_tools=disabled_tools,
+                    model_alias=get_model_alias(agent),
                 )
                 session_manager.save_last_session(saved, agent_id)
         except Exception as e:
@@ -658,6 +668,11 @@ async def run_repl(
         import json as _json  # Local import to avoid circular deps
 
         for tool in display.get_batch_results():
+            # Skip tools that haven't reached a final state - they shouldn't be in history
+            # This also prevents stale ACTIVE gumball artifacts from Live display issues
+            if tool.state in (ToolState.PENDING, ToolState.ACTIVE):
+                continue
+
             if tool.state == ToolState.SUCCESS:
                 gumball = "[green]●[/]"
                 suffix = ""
@@ -1192,9 +1207,13 @@ async def run_repl(
                             if confirm == "y":
                                 agent_name_to_create = output.data["agent_name"]
                                 permission_to_use = output.data.get("permission")
+                                model_to_use = output.data.get("model")
                                 try:
-                                    # Create agent with permission preset
-                                    agent_config = AgentConfig(preset=permission_to_use)
+                                    # Create agent with permission preset and model
+                                    agent_config = AgentConfig(
+                                        preset=permission_to_use,
+                                        model=model_to_use,
+                                    )
                                     new_agent = await pool.create(
                                         agent_id=agent_name_to_create,
                                         config=agent_config,
@@ -1372,6 +1391,7 @@ async def run_repl(
                         created_at=save_agent.created_at,
                         permission_preset=perm_preset,
                         disabled_tools=disabled_tools,
+                        model_alias=get_model_alias(save_agent),
                     )
                     session_manager.save_last_session(saved, current_agent_id)
             except Exception as e:
@@ -1456,7 +1476,7 @@ async def run_repl_client(url: str, agent_id: str, api_key: str | None = None) -
         # Test connection
         try:
             status = await client.get_tokens()
-            console.print(f"Connected. Tokens: {status.get('total', 0)}/{status.get('budget', 0)}")
+            console.print(f"Connected. Tokens: {status.get('total', 0)}/{status.get('available', status.get('budget', 0))}")
         except ClientError as e:
             console.print(f"[red]Connection failed:[/] {e}")
             return
