@@ -66,6 +66,16 @@ You need an API key from at least one provider:
 
 ## Installation
 
+> **Corporate Networks / SSL Issues:** If you're behind a corporate proxy with SSL inspection, both `git` and `pip` may fail with certificate errors. Configure your corporate CA certificate:
+> ```bash
+> # For pip (persistent)
+> pip config set global.cert /path/to/corporate-ca.pem
+>
+> # For git
+> git config --global http.sslCAInfo /path/to/corporate-ca.pem
+> ```
+> See [Certificate Formats](#certificate-formats) below for help identifying and converting your certificate.
+
 ### Step 1: Clone the Repository
 
 ```bash
