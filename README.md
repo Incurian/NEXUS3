@@ -11,11 +11,12 @@ NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrat
 - [Key Features](#key-features)
 - [Requirements](#requirements)
 - [Installation](#installation)
+- [Provider Configuration](#provider-configuration)
 - [Quick Start](#quick-start)
 - [CLI Reference](#cli-reference)
 - [Architecture](#architecture)
 - [Security & Permissions](#security--permissions)
-- [Configuration](#configuration)
+- [Configuration Reference](#configuration-reference)
 - [Built-in Skills](#built-in-skills)
 - [MCP Integration](#mcp-integration)
 - [Session Management](#session-management)
@@ -68,7 +69,7 @@ You need an API key from at least one provider:
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/your-org/nexus3.git
+git clone https://github.com/Incurian/NEXUS3.git
 cd nexus3
 ```
 
@@ -172,6 +173,141 @@ source ~/.bashrc
 # Option 3: Use module directly
 python -m nexus3
 ```
+
+---
+
+## Provider Configuration
+
+NEXUS3 supports multiple LLM providers. The `type` field specifies which **API protocol** to use—it's not locked to any specific service. You can point any provider type at any compatible endpoint using `base_url`.
+
+### Provider Types (API Compatibility Modes)
+
+| Type | API Protocol | Compatible With |
+|------|--------------|-----------------|
+| `openai` | OpenAI Chat Completions | OpenAI, vLLM, LM Studio, LocalAI, text-generation-webui, llama.cpp, any OpenAI-compatible server |
+| `openrouter` | OpenAI + OpenRouter headers | OpenRouter, compatible proxies |
+| `anthropic` | Anthropic Messages API | Anthropic, AWS Bedrock (with adapter), compatible proxies |
+| `azure` | OpenAI + Azure auth | Azure OpenAI Service |
+| `ollama` | OpenAI-compatible | Ollama (convenience preset for `openai` with localhost defaults) |
+| `vllm` | OpenAI-compatible | vLLM servers (convenience preset for `openai`) |
+
+### Basic Setup (Single Provider)
+
+For most users, a single provider is sufficient:
+
+```json
+{
+  "providers": {
+    "main": {
+      "type": "openrouter",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "models": {
+        "default": {
+          "id": "anthropic/claude-sonnet-4",
+          "context_window": 200000
+        }
+      }
+    }
+  },
+  "default_model": "default"
+}
+```
+
+### Using Local Models
+
+Point any OpenAI-compatible local server:
+
+```json
+{
+  "providers": {
+    "local": {
+      "type": "openai",
+      "base_url": "http://localhost:8080/v1",
+      "auth_method": "none",
+      "models": {
+        "llama": {"id": "llama-3.2-8b", "context_window": 128000},
+        "codellama": {"id": "codellama-34b", "context_window": 16000}
+      }
+    }
+  },
+  "default_model": "llama"
+}
+```
+
+This works with:
+- **Ollama**: `http://localhost:11434/v1`
+- **LM Studio**: `http://localhost:1234/v1`
+- **vLLM**: `http://localhost:8000/v1`
+- **text-generation-webui**: `http://localhost:5000/v1`
+- **llama.cpp server**: `http://localhost:8080/v1`
+- **LocalAI**: `http://localhost:8080/v1`
+
+### Multi-Provider Setup
+
+Use multiple providers simultaneously:
+
+```json
+{
+  "providers": {
+    "cloud": {
+      "type": "openrouter",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "models": {
+        "smart": {"id": "anthropic/claude-sonnet-4", "context_window": 200000},
+        "fast": {"id": "anthropic/claude-haiku-4.5", "context_window": 200000}
+      }
+    },
+    "local": {
+      "type": "openai",
+      "base_url": "http://localhost:11434/v1",
+      "auth_method": "none",
+      "models": {
+        "llama": {"id": "llama3.2", "context_window": 128000}
+      }
+    },
+    "work": {
+      "type": "azure",
+      "base_url": "https://my-company.openai.azure.com",
+      "api_key_env": "AZURE_OPENAI_KEY",
+      "api_version": "2024-02-01",
+      "models": {
+        "gpt4": {"id": "gpt-4-turbo", "deployment": "gpt4-deployment", "context_window": 128000}
+      }
+    }
+  },
+  "default_model": "smart"
+}
+```
+
+Switch models at runtime:
+```bash
+nexus3 --model llama      # Use local model
+nexus3 --model smart      # Use cloud model
+/model gpt4               # Switch in REPL
+```
+
+### Provider Options Reference
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `type` | string | `"openrouter"` | API protocol (see table above) |
+| `base_url` | string | Provider-specific | API endpoint URL |
+| `api_key_env` | string | Provider-specific | Environment variable containing API key |
+| `auth_method` | string | `"bearer"` | Auth header format: `bearer`, `api-key`, `x-api-key`, `none` |
+| `request_timeout` | float | `120.0` | Request timeout in seconds |
+| `max_retries` | int | `3` | Retry attempts on failure (0-10) |
+| `retry_backoff` | float | `1.5` | Exponential backoff multiplier |
+| `extra_headers` | object | `{}` | Additional HTTP headers |
+| `api_version` | string | - | API version (Azure) |
+| `deployment` | string | - | Deployment name (Azure) |
+
+### Model Options Reference
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `id` | string | (required) | Model identifier sent to API |
+| `context_window` | int | `131072` | Context window size in tokens |
+| `reasoning` | bool | `false` | Enable extended thinking mode |
 
 ---
 
@@ -615,7 +751,9 @@ Options:
 
 ---
 
-## Configuration
+## Configuration Reference
+
+This section covers all configuration options. For provider setup, see [Provider Configuration](#provider-configuration).
 
 ### File Locations
 
@@ -650,77 +788,36 @@ Configuration is loaded from multiple layers (later overrides earlier):
         └── session.md              # Markdown transcript
 ```
 
-### Configuration Schema
-
-#### Root Configuration
+### Root Configuration Options
 
 ```json
 {
   "default_model": "fast",
-  "providers": { ... },
+  "providers": { },
   "stream_output": true,
   "max_tool_iterations": 100,
   "skill_timeout": 120.0,
   "max_concurrent_tools": 10,
   "default_permission_level": "trusted",
-  "compaction": { ... },
-  "context": { ... },
-  "mcp_servers": [ ... ],
-  "server": { ... },
-  "permissions": { ... }
+  "compaction": { },
+  "context": { },
+  "mcp_servers": [ ],
+  "server": { },
+  "permissions": { }
 }
 ```
 
-#### Provider Configuration
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `default_model` | string | `"fast"` | Model alias to use by default |
+| `providers` | object | - | Provider configurations (see [Provider Configuration](#provider-configuration)) |
+| `stream_output` | bool | `true` | Stream LLM responses |
+| `max_tool_iterations` | int | `100` | Max tool calls per turn |
+| `skill_timeout` | float | `120.0` | Default tool timeout (seconds) |
+| `max_concurrent_tools` | int | `10` | Parallel tool execution limit |
+| `default_permission_level` | string | `"trusted"` | Default permission preset |
 
-```json
-{
-  "providers": {
-    "openrouter": {
-      "type": "openrouter",
-      "api_key_env": "OPENROUTER_API_KEY",
-      "base_url": "https://openrouter.ai/api/v1",
-      "request_timeout": 120.0,
-      "max_retries": 3,
-      "models": {
-        "fast": {
-          "id": "anthropic/claude-haiku-4.5",
-          "context_window": 200000
-        },
-        "smart": {
-          "id": "anthropic/claude-sonnet-4",
-          "context_window": 200000
-        }
-      }
-    },
-    "anthropic": {
-      "type": "anthropic",
-      "api_key_env": "ANTHROPIC_API_KEY",
-      "auth_method": "x-api-key",
-      "models": {
-        "claude-native": {
-          "id": "claude-sonnet-4-20250514",
-          "context_window": 200000
-        }
-      }
-    }
-  },
-  "default_provider": "openrouter"
-}
-```
-
-#### Provider Types
-
-| Type | Description | Required Config |
-|------|-------------|-----------------|
-| `openrouter` | OpenRouter.ai (access to all models) | `OPENROUTER_API_KEY` |
-| `anthropic` | Native Anthropic API | `ANTHROPIC_API_KEY` |
-| `openai` | OpenAI API | `OPENAI_API_KEY` |
-| `azure` | Azure OpenAI | `AZURE_OPENAI_KEY`, `deployment`, `api_version` |
-| `ollama` | Local Ollama | `base_url` (default: localhost:11434) |
-| `vllm` | vLLM server | `base_url` |
-
-#### Compaction Configuration
+### Compaction Configuration
 
 ```json
 {
@@ -768,32 +865,6 @@ Configuration is loaded from multiple layers (later overrides earlier):
     "host": "127.0.0.1",
     "port": 8765,
     "log_level": "INFO"
-  }
-}
-```
-
-### Example: Multi-Provider Setup
-
-```json
-{
-  "default_model": "balanced",
-  "providers": {
-    "openrouter": {
-      "type": "openrouter",
-      "api_key_env": "OPENROUTER_API_KEY",
-      "models": {
-        "fast": {"id": "anthropic/claude-haiku-4.5", "context_window": 200000},
-        "balanced": {"id": "anthropic/claude-sonnet-4", "context_window": 200000}
-      }
-    },
-    "local": {
-      "type": "ollama",
-      "base_url": "http://localhost:11434/v1",
-      "auth_method": "none",
-      "models": {
-        "llama": {"id": "llama3.2", "context_window": 128000}
-      }
-    }
   }
 }
 ```
