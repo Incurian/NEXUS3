@@ -151,6 +151,10 @@ class BaseProvider(ABC):
         self._max_retries = config.max_retries
         self._retry_backoff = config.retry_backoff
 
+        # SSL settings for on-prem/corporate deployments
+        self._verify_ssl = config.verify_ssl
+        self._ssl_ca_cert = config.ssl_ca_cert
+
         # G1: HTTP client lifecycle - lazily created, instance-owned
         self._client: httpx.AsyncClient | None = None
 
@@ -172,7 +176,14 @@ class BaseProvider(ABC):
             The httpx.AsyncClient instance for making HTTP requests.
         """
         if self._client is None:
-            self._client = httpx.AsyncClient(timeout=self._timeout)
+            # SSL verification settings for on-prem/corporate deployments
+            # Priority: ssl_ca_cert (custom CA) > verify_ssl (bool)
+            if self._ssl_ca_cert:
+                verify: bool | str = self._ssl_ca_cert
+            else:
+                verify = self._verify_ssl
+
+            self._client = httpx.AsyncClient(timeout=self._timeout, verify=verify)
         return self._client
 
     async def aclose(self) -> None:

@@ -140,6 +140,15 @@ class ProviderConfig(BaseModel):
     """Allow HTTP (non-HTTPS) for non-localhost URLs. SECURITY WARNING: Only enable for
     development/testing. Enabling this on untrusted networks could expose credentials."""
 
+    verify_ssl: bool = True
+    """Verify SSL certificates. Set to false for self-signed certificates (on-prem/corporate).
+    SECURITY WARNING: Disabling SSL verification makes connections vulnerable to MITM attacks.
+    Only disable when connecting to trusted internal servers with self-signed certs."""
+
+    ssl_ca_cert: str | None = None
+    """Path to CA certificate file for SSL verification. Use this instead of disabling
+    verify_ssl when your on-prem server uses a corporate CA certificate."""
+
     models: dict[str, ModelConfig] = {}
     """Model aliases available through this provider."""
 

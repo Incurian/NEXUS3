@@ -300,6 +300,46 @@ nexus3 --model smart      # Use cloud model
 | `extra_headers` | object | `{}` | Additional HTTP headers |
 | `api_version` | string | - | API version (Azure) |
 | `deployment` | string | - | Deployment name (Azure) |
+| `verify_ssl` | bool | `true` | Verify SSL certificates (set `false` for self-signed certs) |
+| `ssl_ca_cert` | string | - | Path to CA certificate file (for corporate CAs) |
+
+### On-Prem / Self-Signed Certificates
+
+For corporate/on-prem deployments with self-signed certificates:
+
+```json
+{
+  "providers": {
+    "onprem": {
+      "type": "openai",
+      "base_url": "https://internal-llm.company.com/v1",
+      "api_key_env": "ONPREM_API_KEY",
+      "verify_ssl": false,
+      "models": {
+        "internal": {"id": "llama-3-70b", "context_window": 8192}
+      }
+    }
+  }
+}
+```
+
+If your company has a corporate CA certificate, use `ssl_ca_cert` instead (more secure):
+
+```json
+{
+  "providers": {
+    "onprem": {
+      "type": "openai",
+      "base_url": "https://internal-llm.company.com/v1",
+      "api_key_env": "ONPREM_API_KEY",
+      "ssl_ca_cert": "/path/to/corporate-ca.crt",
+      "models": {
+        "internal": {"id": "llama-3-70b", "context_window": 8192}
+      }
+    }
+  }
+}
+```
 
 ### Model Options Reference
 
