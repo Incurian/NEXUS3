@@ -72,7 +72,7 @@ ReasoningCallback = Callable[[bool], None]
 # New batch-aware callback types
 BatchStartCallback = Callable[["tuple[ToolCall, ...]"], None]  # All tools in batch
 ToolActiveCallback = Callable[[str, str], None]  # (name, id) - tool starting execution
-BatchProgressCallback = Callable[[str, str, bool, str], None]  # (name, id, success, error_msg)
+BatchProgressCallback = Callable[[str, str, bool, str, str], None]  # (name, id, success, error_msg, output)
 BatchHaltCallback = Callable[[], None]  # Sequential batch halted due to error
 BatchCompleteCallback = Callable[[], None]  # All tools in batch finished
 
@@ -228,6 +228,7 @@ class Session:
         user_input: str,
         use_tools: bool = False,
         cancel_token: "CancellationToken | None" = None,
+        user_meta: dict[str, Any] | None = None,
     ) -> AsyncIterator[str]:
         """Send a message and stream the response.
 
@@ -239,6 +240,7 @@ class Session:
             use_tools: If True, enable tool execution loop.
                       Automatically enabled if registry has tools.
             cancel_token: Optional cancellation token to cancel the operation.
+            user_meta: Optional metadata for the user message (e.g., source attribution).
 
         Yields:
             String chunks of the assistant's response.
@@ -252,7 +254,7 @@ class Session:
             self._last_iteration_count = 0
 
             # Multi-turn: use context manager
-            self.context.add_user_message(user_input)
+            self.context.add_user_message(user_input, meta=user_meta)
 
             # Check if we should use tool mode
             has_tools = self.registry and self.registry.get_definitions()
@@ -470,6 +472,7 @@ class Session:
                             tool_id=tc.id,
                             success=tool_result.success,
                             error=tool_result.error,
+                            output=tool_result.output if tool_result.success else "",
                         )
                         self._log_event(tool_complete)
                         yield tool_complete
@@ -490,6 +493,7 @@ class Session:
                             tool_id=tc.id,
                             success=tool_result.success,
                             error=tool_result.error,
+                            output=tool_result.output if tool_result.success else "",
                         )
                         self._log_event(tool_complete)
                         yield tool_complete
@@ -581,7 +585,7 @@ class Session:
             elif isinstance(event, ToolCompleted):
                 if self.on_batch_progress:
                     self.on_batch_progress(
-                        event.name, event.tool_id, event.success, event.error
+                        event.name, event.tool_id, event.success, event.error, event.output
                     )
                 # Legacy callback (deprecated)
                 if self.on_tool_complete:

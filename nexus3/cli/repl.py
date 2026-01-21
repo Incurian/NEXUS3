@@ -637,9 +637,16 @@ async def run_repl(
         """Mark tool as actively executing in display."""
         display.set_tool_active(tool_id)
 
-    def on_batch_progress(name: str, tool_id: str, success: bool, error: str) -> None:
+    # Track nexus_send results for display in on_batch_complete
+    _nexus_send_results: dict[str, dict[str, str]] = {}
+
+    def on_batch_progress(name: str, tool_id: str, success: bool, error: str, output: str) -> None:
         """Update display as each tool completes."""
         display.set_tool_complete(tool_id, success, error)
+
+        # Store nexus_send results for formatted display
+        if name == "nexus_send" and success and output:
+            _nexus_send_results[tool_id] = {"output": output}
 
     def on_batch_halt() -> None:
         """Mark remaining tools as halted when sequence stops on error."""
@@ -647,6 +654,8 @@ async def run_repl(
 
     def on_batch_complete() -> None:
         """Print all results to scrollback when batch finishes."""
+        import json as _json  # Local import to avoid circular deps
+
         for tool in display.get_batch_results():
             if tool.state == ToolState.SUCCESS:
                 gumball = "[green]●[/]"
@@ -671,6 +680,22 @@ async def run_repl(
             if tool.state == ToolState.ERROR and tool.error:
                 error_preview = tool.error[:70] + ("..." if len(tool.error) > 70 else "")
                 console.print(f"      [red dim]{error_preview}[/]")
+
+            # Special handling for nexus_send - show response content
+            if tool.name == "nexus_send" and tool.tool_id in _nexus_send_results:
+                result_data = _nexus_send_results.pop(tool.tool_id)
+                try:
+                    parsed = _json.loads(result_data["output"])
+                    content = parsed.get("content", "")
+                    if content:
+                        # Truncate long responses
+                        preview = content[:100] + ("..." if len(content) > 100 else "")
+                        console.print(f"      [dim cyan]↳ Response: {preview}[/]")
+                except (_json.JSONDecodeError, KeyError):
+                    pass  # Silently skip if output isn't valid JSON
+
+        # Clear any remaining nexus_send results
+        _nexus_send_results.clear()
         display.clear_tools()
 
     # =============================================================

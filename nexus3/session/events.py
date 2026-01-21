@@ -150,6 +150,7 @@ class ToolCompleted(SessionEvent):
         tool_id: Unique identifier for this tool call.
         success: True if tool executed without error.
         error: Error message if success is False, empty string otherwise.
+        output: Tool output if success is True, empty string otherwise.
         timestamp: Unix timestamp when event was created.
     """
 
@@ -157,6 +158,7 @@ class ToolCompleted(SessionEvent):
     tool_id: str
     success: bool
     error: str = ""
+    output: str = ""
     timestamp: float = field(default_factory=time.time)
 
 
