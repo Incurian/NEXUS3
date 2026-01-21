@@ -18,6 +18,12 @@ from nexus3.session.events import (
     ToolDetected,
     ToolStarted,
 )
+from nexus3.session.http_logging import (
+    clear_current_logger,
+    configure_http_logging,
+    set_current_logger,
+    unconfigure_http_logging,
+)
 from nexus3.session.logging import RawLogCallbackAdapter, SessionLogger
 from nexus3.session.persistence import (
     SavedSession,
@@ -50,6 +56,11 @@ __all__ = [
     "LogStream",
     "SessionInfo",
     "RawLogCallbackAdapter",
+    # HTTP debug logging
+    "configure_http_logging",
+    "unconfigure_http_logging",
+    "set_current_logger",
+    "clear_current_logger",
     # Persistence
     "SavedSession",
     "SessionSummary",

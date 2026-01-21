@@ -213,6 +213,21 @@ class MarkdownWriter:
         md += "\n\n"
         self._append(self.verbose_path, md)
 
+    def write_http_debug(self, logger_name: str, message: str) -> None:
+        """Write HTTP debug log entry to verbose.md.
+
+        Args:
+            logger_name: Name of the logger (e.g., 'httpx', 'httpcore.http11').
+            message: The log message.
+        """
+        if not self.verbose_enabled:
+            return
+
+        ts = self._format_timestamp()
+        # Format: [HH:MM:SS] logger: message
+        md = f"`[{ts}] {logger_name}:` {message}\n\n"
+        self._append(self.verbose_path, md)
+
 
 class RawWriter:
     """Writes raw API JSON to a JSONL file."""

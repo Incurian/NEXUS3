@@ -90,6 +90,7 @@ load_dotenv()
 
 async def run_repl(
     verbose: bool = False,
+    log_verbose: bool = False,
     raw_log: bool = False,
     log_dir: Path | None = None,
     port: int | None = None,
@@ -111,7 +112,8 @@ async def run_repl(
     rich display. External clients can connect via HTTP on the same port.
 
     Args:
-        verbose: Enable verbose logging stream.
+        verbose: Enable DEBUG output to console (-v).
+        log_verbose: Enable verbose logging to file (-V).
         raw_log: Enable raw API logging stream.
         log_dir: Directory for session logs.
         port: Port for embedded HTTP server. If None, uses config.server.port.
@@ -269,8 +271,11 @@ async def run_repl(
 
     # Configure logging streams based on CLI flags
     log_streams = LogStream.CONTEXT  # Always on for basic functionality
-    if verbose:
+    if log_verbose:
         log_streams |= LogStream.VERBOSE
+        # Configure HTTP debug logging to verbose.md
+        from nexus3.session import configure_http_logging
+        configure_http_logging()
     if raw_log:
         log_streams |= LogStream.RAW
 
@@ -1772,6 +1777,7 @@ def main() -> None:
                 asyncio.run(run_serve(
                     port=args.serve,
                     verbose=args.verbose,
+                    log_verbose=getattr(args, "log_verbose", False),
                     raw_log=args.raw_log,
                     log_dir=args.log_dir,
                 ))
@@ -1782,6 +1788,7 @@ def main() -> None:
                 return
             asyncio.run(run_repl(
                 verbose=args.verbose,
+                log_verbose=getattr(args, "log_verbose", False),
                 raw_log=args.raw_log,
                 log_dir=args.log_dir,
                 resume=args.resume,
@@ -1822,6 +1829,8 @@ def _run_with_reload(args: argparse.Namespace) -> None:
     ]
     if args.verbose:
         cmd.append("--verbose")
+    if getattr(args, "log_verbose", False):
+        cmd.append("--log-verbose")
     if args.raw_log:
         cmd.append("--raw-log")
     if args.log_dir:

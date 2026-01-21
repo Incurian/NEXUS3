@@ -30,6 +30,7 @@ from nexus3.core.validation import ValidationError, validate_tool_arguments
 from nexus3.session.confirmation import ConfirmationController
 from nexus3.session.dispatcher import ToolDispatcher
 from nexus3.session.enforcer import PermissionEnforcer
+from nexus3.session.http_logging import clear_current_logger, set_current_logger
 from nexus3.session.events import (
     ContentChunk,
     IterationCompleted,
@@ -249,56 +250,64 @@ class Session:
         Yields:
             String chunks of the assistant's response.
         """
-        if self.context:
-            # Flush any cancelled tool results from previous turn
-            self._flush_cancelled_tools()
+        # Set current logger for HTTP debug routing to verbose.md
+        if self.logger:
+            set_current_logger(self.logger)
 
-            # Reset iteration state for this send()
-            self._halted_at_iteration_limit = False
-            self._last_iteration_count = 0
-
-            # Multi-turn: use context manager
-            self.context.add_user_message(user_input, meta=user_meta)
-
-            # Check if we should use tool mode
-            has_tools = self.registry and self.registry.get_definitions()
-            if use_tools or has_tools:
-                # Use streaming tool execution loop
-                async for chunk in self._execute_tool_loop_streaming(cancel_token):
-                    yield chunk
-                return
-
-            messages = self.context.build_messages()
-            tools = self.context.get_tool_definitions()
-        else:
-            # Single-turn: build messages directly (backwards compatible)
-            if self.logger:
-                self.logger.log_user(user_input)
-            messages = [Message(role=Role.USER, content=user_input)]
-            tools = None
-
-        # Stream response from provider using new event-based interface
-        final_message: Message | None = None
-        async for event in self.provider.stream(messages, tools):
-            if isinstance(event, ContentDelta):
-                yield event.text
-                if cancel_token and cancel_token.is_cancelled:
-                    return
-            elif isinstance(event, ToolCallStarted):
-                # Notify callback if set (for display updates)
-                if self.on_tool_call:
-                    self.on_tool_call(event.name, event.id)
-            elif isinstance(event, StreamComplete):
-                final_message = event.message
-
-        # Log/store assistant response
-        if final_message:
+        try:
             if self.context:
-                self.context.add_assistant_message(
-                    final_message.content, list(final_message.tool_calls)
-                )
-            elif self.logger:
-                self.logger.log_assistant(final_message.content)
+                # Flush any cancelled tool results from previous turn
+                self._flush_cancelled_tools()
+
+                # Reset iteration state for this send()
+                self._halted_at_iteration_limit = False
+                self._last_iteration_count = 0
+
+                # Multi-turn: use context manager
+                self.context.add_user_message(user_input, meta=user_meta)
+
+                # Check if we should use tool mode
+                has_tools = self.registry and self.registry.get_definitions()
+                if use_tools or has_tools:
+                    # Use streaming tool execution loop
+                    async for chunk in self._execute_tool_loop_streaming(cancel_token):
+                        yield chunk
+                    return
+
+                messages = self.context.build_messages()
+                tools = self.context.get_tool_definitions()
+            else:
+                # Single-turn: build messages directly (backwards compatible)
+                if self.logger:
+                    self.logger.log_user(user_input)
+                messages = [Message(role=Role.USER, content=user_input)]
+                tools = None
+
+            # Stream response from provider using new event-based interface
+            final_message: Message | None = None
+            async for event in self.provider.stream(messages, tools):
+                if isinstance(event, ContentDelta):
+                    yield event.text
+                    if cancel_token and cancel_token.is_cancelled:
+                        return
+                elif isinstance(event, ToolCallStarted):
+                    # Notify callback if set (for display updates)
+                    if self.on_tool_call:
+                        self.on_tool_call(event.name, event.id)
+                elif isinstance(event, StreamComplete):
+                    final_message = event.message
+
+            # Log/store assistant response
+            if final_message:
+                if self.context:
+                    self.context.add_assistant_message(
+                        final_message.content, list(final_message.tool_calls)
+                    )
+                elif self.logger:
+                    self.logger.log_assistant(final_message.content)
+        finally:
+            # Clear current logger after send completes
+            clear_current_logger()
 
     async def run_turn(
         self,
@@ -326,47 +335,55 @@ class Session:
             # Single-turn mode not supported for event-based streaming
             raise RuntimeError("run_turn() requires a context manager")
 
-        # Flush any cancelled tool results from previous turn
-        self._flush_cancelled_tools()
+        # Set current logger for HTTP debug routing to verbose.md
+        if self.logger:
+            set_current_logger(self.logger)
 
-        # Reset iteration state for this turn
-        self._halted_at_iteration_limit = False
-        self._last_iteration_count = 0
+        try:
+            # Flush any cancelled tool results from previous turn
+            self._flush_cancelled_tools()
 
-        # Add user message to context
-        self.context.add_user_message(user_input, meta=user_meta)
+            # Reset iteration state for this turn
+            self._halted_at_iteration_limit = False
+            self._last_iteration_count = 0
 
-        # Check if we should use tool mode
-        has_tools = self.registry and self.registry.get_definitions()
-        if use_tools or has_tools:
-            # Use streaming tool execution loop with events
-            async for event in self._execute_tool_loop_events(cancel_token):
-                yield event
-            return
+            # Add user message to context
+            self.context.add_user_message(user_input, meta=user_meta)
 
-        # No tools - simple streaming mode
-        messages = self.context.build_messages()
-        tools = self.context.get_tool_definitions()
+            # Check if we should use tool mode
+            has_tools = self.registry and self.registry.get_definitions()
+            if use_tools or has_tools:
+                # Use streaming tool execution loop with events
+                async for event in self._execute_tool_loop_events(cancel_token):
+                    yield event
+                return
 
-        final_message: Message | None = None
-        async for stream_event in self.provider.stream(messages, tools):
-            if isinstance(stream_event, ContentDelta):
-                yield ContentChunk(text=stream_event.text)
-                if cancel_token and cancel_token.is_cancelled:
-                    yield SessionCancelled()
-                    return
-            elif isinstance(stream_event, ToolCallStarted):
-                yield ToolDetected(name=stream_event.name, tool_id=stream_event.id)
-            elif isinstance(stream_event, StreamComplete):
-                final_message = stream_event.message
+            # No tools - simple streaming mode
+            messages = self.context.build_messages()
+            tools = self.context.get_tool_definitions()
 
-        # Store assistant response
-        if final_message:
-            self.context.add_assistant_message(
-                final_message.content, list(final_message.tool_calls)
-            )
+            final_message: Message | None = None
+            async for stream_event in self.provider.stream(messages, tools):
+                if isinstance(stream_event, ContentDelta):
+                    yield ContentChunk(text=stream_event.text)
+                    if cancel_token and cancel_token.is_cancelled:
+                        yield SessionCancelled()
+                        return
+                elif isinstance(stream_event, ToolCallStarted):
+                    yield ToolDetected(name=stream_event.name, tool_id=stream_event.id)
+                elif isinstance(stream_event, StreamComplete):
+                    final_message = stream_event.message
 
-        yield SessionCompleted(halted_at_limit=False)
+            # Store assistant response
+            if final_message:
+                self.context.add_assistant_message(
+                    final_message.content, list(final_message.tool_calls)
+                )
+
+            yield SessionCompleted(halted_at_limit=False)
+        finally:
+            # Clear current logger after turn completes
+            clear_current_logger()
 
     async def _execute_tool_loop_events(
         self, cancel_token: "CancellationToken | None" = None
@@ -952,8 +969,15 @@ class Session:
             Message(role=Role.USER, content=prompt)
         ]
 
-        # Use compaction provider (may be different model than main)
-        provider = self._get_compaction_provider()
-        response = await provider.complete(summary_messages, tools=None)
+        # Set current logger for HTTP debug routing to verbose.md
+        if self.logger:
+            set_current_logger(self.logger)
 
-        return response.content
+        try:
+            # Use compaction provider (may be different model than main)
+            provider = self._get_compaction_provider()
+            response = await provider.complete(summary_messages, tools=None)
+
+            return response.content
+        finally:
+            clear_current_logger()

@@ -26,12 +26,64 @@ def add_port_arg(parser: argparse.ArgumentParser) -> None:
     )
 
 
+class _StoreTrueNoDefault(argparse.Action):
+    """Action that stores True without setting a default.
+
+    This allows --verbose to work at any position in the command without
+    subparsers overwriting the value with their own default.
+    """
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: str | list[str] | None,
+        option_string: str | None = None,
+    ) -> None:
+        setattr(namespace, self.dest, True)
+
+
+def add_verbose_arg(parser: argparse.ArgumentParser) -> None:
+    """Add -v/--verbose argument to a parser.
+
+    Uses a custom action that doesn't set a default, preventing subparsers
+    from overwriting values set by parent parsers.
+    """
+    parser.add_argument(
+        "-v", "--verbose",
+        action=_StoreTrueNoDefault,
+        nargs=0,
+        default=argparse.SUPPRESS,
+        help="Show debug output in terminal (HTTP headers, timing)",
+    )
+
+
+def add_log_verbose_arg(parser: argparse.ArgumentParser) -> None:
+    """Add -V/--log-verbose argument to a parser.
+
+    Uses a custom action that doesn't set a default, preventing subparsers
+    from overwriting values set by parent parsers.
+    """
+    parser.add_argument(
+        "-V", "--log-verbose",
+        dest="log_verbose",
+        action=_StoreTrueNoDefault,
+        nargs=0,
+        default=argparse.SUPPRESS,
+        help="Write debug output to verbose.md log file",
+    )
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         prog="nexus3",
         description="AI-powered CLI agent framework",
     )
+    # Set defaults so the attributes always exist
+    parser.set_defaults(verbose=False, log_verbose=False)
+    add_verbose_arg(parser)
+    add_log_verbose_arg(parser)
 
     # Add subparsers for commands
     subparsers = parser.add_subparsers(dest="command")
@@ -44,6 +96,7 @@ def parse_args() -> argparse.Namespace:
         help="JSON-RPC commands for programmatic access",
         description="Commands for programmatic interaction with NEXUS3 servers.",
     )
+    add_verbose_arg(rpc_parser)
     rpc_subparsers = rpc_parser.add_subparsers(dest="rpc_command")
 
     # rpc detect - Check if server is running
@@ -51,6 +104,7 @@ def parse_args() -> argparse.Namespace:
         "detect",
         help="Check if a NEXUS3 server is running",
     )
+    add_verbose_arg(detect_parser)
     add_port_arg(detect_parser)
 
     # rpc list - List agents (requires running server)
@@ -58,6 +112,7 @@ def parse_args() -> argparse.Namespace:
         "list",
         help="List all agents (requires running server)",
     )
+    add_verbose_arg(list_parser)
     add_port_arg(list_parser)
     add_api_key_arg(list_parser)
 
@@ -66,6 +121,7 @@ def parse_args() -> argparse.Namespace:
         "create",
         help="Create an agent (requires running server)",
     )
+    add_verbose_arg(create_parser)
     create_parser.add_argument("agent_id", help="ID for the new agent")
     create_parser.add_argument(
         "--preset",
@@ -108,6 +164,7 @@ def parse_args() -> argparse.Namespace:
         "destroy",
         help="Destroy an agent",
     )
+    add_verbose_arg(destroy_parser)
     destroy_parser.add_argument("agent_id", help="ID of agent to destroy")
     add_port_arg(destroy_parser)
     add_api_key_arg(destroy_parser)
@@ -117,6 +174,7 @@ def parse_args() -> argparse.Namespace:
         "send",
         help="Send message to an agent",
     )
+    add_verbose_arg(send_parser)
     send_parser.add_argument("agent_id", help="Agent ID to send to")
     send_parser.add_argument("content", help="Message to send")
     send_parser.add_argument(
@@ -133,6 +191,7 @@ def parse_args() -> argparse.Namespace:
         "cancel",
         help="Cancel an in-progress request",
     )
+    add_verbose_arg(cancel_parser)
     cancel_parser.add_argument("agent_id", help="Agent ID")
     cancel_parser.add_argument("request_id", help="Request ID to cancel")
     add_port_arg(cancel_parser)
@@ -143,6 +202,7 @@ def parse_args() -> argparse.Namespace:
         "status",
         help="Get agent status (tokens + context)",
     )
+    add_verbose_arg(status_parser)
     status_parser.add_argument("agent_id", help="Agent ID")
     add_port_arg(status_parser)
     add_api_key_arg(status_parser)
@@ -152,6 +212,7 @@ def parse_args() -> argparse.Namespace:
         "compact",
         help="Force context compaction to reclaim token space",
     )
+    add_verbose_arg(compact_parser)
     compact_parser.add_argument("agent_id", help="Agent ID")
     add_port_arg(compact_parser)
     add_api_key_arg(compact_parser)
@@ -161,6 +222,7 @@ def parse_args() -> argparse.Namespace:
         "shutdown",
         help="Shutdown the server",
     )
+    add_verbose_arg(shutdown_parser)
     add_port_arg(shutdown_parser)
     add_api_key_arg(shutdown_parser)
 
@@ -174,11 +236,6 @@ def parse_args() -> argparse.Namespace:
         type=int,
         metavar="PORT",
         help="Run HTTP JSON-RPC server (default port: 8765)",
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable verbose logging (thinking traces, timing)",
     )
     parser.add_argument(
         "--raw-log",

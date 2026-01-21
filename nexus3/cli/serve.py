@@ -53,6 +53,7 @@ load_dotenv()
 async def run_serve(
     port: int | None = None,
     verbose: bool = False,
+    log_verbose: bool = False,
     raw_log: bool = False,
     log_dir: Path | None = None,
 ) -> None:
@@ -68,7 +69,8 @@ async def run_serve(
 
     Args:
         port: Port to listen on. If None, uses config.server.port.
-        verbose: Enable verbose logging stream.
+        verbose: Enable DEBUG output to console (-v).
+        log_verbose: Enable verbose logging to file (-V).
         raw_log: Enable raw API logging stream.
         log_dir: Directory for session logs.
     """
@@ -107,8 +109,11 @@ async def run_serve(
 
     # Configure logging streams based on CLI flags
     log_streams = LogStream.CONTEXT  # Always on for basic functionality
-    if verbose:
+    if log_verbose:
         log_streams |= LogStream.VERBOSE
+        # Configure HTTP debug logging to verbose.md
+        from nexus3.session import configure_http_logging
+        configure_http_logging()
     if raw_log:
         log_streams |= LogStream.RAW
 

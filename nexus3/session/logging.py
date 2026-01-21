@@ -252,6 +252,18 @@ class SessionLogger:
             total_tokens,
         )
 
+    def log_http_debug(self, logger_name: str, message: str) -> None:
+        """Log HTTP debug info (verbose only).
+
+        Args:
+            logger_name: Name of the logger (e.g., 'httpx', 'httpcore').
+            message: The debug message.
+        """
+        if not self._has_stream(LogStream.VERBOSE):
+            return
+
+        self._md_writer.write_http_debug(logger_name, message)
+
     def log_session_event(self, event: SessionEvent) -> None:
         """Persist SessionEvent to SQLite (always). verbose.md if VERBOSE."""
         # Use event timestamp if available, otherwise current time
