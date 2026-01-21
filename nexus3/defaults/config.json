@@ -51,6 +51,32 @@
           "guidance": "Most capable Claude. Good for: complex reasoning, architecture. Expensive."
         }
       }
+    },
+    "onprem-example-selfsigned": {
+      "type": "openai",
+      "base_url": "https://llm.internal.company.com/v1",
+      "api_key_env": "ONPREM_API_KEY",
+      "verify_ssl": false,
+      "models": {
+        "onprem": {
+          "id": "llama-3-70b",
+          "context_window": 8192,
+          "guidance": "EXAMPLE: On-prem with self-signed cert. Set verify_ssl=false. Modify base_url, api_key_env, and model id for your setup."
+        }
+      }
+    },
+    "onprem-example-corporate-ca": {
+      "type": "openai",
+      "base_url": "https://llm.internal.company.com/v1",
+      "api_key_env": "ONPREM_API_KEY",
+      "ssl_ca_cert": "/etc/ssl/certs/corporate-ca.crt",
+      "models": {
+        "onprem-ca": {
+          "id": "llama-3-70b",
+          "context_window": 8192,
+          "guidance": "EXAMPLE: On-prem with corporate CA. More secure than verify_ssl=false. Modify ssl_ca_cert path for your CA."
+        }
+      }
     }
   },
   "stream_output": true,
