@@ -1316,6 +1316,27 @@ nexus3 rpc send test-agent "Describe your capabilities"
 nexus3 rpc destroy test-agent
 ```
 
+### CI/CD
+
+A GitLab CI example is provided in `.gitlab-ci.yml.example`. To use:
+
+```bash
+cp .gitlab-ci.yml.example .gitlab-ci.yml
+```
+
+The example includes:
+- **Lint stage**: ruff check/format, mypy type checking
+- **Test stage**: Separate jobs for unit, integration, security tests
+- **Build stage**: Package building with artifacts
+- **Multi-Python matrix**: Test on 3.11, 3.12, 3.13
+- **Coverage reporting**: Cobertura format for GitLab integration
+
+For CI, use the minimal dependency set:
+
+```bash
+pip install -e ".[ci]"  # No watchfiles, just test/lint tools
+```
+
 ---
 
 ## License
