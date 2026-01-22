@@ -1068,22 +1068,6 @@ NEXUS3 supports the Model Context Protocol (MCP) for connecting external tools.
 
 Create `mcp.json` in `~/.nexus3/` (global) or `.nexus3/` (project):
 
-```json
-{
-  "servers": {
-    "github": {
-      "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
-      "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
-      "enabled": true
-    },
-    "filesystem": {
-      "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/allowed/path"],
-      "enabled": true
-    }
-  }
-}
-```
-
 ### Server Configuration Options
 
 | Field | Type | Default | Description |
@@ -1101,8 +1085,14 @@ For users integrating with AgentBridge for Unreal Engine:
 
 ```json
 {
-  "servers": {
-    "agentbridge": {
+  "mcp_servers": [
+    {
+      "name": "test-server",
+      "command": [".venv/bin/python", "-m", "nexus3.mcp.test_server"],
+      "enabled": true
+    },
+    {
+      "name": "agentbridge",
       "command": [
         "/mnt/d/tempo/TempoSample/TempoEnv/Scripts/python.exe",
         "-m", "mcp",
@@ -1115,7 +1105,7 @@ For users integrating with AgentBridge for Unreal Engine:
       },
       "enabled": true
     }
-  }
+  ]
 }
 ```
 
