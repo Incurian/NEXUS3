@@ -688,7 +688,7 @@ class Session:
 
         # 5. Unknown skill check
         if not skill:
-            logger.warning("Unknown skill requested: %s", tool_call.name)
+            logger.debug("Unknown skill requested: %s", tool_call.name)
             return ToolResult(error=f"Unknown skill: {tool_call.name}")
 
         # 6. Validate arguments
@@ -784,8 +784,8 @@ class Session:
                 result = await skill.execute(**args)
 
             if result.error:
-                # Log full error for debugging
-                logger.warning("Skill '%s' returned error: %s", skill.name, result.error)
+                # Log full error for debugging (debug level to avoid Live display artifacts)
+                logger.debug("Skill '%s' returned error: %s", skill.name, result.error)
                 # Sanitize for agent
                 sanitized_error = sanitize_error_for_agent(result.error, skill.name)
                 if sanitized_error != result.error:
@@ -794,10 +794,10 @@ class Session:
 
             return result
         except TimeoutError:
-            logger.warning("Skill '%s' timed out after %ss", skill.name, timeout)
+            logger.debug("Skill '%s' timed out after %ss", skill.name, timeout)
             return ToolResult(error=f"Skill timed out after {timeout}s")
         except Exception as e:
-            logger.error("Skill '%s' raised exception: %s", skill.name, e, exc_info=True)
+            logger.debug("Skill '%s' raised exception: %s", skill.name, e, exc_info=True)
             raw = f"Skill execution error: {e}"
             safe = sanitize_error_for_agent(raw, skill.name)
             return ToolResult(error=safe or "Skill execution error")

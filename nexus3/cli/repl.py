@@ -61,9 +61,9 @@ from nexus3.core.errors import NexusError
 from nexus3.core.permissions import ConfirmationResult
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.core.types import ToolCall
-from nexus3.display import Activity, StreamingDisplay, get_console
-from nexus3.display.streaming import ToolState
-from nexus3.display.theme import load_theme
+from nexus3.display import Activity, Spinner, get_console
+from nexus3.display.theme import Status, load_theme
+from nexus3.core.text_safety import escape_rich_markup
 from nexus3.rpc.auth import ServerTokenManager, generate_api_key
 from nexus3.rpc.bootstrap import bootstrap_server_components, configure_server_file_logging, SERVER_LOGGER_NAME
 from nexus3.rpc.detection import DetectionResult
@@ -606,129 +606,196 @@ async def run_repl(
     session = main_agent.session
     logger = main_agent.logger
 
-    # Display for streaming phases (created before session for callback)
-    display = StreamingDisplay(theme)
+    # Spinner for streaming phases
+    spinner = Spinner(console, theme)
 
-    # Callback when tool call is detected in stream (updates live display)
-    def on_tool_call(name: str, tool_id: str) -> None:
-        display.add_tool_call(name, tool_id)
+    # =============================================================
+    # Turn state tracking
+    # =============================================================
 
-    # Track if we've printed thinking for this turn
-    thinking_printed = False
+    # Tool state tracking for timing and cancellation bookkeeping
+    import time as _time
+    _tool_start_times: dict[str, float] = {}  # tool_id -> start time
+    _active_tools: dict[str, str] = {}  # tool_id -> tool_name (for cancellation)
+    _pending_tools: dict[str, tuple[str, str]] = {}  # tool_id -> (name, params) (for halt display)
+    _had_errors = False  # Track if any errors occurred in turn
+    _stream_line_open = False  # Whether streaming has left the cursor mid-line
 
-    def print_thinking_if_needed() -> None:
+    # Thinking state
+    _thinking_start: float | None = None
+    _thinking_total: float = 0.0
+    _thinking_printed = False
+
+    def _reset_turn_state() -> None:
+        """Reset all turn state for a new turn."""
+        nonlocal _had_errors, _thinking_start, _thinking_total, _thinking_printed, _stream_line_open
+        _tool_start_times.clear()
+        _active_tools.clear()
+        _pending_tools.clear()
+        _had_errors = False
+        _stream_line_open = False
+        _thinking_start = None
+        _thinking_total = 0.0
+        _thinking_printed = False
+
+    def _print_thinking_if_needed() -> None:
         """Print accumulated thinking time once (if any)."""
-        nonlocal thinking_printed
-        if thinking_printed:
+        nonlocal _thinking_printed
+        if _thinking_printed:
             return
-        duration = display.get_total_thinking_duration()
-        if duration > 0:
-            thinking_printed = True
-            # Always show "for Ns", minimum 1s
-            display_duration = max(1, int(duration))
-            console.print(f"  [dim cyan]●[/] [dim]Thought for {display_duration}s[/]")
+        if _thinking_total > 0:
+            _thinking_printed = True
+            display_duration = max(1, int(_thinking_total))
+            spinner.print(f"  [dim cyan]●[/] [dim]Thought for {display_duration}s[/]")
+
+    # =============================================================
+    # Session callbacks - print immediately to scrollback
+    # =============================================================
+
+    # Callback when tool call is detected in stream (early detection, no print)
+    def on_tool_call(name: str, tool_id: str) -> None:
+        # Just track for potential cancellation - no display update needed
+        pass
 
     # Callback when reasoning state changes
     def on_reasoning(is_reasoning: bool) -> None:
+        nonlocal _thinking_start, _thinking_total
         if is_reasoning:
-            display.start_thinking()
+            _thinking_start = _time.monotonic()
+            spinner.update("Thinking...", Activity.THINKING)
         else:
-            # Just end thinking, accumulate time - don't print yet
-            display.end_thinking()
+            if _thinking_start:
+                _thinking_total += _time.monotonic() - _thinking_start
+                _thinking_start = None
+            spinner.update("Responding...", Activity.RESPONDING)
 
     # Batch callbacks for tool execution
     def on_batch_start(tool_calls: tuple) -> None:
-        """Initialize display with all tools as pending."""
-        # Print any accumulated thinking BEFORE tool calls
-        print_thinking_if_needed()
+        """Initialize batch - print thinking, then track tools."""
+        nonlocal _stream_line_open
 
-        tools = []
+        # Flush any buffered streaming text before tool output
+        spinner.flush_stream()
+
+        # If we've been streaming assistant text without a trailing newline,
+        # make sure tool output starts on a fresh line.
+        if _stream_line_open:
+            spinner.print("")
+            _stream_line_open = False
+
+        # Print any accumulated thinking BEFORE tool calls
+        _print_thinking_if_needed()
+
+        # Track all tools in batch as pending (for halt display)
         for tc in tool_calls:
-            # Format all parameters (path/file prioritized, others truncated)
             params = format_tool_params(tc.arguments)
-            tools.append((tc.name, tc.id, params))
-        display.start_batch(tools)
+            _pending_tools[tc.id] = (tc.name, params)
+
+        spinner.update("Running tools...", Activity.TOOL_CALLING)
 
     def on_tool_active(name: str, tool_id: str) -> None:
-        """Mark tool as actively executing in display."""
-        display.set_tool_active(tool_id)
+        """Tool started executing - print call line and track timing."""
+        nonlocal _stream_line_open
 
-    # Track nexus_send results for display in on_batch_complete
-    _nexus_send_results: dict[str, dict[str, str]] = {}
+        # Flush any buffered streaming text before tool output
+        spinner.flush_stream()
+
+        if _stream_line_open:
+            spinner.print("")
+            _stream_line_open = False
+
+        # Get params from pending (if available)
+        params = ""
+        if tool_id in _pending_tools:
+            _, params = _pending_tools[tool_id]
+
+        # Print tool call line
+        if params:
+            spinner.print(f"  [cyan]●[/] {name}: {params}")
+        else:
+            spinner.print(f"  [cyan]●[/] {name}")
+
+        # Track start time and active state
+        _tool_start_times[tool_id] = _time.monotonic()
+        _active_tools[tool_id] = name
+
+        # Remove from pending
+        _pending_tools.pop(tool_id, None)
+
+        # Update spinner
+        spinner.update(f"Running: {name}", Activity.TOOL_CALLING)
 
     def on_batch_progress(name: str, tool_id: str, success: bool, error: str, output: str) -> None:
-        """Update display as each tool completes."""
-        display.set_tool_complete(tool_id, success, error)
+        """Tool completed - print result line with duration."""
+        import json as _json
+        nonlocal _had_errors
 
-        # Store nexus_send results for formatted display
-        if name == "nexus_send" and success and output:
-            _nexus_send_results[tool_id] = {"output": output}
+        # Calculate duration
+        duration = 0.0
+        if tool_id in _tool_start_times:
+            duration = _time.monotonic() - _tool_start_times.pop(tool_id)
 
-    def on_batch_halt() -> None:
-        """Mark remaining tools as halted when sequence stops on error."""
-        display.halt_remaining_tools()
+        # Remove from active tracking
+        _active_tools.pop(tool_id, None)
+        _pending_tools.pop(tool_id, None)
 
-    def on_batch_complete() -> None:
-        """Callback when batch finishes - NO-OP during streaming.
+        # Format duration
+        duration_str = f" ({duration:.1f}s)" if duration >= 0.1 else ""
 
-        The session calls this during streaming, but we don't want to print
-        to console while Live is active (it would appear above the Live area).
-        Actual printing happens after Live exits via print_tools_to_scrollback().
-        """
-        # Do nothing - printing happens after Live exits
-        pass
-
-    def print_tools_to_scrollback() -> None:
-        """Print tool results to scrollback (call AFTER Live context exits)."""
-        import json as _json  # Local import to avoid circular deps
-
-        for tool in display.get_batch_results():
-            # Skip tools that haven't reached a final state - they shouldn't be in history
-            # This also prevents stale ACTIVE gumball artifacts from Live display issues
-            if tool.state in (ToolState.PENDING, ToolState.ACTIVE):
-                continue
-
-            if tool.state == ToolState.SUCCESS:
-                gumball = "[green]●[/]"
-                suffix = ""
-            elif tool.state == ToolState.HALTED:
-                gumball = "[dark_orange]●[/]"
-                suffix = " [dark_orange](halted)[/]"
-            elif tool.state == ToolState.CANCELLED:
-                gumball = "[bright_yellow]●[/]"
-                suffix = " [bright_yellow](cancelled)[/]"
-            else:  # ERROR
-                gumball = "[red]●[/]"
-                suffix = " [red](error)[/]"
-
-            # Tool name with params
-            if tool.params:
-                console.print(f"  {gumball} {tool.name}: {tool.params}{suffix}")
+        if success:
+            # Success - show result summary
+            result_preview = _summarize_tool_output(name, output)
+            if result_preview:
+                spinner.print(f"      [green]→[/] {result_preview}{duration_str}")
             else:
-                console.print(f"  {gumball} {tool.name}{suffix}")
-
-            # Error message on next line (first 70 chars)
-            if tool.state == ToolState.ERROR and tool.error:
-                error_preview = tool.error[:70] + ("..." if len(tool.error) > 70 else "")
-                console.print(f"      [red dim]{error_preview}[/]")
+                spinner.print(f"      [green]→[/] done{duration_str}")
 
             # Special handling for nexus_send - show response content
-            if tool.name == "nexus_send" and tool.tool_id in _nexus_send_results:
-                result_data = _nexus_send_results.pop(tool.tool_id)
+            if name == "nexus_send" and output:
                 try:
-                    parsed = _json.loads(result_data["output"])
+                    parsed = _json.loads(output)
                     content = parsed.get("content", "")
                     if content:
-                        # Collapse whitespace/newlines for clean single-line preview
                         preview = " ".join(content.split())[:100]
                         ellipsis = "..." if len(content) > 100 else ""
-                        console.print(f"      [dim cyan]↳ Response: {preview}{ellipsis}[/]")
+                        spinner.print(f"      [dim cyan]↳ Response: {preview}{ellipsis}[/]")
                 except (_json.JSONDecodeError, KeyError):
-                    pass  # Silently skip if output isn't valid JSON
+                    pass
+        else:
+            _had_errors = True
+            # Error - show error message
+            error_preview = escape_rich_markup(error[:70] + ("..." if len(error) > 70 else ""))
+            spinner.print(f"      [red]→[/] [red]{error_preview}[/]{duration_str}")
 
-        # Clear any remaining nexus_send results
-        _nexus_send_results.clear()
-        display.clear_tools()
+    def on_batch_halt() -> None:
+        """Sequential batch halted - print halted for remaining pending tools."""
+        for tool_id, (name, params) in list(_pending_tools.items()):
+            if params:
+                spinner.print(f"  [dark_orange]●[/] {name}: {params} [dark_orange](halted)[/]")
+            else:
+                spinner.print(f"  [dark_orange]●[/] {name} [dark_orange](halted)[/]")
+        _pending_tools.clear()
+
+    def on_batch_complete() -> None:
+        """Batch finished - no action needed, tools already printed."""
+        pass
+
+    def _summarize_tool_output(name: str, output: str) -> str:
+        """Create a brief summary of tool output."""
+        if not output:
+            return ""
+        # For read_file, show line count
+        if name == "read_file":
+            lines = output.count("\n") + (1 if output and not output.endswith("\n") else 0)
+            size_kb = len(output) / 1024
+            if size_kb >= 1:
+                return f"{lines} lines, {size_kb:.1f}KB"
+            return f"{lines} lines"
+        # For other tools, first non-empty line (truncated)
+        first_line = output.split("\n")[0].strip()[:60]
+        if first_line:
+            return first_line + ("..." if len(output.split("\n")[0]) > 60 else "")
+        return ""
 
     # =============================================================
     # Session callback attachment (leak-prevention)
@@ -792,16 +859,16 @@ async def run_repl(
     async def _run_incoming_spinner() -> None:
         """Run the spinner while incoming turn is active."""
         nonlocal _incoming_turn_active, _incoming_end_payload
-        # Create a fresh display for the incoming turn
-        incoming_display = StreamingDisplay(theme)
-        incoming_display.set_activity(Activity.WAITING)
-        incoming_display.start_activity_timer()
+        # Create a fresh spinner for the incoming turn
+        incoming_spinner = Spinner(console, theme)
+        incoming_spinner.show("Processing incoming message...", Activity.WAITING)
 
-        with Live(incoming_display, console=console, refresh_per_second=10, transient=True) as live:
-            # Refresh loop until turn ends
+        try:
+            # Wait until turn ends
             while _incoming_turn_done and not _incoming_turn_done.is_set():
-                live.refresh()
                 await asyncio.sleep(0.1)
+        finally:
+            incoming_spinner.hide()
 
         # After spinner stops, print the end notification
         if _incoming_end_payload:
@@ -1325,104 +1392,106 @@ async def run_repl(
             # Visual separation before response/streaming
             console.print("")
 
-            # Reset display for new response and clear error/thinking state
-            display.reset()
-            display.clear_error_state()
-            display.clear_thinking_duration()
-            thinking_printed = False
+            # Reset turn state
+            _reset_turn_state()
             toolbar_has_errors = False
-            display.set_activity(Activity.WAITING)
-            display.start_activity_timer()
+            turn_start_time = _time.monotonic()
+            _first_chunk_received = False
 
             # Streaming task that can be cancelled
             stream_task: asyncio.Task[None] | None = None
             was_cancelled = False
+            cancel_reason = ""
 
             def on_cancel(
-                d: StreamingDisplay = display,
                 get_task: object = lambda: stream_task,
             ) -> None:
-                nonlocal was_cancelled
+                nonlocal was_cancelled, cancel_reason
                 was_cancelled = True
-                d.cancel_all_tools()
+                # Determine what we're cancelling
+                if _active_tools:
+                    # Cancelling a tool
+                    tool_name = list(_active_tools.values())[0]
+                    cancel_reason = f"Cancelled: {tool_name}"
+                else:
+                    cancel_reason = "Cancelled: streaming"
                 task = get_task()  # type: ignore[operator]
                 if task is not None:
                     task.cancel()
 
             async def do_stream(
-                d: StreamingDisplay = display,
                 inp: str = user_input,
                 target_sess: object = active_session,
+                agent_id: str = current_agent_id,
             ) -> None:
-                async for chunk in target_sess.send(inp):  # type: ignore[union-attr]
-                    if d.activity == Activity.WAITING:
-                        d.set_activity(Activity.RESPONDING)
-                    d.add_chunk(chunk)
+                nonlocal _first_chunk_received, _stream_line_open
+                # Wrap in agent_context for correct raw log routing
+                with pool.log_multiplexer.agent_context(agent_id):
+                    async for chunk in target_sess.send(inp):  # type: ignore[union-attr]
+                        if not _first_chunk_received:
+                            _first_chunk_received = True
+                            spinner.update("Responding...", Activity.RESPONDING)
+                        spinner.print_streaming(chunk)
+                        if chunk:
+                            _stream_line_open = not chunk.endswith("\n")
 
-            # Use Live ONLY during streaming (animation works here)
-            # transient=False keeps content in place; we do a clean final render
-            with Live(display, console=console, refresh_per_second=10, transient=False) as live:
-                # Store live reference for confirmation callback to pause/resume
-                token = _current_live.set(live)
-                try:
-                    async with KeyMonitor(
-                        on_escape=on_cancel,
-                        pause_event=key_monitor_pause,
-                        pause_ack_event=key_monitor_pause_ack,
-                    ):
-                        stream_task = asyncio.create_task(do_stream())
-                        # Refresh loop while streaming
-                        while not stream_task.done():
-                            live.refresh()
-                            await asyncio.sleep(0.1)
-                        # Get any exception from the task
-                        try:
-                            stream_task.result()
-                        except asyncio.CancelledError:
-                            pass  # Cancelled by ESC
+            # Show spinner during streaming
+            spinner.show("Waiting...", Activity.WAITING)
 
-                except NexusError as e:
-                    console.print(f"[red]Error:[/] {e.message}")
-                    console.print("")  # Visual separation after error
-                    display.mark_error()
-                finally:
-                    # Do a clean final render (no spinner/status) before exiting
-                    display.set_final_render(True)
-                    live.refresh()
-                    # Clear live reference when exiting Live context
-                    _current_live.reset(token)
+            # Store live reference for confirmation callback to pause/resume
+            token = _current_live.set(spinner.live)
+            try:
+                async with KeyMonitor(
+                    on_escape=on_cancel,
+                    pause_event=key_monitor_pause,
+                    pause_ack_event=key_monitor_pause_ack,
+                ):
+                    stream_task = asyncio.create_task(do_stream())
+                    # Wait for streaming to complete
+                    try:
+                        await stream_task
+                    except asyncio.CancelledError:
+                        pass  # Cancelled by ESC
+
+            except NexusError as e:
+                # Ensure the error prints on its own line if we were mid-stream.
+                if _stream_line_open:
+                    spinner.print("")
+                    _stream_line_open = False
+                spinner.print(f"[red]Error:[/] {e.message}")
+                spinner.print("")
+                _had_errors = True
+            finally:
+                # Ensure the streamed response line is terminated before we
+                # stop the Live spinner (prevents messy wrapping / cursor state).
+                if _stream_line_open:
+                    spinner.print("")
+                    _stream_line_open = False
+                spinner.hide()
+                _current_live.reset(token)
 
             # Update toolbar error state
-            if display.had_errors:
+            if _had_errors:
                 toolbar_has_errors = True
 
-            # Content stays in place from Live display (transient=False)
-            # We only need to handle bookkeeping here
+            # Print any remaining thinking time
+            _print_thinking_if_needed()
 
-            # Print thinking time below the Live content
-            print_thinking_if_needed()
+            # Collect cancelled tools for Session bookkeeping
+            if was_cancelled and _active_tools:
+                cancelled_tools = [(tid, name) for tid, name in _active_tools.items()]
+                if cancelled_tools:
+                    active_session.add_cancelled_tools(cancelled_tools)
 
-            # Collect cancelled tools for next send
-            if display.get_batch_results():
-                if was_cancelled:
-                    cancelled_tools = [
-                        (tool.tool_id, tool.name)
-                        for tool in display.get_batch_results()
-                        if tool.state == ToolState.CANCELLED
-                    ]
-                    if cancelled_tools:
-                        active_session.add_cancelled_tools(cancelled_tools)
-                # Clear tools from display state (but they're already rendered)
-                display.clear_tools()
-
-            # Add spacing after response
-            if display.response or display.text_before_tools:
-                console.print("")  # Visual separation after response
+            # Newline after streaming content
+            console.print("")
 
             # Show completion status
+            turn_duration = _time.monotonic() - turn_start_time
             if was_cancelled:
-                console.print("[bright_yellow]● Cancelled by User[/]")
-                console.print("")  # Visual separation after cancel
+                console.print(f"[bright_yellow]● {cancel_reason}[/]")
+            else:
+                console.print(f"[dim]Turn completed in {turn_duration:.1f}s[/]")
 
             # Auto-save last session after each interaction
             try:
