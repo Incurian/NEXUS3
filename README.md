@@ -1070,38 +1070,54 @@ Create `mcp.json` in `~/.nexus3/` (global) or `.nexus3/` (project):
 
 ```json
 {
-  "servers": [
-    {
-      "name": "github",
-      "command": ["npx", "-y", "@anthropic/mcp-server-github"],
-      "env_passthrough": ["GITHUB_TOKEN"]
+  "servers": {
+    "github": {
+      "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+      "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
+      "enabled": true
     },
-    {
-      "name": "filesystem",
-      "command": ["npx", "-y", "@anthropic/mcp-server-filesystem", "/allowed/path"]
-    },
-    {
-      "name": "postgres",
-      "command": ["npx", "-y", "@anthropic/mcp-server-postgres"],
-      "env": {
-        "DATABASE_URL": "postgresql://localhost/mydb"
-      }
+    "filesystem": {
+      "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/allowed/path"],
+      "enabled": true
     }
-  ]
+  }
 }
 ```
 
 ### Server Configuration Options
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `name` | Yes | Friendly name (used in skill names: `mcp_github_*`) |
-| `command` | One of | Command for stdio transport |
-| `url` | One of | URL for HTTP transport |
-| `env` | No | Explicit environment variables |
-| `env_passthrough` | No | Copy these vars from host environment |
-| `cwd` | No | Working directory for subprocess |
-| `enabled` | No | Default: `true` |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `command` | `list[str]` | - | Command to launch stdio server |
+| `url` | `str` | - | URL for HTTP server (mutually exclusive with `command`) |
+| `env` | `dict` | `{}` | Explicit environment variables |
+| `env_passthrough` | `list[str]` | `[]` | Host env var names to pass through |
+| `cwd` | `str` | - | Working directory for subprocess |
+| `enabled` | `bool` | `true` | Whether server is enabled |
+
+### Example: AgentBridge (Unreal Engine / Tempo)
+
+For users integrating with AgentBridge for Unreal Engine:
+
+```json
+{
+  "servers": {
+    "agentbridge": {
+      "command": [
+        "/mnt/d/tempo/TempoSample/TempoEnv/Scripts/python.exe",
+        "-m", "mcp",
+        "--host", "localhost",
+        "--port", "10001"
+      ],
+      "cwd": "/mnt/d/tempo/TempoSample/Plugins/AgentBridge",
+      "env": {
+        "TEMPO_API_PATH": "/mnt/d/tempo/TempoSample/Plugins/Tempo/TempoCore/Content/Python/API/tempo"
+      },
+      "enabled": true
+    }
+  }
+}
+```
 
 ### Transport Types
 
@@ -1111,72 +1127,105 @@ Create `mcp.json` in `~/.nexus3/` (global) or `.nexus3/` (project):
 
 ### Environment Variable Security
 
-MCP servers only receive safe environment variables by default. To pass secrets:
+MCP servers only receive safe environment variables by default (PATH, HOME, USER, LANG, etc.). To pass secrets:
 
 ```json
 {
-  "name": "github",
-  "command": ["npx", "-y", "@anthropic/mcp-server-github"],
-  "env_passthrough": ["GITHUB_TOKEN"],
-  "env": {
-    "EXTRA_VAR": "explicit-value"
+  "servers": {
+    "github": {
+      "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+      "env_passthrough": ["GITHUB_TOKEN"],
+      "env": {"EXTRA_VAR": "explicit-value"}
+    }
   }
 }
 ```
 
 ### REPL Commands
 
-```bash
-/mcp                        # List servers and status
-/mcp connect github         # Connect to server
-/mcp connect github --allow-all --shared  # Skip prompts
-/mcp disconnect github      # Disconnect
-/mcp tools                  # List available MCP tools
-```
+| Command | Description |
+|---------|-------------|
+| `/mcp` | List servers and status |
+| `/mcp connect NAME` | Connect to server |
+| `/mcp connect NAME --allow-all --shared` | Skip prompts, share with agents |
+| `/mcp disconnect NAME` | Disconnect |
+| `/mcp tools [SERVER]` | List available MCP tools |
 
 ### Permission Requirements
 
-- **YOLO/TRUSTED**: Can use MCP tools
-- **SANDBOXED**: MCP access blocked
+| Level | MCP Access | Confirmation |
+|-------|------------|--------------|
+| YOLO | Yes | Never |
+| TRUSTED | Yes | First access per server |
+| SANDBOXED | No | N/A |
+
+For detailed MCP configuration and protocol coverage, see `nexus3/mcp/README.md` and `MCP-IMPLEMENTATION-GAPS.md`.
 
 ---
 
 ## Session Management
 
-### Session Types
+### Startup Flow
 
-- **Temporary sessions**: Auto-created, not saved unless you use `/save`
-- **Named sessions**: Saved to disk, can be resumed with `--session NAME`
+When you run `nexus3` without flags, you see the **lobby**:
 
-### Saving and Resuming
+```
+NEXUS3 REPL
 
-```bash
-# In REPL
-/save myproject           # Save current session
+  1) Resume: my-project (2h ago, 45 messages)
+  2) Fresh session
+  3) Choose from saved...
 
-# From command line
-nexus3 --resume           # Resume last session
-nexus3 --session myproject  # Resume specific session
+[1/2/3/q]:
 ```
 
-### Session Data
+**Skip the lobby with flags:**
+- `nexus3 --fresh` - Start new temporary session
+- `nexus3 --resume` - Resume last session
+- `nexus3 --session NAME` - Load specific saved session
 
-Each session stores:
-- **session.db**: SQLite database with full message history
-- **session.md**: Human-readable Markdown transcript
-- **Session metadata**: Model, permissions, allowances
+### Session Types
+
+| Type | Name Pattern | Can Save? | Auto-saved? |
+|------|--------------|-----------|-------------|
+| Temporary | `.1`, `.2`, etc. | Only with explicit name | Yes (to last-session.json) |
+| Named | Any name | Yes | Yes |
+
+### REPL Commands
+
+| Command | Description |
+|---------|-------------|
+| `/save [name]` | Save current session (prompts for name if temp) |
+| `/clone <src> <dest>` | Clone agent or saved session |
+| `/rename <old> <new>` | Rename agent or saved session |
+| `/delete <name>` | Delete saved session from disk |
+
+### What Gets Persisted
+
+| Data | Saved | Restored |
+|------|-------|----------|
+| Messages | Yes | Yes |
+| System prompt | Yes | Yes |
+| Working directory | Yes | Yes |
+| Permission preset | Yes | Yes |
+| Disabled tools | Yes | Yes |
+| Model alias | Yes | Yes |
+| Token usage | Yes | Display only |
+| Created timestamp | Yes | Yes |
+| Session allowances | Yes | Yes |
 
 ### Session Files Location
 
 ```
-~/.nexus3/sessions/           # Named session files
-  └── myproject.json          # Session state
+~/.nexus3/
+├── sessions/                 # Named session files
+│   └── myproject.json        # Saved via /save
+├── last-session.json         # Auto-saved for --resume
+└── last-session-name         # Name of last session
 
 .nexus3/logs/{session-id}/    # Session logs
-  ├── session.db              # SQLite database
-  └── session.md              # Markdown transcript
-
-~/.nexus3/last-session.json   # Last session (for --resume)
+├── session.db                # SQLite message history
+└── session.md                # Markdown transcript
 ```
 
 ### Context Compaction
@@ -1191,6 +1240,8 @@ Manual compaction:
 /compact                    # REPL
 nexus3 rpc compact AGENT_ID # RPC
 ```
+
+For detailed session internals, see `nexus3/session/README.md`.
 
 ---
 
@@ -1453,4 +1504,4 @@ MIT
 
 ---
 
-**Updated**: 2026-01-21
+**Updated**: 2026-01-22
