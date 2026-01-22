@@ -343,40 +343,254 @@ MCP servers are configured in `mcp.json` files, loaded from the context layer hi
 ```json
 {
   "servers": {
-    "github": {
-      "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
-      },
-      "env_passthrough": ["HOME"],
+    "server-name": {
+      "command": ["executable", "arg1", "arg2"],
+      "url": "https://...",
+      "env": {"KEY": "value"},
+      "env_passthrough": ["VAR1", "VAR2"],
+      "cwd": "/working/directory",
       "enabled": true
-    },
-    "filesystem": {
-      "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/allowed/path"],
-      "enabled": true
-    },
-    "remote_api": {
-      "url": "https://mcp.example.com/api",
-      "enabled": false
     }
   }
 }
 ```
 
-**Server Configuration Fields:**
+### Server Configuration Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `command` | `list[str]` | Command to launch stdio server |
-| `url` | `str` | URL for HTTP server (mutually exclusive with `command`) |
-| `env` | `dict[str, str]` | Explicit environment variables |
-| `env_passthrough` | `list[str]` | Host env vars to pass through |
-| `enabled` | `bool` | Whether server is enabled (default: `true`) |
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `command` | `list[str]` | - | Command to launch stdio server (mutually exclusive with `url`) |
+| `url` | `str` | - | URL for HTTP server (mutually exclusive with `command`) |
+| `env` | `dict[str, str]` | `{}` | Explicit environment variables for subprocess |
+| `env_passthrough` | `list[str]` | `[]` | Host env var names to pass through to subprocess |
+| `cwd` | `str` | `None` | Working directory for subprocess |
+| `enabled` | `bool` | `true` | Whether server is enabled |
 
-**Notes:**
-- Either `command` or `url` must be specified (not both)
-- Environment variable substitution uses `${VAR_NAME}` syntax
-- Disabled servers (`enabled: false`) raise `MCPConfigError` when connected
+### Configuration Examples
+
+#### 1. NPX-based MCP Server (Most Common)
+
+```json
+{
+  "servers": {
+    "github": {
+      "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    }
+  }
+}
+```
+
+#### 2. Local Filesystem Server with Allowed Paths
+
+```json
+{
+  "servers": {
+    "filesystem": {
+      "command": [
+        "npx", "-y", "@modelcontextprotocol/server-filesystem",
+        "/home/user/projects",
+        "/home/user/documents"
+      ]
+    }
+  }
+}
+```
+
+#### 3. Python MCP Server with Working Directory
+
+```json
+{
+  "servers": {
+    "custom": {
+      "command": ["python", "-m", "my_mcp_server"],
+      "cwd": "/path/to/server",
+      "env": {
+        "DATABASE_URL": "postgresql://localhost/mydb"
+      },
+      "env_passthrough": ["HOME", "USER"]
+    }
+  }
+}
+```
+
+#### 4. HTTP Remote MCP Server
+
+```json
+{
+  "servers": {
+    "remote_api": {
+      "url": "https://mcp.example.com/api",
+      "enabled": true
+    }
+  }
+}
+```
+
+#### 5. Multiple Servers with Different States
+
+```json
+{
+  "servers": {
+    "github": {
+      "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+      "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
+      "enabled": true
+    },
+    "slack": {
+      "command": ["npx", "-y", "@modelcontextprotocol/server-slack"],
+      "env": {"SLACK_TOKEN": "${SLACK_BOT_TOKEN}"},
+      "enabled": false
+    },
+    "sqlite": {
+      "command": ["npx", "-y", "@modelcontextprotocol/server-sqlite", "/data/mydb.sqlite"],
+      "enabled": true
+    }
+  }
+}
+```
+
+#### 6. Environment Variable Substitution
+
+Environment variables in `env` values are expanded using `${VAR_NAME}` syntax:
+
+```json
+{
+  "servers": {
+    "api": {
+      "command": ["my-mcp-server"],
+      "env": {
+        "API_KEY": "${MY_API_KEY}",
+        "BASE_URL": "${API_BASE_URL:-https://default.example.com}",
+        "DEBUG": "false"
+      }
+    }
+  }
+}
+```
+
+**Note:** The `${VAR:-default}` syntax for defaults is NOT currently supported. Only direct `${VAR}` substitution works.
+
+#### 7. AgentBridge (Unreal Engine / Tempo)
+
+For users integrating with [AgentBridge](https://github.com/your-org/agentbridge) for Unreal Engine game development:
+
+```json
+{
+  "servers": {
+    "agentbridge": {
+      "command": [
+        "/mnt/d/tempo/TempoSample/TempoEnv/Scripts/python.exe",
+        "-m", "mcp",
+        "--host", "localhost",
+        "--port", "10001"
+      ],
+      "cwd": "/mnt/d/tempo/TempoSample/Plugins/AgentBridge",
+      "env": {
+        "TEMPO_API_PATH": "/mnt/d/tempo/TempoSample/Plugins/Tempo/TempoCore/Content/Python/API/tempo"
+      },
+      "enabled": true
+    }
+  }
+}
+```
+
+**Windows (non-WSL) Users:** Use Windows paths:
+
+```json
+{
+  "servers": {
+    "agentbridge": {
+      "command": [
+        "D:/tempo/TempoSample/TempoEnv/Scripts/python.exe",
+        "-m", "mcp",
+        "--host", "localhost",
+        "--port", "10001"
+      ],
+      "cwd": "D:/tempo/TempoSample/Plugins/AgentBridge",
+      "env": {
+        "TEMPO_API_PATH": "D:/tempo/TempoSample/Plugins/Tempo/TempoCore/Content/Python/API/tempo"
+      },
+      "enabled": true
+    }
+  }
+}
+```
+
+**Note:** AgentBridge's native `.mcp.json` format uses `mcpServers` with separate `command` and `args` fields. NEXUS3 currently uses `servers` with a single `command` array. See `MCP-IMPLEMENTATION-GAPS.md` for the plan to support both formats.
+
+### Configuration Merging
+
+When multiple `mcp.json` files exist in the layer hierarchy:
+
+1. **Same server name:** Local config **replaces** global config entirely
+2. **Different server names:** Both servers are available
+3. **Enabled state:** Can disable a globally-enabled server locally
+
+```json
+// ~/.nexus3/mcp.json (global)
+{
+  "servers": {
+    "github": {
+      "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
+      "env": {"GITHUB_TOKEN": "${GITHUB_TOKEN}"}
+    }
+  }
+}
+
+// ./.nexus3/mcp.json (local project)
+{
+  "servers": {
+    "github": {
+      "enabled": false
+    },
+    "project-specific": {
+      "command": ["./scripts/my-mcp-server.py"]
+    }
+  }
+}
+```
+
+Result: `github` is disabled, `project-specific` is available.
+
+### REPL Commands
+
+| Command | Description |
+|---------|-------------|
+| `/mcp` | List configured and connected servers |
+| `/mcp connect <name>` | Connect to a configured server |
+| `/mcp connect <name> --allow-all` | Connect, auto-allow all tools |
+| `/mcp connect <name> --per-tool` | Connect, confirm each tool use |
+| `/mcp connect <name> --shared` | Connect, share with all agents |
+| `/mcp connect <name> --private` | Connect, private to this agent |
+| `/mcp disconnect <name>` | Disconnect from a server |
+| `/mcp tools` | List all available MCP tools |
+| `/mcp tools <server>` | List tools from specific server |
+
+### Programmatic Configuration
+
+```python
+from nexus3.mcp import MCPServerConfig, MCPServerRegistry
+
+config = MCPServerConfig(
+    name="my-server",
+    command=["python", "-m", "my_mcp_server"],
+    env={"API_KEY": "secret"},
+    env_passthrough=["HOME"],
+    cwd="/path/to/server",
+    enabled=True,
+)
+
+registry = MCPServerRegistry()
+server = await registry.connect(
+    config,
+    owner_agent_id="main",
+    shared=True,
+    timeout=30.0,
+)
+```
 
 ---
 
