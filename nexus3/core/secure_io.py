@@ -21,6 +21,9 @@ SECURE_DIR_MODE: int = stat.S_IRWXU  # 0o700
 # Secure permissions for session files (owner read/write only)
 SECURE_FILE_MODE: int = stat.S_IRUSR | stat.S_IWUSR  # 0o600
 
+# O_NOFOLLOW doesn't exist on Windows - use 0 and fall back to explicit check
+_O_NOFOLLOW: int = getattr(os, "O_NOFOLLOW", 0)
+
 
 def secure_mkdir(path: Path, parents: bool = True) -> None:
     """Create directory with secure permissions (0o700).
@@ -173,7 +176,11 @@ def secure_append(path: Path, content: str | bytes, *, encoding: str = "utf-8") 
         SymlinkError: If path is a symlink.
         OSError: On other I/O errors.
     """
-    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW
+    # On Windows, O_NOFOLLOW doesn't exist - do explicit check before open
+    if _O_NOFOLLOW == 0:
+        check_no_symlink(path)
+
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | _O_NOFOLLOW
 
     try:
         fd = os.open(str(path), flags, SECURE_FILE_MODE)

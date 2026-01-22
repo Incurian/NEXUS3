@@ -16,7 +16,10 @@ _SECURE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
 
 from nexus3.core.constants import get_nexus_dir
 from nexus3.core.errors import NexusError
-from nexus3.core.secure_io import secure_mkdir
+from nexus3.core.secure_io import SymlinkError, check_no_symlink, secure_mkdir
+
+# O_NOFOLLOW doesn't exist on Windows - use 0 and fall back to explicit check
+_O_NOFOLLOW: int = getattr(os, "O_NOFOLLOW", 0)
 
 
 def _secure_write_file(path: Path, content: str) -> None:
@@ -26,6 +29,8 @@ def _secure_write_file(path: Path, content: str) -> None:
     1. Set permissions at creation time (avoiding chmod race)
     2. Refuse to follow symlinks (preventing symlink attacks)
 
+    On Windows where O_NOFOLLOW doesn't exist, does explicit symlink check.
+
     Args:
         path: Path to write to.
         content: Content to write.
@@ -34,10 +39,19 @@ def _secure_write_file(path: Path, content: str) -> None:
         SessionManagerError: If the path is a symlink (security violation).
         OSError: If the file cannot be written for other reasons.
     """
+    # On Windows, O_NOFOLLOW doesn't exist - do explicit check before open
+    if _O_NOFOLLOW == 0:
+        try:
+            check_no_symlink(path)
+        except SymlinkError as e:
+            raise SessionManagerError(
+                f"Refusing to write to symlink at {path}: potential attack"
+            ) from e
+
     try:
         fd = os.open(
             str(path),
-            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _O_NOFOLLOW,
             _SECURE_FILE_MODE,
         )
     except OSError as e:
