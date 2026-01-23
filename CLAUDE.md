@@ -507,6 +507,16 @@ All non-trivial features should follow this planning process. Plans live in `doc
 | 8. Validate | Subagent confirms patterns, identifies discrepancies |
 | 9. Checklist | Implementation checklist with task IDs for parallel execution |
 
+**CRITICAL: Update plan file after EVERY phase.** Planning sessions can be interrupted (context limits, timeouts, user breaks). Write findings to `docs/<PLAN-NAME>.md` incrementally:
+
+- After Phase 1: Create plan file with Overview section
+- After Phase 2: Add exploration findings, file locations discovered
+- After Phase 3: Add feasibility notes, blockers identified
+- After Phase 4: Add Scope section (included/deferred/excluded)
+- After each subsequent phase: Update relevant sections
+
+This ensures work is preserved even if the session ends unexpectedly. A partial plan with 4 phases completed is far better than losing everything.
+
 #### Plan Document Structure
 
 ```markdown
