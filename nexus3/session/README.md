@@ -318,6 +318,7 @@ class SavedSession:
     permission_preset: str | None
     disabled_tools: list[str]
     session_allowances: dict[str, Any]
+    model_alias: str | None          # Model alias used (e.g., "haiku", "gpt")
     schema_version: int
 ```
 

@@ -837,7 +837,7 @@ from nexus3.rpc import (
     wait_for_server,
 )
 
-# Additional imports from submodules
+# Additional imports (NOT re-exported from nexus3.rpc - import from submodules directly)
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
 from nexus3.rpc.bootstrap import bootstrap_server_components, configure_server_file_logging
 from nexus3.rpc.discovery import (

@@ -40,7 +40,7 @@ The unified REPL calls `Session` directly (not through HTTP) to preserve streami
 | `__init__.py` | Package entry point | `main()` |
 | `repl.py` | Main REPL implementation | `run_repl()`, `run_repl_client()`, `main()` |
 | `serve.py` | Headless HTTP server mode | `run_serve()` |
-| `arg_parser.py` | CLI argument parsing | `parse_args()`, `add_api_key_arg()`, `add_port_arg()` |
+| `arg_parser.py` | CLI argument parsing | `parse_args()`, `add_api_key_arg()`, `add_port_arg()`, `add_verbose_arg()`, `add_log_verbose_arg()` |
 
 ### Commands and Handlers
 

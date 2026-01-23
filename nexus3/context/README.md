@@ -373,6 +373,8 @@ The prompt instructs the summarizing LLM to preserve:
 By default, `format_messages_for_summary()` redacts secrets from message content and tool arguments before sending to the summarization LLM:
 
 ```python
+from nexus3.context.compaction import format_messages_for_summary
+
 # Redaction is on by default
 formatted = format_messages_for_summary(messages, redact=True)
 
