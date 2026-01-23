@@ -10,6 +10,55 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ---
 
+## Dogfooding: Use NEXUS Subagents
+
+**When working on this codebase, use NEXUS3 subagents for research and exploration tasks.** This is dogfooding - we use our own product.
+
+### Starting the Server
+
+```bash
+# Start headless server (use port 9000 to avoid conflict with user's REPL on 8765)
+NEXUS_DEV=1 .venv/bin/python -m nexus3 --serve 9000 &
+
+# Or check if already running
+.venv/bin/python -m nexus3 rpc detect --port 9000
+```
+
+### Creating and Using Research Agents
+
+```bash
+# Create a research agent (trusted can read anywhere, writes within CWD)
+.venv/bin/python -m nexus3 rpc create researcher --preset trusted --cwd /home/inc/repos/NEXUS3 --port 9000
+
+# Send research tasks
+.venv/bin/python -m nexus3 rpc send researcher "Look at nexus3/rpc/ and summarize the JSON-RPC types" --port 9000
+
+# Check status (don't rush - let them work)
+.venv/bin/python -m nexus3 rpc status researcher --port 9000
+
+# Cleanup when done
+.venv/bin/python -m nexus3 rpc destroy researcher --port 9000
+```
+
+### Guidelines
+
+- **Run commands one at a time** (multi-turn), NOT as a multi-step script
+- **Use subagents for reading/research** - they help manage context window
+- **Verify subagent code** - if they write code, review before committing
+- **Reuse agents** - check `rpc status` before destroying; reuse if tokens remain
+- **Use long timeouts** - research tasks need `--timeout 300` or higher
+
+### Coordination Pattern
+
+Claude Code coordinates NEXUS subagents directly:
+- Create agents with appropriate CWD and permissions
+- Send focused research tasks
+- Collect and synthesize findings
+
+Do NOT use a NEXUS coordinator agent in the middle - Claude Code is better at coordination.
+
+---
+
 ## Architecture
 
 ```
