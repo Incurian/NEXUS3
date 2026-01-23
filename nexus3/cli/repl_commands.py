@@ -141,9 +141,15 @@ Configuration:
 
 MCP (External Tools):
   /mcp                List configured and connected MCP servers
-  /mcp connect <name> Connect to a configured MCP server
+  /mcp connect <name> [--allow-all|--per-tool] [--shared|--private]
+                      Connect to a configured MCP server
   /mcp disconnect <name>  Disconnect from an MCP server
   /mcp tools [server] List available MCP tools
+
+Initialization:
+  /init               Create .nexus3/ in current directory with templates
+  /init --force       Overwrite existing config files
+  /init --global      Initialize ~/.nexus3/ instead of local
 
 REPL Control:
   /help               Show this help message
