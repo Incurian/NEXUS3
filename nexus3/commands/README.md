@@ -189,13 +189,14 @@ List all active agents in the pool.
 }
 ```
 
-#### `cmd_create(ctx, name, permission="trusted") -> CommandOutput`
+#### `cmd_create(ctx, name, permission="trusted", model=None) -> CommandOutput`
 
 Create a new agent without switching to it.
 
 **Parameters:**
 - `name`: Agent ID (must not exist)
 - `permission`: One of `"sandboxed"`, `"trusted"`, `"yolo"`, `"worker"`
+- `model`: Optional model alias or ID (None for default)
 
 **Returns** in `data`:
 ```python
@@ -203,7 +204,8 @@ Create a new agent without switching to it.
     "agent_id": "worker-1",
     "is_temp": False,
     "created_at": "2026-01-21T14:30:00",
-    "permission": "trusted"
+    "permission": "trusted",
+    "model": None
 }
 ```
 

@@ -132,8 +132,8 @@ Each model in `providers.*.models`:
     "gpt": {
       "id": "openai/gpt-5.2",
       "context_window": 400000,
-      "reasoning": true,
-      "guidance": "OpenAI GPT-5.2 with extended thinking. Good for: deep analysis, validation, complex reasoning."
+      "reasoning": false,
+      "guidance": "OpenAI GPT-5.2. Good for: deep analysis, validation, complex reasoning."
     }
   }
 }
@@ -151,7 +151,7 @@ Each model in `providers.*.models`:
 | Alias | Provider | Model ID | Context | Notes |
 |-------|----------|----------|---------|-------|
 | `gemini` | openrouter | `google/gemini-3-flash-preview` | 1M | Multimodal, large context |
-| `gpt` | openrouter | `openai/gpt-5.2` | 400K | Extended thinking, reasoning=true |
+| `gpt` | openrouter | `openai/gpt-5.2` | 400K | Deep analysis, complex reasoning |
 | `oss` | openrouter | `openai/gpt-oss-120b` | 131K | Budget/experimental tasks |
 | `fast` | openrouter | `x-ai/grok-4.1-fast` | 2M | Default model, huge context |
 | `haiku-native` | anthropic | `claude-haiku-4-5` | 200K | Fast Claude (native API) |

@@ -173,6 +173,8 @@ Configuration for an LLM provider.
 | `max_retries` | `int` | `3` | Max retry attempts (0-10) |
 | `retry_backoff` | `float` | `1.5` | Exponential backoff multiplier (1.0-5.0) |
 | `allow_insecure_http` | `bool` | `False` | Allow HTTP for non-localhost URLs |
+| `verify_ssl` | `bool` | `True` | Verify SSL certificates (false for self-signed) |
+| `ssl_ca_cert` | `str \| None` | `None` | Path to CA certificate for SSL verification |
 | `models` | `dict[str, ModelConfig]` | `{}` | Model aliases for this provider |
 
 **Supported Provider Types:**
@@ -309,6 +311,7 @@ Configuration for an MCP (Model Context Protocol) server.
 | `url` | `str \| None` | `None` | URL for HTTP transport |
 | `env` | `dict[str, str] \| None` | `None` | Explicit environment variables |
 | `env_passthrough` | `list[str] \| None` | `None` | Host env vars to pass through |
+| `cwd` | `str \| None` | `None` | Working directory for server subprocess |
 | `enabled` | `bool` | `True` | Whether server is enabled |
 
 **Validation:** Exactly one of `command` or `url` must be set.

@@ -1,35 +1,26 @@
 # NEXUS3 Display Module
 
-Terminal display system for NEXUS3 providing inline printing with gumball indicators, animated summary bars, streaming response display with tool batch tracking, and centralized display coordination with consistent theming.
+Terminal display system for NEXUS3 providing a simple animated spinner, inline printing with gumball indicators, and consistent theming.
 
 ## Purpose
 
 This module provides a unified terminal UI with several key responsibilities:
 
-- **Inline scrolling output** - Gumball status indicators, task progress, thinking traces, and sanitized streaming chunks
-- **Live summary bar** - Bottom-anchored bar with pluggable segments showing activity spinners, task counts, and cancellation hints
-- **Full streaming display** - Response content with tool batch progress tracking during Rich.Live sessions
-- **Central coordination** - Single point of control for all display output, cancellation tokens, and activity state
+- **Spinner** - Single animated spinner pinned to bottom, with content printed above (primary interface)
+- **Inline scrolling output** - Gumball status indicators and sanitized streaming chunks
 - **Theming** - Customizable colors, styles, and gumball characters
 
 ## Architecture Overview
 
 ```
-DisplayManager (coordinator)
+Spinner (primary - simple animated spinner)
     |
-    +-- InlinePrinter (scrolling output)
-    |       Uses: Console, Theme
-    |
-    +-- SummaryBar (Rich.Live bottom bar)
-    |       Uses: Console, Theme, Segments[]
-    |       Segments:
-    |           - ActivitySegment (spinner + activity label)
-    |           - TaskCountSegment (active/pending/done/failed)
-    |           - CancelHintSegment (ESC hint)
-    |
-    +-- StreamingDisplay (Rich.Live full display)
-            Uses: Theme
-            Tracks: response, tools[], activity, thinking
+    +-- Console (shared Rich Console)
+    +-- Theme (styling)
+    +-- Prints content above spinner via Live.console.print()
+
+Legacy (deprecated - use Spinner instead):
+    DisplayManager, StreamingDisplay, SummaryBar
 ```
 
 ## Module Files
@@ -37,13 +28,14 @@ DisplayManager (coordinator)
 | File | Description |
 |------|-------------|
 | `__init__.py` | Public exports |
+| `spinner.py` | `Spinner` - animated spinner pinned to bottom (primary) |
 | `console.py` | Shared Rich Console singleton |
-| `manager.py` | `DisplayManager` - central coordinator |
 | `printer.py` | `InlinePrinter` - scrolling output with gumballs |
-| `segments.py` | Summary bar segment protocol and implementations |
-| `streaming.py` | `StreamingDisplay` - Rich.Live streaming with tool tracking |
-| `summary.py` | `SummaryBar` - Rich.Live bottom bar |
 | `theme.py` | `Theme`, `Status`, `Activity` enums |
+| `manager.py` | `DisplayManager` - deprecated, use Spinner |
+| `segments.py` | Summary bar segments - deprecated |
+| `streaming.py` | `StreamingDisplay` - deprecated, use Spinner |
+| `summary.py` | `SummaryBar` - deprecated |
 
 ## Key Exports
 
@@ -53,31 +45,71 @@ from nexus3.display import (
     get_console,          # Get shared Console instance
     set_console,          # Set custom Console (for testing)
 
-    # Central coordinator
-    DisplayManager,       # Main display interface
-
-    # Printers
-    InlinePrinter,        # Scrolling output
-    StreamingDisplay,     # Rich.Live streaming display
-
-    # Summary bar
-    SummaryBar,           # Bottom-anchored live bar
-    SummarySegment,       # Protocol for custom segments
-    ActivitySegment,      # Spinner + activity label
-    TaskCountSegment,     # Task status counts
-    CancelHintSegment,    # ESC cancel hint
+    # Primary interface (recommended)
+    Spinner,              # Simple animated spinner
 
     # Theme system
     Theme,                # Theme configuration
     Status,               # Status enum (ACTIVE, PENDING, COMPLETE, ERROR, CANCELLED)
     Activity,             # Activity enum (IDLE, WAITING, THINKING, RESPONDING, TOOL_CALLING)
     load_theme,           # Load theme with optional overrides
+
+    # Legacy (deprecated - use Spinner instead)
+    DisplayManager,       # Deprecated coordinator
+    InlinePrinter,        # Scrolling output
+    StreamingDisplay,     # Deprecated Rich.Live streaming
+    SummaryBar,           # Deprecated bottom bar
+    SummarySegment,       # Deprecated segment protocol
+    ActivitySegment,      # Deprecated spinner segment
+    TaskCountSegment,     # Deprecated task counts
+    CancelHintSegment,    # Deprecated cancel hint
 )
 ```
 
 ---
 
 ## Core Components
+
+### Spinner (`spinner.py`) - Primary Interface
+
+Simple animated spinner pinned to the bottom of the terminal. All output during an agent turn goes through `spinner.print()`, which prints above the spinner.
+
+```python
+from nexus3.display import Spinner, Activity
+
+spinner = Spinner()
+
+# Start spinner
+spinner.show("Waiting for response...")
+
+# Print content above spinner
+spinner.print("Tool call: read_file")
+spinner.print("Result: 42 lines")
+
+# Stream text (no newline)
+spinner.print_streaming("Hello ")
+spinner.print_streaming("world")
+spinner.flush_stream()  # Flush buffer + newline
+
+# Update spinner text
+spinner.update("Processing...", activity=Activity.TOOL_CALLING)
+
+# Hide spinner when done
+spinner.hide()
+```
+
+**Key Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `show(text, activity)` | Start showing spinner with text |
+| `hide()` | Stop spinner, print final state |
+| `update(text, activity)` | Update spinner text/activity |
+| `print(*args, **kwargs)` | Print above spinner (like console.print) |
+| `print_streaming(text)` | Buffer streaming text without newline |
+| `flush_stream()` | Flush stream buffer with newline |
+
+---
 
 ### Theme System (`theme.py`)
 
