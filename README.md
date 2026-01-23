@@ -758,6 +758,8 @@ Available when running interactively.
 | `commands/` | Unified command infrastructure |
 | `defaults/` | Default configuration and prompts |
 
+Each module has its own `README.md` with detailed documentation.
+
 ---
 
 ## Security & Permissions
