@@ -131,6 +131,9 @@ async def confirm_tool_action(
         pass
 
     try:
+        # Track lines printed so we can clear the prompt after selection
+        lines_printed = 0
+
         # Escape tool name for Rich markup safety (MCP tools can have crafted names)
         safe_tool_name = escape_rich_markup(tool_name)
 
@@ -147,6 +150,7 @@ async def confirm_tool_action(
             console.print(f"\n[yellow]Allow MCP tool '{safe_tool_name}'?[/]")
             console.print(f"  [dim]Server:[/] {safe_server_name}")
             console.print(f"  [dim]Arguments:[/] {safe_args_preview}")
+            lines_printed += 4  # empty + header + server + args
         elif is_exec_tool:
             # Use agent's cwd as default, not process cwd
             cwd = tool_call.arguments.get("cwd", str(agent_cwd))
@@ -157,40 +161,48 @@ async def confirm_tool_action(
             console.print(f"\n[yellow]Execute {safe_tool_name}?[/]")
             console.print(f"  [dim]Command:[/] {safe_preview}")
             console.print(f"  [dim]Directory:[/] {safe_cwd}")
+            lines_printed += 4  # empty + header + command + dir
         elif is_nexus_tool:
             # Nexus tools use agent_id instead of path
             agent_id = tool_call.arguments.get("agent_id", "unknown")
             safe_agent_id = escape_rich_markup(str(agent_id))
             console.print(f"\n[yellow]Allow {safe_tool_name}?[/]")
             console.print(f"  [dim]Agent:[/] {safe_agent_id}")
+            lines_printed += 3  # empty + header + agent
         else:
             path_str = str(target_path) if target_path else tool_call.arguments.get("path", "unknown")
             safe_path_str = escape_rich_markup(str(path_str))
             console.print(f"\n[yellow]Allow {safe_tool_name}?[/]")
             console.print(f"  [dim]Path:[/] {safe_path_str}")
+            lines_printed += 3  # empty + header + path
 
         # Show options based on tool type
         console.print()
+        lines_printed += 1  # empty line
         if is_mcp_tool:
             console.print("  [cyan][1][/] Allow once")
             console.print("  [cyan][2][/] Allow this tool always (this session)")
             console.print("  [cyan][3][/] Allow all tools from this server (this session)")
             console.print("  [cyan][4][/] Deny")
+            lines_printed += 4
         elif is_shell_unsafe:
             # shell_UNSAFE always requires per-use approval - no "allow always" options
             console.print("  [cyan][1][/] Allow once")
             console.print("  [cyan][2][/] Deny")
             console.print("  [dim](shell_UNSAFE requires approval each time)[/]")
+            lines_printed += 3
         elif is_exec_tool:
             # bash_safe and run_python allow directory scope but not global
             console.print("  [cyan][1][/] Allow once")
             console.print("  [cyan][2][/] Allow always in this directory")
             console.print("  [cyan][3][/] Deny")
+            lines_printed += 3
         else:
             console.print("  [cyan][1][/] Allow once")
             console.print("  [cyan][2][/] Allow always for this file")
             console.print("  [cyan][3][/] Allow always in this directory")
             console.print("  [cyan][4][/] Deny")
+            lines_printed += 4
 
         # Use asyncio.to_thread for blocking input to allow event loop to continue
         def get_input() -> str:
@@ -206,6 +218,14 @@ async def confirm_tool_action(
                 return ""
 
         response = await asyncio.to_thread(get_input)
+        lines_printed += 2  # prompt line + input line
+
+        # Clear the confirmation prompt from terminal
+        # Move cursor up N lines and clear from cursor to end of screen
+        import sys
+        sys.stdout.write(f"\033[{lines_printed}F")  # Move to beginning of line N lines up
+        sys.stdout.write("\033[J")  # Clear from cursor to end of screen
+        sys.stdout.flush()
 
         # shell_UNSAFE only has 2 options: 1=allow once, 2=deny
         if is_shell_unsafe:
