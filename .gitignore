@@ -38,6 +38,7 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+*:Zone.Identifier
 
 # NEXUS3 session logs
 .nexus3/
