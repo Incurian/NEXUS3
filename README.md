@@ -751,7 +751,7 @@ Available when running interactively.
 | `context/` | Context management, token counting, compaction |
 | `session/` | Session coordinator, event system, persistence |
 | `skill/` | Skill registry, base classes, 24 built-in skills |
-| `display/` | Rich terminal UI, streaming display |
+| `display/` | Rich terminal UI, spinner, theming |
 | `cli/` | REPL, argument parsing, lobby |
 | `rpc/` | JSON-RPC server, agent pool, authentication |
 | `mcp/` | Model Context Protocol client |
