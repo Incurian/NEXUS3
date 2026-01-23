@@ -1259,6 +1259,13 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P4.3** Implement progress notifications handling
 - [ ] **P4.4** Implement logging notifications handling
 
+### Phase 5: Documentation
+
+- [ ] **P5.1** Update `nexus3/mcp/README.md` with all spec compliance changes
+- [ ] **P5.2** Update `CLAUDE.md` MCP section with any new config format changes
+- [ ] **P5.3** Document new MCPTool fields in protocol.py docstrings
+- [ ] **P5.4** Update `/mcp` command help with new capabilities (if resources/prompts added)
+
 ---
 
 ## Quick Reference: File Locations

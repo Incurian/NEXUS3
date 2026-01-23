@@ -566,7 +566,12 @@ Use this checklist to track implementation progress. Each item can be assigned t
 
 - [ ] **P5.1** Live test via REPL with actual agents
 - [ ] **P5.2** Verify error messages are clear and helpful
-- [ ] **P5.3** Document behavior in CLAUDE.md
+
+### Phase 6: Documentation
+
+- [ ] **P6.1** Update `CLAUDE.md` Permission System section with `allowed_targets` behavior
+- [ ] **P6.2** Update `CLAUDE.md` RPC Agent Permission Quirks to note sandboxed agents can now send to parent
+- [ ] **P6.3** Update `nexus3/session/README.md` with target validation in enforcer
 
 ---
 

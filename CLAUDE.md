@@ -507,6 +507,7 @@ All non-trivial features should follow this planning process. Plans live in `doc
 | 7. Detailed Plan | Concrete implementation with copy-paste code, exact file paths |
 | 8. Validate | Subagent confirms patterns, identifies discrepancies |
 | 9. Checklist | Implementation checklist with task IDs for parallel execution |
+| 10. Documentation | Document what changed for users and future developers |
 
 **CRITICAL: Update plan file after EVERY phase.** Planning sessions can be interrupted (context limits, timeouts, user breaks). Write findings to `docs/<PLAN-NAME>.md` incrementally:
 
@@ -555,6 +556,7 @@ Results from subagent validation against actual code.
 
 ## Implementation Checklist
 Phased checklist with task IDs (P1.1, P1.2, etc.)
+Must include a Documentation phase (see below).
 
 ## Quick Reference
 File locations table, API endpoints, etc.
@@ -599,6 +601,36 @@ Report any discrepancies." --port 9000
 ```
 
 Add findings to the "Codebase Validation Notes" section with corrections applied.
+
+#### Documentation Phase (Required)
+
+Every implementation checklist MUST include a documentation phase. Documentation ensures users can discover and use new features, and future developers can understand what changed.
+
+**What to document:**
+
+| Type | When | What to Update |
+|------|------|----------------|
+| **User-facing features** | New commands, skills, CLI flags | Main README, `CLAUDE.md` (relevant sections) |
+| **Module changes** | New/modified modules | Module's `README.md`, type signatures |
+| **Skills** | New or modified skills | Skill's `description` property, parameter descriptions, `CLAUDE.md` Built-in Skills table |
+| **Commands** | New or modified REPL/CLI commands | Command help data, `CLAUDE.md` Commands Reference |
+| **Configuration** | New config options | `CLAUDE.md` Configuration section, example configs |
+| **Permissions** | Changes to presets or tool permissions | `CLAUDE.md` Permission System section |
+
+**Documentation checklist items should be explicit:**
+
+```markdown
+### Phase N: Documentation (After Implementation Complete)
+- [ ] **PN.1** Update `CLAUDE.md` [specific section] with [specific change]
+- [ ] **PN.2** Update `nexus3/[module]/README.md` with [specific change]
+- [ ] **PN.3** Update skill description property to document [behavior]
+- [ ] **PN.4** Update command help text for [command]
+```
+
+**Not required:**
+- Adding JSDoc/docstrings to every function (only document non-obvious behavior)
+- Creating new markdown files for minor features
+- Updating docs for internal refactors with no user-facing changes
 
 ---
 

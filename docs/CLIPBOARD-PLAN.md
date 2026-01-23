@@ -2275,12 +2275,19 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P6.5** Integration test: permission boundaries (sandboxed can't access project)
 - [ ] **P6.6** Integration test: persistence (project/system entries survive restart)
 
-### Final Integration
+### Phase 7: Live Testing
 
-- [ ] **F1** Live test with real NEXUS3 REPL (create test files, copy/paste flow)
-- [ ] **F2** Update CLAUDE.md with clipboard skills documentation
-- [ ] **F3** Add clipboard section to skill/ README
-- [ ] **F4** Verify no regressions in existing skills
+- [ ] **P7.1** Live test with real NEXUS3 REPL (create test files, copy/paste flow)
+- [ ] **P7.2** Verify no regressions in existing skills
+
+### Phase 8: Documentation
+
+- [ ] **P8.1** Add all clipboard skills to `CLAUDE.md` Built-in Skills table
+- [ ] **P8.2** Add Clipboard section to `CLAUDE.md` describing the system
+- [ ] **P8.3** Add clipboard section to `nexus3/skill/README.md`
+- [ ] **P8.4** Create `nexus3/clipboard/README.md` with module documentation
+- [ ] **P8.5** Update `CLAUDE.md` Configuration section with clipboard config options
+- [ ] **P8.6** Ensure all skill `description` properties are comprehensive with examples
 
 ---
 

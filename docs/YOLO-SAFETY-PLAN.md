@@ -488,7 +488,10 @@ pool.set_repl_connected(current_agent_id, False)
 - [ ] **P5.6** Remove worker from `nexus3/commands/core.py`
 
 ### Phase 6: Documentation
-- [ ] **P6.1** Remove worker from `CLAUDE.md` presets documentation
+- [ ] **P6.1** Remove "worker" from `CLAUDE.md` Built-in Presets table
+- [ ] **P6.2** Update `CLAUDE.md` RPC Agent Permission Quirks section to clarify YOLO is REPL-only
+- [ ] **P6.3** Update `nexus3/rpc/README.md` with YOLO RPC blocking behavior
+- [ ] **P6.4** Ensure error messages in code clearly explain why YOLO RPC send is blocked
 
 ### Phase 7: Testing
 - [ ] **P7.1** Live test: Start REPL in YOLO mode, verify warning appears every turn

@@ -3479,14 +3479,21 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P5.5** Implement `gitlab_feature_flag` skill
 - [ ] **P5.6** Unit tests for Phase 5 skills
 
-### Final Integration
+### Phase 6: Integration & Testing
 
-- [ ] **F1** Add GitLab confirmation handling to PermissionEnforcer
-- [ ] **F2** Add destructive GitLab skills to confirmation list
-- [ ] **F3** Documentation: Update CLAUDE.md with GitLab skills
-- [ ] **F4** Documentation: Add GitLab section to skill/ README
-- [ ] **F5** E2E test: Full workflow (create issue → link to epic → track time)
-- [ ] **F6** Live testing with real GitLab instance
+- [ ] **P6.1** Add GitLab confirmation handling to PermissionEnforcer
+- [ ] **P6.2** Add destructive GitLab skills to confirmation list
+- [ ] **P6.3** E2E test: Full workflow (create issue → link to epic → track time)
+- [ ] **P6.4** Live testing with real GitLab instance
+
+### Phase 7: Documentation
+
+- [ ] **P7.1** Update `CLAUDE.md` Built-in Skills table with all GitLab skills
+- [ ] **P7.2** Update `CLAUDE.md` Configuration section with GitLab config example
+- [ ] **P7.3** Add GitLab section to `nexus3/skill/README.md`
+- [ ] **P7.4** Create `nexus3/skill/vcs/README.md` with module documentation
+- [ ] **P7.5** Document `/gitlab` command in REPL Commands Reference
+- [ ] **P7.6** Ensure all skill `description` properties are comprehensive
 
 ---
 

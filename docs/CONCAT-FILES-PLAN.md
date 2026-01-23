@@ -795,6 +795,13 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P6.5** Live test with real NEXUS3 agent
 - [ ] **P6.6** Verify no regressions in existing skills
 
+### Phase 7: Documentation
+
+- [ ] **P7.1** Add `concat_files` to `CLAUDE.md` Built-in Skills table
+- [ ] **P7.2** Update `nexus3/skill/README.md` with concat_files skill
+- [ ] **P7.3** Ensure skill `description` property is comprehensive with examples
+- [ ] **P7.4** Document all parameter descriptions in the skill schema
+
 ---
 
 ## Quick Reference: File Locations

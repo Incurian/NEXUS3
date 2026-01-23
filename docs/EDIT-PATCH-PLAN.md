@@ -643,6 +643,14 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P5.6** Live test with real NEXUS3 agent (all three tools)
 - [ ] **P5.7** Verify no regressions in existing file skills
 
+### Phase 6: Documentation
+
+- [ ] **P6.1** Update `CLAUDE.md` Built-in Skills table with `edit_lines` and `patch` skills
+- [ ] **P6.2** Update `edit_file` entry in `CLAUDE.md` to note batched edits parameter
+- [ ] **P6.3** Create `nexus3/patch/README.md` with module documentation
+- [ ] **P6.4** Update `nexus3/skill/README.md` with new skills
+- [ ] **P6.5** Ensure all new skill `description` properties are comprehensive with examples
+
 ---
 
 ## Quick Reference: File Locations
