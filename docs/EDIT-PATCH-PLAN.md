@@ -538,3 +538,152 @@ nexus3 --fresh
 - Part 1 (batch edit) can proceed independently of Part 0 (tool separation)
 - Part 2 (patch) is independent of Parts 0 and 1
 - All parts can be implemented in parallel if desired
+
+---
+
+## Codebase Validation Notes
+
+*Validated against NEXUS3 codebase on 2026-01-23*
+
+### Confirmed Patterns
+
+| Aspect | Status | Notes |
+|--------|--------|-------|
+| edit_file.py location | ✓ Exists | `nexus3/skill/builtin/edit_file.py` |
+| Dual modes in edit_file | ✓ Confirmed | Both string and line-based modes present |
+| Mode confusion error | ✓ Confirmed | Returns "Cannot use both..." error |
+| FileSkill base class | ✓ Correct | Provides _validate_path() and services |
+| file_skill_factory | ✓ Correct | Returns factory, attaches as cls.factory |
+| Registration pattern | ✓ Correct | `registry.register(name, factory)` |
+| No unit tests | ✓ Confirmed | Only security tests exist for edit_file |
+| atomic_write_text | ✓ Exists | `nexus3/core/paths.py` line 156 |
+| ToolResult pattern | ✓ Correct | Frozen dataclass with output/error fields |
+
+### Verification Summary
+
+All proposed architectural patterns match the current codebase:
+- FileSkill inheritance pattern matches current file skills
+- Factory registration matches current registry system
+- ToolResult usage is standard across all skills
+- atomic_write_text exists and is used in similar skills
+- Parameter validation is automatically wrapped by file_skill_factory
+
+**No corrections required** - the plan accurately reflects the codebase.
+
+---
+
+## Implementation Checklist
+
+Use this checklist to track implementation progress. Each item can be assigned to a task agent.
+
+### Part 0: Tool Separation (edit_file → edit_file + edit_lines)
+
+- [ ] **P0.1** Create `nexus3/skill/builtin/edit_lines.py` with class skeleton
+- [ ] **P0.2** Move line-based replacement logic from edit_file.py to EditLinesSkill
+- [ ] **P0.3** Implement EditLinesSkill parameters (path, start_line, end_line, new_content)
+- [ ] **P0.4** Add `edit_lines_factory = file_skill_factory(EditLinesSkill)`
+- [ ] **P0.5** Register edit_lines in registration.py
+- [ ] **P0.6** Remove line-based parameters from edit_file.py (start_line, end_line, new_content)
+- [ ] **P0.7** Add migration error in edit_file for line params: "Use edit_lines instead"
+- [ ] **P0.8** Update edit_file description to focus on string replacement only
+- [ ] **P0.9** Add unit tests for edit_lines (single line, range, bounds validation)
+- [ ] **P0.10** Update any existing edit_file tests
+
+### Part 1: Batched edit_file
+
+- [ ] **P1.1** Add `edits` array parameter to edit_file schema
+- [ ] **P1.2** Implement `_batch_replace()` method with validation-first logic
+- [ ] **P1.3** Add mutual exclusion check (edits vs single-edit params)
+- [ ] **P1.4** Implement line number tracking for original file positions
+- [ ] **P1.5** Add unit tests for batch success
+- [ ] **P1.6** Add unit tests for batch rollback on failure
+- [ ] **P1.7** Add unit tests for batch order matters
+- [ ] **P1.8** Add unit tests for mutual exclusion check
+
+### Part 2: Patch Module Core
+
+- [ ] **P2.1** Create `nexus3/patch/` directory
+- [ ] **P2.2** Implement `nexus3/patch/types.py` (Hunk, PatchFile, PatchSet dataclasses)
+- [ ] **P2.3** Implement `nexus3/patch/parser.py` (parse_unified_diff function)
+- [ ] **P2.4** Implement `nexus3/patch/validator.py` (ValidationResult, validate_patch)
+- [ ] **P2.5** Implement `nexus3/patch/__init__.py` (public API exports)
+- [ ] **P2.6** Add unit tests for parser (simple hunk, multiple hunks, git format)
+- [ ] **P2.7** Add unit tests for validator (line count mismatch, whitespace)
+
+### Part 3: Patch Application
+
+- [ ] **P3.1** Implement `nexus3/patch/applier.py` with ApplyMode enum
+- [ ] **P3.2** Implement strict mode (exact context match)
+- [ ] **P3.3** Implement tolerant mode (whitespace tolerance)
+- [ ] **P3.4** Implement fuzzy mode (SequenceMatcher fallback)
+- [ ] **P3.5** Implement offset tracking for multi-hunk patches
+- [ ] **P3.6** Add unit tests for each mode
+- [ ] **P3.7** Add unit tests for offset tracking
+- [ ] **P3.8** Add unit tests for rollback on failure
+
+### Part 4: Patch Skill
+
+- [ ] **P4.1** Create `nexus3/skill/builtin/patch.py` with PatchSkill class
+- [ ] **P4.2** Implement parameters (diff, diff_file, target, mode, fuzzy_threshold, dry_run)
+- [ ] **P4.3** Implement path validation for target file
+- [ ] **P4.4** Implement path validation for diff_file
+- [ ] **P4.5** Add `patch_factory = file_skill_factory(PatchSkill)`
+- [ ] **P4.6** Register patch in registration.py
+- [ ] **P4.7** Add unit tests for inline diff
+- [ ] **P4.8** Add unit tests for file-based diff
+- [ ] **P4.9** Add unit tests for dry-run mode
+
+### Phase 5: Integration & Live Testing
+
+- [ ] **P5.1** Integration test: edit_lines atomic write
+- [ ] **P5.2** Integration test: batch edit atomic rollback
+- [ ] **P5.3** Integration test: patch inline diff
+- [ ] **P5.4** Integration test: patch from file
+- [ ] **P5.5** Integration test: patch permission enforcement
+- [ ] **P5.6** Live test with real NEXUS3 agent (all three tools)
+- [ ] **P5.7** Verify no regressions in existing file skills
+
+---
+
+## Quick Reference: File Locations
+
+| Component | File Path |
+|-----------|-----------|
+| edit_file skill | `nexus3/skill/builtin/edit_file.py` |
+| edit_lines skill (new) | `nexus3/skill/builtin/edit_lines.py` |
+| patch skill (new) | `nexus3/skill/builtin/patch.py` |
+| Patch module types | `nexus3/patch/types.py` |
+| Patch parser | `nexus3/patch/parser.py` |
+| Patch validator | `nexus3/patch/validator.py` |
+| Patch applier | `nexus3/patch/applier.py` |
+| Skill registration | `nexus3/skill/builtin/registration.py` |
+| FileSkill base | `nexus3/skill/base.py` |
+| atomic_write_text | `nexus3/core/paths.py` |
+| Unit tests (edit) | `tests/unit/skill/test_edit_file.py` |
+| Unit tests (lines) | `tests/unit/skill/test_edit_lines.py` |
+| Unit tests (patch) | `tests/unit/skill/test_patch.py` |
+| Unit tests (parser) | `tests/unit/patch/test_parser.py` |
+| Unit tests (applier) | `tests/unit/patch/test_applier.py` |
+
+---
+
+## Patch Hunk Format Reference
+
+**Unified diff header:**
+```
+--- a/path/to/file.py
++++ b/path/to/file.py
+@@ -start,count +start,count @@ optional context
+ context line
+-removed line
++added line
+ context line
+```
+
+**Line prefixes:**
+| Prefix | Meaning |
+|--------|---------|
+| ` ` (space) | Context line (unchanged) |
+| `-` | Line removed from original |
+| `+` | Line added in new version |
+| `\ ` | No newline at end of file marker |

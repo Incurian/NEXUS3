@@ -1143,3 +1143,148 @@ When implementing new MCP features:
 - [MCP Prompts Spec](https://modelcontextprotocol.io/specification/2025-11-25/server/prompts)
 - [MCP Sampling Spec](https://modelcontextprotocol.io/specification/2025-11-25/client/sampling)
 - [MCP Server Examples](https://github.com/modelcontextprotocol/servers)
+
+---
+
+## Codebase Validation Notes
+
+*Validated against NEXUS3 codebase on 2026-01-23*
+
+### Gap Status Confirmation
+
+| Issue | Documented Status | Current Status | Verified |
+|-------|-------------------|----------------|----------|
+| Config format (Priority 0) | Gap | Still present | ✓ |
+| 1.1 Initialized notification params | Gap | Still present | ✓ |
+| 1.2 Client capabilities empty | Acknowledged | As expected | ✓ |
+| 1.3 Server capabilities unused | Acknowledged | As expected | ✓ |
+| 1.4 Pagination not implemented | Gap | Still present | ✓ |
+| 1.5 MCPTool missing fields | Gap | Still present | ✓ |
+| 1.6 MCPToolResult missing field | Gap | Still present | ✓ |
+| 1.7 HTTP missing version header | Gap | Still present | ✓ |
+| 1.8 HTTP missing session mgmt | Gap | Still present | ✓ |
+
+**All documented gaps remain unfixed.** The document accurately reflects the current implementation state.
+
+### Verification Details
+
+- Config loading in `nexus3/context/loader.py` only supports `"servers"` key
+- MCPServerConfig uses `command: list[str]` only, not separate command+args
+- MCPClient._notify() always includes params even when empty
+- MCPClient.list_tools() has no pagination cursor handling
+- MCPTool missing: title, output_schema, icons, annotations
+- MCPToolResult missing: structured_content
+- HTTPTransport missing: MCP-Protocol-Version header, session ID tracking
+
+---
+
+## Implementation Checklist
+
+Use this checklist to track implementation progress. Each item can be assigned to a task agent.
+
+### Priority 0: Config Format Compatibility
+
+- [ ] **P0.1** Update `MCPServerConfig` dataclass to support `command: str | list[str]`
+- [ ] **P0.2** Add `args: list[str] | None` field to MCPServerConfig
+- [ ] **P0.3** Implement `MCPServerConfig.get_command_list()` helper method
+- [ ] **P0.4** Update config loader to check both `mcpServers` and `servers` keys
+- [ ] **P0.5** Update `nexus3/config/schema.py` MCPServerConfig schema
+- [ ] **P0.6** Add unit tests for official MCP config format
+- [ ] **P0.7** Add unit tests for NEXUS3 config format (backward compat)
+- [ ] **P0.8** Update MCP README documentation
+
+### Priority 1.1: Initialized Notification Fix
+
+- [ ] **P1.1.1** Modify `MCPClient._notify()` to omit params when empty
+- [ ] **P1.1.2** Add unit test verifying notification format
+
+### Priority 1.4: Pagination Support
+
+- [ ] **P1.4.1** Modify `MCPClient.list_tools()` to handle cursor pagination
+- [ ] **P1.4.2** Add `nextCursor` handling in list_tools loop
+- [ ] **P1.4.3** Add unit test with mock paginated response
+- [ ] **P1.4.4** Add integration test with MCP server that paginates
+
+### Priority 1.5: MCPTool Fields
+
+- [ ] **P1.5.1** Add `title: str | None` field to MCPTool
+- [ ] **P1.5.2** Add `output_schema: dict[str, Any] | None` field
+- [ ] **P1.5.3** Add `icons: list[dict[str, Any]] | None` field
+- [ ] **P1.5.4** Add `annotations: dict[str, Any] | None` field
+- [ ] **P1.5.5** Update `MCPTool.from_dict()` to parse new fields
+- [ ] **P1.5.6** Add unit tests for MCPTool parsing
+
+### Priority 1.6: MCPToolResult Field
+
+- [ ] **P1.6.1** Add `structured_content: dict[str, Any] | None` field
+- [ ] **P1.6.2** Update `MCPToolResult.from_dict()` to parse structuredContent
+- [ ] **P1.6.3** Add unit test for MCPToolResult parsing
+
+### Priority 1.7: HTTP Protocol Version Header
+
+- [ ] **P1.7.1** Add `MCP-Protocol-Version` header to HTTPTransport
+- [ ] **P1.7.2** Add `Accept` header with json and event-stream
+- [ ] **P1.7.3** Add unit test verifying headers
+
+### Priority 1.8: HTTP Session Management
+
+- [ ] **P1.8.1** Add `_session_id: str | None` field to HTTPTransport
+- [ ] **P1.8.2** Capture session ID from response headers
+- [ ] **P1.8.3** Include session ID in subsequent requests
+- [ ] **P1.8.4** Add unit test for session ID flow
+
+### Phase 2: Resources (Future)
+
+- [ ] **P2.1** Add `resources/list` method to MCPClient
+- [ ] **P2.2** Add `resources/read` method
+- [ ] **P2.3** Add `MCPResource` dataclass to protocol.py
+- [ ] **P2.4** Add `MCPResourceContent` dataclass
+- [ ] **P2.5** Add `/mcp resources` REPL command
+- [ ] **P2.6** Unit tests for resource methods
+- [ ] **P2.7** Integration test with filesystem MCP server
+
+### Phase 3: Prompts (Future)
+
+- [ ] **P3.1** Add `prompts/list` method to MCPClient
+- [ ] **P3.2** Add `prompts/get` method
+- [ ] **P3.3** Add `MCPPrompt` dataclass
+- [ ] **P3.4** Add `MCPPromptArgument` dataclass
+- [ ] **P3.5** Add `/mcp prompts` REPL command
+- [ ] **P3.6** Unit tests for prompt methods
+
+### Phase 4: Utilities (Future)
+
+- [ ] **P4.1** Implement ping method
+- [ ] **P4.2** Implement cancellation (_meta.cancellationToken)
+- [ ] **P4.3** Implement progress notifications handling
+- [ ] **P4.4** Implement logging notifications handling
+
+---
+
+## Quick Reference: File Locations
+
+| Component | File Path |
+|-----------|-----------|
+| MCP client | `nexus3/mcp/client.py` |
+| MCP protocol types | `nexus3/mcp/protocol.py` |
+| MCP transport | `nexus3/mcp/transport.py` |
+| MCP registry | `nexus3/mcp/registry.py` |
+| Config loader | `nexus3/context/loader.py` |
+| Config schema | `nexus3/config/schema.py` |
+| Test server | `nexus3/mcp/test_server/` |
+| Unit tests | `tests/unit/mcp/` |
+| Integration tests | `tests/integration/mcp/` |
+
+---
+
+## Effort Summary
+
+| Priority | Items | Estimated Effort |
+|----------|-------|------------------|
+| P0 (Config) | 8 items | ~2 hours |
+| P1 (Compliance) | 14 items | ~1 hour |
+| P2 (Resources) | 7 items | ~4 hours |
+| P3 (Prompts) | 6 items | ~3 hours |
+| P4 (Utilities) | 4 items | ~2 hours |
+
+**Priority 0 and 1 should be addressed first** to ensure basic MCP spec compliance and compatibility with standard MCP configurations.

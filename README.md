@@ -460,38 +460,35 @@ you> /help
 
 ### Multi-Agent Workflows
 
-NEXUS3 shines when you need multiple agents working together:
+NEXUS3 shines when you need multiple agents working together. Manage everything from within the REPL:
 
-```bash
-# Terminal 1: Start REPL (includes embedded server)
-nexus3
-
-# Terminal 2: Create a research agent
-nexus3 rpc create researcher --preset trusted --cwd /path/to/project
-
-# Send it a task
-nexus3 rpc send researcher "Analyze the authentication module and list security concerns"
-
-# Check its progress
-nexus3 rpc status researcher
-
-# When done, clean up
-nexus3 rpc destroy researcher
 ```
-
-**Or manage agents from within the REPL:**
-```
-you> /agent create researcher --trusted
+you> /create researcher --trusted
 Created agent 'researcher'
 
 you> /whisper researcher
-researcher> Analyze the test coverage in tests/
+[whisper → researcher]
 
-(agent works...)
+researcher> Analyze the authentication module and list security concerns
+
+(agent works autonomously...)
 
 researcher> /over
-you>
+[whisper ended]
+
+you> /status researcher
+researcher: 12,450 tokens used, idle
+
+you> /destroy researcher
+Destroyed agent 'researcher'
 ```
+
+**Key commands:**
+- `/create NAME --trusted` - Create a new agent
+- `/whisper NAME` - Redirect your input to that agent
+- `/over` - Return to your original agent
+- `/status NAME` - Check agent's token usage and state
+- `/list` - See all active agents
 
 ---
 
@@ -539,95 +536,6 @@ nexus3 [OPTIONS]
 |------|-------------|
 | `--init-global` | Create `~/.nexus3/` with default config |
 | `--init-global-force` | Overwrite existing global config |
-
-### RPC Subcommands: `nexus3 rpc`
-
-All RPC commands require a running server. They do **not** auto-start servers.
-
-#### `nexus3 rpc detect`
-
-Check if a server is running.
-
-```bash
-nexus3 rpc detect [--port PORT]
-```
-
-Exit code: 0 if running, 1 if not.
-
-#### `nexus3 rpc list`
-
-List all agents on the server.
-
-```bash
-nexus3 rpc list [--port PORT] [--api-key KEY]
-```
-
-#### `nexus3 rpc create`
-
-Create a new agent.
-
-```bash
-nexus3 rpc create AGENT_ID [OPTIONS]
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--preset` | `sandboxed` | Permission preset: `trusted`, `sandboxed`, `worker` |
-| `--cwd PATH` | - | Working directory (sandbox root) |
-| `--write-path PATH` | - | Allow writes to path (repeatable) |
-| `--model NAME` | - | Model alias |
-| `-M, --message MSG` | - | Send initial message after creation |
-| `-t, --timeout SEC` | 300 | Request timeout |
-
-**Important:** RPC agents are `sandboxed` by default (read-only). Use `--preset trusted` for full access or `--write-path` for specific directories.
-
-#### `nexus3 rpc send`
-
-Send a message to an agent.
-
-```bash
-nexus3 rpc send AGENT_ID MESSAGE [--timeout SEC]
-```
-
-#### `nexus3 rpc status`
-
-Get agent status (tokens, context info).
-
-```bash
-nexus3 rpc status AGENT_ID
-```
-
-#### `nexus3 rpc destroy`
-
-Remove an agent.
-
-```bash
-nexus3 rpc destroy AGENT_ID
-```
-
-#### `nexus3 rpc compact`
-
-Force context compaction to reclaim tokens.
-
-```bash
-nexus3 rpc compact AGENT_ID
-```
-
-#### `nexus3 rpc cancel`
-
-Cancel an in-progress request.
-
-```bash
-nexus3 rpc cancel AGENT_ID REQUEST_ID
-```
-
-#### `nexus3 rpc shutdown`
-
-Gracefully stop the server.
-
-```bash
-nexus3 rpc shutdown
-```
 
 ### REPL Slash Commands
 
@@ -700,6 +608,26 @@ Available when running interactively.
 | `ESC` | Cancel current response |
 | `Ctrl+C` | Interrupt input |
 | `Ctrl+D` | Exit REPL |
+
+### RPC Commands (Programmatic Access)
+
+For scripting, automation, or integrating NEXUS3 with external tools, use the `nexus3 rpc` subcommands. These provide the same functionality as REPL commands but from the shell.
+
+**Note:** RPC commands require a running server (started via `nexus3` REPL or `NEXUS_DEV=1 nexus3 --serve`). They do **not** auto-start servers.
+
+| Command | Description |
+|---------|-------------|
+| `nexus3 rpc detect` | Check if server is running (exit code 0/1) |
+| `nexus3 rpc list` | List all agents |
+| `nexus3 rpc create ID [--preset P] [--cwd PATH]` | Create agent |
+| `nexus3 rpc send ID MESSAGE` | Send message to agent |
+| `nexus3 rpc status ID` | Get agent status |
+| `nexus3 rpc destroy ID` | Remove agent |
+| `nexus3 rpc compact ID` | Force context compaction |
+| `nexus3 rpc cancel ID REQ_ID` | Cancel in-progress request |
+| `nexus3 rpc shutdown` | Stop the server |
+
+**Security note:** RPC-created agents default to `sandboxed` (read-only). Use `--preset trusted` for write access or `--write-path PATH` for specific directories.
 
 ---
 

@@ -1021,13 +1021,13 @@ Display help information.
 
 ```
 /help                           # Show all commands overview
-/help save                      # Detailed help for /save (NOT YET IMPLEMENTED)
+/help save                      # Detailed help for /save
 ```
 
 **Notes:**
 
-- Per-command help (`/help <command>`) is planned but not yet implemented
-- See COMMAND-HELP.md for detailed per-command documentation
+- Both `/help <command>` and `/<command> --help` show detailed help
+- Help text is defined in `COMMAND_HELP` dict in `repl_commands.py`
 
 ---
 
@@ -1206,4 +1206,4 @@ def test_help_examples_are_syntactically_valid():
 
 ---
 
-*Last updated: 2026-01-22*
+*Last updated: 2026-01-23*

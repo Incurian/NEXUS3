@@ -10,6 +10,35 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ---
 
+## Current Development
+
+### In Progress: Command Help System
+
+**Plan:** `docs/COMMAND-HELP.md`
+
+**Status:** Implementation complete, awaiting user testing before merge.
+
+Dynamic help system for REPL commands with consistent formatting, argument documentation, and examples.
+
+### On Deck
+
+Plans are listed in recommended implementation order. Most are independent, but dependencies are noted.
+
+| Priority | Plan | Description |
+|----------|------|-------------|
+| 1 | `CONCAT-FILES-PLAN.md` | New `concat_files` skill to bundle source files with token estimation. Simple, isolated, low risk. |
+| 2 | `EDIT-PATCH-PLAN.md` | Split `edit_file` into separate tools, add batched edits, new `patch` skill for unified diffs. |
+| 3 | `CLIPBOARD-PLAN.md` | Scoped clipboard system (agent/project/system) for copy/paste across files and agents. |
+| 4 | `MCP-IMPLEMENTATION-GAPS.md` | MCP spec compliance fixes: config format compatibility, pagination, HTTP headers, session management. |
+| 5 | `SANDBOXED-PARENT-SEND-PLAN.md` | Allow sandboxed agents to `nexus_send` to their parent only. Extends permission system with target restrictions. |
+| 6 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration (issues, MRs, epics, CI/CD). Large feature. *Note: Uses session allowances pattern similar to #5; consider implementing #5 first to establish enforcer patterns.* |
+
+**Reference docs** (not plans):
+- `GITHUB-REFERENCE.md` - GitHub API/CLI reference for future GitHub integration
+- `GITLAB-REFERENCE.md` - GitLab API/CLI reference used by GITLAB-TOOLS-PLAN
+
+---
+
 ## Dogfooding: Use NEXUS Subagents
 
 **When working on this codebase, use NEXUS3 subagents for research and exploration tasks.** This is dogfooding - we use our own product.
@@ -402,6 +431,9 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | **Live Test** | **Automated tests are not sufficient. Always live test with real NEXUS3 agents before committing changes.** |
 | Document | Each phase updates this file and module READMEs. |
 | No Dead Code | Delete unused code. Run `ruff check --select F401`. |
+| **Plan First** | **Non-trivial features require a plan in `docs/`. See Feature Planning SOP below.** |
+| **Commit Often** | **Commit after each phase/logical unit. Don't wait for "everything done."** |
+| **Branch per Plan** | **One feature branch per plan. Merge only after checklist complete + user sign-off.** |
 
 ### Live Testing Requirement (MANDATORY)
 
@@ -418,6 +450,139 @@ This catches issues that unit/integration tests miss, such as:
 - Agent tools being incorrectly enabled/disabled
 - RPC message handling edge cases
 - Real-world serialization/deserialization issues
+
+### Version Control
+
+#### Commit Frequency
+
+Commit after each completed phase or logical unit. Don't wait for "everything done."
+
+- **After each checklist phase** (P1, P2, etc.) - phases are designed as atomic units
+- **Before switching files/modules** - if you've been working in `skill/` and need to touch `session/`, commit first
+- **When tests pass** - green tests = safe checkpoint
+- **Before risky changes** - about to refactor? commit the working state first
+- **Rule of thumb**: if you'd be upset losing the work, commit it
+
+Commit messages should reference the plan and checklist item when applicable:
+```
+feat(clipboard): implement ClipboardManager (CLIPBOARD-PLAN P1.4)
+```
+
+#### Branching
+
+- **One branch per plan** - `feature/<plan-name>` (e.g., `feature/clipboard`, `feature/sandboxed-parent-send`)
+- **Branch before starting implementation** - not during exploration/planning
+- **Keep branches focused** - don't mix unrelated changes
+
+#### Merging
+
+- **Merge when:** Plan checklist complete + tests pass + live testing done + user sign-off
+- **Don't merge:** Partial implementations, broken tests, untested changes
+- **Merge strategy:** Squash for small plans (clean history), regular merge for large plans (preserve bisectability)
+
+### Feature Planning SOP
+
+All non-trivial features should follow this planning process. Plans live in `docs/` as markdown files.
+
+**Reference examples:**
+- `docs/EXAMPLE-PLAN-SIMPLE.md` - Template for focused single-feature plans
+- `docs/EXAMPLE-PLAN-COMPLEX.md` - Comprehensive example for large multi-phase features
+
+#### Planning Process
+
+| Phase | Description |
+|-------|-------------|
+| 1. Intent | Discuss what the feature should accomplish, user-facing behavior |
+| 2. Explore | Research relevant code with subagents, understand existing patterns |
+| 3. Feasibility | Discuss technical approach, identify blockers or concerns |
+| 4. Scope | Define what's included, deferred, and explicitly excluded |
+| 5. General Plan | High-level architecture, design decisions with rationale |
+| 6. Validate | Subagent validates plan against actual codebase patterns |
+| 7. Detailed Plan | Concrete implementation with copy-paste code, exact file paths |
+| 8. Validate | Subagent confirms patterns, identifies discrepancies |
+| 9. Checklist | Implementation checklist with task IDs for parallel execution |
+
+#### Plan Document Structure
+
+```markdown
+# Plan: Feature Name
+
+## Overview
+Brief description, current state, goal.
+
+## Scope
+### Included in v1
+### Deferred to Future
+### Explicitly Excluded
+
+## Design Decisions
+| Question | Decision | Rationale |
+Record WHY choices were made, not just what.
+
+## Security Considerations (when relevant)
+Network access, permissions, file I/O implications.
+
+## Architecture
+Directory structure, base classes, patterns.
+
+## Implementation Details
+Concrete code, exact file paths, integration points.
+
+## Testing Strategy
+Unit tests, integration tests, live testing plan.
+
+## Open Questions
+Unresolved decisions that need input.
+
+## Codebase Validation Notes
+Results from subagent validation against actual code.
+
+## Implementation Checklist
+Phased checklist with task IDs (P1.1, P1.2, etc.)
+
+## Quick Reference
+File locations table, API endpoints, etc.
+```
+
+#### Implementation Checklist Format
+
+Checklists are designed for task agent parallelization:
+
+```markdown
+### Phase 1: Foundation (Required First)
+- [ ] **P1.1** Create directory structure
+- [ ] **P1.2** Implement core types
+- [ ] **P1.3** Implement base class (requires P1.2)
+
+### Phase 2: Features (After Phase 1)
+- [ ] **P2.1** Implement feature A (can parallel with P2.2)
+- [ ] **P2.2** Implement feature B (can parallel with P2.1)
+- [ ] **P2.3** Integration (requires P2.1, P2.2)
+```
+
+**Parallelization rules:**
+- Items in the same phase can run in parallel unless noted
+- Different phases are sequential (Phase 2 waits for Phase 1)
+- Note dependencies explicitly: `(requires P1.3)` or `(can parallel with P2.1)`
+- Avoid multiple agents editing the same file simultaneously
+
+#### Validation with Subagents
+
+Before finalizing plans, use Claude Code subagents to validate assumptions:
+
+```bash
+# Create a research agent
+.venv/bin/python -m nexus3 rpc create validator --preset trusted --port 9000
+
+# Send validation task
+.venv/bin/python -m nexus3 rpc send validator "Validate this plan against the codebase:
+1. Check if FileSkill exists in nexus3/skill/base.py
+2. Verify the factory pattern matches what the plan describes
+3. Confirm ToolResult is constructed with output=/error= kwargs
+Report any discrepancies." --port 9000
+```
+
+Add findings to the "Codebase Validation Notes" section with corrections applied.
 
 ---
 
