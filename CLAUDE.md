@@ -26,12 +26,13 @@ Plans are listed in recommended implementation order. Most are independent, but 
 
 | Priority | Plan | Description |
 |----------|------|-------------|
-| 1 | `CONCAT-FILES-PLAN.md` | New `concat_files` skill to bundle source files with token estimation. Simple, isolated, low risk. |
-| 2 | `EDIT-PATCH-PLAN.md` | Split `edit_file` into separate tools, add batched edits, new `patch` skill for unified diffs. |
-| 3 | `CLIPBOARD-PLAN.md` | Scoped clipboard system (agent/project/system) for copy/paste across files and agents. |
-| 4 | `MCP-IMPLEMENTATION-GAPS.md` | MCP spec compliance fixes: config format compatibility, pagination, HTTP headers, session management. |
-| 5 | `SANDBOXED-PARENT-SEND-PLAN.md` | Allow sandboxed agents to `nexus_send` to their parent only. Extends permission system with target restrictions. |
-| 6 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration (issues, MRs, epics, CI/CD). Large feature. *Note: Uses session allowances pattern similar to #5; consider implementing #5 first to establish enforcer patterns.* |
+| 1 | `YOLO-SAFETY-PLAN.md` | YOLO warning banner, remove legacy "worker" preset, block RPC send to YOLO agents. Small, security-focused. |
+| 2 | `CONCAT-FILES-PLAN.md` | New `concat_files` skill to bundle source files with token estimation. Simple, isolated, low risk. |
+| 3 | `EDIT-PATCH-PLAN.md` | Split `edit_file` into separate tools, add batched edits, new `patch` skill for unified diffs. |
+| 4 | `CLIPBOARD-PLAN.md` | Scoped clipboard system (agent/project/system) for copy/paste across files and agents. |
+| 5 | `MCP-IMPLEMENTATION-GAPS.md` | MCP spec compliance fixes: config format compatibility, pagination, HTTP headers, session management. |
+| 6 | `SANDBOXED-PARENT-SEND-PLAN.md` | Allow sandboxed agents to `nexus_send` to their parent only. Extends permission system with target restrictions. |
+| 7 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration (issues, MRs, epics, CI/CD). Large feature. *Note: Uses session allowances pattern similar to #6; consider implementing #6 first to establish enforcer patterns.* |
 
 **Reference docs** (not plans):
 - `GITHUB-REFERENCE.md` - GitHub API/CLI reference for future GitHub integration
