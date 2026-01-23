@@ -423,29 +423,35 @@ pool.set_repl_connected(current_agent_id, False)
 
 ---
 
-## Phase 8: Final Validation (Needs Re-validation)
+## Phase 8: Final Validation (Complete)
 
-Plan updated for nuanced REPL connection tracking. Key changes:
+### Line Numbers Verified
+| Component | File | Lines | Status |
+|-----------|------|-------|--------|
+| Agent dataclass | pool.py | 245-277 | ✓ Add field at 278 |
+| Dispatcher.__init__ | dispatcher.py | 36-50 | ✓ Add pool param |
+| TYPE_CHECKING block | dispatcher.py | 18-20 | ✓ Add AgentPool import |
+| Dispatcher creation | pool.py | 589-595 | ✓ Add pool=self |
+| REPL startup | repl.py | 464 | ✓ current_agent_id set |
+| REPL /agent switch | repl.py | 1244 | ✓ current_agent_id = new_id |
+| REPL session restore | repl.py | 1304 | ✓ current_agent_id = ... |
+| REPL new agent | repl.py | 1352 | ✓ current_agent_id = ... |
+| REPL exit | repl.py | 1228 | ✓ break for /quit |
 
-### New Components
-- `Agent.repl_connected: bool` field in pool.py
-- `AgentPool.set_repl_connected()` and `is_repl_connected()` helper methods
-- Pool reference passed to Dispatcher
-- REPL updates connection state on agent switch
-
-### Confirmed Working (from prior validation)
-- All line numbers for worker removal still accurate
-- YOLO warning banner location and pattern still correct
+### Confirmed Working
+- All line numbers accurate (no drift)
+- TYPE_CHECKING already configured in dispatcher.py
 - `InvalidParamsError` already imported in dispatcher.py
-- Rich console markup will render correctly
+- Whisper mode won't interfere (doesn't change current_agent_id)
+- No circular import issues
 
 ### Imports Needed
 - `repl.py`: Add `PermissionLevel` to existing import from `nexus3.core.permissions`
 - `dispatcher.py`: Add `from nexus3.core.permissions import PermissionLevel`
-- `dispatcher.py`: Add `TYPE_CHECKING` import for AgentPool type hint
+- `dispatcher.py`: Add `from nexus3.rpc.pool import AgentPool` in TYPE_CHECKING block
 
 ### Risk Assessment
-**LOW-MEDIUM** - Connection tracking is new, but isolated to pool/dispatcher/repl. No complex interactions.
+**LOW** - All changes isolated, no circular imports, existing patterns support implementation.
 
 ---
 
