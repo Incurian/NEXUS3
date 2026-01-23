@@ -2,7 +2,7 @@
 
 **A secure, multi-agent CLI framework for AI-powered software engineering.**
 
-NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrating multiple AI agents. Each agent runs in isolation with configurable permissions, enabling safe automation of development tasks through 26 built-in skills (file operations, git, shell execution, inter-agent communication).
+NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrating multiple AI agents. Each agent runs in isolation with configurable permissions, enabling safe automation of development tasks through 24 built-in skills (file operations, git, shell execution, inter-agent communication).
 
 ---
 
@@ -750,7 +750,7 @@ Available when running interactively.
 | `provider/` | LLM provider implementations, retry logic |
 | `context/` | Context management, token counting, compaction |
 | `session/` | Session coordinator, event system, persistence |
-| `skill/` | Skill registry, base classes, 26 built-in skills |
+| `skill/` | Skill registry, base classes, 24 built-in skills |
 | `display/` | Rich terminal UI, streaming display |
 | `cli/` | REPL, argument parsing, lobby |
 | `rpc/` | JSON-RPC server, agent pool, authentication |
@@ -984,7 +984,7 @@ Configuration is loaded from multiple layers (later overrides earlier):
 
 ## Built-in Skills
 
-NEXUS3 includes 26 built-in skills organized by category.
+NEXUS3 includes 24 built-in skills organized by category.
 
 ### File Operations (Read)
 
@@ -1045,7 +1045,6 @@ Git commands are filtered by permission level:
 
 | Skill | Description | Parameters |
 |-------|-------------|------------|
-| `echo` | Echo message (testing) | `message` |
 | `sleep` | Pause execution | `seconds`, `label` |
 
 ### Skill Availability by Permission Level
@@ -1121,13 +1120,14 @@ MCP servers only receive safe environment variables by default (PATH, HOME, USER
 
 ```json
 {
-  "servers": {
-    "github": {
+  "mcp_servers": [
+    {
+      "name": "github",
       "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
       "env_passthrough": ["GITHUB_TOKEN"],
       "env": {"EXTRA_VAR": "explicit-value"}
     }
-  }
+  ]
 }
 ```
 
@@ -1494,4 +1494,4 @@ MIT
 
 ---
 
-**Updated**: 2026-01-22
+**Updated**: 2026-01-23
