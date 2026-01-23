@@ -196,8 +196,8 @@ Handles disk persistence of sessions in `~/.nexus3/sessions/`.
 ```
 ~/.nexus3/
 ├── sessions/
-│   └── {name}.json      # Named sessions
-├── last-session.json    # For --resume
+│   └── {name}.json      # Named sessions (saved via /save)
+├── last-session.json    # Auto-saved on exit (for --resume)
 └── last-session-name    # Name of last session
 ```
 
@@ -206,6 +206,93 @@ Handles disk persistence of sessions in `~/.nexus3/sessions/`.
 - Session names are validated via `validate_agent_id()` to prevent path traversal
 - Files written with secure permissions (0o600) using `O_NOFOLLOW` to reject symlinks
 - Directories created with 0o700 permissions
+
+---
+
+## User-Facing Session Commands
+
+### CLI Startup Flags
+
+| Flag | Description |
+|------|-------------|
+| `nexus3` | Show lobby for session selection |
+| `nexus3 --fresh` | Start fresh temp session (skip lobby) |
+| `nexus3 --resume` | Resume last session from `last-session.json` |
+| `nexus3 --session NAME` | Load specific saved session |
+| `nexus3 --template PATH` | Custom system prompt (with --fresh) |
+
+### REPL Commands
+
+| Command | Description |
+|---------|-------------|
+| `/save [name]` | Save current session to disk |
+| `/clone <src> <dest>` | Clone agent or saved session |
+| `/rename <old> <new>` | Rename agent or saved session |
+| `/delete <name>` | Delete saved session from disk |
+
+### Lobby Mode
+
+When starting without flags, NEXUS3 shows an interactive lobby:
+
+```
+NEXUS3 REPL
+
+  1) Resume: my-project (2h ago, 45 messages)
+  2) Fresh session
+  3) Choose from saved...
+
+[1/2/3/q]:
+```
+
+The lobby uses `SessionManager.load_last_session()` for option 1 and `SessionManager.list_sessions()` for option 3.
+
+### Save Command Behavior
+
+The `/save` command (`nexus3/commands/core.py:cmd_save`):
+
+1. Rejects temp session names (`.1`, `.2`) - requires a real name
+2. Serializes current agent state:
+   - Messages (full conversation history)
+   - System prompt content and path
+   - Working directory
+   - Permission level and preset
+   - Disabled tools
+   - Model alias
+   - Token usage
+   - Creation timestamp
+3. Writes to `~/.nexus3/sessions/{name}.json`
+
+### Session Restoration
+
+When loading a saved session (`nexus3/rpc/pool.py:restore_from_saved`):
+
+1. Deserialize messages back to `Message` objects
+2. Resolve model alias via config (`config.resolve_model(saved.model_alias)`)
+3. Recreate permissions from preset + disabled_tools
+4. Set working directory from saved state
+5. Rebuild agent with context, skill registry, and provider
+6. Restore creation timestamp for accurate session age display
+
+### Temp vs Named Sessions
+
+| Type | Name Pattern | Can Save? | Auto-saved? |
+|------|--------------|-----------|-------------|
+| Temp | `.1`, `.2`, etc. | No (must provide name) | Yes (to last-session.json) |
+| Named | alphanumeric | Yes | Yes |
+
+### What Gets Persisted
+
+| Field | Persisted | Restored |
+|-------|-----------|----------|
+| Messages | ✓ | ✓ |
+| System prompt | ✓ | ✓ |
+| Working directory | ✓ | ✓ |
+| Permission preset | ✓ | ✓ |
+| Disabled tools | ✓ | ✓ |
+| Model alias | ✓ | ✓ |
+| Token usage | ✓ | For display only |
+| Created timestamp | ✓ | ✓ |
+| Session allowances | ✓ | ✓ |
 
 ---
 

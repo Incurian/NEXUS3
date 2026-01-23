@@ -46,9 +46,6 @@ Thumbs.db
 .claude/
 .claude-notes/
 
-# Internal docs
-docs/
-
 # Archive (plans, reviews, old scripts)
 .archive/
 reviews/
