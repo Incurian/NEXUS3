@@ -474,6 +474,11 @@ feat(clipboard): implement ClipboardManager (CLIPBOARD-PLAN P1.4)
 - **Branch before starting implementation** - not during exploration/planning
 - **Keep branches focused** - don't mix unrelated changes
 
+#### Pushing
+
+- **Feature branches:** Push after each commit - provides backup, enables CI, no downside
+- **Main/master:** Only via PR merge, never direct push
+
 #### Merging
 
 - **Merge when:** Plan checklist complete + tests pass + live testing done + user sign-off
