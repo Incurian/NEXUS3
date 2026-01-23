@@ -34,9 +34,11 @@ Make YOLO mode's danger more visible and close the RPC loophole.
 - Remove from valid preset lists AND legacy mappings
 - Update documentation
 
-### YOLO-Requires-REPL
-- Block RPC `send` to agents with YOLO permission level
-- Return clear error: "Cannot send to YOLO agent via RPC - YOLO requires interactive REPL"
+### YOLO-Requires-REPL (Nuanced)
+- Block RPC `send` to YOLO agents **only when REPL is not connected**
+- If REPL is actively connected (user can see what happens), allow RPC send
+- Return clear error when blocked: "Cannot send to YOLO agent - no REPL connected"
+- Requires tracking REPL connection state per agent
 
 ---
 
@@ -79,16 +81,31 @@ if agent:
 3. REPL shows "▶ INCOMING" notification but no YOLO warning
 4. Agent executes with full YOLO permissions even if user isn't watching
 
-**Block point**: Add check in `dispatcher.py:_handle_send()` before processing
+**Desired behavior**:
+- If YOLO agent AND no REPL connected → block with error
+- If YOLO agent AND REPL connected → allow (user can see it)
+- Non-YOLO agents → allow always (existing behavior)
 
-```python
-# In _handle_send(), after getting agent:
-if agent.services.get("permissions").effective_policy.level == PermissionLevel.YOLO:
-    raise JsonRpcError(
-        code=-32001,
-        message="Cannot send to YOLO agent via RPC - YOLO requires interactive REPL"
-    )
-```
+**Implementation approach** (explored):
+
+Use pool-based connection tracking with helper methods:
+
+1. Add `repl_connected: bool = False` field to `Agent` dataclass in `pool.py`
+2. Add helper methods to `AgentPool`:
+   - `set_repl_connected(agent_id: str, connected: bool) -> None`
+   - `is_repl_connected(agent_id: str) -> bool`
+3. Pass pool reference to `Dispatcher` on creation
+4. REPL calls `pool.set_repl_connected(old_id, False)` / `pool.set_repl_connected(new_id, True)` on agent switch
+5. Dispatcher checks `self._pool.is_repl_connected(self._agent_id)` before blocking YOLO send
+
+**"REPL connected" means**: Agent is current_agent_id in active REPL (Option A - most precise)
+
+**Agent switch locations in repl.py** (all need connection updates):
+- Line ~1244: Regular `/agent` switch
+- Line ~1304: Session restore
+- Line ~1352: New agent creation
+- REPL startup (initial agent)
+- REPL exit (clear all)
 
 ---
 
@@ -135,8 +152,6 @@ if agent.services.get("permissions").effective_policy.level == PermissionLevel.Y
 
 ### Architecture
 
-No new modules or classes needed. All changes are surgical edits to existing code.
-
 ```
 YOLO Warning Banner:
   repl.py main loop → check permission level → print warning
@@ -144,8 +159,10 @@ YOLO Warning Banner:
 Worker Removal:
   Delete "worker" string from 7 files (no logic changes)
 
-RPC-to-YOLO Block:
-  dispatcher._handle_send() → check permission level → raise JsonRpcError
+RPC-to-YOLO Block (nuanced):
+  pool.py: Add repl_connected field to Agent + helper methods
+  repl.py: Update connection state on agent switch
+  dispatcher.py: Check connection before blocking YOLO send
 ```
 
 ### Implementation Approach
@@ -154,7 +171,12 @@ RPC-to-YOLO Block:
 
 2. **Worker Removal**: Simple search-and-delete. No conditional logic needed since we're not maintaining backward compat.
 
-3. **RPC Block**: Add permission check at start of `_handle_send()`. Return JSON-RPC error code -32001 (custom app error) with clear message.
+3. **RPC Block** (nuanced):
+   - Add `repl_connected: bool` field to Agent dataclass
+   - Add pool helper methods: `set_repl_connected()`, `is_repl_connected()`
+   - Pass pool reference to Dispatcher
+   - REPL updates connection state on agent switch
+   - Dispatcher checks connection before blocking YOLO send
 
 ### Error Handling
 
@@ -171,6 +193,9 @@ RPC-to-YOLO Block:
 | Warning suppression | None | If it's annoying, switch to trusted mode |
 | Worker removal | Remove completely, no backward compat | Clean break, worker was never documented as supported |
 | RPC block scope | Block `send` only | Creation already blocked; other methods (status, cancel) are safe |
+| RPC block condition | Only when no REPL connected | If user is watching, allow RPC send to YOLO |
+| "REPL connected" meaning | Agent is current_agent_id | Most precise - user is actively watching that agent |
+| Connection tracking | Pool-based with helper methods | Centralized source of truth, type-safe, testable |
 
 ---
 
@@ -209,10 +234,18 @@ All locations confirmed with exact line numbers:
 - **Permissions access**: Via `self._session._services.get("permissions")`
 - **Insert after**: Line 140 (after content validation, before processing)
 - **Import needed**: `PermissionLevel` from `nexus3.core.permissions`
+- **Pool access**: Dispatcher needs pool reference (pass at init, already done for some cases)
+
+### Connection Tracking Validation
+
+- **Agent dataclass**: `pool.py:246-277` - add `repl_connected: bool = False`
+- **Pool helper methods**: Add to AgentPool class
+- **Dispatcher init**: `pool.py:590-595` - already passes some refs, add pool
+- **REPL switch points**: Lines ~1244, ~1304, ~1352 (all use same pattern)
 
 ### Corrections Applied
 
-None needed - original plan was accurate.
+- Changed from unconditional block to nuanced (check repl_connected)
 
 ---
 
@@ -237,9 +270,48 @@ from nexus3.core.permissions import PermissionLevel
                         console.print("[bold red]⚠️  YOLO MODE - All actions execute without confirmation[/]")
 ```
 
-### 2. RPC-to-YOLO Block
+### 2. RPC-to-YOLO Block (Nuanced)
+
+#### 2a. Add connection tracking to Agent
+
+**File**: `nexus3/rpc/pool.py`
+
+**Add field to Agent dataclass** (around line 277):
+```python
+    repl_connected: bool = False
+```
+
+**Add helper methods to AgentPool class**:
+```python
+    def set_repl_connected(self, agent_id: str, connected: bool) -> None:
+        """Set REPL connection state for an agent."""
+        agent = self._agents.get(agent_id)
+        if agent:
+            agent.repl_connected = connected
+
+    def is_repl_connected(self, agent_id: str) -> bool:
+        """Check if agent is connected to REPL."""
+        agent = self._agents.get(agent_id)
+        return agent.repl_connected if agent else False
+```
+
+#### 2b. Pass pool to Dispatcher
 
 **File**: `nexus3/rpc/dispatcher.py`
+
+**Update __init__** to accept pool:
+```python
+def __init__(
+    self,
+    session: Session,
+    context: ContextManager | None = None,
+    agent_id: str | None = None,
+    log_multiplexer: LogMultiplexer | None = None,
+    pool: "AgentPool | None" = None,  # NEW
+) -> None:
+    # ... existing code ...
+    self._pool = pool
+```
 
 **Add import** (with other imports):
 ```python
@@ -248,13 +320,53 @@ from nexus3.core.permissions import PermissionLevel
 
 **Insert after line 140** (after content validation in `_handle_send`):
 ```python
-        # Block RPC sends to YOLO agents - YOLO requires interactive REPL
+        # Block RPC sends to YOLO agents when no REPL connected
         if self._session._services:
             permissions = self._session._services.get("permissions")
             if permissions and permissions.effective_policy.level == PermissionLevel.YOLO:
-                raise InvalidParamsError(
-                    "Cannot send to YOLO agent via RPC - YOLO requires interactive REPL"
-                )
+                if not (self._pool and self._pool.is_repl_connected(self._agent_id)):
+                    raise InvalidParamsError(
+                        "Cannot send to YOLO agent - no REPL connected"
+                    )
+```
+
+#### 2c. Update pool to pass itself to Dispatcher
+
+**File**: `nexus3/rpc/pool.py` (around line 590)
+
+Update dispatcher creation:
+```python
+dispatcher = Dispatcher(
+    session,
+    context=context,
+    agent_id=effective_id,
+    log_multiplexer=self._log_multiplexer,
+    pool=self,  # NEW
+)
+```
+
+#### 2d. REPL updates connection state
+
+**File**: `nexus3/cli/repl.py`
+
+**On agent switch** (lines ~1244, ~1304, ~1352):
+```python
+# Before switching away from old agent
+pool.set_repl_connected(current_agent_id, False)
+
+# After switching to new agent
+current_agent_id = new_id
+pool.set_repl_connected(new_id, True)
+```
+
+**On REPL startup** (after initial agent creation):
+```python
+pool.set_repl_connected(current_agent_id, True)
+```
+
+**On REPL exit** (cleanup):
+```python
+pool.set_repl_connected(current_agent_id, False)
 ```
 
 ### 3. Worker Preset Removal
@@ -298,8 +410,9 @@ from nexus3.core.permissions import PermissionLevel
 
 | File | Changes |
 |------|---------|
-| `nexus3/cli/repl.py` | Add YOLO warning banner in main loop |
-| `nexus3/rpc/dispatcher.py` | Block RPC send to YOLO agents |
+| `nexus3/rpc/pool.py` | Add `repl_connected` field, helper methods, pass pool to Dispatcher |
+| `nexus3/rpc/dispatcher.py` | Accept pool param, check connection before blocking YOLO |
+| `nexus3/cli/repl.py` | YOLO warning banner + connection state updates on switch |
 | `nexus3/rpc/global_dispatcher.py` | Remove "worker" from valid_presets |
 | `nexus3/cli/arg_parser.py` | Remove "worker" from CLI choices |
 | `nexus3/commands/core.py` | Remove "worker" from valid_permissions |
@@ -310,23 +423,29 @@ from nexus3.core.permissions import PermissionLevel
 
 ---
 
-## Phase 8: Final Validation (Complete)
+## Phase 8: Final Validation (Needs Re-validation)
 
-Subagent verified all implementation details:
+Plan updated for nuanced REPL connection tracking. Key changes:
 
-### Confirmed Working
-- All line numbers accurate (no drift since exploration)
-- All variables in scope at insertion points (`pool`, `current_agent_id`, `console`)
+### New Components
+- `Agent.repl_connected: bool` field in pool.py
+- `AgentPool.set_repl_connected()` and `is_repl_connected()` helper methods
+- Pool reference passed to Dispatcher
+- REPL updates connection state on agent switch
+
+### Confirmed Working (from prior validation)
+- All line numbers for worker removal still accurate
+- YOLO warning banner location and pattern still correct
 - `InvalidParamsError` already imported in dispatcher.py
-- `self._session._services` pattern is correct for permissions access
 - Rich console markup will render correctly
 
-### Imports Needed (as noted in Phase 7)
+### Imports Needed
 - `repl.py`: Add `PermissionLevel` to existing import from `nexus3.core.permissions`
-- `dispatcher.py`: Add new import `from nexus3.core.permissions import PermissionLevel`
+- `dispatcher.py`: Add `from nexus3.core.permissions import PermissionLevel`
+- `dispatcher.py`: Add `TYPE_CHECKING` import for AgentPool type hint
 
 ### Risk Assessment
-**LOW** - All changes isolated, no circular imports, no dependency changes.
+**LOW-MEDIUM** - Connection tracking is new, but isolated to pool/dispatcher/repl. No complex interactions.
 
 ---
 
@@ -336,26 +455,41 @@ Subagent verified all implementation details:
 - [ ] **P1.1** Add `PermissionLevel` import to `repl.py`
 - [ ] **P1.2** Add YOLO warning print after empty input check in main loop
 
-### Phase 2: RPC-to-YOLO Block
-- [ ] **P2.1** Add `PermissionLevel` import to `dispatcher.py`
-- [ ] **P2.2** Add YOLO check in `_handle_send()` that raises error
+### Phase 2: Connection Tracking Infrastructure (required for Phase 3)
+- [ ] **P2.1** Add `repl_connected: bool = False` field to Agent dataclass in `pool.py`
+- [ ] **P2.2** Add `set_repl_connected()` helper method to AgentPool
+- [ ] **P2.3** Add `is_repl_connected()` helper method to AgentPool
+- [ ] **P2.4** Update Dispatcher.__init__ to accept pool parameter
+- [ ] **P2.5** Update Dispatcher creation in pool.py to pass `pool=self`
 
-### Phase 3: Worker Preset Removal (can parallel)
-- [ ] **P3.1** Remove worker mapping from `nexus3/core/permissions.py:312-314`
-- [ ] **P3.2** Remove worker mapping from `nexus3/core/presets.py:176-178`
-- [ ] **P3.3** Remove worker from `nexus3/rpc/global_dispatcher.py` (4 locations)
-- [ ] **P3.4** Remove worker flag from `nexus3/cli/repl.py:1072-1073`
-- [ ] **P3.5** Remove worker from `nexus3/cli/arg_parser.py`
-- [ ] **P3.6** Remove worker from `nexus3/commands/core.py`
+### Phase 3: RPC-to-YOLO Block (requires Phase 2)
+- [ ] **P3.1** Add `PermissionLevel` import to `dispatcher.py`
+- [ ] **P3.2** Add YOLO+connection check in `_handle_send()` that raises error when no REPL
 
-### Phase 4: Documentation
-- [ ] **P4.1** Remove worker from `CLAUDE.md` presets documentation
+### Phase 4: REPL Connection Updates
+- [ ] **P4.1** Set connection on REPL startup (initial agent)
+- [ ] **P4.2** Update connection on `/agent` switch (~line 1244)
+- [ ] **P4.3** Update connection on session restore (~line 1304)
+- [ ] **P4.4** Update connection on new agent creation (~line 1352)
+- [ ] **P4.5** Clear connection on REPL exit
 
-### Phase 5: Testing
-- [ ] **P5.1** Live test: Start REPL in YOLO mode, verify warning appears every turn
-- [ ] **P5.2** Live test: Create YOLO agent in REPL, try RPC send, verify error
-- [ ] **P5.3** Live test: Try to create agent with `--preset worker`, verify error
-- [ ] **P5.4** Run existing test suite to check for regressions
+### Phase 5: Worker Preset Removal (can parallel with P1-P4)
+- [ ] **P5.1** Remove worker mapping from `nexus3/core/permissions.py:312-314`
+- [ ] **P5.2** Remove worker mapping from `nexus3/core/presets.py:176-178`
+- [ ] **P5.3** Remove worker from `nexus3/rpc/global_dispatcher.py` (4 locations)
+- [ ] **P5.4** Remove worker flag from `nexus3/cli/repl.py:1072-1073`
+- [ ] **P5.5** Remove worker from `nexus3/cli/arg_parser.py`
+- [ ] **P5.6** Remove worker from `nexus3/commands/core.py`
+
+### Phase 6: Documentation
+- [ ] **P6.1** Remove worker from `CLAUDE.md` presets documentation
+
+### Phase 7: Testing
+- [ ] **P7.1** Live test: Start REPL in YOLO mode, verify warning appears every turn
+- [ ] **P7.2** Live test: Create YOLO agent in REPL, RPC send should SUCCEED (REPL connected)
+- [ ] **P7.3** Live test: Switch to different agent, RPC send to YOLO should FAIL (no REPL)
+- [ ] **P7.4** Live test: Try to create agent with `--preset worker`, verify error
+- [ ] **P7.5** Run existing test suite to check for regressions
 
 ---
 
@@ -364,7 +498,10 @@ Subagent verified all implementation details:
 | Item | File | Line |
 |------|------|------|
 | YOLO warning insert | `nexus3/cli/repl.py` | After 1217 |
+| Agent dataclass | `nexus3/rpc/pool.py` | 246-277 |
+| Dispatcher creation | `nexus3/rpc/pool.py` | 590-595 |
 | RPC block insert | `nexus3/rpc/dispatcher.py` | After 140 |
+| REPL agent switch | `nexus3/cli/repl.py` | ~1244, ~1304, ~1352 |
 | Worker in permissions | `nexus3/core/permissions.py` | 312-314 |
 | Worker in presets | `nexus3/core/presets.py` | 176-178 |
 | Worker in global_dispatcher | `nexus3/rpc/global_dispatcher.py` | 126, 180, 291, 293, 322 |
