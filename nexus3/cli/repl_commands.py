@@ -20,7 +20,6 @@ Commands:
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -160,7 +159,408 @@ Keyboard Shortcuts:
   ESC                 Cancel in-progress request
   Ctrl+C              Interrupt current input
   Ctrl+D              Exit REPL
+
+Detailed help: /help <command> or /<command> --help
 """.strip()
+
+
+# Per-command detailed help text
+# Both /help <cmd> and /<cmd> --help read from this dict
+COMMAND_HELP: dict[str, str] = {
+    "agent": """/agent [name] [--yolo|-y] [--trusted|-t] [--sandboxed|-s] [--model|-m <alias>]
+
+Show current agent status, switch to another agent, or create and switch to a new agent.
+
+Arguments:
+  name        Optional. Agent name to switch to or create.
+
+Flags:
+  --yolo, -y       Create with YOLO permission level (no confirmations)
+  --trusted, -t    Create with TRUSTED permission level (confirms destructive)
+  --sandboxed, -s  Create with SANDBOXED permission level (restricted to CWD)
+  --model, -m      Specify model alias or ID for new agent
+
+Behavior:
+  /agent                Show current agent's detailed status
+  /agent foo            Switch to "foo" (prompts to create if doesn't exist)
+  /agent foo --trusted  Create with preset and switch
+
+Examples:
+  /agent                          # Show current agent status
+  /agent analyzer                 # Switch to "analyzer"
+  /agent worker --sandboxed       # Create sandboxed agent and switch
+  /agent researcher -t -m gpt     # Create trusted agent with GPT model""",
+
+    "whisper": """/whisper <agent>
+
+Enter whisper mode - redirect all subsequent input to the target agent until /over.
+
+Arguments:
+  agent       Required. Agent ID to whisper to. Must exist in the pool.
+
+Examples:
+  /whisper worker-1               # Start whispering to worker-1
+
+After entering whisper mode:
+  worker-1> analyze this code     # Goes to worker-1
+  worker-1> /over                 # Exit whisper mode""",
+
+    "over": """/over
+
+Exit whisper mode and return to the original agent.
+
+Arguments: None
+
+Examples:
+  worker-1> /over                 # Exit whisper mode, back to original agent""",
+
+    "list": """/list
+
+List all active agents in the pool with summary information.
+
+Arguments: None
+
+Output includes:
+  - Agent ID and type (temp vs named)
+  - Model being used
+  - Permission level
+  - Message count
+  - Working directory
+
+Examples:
+  /list                           # Show all active agents""",
+
+    "create": """/create <name> [--yolo|-y] [--trusted|-t] [--sandboxed|-s] [--model|-m <alias>]
+
+Create a new agent without switching to it.
+
+Arguments:
+  name        Required. Unique agent ID. Cannot already exist.
+
+Flags:
+  --yolo, -y       YOLO permission level
+  --trusted, -t    TRUSTED permission level (default)
+  --sandboxed, -s  SANDBOXED permission level
+  --model, -m      Model alias or ID
+
+Examples:
+  /create worker-1                # Create with default (trusted) preset
+  /create analyzer --sandboxed    # Create sandboxed agent
+  /create helper --model haiku    # Create with specific model""",
+
+    "destroy": """/destroy <name>
+
+Remove an agent from the pool. Log files are preserved on disk.
+
+Arguments:
+  name        Required. Agent ID to destroy.
+
+Examples:
+  /destroy worker-1               # Remove worker-1 from pool
+
+Notes:
+  - Cannot destroy your current agent (switch to another first)
+  - Log files in .nexus3/logs/<agent_id>/ are preserved
+  - Saved sessions are NOT affected""",
+
+    "send": """/send <agent> <message>
+
+Send a one-shot message to another agent and display the response.
+
+Arguments:
+  agent       Required. Target agent ID.
+  message     Required. Message content to send.
+
+Examples:
+  /send worker-1 summarize the file you just read
+  /send analyzer what patterns did you find?
+
+Notes:
+  - Synchronous - waits for the full response
+  - For ongoing conversations, use /whisper or /agent""",
+
+    "status": """/status [agent] [--tools] [--tokens] [-a|--all]
+
+Get comprehensive status information about an agent.
+
+Arguments:
+  agent       Optional. Agent ID to check. Defaults to current agent.
+
+Flags:
+  --tools     Include full list of available tools
+  --tokens    Include detailed token breakdown
+  -a, --all   Include both tools and tokens
+
+Examples:
+  /status                         # Current agent, basic info
+  /status worker-1                # Check another agent
+  /status --tokens                # Current agent with token breakdown
+  /status -a                      # Everything""",
+
+    "cancel": """/cancel [agent]
+
+Cancel an in-progress request. Also works via ESC key during streaming.
+
+Arguments:
+  agent       Optional. Agent ID. Defaults to current agent.
+
+Examples:
+  /cancel                         # Cancel current agent's request
+  /cancel worker-1                # Cancel another agent's request""",
+
+    "save": """/save [name]
+
+Save the current agent's session to disk for later restoration.
+
+Arguments:
+  name        Optional. Name to save as. Defaults to current agent ID.
+
+What gets saved:
+  - Full message history
+  - System prompt content and path
+  - Working directory
+  - Permission preset and disabled tools
+  - Model alias
+  - Token usage snapshot
+
+Examples:
+  /save                           # Save with current agent name
+  /save my-project                # Save as "my-project"
+
+Notes:
+  - Cannot save temp names (.1, .2) - must provide a real name
+  - Saves to ~/.nexus3/sessions/{name}.json
+  - Session is auto-saved on exit for --resume""",
+
+    "clone": """/clone <src> <dest>
+
+Clone an active agent or saved session to a new name.
+
+Arguments:
+  src         Required. Source agent ID or saved session name.
+  dest        Required. Destination name. Must not already exist.
+
+Examples:
+  /clone main backup              # Clone active agent "main" to "backup"
+  /clone my-project experiment    # Clone saved session""",
+
+    "rename": """/rename <old> <new>
+
+Rename an active agent or saved session.
+
+Arguments:
+  old         Required. Current name.
+  new         Required. New name. Must not already exist.
+
+Examples:
+  /rename .1 my-project           # Give a temp session a real name
+  /rename old-name new-name       # Rename a saved session""",
+
+    "delete": """/delete <name>
+
+Delete a saved session from disk. Does NOT affect active agents.
+
+Arguments:
+  name        Required. Saved session name to delete.
+
+Examples:
+  /delete old-project             # Remove saved session
+
+Notes:
+  - Only deletes from ~/.nexus3/sessions/, not active agents
+  - Use /destroy to remove active agents
+  - No confirmation prompt - deletion is immediate""",
+
+    "cwd": """/cwd [path]
+
+Show or change the working directory for the current agent.
+
+Arguments:
+  path        Optional. New working directory. If omitted, shows current.
+
+Examples:
+  /cwd                            # Show current working directory
+  /cwd /home/user/project         # Change to absolute path
+  /cwd ~/repos/myapp              # Tilde expansion supported
+  /cwd ../other-project           # Relative paths work too
+
+Notes:
+  - Each agent has its own CWD (not shared)
+  - Sandboxed agents can only change within allowed paths""",
+
+    "model": """/model [name]
+
+Show current model or switch to a different model.
+
+Arguments:
+  name        Optional. Model alias or full ID. If omitted, shows current.
+
+Examples:
+  /model                          # Show current model info
+  /model haiku                    # Switch to haiku (by alias)
+  /model gpt                      # Switch to GPT (by alias)
+
+Notes:
+  - Model aliases are defined in config.json
+  - If context exceeds new model's limit, /compact first
+  - Model choice is persisted when you /save""",
+
+    "permissions": """/permissions [preset] [--disable <tool>] [--enable <tool>] [--list-tools]
+
+Show or modify permission level for the current agent.
+
+Arguments:
+  preset      Optional. Change to this preset (yolo/trusted/sandboxed).
+
+Flags:
+  --disable <tool>   Disable a specific tool
+  --enable <tool>    Re-enable a previously disabled tool
+  --list-tools       Show all tools with enabled/disabled status
+
+Presets:
+  yolo        Full access, no confirmations (REPL-only)
+  trusted     Confirmations for destructive actions
+  sandboxed   Restricted to CWD, no network, no agent management
+
+Examples:
+  /permissions                    # Show current permissions
+  /permissions trusted            # Switch to trusted preset
+  /permissions --disable shell_UNSAFE
+  /permissions --list-tools""",
+
+    "prompt": """/prompt [file]
+
+Show or set the system prompt for the current agent.
+
+Arguments:
+  file        Optional. Path to prompt file. If omitted, shows preview.
+
+Examples:
+  /prompt                         # Show current system prompt (preview)
+  /prompt ~/prompts/coding.md     # Load prompt from file
+  /prompt ./NEXUS.md              # Load project-specific prompt""",
+
+    "compact": """/compact
+
+Force context compaction, summarizing older messages to reclaim token space.
+
+Arguments: None
+
+Examples:
+  /compact                        # Force compaction now
+
+Output:
+  Compacted: 85,000 -> 25,000 tokens
+
+Notes:
+  - Uses a cheaper/faster model for summarization
+  - Preserves recent messages verbatim
+  - Automatic compaction triggers at 90% capacity
+  - System prompt reloads during compaction (picks up NEXUS.md changes)""",
+
+    "mcp": """/mcp
+/mcp connect <name> [--allow-all|--per-tool] [--shared|--private]
+/mcp disconnect <name>
+/mcp tools [server]
+
+Manage Model Context Protocol (MCP) server connections for external tools.
+
+Subcommands:
+  /mcp                  List configured and connected servers
+  /mcp connect <name>   Connect to a configured MCP server
+  /mcp disconnect <name> Disconnect from server
+  /mcp tools [server]   List available MCP tools
+
+Connect flags:
+  --allow-all   Skip consent prompt, allow all tools
+  --per-tool    Skip consent prompt, require per-tool confirmation
+  --shared      Skip sharing prompt, share with all agents
+  --private     Skip sharing prompt, keep private to this agent
+
+Examples:
+  /mcp                                    # List servers
+  /mcp connect filesystem                 # Interactive prompts
+  /mcp connect github --allow-all --shared
+  /mcp disconnect filesystem
+  /mcp tools                              # List all MCP tools""",
+
+    "init": """/init [--force|-f] [--global|-g]
+
+Initialize NEXUS3 configuration directory with templates.
+
+Flags:
+  --force, -f   Overwrite existing configuration files
+  --global, -g  Initialize ~/.nexus3/ instead of local ./.nexus3/
+
+Examples:
+  /init                           # Create ./.nexus3/ with templates
+  /init --force                   # Overwrite existing local config
+  /init --global                  # Initialize ~/.nexus3/
+
+Created files (local):
+  ./.nexus3/
+  ├── NEXUS.md       # Project-specific system prompt
+  ├── config.json    # Project configuration
+  └── mcp.json       # Project MCP servers""",
+
+    "help": """/help [command]
+
+Display help information.
+
+Arguments:
+  command     Optional. Specific command to get help for.
+
+Examples:
+  /help                           # Show all commands overview
+  /help save                      # Detailed help for /save
+  /save --help                    # Same as /help save""",
+
+    "clear": """/clear
+
+Clear the terminal display. Conversation context is preserved.
+
+Arguments: None
+
+Examples:
+  /clear                          # Clear screen""",
+
+    "quit": """/quit
+/exit
+/q
+
+Exit the REPL. All three forms are equivalent.
+
+Arguments: None
+
+Notes:
+  - Current session is auto-saved to ~/.nexus3/last-session.json
+  - Active agents are destroyed (but saved sessions persist)
+  - Ctrl+D also exits""",
+}
+
+# Aliases map to canonical command names
+COMMAND_ALIASES: dict[str, str] = {
+    "exit": "quit",
+    "q": "quit",
+}
+
+
+def get_command_help(cmd_name: str) -> str | None:
+    """Get detailed help text for a command.
+
+    Args:
+        cmd_name: Command name (with or without leading /).
+
+    Returns:
+        Help text for the command, or None if command unknown.
+    """
+    # Strip leading slash if present
+    name = cmd_name.lstrip("/").lower()
+
+    # Resolve aliases
+    canonical = COMMAND_ALIASES.get(name, name)
+
+    return COMMAND_HELP.get(canonical)
 
 
 async def cmd_agent(
@@ -802,15 +1202,29 @@ async def cmd_prompt(
         return CommandOutput.error(f"Error reading file: {e}")
 
 
-async def cmd_help(ctx: CommandContext) -> CommandOutput:
+async def cmd_help(ctx: CommandContext, args: str | None = None) -> CommandOutput:
     """Display help text for REPL commands.
+
+    If a command name is provided, shows detailed help for that command.
+    Otherwise shows the main help overview.
 
     Args:
         ctx: Command context (unused but consistent with other commands).
+        args: Optional command name to get detailed help for.
 
     Returns:
         CommandOutput with help text.
     """
+    if args and args.strip():
+        # Get help for specific command
+        cmd_name = args.strip().lstrip("/")
+        help_text = get_command_help(cmd_name)
+        if help_text:
+            return CommandOutput.success(message=help_text)
+        return CommandOutput.error(
+            f"Unknown command: /{cmd_name}\n"
+            f"Use /help for available commands."
+        )
     return CommandOutput.success(message=HELP_TEXT)
 
 
