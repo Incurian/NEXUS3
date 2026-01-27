@@ -31,12 +31,6 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 **Remaining:**
 - P2.1: Registry robustness (stale connection detection, graceful tool listing failure)
 
-**Known Issue (from validation):**
-- `nexus3/skill/builtin/bash.py` and `run_python.py` use `start_new_session=True` unconditionally
-- This only works on Unix; Windows needs `CREATE_NEW_PROCESS_GROUP` flag
-- Impact: Subprocess timeout termination won't kill child processes on Windows
-- Fix: Add platform check like we did in `nexus3/mcp/transport.py`
-
 **Test count:** 2494 passed (756 security, 118 MCP unit tests)
 
 ### Pending Live Test: Command Help System
