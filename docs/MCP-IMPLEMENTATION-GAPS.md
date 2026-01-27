@@ -504,6 +504,547 @@ class HTTPTransport(MCPTransport):
 
 ---
 
+## Priority 1.9: Improved Error Messages
+
+**Status:** MCP errors are currently terse and lack context, making troubleshooting difficult.
+
+### The Problem
+
+Current error messages don't tell users:
+1. **Which config file** the error came from (global, ancestor, local?)
+2. **What format was expected** vs what was provided
+3. **Common causes** of the specific error
+4. **How to fix it** with actionable suggestions
+
+**Current error examples (unhelpful):**
+
+```
+MCPConfigError: Invalid MCP server config in /home/user/.nexus3/mcp.json: 1 validation error for MCPServerConfig
+command
+  Input should be a valid list [type=list_type, input_value='npx', input_type=str]
+
+MCPTransportError: MCP server command not found: npx
+
+MCPConfigError: MCPServerConfig: Must specify either 'command' or 'url'
+```
+
+### Improved Error Messages
+
+#### 1.9.1 Config Validation Errors
+
+**Current:**
+```
+Invalid MCP server config in /home/user/.nexus3/mcp.json: 1 validation error...
+```
+
+**Improved:**
+```
+MCP Configuration Error
+━━━━━━━━━━━━━━━━━━━━━━━
+
+Server: "github"
+Source: ~/.nexus3/mcp.json (global config)
+
+Problem: 'command' must be a list of strings, not a string
+  You provided: "npx"
+  Expected:     ["npx", "-y", "@modelcontextprotocol/server-github"]
+
+Likely cause: You may be using Claude Desktop format (command + args separate).
+NEXUS3 currently requires the command as a single array.
+
+Fix: Change your mcp.json from:
+  {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"]
+  }
+To:
+  {
+    "command": ["npx", "-y", "@modelcontextprotocol/server-github"]
+  }
+
+Note: Support for Claude Desktop format is planned. See:
+https://github.com/your-repo/nexus3/docs/MCP-IMPLEMENTATION-GAPS.md#priority-0
+```
+
+#### 1.9.2 Command Not Found Errors
+
+**Current:**
+```
+MCPTransportError: MCP server command not found: npx
+```
+
+**Improved:**
+```
+MCP Server Launch Failed
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+Server: "filesystem"
+Source: ./.nexus3/mcp.json (project config)
+
+Problem: Command not found: npx
+
+Likely causes:
+  1. npx is not installed (comes with Node.js)
+  2. npx is not in PATH for the MCP subprocess
+
+Troubleshooting:
+  • Check if npx exists: which npx
+  • If not installed: Install Node.js from https://nodejs.org
+  • If installed but not found: Add to env_passthrough in mcp.json:
+    {
+      "name": "filesystem",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem"],
+      "env_passthrough": ["PATH", "NODE_PATH"]
+    }
+```
+
+#### 1.9.3 Server Startup Failures
+
+**Current:**
+```
+MCPTransportError: Failed to start MCP server: [Errno 13] Permission denied
+```
+
+**Improved:**
+```
+MCP Server Launch Failed
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+Server: "custom-server"
+Source: ~/.nexus3/mcp.json (global config)
+Command: ["/home/user/scripts/my-server.py"]
+
+Problem: Permission denied when executing command
+
+Likely causes:
+  1. Script is not executable
+  2. Script path contains spaces (needs quoting in shell)
+
+Fix:
+  • Make executable: chmod +x /home/user/scripts/my-server.py
+  • Or run via interpreter: ["python", "/home/user/scripts/my-server.py"]
+```
+
+#### 1.9.4 Server Crash / Exit Errors
+
+**Current:**
+```
+MCPTransportError: MCP server closed (exit code: 1)
+```
+
+**Improved:**
+```
+MCP Server Crashed
+━━━━━━━━━━━━━━━━━━
+
+Server: "postgres"
+Source: ./.nexus3/mcp.json (project config)
+Command: ["npx", "-y", "@modelcontextprotocol/server-postgres"]
+
+Problem: Server exited with code 1
+
+Server stderr (last 10 lines):
+  Error: connect ECONNREFUSED 127.0.0.1:5432
+  at TCPConnectWrap.afterConnect [as oncomplete]
+
+Likely cause: Database connection failed
+
+Troubleshooting:
+  • Check if PostgreSQL is running: pg_isready
+  • Verify DATABASE_URL environment variable is set
+  • Add to env_passthrough: ["DATABASE_URL"]
+  • Or set explicitly in env: {"DATABASE_URL": "postgresql://..."}
+```
+
+#### 1.9.5 Missing Transport Configuration
+
+**Current:**
+```
+MCPConfigError: Server 'test' must have either 'command' or 'url'
+```
+
+**Improved:**
+```
+MCP Configuration Error
+━━━━━━━━━━━━━━━━━━━━━━━
+
+Server: "test"
+Source: ~/.nexus3/mcp.json (global config)
+
+Problem: Server has no transport configured
+
+Every MCP server needs exactly one of:
+  • command: Launch server as subprocess (stdio transport)
+  • url: Connect to running server (HTTP transport)
+
+Example stdio server:
+  {
+    "name": "test",
+    "command": ["python", "-m", "nexus3.mcp.test_server"]
+  }
+
+Example HTTP server:
+  {
+    "name": "remote",
+    "url": "http://localhost:3000/mcp"
+  }
+```
+
+#### 1.9.6 Invalid JSON Errors
+
+**Current:**
+```
+ContextLoadError: Error loading /home/user/.nexus3/mcp.json: ...JSONDecodeError...
+```
+
+**Improved:**
+```
+MCP Configuration Error
+━━━━━━━━━━━━━━━━━━━━━━━
+
+File: ~/.nexus3/mcp.json (global config)
+
+Problem: Invalid JSON syntax at line 5, column 12
+
+  4 │   "servers": [
+  5 │     { "name": "test" "command": ["echo"] }
+    │                     ^ Expected ',' or '}'
+  6 │   ]
+
+Common JSON mistakes:
+  • Missing comma between properties
+  • Trailing comma after last item
+  • Single quotes instead of double quotes
+  • Unquoted property names
+
+Tip: Validate your JSON at https://jsonlint.com
+```
+
+#### 1.9.7 Protocol/Handshake Errors
+
+**Current:**
+```
+MCPError: MCP connection timed out after 30s
+```
+
+**Improved:**
+```
+MCP Connection Failed
+━━━━━━━━━━━━━━━━━━━━━
+
+Server: "slow-server"
+Source: ./.nexus3/mcp.json (project config)
+Command: ["node", "server.js"]
+
+Problem: Server did not complete MCP handshake within 30 seconds
+
+Possible causes:
+  1. Server is slow to start (loading large models, connecting to DBs)
+  2. Server doesn't implement MCP protocol correctly
+  3. Server is waiting for input that will never come
+
+Troubleshooting:
+  • Test server manually: node server.js
+    Then type: {"jsonrpc":"2.0","method":"initialize","id":1,"params":{...}}
+  • Check server logs for startup errors
+  • Increase timeout in config.json:
+    {"mcp": {"connection_timeout": 60}}
+```
+
+### Implementation
+
+#### Error Context Dataclass
+
+```python
+# nexus3/mcp/errors.py (new file)
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+@dataclass
+class MCPErrorContext:
+    """Rich context for MCP error messages."""
+    server_name: str | None = None
+    source_path: Path | None = None
+    source_layer: str | None = None  # "global", "local", "ancestor:project-name"
+    command: list[str] | None = None
+    url: str | None = None
+    raw_config: dict[str, Any] | None = None
+    stderr_output: str | None = None
+
+    def format_source(self) -> str:
+        """Format source path with layer description."""
+        if not self.source_path:
+            return "unknown source"
+
+        layer_desc = {
+            "global": "global config",
+            "local": "project config",
+        }
+        desc = layer_desc.get(self.source_layer or "", self.source_layer or "")
+
+        # Shorten home directory
+        path_str = str(self.source_path)
+        home = str(Path.home())
+        if path_str.startswith(home):
+            path_str = "~" + path_str[len(home):]
+
+        return f"{path_str} ({desc})" if desc else path_str
+```
+
+#### Error Formatter
+
+```python
+# nexus3/mcp/error_formatter.py (new file)
+from nexus3.mcp.errors import MCPErrorContext
+
+def format_config_validation_error(
+    ctx: MCPErrorContext,
+    validation_error: Exception,
+) -> str:
+    """Format a Pydantic validation error with context and suggestions."""
+    lines = [
+        "MCP Configuration Error",
+        "━" * 24,
+        "",
+    ]
+
+    if ctx.server_name:
+        lines.append(f'Server: "{ctx.server_name}"')
+    lines.append(f"Source: {ctx.format_source()}")
+    lines.append("")
+
+    # Parse Pydantic error for field-specific messages
+    # ... detect command format issues, suggest Claude Desktop format, etc.
+
+    return "\n".join(lines)
+
+
+def format_command_not_found(ctx: MCPErrorContext, command: str) -> str:
+    """Format command-not-found error with installation hints."""
+    # ... suggest npm/pip install, PATH issues, etc.
+
+
+def format_server_crash(ctx: MCPErrorContext, exit_code: int) -> str:
+    """Format server crash error with stderr context."""
+    # ... include last N lines of stderr, common causes
+```
+
+#### Integration Points
+
+1. **`ContextLoader._merge_mcp_servers()`** - Catch validation errors, add source path context
+2. **`MCPServerRegistry.connect()`** - Capture stderr, track source config
+3. **`StdioTransport.connect()`** - Capture command-not-found with context
+4. **`StdioTransport.receive()`** - Include stderr when server crashes
+5. **`MCPClient.connect()`** - Timeout errors with handshake context
+
+### Files to Modify
+
+| File | Changes |
+|------|---------|
+| `nexus3/mcp/errors.py` | New file: MCPErrorContext dataclass |
+| `nexus3/mcp/error_formatter.py` | New file: Error formatting functions |
+| `nexus3/context/loader.py` | Pass source path to validation errors |
+| `nexus3/mcp/registry.py` | Track config origin, capture stderr |
+| `nexus3/mcp/transport.py` | Buffer stderr, include in crash errors |
+| `nexus3/mcp/client.py` | Add context to timeout/protocol errors |
+| `nexus3/core/errors.py` | Add `context` field to MCPConfigError |
+
+### Effort
+
+- **Estimated:** 3-4 hours
+- **Risk:** Low (improves error messages without changing behavior)
+- **Priority:** High (significantly improves user experience)
+
+---
+
+## Priority 2.0: Windows Compatibility
+
+**Status:** MCP stdio transport has several issues that would affect Windows users.
+
+### The Problems
+
+#### 2.0.1 Missing Windows Environment Variables
+
+**Current `SAFE_ENV_KEYS`:**
+```python
+SAFE_ENV_KEYS = frozenset({
+    "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL",
+    "LC_CTYPE", "TERM", "SHELL", "TMPDIR", "TMP", "TEMP",
+})
+```
+
+**Missing Windows-essential vars:**
+
+| Variable | Purpose | Impact if Missing |
+|----------|---------|-------------------|
+| `USERPROFILE` | Windows home directory | `HOME` may not exist on Windows; Node.js, npm use this |
+| `HOMEDRIVE` + `HOMEPATH` | Alternative home path | Some tools use these instead of USERPROFILE |
+| `APPDATA` | Application data | npm global config, many tools store config here |
+| `LOCALAPPDATA` | Local app data | npm cache, node_modules location |
+| `PATHEXT` | Executable extensions | **Critical:** Without this, `npx` won't resolve to `npx.cmd` |
+| `SYSTEMROOT` | Windows directory | Many system calls need this |
+| `COMSPEC` | Command processor | Needed for `cmd /c` fallbacks |
+
+**Fix:**
+```python
+SAFE_ENV_KEYS = frozenset({
+    # Cross-platform
+    "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL",
+    "LC_CTYPE", "TERM", "SHELL", "TMPDIR", "TMP", "TEMP",
+    # Windows-specific
+    "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
+    "APPDATA", "LOCALAPPDATA",
+    "PATHEXT", "SYSTEMROOT", "COMSPEC",
+})
+```
+
+#### 2.0.2 Command Extension Resolution
+
+**Problem:** On Windows, `npx` is actually `npx.cmd`. Python's `create_subprocess_exec()` without `shell=True` doesn't automatically resolve `.cmd`/`.bat` extensions.
+
+**Current behavior:**
+```python
+# This fails on Windows:
+command = ["npx", "-y", "@modelcontextprotocol/server-filesystem"]
+await asyncio.create_subprocess_exec(*command, ...)  # FileNotFoundError: npx
+```
+
+**User workarounds (documented but not ideal):**
+```json
+// Windows users must use full path or cmd wrapper:
+{"command": ["cmd", "/c", "npx", "-y", "..."]}
+// Or:
+{"command": ["C:/Program Files/nodejs/npx.cmd", "-y", "..."]}
+```
+
+**Proper fix - resolve command on Windows:**
+```python
+import shutil
+import sys
+
+def resolve_command(command: list[str]) -> list[str]:
+    """Resolve command for cross-platform execution.
+
+    On Windows, finds .cmd/.bat/.exe extensions via PATHEXT.
+    """
+    if sys.platform != "win32" or not command:
+        return command
+
+    executable = command[0]
+
+    # If already has extension or is absolute path with extension, use as-is
+    if any(executable.lower().endswith(ext) for ext in ['.exe', '.cmd', '.bat', '.com']):
+        return command
+
+    # Try to find via shutil.which (respects PATHEXT)
+    resolved = shutil.which(executable)
+    if resolved:
+        return [resolved] + command[1:]
+
+    return command  # Fall back to original, let it fail with clear error
+```
+
+#### 2.0.3 Line Ending Handling
+
+**Problem:** Code searches for `\n` only. Windows MCP servers might output `\r\n`.
+
+**Current:**
+```python
+newline_idx = chunk.find(b"\n")
+```
+
+**Impact:** JSON line would include trailing `\r`:
+```python
+line = b'{"result": {}}\r\n'
+# After find(\n) and slice:
+line = b'{"result": {}}\r'  # \r remains
+json.loads(line)  # Works (JSON ignores whitespace), but not ideal
+```
+
+**Fix - strip CR:**
+```python
+# In receive() after reading line:
+line = line.rstrip(b"\r\n")
+return json.loads(line.decode("utf-8"))
+```
+
+Or handle both in `_read_bounded_line`:
+```python
+# Look for either \n or \r\n
+newline_idx = chunk.find(b"\n")
+if newline_idx > 0 and chunk[newline_idx - 1:newline_idx] == b"\r":
+    # Include \r in the line (will be stripped when parsing)
+    pass  # newline_idx already points to \n
+```
+
+#### 2.0.4 Process Group Handling
+
+**Current:** Uses `terminate()` and `kill()` which work differently on Windows.
+
+**Impact:** On Unix, `terminate()` sends SIGTERM. On Windows, it calls `TerminateProcess()`. Child processes spawned by the MCP server may not be terminated.
+
+**Fix for orphan prevention:**
+```python
+import sys
+
+if sys.platform == "win32":
+    # Windows: use CREATE_NEW_PROCESS_GROUP and send CTRL_BREAK_EVENT
+    import subprocess
+    self._process = await asyncio.create_subprocess_exec(
+        *self._command,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+        ...
+    )
+else:
+    # Unix: use start_new_session for process group
+    self._process = await asyncio.create_subprocess_exec(
+        *self._command,
+        start_new_session=True,
+        ...
+    )
+```
+
+### Windows Error Message Improvements
+
+The error messages from Priority 1.9 should include Windows-specific hints:
+
+**Command not found on Windows:**
+```
+MCP Server Launch Failed
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+Server: "filesystem"
+Command: ["npx", "-y", "@modelcontextprotocol/server-filesystem"]
+
+Problem: Command not found: npx
+
+Windows-specific causes:
+  1. npx.cmd exists but PATHEXT not passed to subprocess
+  2. Node.js not installed or not in PATH
+
+Fix options:
+  • Use full command path: ["C:/Program Files/nodejs/npx.cmd", ...]
+  • Use cmd wrapper: ["cmd", "/c", "npx", ...]
+  • Add to env_passthrough: ["PATHEXT", "APPDATA", "LOCALAPPDATA"]
+```
+
+### Implementation
+
+| File | Changes |
+|------|---------|
+| `nexus3/mcp/transport.py` | Add Windows env vars, command resolution, CRLF handling |
+| `nexus3/mcp/error_formatter.py` | Windows-specific error hints |
+| `tests/unit/mcp/test_transport.py` | Windows-specific tests (can mock sys.platform) |
+
+### Effort
+
+- **Estimated:** 2-3 hours
+- **Risk:** Low (additive changes, cross-platform logic is isolated)
+- **Priority:** Medium-High (blocks Windows users entirely in some cases)
+
+---
+
 ## Summary
 
 | Category | Implemented | Not Implemented |
@@ -1233,6 +1774,34 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P1.8.3** Include session ID in subsequent requests
 - [ ] **P1.8.4** Add unit test for session ID flow
 
+### Priority 1.9: Improved Error Messages
+
+- [ ] **P1.9.1** Create `nexus3/mcp/errors.py` with `MCPErrorContext` dataclass
+- [ ] **P1.9.2** Create `nexus3/mcp/error_formatter.py` with formatting functions
+- [ ] **P1.9.3** Add `context: MCPErrorContext | None` field to `MCPConfigError`
+- [ ] **P1.9.4** Update `ContextLoader._merge_mcp_servers()` to pass source path/layer to errors
+- [ ] **P1.9.5** Update `MCPServerRegistry.connect()` to track config origin in errors
+- [ ] **P1.9.6** Update `StdioTransport` to buffer stderr and include in crash errors
+- [ ] **P1.9.7** Implement `format_config_validation_error()` with field-specific suggestions
+- [ ] **P1.9.8** Implement `format_command_not_found()` with installation hints
+- [ ] **P1.9.9** Implement `format_server_crash()` with stderr context
+- [ ] **P1.9.10** Implement `format_json_syntax_error()` with line/column pointer
+- [ ] **P1.9.11** Implement `format_timeout_error()` with handshake troubleshooting
+- [ ] **P1.9.12** Add unit tests for error formatting functions
+- [ ] **P1.9.13** Add integration tests verifying user-facing error output
+
+### Priority 2.0: Windows Compatibility
+
+- [ ] **P2.0.1** Add Windows env vars to `SAFE_ENV_KEYS`: USERPROFILE, HOMEDRIVE, HOMEPATH, APPDATA, LOCALAPPDATA, PATHEXT, SYSTEMROOT, COMSPEC
+- [ ] **P2.0.2** Implement `resolve_command()` helper using `shutil.which()` for Windows .cmd/.bat resolution
+- [ ] **P2.0.3** Update `StdioTransport.connect()` to use `resolve_command()` on Windows
+- [ ] **P2.0.4** Handle CRLF line endings in `_read_bounded_line()` or `receive()`
+- [ ] **P2.0.5** Add Windows process group handling (CREATE_NEW_PROCESS_GROUP) for clean shutdown
+- [ ] **P2.0.6** Add Windows-specific hints to error formatter (PATHEXT, .cmd extensions)
+- [ ] **P2.0.7** Add unit tests for Windows command resolution (mock sys.platform)
+- [ ] **P2.0.8** Add unit tests for CRLF handling
+- [ ] **P2.0.9** Document Windows-specific config in MCP README (cmd wrapper, env vars)
+
 ### Phase 2: Resources (Future)
 
 - [ ] **P2.1** Add `resources/list` method to MCPClient
@@ -1276,6 +1845,9 @@ Use this checklist to track implementation progress. Each item can be assigned t
 | MCP protocol types | `nexus3/mcp/protocol.py` |
 | MCP transport | `nexus3/mcp/transport.py` |
 | MCP registry | `nexus3/mcp/registry.py` |
+| MCP error context | `nexus3/mcp/errors.py` (new) |
+| MCP error formatter | `nexus3/mcp/error_formatter.py` (new) |
+| Core errors | `nexus3/core/errors.py` |
 | Config loader | `nexus3/context/loader.py` |
 | Config schema | `nexus3/config/schema.py` |
 | Test server | `nexus3/mcp/test_server/` |
@@ -1288,10 +1860,12 @@ Use this checklist to track implementation progress. Each item can be assigned t
 
 | Priority | Items | Estimated Effort |
 |----------|-------|------------------|
-| P0 (Config) | 8 items | ~2 hours |
-| P1 (Compliance) | 14 items | ~1 hour |
-| P2 (Resources) | 7 items | ~4 hours |
-| P3 (Prompts) | 6 items | ~3 hours |
-| P4 (Utilities) | 4 items | ~2 hours |
+| P0 (Config Format) | 8 items | ~2 hours |
+| P1.1-1.8 (Protocol Compliance) | 14 items | ~1 hour |
+| P1.9 (Error Messages) | 13 items | ~3-4 hours |
+| P2.0 (Windows Compat) | 9 items | ~2-3 hours |
+| Phase 2 (Resources) | 7 items | ~4 hours |
+| Phase 3 (Prompts) | 6 items | ~3 hours |
+| Phase 4 (Utilities) | 4 items | ~2 hours |
 
-**Priority 0 and 1 should be addressed first** to ensure basic MCP spec compliance and compatibility with standard MCP configurations.
+**Priority 0, P1.x, and P2.0 should be addressed first** to ensure basic MCP spec compliance, config compatibility, good error messages, and Windows support.
