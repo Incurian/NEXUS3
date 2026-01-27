@@ -17,8 +17,9 @@ from pydantic import ValidationError
 from nexus3.config.load_utils import load_json_file
 from nexus3.config.schema import ContextConfig, MCPServerConfig
 from nexus3.core.constants import get_defaults_dir, get_nexus_dir
-from nexus3.core.errors import ContextLoadError, LoadError
+from nexus3.core.errors import ContextLoadError, LoadError, MCPConfigError
 from nexus3.core.utils import deep_merge, find_ancestor_config_dirs
+from nexus3.mcp.errors import MCPErrorContext
 
 
 def get_system_info(is_repl: bool = True, cwd: Path | None = None) -> str:
@@ -463,8 +464,6 @@ Source: {source_path}
                         source_path=mcp_path,
                     )
                 except ValidationError as e:
-                    from nexus3.core.errors import MCPConfigError
-
                     # Sanitize: Don't include full config dict which may contain secrets
                     # Extract field locations from errors (loc can be empty for root validators)
                     error_fields = []
@@ -475,15 +474,29 @@ Source: {source_path}
                         else:
                             # Root-level validation error (e.g., model_validator)
                             error_fields.append(err.get("type", "validation_error"))
+
+                    # Create error context for detailed error reporting
+                    context = MCPErrorContext(
+                        server_name=server_name,
+                        source_path=mcp_path,
+                        source_layer=layer.name,
+                    )
                     raise MCPConfigError(
-                        f"Invalid MCP server config in {mcp_path}: "
-                        f"validation failed for fields: {error_fields}"
+                        f"Invalid MCP server config '{server_name}' in {mcp_path}: "
+                        f"validation failed for fields: {error_fields}",
+                        context=context,
                     ) from e
                 except Exception as e:
-                    from nexus3.core.errors import MCPConfigError
-
+                    # Create error context for detailed error reporting
+                    context = MCPErrorContext(
+                        server_name=server_name,
+                        source_path=mcp_path,
+                        source_layer=layer.name,
+                    )
                     raise MCPConfigError(
-                        f"Invalid MCP server config in {mcp_path}: {type(e).__name__}"
+                        f"Invalid MCP server config '{server_name}' in {mcp_path}: "
+                        f"{type(e).__name__}",
+                        context=context,
                     ) from e
 
         return list(servers_by_name.values())

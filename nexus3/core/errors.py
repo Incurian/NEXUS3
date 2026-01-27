@@ -1,6 +1,12 @@
 """Typed exception hierarchy for NEXUS3."""
 
+from __future__ import annotations
+
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nexus3.mcp.errors import MCPErrorContext
 
 
 class NexusError(Exception):
@@ -43,7 +49,11 @@ class ContextLoadError(LoadError):
 class MCPConfigError(ContextLoadError):
     """MCP server configuration errors."""
 
-    pass
+    def __init__(
+        self, message: str, context: MCPErrorContext | None = None
+    ) -> None:
+        super().__init__(message)
+        self.context = context
 
 
 # === Error Sanitization for Agent-Facing Messages ===

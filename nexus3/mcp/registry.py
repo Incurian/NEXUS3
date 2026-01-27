@@ -26,8 +26,10 @@ from dataclasses import dataclass, field
 
 from nexus3.core.errors import MCPConfigError
 from nexus3.mcp.client import MCPClient
+from nexus3.mcp.error_formatter import format_command_not_found, format_server_crash
+from nexus3.mcp.errors import MCPErrorContext
 from nexus3.mcp.skill_adapter import MCPSkillAdapter
-from nexus3.mcp.transport import HTTPTransport, StdioTransport
+from nexus3.mcp.transport import HTTPTransport, MCPTransportError, StdioTransport
 
 
 @dataclass
@@ -159,16 +161,26 @@ class MCPServerRegistry:
             MCPConfigError: If config has neither command nor url, or if server is disabled.
             MCPError: If connection times out or fails.
         """
+        # P1.9.5: Create error context for this server
+        command_list = config.get_command_list()
+        error_context = MCPErrorContext(
+            server_name=config.name,
+            command=command_list if command_list else None,
+        )
+
         # Check if server is enabled (P2.17: use MCPConfigError for consistency)
         if not config.enabled:
-            raise MCPConfigError(f"MCP server '{config.name}' is disabled in configuration")
+            raise MCPConfigError(
+                f"MCP server '{config.name}' is disabled in configuration",
+                context=error_context,
+            )
 
         # Disconnect existing if present
         if config.name in self._servers:
             await self.disconnect(config.name)
 
         # Create transport based on config
-        command_list = config.get_command_list()
+        transport: StdioTransport | HTTPTransport
         if command_list:
             transport = StdioTransport(
                 command_list,
@@ -180,11 +192,42 @@ class MCPServerRegistry:
             transport = HTTPTransport(config.url)
         else:
             # P2.17: use MCPConfigError for consistency
-            raise MCPConfigError(f"Server '{config.name}' must have either 'command' or 'url'")
+            raise MCPConfigError(
+                f"Server '{config.name}' must have either 'command' or 'url'",
+                context=error_context,
+            )
 
-        # Create and initialize client
+        # Create and initialize client with error context
         client = MCPClient(transport)
-        await client.connect(timeout=timeout)
+        try:
+            await client.connect(timeout=timeout)
+        except MCPTransportError as e:
+            # P1.9.5: Capture stderr if available (for stdio transport)
+            if isinstance(transport, StdioTransport):
+                error_context.stderr_lines = transport.stderr_lines
+
+            # Check for specific error types and format appropriately
+            error_msg = str(e)
+            if "not found" in error_msg.lower():
+                # Command not found - use formatted message
+                cmd = command_list[0] if command_list else "unknown"
+                raise MCPTransportError(
+                    format_command_not_found(error_context, cmd)
+                ) from e
+            elif "closed" in error_msg.lower() or "exit" in error_msg.lower():
+                # Server crashed - use formatted message with stderr
+                # Try to extract exit code from message
+                import re
+                match = re.search(r"exit code[:\s]*(-?\d+)", error_msg, re.IGNORECASE)
+                exit_code = int(match.group(1)) if match else None
+                raise MCPTransportError(
+                    format_server_crash(error_context, exit_code, error_context.stderr_lines)
+                ) from e
+            else:
+                # Generic transport error - include server context
+                raise MCPTransportError(
+                    f"Failed to connect to MCP server '{config.name}': {e}"
+                ) from e
 
         # List tools and create adapters
         tools = await client.list_tools()

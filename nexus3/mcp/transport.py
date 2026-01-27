@@ -17,6 +17,7 @@ import os
 import random
 import re
 from abc import ABC, abstractmethod
+from collections import deque
 from typing import Any
 
 import httpx
@@ -213,6 +214,8 @@ class StdioTransport(MCPTransport):
         self._cwd = cwd
         self._process: asyncio.subprocess.Process | None = None
         self._stderr_task: asyncio.Task[None] | None = None
+        # P1.9.6: Buffer stderr lines for error context (last 20 lines)
+        self._stderr_buffer: deque[str] = deque(maxlen=20)
         # Lock for serializing I/O operations (clarity for concurrent callers)
         self._io_lock = asyncio.Lock()
         # Buffer for data read past newline (fixes multi-response buffering)
@@ -244,7 +247,10 @@ class StdioTransport(MCPTransport):
         self._stderr_task = asyncio.create_task(self._read_stderr())
 
     async def _read_stderr(self) -> None:
-        """Read and log stderr from subprocess."""
+        """Read and log stderr from subprocess.
+
+        P1.9.6: Buffers last 20 lines for error context in addition to logging.
+        """
         if self._process is None or self._process.stderr is None:
             return
 
@@ -253,13 +259,25 @@ class StdioTransport(MCPTransport):
                 line = await self._process.stderr.readline()
                 if not line:
                     break
-                # Log at DEBUG level for debugging MCP server issues
+                # Decode and strip whitespace
                 text = line.decode(errors="replace").rstrip()
                 if text:
+                    # P1.9.6: Buffer for error context
+                    self._stderr_buffer.append(text)
+                    # Log at DEBUG level for debugging MCP server issues
                     logger.debug("MCP stderr [%s]: %s", self._command[0], text)
             except Exception as e:
                 logger.debug("Stderr reader stopped: %s", e)
                 break
+
+    @property
+    def stderr_lines(self) -> list[str]:
+        """Return buffered stderr lines for error context.
+
+        P1.9.6: Returns the last 20 lines of stderr output from the MCP server.
+        Useful for providing context when errors occur.
+        """
+        return list(self._stderr_buffer)
 
     async def send(self, message: dict[str, Any]) -> None:
         """Write JSON-RPC message to stdin.
