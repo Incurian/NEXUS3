@@ -144,6 +144,7 @@ MCP (External Tools):
                       Connect to a configured MCP server
   /mcp disconnect <name>  Disconnect from an MCP server
   /mcp tools [server] List available MCP tools
+  /mcp retry <name>   Retry listing tools from a server
 
 Initialization:
   /init               Create .nexus3/ in current directory with templates
@@ -462,6 +463,7 @@ Notes:
 /mcp connect <name> [--allow-all|--per-tool] [--shared|--private]
 /mcp disconnect <name>
 /mcp tools [server]
+/mcp retry <name>
 
 Manage Model Context Protocol (MCP) server connections for external tools.
 
@@ -470,6 +472,7 @@ Subcommands:
   /mcp connect <name>   Connect to a configured MCP server
   /mcp disconnect <name> Disconnect from server
   /mcp tools [server]   List available MCP tools
+  /mcp retry <name>     Retry listing tools from a server
 
 Connect flags:
   --allow-all   Skip consent prompt, allow all tools
@@ -482,7 +485,8 @@ Examples:
   /mcp connect filesystem                 # Interactive prompts
   /mcp connect github --allow-all --shared
   /mcp disconnect filesystem
-  /mcp tools                              # List all MCP tools""",
+  /mcp tools                              # List all MCP tools
+  /mcp retry filesystem                   # Retry failed server""",
 
     "init": """/init [--force|-f] [--global|-g]
 

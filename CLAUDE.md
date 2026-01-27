@@ -369,6 +369,12 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `/mcp connect <name>` | Connect to a configured MCP server |
 | `/mcp disconnect <name>` | Disconnect from an MCP server |
 | `/mcp tools [server]` | List available MCP tools |
+| `/mcp retry <name>` | Retry listing tools from a server |
+
+**Key behaviors:**
+- Servers connect even if initial tool listing fails (graceful degradation)
+- Dead connections automatically reconnect when tools are needed (lazy reconnection)
+- Use `/mcp retry <server>` to manually retry tool listing after fixing configuration issues
 
 ### Initialization
 

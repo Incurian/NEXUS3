@@ -22,10 +22,10 @@ class MCPTool:
         name: Unique identifier for the tool.
         description: Human-readable description of what the tool does.
         input_schema: JSON Schema describing the tool's parameters.
-        title: Human-readable title for the tool.
-        output_schema: JSON Schema describing the tool's output.
-        icons: List of icon definitions for the tool.
-        annotations: Additional metadata about the tool.
+        title: Human-readable title for display (optional, may differ from name).
+        output_schema: JSON Schema for output validation (optional, for structured responses).
+        icons: Icon identifiers for UI display (optional, server-provided).
+        annotations: Additional metadata/annotations (optional, server-specific extensions).
     """
 
     name: str
@@ -57,9 +57,9 @@ class MCPToolResult:
     MCP returns results as a list of content items (text, images, etc).
 
     Attributes:
-        content: List of content items from the tool.
+        content: List of content items from the tool (text, images, resources).
         is_error: Whether the result represents an error.
-        structured_content: JSON-structured response data.
+        structured_content: Structured content blocks (optional, alternative to text-only content).
     """
 
     content: list[dict[str, Any]] = field(default_factory=list)

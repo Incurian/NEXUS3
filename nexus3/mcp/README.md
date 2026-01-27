@@ -130,9 +130,19 @@ finally:
 - `is_initialized` - Whether handshake completed
 - `is_connected` - Whether transport is connected
 
+**Methods:**
+- `list_tools()` - List available tools with automatic pagination support (P1.4)
+- `call_tool()` - Invoke a tool with arguments
+- `reconnect()` - Reconnect to server after disconnection (P2.1)
+- `close()` - Clean shutdown
+
 **Security Features:**
 - **Response ID matching (P2.9):** Verifies response IDs match request IDs to prevent response confusion attacks
 - **Notification discarding (P2.10):** Discards interleaved notifications (max 100) while waiting for responses
+
+**Spec Compliance Features:**
+- **Pagination support (P1.4):** `list_tools()` automatically handles cursor-based pagination for servers with many tools
+- **Reconnection support (P2.1):** `reconnect()` method re-establishes connection and re-performs handshake without creating new transport
 
 ### MCPTransport (`transport.py`)
 
@@ -170,6 +180,9 @@ transport = StdioTransport(
 **Safe environment variables passed by default:**
 ```
 PATH, HOME, USER, LOGNAME, LANG, LC_ALL, LC_CTYPE, TERM, SHELL, TMPDIR, TMP, TEMP
+
+# Windows-specific (P5.5):
+USERPROFILE, APPDATA, LOCALAPPDATA, PATHEXT, SYSTEMROOT, COMSPEC
 ```
 
 #### HTTPTransport
@@ -188,7 +201,20 @@ transport = HTTPTransport(
 
 **Security Features:**
 - **SSRF protection:** URL validation (allows localhost for local MCP servers)
+- **SSRF redirect prevention:** `follow_redirects=False` prevents redirect-based SSRF attacks
 - **Requires httpx:** Install with `pip install httpx`
+
+**HTTP Session Management (P5.7):**
+- Servers may return `mcp-session-id` header during initialization
+- Client captures and sends session ID in subsequent requests via `Mcp-Session-Id` header
+- Session IDs validated: alphanumeric + dash/underscore, max 256 chars
+- Access via `HTTPTransport.session_id` property
+
+**HTTP Retry Logic (P1.10):**
+- Automatic exponential backoff for 429 (rate limit) and 5xx (server error) responses
+- Retries: 1s, 2s, 4s delays (3 total retries by default)
+- Random jitter added to prevent thundering herd
+- Configurable via transport timeout parameter
 
 ### Protocol Types (`protocol.py`)
 
@@ -263,6 +289,52 @@ await registry.close_all()
 **Visibility Model:**
 - `shared=True`: Connection visible to all agents
 - `shared=False`: Connection visible only to `owner_agent_id`
+
+**Reconnection and Resilience (P2.1):**
+
+The registry provides automatic reconnection and graceful degradation when MCP servers become unavailable:
+
+```python
+# Manual reconnection of a specific server
+await registry.reconnect("github", timeout=30.0)
+
+# Automatic lazy reconnection during skill retrieval
+skills = await registry.get_all_skills(agent_id="main")
+# Stale connections are detected and reconnected automatically
+
+# Retry tool listing after connection issues
+server = registry.get("github")
+await server.retry_tools(timeout=30.0)
+
+# Check connection health
+dead_servers = await registry.check_connections()
+for server_name in dead_servers:
+    print(f"Server {server_name} is disconnected")
+```
+
+**Key reconnection behaviors:**
+
+| Feature | Description |
+|---------|-------------|
+| **Lazy reconnection** | `get_all_skills()` detects stale connections and automatically calls `reconnect()` |
+| **Stale detection** | Checks `transport.is_connected()` and `client.is_connected` before returning skills |
+| **Graceful degradation** | If `list_tools()` fails during `connect()`, connection succeeds but skills are empty |
+| **Retry mechanism** | `retry_tools()` re-attempts tool listing after initial connection |
+| **Connection health checks** | `check_connections()` reports disconnected servers |
+
+**Configuration option (P2.1.8):**
+```json
+{
+  "servers": {
+    "flaky-server": {
+      "command": ["./mcp-server"],
+      "fail_if_no_tools": true  // Fail connect() if list_tools() returns empty (default: false)
+    }
+  }
+}
+```
+
+When `fail_if_no_tools=false` (default), connections succeed even if tool listing fails. This allows agents to start without waiting for slow/flaky MCP servers.
 
 ### MCPSkillAdapter (`skill_adapter.py`)
 
@@ -640,10 +712,15 @@ server = await registry.connect(
 MCP servers receive a sanitized environment by default:
 
 ```python
-# Only these are passed by default:
+# Only these are passed by default (cross-platform):
 SAFE_ENV_KEYS = {
+    # Unix/Linux/macOS
     "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL",
-    "LC_CTYPE", "TERM", "SHELL", "TMPDIR", "TMP", "TEMP"
+    "LC_CTYPE", "TERM", "SHELL", "TMPDIR", "TMP", "TEMP",
+
+    # Windows (P5.5)
+    "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PATHEXT",
+    "SYSTEMROOT", "COMSPEC"
 }
 ```
 
@@ -651,6 +728,7 @@ SAFE_ENV_KEYS = {
 - Prevents accidental leakage of API keys (OPENROUTER_API_KEY, etc.)
 - Explicit opt-in via `env` or `env_passthrough` for needed secrets
 - Each MCP server only receives what it needs
+- Cross-platform compatibility (Unix and Windows)
 
 ### Protocol Hardening
 
@@ -661,6 +739,11 @@ SAFE_ENV_KEYS = {
 | **P2.11: Deny by default** | MCP access denied if no permissions configured |
 | **P2.12: Line length limit** | 10MB max for stdio transport |
 | **SSRF protection** | URL validation for HTTP transport |
+| **SSRF redirect prevention (P0.5)** | `follow_redirects=False` prevents redirect-based SSRF attacks |
+| **Output sanitization (P0.5)** | MCP output sanitized via `sanitize_for_display()` to strip terminal escapes |
+| **Response size limits (P0.5)** | 10MB max response size (`MAX_MCP_OUTPUT_SIZE`) prevents memory exhaustion |
+| **Config error sanitization (P0.5)** | Validation errors don't leak secrets from env vars |
+| **Session ID validation (P0.5)** | Session IDs restricted to alphanumeric + dash/underscore, max 256 chars |
 
 ### Permission Enforcement
 
@@ -678,6 +761,205 @@ from nexus3.core.identifiers import build_mcp_skill_name
 
 build_mcp_skill_name("github", "list-repos")       # "mcp_github_list_repos"
 build_mcp_skill_name("evil/../path", "../../etc")  # "mcp_evil_path_etc"
+```
+
+---
+
+## Windows Compatibility
+
+NEXUS3's MCP implementation is fully compatible with Windows systems (P5.5, P2.0):
+
+### Environment Variables
+
+Windows-specific environment variables are included in the safe default set:
+
+| Variable | Purpose |
+|----------|---------|
+| `USERPROFILE` | User home directory (equivalent to `HOME` on Unix) |
+| `APPDATA` | Application data directory |
+| `LOCALAPPDATA` | Local application data directory |
+| `PATHEXT` | Executable file extensions (.exe, .cmd, .bat) |
+| `SYSTEMROOT` | Windows system directory |
+| `COMSPEC` | Command interpreter path (cmd.exe) |
+
+### Command Resolution
+
+The `resolve_command()` function in `transport.py` handles Windows command resolution:
+
+```python
+# Cross-platform command resolution
+command = ["npx", "-y", "some-package"]
+
+# On Windows, automatically resolves to:
+# - npx.cmd (if found)
+# - npx.bat (if found)
+# - npx.exe (if found)
+# - npx (fallback)
+```
+
+**Implementation details:**
+- Uses `shutil.which()` for cross-platform executable discovery
+- Tries extensions from `PATHEXT` environment variable
+- Falls back to bare command name if not found
+
+### Process Management
+
+Windows process termination uses `CTRL_BREAK_EVENT` instead of Unix `SIGTERM`:
+
+```python
+# Cross-platform process termination
+if sys.platform == "win32":
+    process.send_signal(signal.CTRL_BREAK_EVENT)
+else:
+    process.terminate()  # SIGTERM on Unix
+```
+
+### Line Endings
+
+CRLF (`\r\n`) line endings are handled automatically:
+- Stdio transport uses `line.rstrip()` to strip both `\n` and `\r\n`
+- JSON parsing is line-ending agnostic
+- No special configuration required
+
+### Testing
+
+Windows-specific tests validate:
+- Environment variable filtering (`test_windows_env_vars`)
+- Command resolution (`test_resolve_command_windows`)
+- Process group creation (`test_process_group_windows`)
+- CRLF line ending handling
+
+---
+
+## Error Handling and Context
+
+MCP errors include rich context to help diagnose issues (P5.6, P1.9):
+
+### MCPErrorContext
+
+The `MCPErrorContext` dataclass tracks error source information:
+
+```python
+@dataclass
+class MCPErrorContext:
+    server_name: str              # MCP server name
+    command: list[str] | None     # Command used to launch server (stdio only)
+    source_path: str | None       # Path to mcp.json config file
+    stderr_lines: list[str]       # Last 20 lines of stderr (stdio only)
+```
+
+### Error Formatters
+
+Specialized formatters provide actionable troubleshooting hints:
+
+#### Command Not Found
+```python
+format_command_not_found(ctx: MCPErrorContext) -> str
+```
+
+Example output:
+```
+MCP server 'github' failed to start: command not found
+
+Server: github
+Command: npx -y @modelcontextprotocol/server-github
+Config: /home/user/project/.nexus3/mcp.json
+
+The command 'npx' is not installed or not in PATH.
+
+Troubleshooting:
+- Install Node.js and npm: https://nodejs.org/
+- Verify 'npx' is in PATH: which npx (Unix) or where npx (Windows)
+- Check the command in your mcp.json config
+```
+
+#### Server Crash
+```python
+format_server_crash(ctx: MCPErrorContext) -> str
+```
+
+Example output:
+```
+MCP server 'github' process crashed during initialization
+
+Server: github
+Command: python -m my_mcp_server
+Config: /home/user/project/.nexus3/mcp.json
+
+Last 20 lines of stderr:
+  File "server.py", line 42
+    async def handle_request
+                            ^
+SyntaxError: invalid syntax
+
+Troubleshooting:
+- Check server logs above for Python errors
+- Verify the server is compatible with MCP spec 2025-11-25
+- Test the command manually: python -m my_mcp_server
+```
+
+#### JSON Protocol Error
+```python
+format_json_error(ctx: MCPErrorContext, line: str, error: Exception) -> str
+```
+
+Example output:
+```
+MCP server 'github' sent invalid JSON
+
+Server: github
+Command: npx -y @modelcontextprotocol/server-github
+Config: /home/user/.nexus3/mcp.json
+
+Invalid line: {"result": {"capabilities": {missing quote}
+
+Error: Expecting property name enclosed in double quotes: line 1 column 35
+
+Troubleshooting:
+- Check if the server is writing non-JSON output to stdout
+- Try running the command manually and inspecting output
+- Verify the server implements MCP protocol correctly
+```
+
+#### Timeout Error
+```python
+format_timeout_error(ctx: MCPErrorContext, operation: str, timeout: float) -> str
+```
+
+Example output:
+```
+MCP server 'slow-api' timed out during list_tools
+
+Server: slow-api
+Timeout: 30.0s
+Config: /home/user/project/.nexus3/mcp.json
+
+Troubleshooting:
+- The server may be overloaded or unresponsive
+- Increase timeout in config or REPL: /mcp connect slow-api --timeout 60
+- Check network connectivity (for HTTP servers)
+- Try reconnecting: /mcp disconnect slow-api && /mcp connect slow-api
+```
+
+### Error Propagation
+
+Errors include context at all layers:
+
+1. **Transport layer** - Captures command, stderr, source path
+2. **Client layer** - Adds operation name (initialize, list_tools, call_tool)
+3. **Registry layer** - Adds server name, timeout values
+4. **Skill adapter** - Converts to NEXUS3 `ToolResult` with formatted message
+
+### Windows-Specific Error Hints (P2.0.11)
+
+When command resolution fails on Windows, additional troubleshooting hints are provided:
+
+```
+Troubleshooting:
+- Install Node.js and npm: https://nodejs.org/
+- Verify 'npx' is in PATH: where npx
+- Check the command in your mcp.json config
+- On Windows, ensure .cmd/.bat/.exe extensions are in PATHEXT
 ```
 
 ---
@@ -796,7 +1078,7 @@ if can_use_mcp(session.permissions):
 
 ---
 
-## Error Handling
+## Exception Hierarchy
 
 ```python
 from nexus3.mcp import MCPClient, MCPError
@@ -817,6 +1099,8 @@ except MCPConfigError as e:
     # Configuration error (disabled server, missing command/url)
     print(f"Config error: {e}")
 ```
+
+**See "Error Handling and Context" section above** for details on rich error context and troubleshooting hints (P5.6, P1.9).
 
 ---
 
@@ -899,4 +1183,4 @@ async def get_mcp_skills(registry, agent_permissions, session_allowances, agent_
 
 ---
 
-*Updated: 2026-01-21*
+*Updated: 2026-01-27*
