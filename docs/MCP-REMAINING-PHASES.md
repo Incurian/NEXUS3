@@ -13,7 +13,7 @@ This document outlines the phased plan to complete all remaining MCP implementat
 |-------|-------------|--------|----------|
 | **Phase 1** | Documentation (P5.x) | 1-2 hours | ✅ COMPLETE |
 | **Phase 2** | Windows Polish (P2.0.8-11) | 1-2 hours | ✅ COMPLETE |
-| **Phase 3** | Deferred Tests (P1.4.4, P1.9.14) | 1-2 hours | Low - nice to have |
+| **Phase 3** | Deferred Tests (P1.4.4, P1.9.14) | 1-2 hours | ✅ COMPLETE |
 | **Phase 4** | Future: Resources (FA) | 3-4 hours | Deferred |
 | **Phase 5** | Future: Prompts (FB) | 2-3 hours | Deferred |
 | **Phase 6** | Future: Utilities (FC) | 2-3 hours | Deferred |
@@ -105,29 +105,29 @@ This document outlines the phased plan to complete all remaining MCP implementat
 
 ---
 
-## Phase 3: Deferred Tests (P1.4.4, P1.9.14) - LOW PRIORITY
+## Phase 3: Deferred Tests (P1.4.4, P1.9.14) - COMPLETE
 
 **Goal:** Add integration tests for edge cases that are hard to unit test.
 
 ### Checklist
 
-- [ ] **P1.4.4** Integration test with paginating MCP server
+- [x] **P1.4.4** Integration test with paginating MCP server
   - Create test server that returns paginated tool lists
   - Test 2-page, 3-page, and empty page scenarios
   - Verify all tools collected across pages
 
-- [ ] **P1.9.14** Integration tests for user-facing error output
+- [x] **P1.9.14** Integration tests for user-facing error output
   - Test actual error message formatting in REPL context
   - Verify Rich markup escaping works
   - Test stderr capture and display
 
-### Files to Create/Modify
+### Files Created
 
-| File | Changes |
+| File | Purpose |
 |------|---------|
-| `tests/integration/test_mcp_pagination.py` | P1.4.4 (new file) |
-| `tests/integration/test_mcp_errors.py` | P1.9.14 (new file) |
-| `nexus3/mcp/test_server/` | May need pagination support |
+| `nexus3/mcp/test_server/paginating_server.py` | Paginating MCP server for tests |
+| `tests/integration/test_mcp_pagination.py` | 10 pagination integration tests |
+| `tests/integration/test_mcp_errors.py` | 21 error output integration tests |
 
 ---
 
