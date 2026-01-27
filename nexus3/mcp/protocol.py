@@ -140,5 +140,168 @@ class MCPClientInfo:
         return {"name": self.name, "version": self.version}
 
 
+@dataclass
+class MCPResource:
+    """Resource definition from an MCP server.
+
+    Resources are URI-addressable content that servers make available
+    to clients, such as files, database records, or API responses.
+
+    Attributes:
+        uri: Unique identifier for the resource.
+        name: Human-readable name.
+        description: Optional description of what the resource contains.
+        mime_type: MIME type of the resource content.
+        annotations: Additional metadata/annotations (optional).
+    """
+
+    uri: str
+    name: str
+    description: str | None = None
+    mime_type: str = "text/plain"
+    annotations: dict[str, Any] | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "MCPResource":
+        """Create from MCP server response."""
+        return cls(
+            uri=data["uri"],
+            name=data.get("name", data["uri"]),
+            description=data.get("description"),
+            mime_type=data.get("mimeType", "text/plain"),
+            annotations=data.get("annotations"),
+        )
+
+
+@dataclass
+class MCPResourceContent:
+    """Content of a resource from resources/read.
+
+    Attributes:
+        uri: The resource URI this content belongs to.
+        mime_type: MIME type of the content.
+        text: Text content (for text-based resources).
+        blob: Base64-encoded binary content (for binary resources).
+    """
+
+    uri: str
+    mime_type: str = "text/plain"
+    text: str | None = None
+    blob: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "MCPResourceContent":
+        """Create from MCP server response."""
+        return cls(
+            uri=data["uri"],
+            mime_type=data.get("mimeType", "text/plain"),
+            text=data.get("text"),
+            blob=data.get("blob"),
+        )
+
+
+@dataclass
+class MCPPromptArgument:
+    """Argument definition for an MCP prompt.
+
+    Attributes:
+        name: Argument name.
+        description: Optional description.
+        required: Whether the argument is required. Default True.
+    """
+
+    name: str
+    description: str | None = None
+    required: bool = True
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "MCPPromptArgument":
+        """Create from MCP server response."""
+        return cls(
+            name=data["name"],
+            description=data.get("description"),
+            required=data.get("required", True),
+        )
+
+
+@dataclass
+class MCPPrompt:
+    """Prompt definition from an MCP server.
+
+    Prompts are reusable templates that servers provide for common
+    interactions, with optional arguments for customization.
+
+    Attributes:
+        name: Unique identifier for the prompt.
+        description: Optional description of what the prompt does.
+        arguments: List of argument definitions.
+    """
+
+    name: str
+    description: str | None = None
+    arguments: list[MCPPromptArgument] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "MCPPrompt":
+        """Create from MCP server response."""
+        args_data = data.get("arguments", [])
+        return cls(
+            name=data["name"],
+            description=data.get("description"),
+            arguments=[MCPPromptArgument.from_dict(a) for a in args_data],
+        )
+
+
+@dataclass
+class MCPPromptMessage:
+    """A message in a prompt result.
+
+    Attributes:
+        role: Message role (user, assistant, system).
+        content: Message content (text or structured).
+    """
+
+    role: str
+    content: dict[str, Any] | str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "MCPPromptMessage":
+        """Create from MCP server response."""
+        return cls(
+            role=data["role"],
+            content=data["content"],
+        )
+
+    def get_text(self) -> str:
+        """Extract text from content."""
+        if isinstance(self.content, str):
+            return self.content
+        if isinstance(self.content, dict):
+            return self.content.get("text", str(self.content))
+        return str(self.content)
+
+
+@dataclass
+class MCPPromptResult:
+    """Result from prompts/get.
+
+    Attributes:
+        description: Description of this prompt instance.
+        messages: List of messages to send.
+    """
+
+    description: str = ""
+    messages: list[MCPPromptMessage] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "MCPPromptResult":
+        """Create from MCP server response."""
+        messages_data = data.get("messages", [])
+        return cls(
+            description=data.get("description", ""),
+            messages=[MCPPromptMessage.from_dict(m) for m in messages_data],
+        )
+
+
 # MCP protocol version we support
 PROTOCOL_VERSION = "2025-11-25"

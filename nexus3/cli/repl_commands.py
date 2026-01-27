@@ -21,7 +21,7 @@ Commands:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands.protocol import CommandContext, CommandOutput, CommandResult
@@ -144,6 +144,8 @@ MCP (External Tools):
                       Connect to a configured MCP server
   /mcp disconnect <name>  Disconnect from an MCP server
   /mcp tools [server] List available MCP tools
+  /mcp resources [server]  List available resources
+  /mcp prompts [server]    List available prompts
   /mcp retry <name>   Retry listing tools from a server
 
 Initialization:
@@ -463,16 +465,20 @@ Notes:
 /mcp connect <name> [--allow-all|--per-tool] [--shared|--private]
 /mcp disconnect <name>
 /mcp tools [server]
+/mcp resources [server]
+/mcp prompts [server]
 /mcp retry <name>
 
 Manage Model Context Protocol (MCP) server connections for external tools.
 
 Subcommands:
-  /mcp                  List configured and connected servers
-  /mcp connect <name>   Connect to a configured MCP server
-  /mcp disconnect <name> Disconnect from server
-  /mcp tools [server]   List available MCP tools
-  /mcp retry <name>     Retry listing tools from a server
+  /mcp                    List configured and connected servers
+  /mcp connect <name>     Connect to a configured MCP server
+  /mcp disconnect <name>  Disconnect from server
+  /mcp tools [server]     List available MCP tools
+  /mcp resources [server] List available resources
+  /mcp prompts [server]   List available prompts
+  /mcp retry <name>       Retry listing tools from a server
 
 Connect flags:
   --allow-all   Skip consent prompt, allow all tools
@@ -486,6 +492,8 @@ Examples:
   /mcp connect github --allow-all --shared
   /mcp disconnect filesystem
   /mcp tools                              # List all MCP tools
+  /mcp resources                          # List all resources
+  /mcp prompts filesystem                 # List prompts from filesystem server
   /mcp retry filesystem                   # Retry failed server""",
 
     "init": """/init [--force|-f] [--global|-g]
@@ -1908,10 +1916,174 @@ async def cmd_mcp(
         except Exception as e:
             return CommandOutput.error(f"Retry failed: {e}")
 
+    elif subcmd == "resources":
+        # /mcp resources [server] - list resources
+        server_name = parts[1] if len(parts) > 1 else None
+
+        if server_name:
+            # List resources from specific server
+            server = registry.get(server_name, agent_id=current_agent_id)
+            if server is None:
+                if registry.get(server_name) is not None:
+                    return CommandOutput.error(
+                        f"Server '{server_name}' is not visible to this agent"
+                    )
+                return CommandOutput.error(f"Not connected to '{server_name}'")
+
+            try:
+                resources = await server.client.list_resources()
+                if not resources:
+                    return CommandOutput.success(
+                        message=f"No resources from {server_name}",
+                        data={"server": server_name, "resources": []},
+                    )
+
+                lines = [f"Resources from {server_name}:"]
+                for r in resources:
+                    lines.append(f"  {r.uri}")
+                    lines.append(f"    Name: {r.name}")
+                    if r.description:
+                        lines.append(f"    Description: {r.description}")
+                    lines.append(f"    Type: {r.mime_type}")
+
+                return CommandOutput.success(
+                    message="\n".join(lines),
+                    data={
+                        "server": server_name,
+                        "resources": [{"uri": r.uri, "name": r.name} for r in resources],
+                    },
+                )
+            except Exception as e:
+                return CommandOutput.error(f"Failed to list resources: {e}")
+        else:
+            # List resources from all visible servers
+            visible_servers = registry.list_servers(agent_id=current_agent_id)
+            if not visible_servers:
+                return CommandOutput.success(
+                    message="No MCP servers connected",
+                    data={"resources": []},
+                )
+
+            lines: list[str] = []
+            all_resources: list[dict[str, Any]] = []
+            for name in visible_servers:
+                server = registry.get(name, agent_id=current_agent_id)
+                if server:
+                    try:
+                        resources = await server.client.list_resources()
+                        if resources:
+                            lines.append(f"\n{name}:")
+                            for r in resources:
+                                lines.append(f"  {r.uri} - {r.name}")
+                                all_resources.append({
+                                    "server": name,
+                                    "uri": r.uri,
+                                    "name": r.name,
+                                })
+                    except Exception as e:
+                        lines.append(f"\n{name}: Error - {e}")
+
+            if not lines:
+                return CommandOutput.success(
+                    message="No resources available",
+                    data={"resources": []},
+                )
+
+            return CommandOutput.success(
+                message="MCP Resources:" + "".join(lines),
+                data={"resources": all_resources},
+            )
+
+    elif subcmd == "prompts":
+        # /mcp prompts [server] - list prompts
+        server_name = parts[1] if len(parts) > 1 else None
+
+        if server_name:
+            # List prompts from specific server
+            server = registry.get(server_name, agent_id=current_agent_id)
+            if server is None:
+                if registry.get(server_name) is not None:
+                    return CommandOutput.error(
+                        f"Server '{server_name}' is not visible to this agent"
+                    )
+                return CommandOutput.error(f"Not connected to '{server_name}'")
+
+            try:
+                prompts = await server.client.list_prompts()
+                if not prompts:
+                    return CommandOutput.success(
+                        message=f"No prompts from {server_name}",
+                        data={"server": server_name, "prompts": []},
+                    )
+
+                lines = [f"Prompts from {server_name}:"]
+                for p in prompts:
+                    lines.append(f"  {p.name}")
+                    if p.description:
+                        lines.append(f"    {p.description}")
+                    if p.arguments:
+                        args_str = ", ".join(
+                            f"{a.name}{'*' if a.required else ''}"
+                            for a in p.arguments
+                        )
+                        lines.append(f"    Args: {args_str}")
+
+                return CommandOutput.success(
+                    message="\n".join(lines),
+                    data={
+                        "server": server_name,
+                        "prompts": [{"name": p.name, "description": p.description} for p in prompts],
+                    },
+                )
+            except Exception as e:
+                return CommandOutput.error(f"Failed to list prompts: {e}")
+        else:
+            # List prompts from all visible servers
+            visible_servers = registry.list_servers(agent_id=current_agent_id)
+            if not visible_servers:
+                return CommandOutput.success(
+                    message="No MCP servers connected",
+                    data={"prompts": []},
+                )
+
+            lines: list[str] = []
+            all_prompts: list[dict[str, Any]] = []
+            for name in visible_servers:
+                server = registry.get(name, agent_id=current_agent_id)
+                if server:
+                    try:
+                        prompts = await server.client.list_prompts()
+                        if prompts:
+                            lines.append(f"\n{name}:")
+                            for p in prompts:
+                                args_str = ""
+                                if p.arguments:
+                                    args_str = f" ({len(p.arguments)} args)"
+                                desc = f" - {p.description}" if p.description else ""
+                                lines.append(f"  {p.name}{args_str}{desc}")
+                                all_prompts.append({
+                                    "server": name,
+                                    "name": p.name,
+                                    "description": p.description,
+                                })
+                    except Exception as e:
+                        lines.append(f"\n{name}: Error - {e}")
+
+            if not lines:
+                return CommandOutput.success(
+                    message="No prompts available",
+                    data={"prompts": []},
+                )
+
+            return CommandOutput.success(
+                message="MCP Prompts:" + "".join(lines),
+                data={"prompts": all_prompts},
+            )
+
     else:
         return CommandOutput.error(
             f"Unknown MCP subcommand: {subcmd}\n"
-            f"Usage: /mcp [connect|disconnect|tools|retry] [args]"
+            f"Usage: /mcp [connect|disconnect|tools|resources|prompts|retry] [args]"
         )
 
 
