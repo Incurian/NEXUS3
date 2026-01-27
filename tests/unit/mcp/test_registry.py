@@ -218,3 +218,110 @@ class TestRegistryReconnect:
                 dead = await registry.check_connections()
                 assert dead == ["test-server"]
                 assert len(registry) == 0
+
+
+class TestGracefulToolListingFailure:
+    """Tests for P2.1.6-8: Graceful tool listing failure."""
+
+    @pytest.mark.asyncio
+    async def test_connect_succeeds_when_list_tools_fails(self) -> None:
+        """P2.1.6: Connection succeeds even if tool listing fails."""
+        from unittest.mock import patch
+
+        registry = MCPServerRegistry()
+        config = MCPServerConfig(name="test", command=["echo", "test"])
+
+        # Mock transport and client
+        mock_transport = MagicMock()
+        mock_transport.connect = AsyncMock()
+        mock_transport.close = AsyncMock()
+        mock_transport.is_connected = True
+
+        mock_client = MagicMock()
+        mock_client.connect = AsyncMock()
+        mock_client.close = AsyncMock()
+        mock_client.is_connected = True
+        mock_client.list_tools = AsyncMock(side_effect=Exception("Tool listing failed"))
+
+        # Patch to use our mocks
+        with patch('nexus3.mcp.registry.StdioTransport', return_value=mock_transport):
+            with patch('nexus3.mcp.registry.MCPClient', return_value=mock_client):
+                server = await registry.connect(config)
+
+        # Connection should succeed with empty skills
+        assert server is not None
+        assert server.skills == []
+        assert config.name in registry.list_servers()
+
+    @pytest.mark.asyncio
+    async def test_connect_fails_when_fail_if_no_tools_true(self) -> None:
+        """P2.1.8: Connection fails when fail_if_no_tools=True and list_tools fails."""
+        from unittest.mock import patch
+
+        registry = MCPServerRegistry()
+        config = MCPServerConfig(name="test", command=["echo"], fail_if_no_tools=True)
+
+        mock_transport = MagicMock()
+        mock_transport.connect = AsyncMock()
+        mock_transport.close = AsyncMock()
+        mock_transport.is_connected = True
+
+        mock_client = MagicMock()
+        mock_client.connect = AsyncMock()
+        mock_client.close = AsyncMock()
+        mock_client.is_connected = True
+        mock_client.list_tools = AsyncMock(side_effect=Exception("Tool listing failed"))
+
+        with patch('nexus3.mcp.registry.StdioTransport', return_value=mock_transport):
+            with patch('nexus3.mcp.registry.MCPClient', return_value=mock_client):
+                with pytest.raises(Exception, match="Tool listing failed"):
+                    await registry.connect(config)
+
+    @pytest.mark.asyncio
+    async def test_retry_tools_success(self) -> None:
+        """P2.1.7: retry_tools() successfully retries and updates skills."""
+        registry = MCPServerRegistry()
+
+        # Create a mock connected server with empty skills
+        mock_client = MagicMock()
+        mock_client.list_tools = AsyncMock(return_value=[
+            MCPTool(name="tool1", description="Test tool 1"),
+            MCPTool(name="tool2", description="Test tool 2"),
+        ])
+        mock_client.is_connected = True
+
+        config = MCPServerConfig(name="test", command=["echo"])
+        server = ConnectedServer(config=config, client=mock_client, skills=[])
+        registry._servers["test"] = server
+
+        # Retry should succeed and update skills
+        count = await registry.retry_tools("test")
+        assert count == 2
+        assert len(server.skills) == 2
+
+    @pytest.mark.asyncio
+    async def test_retry_tools_not_connected(self) -> None:
+        """P2.1.7: retry_tools() raises MCPError for non-existent server."""
+        from nexus3.mcp.client import MCPError
+
+        registry = MCPServerRegistry()
+
+        with pytest.raises(MCPError, match="not connected"):
+            await registry.retry_tools("nonexistent")
+
+    @pytest.mark.asyncio
+    async def test_retry_tools_failure_returns_zero(self) -> None:
+        """P2.1.7: retry_tools() returns 0 when listing still fails."""
+        registry = MCPServerRegistry()
+
+        mock_client = MagicMock()
+        mock_client.list_tools = AsyncMock(side_effect=Exception("Still failing"))
+        mock_client.is_connected = True
+
+        config = MCPServerConfig(name="test", command=["echo"])
+        server = ConnectedServer(config=config, client=mock_client, skills=[])
+        registry._servers["test"] = server
+
+        count = await registry.retry_tools("test")
+        assert count == 0
+        assert server.skills == []  # Skills unchanged

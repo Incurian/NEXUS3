@@ -1585,6 +1585,7 @@ async def cmd_mcp(
         /mcp connect <name> [flags]  Connect to a configured MCP server
         /mcp disconnect <name>  Disconnect from server
         /mcp tools [server] List available MCP tools
+        /mcp retry <server> Retry listing tools from a server
 
     Connect flags:
         --allow-all   Skip consent prompt, allow all tools
@@ -1868,10 +1869,45 @@ async def cmd_mcp(
             data={"tools": [s.name for s in skills]},
         )
 
+    elif subcmd == "retry":
+        # /mcp retry <server> - Retry listing tools from a server
+        if len(parts) < 2:
+            return CommandOutput.error("Usage: /mcp retry <server>")
+
+        server_name = parts[1]
+
+        # Check if server exists and is visible
+        server = registry.get(server_name, agent_id=current_agent_id)
+        if server is None:
+            if registry.get(server_name) is not None:
+                return CommandOutput.error(
+                    f"Server '{server_name}' is not visible to this agent"
+                )
+            return CommandOutput.error(f"Not connected to '{server_name}'")
+
+        try:
+            tool_count = await registry.retry_tools(server_name)
+            if tool_count > 0:
+                # Refresh tool definitions for this agent
+                if agent:
+                    await _refresh_agent_tools(agent, registry, shared)
+                # If shared, refresh other agents too
+                if server.shared:
+                    await _refresh_all_other_agents_tools(current_agent_id, ctx.pool, registry, shared)
+                return CommandOutput.success(
+                    message=f"Successfully listed {tool_count} tools from '{server_name}'"
+                )
+            else:
+                return CommandOutput.error(
+                    f"Tool listing still failing for '{server_name}'. Check server logs."
+                )
+        except Exception as e:
+            return CommandOutput.error(f"Retry failed: {e}")
+
     else:
         return CommandOutput.error(
             f"Unknown MCP subcommand: {subcmd}\n"
-            f"Usage: /mcp [connect|disconnect|tools] [args]"
+            f"Usage: /mcp [connect|disconnect|tools|retry] [args]"
         )
 
 
