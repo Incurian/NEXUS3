@@ -120,6 +120,21 @@ class MCPClient:
         await self._transport.close()
         self._initialized = False
 
+    async def reconnect(self, timeout: float = 30.0) -> None:
+        """Close and reconnect to the server.
+
+        Useful for recovering from stale connections without recreating
+        the client object.
+
+        Args:
+            timeout: Maximum time to wait for reconnection. Default 30s.
+
+        Raises:
+            MCPError: If reconnection fails.
+        """
+        await self.close()
+        await self.connect(timeout=timeout)
+
     async def __aenter__(self) -> "MCPClient":
         """Connect and initialize."""
         await self.connect()

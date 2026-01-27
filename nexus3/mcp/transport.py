@@ -759,7 +759,9 @@ class HTTPTransport(MCPTransport):
     @property
     def is_connected(self) -> bool:
         """Check if transport is connected."""
-        return self._client is not None
+        if self._client is None:
+            return False
+        return not self._client.is_closed
 
     @property
     def session_id(self) -> str | None:

@@ -124,6 +124,23 @@ class ConnectedServer:
         """
         return self.client.is_connected
 
+    async def reconnect(self, timeout: float = 30.0) -> None:
+        """Reconnect to the server and refresh tools.
+
+        Closes the existing connection, reconnects, and re-fetches the tool list.
+        Updates self.skills with new skill adapters.
+
+        Args:
+            timeout: Maximum time to wait for reconnection. Default 30s.
+
+        Raises:
+            MCPError: If reconnection fails.
+        """
+        await self.client.reconnect(timeout=timeout)
+        # Re-list tools after reconnection (tools may have changed)
+        tools = await self.client.list_tools()
+        self.skills = [MCPSkillAdapter(self.client, tool, self.config.name) for tool in tools]
+
 
 class MCPServerRegistry:
     """Registry for managing multiple MCP server connections.

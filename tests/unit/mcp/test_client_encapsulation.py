@@ -212,6 +212,60 @@ class TestIsConnectedIntegration:
         assert client.is_connected is False
         assert client.is_initialized is False
 
+    @pytest.mark.asyncio
+    async def test_reconnect_lifecycle(self) -> None:
+        """Test reconnect() closes and reconnects the client."""
+        # Track connection state
+        connected = False
+        request_id = 0
+
+        def get_connected() -> bool:
+            return connected
+
+        async def do_connect() -> None:
+            nonlocal connected
+            connected = True
+
+        async def do_close() -> None:
+            nonlocal connected
+            connected = False
+
+        # Mock responses for two initialization sequences
+        async def mock_receive() -> dict:
+            nonlocal request_id
+            request_id += 1
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "serverInfo": {"name": "test", "version": "1.0"},
+                },
+            }
+
+        mock_transport = MagicMock()
+        mock_transport.connect = AsyncMock(side_effect=do_connect)
+        mock_transport.close = AsyncMock(side_effect=do_close)
+        mock_transport.send = AsyncMock()
+        mock_transport.receive = mock_receive
+        type(mock_transport).is_connected = PropertyMock(side_effect=get_connected)
+
+        client = MCPClient(mock_transport)
+
+        # Initial connection
+        await client.connect()
+        assert client.is_connected is True
+        assert client.is_initialized is True
+
+        # Reconnect should close and connect again
+        await client.reconnect()
+        assert client.is_connected is True
+        assert client.is_initialized is True
+
+        # Verify connect was called twice (initial + reconnect)
+        assert mock_transport.connect.call_count == 2
+
 
 class TestMCPClientNotificationFormat:
     """Tests for _notify() method MCP spec compliance.
