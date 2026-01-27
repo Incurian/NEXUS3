@@ -284,9 +284,9 @@ else:
 
 ---
 
-### Priority 2.1: Registry Robustness - NEXT
+### Priority 2.1: Registry Robustness - DONE
 
-**Status:** Actual remaining work. MCP connections can become stale, and tool listing failures block entire server registration.
+**Status:** COMPLETE. Stale connection detection, auto-reconnection, graceful tool listing failure, and retry command are implemented.
 
 #### 2.1.1 Stale Connection Detection and Auto-Reconnection
 
@@ -452,19 +452,19 @@ MCP transport layer and ExecutionSkills complete. All process group creation use
 - [ ] **P2.0.10** Add unit tests for CRLF handling
 - [ ] **P2.0.11** Document Windows-specific config in MCP README
 
-### Priority 2.1: Registry Robustness
+### Priority 2.1: Registry Robustness - DONE
 
-- [ ] **P2.1.1** Improve `HTTPTransport.is_connected`
-- [ ] **P2.1.2** Add `reconnect()` to `MCPClient`
-- [ ] **P2.1.3** Add `reconnect()` to `ConnectedServer`
-- [ ] **P2.1.4** Change `get_all_skills()` to async
-- [ ] **P2.1.5** Update ALL callers of `get_all_skills()` **(requires P2.1.4, same commit)**
-- [ ] **P2.1.6** Wrap tool listing in try/except in `registry.connect()`
-- [ ] **P2.1.7** Add `retry_tools()` method
-- [ ] **P2.1.8** Add `fail_if_no_tools: bool = False` to MCPServerConfig
-- [ ] **P2.1.9** Add `/mcp retry <server>` REPL command
-- [ ] **P2.1.10** Add unit tests for reconnection
-- [ ] **P2.1.11** Add unit tests for graceful tool listing failure
+- [x] **P2.1.1** Improve `HTTPTransport.is_connected`
+- [x] **P2.1.2** Add `reconnect()` to `MCPClient`
+- [x] **P2.1.3** Add `reconnect()` to `ConnectedServer`
+- [x] **P2.1.4** Change `get_all_skills()` to async
+- [x] **P2.1.5** Update ALL callers of `get_all_skills()` **(requires P2.1.4, same commit)**
+- [x] **P2.1.6** Wrap tool listing in try/except in `registry.connect()`
+- [x] **P2.1.7** Add `retry_tools()` method
+- [x] **P2.1.8** Add `fail_if_no_tools: bool = False` to MCPServerConfig
+- [x] **P2.1.9** Add `/mcp retry <server>` REPL command
+- [x] **P2.1.10** Add unit tests for reconnection
+- [x] **P2.1.11** Add unit tests for graceful tool listing failure
 
 ### Future Phase A: Resources
 

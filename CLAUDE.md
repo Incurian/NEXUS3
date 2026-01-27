@@ -15,9 +15,9 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 ### In Progress: MCP Improvements
 
 **Plan:** `docs/MCP-IMPLEMENTATION-GAPS.md`
-**Branch:** `feature/mcp-improvements` (20 commits ahead of master)
+**Branch:** `feature/mcp-improvements` (24 commits ahead of master)
 
-**Completed (validated by explorers 2026-01-27):**
+**Completed:**
 - ✅ P0.5: Security hardening (SSRF redirect fix, output sanitization, size limits, error sanitization)
 - ✅ P0: Claude Desktop config format compatibility (`mcpServers` + `command`/`args`)
 - ✅ P1.1: Notification format fix (omit empty params)
@@ -27,12 +27,12 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 - ✅ P1.9: Improved error messages with source tracking and actionable suggestions
 - ✅ P1.10: HTTP retry logic with exponential backoff
 - ✅ P2.0: Windows compatibility (env vars, command resolution, CRLF, process groups)
+- ✅ P2.1: Registry robustness (reconnection, graceful tool listing, `/mcp retry` command)
 
 **Remaining:**
-- P2.1: Registry robustness (stale connection detection, graceful tool listing failure)
-- P2.0.8-11, P1.9.14: Polish items (Windows error hints, tests, docs) - optional
+- P2.0.8-11, P1.9.14: Polish items (Windows error hints, additional tests, docs) - optional
 
-**Test count:** 2494 passed (756 security, 118 MCP unit tests)
+**Test count:** 2512 passed (756 security, 136 MCP unit tests)
 
 ### Pending Live Test: Command Help System
 
