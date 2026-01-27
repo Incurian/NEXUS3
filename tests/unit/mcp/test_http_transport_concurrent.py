@@ -35,6 +35,7 @@ class TestHTTPTransportRequest:
         mock_response.content = b'{"jsonrpc": "2.0", "id": 1, "result": {"data": "test"}}'
         mock_response.json.return_value = {"jsonrpc": "2.0", "id": 1, "result": {"data": "test"}}
         mock_response.raise_for_status = MagicMock()
+        mock_response.headers = {}  # P1.8: Session management expects headers
 
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -57,6 +58,7 @@ class TestHTTPTransportRequest:
         mock_response.status_code = 204
         mock_response.content = b""
         mock_response.raise_for_status = MagicMock()
+        mock_response.headers = {}  # P1.8: Session management expects headers
 
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -279,7 +281,7 @@ class TestHTTPConcurrentRequests:
         # Track request/response pairs
         call_count = 0
 
-        async def mock_post(url: str, content: str) -> MagicMock:
+        async def mock_post(url: str, content: str, headers: Any = None) -> MagicMock:
             nonlocal call_count
             call_count += 1
             current_id = call_count
@@ -297,6 +299,7 @@ class TestHTTPConcurrentRequests:
             response.content = f'{{"jsonrpc": "2.0", "id": {request_id}, "result": {{"data": "response_{request_id}"}}}}'.encode()
             response.json.return_value = {"jsonrpc": "2.0", "id": request_id, "result": {"data": f"response_{request_id}"}}
             response.raise_for_status = MagicMock()
+            response.headers = {}  # P1.8: Session management expects headers
             return response
 
         mock_client = AsyncMock()
@@ -324,7 +327,7 @@ class TestHTTPConcurrentRequests:
         # Track that _pending_response is not used by request()
         pending_checks: list[bool] = []
 
-        async def mock_post(url: str, content: str) -> MagicMock:
+        async def mock_post(url: str, content: str, headers: Any = None) -> MagicMock:
             # Check if _pending_response is set (it shouldn't be)
             pending_checks.append(transport._pending_response is not None)
 
@@ -337,6 +340,7 @@ class TestHTTPConcurrentRequests:
             response.content = b'{"jsonrpc": "2.0", "id": 1, "result": {}}'
             response.json.return_value = {"jsonrpc": "2.0", "id": request_id, "result": {}}
             response.raise_for_status = MagicMock()
+            response.headers = {}  # P1.8: Session management expects headers
             return response
 
         mock_client = AsyncMock()

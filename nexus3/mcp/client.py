@@ -149,7 +149,7 @@ class MCPClient:
         self._server_info = MCPServerInfo.from_dict(response)
 
         # Send initialized notification (no response expected)
-        await self._notify("notifications/initialized", {})
+        await self._notify("notifications/initialized")
 
         self._initialized = True
 
@@ -244,18 +244,19 @@ class MCPClient:
 
         return response.get("result", {})
 
-    async def _notify(self, method: str, params: dict[str, Any]) -> None:
+    async def _notify(self, method: str, params: dict[str, Any] | None = None) -> None:
         """Send notification (no response expected).
 
         Args:
             method: Notification method name.
-            params: Notification parameters.
+            params: Notification parameters. Omitted from message if None or empty.
         """
-        notification = {
+        notification: dict[str, Any] = {
             "jsonrpc": "2.0",
             "method": method,
-            "params": params,
         }
+        if params:  # Only include if non-empty
+            notification["params"] = params
         await self._transport.send(notification)
 
     async def list_tools(self) -> list[MCPTool]:

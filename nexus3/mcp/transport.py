@@ -14,11 +14,13 @@ import asyncio
 import json
 import logging
 import os
+import re
 from abc import ABC, abstractmethod
 from typing import Any
 
 from nexus3.core.errors import NexusError
 from nexus3.core.url_validator import UrlSecurityError, validate_url
+from nexus3.mcp.protocol import PROTOCOL_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,19 @@ class MCPTransportError(NexusError):
 # Prevents memory exhaustion from malicious/buggy servers.
 # 10MB should be generous for any legitimate MCP message.
 MAX_STDIO_LINE_LENGTH: int = 10 * 1024 * 1024  # 10 MB
+
+# P1.7: MCP-specific HTTP headers required by the protocol spec.
+# These are added to every HTTP request to MCP servers.
+MCP_HTTP_HEADERS: dict[str, str] = {
+    "MCP-Protocol-Version": PROTOCOL_VERSION,
+    "Accept": "application/json, text/event-stream",
+}
+
+# P1.8: Session ID validation constants.
+# MCP session IDs should be alphanumeric with optional dashes/underscores.
+# Max length prevents unbounded memory growth from malicious servers.
+MAX_SESSION_ID_LENGTH: int = 256
+SESSION_ID_PATTERN: re.Pattern[str] = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 # Environment variables always safe to pass to MCP servers.
@@ -426,6 +441,8 @@ class HTTPTransport(MCPTransport):
         self._timeout = timeout
         self._client: Any = None  # httpx.AsyncClient
         self._pending_response: dict[str, Any] | None = None
+        # P1.8: MCP session ID tracking (returned by server, sent in subsequent requests)
+        self._session_id: str | None = None
 
     async def connect(self) -> None:
         """Create HTTP client (connection pool)."""
@@ -434,10 +451,16 @@ class HTTPTransport(MCPTransport):
         except ImportError as e:
             raise MCPTransportError("httpx required for HTTP transport: pip install httpx") from e
 
+        # P1.7: Include MCP protocol headers alongside Content-Type and user headers
+        combined_headers = {
+            "Content-Type": "application/json",
+            **MCP_HTTP_HEADERS,
+            **self._headers,  # User headers override defaults
+        }
         self._client = httpx.AsyncClient(
             timeout=self._timeout,
             follow_redirects=False,  # SECURITY: Prevent redirect-based SSRF bypass
-            headers={"Content-Type": "application/json", **self._headers},
+            headers=combined_headers,
         )
 
     async def send(self, message: dict[str, Any]) -> None:
@@ -447,14 +470,28 @@ class HTTPTransport(MCPTransport):
         This maintains the send/receive pattern expected by MCPClient.
 
         For notifications (no id), the server may return 204 No Content.
+
+        P1.8: Includes session ID header if set, and captures session ID
+        from response for subsequent requests.
         """
         if self._client is None:
             raise MCPTransportError("Transport not connected")
 
         try:
             data = json.dumps(message, separators=(",", ":"))
-            response = await self._client.post(self._url, content=data)
+
+            # P1.8: Include session ID in request headers if we have one
+            req_headers: dict[str, str] = {}
+            if self._session_id:
+                req_headers["mcp-session-id"] = self._session_id
+
+            response = await self._client.post(
+                self._url, content=data, headers=req_headers if req_headers else None
+            )
             response.raise_for_status()
+
+            # P1.8: Extract and store session ID from response (with validation)
+            self._capture_session_id(response.headers)
 
             # Handle 204 No Content (for notifications)
             if response.status_code == 204 or not response.content:
@@ -484,6 +521,9 @@ class HTTPTransport(MCPTransport):
         send/receive. Unlike send(), this method does NOT use the shared
         _pending_response slot, making it safe for concurrent requests.
 
+        P1.8: Includes session ID header if set, and captures session ID
+        from response for subsequent requests.
+
         Args:
             message: JSON-RPC request message
 
@@ -499,8 +539,19 @@ class HTTPTransport(MCPTransport):
 
         try:
             data = json.dumps(message, separators=(",", ":"))
-            response = await self._client.post(self._url, content=data)
+
+            # P1.8: Include session ID in request headers if we have one
+            req_headers: dict[str, str] = {}
+            if self._session_id:
+                req_headers["mcp-session-id"] = self._session_id
+
+            response = await self._client.post(
+                self._url, content=data, headers=req_headers if req_headers else None
+            )
             response.raise_for_status()
+
+            # P1.8: Extract session ID from response (with validation)
+            self._capture_session_id(response.headers)
 
             # For requests (messages with 'id'), we expect a response body
             if response.status_code == 204 or not response.content:
@@ -522,3 +573,57 @@ class HTTPTransport(MCPTransport):
     def is_connected(self) -> bool:
         """Check if transport is connected."""
         return self._client is not None
+
+    @property
+    def session_id(self) -> str | None:
+        """Get the current MCP session ID (if available).
+
+        P1.8: Session ID is returned by the server and must be included
+        in subsequent requests for session continuity.
+        """
+        return self._session_id
+
+    def _validate_session_id(self, session_id: str) -> bool:
+        """Validate MCP session ID format.
+
+        P1.8 SECURITY: Prevents session ID injection attacks and log pollution.
+        Session IDs should be alphanumeric with optional dashes/underscores,
+        and limited to MAX_SESSION_ID_LENGTH bytes.
+
+        Args:
+            session_id: The session ID string to validate.
+
+        Returns:
+            True if valid, False otherwise.
+        """
+        if not session_id:
+            return False
+
+        # Check length limit
+        if len(session_id) > MAX_SESSION_ID_LENGTH:
+            logger.warning(
+                "Rejecting session ID: too long (%d > %d)",
+                len(session_id),
+                MAX_SESSION_ID_LENGTH,
+            )
+            return False
+
+        # Check format (alphanumeric, dash, underscore only)
+        if not SESSION_ID_PATTERN.match(session_id):
+            logger.warning("Rejecting session ID: invalid format")
+            return False
+
+        return True
+
+    def _capture_session_id(self, headers: Any) -> None:
+        """Capture and validate session ID from response headers.
+
+        P1.8: MCP servers may return a session ID that must be included
+        in subsequent requests. This method extracts and validates it.
+
+        Args:
+            headers: Response headers (httpx.Headers or similar mapping).
+        """
+        session_id = headers.get("mcp-session-id")
+        if session_id and self._validate_session_id(session_id):
+            self._session_id = session_id

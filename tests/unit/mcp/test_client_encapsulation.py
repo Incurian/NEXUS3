@@ -211,3 +211,122 @@ class TestIsConnectedIntegration:
         await client.close()
         assert client.is_connected is False
         assert client.is_initialized is False
+
+
+class TestMCPClientNotificationFormat:
+    """Tests for _notify() method MCP spec compliance.
+
+    MCP spec requires notifications to omit the 'params' field entirely
+    when there are no parameters, not send an empty object.
+    """
+
+    @pytest.mark.asyncio
+    async def test_notify_omits_params_when_none(self) -> None:
+        """_notify() should not include params field when None."""
+        sent_messages: list[dict] = []
+
+        mock_transport = MagicMock()
+        mock_transport.send = AsyncMock(side_effect=lambda msg: sent_messages.append(msg))
+
+        client = MCPClient(mock_transport)
+
+        # Call _notify with no params (default None)
+        await client._notify("test/notification")
+
+        assert len(sent_messages) == 1
+        notification = sent_messages[0]
+
+        # Should have jsonrpc and method, but NOT params
+        assert notification == {
+            "jsonrpc": "2.0",
+            "method": "test/notification",
+        }
+        assert "params" not in notification
+
+    @pytest.mark.asyncio
+    async def test_notify_omits_params_when_empty_dict(self) -> None:
+        """_notify() should not include params field when empty dict."""
+        sent_messages: list[dict] = []
+
+        mock_transport = MagicMock()
+        mock_transport.send = AsyncMock(side_effect=lambda msg: sent_messages.append(msg))
+
+        client = MCPClient(mock_transport)
+
+        # Call _notify with empty dict (should be treated same as None)
+        await client._notify("test/notification", {})
+
+        assert len(sent_messages) == 1
+        notification = sent_messages[0]
+
+        # Should have jsonrpc and method, but NOT params
+        assert notification == {
+            "jsonrpc": "2.0",
+            "method": "test/notification",
+        }
+        assert "params" not in notification
+
+    @pytest.mark.asyncio
+    async def test_notify_includes_params_when_non_empty(self) -> None:
+        """_notify() should include params field when non-empty."""
+        sent_messages: list[dict] = []
+
+        mock_transport = MagicMock()
+        mock_transport.send = AsyncMock(side_effect=lambda msg: sent_messages.append(msg))
+
+        client = MCPClient(mock_transport)
+
+        # Call _notify with actual params
+        await client._notify("test/notification", {"key": "value"})
+
+        assert len(sent_messages) == 1
+        notification = sent_messages[0]
+
+        # Should have jsonrpc, method, AND params
+        assert notification == {
+            "jsonrpc": "2.0",
+            "method": "test/notification",
+            "params": {"key": "value"},
+        }
+
+    @pytest.mark.asyncio
+    async def test_initialized_notification_has_no_params(self) -> None:
+        """The 'notifications/initialized' notification should have no params.
+
+        Per MCP spec: {"jsonrpc": "2.0", "method": "notifications/initialized"}
+        NOT: {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}
+        """
+        sent_messages: list[dict] = []
+
+        mock_transport = MagicMock()
+        mock_transport.connect = AsyncMock()
+        mock_transport.send = AsyncMock(side_effect=lambda msg: sent_messages.append(msg))
+        mock_transport.receive = AsyncMock(return_value={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "serverInfo": {"name": "test", "version": "1.0"},
+            },
+        })
+        type(mock_transport).is_connected = PropertyMock(return_value=True)
+
+        client = MCPClient(mock_transport)
+        await client.connect()
+
+        # Find the initialized notification in sent messages
+        initialized_notifications = [
+            msg for msg in sent_messages
+            if msg.get("method") == "notifications/initialized"
+        ]
+
+        assert len(initialized_notifications) == 1
+        notification = initialized_notifications[0]
+
+        # Should NOT have params field
+        assert "params" not in notification
+        assert notification == {
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+        }

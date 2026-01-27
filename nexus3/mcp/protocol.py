@@ -22,11 +22,19 @@ class MCPTool:
         name: Unique identifier for the tool.
         description: Human-readable description of what the tool does.
         input_schema: JSON Schema describing the tool's parameters.
+        title: Human-readable title for the tool.
+        output_schema: JSON Schema describing the tool's output.
+        icons: List of icon definitions for the tool.
+        annotations: Additional metadata about the tool.
     """
 
     name: str
     description: str
     input_schema: dict[str, Any] = field(default_factory=dict)
+    title: str | None = None
+    output_schema: dict[str, Any] | None = None
+    icons: list[dict[str, Any]] | None = None
+    annotations: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "MCPTool":
@@ -35,6 +43,10 @@ class MCPTool:
             name=data["name"],
             description=data.get("description", ""),
             input_schema=data.get("inputSchema", {}),
+            title=data.get("title"),
+            output_schema=data.get("outputSchema"),
+            icons=data.get("icons"),
+            annotations=data.get("annotations"),
         )
 
 
@@ -47,10 +59,12 @@ class MCPToolResult:
     Attributes:
         content: List of content items from the tool.
         is_error: Whether the result represents an error.
+        structured_content: JSON-structured response data.
     """
 
     content: list[dict[str, Any]] = field(default_factory=list)
     is_error: bool = False
+    structured_content: dict[str, Any] | None = None
 
     def to_text(self) -> str:
         """Extract text content from result with size limit.
@@ -80,6 +94,7 @@ class MCPToolResult:
         return cls(
             content=data.get("content", []),
             is_error=data.get("isError", False),
+            structured_content=data.get("structuredContent"),
         )
 
 
