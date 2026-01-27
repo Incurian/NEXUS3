@@ -359,12 +359,51 @@ MCP servers are configured in `mcp.json` files, loaded from the context layer hi
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `command` | `list[str]` | - | Command to launch stdio server (mutually exclusive with `url`) |
+| `command` | `str \| list[str]` | - | Command to launch stdio server (mutually exclusive with `url`) |
+| `args` | `list[str]` | `[]` | Arguments for command (only used when `command` is a string) |
 | `url` | `str` | - | URL for HTTP server (mutually exclusive with `command`) |
 | `env` | `dict[str, str]` | `{}` | Explicit environment variables for subprocess |
 | `env_passthrough` | `list[str]` | `[]` | Host env var names to pass through to subprocess |
 | `cwd` | `str` | `None` | Working directory for subprocess |
 | `enabled` | `bool` | `true` | Whether server is enabled |
+
+### Command Format Options
+
+NEXUS3 supports two command formats for compatibility with different MCP configurations:
+
+#### NEXUS3 Format (command as array)
+
+```json
+{
+  "servers": {
+    "github": {
+      "command": ["npx", "-y", "@modelcontextprotocol/server-github"]
+    }
+  }
+}
+```
+
+#### Official MCP Format (Claude Desktop compatible)
+
+Uses `mcpServers` with `command` as a string and separate `args` array:
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"]
+    }
+  }
+}
+```
+
+Both formats produce the same result: `["npx", "-y", "@modelcontextprotocol/server-github"]`.
+
+**Notes:**
+- Both formats can be mixed in the same config file
+- When `command` is a list, the `args` field is ignored
+- The `mcpServers` key is an alias for `servers` (Claude Desktop compatibility)
 
 ### Configuration Examples
 

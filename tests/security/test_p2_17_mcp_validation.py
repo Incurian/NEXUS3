@@ -152,15 +152,15 @@ class TestContextLoaderMCPValidation:
         # Sanitized error shows field names, not full validation message
         assert "validation failed for fields" in str(exc_info.value)
 
-    def test_missing_name_raises_mcp_config_error(self, temp_project: Path) -> None:
-        """MCP server without name raises MCPConfigError."""
+    def test_missing_name_gets_auto_generated_name(self, temp_project: Path) -> None:
+        """MCP server without name gets auto-generated name (unnamed-N)."""
         mcp_path = temp_project / ".nexus3" / "mcp.json"
         mcp_path.write_text(
             json.dumps(
                 {
                     "servers": [
                         {
-                            # Missing name
+                            # Missing name - will get auto-generated name
                             "command": ["python", "server.py"]
                         }
                     ]
@@ -169,12 +169,12 @@ class TestContextLoaderMCPValidation:
         )
 
         loader = ContextLoader(cwd=temp_project)
+        context = loader.load()
 
-        with pytest.raises(MCPConfigError) as exc_info:
-            loader.load()
-
-        assert "Invalid MCP server config" in str(exc_info.value)
-        assert str(mcp_path) in str(exc_info.value)
+        # Should load successfully with auto-generated name
+        assert len(context.mcp_servers) == 1
+        assert context.mcp_servers[0].config.name == "unnamed-0"
+        assert context.mcp_servers[0].config.command == ["python", "server.py"]
 
     def test_extra_field_raises_mcp_config_error(self, temp_project: Path) -> None:
         """MCP server with extra field raises MCPConfigError (extra=forbid)."""

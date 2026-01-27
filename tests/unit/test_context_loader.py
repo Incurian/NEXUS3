@@ -1,8 +1,8 @@
 """Tests for the ContextLoader with layered configuration."""
 
 import json
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 import pytest
 
@@ -12,7 +12,6 @@ from nexus3.context.loader import (
     ContextLoader,
     ContextSources,
     LoadedContext,
-    MCPServerWithOrigin,
 )
 from nexus3.core.utils import deep_merge, find_ancestor_config_dirs
 
@@ -312,6 +311,105 @@ class TestContextLoader:
         assert server.config.name == "shared"
         assert server.config.command == ["echo", "local"]
         assert server.origin == "local"
+
+    def test_mcp_official_format_mcpservers_dict(self, tmp_path: Path) -> None:
+        """Test official Claude Desktop format with mcpServers dict."""
+        local_dir = tmp_path / "project" / ".nexus3"
+        local_dir.mkdir(parents=True)
+        # Official format: {"mcpServers": {"name": {...config...}}}
+        (local_dir / "mcp.json").write_text(json.dumps({
+            "mcpServers": {
+                "my-server": {
+                    "command": ["node", "server.js"],
+                },
+                "another-server": {
+                    "url": "http://localhost:3000",
+                }
+            }
+        }))
+
+        loader = ContextLoader(
+            cwd=tmp_path / "project",
+            context_config=ContextConfig(ancestor_depth=0),
+        )
+        loader._get_global_dir = lambda: tmp_path / "nonexistent"  # type: ignore
+        loader._get_defaults_dir = lambda: tmp_path / "nonexistent"  # type: ignore
+
+        context = loader.load()
+
+        assert len(context.mcp_servers) == 2
+        names = {s.config.name for s in context.mcp_servers}
+        assert names == {"my-server", "another-server"}
+
+        # Verify configs are correct
+        server_by_name = {s.config.name: s.config for s in context.mcp_servers}
+        assert server_by_name["my-server"].command == ["node", "server.js"]
+        assert server_by_name["another-server"].url == "http://localhost:3000"
+
+    def test_mcp_mixed_formats_override(self, tmp_path: Path) -> None:
+        """Test official format in local overrides NEXUS3 format in global."""
+        global_dir = tmp_path / "global" / ".nexus3"
+        global_dir.mkdir(parents=True)
+        # Global uses NEXUS3 format (array)
+        (global_dir / "mcp.json").write_text(json.dumps({
+            "servers": [
+                {"name": "shared", "command": ["echo", "global"]}
+            ]
+        }))
+
+        local_dir = tmp_path / "project" / ".nexus3"
+        local_dir.mkdir(parents=True)
+        # Local uses official format (dict)
+        (local_dir / "mcp.json").write_text(json.dumps({
+            "mcpServers": {
+                "shared": {
+                    "command": ["echo", "local-official"],
+                }
+            }
+        }))
+
+        loader = ContextLoader(
+            cwd=tmp_path / "project",
+            context_config=ContextConfig(ancestor_depth=0),
+        )
+        loader._get_global_dir = lambda: global_dir  # type: ignore
+
+        context = loader.load()
+
+        # Local should override global
+        assert len(context.mcp_servers) == 1
+        server = context.mcp_servers[0]
+        assert server.config.name == "shared"
+        assert server.config.command == ["echo", "local-official"]
+        assert server.origin == "local"
+
+    def test_mcp_mcpservers_preferred_over_servers(self, tmp_path: Path) -> None:
+        """Test mcpServers key is preferred over servers key in same file."""
+        local_dir = tmp_path / "project" / ".nexus3"
+        local_dir.mkdir(parents=True)
+        # Both keys in same file - mcpServers should be used
+        (local_dir / "mcp.json").write_text(json.dumps({
+            "mcpServers": {
+                "official": {"command": ["official-cmd"]},
+            },
+            "servers": [
+                {"name": "array-format", "command": ["array-cmd"]}
+            ]
+        }))
+
+        loader = ContextLoader(
+            cwd=tmp_path / "project",
+            context_config=ContextConfig(ancestor_depth=0),
+        )
+        loader._get_global_dir = lambda: tmp_path / "nonexistent"  # type: ignore
+        loader._get_defaults_dir = lambda: tmp_path / "nonexistent"  # type: ignore
+
+        context = loader.load()
+
+        # mcpServers takes precedence
+        assert len(context.mcp_servers) == 1
+        assert context.mcp_servers[0].config.name == "official"
+        assert context.mcp_servers[0].config.command == ["official-cmd"]
 
 
 class TestContextLoaderSubagent:

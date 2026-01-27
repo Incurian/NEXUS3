@@ -341,6 +341,11 @@ class MCPServerConfig(BaseModel):
     - Use `env` for explicit key-value pairs (e.g., secrets from config)
     - Use `env_passthrough` to copy vars from host environment
 
+    Supports two command formats:
+    1. NEXUS3 format: command as list ["npx", "-y", "@anthropic/mcp-server-github"]
+    2. Official format: command as string + args array
+       {"command": "npx", "args": ["-y", "@anthropic/mcp-server-github"]}
+
     Example in config.json:
         "mcp_servers": [
             {
@@ -349,7 +354,8 @@ class MCPServerConfig(BaseModel):
             },
             {
                 "name": "github",
-                "command": ["npx", "-y", "@anthropic/mcp-server-github"],
+                "command": "npx",
+                "args": ["-y", "@anthropic/mcp-server-github"],
                 "env_passthrough": ["GITHUB_TOKEN"]
             },
             {
@@ -365,8 +371,12 @@ class MCPServerConfig(BaseModel):
     name: str
     """Friendly name for the server (used in skill prefixes)."""
 
-    command: list[str] | None = None
-    """Command to launch server (for stdio transport)."""
+    command: str | list[str] | None = None
+    """Command to launch server (for stdio transport).
+    Can be a list (NEXUS3 format) or string (official format, use with args)."""
+
+    args: list[str] | None = None
+    """Arguments for command when command is a string (official format)."""
 
     url: str | None = None
     """URL for HTTP transport (not yet implemented)."""
@@ -382,6 +392,23 @@ class MCPServerConfig(BaseModel):
 
     enabled: bool = True
     """Whether this server is enabled."""
+
+    def get_command_list(self) -> list[str]:
+        """Return command as list, merging command + args if needed.
+
+        Returns:
+            Command as list of strings suitable for subprocess execution.
+            Empty list if no command configured.
+        """
+        if isinstance(self.command, list):
+            return self.command  # NEXUS3 format
+        elif isinstance(self.command, str):
+            # Official format: command string + args array
+            cmd = [self.command]
+            if self.args:
+                cmd.extend(self.args)
+            return cmd
+        return []
 
     @model_validator(mode="after")
     def validate_transport(self) -> "MCPServerConfig":

@@ -37,9 +37,16 @@ class MCPServerConfig:
     SECURITY: MCP servers receive only safe environment variables by default.
     Use env for explicit values or env_passthrough for host vars.
 
+    Supports two command formats:
+    1. NEXUS3 format: command as list ["npx", "-y", "@anthropic/mcp-server-github"]
+    2. Official format: command as string + args array
+       {"command": "npx", "args": ["-y", "@anthropic/mcp-server-github"]}
+
     Attributes:
         name: Friendly name for the server (used in skill prefixes).
         command: Command to launch server (for stdio transport).
+            Can be a list (NEXUS3 format) or string (official format, use with args).
+        args: Arguments for command when command is a string (official format).
         url: URL for HTTP transport.
         env: Explicit environment variables for subprocess.
         env_passthrough: Names of host env vars to pass to subprocess.
@@ -48,12 +55,30 @@ class MCPServerConfig:
     """
 
     name: str
-    command: list[str] | None = None
+    command: str | list[str] | None = None
+    args: list[str] | None = None
     url: str | None = None
     env: dict[str, str] | None = None
     env_passthrough: list[str] | None = None
     cwd: str | None = None
     enabled: bool = True
+
+    def get_command_list(self) -> list[str]:
+        """Return command as list, merging command + args if needed.
+
+        Returns:
+            Command as list of strings suitable for subprocess execution.
+            Empty list if no command configured.
+        """
+        if isinstance(self.command, list):
+            return self.command  # NEXUS3 format
+        elif isinstance(self.command, str):
+            # Official format: command string + args array
+            cmd = [self.command]
+            if self.args:
+                cmd.extend(self.args)
+            return cmd
+        return []
 
 
 @dataclass
@@ -143,9 +168,10 @@ class MCPServerRegistry:
             await self.disconnect(config.name)
 
         # Create transport based on config
-        if config.command:
+        command_list = config.get_command_list()
+        if command_list:
             transport = StdioTransport(
-                config.command,
+                command_list,
                 env=config.env,
                 env_passthrough=config.env_passthrough,
                 cwd=config.cwd,

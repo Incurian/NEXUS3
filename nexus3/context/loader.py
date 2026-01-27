@@ -413,6 +413,10 @@ Source: {source_path}
 
         Later layers override earlier layers with same name.
 
+        Supports two MCP config formats:
+        - Official (Claude Desktop): {"mcpServers": {"name": {...config...}}}
+        - NEXUS3: {"servers": [{"name": "...", ...config...}]}
+
         Args:
             layers: All context layers in order.
             sources: ContextSources to record what was loaded.
@@ -429,8 +433,28 @@ Source: {source_path}
             mcp_path = layer.path / "mcp.json"
             sources.mcp_sources.append(mcp_path)
 
-            servers_list = layer.mcp.get("servers", [])
-            for server_data in servers_list:
+            # Support both official ("mcpServers" with dict) and NEXUS3 ("servers" with array) keys
+            servers_data = layer.mcp.get("mcpServers") or layer.mcp.get("servers")
+            if not servers_data:
+                continue
+
+            # Normalize to list of (name, server_dict) tuples
+            if isinstance(servers_data, dict):
+                # Official format: {"mcpServers": {"test": {...}}}
+                server_items = list(servers_data.items())
+            elif isinstance(servers_data, list):
+                # NEXUS3 format: {"servers": [{"name": "test", ...}]}
+                server_items = [
+                    (s.get("name", f"unnamed-{i}"), s) for i, s in enumerate(servers_data)
+                ]
+            else:
+                continue
+
+            for server_name, server_data in server_items:
+                # Ensure name is in the dict for MCPServerConfig validation
+                if isinstance(server_data, dict):
+                    server_data = {**server_data, "name": server_name}
+
                 try:
                     server_config = MCPServerConfig.model_validate(server_data)
                     servers_by_name[server_config.name] = MCPServerWithOrigin(
