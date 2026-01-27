@@ -689,10 +689,13 @@ def _is_retryable_error(self, status_code: int) -> bool:
 | 1.6 MCPToolResult missing field | Low | 5 min | protocol.py |
 | 1.7 HTTP missing version header | Medium | 5 min | transport.py |
 | 1.8 HTTP missing session ID | Medium | 15 min | transport.py |
+| 1.9 Improved error messages | High | 3-4 hrs | Multiple (new files) |
+| 1.10 HTTP retry logic | Medium | 1 hr | transport.py |
 
 *Address when implementing related features
 
 **Total effort for critical fixes (1.1, 1.4, 1.7, 1.8):** ~40 minutes
+**Total effort including P1.9-P1.10:** ~5-6 hours
 
 ---
 
@@ -1130,8 +1133,9 @@ async def execute(self, **kwargs: Any) -> ToolResult:
             return ToolResult(error=text_content)
         return ToolResult(output=text_content)
     except MCPError as e:
+        # Use str(e) not e.message for robustness (NexusError stores in args)
         return ToolResult(
-            error=f"MCP server '{self._server_name}' returned error: {e.message} "
+            error=f"MCP server '{self._server_name}' returned error: {str(e)} "
                    f"(code: {e.code})"
         )
     except MCPTransportError as e:
@@ -2345,7 +2349,7 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P1.9.7** Implement `format_config_validation_error()` with field-specific suggestions
 - [ ] **P1.9.8** Implement `format_command_not_found()` with installation hints
 - [ ] **P1.9.9** Implement `format_server_crash()` with stderr context
-- [ ] **P1.9.10** Implement `format_json_syntax_error()` with line/column pointer
+- [ ] **P1.9.10** Implement `_format_json_error()` helper with line/column pointer (in transport.py)
 - [ ] **P1.9.11** Implement `format_timeout_error()` with handshake troubleshooting
 - [ ] **P1.9.12** Update `nexus3/mcp/skill_adapter.py` (lines 62-87) to distinguish MCPError vs MCPTransportError
 - [ ] **P1.9.13** Add unit tests for error formatting functions
@@ -2381,13 +2385,21 @@ Use this checklist to track implementation progress. Each item can be assigned t
 **Note:** P2.1.4 changes `get_all_skills()` to async, which is a **BREAKING CHANGE**. P2.1.5 must be completed immediately after.
 
 - [ ] **P2.1.1** Improve `HTTPTransport.is_connected` to check `self._client.is_closed`
-- [ ] **P2.1.2** Add `reconnect()` method to `MCPClient` (client.py)
+- [ ] **P2.1.2** Add `reconnect()` method to `MCPClient` (client.py):
+  ```python
+  async def reconnect(self, timeout: float = 30.0) -> None:
+      """Reconnect by closing and re-initializing."""
+      await self.close()
+      await self.connect(timeout=timeout)
+  ```
 - [ ] **P2.1.3** Add `reconnect()` method to `ConnectedServer` (registry.py)
 - [ ] **P2.1.4** Change `get_all_skills()` to async with lazy reconnection
 - [ ] **P2.1.5** Update ALL callers of `get_all_skills()` to await **(requires P2.1.4, same commit)**:
-  - `nexus3/skill/services.py` - ServiceContainer
-  - `nexus3/session/dispatcher.py` - Dispatcher
-  - Any other callers (grep for `get_all_skills`)
+  - `nexus3/rpc/pool.py:551` - RPC dispatcher tool definitions
+  - `nexus3/rpc/pool.py:832` - RPC dispatcher response building
+  - `nexus3/cli/repl_commands.py:65` - REPL tool discovery
+  - `nexus3/cli/repl_commands.py:1853` - REPL `/mcp tools` command
+  - `tests/integration/test_mcp_client.py` - multiple test locations
 - [ ] **P2.1.6** Wrap tool listing in try/except in `registry.connect()` - continue with empty skills
 - [ ] **P2.1.7** Add `retry_tools()` method to MCPServerRegistry
 - [ ] **P2.1.8** Add `fail_if_no_tools: bool = False` to MCPServerConfig
@@ -2395,38 +2407,41 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P2.1.10** Add unit tests for reconnection logic
 - [ ] **P2.1.11** Add unit tests for graceful tool listing failure
 
-### Phase 2: Resources (Future)
+### Future Phase A: Resources
 
-- [ ] **P2.1** Add `resources/list` method to MCPClient
-- [ ] **P2.2** Add `resources/read` method
-- [ ] **P2.3** Add `MCPResource` dataclass to protocol.py
-- [ ] **P2.4** Add `MCPResourceContent` dataclass
-- [ ] **P2.5** Add `/mcp resources` REPL command
-- [ ] **P2.6** Unit tests for resource methods
-- [ ] **P2.7** Integration test with filesystem MCP server
+- [ ] **FA.1** Add `resources/list` method to MCPClient
+- [ ] **FA.2** Add `resources/read` method
+- [ ] **FA.3** Add `MCPResource` dataclass to protocol.py
+- [ ] **FA.4** Add `MCPResourceContent` dataclass
+- [ ] **FA.5** Add `/mcp resources` REPL command
+- [ ] **FA.6** Unit tests for resource methods
+- [ ] **FA.7** Integration test with filesystem MCP server
 
-### Phase 3: Prompts (Future)
+### Future Phase B: Prompts
 
-- [ ] **P3.1** Add `prompts/list` method to MCPClient
-- [ ] **P3.2** Add `prompts/get` method
-- [ ] **P3.3** Add `MCPPrompt` dataclass
-- [ ] **P3.4** Add `MCPPromptArgument` dataclass
-- [ ] **P3.5** Add `/mcp prompts` REPL command
-- [ ] **P3.6** Unit tests for prompt methods
+- [ ] **FB.1** Add `prompts/list` method to MCPClient
+- [ ] **FB.2** Add `prompts/get` method
+- [ ] **FB.3** Add `MCPPrompt` dataclass
+- [ ] **FB.4** Add `MCPPromptArgument` dataclass
+- [ ] **FB.5** Add `/mcp prompts` REPL command
+- [ ] **FB.6** Unit tests for prompt methods
 
-### Phase 4: Utilities (Future)
+### Future Phase C: Utilities
 
-- [ ] **P4.1** Implement ping method
-- [ ] **P4.2** Implement cancellation (_meta.cancellationToken)
-- [ ] **P4.3** Implement progress notifications handling
-- [ ] **P4.4** Implement logging notifications handling
+- [ ] **FC.1** Implement ping method
+- [ ] **FC.2** Implement cancellation (_meta.cancellationToken)
+- [ ] **FC.3** Implement progress notifications handling
+- [ ] **FC.4** Implement logging notifications handling
 
 ### Phase 5: Documentation
 
 - [ ] **P5.1** Update `nexus3/mcp/README.md` with all spec compliance changes
 - [ ] **P5.2** Update `CLAUDE.md` MCP section with any new config format changes
 - [ ] **P5.3** Document new MCPTool fields in protocol.py docstrings
-- [ ] **P5.4** Update `/mcp` command help with new capabilities (if resources/prompts added)
+- [ ] **P5.4** Update `/mcp` command help with new capabilities
+- [ ] **P5.5** Document Windows-specific configuration (env vars, .cmd resolution)
+- [ ] **P5.6** Document error context pattern and MCPErrorContext usage
+- [ ] **P5.7** Document HTTP session ID persistence behavior
 
 ---
 
@@ -2459,9 +2474,9 @@ Use this checklist to track implementation progress. Each item can be assigned t
 | P1.10 (HTTP Retry) | 8 items | ~1 hour | Exponential backoff + jitter |
 | P2.0 (Windows Compat) | 11 items | ~2-3 hours | Includes process termination |
 | P2.1 (Registry Robustness) | 11 items | ~3-4 hours | async migration + caller updates |
-| Phase 2 (Resources) | 7 items | ~4 hours | Future |
-| Phase 3 (Prompts) | 6 items | ~3 hours | Future |
-| Phase 4 (Utilities) | 4 items | ~2 hours | Future |
+| Future Phase A (Resources) | 7 items | ~4 hours | Future |
+| Future Phase B (Prompts) | 6 items | ~3 hours | Future |
+| Future Phase C (Utilities) | 4 items | ~2 hours | Future |
 
 **Total for immediate priorities (P0, P1.x, P2.0, P2.1):** ~14-18 hours
 
