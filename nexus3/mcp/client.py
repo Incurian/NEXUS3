@@ -153,7 +153,7 @@ class MCPClient:
 
         self._initialized = True
 
-    async def _call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+    async def _call(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Make JSON-RPC call and wait for response.
 
         P2.9 SECURITY: Verifies response ID matches request ID.
@@ -166,7 +166,7 @@ class MCPClient:
 
         Args:
             method: RPC method name.
-            params: Method parameters.
+            params: Method parameters. If None or empty, params field is omitted.
 
         Returns:
             The 'result' field from the response.
@@ -177,12 +177,13 @@ class MCPClient:
         """
         self._request_id += 1
         expected_id = self._request_id
-        request = {
+        request: dict[str, Any] = {
             "jsonrpc": "2.0",
             "id": expected_id,
             "method": method,
-            "params": params,
         }
+        if params:
+            request["params"] = params
 
         await self._transport.send(request)
 
@@ -263,6 +264,7 @@ class MCPClient:
         """Discover available tools from server.
 
         Fetches and caches the list of tools the server provides.
+        Handles pagination per MCP spec - loops until no nextCursor returned.
 
         Returns:
             List of available tools.
@@ -270,12 +272,24 @@ class MCPClient:
         Raises:
             MCPError: If the server returns an error.
         """
-        result = await self._call("tools/list", {})
+        all_tools: list[MCPTool] = []
+        cursor: str | None = None
 
-        self._tools = [
-            MCPTool.from_dict(t) for t in result.get("tools", [])
-        ]
+        while True:
+            params: dict[str, Any] | None = None
+            if cursor:
+                params = {"cursor": cursor}
 
+            result = await self._call("tools/list", params)
+
+            tools_data = result.get("tools", [])
+            all_tools.extend(MCPTool.from_dict(t) for t in tools_data)
+
+            cursor = result.get("nextCursor")
+            if not cursor:
+                break
+
+        self._tools = all_tools
         return self._tools
 
     async def call_tool(

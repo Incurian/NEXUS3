@@ -8,10 +8,14 @@ import pytest
 
 from nexus3.mcp.protocol import PROTOCOL_VERSION
 from nexus3.mcp.transport import (
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_RETRY_BACKOFF,
     MAX_SESSION_ID_LENGTH,
     MCP_HTTP_HEADERS,
+    RETRYABLE_STATUS_CODES,
     SAFE_ENV_KEYS,
     HTTPTransport,
+    MCPTransportError,
     StdioTransport,
     build_safe_env,
 )
@@ -283,12 +287,9 @@ class TestMCPHTTPHeaders:
         """HTTPTransport.connect() includes MCP protocol headers."""
         transport = HTTPTransport("http://localhost:9000")
 
-        # Mock httpx module - needs create=True since it's imported inside method
+        # Patch httpx in the transport module where it's imported
         mock_client = MagicMock()
-        with patch.dict("sys.modules", {"httpx": MagicMock()}) as mock_modules:
-            import sys
-
-            mock_httpx = sys.modules["httpx"]
+        with patch("nexus3.mcp.transport.httpx") as mock_httpx:
             mock_httpx.AsyncClient = MagicMock(return_value=mock_client)
             await transport.connect()
 
@@ -308,12 +309,9 @@ class TestMCPHTTPHeaders:
             headers={"Accept": "custom/accept", "X-Custom": "value"},
         )
 
-        # Mock httpx module - needs create=True since it's imported inside method
+        # Patch httpx in the transport module where it's imported
         mock_client = MagicMock()
-        with patch.dict("sys.modules", {"httpx": MagicMock()}) as mock_modules:
-            import sys
-
-            mock_httpx = sys.modules["httpx"]
+        with patch("nexus3.mcp.transport.httpx") as mock_httpx:
             mock_httpx.AsyncClient = MagicMock(return_value=mock_client)
             await transport.connect()
 
@@ -555,3 +553,373 @@ class TestHTTPTransportSessionManagement:
 
         # Session ID still set
         assert transport.session_id == "persistent-session"
+
+
+class TestHTTPTransportRetryConstants:
+    """Test P1.10: HTTP retry configuration constants."""
+
+    def test_default_max_retries(self):
+        """Default max retries is 3."""
+        assert DEFAULT_MAX_RETRIES == 3
+
+    def test_default_retry_backoff(self):
+        """Default retry backoff is 1.0 seconds."""
+        assert DEFAULT_RETRY_BACKOFF == 1.0
+
+    def test_retryable_status_codes(self):
+        """Retryable status codes include 429 and 5xx server errors."""
+        assert 429 in RETRYABLE_STATUS_CODES  # Rate limit
+        assert 500 in RETRYABLE_STATUS_CODES  # Internal server error
+        assert 502 in RETRYABLE_STATUS_CODES  # Bad gateway
+        assert 503 in RETRYABLE_STATUS_CODES  # Service unavailable
+        assert 504 in RETRYABLE_STATUS_CODES  # Gateway timeout
+
+    def test_non_retryable_client_errors(self):
+        """Client errors (4xx except 429) should not be retryable."""
+        assert 400 not in RETRYABLE_STATUS_CODES  # Bad request
+        assert 401 not in RETRYABLE_STATUS_CODES  # Unauthorized
+        assert 403 not in RETRYABLE_STATUS_CODES  # Forbidden
+        assert 404 not in RETRYABLE_STATUS_CODES  # Not found
+
+
+class TestHTTPTransportRetryConfiguration:
+    """Test P1.10: HTTP retry configuration in HTTPTransport."""
+
+    def test_default_retry_params(self):
+        """HTTPTransport uses default retry params when not specified."""
+        transport = HTTPTransport("http://localhost:9000")
+        assert transport._max_retries == DEFAULT_MAX_RETRIES
+        assert transport._retry_backoff == DEFAULT_RETRY_BACKOFF
+
+    def test_custom_retry_params(self):
+        """HTTPTransport accepts custom retry params."""
+        transport = HTTPTransport(
+            "http://localhost:9000",
+            max_retries=5,
+            retry_backoff=2.0,
+        )
+        assert transport._max_retries == 5
+        assert transport._retry_backoff == 2.0
+
+    def test_is_retryable_status_true_for_retryable_codes(self):
+        """_is_retryable_status returns True for retryable codes."""
+        transport = HTTPTransport("http://localhost:9000")
+
+        for code in [429, 500, 502, 503, 504]:
+            assert transport._is_retryable_status(code) is True
+
+    def test_is_retryable_status_false_for_non_retryable_codes(self):
+        """_is_retryable_status returns False for non-retryable codes."""
+        transport = HTTPTransport("http://localhost:9000")
+
+        for code in [200, 201, 400, 401, 403, 404, 405]:
+            assert transport._is_retryable_status(code) is False
+
+    def test_calculate_retry_delay_exponential_backoff(self):
+        """_calculate_retry_delay uses exponential backoff."""
+        transport = HTTPTransport("http://localhost:9000", retry_backoff=1.0)
+
+        # Attempt 0: ~1s (1.0 * 2^0 = 1.0, plus 0-10% jitter)
+        delay0 = transport._calculate_retry_delay(0)
+        assert 1.0 <= delay0 <= 1.1
+
+        # Attempt 1: ~2s (1.0 * 2^1 = 2.0, plus 0-10% jitter)
+        delay1 = transport._calculate_retry_delay(1)
+        assert 2.0 <= delay1 <= 2.2
+
+        # Attempt 2: ~4s (1.0 * 2^2 = 4.0, plus 0-10% jitter)
+        delay2 = transport._calculate_retry_delay(2)
+        assert 4.0 <= delay2 <= 4.4
+
+    def test_calculate_retry_delay_with_custom_backoff(self):
+        """_calculate_retry_delay respects custom backoff value."""
+        transport = HTTPTransport("http://localhost:9000", retry_backoff=0.5)
+
+        # Attempt 0: ~0.5s (0.5 * 2^0 = 0.5, plus 0-10% jitter)
+        delay0 = transport._calculate_retry_delay(0)
+        assert 0.5 <= delay0 <= 0.55
+
+
+class TestHTTPTransportRetryBehavior:
+    """Test P1.10: HTTP retry behavior in send() and request()."""
+
+    @pytest.mark.asyncio
+    async def test_send_retries_on_429(self):
+        """send() retries on 429 Too Many Requests."""
+        transport = HTTPTransport(
+            "http://localhost:9000",
+            max_retries=2,
+            retry_backoff=0.01,  # Fast for testing
+        )
+
+        # First call returns 429, second returns 200
+        mock_response_429 = MagicMock()
+        mock_response_429.status_code = 429
+        mock_response_429.headers = {}
+
+        mock_response_200 = MagicMock()
+        mock_response_200.status_code = 200
+        mock_response_200.content = b'{"result": "ok"}'
+        mock_response_200.json.return_value = {"result": "ok"}
+        mock_response_200.headers = {}
+
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = [mock_response_429, mock_response_200]
+        transport._client = mock_client
+
+        await transport.send({"method": "test"})
+
+        # Should have been called twice
+        assert mock_client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_send_retries_on_503(self):
+        """send() retries on 503 Service Unavailable."""
+        transport = HTTPTransport(
+            "http://localhost:9000",
+            max_retries=2,
+            retry_backoff=0.01,
+        )
+
+        mock_response_503 = MagicMock()
+        mock_response_503.status_code = 503
+        mock_response_503.headers = {}
+
+        mock_response_200 = MagicMock()
+        mock_response_200.status_code = 200
+        mock_response_200.content = b'{"result": "ok"}'
+        mock_response_200.json.return_value = {"result": "ok"}
+        mock_response_200.headers = {}
+
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = [mock_response_503, mock_response_200]
+        transport._client = mock_client
+
+        await transport.send({"method": "test"})
+
+        assert mock_client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_send_no_retry_on_400(self):
+        """send() does not retry on 400 Bad Request (client error)."""
+        transport = HTTPTransport(
+            "http://localhost:9000",
+            max_retries=2,
+            retry_backoff=0.01,
+        )
+
+        mock_response_400 = MagicMock()
+        mock_response_400.status_code = 400
+        mock_response_400.headers = {}
+        mock_response_400.raise_for_status.side_effect = Exception("400 Bad Request")
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response_400
+        transport._client = mock_client
+
+        with pytest.raises(MCPTransportError):
+            await transport.send({"method": "test"})
+
+        # Should only be called once (no retry)
+        assert mock_client.post.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_send_exhausts_retries(self):
+        """send() fails after exhausting retries."""
+        transport = HTTPTransport(
+            "http://localhost:9000",
+            max_retries=2,
+            retry_backoff=0.01,
+        )
+
+        mock_response_503 = MagicMock()
+        mock_response_503.status_code = 503
+        mock_response_503.headers = {}
+        mock_response_503.raise_for_status.side_effect = Exception("503 Service Unavailable")
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response_503
+        transport._client = mock_client
+
+        with pytest.raises(MCPTransportError):
+            await transport.send({"method": "test"})
+
+        # Should be called 3 times (initial + 2 retries)
+        assert mock_client.post.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_send_retries_on_transport_error(self):
+        """send() retries on httpx.TransportError."""
+        import httpx
+
+        transport = HTTPTransport(
+            "http://localhost:9000",
+            max_retries=2,
+            retry_backoff=0.01,
+        )
+
+        mock_response_200 = MagicMock()
+        mock_response_200.status_code = 200
+        mock_response_200.content = b'{"result": "ok"}'
+        mock_response_200.json.return_value = {"result": "ok"}
+        mock_response_200.headers = {}
+
+        mock_client = AsyncMock()
+        # First call raises TransportError, second succeeds
+        mock_client.post.side_effect = [
+            httpx.TransportError("Connection reset"),
+            mock_response_200,
+        ]
+        transport._client = mock_client
+
+        await transport.send({"method": "test"})
+
+        assert mock_client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_send_transport_error_exhausts_retries(self):
+        """send() fails after exhausting retries on TransportError."""
+        import httpx
+
+        transport = HTTPTransport(
+            "http://localhost:9000",
+            max_retries=2,
+            retry_backoff=0.01,
+        )
+
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = httpx.TransportError("Connection refused")
+        transport._client = mock_client
+
+        with pytest.raises(MCPTransportError) as exc_info:
+            await transport.send({"method": "test"})
+
+        assert "after 3 attempts" in str(exc_info.value)
+        assert mock_client.post.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_request_retries_on_500(self):
+        """request() retries on 500 Internal Server Error."""
+        transport = HTTPTransport(
+            "http://localhost:9000",
+            max_retries=2,
+            retry_backoff=0.01,
+        )
+
+        mock_response_500 = MagicMock()
+        mock_response_500.status_code = 500
+        mock_response_500.headers = {}
+
+        mock_response_200 = MagicMock()
+        mock_response_200.status_code = 200
+        mock_response_200.content = b'{"result": "ok"}'
+        mock_response_200.json.return_value = {"result": "ok"}
+        mock_response_200.headers = {}
+
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = [mock_response_500, mock_response_200]
+        transport._client = mock_client
+
+        result = await transport.request({"method": "test", "id": 1})
+
+        assert result == {"result": "ok"}
+        assert mock_client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_request_retries_on_transport_error(self):
+        """request() retries on httpx.TransportError."""
+        import httpx
+
+        transport = HTTPTransport(
+            "http://localhost:9000",
+            max_retries=2,
+            retry_backoff=0.01,
+        )
+
+        mock_response_200 = MagicMock()
+        mock_response_200.status_code = 200
+        mock_response_200.content = b'{"result": "ok"}'
+        mock_response_200.json.return_value = {"result": "ok"}
+        mock_response_200.headers = {}
+
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = [
+            httpx.TransportError("Network error"),
+            mock_response_200,
+        ]
+        transport._client = mock_client
+
+        result = await transport.request({"method": "test", "id": 1})
+
+        assert result == {"result": "ok"}
+        assert mock_client.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_request_no_retry_on_404(self):
+        """request() does not retry on 404 Not Found."""
+        transport = HTTPTransport(
+            "http://localhost:9000",
+            max_retries=2,
+            retry_backoff=0.01,
+        )
+
+        mock_response_404 = MagicMock()
+        mock_response_404.status_code = 404
+        mock_response_404.headers = {}
+        mock_response_404.raise_for_status.side_effect = Exception("404 Not Found")
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response_404
+        transport._client = mock_client
+
+        with pytest.raises(MCPTransportError):
+            await transport.request({"method": "test", "id": 1})
+
+        assert mock_client.post.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_request_exhausts_retries(self):
+        """request() fails after exhausting retries."""
+        transport = HTTPTransport(
+            "http://localhost:9000",
+            max_retries=2,
+            retry_backoff=0.01,
+        )
+
+        mock_response_502 = MagicMock()
+        mock_response_502.status_code = 502
+        mock_response_502.headers = {}
+        mock_response_502.raise_for_status.side_effect = Exception("502 Bad Gateway")
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response_502
+        transport._client = mock_client
+
+        with pytest.raises(MCPTransportError):
+            await transport.request({"method": "test", "id": 1})
+
+        assert mock_client.post.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_zero_retries_no_retry(self):
+        """With max_retries=0, no retries are attempted."""
+        transport = HTTPTransport(
+            "http://localhost:9000",
+            max_retries=0,
+            retry_backoff=0.01,
+        )
+
+        mock_response_503 = MagicMock()
+        mock_response_503.status_code = 503
+        mock_response_503.headers = {}
+        mock_response_503.raise_for_status.side_effect = Exception("503 Service Unavailable")
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response_503
+        transport._client = mock_client
+
+        with pytest.raises(MCPTransportError):
+            await transport.send({"method": "test"})
+
+        # Only 1 attempt, no retries
+        assert mock_client.post.call_count == 1

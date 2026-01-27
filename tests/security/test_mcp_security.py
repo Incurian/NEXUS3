@@ -31,11 +31,8 @@ class TestSSRFRedirectBypass:
     @pytest.mark.asyncio
     async def test_http_transport_follow_redirects_false(self) -> None:
         """HTTPTransport must have follow_redirects=False set."""
-        # httpx is imported inside connect(), so we patch at the import location
-        with patch.dict("sys.modules", {"httpx": MagicMock()}):
-            import sys
-
-            mock_httpx = sys.modules["httpx"]
+        # Patch httpx in the transport module where it's imported
+        with patch("nexus3.mcp.transport.httpx") as mock_httpx:
             mock_client = MagicMock()
             mock_httpx.AsyncClient.return_value = mock_client
 
@@ -56,13 +53,14 @@ class TestSSRFRedirectBypass:
         When a redirect (3xx) response is received, it should raise an error
         rather than following the redirect to a potentially dangerous URL.
         """
-        # httpx is imported inside connect(), so we patch at the import location
-        with patch.dict("sys.modules", {"httpx": MagicMock()}):
-            import sys
+        import httpx as real_httpx
 
-            mock_httpx = sys.modules["httpx"]
+        # Patch httpx in the transport module, preserving TransportError for except clause
+        with patch("nexus3.mcp.transport.httpx") as mock_httpx:
             mock_client = AsyncMock()
             mock_httpx.AsyncClient.return_value = mock_client
+            # Preserve real TransportError so except clause works
+            mock_httpx.TransportError = real_httpx.TransportError
 
             # Simulate a redirect response (302)
             mock_response = MagicMock()

@@ -14,9 +14,12 @@ import asyncio
 import json
 import logging
 import os
+import random
 import re
 from abc import ABC, abstractmethod
 from typing import Any
+
+import httpx
 
 from nexus3.core.errors import NexusError
 from nexus3.core.url_validator import UrlSecurityError, validate_url
@@ -33,6 +36,12 @@ class MCPTransportError(NexusError):
 # Prevents memory exhaustion from malicious/buggy servers.
 # 10MB should be generous for any legitimate MCP message.
 MAX_STDIO_LINE_LENGTH: int = 10 * 1024 * 1024  # 10 MB
+
+# P1.10: HTTP retry configuration for transient failures.
+# Retry on server errors and rate limiting, but not client errors.
+DEFAULT_MAX_RETRIES: int = 3
+DEFAULT_RETRY_BACKOFF: float = 1.0
+RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 
 # P1.7: MCP-specific HTTP headers required by the protocol spec.
 # These are added to every HTTP request to MCP servers.
@@ -419,6 +428,8 @@ class HTTPTransport(MCPTransport):
         url: str,
         headers: dict[str, str] | None = None,
         timeout: float = 30.0,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        retry_backoff: float = DEFAULT_RETRY_BACKOFF,
     ):
         """Initialize HTTPTransport.
 
@@ -426,6 +437,8 @@ class HTTPTransport(MCPTransport):
             url: Base URL of the MCP server.
             headers: Additional HTTP headers (e.g., for auth).
             timeout: Request timeout in seconds.
+            max_retries: Maximum number of retries for transient failures (default 3).
+            retry_backoff: Base delay in seconds for exponential backoff (default 1.0).
 
         Raises:
             MCPTransportError: If URL is invalid or blocked (SSRF protection).
@@ -439,6 +452,8 @@ class HTTPTransport(MCPTransport):
         self._url = url.rstrip("/")
         self._headers = headers or {}
         self._timeout = timeout
+        self._max_retries = max_retries
+        self._retry_backoff = retry_backoff
         self._client: Any = None  # httpx.AsyncClient
         self._pending_response: dict[str, Any] | None = None
         # P1.8: MCP session ID tracking (returned by server, sent in subsequent requests)
@@ -446,11 +461,6 @@ class HTTPTransport(MCPTransport):
 
     async def connect(self) -> None:
         """Create HTTP client (connection pool)."""
-        try:
-            import httpx
-        except ImportError as e:
-            raise MCPTransportError("httpx required for HTTP transport: pip install httpx") from e
-
         # P1.7: Include MCP protocol headers alongside Content-Type and user headers
         combined_headers = {
             "Content-Type": "application/json",
@@ -473,33 +483,74 @@ class HTTPTransport(MCPTransport):
 
         P1.8: Includes session ID header if set, and captures session ID
         from response for subsequent requests.
+
+        P1.10: Retries on transient failures (5xx, 429) with exponential backoff.
         """
         if self._client is None:
             raise MCPTransportError("Transport not connected")
 
-        try:
-            data = json.dumps(message, separators=(",", ":"))
+        data = json.dumps(message, separators=(",", ":"))
 
-            # P1.8: Include session ID in request headers if we have one
-            req_headers: dict[str, str] = {}
-            if self._session_id:
-                req_headers["mcp-session-id"] = self._session_id
+        # P1.8: Include session ID in request headers if we have one
+        req_headers: dict[str, str] = {}
+        if self._session_id:
+            req_headers["mcp-session-id"] = self._session_id
 
-            response = await self._client.post(
-                self._url, content=data, headers=req_headers if req_headers else None
-            )
-            response.raise_for_status()
+        last_error: Exception | None = None
 
-            # P1.8: Extract and store session ID from response (with validation)
-            self._capture_session_id(response.headers)
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = await self._client.post(
+                    self._url, content=data, headers=req_headers if req_headers else None
+                )
 
-            # Handle 204 No Content (for notifications)
-            if response.status_code == 204 or not response.content:
-                self._pending_response = None
-            else:
-                self._pending_response = response.json()
-        except Exception as e:
-            raise MCPTransportError(f"HTTP request failed: {e}") from e
+                # P1.10: Retry on transient failures with backoff
+                if self._is_retryable_status(response.status_code) and attempt < self._max_retries:
+                    delay = self._calculate_retry_delay(attempt)
+                    logger.debug(
+                        "HTTP %d on attempt %d, retrying in %.2fs",
+                        response.status_code,
+                        attempt + 1,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+                response.raise_for_status()
+
+                # P1.8: Extract and store session ID from response (with validation)
+                self._capture_session_id(response.headers)
+
+                # Handle 204 No Content (for notifications)
+                if response.status_code == 204 or not response.content:
+                    self._pending_response = None
+                else:
+                    self._pending_response = response.json()
+                return
+
+            except httpx.TransportError as e:
+                last_error = e
+                if attempt < self._max_retries:
+                    delay = self._calculate_retry_delay(attempt)
+                    logger.debug(
+                        "Transport error on attempt %d (%s), retrying in %.2fs",
+                        attempt + 1,
+                        e,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise MCPTransportError(
+                    f"HTTP request failed after {self._max_retries + 1} attempts: {e}"
+                ) from e
+            except Exception as e:
+                raise MCPTransportError(f"HTTP request failed: {e}") from e
+
+        # Should not reach here, but handle edge case
+        if last_error:
+            raise MCPTransportError(
+                f"HTTP request failed after {self._max_retries + 1} attempts: {last_error}"
+            ) from last_error
 
     async def receive(self) -> dict[str, Any]:
         """Return the response from the last send().
@@ -524,6 +575,8 @@ class HTTPTransport(MCPTransport):
         P1.8: Includes session ID header if set, and captures session ID
         from response for subsequent requests.
 
+        P1.10: Retries on transient failures (5xx, 429) with exponential backoff.
+
         Args:
             message: JSON-RPC request message
 
@@ -537,31 +590,70 @@ class HTTPTransport(MCPTransport):
         if self._client is None:
             raise MCPTransportError("Transport not connected")
 
-        try:
-            data = json.dumps(message, separators=(",", ":"))
+        data = json.dumps(message, separators=(",", ":"))
 
-            # P1.8: Include session ID in request headers if we have one
-            req_headers: dict[str, str] = {}
-            if self._session_id:
-                req_headers["mcp-session-id"] = self._session_id
+        # P1.8: Include session ID in request headers if we have one
+        req_headers: dict[str, str] = {}
+        if self._session_id:
+            req_headers["mcp-session-id"] = self._session_id
 
-            response = await self._client.post(
-                self._url, content=data, headers=req_headers if req_headers else None
-            )
-            response.raise_for_status()
+        last_error: Exception | None = None
 
-            # P1.8: Extract session ID from response (with validation)
-            self._capture_session_id(response.headers)
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = await self._client.post(
+                    self._url, content=data, headers=req_headers if req_headers else None
+                )
 
-            # For requests (messages with 'id'), we expect a response body
-            if response.status_code == 204 or not response.content:
-                raise MCPTransportError("Server returned empty response for request")
+                # P1.10: Retry on transient failures with backoff
+                if self._is_retryable_status(response.status_code) and attempt < self._max_retries:
+                    delay = self._calculate_retry_delay(attempt)
+                    logger.debug(
+                        "HTTP %d on attempt %d, retrying in %.2fs",
+                        response.status_code,
+                        attempt + 1,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
 
-            return response.json()
-        except MCPTransportError:
-            raise
-        except Exception as e:
-            raise MCPTransportError(f"HTTP request failed: {e}") from e
+                response.raise_for_status()
+
+                # P1.8: Extract session ID from response (with validation)
+                self._capture_session_id(response.headers)
+
+                # For requests (messages with 'id'), we expect a response body
+                if response.status_code == 204 or not response.content:
+                    raise MCPTransportError("Server returned empty response for request")
+
+                return response.json()
+
+            except httpx.TransportError as e:
+                last_error = e
+                if attempt < self._max_retries:
+                    delay = self._calculate_retry_delay(attempt)
+                    logger.debug(
+                        "Transport error on attempt %d (%s), retrying in %.2fs",
+                        attempt + 1,
+                        e,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise MCPTransportError(
+                    f"HTTP request failed after {self._max_retries + 1} attempts: {e}"
+                ) from e
+            except MCPTransportError:
+                raise
+            except Exception as e:
+                raise MCPTransportError(f"HTTP request failed: {e}") from e
+
+        # Should not reach here, but handle edge case
+        if last_error:
+            raise MCPTransportError(
+                f"HTTP request failed after {self._max_retries + 1} attempts: {last_error}"
+            ) from last_error
+        raise MCPTransportError(f"HTTP request failed after {self._max_retries + 1} attempts")
 
     async def close(self) -> None:
         """Close HTTP client."""
@@ -627,3 +719,36 @@ class HTTPTransport(MCPTransport):
         session_id = headers.get("mcp-session-id")
         if session_id and self._validate_session_id(session_id):
             self._session_id = session_id
+
+    def _is_retryable_status(self, status_code: int) -> bool:
+        """Check if HTTP status code is retryable.
+
+        P1.10: Only retry on server errors (5xx) and rate limiting (429).
+        Client errors (4xx except 429) are not retried as they indicate
+        a problem with the request itself.
+
+        Args:
+            status_code: HTTP response status code.
+
+        Returns:
+            True if the request should be retried.
+        """
+        return status_code in RETRYABLE_STATUS_CODES
+
+    def _calculate_retry_delay(self, attempt: int) -> float:
+        """Calculate retry delay with exponential backoff and jitter.
+
+        P1.10: Uses exponential backoff (base * 2^attempt) with random
+        jitter (0-10% of delay) to prevent thundering herd.
+
+        Args:
+            attempt: Current attempt number (0-indexed).
+
+        Returns:
+            Delay in seconds before next retry.
+        """
+        import random
+
+        delay: float = self._retry_backoff * (2 ** attempt)
+        jitter: float = random.uniform(0, 0.1 * delay)
+        return delay + jitter
