@@ -12,11 +12,23 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ## Current Development
 
-### In Progress: Command Help System
+### In Progress: MCP Improvements
+
+**Plan:** `docs/MCP-IMPLEMENTATION-GAPS.md`
+
+**Status:** Starting implementation.
+
+MCP spec compliance and usability improvements:
+- P0: Config format compatibility (support Claude Desktop `mcpServers` format)
+- P1.1-1.8: Protocol compliance fixes (pagination, HTTP headers, session management)
+- P1.9: Improved error messages with source tracking and actionable suggestions
+- P2.0: Windows compatibility (PATHEXT, .cmd resolution, env vars)
+
+### Pending Live Test: Command Help System
 
 **Plan:** `docs/COMMAND-HELP.md`
 
-**Status:** Implementation complete, awaiting user testing before merge.
+**Status:** Implementation complete, merged to master, awaiting user live testing.
 
 Dynamic help system for REPL commands with consistent formatting, argument documentation, and examples.
 
@@ -30,9 +42,8 @@ Plans are listed in recommended implementation order. Most are independent, but 
 | 2 | `CONCAT-FILES-PLAN.md` | New `concat_files` skill to bundle source files with token estimation. Simple, isolated, low risk. |
 | 3 | `EDIT-PATCH-PLAN.md` | Split `edit_file` into separate tools, add batched edits, new `patch` skill for unified diffs. |
 | 4 | `CLIPBOARD-PLAN.md` | Scoped clipboard system (agent/project/system) for copy/paste across files and agents. |
-| 5 | `MCP-IMPLEMENTATION-GAPS.md` | MCP spec compliance fixes: config format compatibility, pagination, HTTP headers, session management. |
-| 6 | `SANDBOXED-PARENT-SEND-PLAN.md` | Allow sandboxed agents to `nexus_send` to their parent only. Extends permission system with target restrictions. |
-| 7 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration (issues, MRs, epics, CI/CD). Large feature. *Note: Uses session allowances pattern similar to #6; consider implementing #6 first to establish enforcer patterns.* |
+| 5 | `SANDBOXED-PARENT-SEND-PLAN.md` | Allow sandboxed agents to `nexus_send` to their parent only. Extends permission system with target restrictions. |
+| 6 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration (issues, MRs, epics, CI/CD). Large feature. *Note: Uses session allowances pattern similar to #5; consider implementing #5 first to establish enforcer patterns.* |
 
 **Reference docs** (not plans):
 - `GITHUB-REFERENCE.md` - GitHub API/CLI reference for future GitHub integration
