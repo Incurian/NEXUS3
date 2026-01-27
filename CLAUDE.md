@@ -15,14 +15,29 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 ### In Progress: MCP Improvements
 
 **Plan:** `docs/MCP-IMPLEMENTATION-GAPS.md`
+**Branch:** `feature/mcp-improvements` (12 commits ahead of master)
 
-**Status:** Starting implementation.
+**Completed (validated by explorers 2026-01-27):**
+- ✅ P0.5: Security hardening (SSRF redirect fix, output sanitization, size limits, error sanitization)
+- ✅ P0: Claude Desktop config format compatibility (`mcpServers` + `command`/`args`)
+- ✅ P1.1: Notification format fix (omit empty params)
+- ✅ P1.4: Pagination support for tools/list
+- ✅ P1.5-P1.6: MCPTool/MCPToolResult optional fields (title, icons, structured_content, etc.)
+- ✅ P1.7-P1.8: HTTP protocol headers and session management
+- ✅ P1.9: Improved error messages with source tracking and actionable suggestions
+- ✅ P1.10: HTTP retry logic with exponential backoff
+- ✅ P2.0: Windows compatibility (env vars, command resolution, CRLF, process groups)
 
-MCP spec compliance and usability improvements:
-- P0: Config format compatibility (support Claude Desktop `mcpServers` format)
-- P1.1-1.8: Protocol compliance fixes (pagination, HTTP headers, session management)
-- P1.9: Improved error messages with source tracking and actionable suggestions
-- P2.0: Windows compatibility (PATHEXT, .cmd resolution, env vars)
+**Remaining:**
+- P2.1: Registry robustness (stale connection detection, graceful tool listing failure)
+
+**Known Issue (from validation):**
+- `nexus3/skill/builtin/bash.py` and `run_python.py` use `start_new_session=True` unconditionally
+- This only works on Unix; Windows needs `CREATE_NEW_PROCESS_GROUP` flag
+- Impact: Subprocess timeout termination won't kill child processes on Windows
+- Fix: Add platform check like we did in `nexus3/mcp/transport.py`
+
+**Test count:** 2494 passed (756 security, 118 MCP unit tests)
 
 ### Pending Live Test: Command Help System
 
@@ -1221,5 +1236,11 @@ Comprehensive security hardening completed January 2026:
 - **Process isolation**: Process group kills on timeout, env sanitization
 - **Input validation**: URL validation, agent ID validation, MCP protocol hardening
 - **Output sanitization**: Terminal escape stripping, Rich markup escaping, secrets redaction
+- **MCP hardening** (added 2026-01-27):
+  - SSRF redirect bypass prevention (`follow_redirects=False`)
+  - MCP output sanitization via `sanitize_for_display()`
+  - Response size limits (10MB max via `MAX_MCP_OUTPUT_SIZE`)
+  - Config error sanitization (no secret leakage in validation errors)
+  - Session ID validation (alphanumeric only, 256 char max)
 
-**Test coverage**: 2300+ tests including 500+ security-specific tests.
+**Test coverage**: 2494 tests including 756 security-specific tests.
