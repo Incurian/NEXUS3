@@ -12,7 +12,7 @@ This document outlines the phased plan to complete all remaining MCP implementat
 | Phase | Description | Effort | Priority |
 |-------|-------------|--------|----------|
 | **Phase 1** | Documentation (P5.x) | 1-2 hours | ✅ COMPLETE |
-| **Phase 2** | Windows Polish (P2.0.8-11) | 1-2 hours | Medium - optional |
+| **Phase 2** | Windows Polish (P2.0.8-11) | 1-2 hours | ✅ COMPLETE |
 | **Phase 3** | Deferred Tests (P1.4.4, P1.9.14) | 1-2 hours | Low - nice to have |
 | **Phase 4** | Future: Resources (FA) | 3-4 hours | Deferred |
 | **Phase 5** | Future: Prompts (FB) | 2-3 hours | Deferred |
@@ -71,29 +71,29 @@ This document outlines the phased plan to complete all remaining MCP implementat
 
 ---
 
-## Phase 2: Windows Polish (P2.0.8-11) - MEDIUM PRIORITY
+## Phase 2: Windows Polish (P2.0.8-11) - COMPLETE
 
 **Goal:** Improve Windows user experience with better error messages and test coverage.
 
 ### Checklist
 
-- [ ] **P2.0.8** Add Windows-specific hints to error formatter
+- [x] **P2.0.8** Add Windows-specific hints to error formatter
   - Detect Windows in `format_command_not_found()`
   - Add hints about PATHEXT, .cmd/.bat extensions
   - Suggest checking `where` instead of `which`
 
-- [ ] **P2.0.9** Add unit tests for Windows command resolution
+- [x] **P2.0.9** Add unit tests for Windows command resolution
   - Test `resolve_command()` with mocked `shutil.which`
   - Test extension resolution (.cmd, .bat, .exe)
   - Test path-through for already-resolved commands
 
-- [ ] **P2.0.10** Add unit tests for CRLF handling
+- [x] **P2.0.10** Add unit tests for CRLF handling
   - Test `StdioTransport.receive()` with CRLF line endings
   - Test mixed LF/CRLF in same session
   - Test JSON parsing after CRLF strip
 
-- [ ] **P2.0.11** Document Windows-specific config in MCP README
-  - (Overlaps with P5.5 - can combine)
+- [x] **P2.0.11** Document Windows-specific config in MCP README
+  - (Completed in P5.5)
 
 ### Files to Modify
 
