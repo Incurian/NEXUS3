@@ -55,13 +55,20 @@ Both official (`mcpServers` with command+args) and NEXUS3 (`servers` with comman
 
 - [x] **P1.10.1-P1.10.8** Exponential backoff with jitter for 429/5xx errors
 
+### Priority 1.9: Improved Error Messages - DONE
+
+- [x] **P1.9.1-P1.9.13** Error context, formatting functions, stderr buffering, unit tests
+- [ ] **P1.9.14** Integration tests for user-facing error output (deferred)
+
+See Implementation Checklist below for details.
+
 ---
 
 ## Remaining Work
 
-### Priority 1.9: Improved Error Messages
+### Priority 1.9: Design Reference (Implemented)
 
-**Status:** MCP errors are currently terse and lack context, making troubleshooting difficult.
+**Status:** COMPLETE. The error formatting system is implemented. This section preserved for reference.
 
 #### The Problem
 
@@ -162,9 +169,9 @@ Troubleshooting:
 
 ---
 
-### Priority 2.0: Windows Compatibility
+### Priority 2.0: Windows Compatibility (Implemented)
 
-**Status:** MCP stdio transport has several issues that would affect Windows users.
+**Status:** COMPLETE. MCP transport and ExecutionSkills have Windows process group support. This section preserved for reference.
 
 #### 2.0.1 Missing Windows Environment Variables
 
@@ -277,9 +284,9 @@ else:
 
 ---
 
-### Priority 2.1: Registry Robustness
+### Priority 2.1: Registry Robustness - NEXT
 
-**Status:** MCP connections can become stale, and tool listing failures block entire server registration.
+**Status:** Actual remaining work. MCP connections can become stale, and tool listing failures block entire server registration.
 
 #### 2.1.1 Stale Connection Detection and Auto-Reconnection
 
@@ -412,22 +419,22 @@ Method: `elicitation/request` (Server → Client)
 
 ## Implementation Checklist
 
-### Priority 1.9: Improved Error Messages
+### Priority 1.9: Improved Error Messages - DONE
 
-- [ ] **P1.9.1** Create `nexus3/mcp/errors.py` with `MCPErrorContext` dataclass
-- [ ] **P1.9.2** Create `nexus3/mcp/error_formatter.py` with formatting functions
-- [ ] **P1.9.3** Add `context: MCPErrorContext | None` field to `MCPConfigError`
-- [ ] **P1.9.4** Update `ContextLoader._merge_mcp_servers()` to pass source context
-- [ ] **P1.9.5** Update `MCPServerRegistry.connect()` to track config origin
-- [ ] **P1.9.6** Update `StdioTransport` to buffer stderr (deque maxlen=20)
-- [ ] **P1.9.7** Implement `format_config_validation_error()`
-- [ ] **P1.9.8** Implement `format_command_not_found()`
-- [ ] **P1.9.9** Implement `format_server_crash()`
-- [ ] **P1.9.10** Implement `_format_json_error()` helper
-- [ ] **P1.9.11** Implement `format_timeout_error()`
-- [ ] **P1.9.12** Update `skill_adapter.py` to distinguish MCPError vs MCPTransportError
-- [ ] **P1.9.13** Add unit tests for error formatting
-- [ ] **P1.9.14** Add integration tests for user-facing error output
+- [x] **P1.9.1** Create `nexus3/mcp/errors.py` with `MCPErrorContext` dataclass
+- [x] **P1.9.2** Create `nexus3/mcp/error_formatter.py` with formatting functions
+- [x] **P1.9.3** Add `context: MCPErrorContext | None` field to `MCPConfigError`
+- [x] **P1.9.4** Update `ContextLoader._merge_mcp_servers()` to pass source context
+- [x] **P1.9.5** Update `MCPServerRegistry.connect()` to track config origin
+- [x] **P1.9.6** Update `StdioTransport` to buffer stderr (deque maxlen=20)
+- [x] **P1.9.7** Implement `format_config_validation_error()`
+- [x] **P1.9.8** Implement `format_command_not_found()`
+- [x] **P1.9.9** Implement `format_server_crash()`
+- [x] **P1.9.10** Implement `format_json_error()`
+- [x] **P1.9.11** Implement `format_timeout_error()`
+- [x] **P1.9.12** Update `skill_adapter.py` to distinguish MCPError vs MCPTransportError
+- [x] **P1.9.13** Add unit tests for error formatting (37 tests)
+- [ ] **P1.9.14** Add integration tests for user-facing error output (deferred)
 
 ### Priority 2.0: Windows Compatibility - DONE
 
