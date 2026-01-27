@@ -22,6 +22,7 @@ Usage:
     await registry.close_all()
 """
 
+import logging
 from dataclasses import dataclass, field
 
 from nexus3.core.errors import MCPConfigError
@@ -30,6 +31,8 @@ from nexus3.mcp.error_formatter import format_command_not_found, format_server_c
 from nexus3.mcp.errors import MCPErrorContext
 from nexus3.mcp.skill_adapter import MCPSkillAdapter
 from nexus3.mcp.transport import HTTPTransport, MCPTransportError, StdioTransport
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -54,6 +57,8 @@ class MCPServerConfig:
         env_passthrough: Names of host env vars to pass to subprocess.
         cwd: Working directory for the server subprocess.
         enabled: Whether this server is enabled.
+        fail_if_no_tools: If True, raise error when tool listing fails during connect.
+            Default False means connect succeeds with empty tools.
     """
 
     name: str
@@ -64,6 +69,7 @@ class MCPServerConfig:
     env_passthrough: list[str] | None = None
     cwd: str | None = None
     enabled: bool = True
+    fail_if_no_tools: bool = False
 
     def get_command_list(self) -> list[str]:
         """Return command as list, merging command + args if needed.
@@ -247,8 +253,15 @@ class MCPServerRegistry:
                 ) from e
 
         # List tools and create adapters
-        tools = await client.list_tools()
-        skills = [MCPSkillAdapter(client, tool, config.name) for tool in tools]
+        # P2.1.6: Graceful failure - connect succeeds even if tool listing fails
+        try:
+            tools = await client.list_tools()
+            skills = [MCPSkillAdapter(client, tool, config.name) for tool in tools]
+        except Exception as e:
+            if config.fail_if_no_tools:
+                raise
+            logger.warning("Failed to list tools from '%s': %s", config.name, e)
+            skills = []
 
         # Store connected server
         connected = ConnectedServer(
@@ -380,6 +393,34 @@ class MCPServerRegistry:
                 await self.disconnect(name)
                 dead.append(name)
         return dead
+
+    async def retry_tools(self, name: str) -> int:
+        """Retry listing tools from a server that previously failed.
+
+        Useful when a server connected but tool listing failed. This attempts
+        to list tools again and update the server's skills.
+
+        Args:
+            name: Server name to retry.
+
+        Returns:
+            Number of tools discovered (0 if still failing or server not found).
+
+        Raises:
+            MCPError: If server is not connected.
+        """
+        server = self._servers.get(name)
+        if server is None:
+            from nexus3.mcp.client import MCPError
+            raise MCPError(f"Server '{name}' is not connected")
+
+        try:
+            tools = await server.client.list_tools()
+            server.skills = [MCPSkillAdapter(server.client, tool, server.config.name) for tool in tools]
+            return len(tools)
+        except Exception as e:
+            logger.warning("Retry tools failed for '%s': %s", name, e)
+            return 0
 
     async def close_all(self) -> None:
         """Disconnect all servers.
