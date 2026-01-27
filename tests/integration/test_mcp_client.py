@@ -40,10 +40,10 @@ class TestMCPClientIntegration:
         """Test discovering tools from server."""
         tools = await mcp_client.list_tools()
 
-        assert len(tools) == 3
+        assert len(tools) == 4
 
         tool_names = {t.name for t in tools}
-        assert tool_names == {"echo", "get_time", "add"}
+        assert tool_names == {"echo", "get_time", "add", "slow_operation"}
 
         # Check echo tool schema
         echo_tool = next(t for t in tools if t.name == "echo")
@@ -85,7 +85,8 @@ class TestMCPClientIntegration:
         with pytest.raises(MCPError) as exc_info:
             await mcp_client.call_tool("nonexistent", {})
 
-        assert exc_info.value.code == -32601
+        # -32602 = Invalid params (tool name is a parameter to tools/call)
+        assert exc_info.value.code == -32602
         assert "Unknown tool" in exc_info.value.message
 
 
@@ -133,7 +134,7 @@ class TestMCPServerRegistry:
         server = await registry.connect(config)
         assert server.config.name == "test"
         assert server.client.is_initialized
-        assert len(server.skills) == 3
+        assert len(server.skills) == 4
         assert len(registry) == 1
 
         # Disconnect
@@ -158,9 +159,9 @@ class TestMCPServerRegistry:
         await registry.connect(config)
         skills = await registry.get_all_skills()
 
-        assert len(skills) == 3
+        assert len(skills) == 4
         skill_names = {s.name for s in skills}
-        assert skill_names == {"mcp_test_echo", "mcp_test_get_time", "mcp_test_add"}
+        assert skill_names == {"mcp_test_echo", "mcp_test_get_time", "mcp_test_add", "mcp_test_slow_operation"}
 
         await registry.close_all()
 
@@ -180,7 +181,7 @@ class TestMCPServerRegistry:
         # Owner can see it
         assert registry.get("private", agent_id="main") is not None
         assert len(registry.list_servers(agent_id="main")) == 1
-        assert len(await registry.get_all_skills(agent_id="main")) == 3
+        assert len(await registry.get_all_skills(agent_id="main")) == 4
 
         # Other agent cannot see it
         assert registry.get("private", agent_id="worker") is None
@@ -208,7 +209,7 @@ class TestMCPServerRegistry:
         # Other agent can also see it (shared)
         assert registry.get("shared", agent_id="worker") is not None
         assert len(registry.list_servers(agent_id="worker")) == 1
-        assert len(await registry.get_all_skills(agent_id="worker")) == 3
+        assert len(await registry.get_all_skills(agent_id="worker")) == 4
 
         await registry.close_all()
 
@@ -325,9 +326,9 @@ class TestHTTPTransport:
         """Test HTTP client discovers tools."""
         tools = await http_mcp_client.list_tools()
 
-        assert len(tools) == 3
+        assert len(tools) == 4
         tool_names = {t.name for t in tools}
-        assert tool_names == {"echo", "get_time", "add"}
+        assert tool_names == {"echo", "get_time", "add", "slow_operation"}
 
     @pytest.mark.asyncio
     async def test_http_call_echo(self, http_mcp_client: MCPClient) -> None:
@@ -372,7 +373,7 @@ class TestRegistryWithHTTP:
 
         server = await registry.connect(config)
         assert server.config.name == "http-test"
-        assert len(server.skills) == 3
+        assert len(server.skills) == 4
 
         await registry.close_all()
 
