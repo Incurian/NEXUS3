@@ -429,15 +429,17 @@ Method: `elicitation/request` (Server → Client)
 - [ ] **P1.9.13** Add unit tests for error formatting
 - [ ] **P1.9.14** Add integration tests for user-facing error output
 
-### Priority 2.0: Windows Compatibility
+### Priority 2.0: Windows Compatibility - MOSTLY DONE
 
-- [ ] **P2.0.1** Add Windows env vars to `SAFE_ENV_KEYS`
-- [ ] **P2.0.2** Implement `resolve_command()` helper
-- [ ] **P2.0.3** Update `StdioTransport.connect()` to use `resolve_command()`
-- [ ] **P2.0.4** Handle CRLF line endings
-- [ ] **P2.0.5** Add Windows process group creation (CREATE_NEW_PROCESS_GROUP)
-- [ ] **P2.0.6** Add Windows process termination (CTRL_BREAK_EVENT)
-- [ ] **P2.0.7** Update `skill/base.py` with Windows process termination
+MCP transport layer complete. ExecutionSkill (bash.py, run_python.py) needs Windows process group creation.
+
+- [x] **P2.0.1** Add Windows env vars to `SAFE_ENV_KEYS`
+- [x] **P2.0.2** Implement `resolve_command()` helper
+- [x] **P2.0.3** Update `StdioTransport.connect()` to use `resolve_command()`
+- [x] **P2.0.4** Handle CRLF line endings
+- [x] **P2.0.5** Add Windows process group creation (CREATE_NEW_PROCESS_GROUP) - MCP transport only
+- [x] **P2.0.6** Add Windows process termination (CTRL_BREAK_EVENT) - MCP transport only
+- [ ] **P2.0.7** Update `skill/builtin/bash.py` and `run_python.py` with Windows process creation (uses `start_new_session=True` which is Unix-only)
 - [ ] **P2.0.8** Add Windows-specific hints to error formatter
 - [ ] **P2.0.9** Add unit tests for Windows command resolution
 - [ ] **P2.0.10** Add unit tests for CRLF handling
