@@ -1,5 +1,7 @@
 """MCP error message formatting for user-friendly output."""
 
+import sys
+
 from nexus3.mcp.errors import MCPErrorContext
 
 
@@ -48,41 +50,52 @@ def format_command_not_found(
     lines.append("")
     lines.append("Likely causes:")
 
+    # Determine which command to use for checking command existence
+    is_windows = sys.platform == "win32"
+    which_cmd = "where" if is_windows else "which"
+
     # Add command-specific hints
     if command in ("npx", "npm", "node"):
         lines.append("  1. Node.js is not installed")
         lines.append("  2. Node.js is not in PATH for the subprocess")
         lines.append("")
         lines.append("Troubleshooting:")
-        lines.append(f"  - Check if {command} exists: which {command}")
+        lines.append(f"  - Check if {command} exists: {which_cmd} {command}")
         lines.append("  - Install Node.js: https://nodejs.org")
     elif command in ("python", "python3", "pip", "pip3"):
         lines.append("  1. Python is not installed")
         lines.append("  2. Python is not in PATH")
         lines.append("")
         lines.append("Troubleshooting:")
-        lines.append(f"  - Check if {command} exists: which {command}")
+        lines.append(f"  - Check if {command} exists: {which_cmd} {command}")
         lines.append("  - Install Python: https://python.org")
     elif command in ("uvx", "uv"):
         lines.append("  1. uv is not installed")
         lines.append("  2. uv is not in PATH")
         lines.append("")
         lines.append("Troubleshooting:")
-        lines.append(f"  - Check if {command} exists: which {command}")
+        lines.append(f"  - Check if {command} exists: {which_cmd} {command}")
         lines.append("  - Install uv: https://docs.astral.sh/uv/")
     elif command in ("docker", "podman"):
         lines.append(f"  1. {command} is not installed")
         lines.append(f"  2. {command} daemon is not running")
         lines.append("")
         lines.append("Troubleshooting:")
-        lines.append(f"  - Check if {command} exists: which {command}")
+        lines.append(f"  - Check if {command} exists: {which_cmd} {command}")
         lines.append(f"  - Check daemon status: {command} info")
     else:
         lines.append(f"  1. {command} is not installed")
         lines.append(f"  2. {command} is not in PATH for the subprocess")
         lines.append("")
         lines.append("Troubleshooting:")
-        lines.append(f"  - Check if {command} exists: which {command}")
+        lines.append(f"  - Check if {command} exists: {which_cmd} {command}")
+
+    # Add Windows-specific hints
+    if is_windows:
+        lines.append(
+            "  - Windows uses PATHEXT to resolve executable extensions (.exe, .cmd, .bat)"
+        )
+        lines.append("  - Many Node.js tools install as .cmd files on Windows")
 
     lines.append('  - Add to env_passthrough in config: ["PATH"]')
 

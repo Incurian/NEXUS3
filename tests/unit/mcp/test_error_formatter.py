@@ -1,5 +1,7 @@
 """Unit tests for MCP error formatting."""
 
+from unittest.mock import patch
+
 import pytest
 from nexus3.mcp.errors import MCPErrorContext
 from nexus3.mcp.error_formatter import (
@@ -269,3 +271,82 @@ class TestFormatTimeoutError:
         assert "troubleshoot" in result.lower()
         # Should suggest running command manually
         assert "manually" in result.lower()
+
+
+class TestFormatCommandNotFoundWindowsHints:
+    """Tests for Windows-specific hints in command not found errors."""
+
+    def test_windows_uses_where_command(self):
+        """On Windows, should suggest 'where' instead of 'which'."""
+        context = MCPErrorContext(server_name="test")
+        with patch("nexus3.mcp.error_formatter.sys.platform", "win32"):
+            result = format_command_not_found(context, "npx")
+        assert "where npx" in result
+        assert "which npx" not in result
+
+    def test_unix_uses_which_command(self):
+        """On Unix, should suggest 'which' command."""
+        context = MCPErrorContext(server_name="test")
+        with patch("nexus3.mcp.error_formatter.sys.platform", "linux"):
+            result = format_command_not_found(context, "npx")
+        assert "which npx" in result
+        assert "where npx" not in result
+
+    def test_windows_pathext_hint(self):
+        """On Windows, should mention PATHEXT for extension resolution."""
+        context = MCPErrorContext(server_name="test")
+        with patch("nexus3.mcp.error_formatter.sys.platform", "win32"):
+            result = format_command_not_found(context, "npx")
+        assert "PATHEXT" in result
+        assert ".exe" in result
+        assert ".cmd" in result
+        assert ".bat" in result
+
+    def test_windows_cmd_files_hint(self):
+        """On Windows, should mention that Node.js tools install as .cmd files."""
+        context = MCPErrorContext(server_name="test")
+        with patch("nexus3.mcp.error_formatter.sys.platform", "win32"):
+            result = format_command_not_found(context, "npx")
+        assert ".cmd files on Windows" in result
+
+    def test_windows_hints_for_generic_command(self):
+        """Windows hints should also appear for generic commands."""
+        context = MCPErrorContext(server_name="test")
+        with patch("nexus3.mcp.error_formatter.sys.platform", "win32"):
+            result = format_command_not_found(context, "custom-binary")
+        assert "where custom-binary" in result
+        assert "PATHEXT" in result
+        assert ".cmd files on Windows" in result
+
+    def test_unix_no_windows_hints(self):
+        """On Unix, Windows-specific hints should not appear."""
+        context = MCPErrorContext(server_name="test")
+        with patch("nexus3.mcp.error_formatter.sys.platform", "linux"):
+            result = format_command_not_found(context, "npx")
+        assert "PATHEXT" not in result
+        assert ".cmd files on Windows" not in result
+
+    def test_windows_hints_for_python_command(self):
+        """Windows hints should appear for Python commands too."""
+        context = MCPErrorContext(server_name="test")
+        with patch("nexus3.mcp.error_formatter.sys.platform", "win32"):
+            result = format_command_not_found(context, "python")
+        assert "where python" in result
+        assert "PATHEXT" in result
+
+    def test_windows_hints_for_docker_command(self):
+        """Windows hints should appear for Docker commands too."""
+        context = MCPErrorContext(server_name="test")
+        with patch("nexus3.mcp.error_formatter.sys.platform", "win32"):
+            result = format_command_not_found(context, "docker")
+        assert "where docker" in result
+        assert "PATHEXT" in result
+
+    def test_darwin_uses_which_command(self):
+        """On macOS (darwin), should suggest 'which' command."""
+        context = MCPErrorContext(server_name="test")
+        with patch("nexus3.mcp.error_formatter.sys.platform", "darwin"):
+            result = format_command_not_found(context, "npx")
+        assert "which npx" in result
+        assert "where npx" not in result
+        assert "PATHEXT" not in result
