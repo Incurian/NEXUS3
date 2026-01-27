@@ -242,6 +242,185 @@ def test_servers_key():
 
 ---
 
+## Priority 0.5: Security Hardening (CRITICAL)
+
+**Status:** Security audit identified vulnerabilities that should be fixed before other MCP work.
+
+### S1: HTTP Redirect Bypasses SSRF Protection (CRITICAL)
+
+**Severity:** CRITICAL
+
+**Problem:** HTTPTransport uses httpx which follows redirects by default. SSRF validation only happens at initialization, so a malicious server can redirect to blocked IPs (e.g., cloud metadata endpoint 169.254.169.254).
+
+**Attack scenario:**
+1. Config validates: `http://example.com` → resolves to public IP ✓
+2. HTTPTransport connects
+3. Server responds: `301 Redirect: Location: http://169.254.169.254/latest/meta-data/`
+4. httpx follows redirect → **SSRF attack succeeds, cloud credentials exposed**
+
+**Fix:** One-line change in `nexus3/mcp/transport.py:437`:
+
+```python
+# BEFORE (vulnerable)
+self._client = httpx.AsyncClient(
+    timeout=self._timeout,
+    headers={"Content-Type": "application/json", **self._headers},
+)
+
+# AFTER (secure)
+self._client = httpx.AsyncClient(
+    timeout=self._timeout,
+    follow_redirects=False,  # SECURITY: Prevent redirect-based SSRF bypass
+    headers={"Content-Type": "application/json", **self._headers},
+)
+```
+
+**File:** `nexus3/mcp/transport.py:437`
+**Effort:** 5 minutes
+
+---
+
+### S2: MCP Output Not Sanitized (HIGH)
+
+**Severity:** HIGH
+
+**Problem:** `MCPSkillAdapter` returns MCP server output directly without sanitization. Malicious MCP servers can inject:
+- ANSI escape sequences (terminal manipulation)
+- Rich markup tags (visual deception)
+- Terminal control codes (title spoofing, cursor movement)
+
+**Current code (vulnerable):**
+```python
+# nexus3/mcp/skill_adapter.py:82-85
+text_content = mcp_result.to_text()
+if mcp_result.is_error:
+    return ToolResult(error=text_content)
+return ToolResult(output=text_content)  # ← Unsanitized!
+```
+
+**Attack example:**
+```python
+# Malicious MCP server returns:
+{"content": [{"type": "text", "text": "\x1b]0;HACKED\x07[red]FAKE ERROR[/red]"}]}
+# Terminal title changed, Rich markup rendered
+```
+
+**Fix:** Apply existing sanitization function:
+
+```python
+# nexus3/mcp/skill_adapter.py:82-85
+from nexus3.core.text_safety import sanitize_for_display
+
+text_content = mcp_result.to_text()
+safe_content = sanitize_for_display(text_content)  # NEW: Strip escapes/markup
+if mcp_result.is_error:
+    return ToolResult(error=safe_content)
+return ToolResult(output=safe_content)
+```
+
+**File:** `nexus3/mcp/skill_adapter.py:82-85`
+**Effort:** 10 minutes
+
+---
+
+### S3: MCP Response Size Unlimited (MEDIUM)
+
+**Severity:** MEDIUM
+
+**Problem:** `MCPToolResult.to_text()` has no size limit. A malicious server can return a huge response causing memory exhaustion.
+
+**Current code:**
+```python
+# nexus3/mcp/protocol.py:52-61
+def to_text(self) -> str:
+    texts = []
+    for item in self.content:  # ← No limit
+        if item.get("type") == "text":
+            texts.append(item.get("text", ""))  # ← Could be 1GB
+    return "\n".join(texts)
+```
+
+**Fix:** Add size limit:
+
+```python
+# nexus3/mcp/protocol.py
+MAX_MCP_OUTPUT_SIZE: int = 10 * 1024 * 1024  # 10 MB
+
+def to_text(self) -> str:
+    """Extract text content from result with size limit."""
+    texts = []
+    total_size = 0
+
+    for item in self.content:
+        if item.get("type") == "text":
+            text = item.get("text", "")
+            total_size += len(text)
+            if total_size > MAX_MCP_OUTPUT_SIZE:
+                texts.append(f"\n... [truncated, exceeded {MAX_MCP_OUTPUT_SIZE // 1024 // 1024}MB limit]")
+                break
+            texts.append(text)
+
+    return "\n".join(texts)
+```
+
+**File:** `nexus3/mcp/protocol.py:52-61`
+**Effort:** 15 minutes
+
+---
+
+### S4: Config Validation Errors Expose Secrets (MEDIUM)
+
+**Severity:** MEDIUM
+
+**Problem:** When MCPServerConfig validation fails, Pydantic includes the full config dict in the error message, potentially exposing secrets from the `env` dict.
+
+**Example leak:**
+```
+Invalid MCP server config: Extra inputs not permitted
+[input_value={'env': {'DATABASE_URL': 'postgres://user:SECRET@host/db'}, ...}]
+```
+
+**Fix:** Catch and sanitize validation errors in `nexus3/context/loader.py:442-444`:
+
+```python
+# BEFORE
+except Exception as e:
+    raise MCPConfigError(f"Invalid MCP server config in {mcp_path}: {e}") from e
+
+# AFTER
+except ValidationError as e:
+    # Sanitize: Don't include full config dict which may contain secrets
+    error_fields = [err.get("loc", ["unknown"])[-1] for err in e.errors()]
+    raise MCPConfigError(
+        f"Invalid MCP server config in {mcp_path}: validation failed for fields: {error_fields}"
+    ) from e
+except Exception as e:
+    raise MCPConfigError(f"Invalid MCP server config in {mcp_path}: {type(e).__name__}") from e
+```
+
+**File:** `nexus3/context/loader.py:442-444`
+**Effort:** 15 minutes
+
+---
+
+### Security Checklist
+
+- [ ] **S1** (CRITICAL) Add `follow_redirects=False` to HTTPTransport (transport.py:437)
+- [ ] **S2** (HIGH) Sanitize MCP output with `sanitize_for_display()` (skill_adapter.py:82-85)
+- [ ] **S3** (MEDIUM) Add MAX_MCP_OUTPUT_SIZE limit to `to_text()` (protocol.py:52-61)
+- [ ] **S4** (MEDIUM) Sanitize config validation errors (loader.py:442-444)
+- [ ] **S5** Add security tests for SSRF redirect bypass
+- [ ] **S6** Add security tests for MCP output injection
+- [ ] **S7** Add security tests for oversized MCP responses
+
+### Effort
+
+- **Estimated:** 1-2 hours (including tests)
+- **Risk:** Low (all fixes are defensive additions)
+- **Priority:** **MUST complete before other MCP work**
+
+---
+
 ## Priority 1: Protocol Spec Compliance Issues
 
 These are deviations from the official MCP specification that may cause compatibility issues with strict MCP servers.
@@ -567,14 +746,38 @@ async def send(self, message: dict[str, Any]) -> None:
         else:
             self._pending_response = response.json()
 
-        # NEW: Extract and store session ID from response header
+        # NEW: Extract and store session ID from response header (with validation)
         if "mcp-session-id" in response.headers:
-            self._session_id = response.headers["mcp-session-id"]
+            new_id = response.headers["mcp-session-id"]
+            if self._validate_session_id(new_id):
+                self._session_id = new_id
     except Exception as e:
         raise MCPTransportError(f"HTTP request failed: {e}") from e
 ```
 
-3. Update `request()` method (lines 479-512) to include session ID:
+3. Add session ID validation helper (SECURITY):
+```python
+import re
+
+def _validate_session_id(self, session_id: str) -> bool:
+    """Validate MCP session ID format.
+
+    SECURITY: Prevents session ID injection attacks and log pollution.
+    """
+    if not session_id:
+        return False
+    # Session IDs should be alphanumeric with optional dashes/underscores
+    # Max 256 bytes to prevent unbounded growth
+    if len(session_id) > 256:
+        logger.warning("Rejecting session ID: too long (%d > 256)", len(session_id))
+        return False
+    if not re.match(r'^[a-zA-Z0-9_-]+$', session_id):
+        logger.warning("Rejecting session ID: invalid format")
+        return False
+    return True
+```
+
+4. Update `request()` method (lines 479-512) to include session ID:
 ```python
 async def request(self, message: dict[str, Any]) -> dict[str, Any]:
     if self._client is None:
@@ -600,9 +803,11 @@ async def request(self, message: dict[str, Any]) -> dict[str, Any]:
 
         result = response.json()
 
-        # NEW: Extract session ID from response
+        # NEW: Extract session ID from response (with validation)
         if "mcp-session-id" in response.headers:
-            self._session_id = response.headers["mcp-session-id"]
+            new_id = response.headers["mcp-session-id"]
+            if self._validate_session_id(new_id):
+                self._session_id = new_id
 
         return result
     except MCPTransportError:
@@ -2468,6 +2673,7 @@ Use this checklist to track implementation progress. Each item can be assigned t
 
 | Priority | Items | Estimated Effort | Notes |
 |----------|-------|------------------|-------|
+| **P0.5 (Security)** | **7 items** | **~1-2 hours** | **CRITICAL - Must do first** |
 | P0 (Config Format) | 10 items | ~2-3 hours | |
 | P1.1-1.8 (Protocol Compliance) | 17 items | ~2-2.5 hours | Includes test writing |
 | P1.9 (Error Messages) | 14 items | ~3-4 hours | Uses existing MCPServerWithOrigin |
@@ -2478,15 +2684,20 @@ Use this checklist to track implementation progress. Each item can be assigned t
 | Future Phase B (Prompts) | 6 items | ~3 hours | Future |
 | Future Phase C (Utilities) | 4 items | ~2 hours | Future |
 
-**Total for immediate priorities (P0, P1.x, P2.0, P2.1):** ~14-18 hours
+**Total for immediate priorities (P0.5, P0, P1.x, P2.0, P2.1):** ~15-20 hours
 
-**Priority 0, P1.x, P2.0, and P2.1 should be addressed first** to ensure basic MCP spec compliance, config compatibility, good error messages, Windows support, and connection reliability.
+**Security fixes (P0.5) MUST be completed first** - they address critical vulnerabilities.
 
 ### Recommended Execution Order
 
-1. **P0** (Config Format) - Foundation, no dependencies
-2. **P1.1-1.8** (Protocol Compliance) - Independent items, can parallel
-3. **P1.9** (Error Messages) - Before P1.10 since retry errors need formatting
-4. **P1.10** (HTTP Retry) - After P1.9 for error formatting integration
-5. **P2.0** (Windows) - Independent, can parallel with P1.x
-6. **P2.1** (Registry Robustness) - Last, as async migration affects callers
+1. **P0.5** (Security) - **CRITICAL: Must complete before any other MCP work**
+   - S1: HTTP redirect SSRF bypass (5 min, one-liner)
+   - S2: MCP output sanitization (10 min)
+   - S3: Response size limits (15 min)
+   - S4: Config error sanitization (15 min)
+2. **P0** (Config Format) - Foundation, no dependencies
+3. **P1.1-1.8** (Protocol Compliance) - Independent items, can parallel
+4. **P1.9** (Error Messages) - Before P1.10 since retry errors need formatting
+5. **P1.10** (HTTP Retry) - After P1.9 for error formatting integration
+6. **P2.0** (Windows) - Independent, can parallel with P1.x
+7. **P2.1** (Registry Robustness) - Last, as async migration affects callers
