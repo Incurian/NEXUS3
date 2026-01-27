@@ -16,6 +16,10 @@ import logging
 import os
 import random
 import re
+import shutil
+import signal
+import subprocess
+import sys
 from abc import ABC, abstractmethod
 from collections import deque
 from typing import Any
@@ -61,6 +65,7 @@ SESSION_ID_PATTERN: re.Pattern[str] = re.compile(r"^[a-zA-Z0-9_-]+$")
 # Environment variables always safe to pass to MCP servers.
 # These are essential for subprocess execution but don't contain secrets.
 SAFE_ENV_KEYS: frozenset[str] = frozenset({
+    # Cross-platform
     "PATH",       # Find executables
     "HOME",       # User home directory (config files)
     "USER",       # Current username
@@ -71,8 +76,15 @@ SAFE_ENV_KEYS: frozenset[str] = frozenset({
     "TERM",       # Terminal type
     "SHELL",      # Default shell
     "TMPDIR",     # Temporary directory
-    "TMP",        # Windows temp directory
-    "TEMP",       # Windows temp directory
+    "TMP",        # Temp directory (cross-platform)
+    "TEMP",       # Temp directory (cross-platform)
+    # Windows-specific (P2.0.1)
+    "USERPROFILE",  # Windows user home directory
+    "APPDATA",      # Windows roaming app data
+    "LOCALAPPDATA", # Windows local app data
+    "PATHEXT",      # Windows executable extensions (.exe, .cmd, .bat)
+    "SYSTEMROOT",   # Windows system root (C:\Windows)
+    "COMSPEC",      # Windows command interpreter (cmd.exe)
 })
 
 
@@ -114,6 +126,36 @@ def build_safe_env(
         env.update(explicit_env)
 
     return env
+
+
+def resolve_command(command: list[str]) -> list[str]:
+    """Resolve command for cross-platform execution.
+
+    P2.0.2-P2.0.3: On Windows, executable extensions (.cmd, .bat, .exe) are not
+    automatically resolved by create_subprocess_exec. This uses shutil.which to
+    find the actual executable path, respecting PATHEXT.
+
+    Args:
+        command: Command and arguments list.
+
+    Returns:
+        Command list with resolved executable path (on Windows) or unchanged (on Unix).
+    """
+    if sys.platform != "win32" or not command:
+        return command
+
+    executable = command[0]
+
+    # Skip if already has a known Windows executable extension
+    if any(executable.lower().endswith(ext) for ext in (".exe", ".cmd", ".bat", ".com")):
+        return command
+
+    # Try to resolve using which (respects PATHEXT on Windows)
+    resolved = shutil.which(executable)
+    if resolved:
+        return [resolved] + command[1:]
+
+    return command
 
 
 class MCPTransport(ABC):
@@ -229,15 +271,33 @@ class StdioTransport(MCPTransport):
             passthrough=self._env_passthrough,
         )
 
+        # P2.0.2-P2.0.3: Resolve command for Windows (.cmd, .bat extension handling)
+        resolved_command = resolve_command(self._command)
+
         try:
-            self._process = await asyncio.create_subprocess_exec(
-                *self._command,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-                cwd=self._cwd,
-            )
+            # P2.0.5: Platform-specific process group handling
+            if sys.platform == "win32":
+                # Windows: CREATE_NEW_PROCESS_GROUP allows sending CTRL_BREAK_EVENT
+                self._process = await asyncio.create_subprocess_exec(
+                    *resolved_command,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env,
+                    cwd=self._cwd,
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                )
+            else:
+                # Unix: start_new_session creates new process group for clean termination
+                self._process = await asyncio.create_subprocess_exec(
+                    *resolved_command,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env,
+                    cwd=self._cwd,
+                    start_new_session=True,
+                )
         except FileNotFoundError as e:
             raise MCPTransportError(f"MCP server command not found: {self._command[0]}") from e
         except Exception as e:
@@ -301,6 +361,8 @@ class StdioTransport(MCPTransport):
         P2.12 SECURITY: Enforces MAX_STDIO_LINE_LENGTH to prevent memory
         exhaustion from extremely long lines.
 
+        P2.0.4: Handles both LF and CRLF line endings (Windows compatibility).
+
         Uses I/O lock to serialize concurrent receives.
         """
         if self._process is None or self._process.stdout is None:
@@ -314,6 +376,8 @@ class StdioTransport(MCPTransport):
                     returncode = self._process.returncode
                     raise MCPTransportError(f"MCP server closed (exit code: {returncode})")
 
+                # P2.0.4: Strip CRLF/LF before JSON parsing (Windows compatibility)
+                line = line.rstrip(b"\r\n")
                 return json.loads(line.decode("utf-8"))
             except json.JSONDecodeError as e:
                 raise MCPTransportError(f"Invalid JSON from server: {e}") from e
@@ -409,8 +473,21 @@ class StdioTransport(MCPTransport):
             try:
                 await asyncio.wait_for(self._process.wait(), timeout=2.0)
             except TimeoutError:
-                # Force terminate
-                self._process.terminate()
+                # P2.0.6: Platform-specific process termination
+                try:
+                    if sys.platform == "win32":
+                        # Windows: send CTRL_BREAK_EVENT to process group
+                        os.kill(self._process.pid, signal.CTRL_BREAK_EVENT)
+                    else:
+                        # Unix: kill the entire process group
+                        try:
+                            pgid = os.getpgid(self._process.pid)
+                            os.killpg(pgid, signal.SIGTERM)
+                        except (ProcessLookupError, PermissionError):
+                            self._process.terminate()
+                except Exception:
+                    self._process.terminate()
+
                 try:
                     await asyncio.wait_for(self._process.wait(), timeout=2.0)
                 except TimeoutError:
@@ -765,8 +842,6 @@ class HTTPTransport(MCPTransport):
         Returns:
             Delay in seconds before next retry.
         """
-        import random
-
         delay: float = self._retry_backoff * (2 ** attempt)
         jitter: float = random.uniform(0, 0.1 * delay)
         return delay + jitter

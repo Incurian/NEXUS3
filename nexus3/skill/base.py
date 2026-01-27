@@ -17,6 +17,7 @@ import asyncio
 import json
 import os
 import signal
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from functools import wraps
@@ -1013,14 +1014,19 @@ class ExecutionSkill(ABC):
                     timeout=timeout
                 )
             except TimeoutError:
-                # Kill the entire process group to avoid orphan child processes
-                # On POSIX: start_new_session=True creates new group; killpg kills all
-                # On Windows: Fallback to process.kill() (no process groups)
+                # P2.0.7: Kill the entire process group to avoid orphan child processes
+                # Platform-specific handling for Windows vs Unix
                 try:
-                    pgid = os.getpgid(process.pid)
-                    os.killpg(pgid, signal.SIGKILL)
+                    if sys.platform == "win32":
+                        # Windows: send CTRL_BREAK_EVENT to process group
+                        # Requires CREATE_NEW_PROCESS_GROUP in process creation
+                        os.kill(process.pid, signal.CTRL_BREAK_EVENT)
+                    else:
+                        # Unix: start_new_session=True creates new group; killpg kills all
+                        pgid = os.getpgid(process.pid)
+                        os.killpg(pgid, signal.SIGKILL)
                 except (ProcessLookupError, OSError, AttributeError):
-                    # Process already dead, permission error, or Windows (no getpgid)
+                    # Process already dead, permission error, or missing attribute
                     process.kill()
                 await process.wait()
                 return ToolResult(error=timeout_message.format(timeout=timeout))
