@@ -1,6 +1,7 @@
 """Integration tests for MCP client with test server."""
 
 import asyncio
+import sys
 
 import pytest
 
@@ -18,7 +19,7 @@ from nexus3.mcp.transport import HTTPTransport, StdioTransport
 @pytest.fixture
 async def mcp_client():
     """Create MCP client connected to test server."""
-    transport = StdioTransport(["python3", "-m", "nexus3.mcp.test_server"])
+    transport = StdioTransport([sys.executable, "-m", "nexus3.mcp.test_server"])
     async with MCPClient(transport) as client:
         yield client
 
@@ -94,7 +95,7 @@ class TestStdioTransport:
     @pytest.mark.asyncio
     async def test_transport_connect_disconnect(self) -> None:
         """Test transport connection lifecycle."""
-        transport = StdioTransport(["python3", "-m", "nexus3.mcp.test_server"])
+        transport = StdioTransport([sys.executable, "-m", "nexus3.mcp.test_server"])
 
         await transport.connect()
         assert transport.is_connected
@@ -125,7 +126,7 @@ class TestMCPServerRegistry:
 
         config = MCPServerConfig(
             name="test",
-            command=["python3", "-m", "nexus3.mcp.test_server"],
+            command=[sys.executable, "-m", "nexus3.mcp.test_server"],
         )
 
         # Connect
@@ -151,7 +152,7 @@ class TestMCPServerRegistry:
 
         config = MCPServerConfig(
             name="test",
-            command=["python3", "-m", "nexus3.mcp.test_server"],
+            command=[sys.executable, "-m", "nexus3.mcp.test_server"],
         )
 
         await registry.connect(config)
@@ -170,7 +171,7 @@ class TestMCPServerRegistry:
 
         config = MCPServerConfig(
             name="private",
-            command=["python3", "-m", "nexus3.mcp.test_server"],
+            command=[sys.executable, "-m", "nexus3.mcp.test_server"],
         )
 
         # Connect as agent "main" with private visibility
@@ -195,7 +196,7 @@ class TestMCPServerRegistry:
 
         config = MCPServerConfig(
             name="shared",
-            command=["python3", "-m", "nexus3.mcp.test_server"],
+            command=[sys.executable, "-m", "nexus3.mcp.test_server"],
         )
 
         # Connect as agent "main" with shared visibility
@@ -218,7 +219,7 @@ class TestMCPServerRegistry:
 
         config = MCPServerConfig(
             name="test",
-            command=["python3", "-m", "nexus3.mcp.test_server"],
+            command=[sys.executable, "-m", "nexus3.mcp.test_server"],
         )
 
         await registry.connect(config)
@@ -238,7 +239,7 @@ class TestMCPSkillAdapter:
 
         config = MCPServerConfig(
             name="test",
-            command=["python3", "-m", "nexus3.mcp.test_server"],
+            command=[sys.executable, "-m", "nexus3.mcp.test_server"],
         )
 
         server = await registry.connect(config)
@@ -259,7 +260,7 @@ class TestMCPSkillAdapter:
 
         config = MCPServerConfig(
             name="test",
-            command=["python3", "-m", "nexus3.mcp.test_server"],
+            command=[sys.executable, "-m", "nexus3.mcp.test_server"],
         )
 
         server = await registry.connect(config)
