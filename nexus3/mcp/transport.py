@@ -436,6 +436,7 @@ class HTTPTransport(MCPTransport):
 
         self._client = httpx.AsyncClient(
             timeout=self._timeout,
+            follow_redirects=False,  # SECURITY: Prevent redirect-based SSRF bypass
             headers={"Content-Type": "application/json", **self._headers},
         )
 
