@@ -14,9 +14,9 @@ This document outlines the phased plan to complete all remaining MCP implementat
 | **Phase 1** | Documentation (P5.x) | 1-2 hours | ✅ COMPLETE |
 | **Phase 2** | Windows Polish (P2.0.8-11) | 1-2 hours | ✅ COMPLETE |
 | **Phase 3** | Deferred Tests (P1.4.4, P1.9.14) | 1-2 hours | ✅ COMPLETE |
-| **Phase 4** | Future: Resources (FA) | 3-4 hours | Deferred |
-| **Phase 5** | Future: Prompts (FB) | 2-3 hours | Deferred |
-| **Phase 6** | Future: Utilities (FC) | 2-3 hours | Deferred |
+| **Phase 4** | Resources (FA) | 3-4 hours | ✅ COMPLETE |
+| **Phase 5** | Prompts (FB) | 2-3 hours | ✅ COMPLETE |
+| **Phase 6** | Utilities (FC) | 2-3 hours | ✅ COMPLETE (ping) |
 
 ---
 
@@ -131,19 +131,19 @@ This document outlines the phased plan to complete all remaining MCP implementat
 
 ---
 
-## Phase 4: Future - Resources (FA) - DEFERRED
+## Phase 4: Resources (FA) - COMPLETE
 
 **Goal:** Implement MCP resources capability (read-only file/data access).
 
 ### Checklist
 
-- [ ] **FA.1** Add `resources/list` method to MCPClient
-- [ ] **FA.2** Add `resources/read` method to MCPClient
-- [ ] **FA.3** Create `MCPResource` dataclass in protocol.py
-- [ ] **FA.4** Add resource caching/refresh logic
-- [ ] **FA.5** Add `/mcp resources [server]` REPL command
-- [ ] **FA.6** Add unit tests for resource methods
-- [ ] **FA.7** Add integration tests with test server
+- [x] **FA.1** Add `resources/list` method to MCPClient
+- [x] **FA.2** Add `resources/read` method to MCPClient
+- [x] **FA.3** Create `MCPResource` and `MCPResourceContent` dataclasses in protocol.py
+- [x] **FA.4** Add resource caching/refresh logic
+- [x] **FA.5** Add `/mcp resources [server]` REPL command
+- [x] **FA.6** Add unit tests for resource methods (11 tests)
+- [x] **FA.7** Add integration tests with test server (7 tests)
 
 ### Files to Modify
 
@@ -158,18 +158,18 @@ This document outlines the phased plan to complete all remaining MCP implementat
 
 ---
 
-## Phase 5: Future - Prompts (FB) - DEFERRED
+## Phase 5: Prompts (FB) - COMPLETE
 
 **Goal:** Implement MCP prompts capability (server-provided prompt templates).
 
 ### Checklist
 
-- [ ] **FB.1** Add `prompts/list` method to MCPClient
-- [ ] **FB.2** Add `prompts/get` method to MCPClient
-- [ ] **FB.3** Create `MCPPrompt` dataclass in protocol.py
-- [ ] **FB.4** Add `/mcp prompts [server]` REPL command
-- [ ] **FB.5** Add unit tests for prompt methods
-- [ ] **FB.6** Add integration tests with test server
+- [x] **FB.1** Add `prompts/list` method to MCPClient
+- [x] **FB.2** Add `prompts/get` method to MCPClient
+- [x] **FB.3** Create `MCPPrompt`, `MCPPromptArgument`, `MCPPromptMessage`, `MCPPromptResult` dataclasses
+- [x] **FB.4** Add `/mcp prompts [server]` REPL command
+- [x] **FB.5** Add unit tests for prompt methods (14 tests)
+- [x] **FB.6** Add integration tests with test server (7 tests)
 
 ### Files to Modify
 
@@ -183,29 +183,31 @@ This document outlines the phased plan to complete all remaining MCP implementat
 
 ---
 
-## Phase 6: Future - Utilities (FC) - DEFERRED
+## Phase 6: Utilities (FC) - PARTIAL
 
 **Goal:** Implement MCP utility features (ping, cancellation, progress, logging).
 
 ### Checklist
 
-- [ ] **FC.1** Add `ping` method to MCPClient
-  - Useful for health checks and latency measurement
+- [x] **FC.1** Add `ping` method to MCPClient
+  - Health checks and latency measurement implemented
 
-- [ ] **FC.2** Add request cancellation support
+- [ ] **FC.2** Add request cancellation support (deferred)
   - Send `$/cancelRequest` notification
   - Track pending requests by ID
   - Handle cancellation responses
 
-- [ ] **FC.3** Add progress notification handling
+- [ ] **FC.3** Add progress notification handling (deferred)
   - `$/progress` notification parsing
   - Progress callback mechanism
   - Display integration
 
-- [ ] **FC.4** Add logging notification handling
+- [ ] **FC.4** Add logging notification handling (deferred)
   - `$/log` notification parsing
   - Log level filtering
   - Display integration
+
+**Note:** Cancellation, progress, and logging require bidirectional notification handling which is more complex. Ping is sufficient for current health check needs.
 
 ### Files to Modify
 
