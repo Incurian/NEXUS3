@@ -478,15 +478,15 @@ MCP transport layer and ExecutionSkills complete. All process group creation use
 
 - [ ] **FC.1-FC.4** ping, cancellation, progress, logging
 
-### Documentation
+### Documentation - DONE
 
-- [ ] **P5.1** Update `nexus3/mcp/README.md` with spec compliance changes
-- [ ] **P5.2** Update `CLAUDE.md` MCP section
-- [ ] **P5.3** Document new MCPTool fields in protocol.py
-- [ ] **P5.4** Update `/mcp` command help
-- [ ] **P5.5** Document Windows-specific configuration
-- [ ] **P5.6** Document error context pattern
-- [ ] **P5.7** Document HTTP session ID behavior
+- [x] **P5.1** Update `nexus3/mcp/README.md` with spec compliance changes
+- [x] **P5.2** Update `CLAUDE.md` MCP section
+- [x] **P5.3** Document new MCPTool fields in protocol.py
+- [x] **P5.4** Update `/mcp` command help
+- [x] **P5.5** Document Windows-specific configuration
+- [x] **P5.6** Document error context pattern
+- [x] **P5.7** Document HTTP session ID behavior
 
 ---
 

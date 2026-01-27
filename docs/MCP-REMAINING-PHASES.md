@@ -11,7 +11,7 @@ This document outlines the phased plan to complete all remaining MCP implementat
 
 | Phase | Description | Effort | Priority |
 |-------|-------------|--------|----------|
-| **Phase 1** | Documentation (P5.x) | 1-2 hours | High - do before merge |
+| **Phase 1** | Documentation (P5.x) | 1-2 hours | ✅ COMPLETE |
 | **Phase 2** | Windows Polish (P2.0.8-11) | 1-2 hours | Medium - optional |
 | **Phase 3** | Deferred Tests (P1.4.4, P1.9.14) | 1-2 hours | Low - nice to have |
 | **Phase 4** | Future: Resources (FA) | 3-4 hours | Deferred |
@@ -20,42 +20,42 @@ This document outlines the phased plan to complete all remaining MCP implementat
 
 ---
 
-## Phase 1: Documentation (P5.x) - HIGH PRIORITY
+## Phase 1: Documentation (P5.x) - COMPLETE
 
 **Goal:** Update all documentation to reflect completed MCP improvements before merging.
 
 ### Checklist
 
-- [ ] **P5.1** Update `nexus3/mcp/README.md` with spec compliance changes
+- [x] **P5.1** Update `nexus3/mcp/README.md` with spec compliance changes
   - Document pagination support (P1.4)
   - Document HTTP retry logic (P1.10)
   - Document reconnection and graceful failure (P2.1)
   - Update architecture diagram if needed
 
-- [ ] **P5.2** Update `CLAUDE.md` MCP section
+- [x] **P5.2** Update `CLAUDE.md` MCP section
   - Add new `/mcp retry` command to REPL Commands Reference
   - Update MCP configuration examples with new options (`fail_if_no_tools`)
   - Document lazy reconnection behavior
 
-- [ ] **P5.3** Document new MCPTool fields in `protocol.py`
+- [x] **P5.3** Document new MCPTool fields in `protocol.py`
   - Add docstrings for `title`, `output_schema`, `icons`, `annotations` fields
   - Document MCPToolResult `structured_content` field
 
-- [ ] **P5.4** Update `/mcp` command help
+- [x] **P5.4** Update `/mcp` command help
   - Add `retry <server>` subcommand to help text
   - Verify all subcommands are documented
 
-- [ ] **P5.5** Document Windows-specific configuration
+- [x] **P5.5** Document Windows-specific configuration
   - `SAFE_ENV_KEYS` Windows variables (USERPROFILE, APPDATA, PATHEXT, etc.)
   - Command resolution (.cmd, .bat extension handling)
   - Process termination (CTRL_BREAK_EVENT)
 
-- [ ] **P5.6** Document error context pattern
+- [x] **P5.6** Document error context pattern
   - `MCPErrorContext` dataclass usage
   - Error formatter functions
   - How to add new error types
 
-- [ ] **P5.7** Document HTTP session ID behavior
+- [x] **P5.7** Document HTTP session ID behavior
   - Session ID capture and validation
   - Header format (`mcp-session-id`)
   - Security considerations (validation, max length)
