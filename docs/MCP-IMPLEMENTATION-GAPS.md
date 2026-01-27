@@ -2,7 +2,7 @@
 
 This document compares NEXUS3's MCP implementation against the [MCP specification (2025-11-25)](https://modelcontextprotocol.io/specification/2025-11-25) and identifies features not yet implemented.
 
-**Last updated:** 2026-01-22
+**Last updated:** 2026-01-27
 
 ---
 
@@ -59,7 +59,7 @@ This document compares NEXUS3's MCP implementation against the [MCP specificatio
 1. **Pydantic model** in `nexus3/config/schema.py:332` - Used by config validation (AUTHORITATIVE)
 2. **Dataclass** in `nexus3/mcp/registry.py:34` - Used by MCP runtime
 
-Both must be updated for consistency.
+Both must be updated for consistency. Note: The config loader imports from `schema.py`, so that is the authoritative definition for validation. The registry dataclass is used at runtime but should mirror the schema.
 
 #### Step 1: Update `MCPServerConfig` Pydantic model (AUTHORITATIVE)
 
@@ -945,17 +945,37 @@ Troubleshooting:
 
 ### Implementation
 
+#### Existing Infrastructure: MCPServerWithOrigin
+
+**IMPORTANT:** `MCPServerWithOrigin` already exists in `nexus3/context/loader.py:98-104`:
+
+```python
+@dataclass
+class MCPServerWithOrigin:
+    config: MCPServerConfig
+    origin: str  # "global", "ancestor:dirname", "local"
+    source_path: Path
+```
+
+This already tracks config origin and source path. P1.9 should **extend this existing structure** rather than creating duplicate tracking. The error context should leverage `MCPServerWithOrigin` when available.
+
 #### Error Context Dataclass
 
 ```python
 # nexus3/mcp/errors.py (new file)
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nexus3.context.loader import MCPServerWithOrigin
 
 @dataclass
 class MCPErrorContext:
-    """Rich context for MCP error messages."""
+    """Rich context for MCP error messages.
+
+    Can be constructed from MCPServerWithOrigin (preferred) or manually.
+    """
     server_name: str | None = None
     source_path: Path | None = None
     source_layer: str | None = None  # "global", "local", "ancestor:project-name"
@@ -963,6 +983,23 @@ class MCPErrorContext:
     url: str | None = None
     raw_config: dict[str, Any] | None = None
     stderr_output: str | None = None
+
+    @classmethod
+    def from_server_with_origin(
+        cls,
+        server: "MCPServerWithOrigin",
+        stderr_output: str | None = None,
+    ) -> "MCPErrorContext":
+        """Create context from MCPServerWithOrigin (preferred constructor)."""
+        cmd = server.config.get_command_list() if hasattr(server.config, 'get_command_list') else None
+        return cls(
+            server_name=server.config.name,
+            source_path=server.source_path,
+            source_layer=server.origin,
+            command=cmd,
+            url=getattr(server.config, 'url', None),
+            stderr_output=stderr_output,
+        )
 
     def format_source(self) -> str:
         """Format source path with layer description."""
@@ -1188,12 +1225,13 @@ SAFE_ENV_KEYS = frozenset({
 | Variable | Purpose | Impact if Missing |
 |----------|---------|-------------------|
 | `USERPROFILE` | Windows home directory | `HOME` may not exist on Windows; Node.js, npm use this |
-| `HOMEDRIVE` + `HOMEPATH` | Alternative home path | Some tools use these instead of USERPROFILE |
 | `APPDATA` | Application data | npm global config, many tools store config here |
 | `LOCALAPPDATA` | Local app data | npm cache, node_modules location |
 | `PATHEXT` | Executable extensions | **Critical:** Without this, `npx` won't resolve to `npx.cmd` |
 | `SYSTEMROOT` | Windows directory | Many system calls need this |
 | `COMSPEC` | Command processor | Needed for `cmd /c` fallbacks |
+
+**Note:** `HOMEDRIVE` and `HOMEPATH` are redundant with `USERPROFILE` - only `USERPROFILE` is needed.
 
 **Fix:**
 ```python
@@ -1202,7 +1240,7 @@ SAFE_ENV_KEYS = frozenset({
     "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL",
     "LC_CTYPE", "TERM", "SHELL", "TMPDIR", "TMP", "TEMP",
     # Windows-specific
-    "USERPROFILE", "HOMEDRIVE", "HOMEPATH",
+    "USERPROFILE",           # Home directory (covers HOMEDRIVE+HOMEPATH)
     "APPDATA", "LOCALAPPDATA",
     "PATHEXT", "SYSTEMROOT", "COMSPEC",
 })
@@ -1293,26 +1331,68 @@ if newline_idx > 0 and chunk[newline_idx - 1:newline_idx] == b"\r":
 
 **Impact:** On Unix, `terminate()` sends SIGTERM. On Windows, it calls `TerminateProcess()`. Child processes spawned by the MCP server may not be terminated.
 
-**Fix for orphan prevention:**
+**Fix for orphan prevention - TWO PARTS:**
+
+**Part 1: Process creation (StdioTransport.connect()):**
 ```python
 import sys
 
 if sys.platform == "win32":
-    # Windows: use CREATE_NEW_PROCESS_GROUP and send CTRL_BREAK_EVENT
+    # Windows: use CREATE_NEW_PROCESS_GROUP for clean termination
     import subprocess
     self._process = await asyncio.create_subprocess_exec(
         *self._command,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-        ...
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+        cwd=self._cwd,
     )
 else:
     # Unix: use start_new_session for process group
     self._process = await asyncio.create_subprocess_exec(
         *self._command,
         start_new_session=True,
-        ...
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+        cwd=self._cwd,
     )
 ```
+
+**Part 2: Process termination (StdioTransport.close() and skill/base.py):**
+
+**CRITICAL:** When using `CREATE_NEW_PROCESS_GROUP` on Windows, you MUST use `CTRL_BREAK_EVENT` to terminate, not just `kill()`:
+
+```python
+import signal
+import sys
+
+async def _terminate_process(self) -> None:
+    """Terminate process with platform-appropriate signal."""
+    if self._process is None:
+        return
+
+    if sys.platform == "win32":
+        # Windows: Send CTRL_BREAK_EVENT to process group
+        try:
+            os.kill(self._process.pid, signal.CTRL_BREAK_EVENT)
+        except (ProcessLookupError, OSError):
+            # Process already dead
+            pass
+    else:
+        # Unix: Use process group kill
+        try:
+            pgid = os.getpgid(self._process.pid)
+            os.killpg(pgid, signal.SIGTERM)
+        except (ProcessLookupError, OSError, AttributeError):
+            # Process already dead or no process group
+            self._process.terminate()
+```
+
+**Also update `nexus3/skill/base.py` (lines 1019-1025)** with similar Windows handling for subprocess timeouts.
 
 ### Windows Error Message Improvements
 
@@ -2254,7 +2334,24 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P1.8.4** Add `session_id` property for access
 - [ ] **P1.8.5** Add unit test for session ID capture and persistence
 
-### Priority 1.10: HTTP Retry Logic (NEW)
+### Priority 1.9: Improved Error Messages (Before P1.10)
+
+- [ ] **P1.9.1** Create `nexus3/mcp/errors.py` with `MCPErrorContext` dataclass (include `from_server_with_origin()` factory)
+- [ ] **P1.9.2** Create `nexus3/mcp/error_formatter.py` with formatting functions
+- [ ] **P1.9.3** Add `context: MCPErrorContext | None` field to `MCPConfigError`
+- [ ] **P1.9.4** Update `ContextLoader._merge_mcp_servers()` to pass source path/layer to errors (use existing `MCPServerWithOrigin`)
+- [ ] **P1.9.5** Update `MCPServerRegistry.connect()` to track config origin in errors
+- [ ] **P1.9.6** Update `StdioTransport` to buffer stderr (deque maxlen=20) and include in crash errors
+- [ ] **P1.9.7** Implement `format_config_validation_error()` with field-specific suggestions
+- [ ] **P1.9.8** Implement `format_command_not_found()` with installation hints
+- [ ] **P1.9.9** Implement `format_server_crash()` with stderr context
+- [ ] **P1.9.10** Implement `format_json_syntax_error()` with line/column pointer
+- [ ] **P1.9.11** Implement `format_timeout_error()` with handshake troubleshooting
+- [ ] **P1.9.12** Update `nexus3/mcp/skill_adapter.py` (lines 62-87) to distinguish MCPError vs MCPTransportError
+- [ ] **P1.9.13** Add unit tests for error formatting functions
+- [ ] **P1.9.14** Add integration tests verifying user-facing error output
+
+### Priority 1.10: HTTP Retry Logic
 
 - [ ] **P1.10.1** Add retry constants to transport.py (MAX_RETRIES, BACKOFF, RETRYABLE_CODES)
 - [ ] **P1.10.2** Add `max_retries`, `retry_backoff` params to HTTPTransport `__init__`
@@ -2265,41 +2362,32 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P1.10.7** Add `http_max_retries`, `http_retry_backoff` to MCPServerConfig in schema.py
 - [ ] **P1.10.8** Add unit tests for retry logic (mock 429 responses)
 
-### Priority 1.9: Improved Error Messages
-
-- [ ] **P1.9.1** Create `nexus3/mcp/errors.py` with `MCPErrorContext` dataclass
-- [ ] **P1.9.2** Create `nexus3/mcp/error_formatter.py` with formatting functions
-- [ ] **P1.9.3** Add `context: MCPErrorContext | None` field to `MCPConfigError`
-- [ ] **P1.9.4** Update `ContextLoader._merge_mcp_servers()` to pass source path/layer to errors
-- [ ] **P1.9.5** Update `MCPServerRegistry.connect()` to track config origin in errors
-- [ ] **P1.9.6** Update `StdioTransport` to buffer stderr and include in crash errors
-- [ ] **P1.9.7** Implement `format_config_validation_error()` with field-specific suggestions
-- [ ] **P1.9.8** Implement `format_command_not_found()` with installation hints
-- [ ] **P1.9.9** Implement `format_server_crash()` with stderr context
-- [ ] **P1.9.10** Implement `format_json_syntax_error()` with line/column pointer
-- [ ] **P1.9.11** Implement `format_timeout_error()` with handshake troubleshooting
-- [ ] **P1.9.12** Add unit tests for error formatting functions
-- [ ] **P1.9.13** Add integration tests verifying user-facing error output
-
 ### Priority 2.0: Windows Compatibility
 
-- [ ] **P2.0.1** Add Windows env vars to `SAFE_ENV_KEYS`: USERPROFILE, HOMEDRIVE, HOMEPATH, APPDATA, LOCALAPPDATA, PATHEXT, SYSTEMROOT, COMSPEC
+- [ ] **P2.0.1** Add Windows env vars to `SAFE_ENV_KEYS`: USERPROFILE, APPDATA, LOCALAPPDATA, PATHEXT, SYSTEMROOT, COMSPEC (Note: HOMEDRIVE/HOMEPATH redundant with USERPROFILE)
 - [ ] **P2.0.2** Implement `resolve_command()` helper using `shutil.which()` for Windows .cmd/.bat resolution
 - [ ] **P2.0.3** Update `StdioTransport.connect()` to use `resolve_command()` on Windows
 - [ ] **P2.0.4** Handle CRLF line endings in `_read_bounded_line()` or `receive()`
-- [ ] **P2.0.5** Add Windows process group handling (CREATE_NEW_PROCESS_GROUP) for clean shutdown
-- [ ] **P2.0.6** Add Windows-specific hints to error formatter (PATHEXT, .cmd extensions)
-- [ ] **P2.0.7** Add unit tests for Windows command resolution (mock sys.platform)
-- [ ] **P2.0.8** Add unit tests for CRLF handling
-- [ ] **P2.0.9** Document Windows-specific config in MCP README (cmd wrapper, env vars)
+- [ ] **P2.0.5** Add Windows process group creation (CREATE_NEW_PROCESS_GROUP) in `connect()`
+- [ ] **P2.0.6** Add Windows process termination (CTRL_BREAK_EVENT) in `close()` and `_terminate_process()`
+- [ ] **P2.0.7** Update `nexus3/skill/base.py` lines 1019-1025 with Windows process termination
+- [ ] **P2.0.8** Add Windows-specific hints to error formatter (PATHEXT, .cmd extensions)
+- [ ] **P2.0.9** Add unit tests for Windows command resolution (mock sys.platform)
+- [ ] **P2.0.10** Add unit tests for CRLF handling
+- [ ] **P2.0.11** Document Windows-specific config in MCP README (cmd wrapper, env vars)
 
 ### Priority 2.1: Registry Robustness (NEW)
+
+**Note:** P2.1.4 changes `get_all_skills()` to async, which is a **BREAKING CHANGE**. P2.1.5 must be completed immediately after.
 
 - [ ] **P2.1.1** Improve `HTTPTransport.is_connected` to check `self._client.is_closed`
 - [ ] **P2.1.2** Add `reconnect()` method to `MCPClient` (client.py)
 - [ ] **P2.1.3** Add `reconnect()` method to `ConnectedServer` (registry.py)
 - [ ] **P2.1.4** Change `get_all_skills()` to async with lazy reconnection
-- [ ] **P2.1.5** Update callers of `get_all_skills()` to await (check dispatcher.py, services.py)
+- [ ] **P2.1.5** Update ALL callers of `get_all_skills()` to await **(requires P2.1.4, same commit)**:
+  - `nexus3/skill/services.py` - ServiceContainer
+  - `nexus3/session/dispatcher.py` - Dispatcher
+  - Any other callers (grep for `get_all_skills`)
 - [ ] **P2.1.6** Wrap tool listing in try/except in `registry.connect()` - continue with empty skills
 - [ ] **P2.1.7** Add `retry_tools()` method to MCPServerRegistry
 - [ ] **P2.1.8** Add `fail_if_no_tools: bool = False` to MCPServerConfig
@@ -2363,16 +2451,27 @@ Use this checklist to track implementation progress. Each item can be assigned t
 
 ## Effort Summary
 
-| Priority | Items | Estimated Effort |
-|----------|-------|------------------|
-| P0 (Config Format) | 10 items | ~2-3 hours |
-| P1.1-1.8 (Protocol Compliance) | 17 items | ~1.5 hours |
-| P1.9 (Error Messages) | 13 items | ~3-4 hours |
-| P1.10 (HTTP Retry) | 8 items | ~30 min |
-| P2.0 (Windows Compat) | 9 items | ~2-3 hours |
-| P2.1 (Registry Robustness) | 11 items | ~2-3 hours |
-| Phase 2 (Resources) | 7 items | ~4 hours |
-| Phase 3 (Prompts) | 6 items | ~3 hours |
-| Phase 4 (Utilities) | 4 items | ~2 hours |
+| Priority | Items | Estimated Effort | Notes |
+|----------|-------|------------------|-------|
+| P0 (Config Format) | 10 items | ~2-3 hours | |
+| P1.1-1.8 (Protocol Compliance) | 17 items | ~2-2.5 hours | Includes test writing |
+| P1.9 (Error Messages) | 14 items | ~3-4 hours | Uses existing MCPServerWithOrigin |
+| P1.10 (HTTP Retry) | 8 items | ~1 hour | Exponential backoff + jitter |
+| P2.0 (Windows Compat) | 11 items | ~2-3 hours | Includes process termination |
+| P2.1 (Registry Robustness) | 11 items | ~3-4 hours | async migration + caller updates |
+| Phase 2 (Resources) | 7 items | ~4 hours | Future |
+| Phase 3 (Prompts) | 6 items | ~3 hours | Future |
+| Phase 4 (Utilities) | 4 items | ~2 hours | Future |
+
+**Total for immediate priorities (P0, P1.x, P2.0, P2.1):** ~14-18 hours
 
 **Priority 0, P1.x, P2.0, and P2.1 should be addressed first** to ensure basic MCP spec compliance, config compatibility, good error messages, Windows support, and connection reliability.
+
+### Recommended Execution Order
+
+1. **P0** (Config Format) - Foundation, no dependencies
+2. **P1.1-1.8** (Protocol Compliance) - Independent items, can parallel
+3. **P1.9** (Error Messages) - Before P1.10 since retry errors need formatting
+4. **P1.10** (HTTP Retry) - After P1.9 for error formatting integration
+5. **P2.0** (Windows) - Independent, can parallel with P1.x
+6. **P2.1** (Registry Robustness) - Last, as async migration affects callers
