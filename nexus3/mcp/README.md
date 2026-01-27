@@ -244,7 +244,7 @@ server = await registry.connect(
 )
 
 # Get skills for an agent
-skills = registry.get_all_skills(agent_id="main")
+skills = await registry.get_all_skills(agent_id="main")
 
 # List connected servers
 server_names = registry.list_servers(agent_id="main")
@@ -768,7 +768,7 @@ for name, server_config in mcp_config.servers.items():
     await container.mcp_registry.connect(server_config)
 
 # Get MCP skills for an agent
-mcp_skills = container.mcp_registry.get_all_skills(agent_id)
+mcp_skills = await container.mcp_registry.get_all_skills(agent_id)
 ```
 
 ### With SkillRegistry
@@ -777,7 +777,7 @@ MCP skills are registered alongside native skills:
 
 ```python
 # Add MCP skills to agent's skill registry
-for skill in mcp_registry.get_all_skills(agent_id):
+for skill in await mcp_registry.get_all_skills(agent_id):
     skill_registry.register(skill)
 ```
 
@@ -861,7 +861,7 @@ await registry.connect(MCPServerConfig(
 ))
 
 # Get all skills
-skills = registry.get_all_skills()
+skills = await registry.get_all_skills()
 for skill in skills:
     print(f"- {skill.name}")
 

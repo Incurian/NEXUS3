@@ -156,7 +156,7 @@ class TestMCPServerRegistry:
         )
 
         await registry.connect(config)
-        skills = registry.get_all_skills()
+        skills = await registry.get_all_skills()
 
         assert len(skills) == 3
         skill_names = {s.name for s in skills}
@@ -180,12 +180,12 @@ class TestMCPServerRegistry:
         # Owner can see it
         assert registry.get("private", agent_id="main") is not None
         assert len(registry.list_servers(agent_id="main")) == 1
-        assert len(registry.get_all_skills(agent_id="main")) == 3
+        assert len(await registry.get_all_skills(agent_id="main")) == 3
 
         # Other agent cannot see it
         assert registry.get("private", agent_id="worker") is None
         assert len(registry.list_servers(agent_id="worker")) == 0
-        assert len(registry.get_all_skills(agent_id="worker")) == 0
+        assert len(await registry.get_all_skills(agent_id="worker")) == 0
 
         await registry.close_all()
 
@@ -208,7 +208,7 @@ class TestMCPServerRegistry:
         # Other agent can also see it (shared)
         assert registry.get("shared", agent_id="worker") is not None
         assert len(registry.list_servers(agent_id="worker")) == 1
-        assert len(registry.get_all_skills(agent_id="worker")) == 3
+        assert len(await registry.get_all_skills(agent_id="worker")) == 3
 
         await registry.close_all()
 

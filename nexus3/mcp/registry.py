@@ -309,8 +309,10 @@ class MCPServerRegistry:
             if server.is_visible_to(agent_id)
         ]
 
-    def get_all_skills(self, agent_id: str | None = None) -> list[MCPSkillAdapter]:
+    async def get_all_skills(self, agent_id: str | None = None) -> list[MCPSkillAdapter]:
         """Get all skill adapters from connected servers.
+
+        Performs lazy reconnection for stale connections before returning skills.
 
         Args:
             agent_id: If provided, only return skills from visible servers.
@@ -321,6 +323,13 @@ class MCPServerRegistry:
         skills: list[MCPSkillAdapter] = []
         for server in self._servers.values():
             if agent_id is None or server.is_visible_to(agent_id):
+                # Lazy reconnection: if connection is dead, try to reconnect
+                if not server.is_alive():
+                    try:
+                        await server.reconnect()
+                    except Exception:
+                        # Reconnection failed, skip this server's skills
+                        continue
                 skills.extend(server.skills)
         return skills
 
