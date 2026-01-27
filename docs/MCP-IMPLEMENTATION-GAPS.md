@@ -55,15 +55,24 @@ This document compares NEXUS3's MCP implementation against the [MCP specificatio
 
 **Option chosen:** Support both formats (backward compatible)
 
-#### Step 1: Update `MCPServerConfig` dataclass
+**IMPORTANT:** There are TWO `MCPServerConfig` definitions in the codebase:
+1. **Pydantic model** in `nexus3/config/schema.py:332` - Used by config validation (AUTHORITATIVE)
+2. **Dataclass** in `nexus3/mcp/registry.py:34` - Used by MCP runtime
 
-File: `nexus3/mcp/registry.py`
+Both must be updated for consistency.
+
+#### Step 1: Update `MCPServerConfig` Pydantic model (AUTHORITATIVE)
+
+File: `nexus3/config/schema.py` (lines 332-393)
 
 ```python
-@dataclass
-class MCPServerConfig:
+class MCPServerConfig(BaseModel):
+    """Configuration for an MCP server."""
+
+    model_config = ConfigDict(extra="forbid")
+
     name: str
-    command: str | list[str] | None = None  # Support both string and array
+    command: str | list[str] | None = None  # CHANGED: Accept both formats
     args: list[str] | None = None           # NEW: separate args (official format)
     url: str | None = None
     env: dict[str, str] | None = None
@@ -82,36 +91,93 @@ class MCPServerConfig:
                 cmd.extend(self.args)
             return cmd
         return []
+
+    @model_validator(mode="after")
+    def validate_transport(self) -> "MCPServerConfig":
+        """Ensure exactly one of command or url is set."""
+        has_command = self.command is not None  # CHANGED: check is not None
+        if has_command and self.url:
+            raise ValueError("MCPServerConfig: Cannot specify both 'command' and 'url'")
+        if not has_command and not self.url:
+            raise ValueError("MCPServerConfig: Must specify either 'command' or 'url'")
+        return self
+```
+
+#### Step 1b: Update `MCPServerConfig` dataclass (runtime)
+
+File: `nexus3/mcp/registry.py` (lines 34-56)
+
+```python
+@dataclass
+class MCPServerConfig:
+    name: str
+    command: str | list[str] | None = None  # CHANGED: Accept both formats
+    args: list[str] | None = None           # NEW: separate args (official format)
+    url: str | None = None
+    env: dict[str, str] | None = None
+    env_passthrough: list[str] | None = None
+    cwd: str | None = None
+    enabled: bool = True
+
+    def get_command_list(self) -> list[str]:
+        """Return command as list, merging command + args if needed."""
+        if isinstance(self.command, list):
+            return self.command
+        elif isinstance(self.command, str):
+            cmd = [self.command]
+            if self.args:
+                cmd.extend(self.args)
+            return cmd
+        return []
 ```
 
 #### Step 2: Update config loading
 
-File: `nexus3/config/loader.py` (or wherever MCP config is parsed)
+File: `nexus3/context/loader.py` (lines 430-444 in `_merge_mcp_servers()`)
+
+The loader must handle BOTH:
+- **Official format:** `{"mcpServers": {"name": {...}}}` (dict of dicts)
+- **NEXUS3 format:** `{"servers": [{"name": "...", ...}]}` (array of objects)
 
 ```python
-def load_mcp_config(data: dict) -> dict[str, MCPServerConfig]:
-    """Load MCP config, supporting both official and NEXUS3 formats."""
-    # Support both top-level keys
-    servers_data = data.get("mcpServers") or data.get("servers") or {}
+# Replace lines 430-444:
+# Support both official ("mcpServers" with dict) and NEXUS3 ("servers" with array) keys
+servers_data = layer.mcp.get("mcpServers") or layer.mcp.get("servers")
+if not servers_data:
+    continue
 
-    configs = {}
-    for name, server_data in servers_data.items():
-        configs[name] = MCPServerConfig(
-            name=name,
-            command=server_data.get("command"),
-            args=server_data.get("args"),  # NEW
-            url=server_data.get("url"),
-            env=server_data.get("env"),
-            env_passthrough=server_data.get("env_passthrough"),
-            cwd=server_data.get("cwd"),
-            enabled=server_data.get("enabled", True),
+# Normalize to list of (name, server_dict) tuples
+if isinstance(servers_data, dict):
+    # Official format: {"mcpServers": {"test": {...}}}
+    server_items = list(servers_data.items())
+elif isinstance(servers_data, list):
+    # NEXUS3 format: {"servers": [{"name": "test", ...}]}
+    server_items = [(s.get("name", f"unnamed-{i}"), s) for i, s in enumerate(servers_data)]
+else:
+    continue
+
+for server_name, server_data in server_items:
+    # Ensure name is in the dict for MCPServerConfig validation
+    if isinstance(server_data, dict):
+        server_data = {**server_data, "name": server_name}
+
+    try:
+        server_config = MCPServerConfig.model_validate(server_data)
+        servers_by_name[server_config.name] = MCPServerWithOrigin(
+            config=server_config,
+            origin=layer.name,
+            source_path=mcp_path,
         )
-    return configs
+    except Exception as e:
+        from nexus3.core.errors import MCPConfigError
+        raise MCPConfigError(
+            f"Invalid MCP server config in {mcp_path}: {e}"
+        ) from e
 ```
 
 #### Step 3: Update `StdioTransport` creation
 
-File: `nexus3/mcp/registry.py` in `MCPServerRegistry.connect()`
+File: `nexus3/mcp/registry.py` (lines 146-150 in `connect()`)
 
 ```python
 if config.command:
@@ -433,19 +499,36 @@ self._client = httpx.AsyncClient(
 
 **Spec says:**
 > "Mandatory on all HTTP requests (except initialization): `MCP-Protocol-Version: 2025-11-25`"
+> Client MUST include `Accept: application/json, text/event-stream` header.
 
 **Fix:**
+
+1. Add import at top of `transport.py`:
+```python
+from nexus3.mcp.protocol import PROTOCOL_VERSION
+```
+
+2. Add MCP headers in `__init__` (line 407):
+```python
+self._mcp_headers = {
+    "MCP-Protocol-Version": PROTOCOL_VERSION,
+    "Accept": "application/json, text/event-stream",
+}
+```
+
+3. Merge headers in `connect()` (lines 437-440):
 ```python
 self._client = httpx.AsyncClient(
     timeout=self._timeout,
     headers={
         "Content-Type": "application/json",
-        "Accept": "application/json, text/event-stream",
-        "MCP-Protocol-Version": PROTOCOL_VERSION,
-        **self._headers,
+        **self._mcp_headers,
+        **self._headers,  # User headers can override
     },
 )
 ```
+
+**Note:** `PROTOCOL_VERSION = "2025-11-25"` is already defined in `nexus3/mcp/protocol.py:115`.
 
 **File:** `nexus3/mcp/transport.py`
 **Effort:** 5 minutes
@@ -462,26 +545,135 @@ self._client = httpx.AsyncClient(
 **Current:** HTTPTransport doesn't capture or send session ID.
 
 **Fix:**
+
+1. Add field in `__init__` (line 407):
 ```python
-class HTTPTransport(MCPTransport):
-    def __init__(self, ...):
-        ...
-        self._session_id: str | None = None
+self._session_id: str | None = None
+```
 
-    async def send(self, message: dict[str, Any]) -> None:
-        headers = {}
+2. Update `send()` method (lines 442-464) to capture session ID:
+```python
+async def send(self, message: dict[str, Any]) -> None:
+    if self._client is None:
+        raise MCPTransportError("Transport not connected")
+
+    try:
+        data = json.dumps(message, separators=(",", ":"))
+        response = await self._client.post(self._url, content=data)
+        response.raise_for_status()
+
+        if response.status_code == 204 or not response.content:
+            self._pending_response = None
+        else:
+            self._pending_response = response.json()
+
+        # NEW: Extract and store session ID from response header
+        if "mcp-session-id" in response.headers:
+            self._session_id = response.headers["mcp-session-id"]
+    except Exception as e:
+        raise MCPTransportError(f"HTTP request failed: {e}") from e
+```
+
+3. Update `request()` method (lines 479-512) to include session ID:
+```python
+async def request(self, message: dict[str, Any]) -> dict[str, Any]:
+    if self._client is None:
+        raise MCPTransportError("Transport not connected")
+
+    try:
+        data = json.dumps(message, separators=(",", ":"))
+
+        # NEW: Include session ID in request headers
+        req_headers: dict[str, str] = {}
         if self._session_id:
-            headers["MCP-Session-Id"] = self._session_id
+            req_headers["mcp-session-id"] = self._session_id
 
-        response = await self._client.post(self._url, content=data, headers=headers)
+        response = await self._client.post(
+            self._url,
+            content=data,
+            headers=req_headers,
+        )
+        response.raise_for_status()
 
-        # Capture session ID from response
-        if "MCP-Session-Id" in response.headers:
-            self._session_id = response.headers["MCP-Session-Id"]
+        if response.status_code == 204 or not response.content:
+            raise MCPTransportError("Server returned empty response for request")
+
+        result = response.json()
+
+        # NEW: Extract session ID from response
+        if "mcp-session-id" in response.headers:
+            self._session_id = response.headers["mcp-session-id"]
+
+        return result
+    except MCPTransportError:
+        raise
+    except Exception as e:
+        raise MCPTransportError(f"HTTP request failed: {e}") from e
+```
+
+4. Add property for access (after line 520):
+```python
+@property
+def session_id(self) -> str | None:
+    """Get the current MCP session ID (if available)."""
+    return self._session_id
 ```
 
 **File:** `nexus3/mcp/transport.py`
 **Effort:** 15 minutes
+
+---
+
+### 1.10 HTTP Retry Logic (NEW)
+
+**Status:** HTTPTransport has no retry logic for transient failures.
+
+**Problem:** HTTP requests fail immediately on 429/5xx errors without retry.
+
+**Pattern:** Follow existing retry pattern from `nexus3/provider/base.py` (lines 243-265).
+
+**Fix:**
+
+1. Add constants at top of `transport.py` (after line 34):
+```python
+DEFAULT_HTTP_MAX_RETRIES: int = 3
+DEFAULT_HTTP_RETRY_BACKOFF: float = 1.5
+DEFAULT_HTTP_MAX_RETRY_DELAY: float = 10.0
+RETRYABLE_HTTP_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+```
+
+2. Add retry parameters to `__init__`:
+```python
+def __init__(
+    self,
+    url: str,
+    headers: dict[str, str] | None = None,
+    timeout: float = 30.0,
+    max_retries: int = DEFAULT_HTTP_MAX_RETRIES,
+    retry_backoff: float = DEFAULT_HTTP_RETRY_BACKOFF,
+):
+    # ... existing code ...
+    self._max_retries = max_retries
+    self._retry_backoff = retry_backoff
+```
+
+3. Add helper methods:
+```python
+def _calculate_retry_delay(self, attempt: int) -> float:
+    """Calculate delay with exponential backoff and jitter."""
+    import random
+    delay = (self._retry_backoff ** attempt) + random.uniform(0, 1)
+    return min(delay, DEFAULT_HTTP_MAX_RETRY_DELAY)
+
+def _is_retryable_error(self, status_code: int) -> bool:
+    """Check if HTTP status code is retryable."""
+    return status_code in RETRYABLE_HTTP_STATUS_CODES
+```
+
+4. Wrap `send()` and `request()` in retry loops (check status code on exception).
+
+**Files:** `nexus3/mcp/transport.py`, `nexus3/config/schema.py` (add `http_max_retries`, `http_retry_backoff` to MCPServerConfig)
+**Effort:** 30 minutes
 
 ---
 
@@ -830,6 +1022,123 @@ def format_server_crash(ctx: MCPErrorContext, exit_code: int) -> str:
     # ... include last N lines of stderr, common causes
 ```
 
+#### Stderr Buffering for Crash Context
+
+To show stderr in crash errors, `StdioTransport` must buffer recent stderr lines.
+
+**File:** `nexus3/mcp/transport.py`
+
+1. Add import and buffer field (after line 195):
+```python
+import collections  # Add at top of file
+
+# In __init__:
+self._stderr_buffer: collections.deque[str] = collections.deque(maxlen=20)
+self._stderr_lock = asyncio.Lock()
+```
+
+2. Update `_read_stderr()` (lines 222-238) to buffer:
+```python
+async def _read_stderr(self) -> None:
+    """Read and log stderr from subprocess, buffering last N lines."""
+    if self._process is None or self._process.stderr is None:
+        return
+
+    while True:
+        try:
+            line = await self._process.stderr.readline()
+            if not line:
+                break
+            text = line.decode(errors="replace").rstrip()
+            if text:
+                logger.debug("MCP stderr [%s]: %s", self._command[0], text)
+                async with self._stderr_lock:
+                    self._stderr_buffer.append(text)
+        except Exception as e:
+            logger.debug("Stderr reader stopped: %s", e)
+            break
+```
+
+3. Add accessor method:
+```python
+async def get_stderr_buffer(self) -> list[str]:
+    """Get buffered stderr lines (last ~20 lines)."""
+    async with self._stderr_lock:
+        return list(self._stderr_buffer)
+```
+
+4. Clear buffer in `close()` (line 347):
+```python
+self._stderr_buffer.clear()
+```
+
+#### Skill Adapter Error Context
+
+**File:** `nexus3/mcp/skill_adapter.py`
+
+The adapter already stores `_server_name` (line 43). Update error messages (lines 62-87):
+
+```python
+from nexus3.mcp.client import MCPError
+from nexus3.mcp.transport import MCPTransportError
+
+async def execute(self, **kwargs: Any) -> ToolResult:
+    # ... existing validation code ...
+    try:
+        mcp_result = await self._client.call_tool(
+            self._original_name, validated_args
+        )
+        text_content = mcp_result.to_text()
+        if mcp_result.is_error:
+            return ToolResult(error=text_content)
+        return ToolResult(output=text_content)
+    except MCPError as e:
+        return ToolResult(
+            error=f"MCP server '{self._server_name}' returned error: {e.message} "
+                   f"(code: {e.code})"
+        )
+    except MCPTransportError as e:
+        return ToolResult(
+            error=f"MCP transport error on server '{self._server_name}': {str(e)}"
+        )
+    except Exception as e:
+        return ToolResult(
+            error=f"Unexpected error on MCP server '{self._server_name}': {str(e)}"
+        )
+```
+
+#### JSON Syntax Error Formatting
+
+**File:** `nexus3/mcp/transport.py`
+
+Add helper to format `json.JSONDecodeError` with context:
+
+```python
+def _format_json_error(self, text: str, error: json.JSONDecodeError) -> str:
+    """Format JSON error with context lines."""
+    lines = text.split('\n')
+    error_line_idx = min(error.lineno - 1, len(lines) - 1)
+
+    msg = f"Invalid JSON from MCP server: {error.msg} at line {error.lineno}:{error.colno}\n"
+
+    # Show context lines
+    start = max(0, error_line_idx - 1)
+    end = min(len(lines), error_line_idx + 2)
+
+    for i in range(start, end):
+        prefix = ">>>" if i == error_line_idx else "   "
+        msg += f"{prefix} {i+1:4d}: {lines[i][:100]}\n"
+
+    return msg
+```
+
+Use in `receive()` (lines 275-277):
+```python
+except json.JSONDecodeError as e:
+    error_msg = self._format_json_error(line.decode("utf-8", errors="replace"), e)
+    raise MCPTransportError(error_msg) from e
+```
+
 #### Integration Points
 
 1. **`ContextLoader._merge_mcp_servers()`** - Catch validation errors, add source path context
@@ -1042,6 +1351,170 @@ Fix options:
 - **Estimated:** 2-3 hours
 - **Risk:** Low (additive changes, cross-platform logic is isolated)
 - **Priority:** Medium-High (blocks Windows users entirely in some cases)
+
+---
+
+## Priority 2.1: Registry Robustness (NEW)
+
+**Status:** MCP connections can become stale, and tool listing failures block entire server registration.
+
+### 2.1.1 Stale Connection Detection and Auto-Reconnection
+
+**Problem:**
+- `HTTPTransport.is_connected` only checks if client object exists, not if server is reachable
+- `get_all_skills()` returns stale skills from dead connections without warning
+- No automatic reconnection when connections fail
+
+**Current `is_connected` (transport.py:521-523):**
+```python
+@property
+def is_connected(self) -> bool:
+    return self._client is not None  # Only checks object existence!
+```
+
+**Fix:**
+
+1. Improve HTTP connection detection (transport.py):
+```python
+@property
+def is_connected(self) -> bool:
+    """Check if transport is connected and valid."""
+    if self._client is None:
+        return False
+    return not self._client.is_closed
+```
+
+2. Add `reconnect()` method to `MCPClient` (client.py, after line 114):
+```python
+async def reconnect(self, timeout: float = 30.0) -> None:
+    """Reconnect after a disconnect."""
+    if not self._transport.is_connected:
+        await self.connect(timeout=timeout)
+```
+
+3. Add `reconnect()` to `ConnectedServer` (registry.py, after line 87):
+```python
+async def reconnect(self, timeout: float = 30.0) -> bool:
+    """Attempt to reconnect and re-list tools."""
+    try:
+        await self.client.reconnect(timeout=timeout)
+        tools = await self.client.list_tools()
+        self.skills = [MCPSkillAdapter(self.client, tool, self.config.name)
+                       for tool in tools]
+        return True
+    except Exception as e:
+        logger.warning("Failed to reconnect to '%s': %s", self.config.name, e)
+        return False
+```
+
+4. Make `get_all_skills()` async with lazy reconnection (registry.py:226-239):
+```python
+async def get_all_skills(self, agent_id: str | None = None) -> list[MCPSkillAdapter]:
+    """Get skills, attempting reconnection for stale connections."""
+    skills: list[MCPSkillAdapter] = []
+
+    for name, server in list(self._servers.items()):
+        if agent_id is not None and not server.is_visible_to(agent_id):
+            continue
+
+        if not server.is_alive():
+            logger.debug("MCP server '%s' stale, attempting reconnect", name)
+            if not await server.reconnect():
+                logger.warning("Skipping '%s' (reconnection failed)", name)
+                continue
+
+        skills.extend(server.skills)
+
+    return skills
+```
+
+### 2.1.2 Graceful Tool Listing Failure
+
+**Problem:** If `client.list_tools()` fails during `connect()`, the entire server registration fails, even though the server is connected and might work later.
+
+**Current (registry.py:160-176):**
+```python
+client = MCPClient(transport)
+await client.connect(timeout=timeout)
+tools = await client.list_tools()  # If this fails, entire connect() fails
+```
+
+**Fix:**
+
+1. Wrap tool listing in try/except (registry.py:160-176):
+```python
+client = MCPClient(transport)
+try:
+    await client.connect(timeout=timeout)
+except Exception as e:
+    await transport.close()
+    raise
+
+# Gracefully handle tool listing failure
+skills: list[MCPSkillAdapter] = []
+try:
+    tools = await client.list_tools()
+    skills = [MCPSkillAdapter(client, tool, config.name) for tool in tools]
+except MCPError as e:
+    logger.warning(
+        "Failed to list tools from '%s': %s (continuing with empty skills)",
+        config.name, e.message
+    )
+    skills = []
+
+connected = ConnectedServer(
+    config=config,
+    client=client,
+    skills=skills,
+    owner_agent_id=owner_agent_id,
+    shared=shared,
+)
+self._servers[config.name] = connected
+
+if not skills:
+    logger.warning(
+        "Connected to '%s' but no tools available. Use /mcp retry to re-discover.",
+        config.name
+    )
+
+return connected
+```
+
+2. Add `retry_tools()` method to registry:
+```python
+async def retry_tools(self, name: str) -> list[MCPSkillAdapter]:
+    """Retry tool discovery for a connected server."""
+    server = self._servers.get(name)
+    if server is None:
+        raise MCPError(f"Server '{name}' not found")
+
+    tools = await server.client.list_tools()
+    server.skills = [MCPSkillAdapter(server.client, tool, name) for tool in tools]
+    logger.info("Tool retry for '%s': %d tools found", name, len(tools))
+    return server.skills
+```
+
+3. Add config option (schema.py MCPServerConfig):
+```python
+fail_if_no_tools: bool = False
+"""If True, fail connect() when tool listing returns empty."""
+```
+
+### Implementation
+
+| File | Changes |
+|------|---------|
+| `nexus3/mcp/transport.py` | Improve `HTTPTransport.is_connected` |
+| `nexus3/mcp/client.py` | Add `reconnect()` method |
+| `nexus3/mcp/registry.py` | Add `ConnectedServer.reconnect()`, `retry_tools()`, update `get_all_skills()` to async |
+| `nexus3/config/schema.py` | Add `fail_if_no_tools` to MCPServerConfig |
+| `nexus3/cli/repl_commands.py` | Add `/mcp retry <server>` command |
+
+### Effort
+
+- **Estimated:** 2-3 hours
+- **Risk:** Medium (changes `get_all_skills()` to async - may require callers to update)
+- **Priority:** Medium (improves reliability for long-running sessions)
 
 ---
 
@@ -1725,14 +2198,18 @@ Use this checklist to track implementation progress. Each item can be assigned t
 
 ### Priority 0: Config Format Compatibility
 
-- [ ] **P0.1** Update `MCPServerConfig` dataclass to support `command: str | list[str]`
-- [ ] **P0.2** Add `args: list[str] | None` field to MCPServerConfig
-- [ ] **P0.3** Implement `MCPServerConfig.get_command_list()` helper method
-- [ ] **P0.4** Update config loader to check both `mcpServers` and `servers` keys
-- [ ] **P0.5** Update `nexus3/config/schema.py` MCPServerConfig schema
-- [ ] **P0.6** Add unit tests for official MCP config format
-- [ ] **P0.7** Add unit tests for NEXUS3 config format (backward compat)
-- [ ] **P0.8** Update MCP README documentation
+**Note:** TWO `MCPServerConfig` definitions exist - Pydantic in `schema.py` (authoritative) and dataclass in `registry.py`. Both must be updated.
+
+- [ ] **P0.1** Update `nexus3/config/schema.py` MCPServerConfig: `command: str | list[str] | None`
+- [ ] **P0.2** Update `nexus3/mcp/registry.py` MCPServerConfig dataclass: `command: str | list[str] | None`
+- [ ] **P0.3** Add `args: list[str] | None` field to both MCPServerConfig definitions
+- [ ] **P0.4** Add `get_command_list()` helper method to both MCPServerConfig definitions
+- [ ] **P0.5** Update `nexus3/context/loader.py:430` to check both `mcpServers` (dict) and `servers` (array) keys
+- [ ] **P0.6** Update loader to normalize both dict and array formats to (name, config) tuples
+- [ ] **P0.7** Update `MCPServerRegistry.connect()` to call `config.get_command_list()`
+- [ ] **P0.8** Add unit tests for official MCP config format (mcpServers + command/args)
+- [ ] **P0.9** Add unit tests for NEXUS3 config format (servers array)
+- [ ] **P0.10** Update MCP README documentation with both formats
 
 ### Priority 1.1: Initialized Notification Fix
 
@@ -1763,16 +2240,30 @@ Use this checklist to track implementation progress. Each item can be assigned t
 
 ### Priority 1.7: HTTP Protocol Version Header
 
-- [ ] **P1.7.1** Add `MCP-Protocol-Version` header to HTTPTransport
-- [ ] **P1.7.2** Add `Accept` header with json and event-stream
-- [ ] **P1.7.3** Add unit test verifying headers
+- [ ] **P1.7.1** Add import `from nexus3.mcp.protocol import PROTOCOL_VERSION` to transport.py
+- [ ] **P1.7.2** Add `_mcp_headers` dict in HTTPTransport `__init__` with MCP-Protocol-Version
+- [ ] **P1.7.3** Add `Accept: application/json, text/event-stream` to `_mcp_headers`
+- [ ] **P1.7.4** Merge `_mcp_headers` in `connect()` method
+- [ ] **P1.7.5** Add unit test verifying all required headers
 
 ### Priority 1.8: HTTP Session Management
 
-- [ ] **P1.8.1** Add `_session_id: str | None` field to HTTPTransport
-- [ ] **P1.8.2** Capture session ID from response headers
-- [ ] **P1.8.3** Include session ID in subsequent requests
-- [ ] **P1.8.4** Add unit test for session ID flow
+- [ ] **P1.8.1** Add `_session_id: str | None` field to HTTPTransport `__init__`
+- [ ] **P1.8.2** Capture `mcp-session-id` from response headers in `send()`
+- [ ] **P1.8.3** Include session ID in `request()` method headers
+- [ ] **P1.8.4** Add `session_id` property for access
+- [ ] **P1.8.5** Add unit test for session ID capture and persistence
+
+### Priority 1.10: HTTP Retry Logic (NEW)
+
+- [ ] **P1.10.1** Add retry constants to transport.py (MAX_RETRIES, BACKOFF, RETRYABLE_CODES)
+- [ ] **P1.10.2** Add `max_retries`, `retry_backoff` params to HTTPTransport `__init__`
+- [ ] **P1.10.3** Implement `_calculate_retry_delay()` helper with exponential backoff + jitter
+- [ ] **P1.10.4** Implement `_is_retryable_error()` helper (429, 500, 502, 503, 504)
+- [ ] **P1.10.5** Add retry loop to `send()` method
+- [ ] **P1.10.6** Add retry loop to `request()` method
+- [ ] **P1.10.7** Add `http_max_retries`, `http_retry_backoff` to MCPServerConfig in schema.py
+- [ ] **P1.10.8** Add unit tests for retry logic (mock 429 responses)
 
 ### Priority 1.9: Improved Error Messages
 
@@ -1801,6 +2292,20 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P2.0.7** Add unit tests for Windows command resolution (mock sys.platform)
 - [ ] **P2.0.8** Add unit tests for CRLF handling
 - [ ] **P2.0.9** Document Windows-specific config in MCP README (cmd wrapper, env vars)
+
+### Priority 2.1: Registry Robustness (NEW)
+
+- [ ] **P2.1.1** Improve `HTTPTransport.is_connected` to check `self._client.is_closed`
+- [ ] **P2.1.2** Add `reconnect()` method to `MCPClient` (client.py)
+- [ ] **P2.1.3** Add `reconnect()` method to `ConnectedServer` (registry.py)
+- [ ] **P2.1.4** Change `get_all_skills()` to async with lazy reconnection
+- [ ] **P2.1.5** Update callers of `get_all_skills()` to await (check dispatcher.py, services.py)
+- [ ] **P2.1.6** Wrap tool listing in try/except in `registry.connect()` - continue with empty skills
+- [ ] **P2.1.7** Add `retry_tools()` method to MCPServerRegistry
+- [ ] **P2.1.8** Add `fail_if_no_tools: bool = False` to MCPServerConfig
+- [ ] **P2.1.9** Add `/mcp retry <server>` REPL command
+- [ ] **P2.1.10** Add unit tests for reconnection logic
+- [ ] **P2.1.11** Add unit tests for graceful tool listing failure
 
 ### Phase 2: Resources (Future)
 
@@ -1860,12 +2365,14 @@ Use this checklist to track implementation progress. Each item can be assigned t
 
 | Priority | Items | Estimated Effort |
 |----------|-------|------------------|
-| P0 (Config Format) | 8 items | ~2 hours |
-| P1.1-1.8 (Protocol Compliance) | 14 items | ~1 hour |
+| P0 (Config Format) | 10 items | ~2-3 hours |
+| P1.1-1.8 (Protocol Compliance) | 17 items | ~1.5 hours |
 | P1.9 (Error Messages) | 13 items | ~3-4 hours |
+| P1.10 (HTTP Retry) | 8 items | ~30 min |
 | P2.0 (Windows Compat) | 9 items | ~2-3 hours |
+| P2.1 (Registry Robustness) | 11 items | ~2-3 hours |
 | Phase 2 (Resources) | 7 items | ~4 hours |
 | Phase 3 (Prompts) | 6 items | ~3 hours |
 | Phase 4 (Utilities) | 4 items | ~2 hours |
 
-**Priority 0, P1.x, and P2.0 should be addressed first** to ensure basic MCP spec compliance, config compatibility, good error messages, and Windows support.
+**Priority 0, P1.x, P2.0, and P2.1 should be addressed first** to ensure basic MCP spec compliance, config compatibility, good error messages, Windows support, and connection reliability.
