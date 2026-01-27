@@ -149,7 +149,8 @@ class TestContextLoaderMCPValidation:
             loader.load()
 
         assert "Invalid MCP server config" in str(exc_info.value)
-        assert "Cannot specify both" in str(exc_info.value)
+        # Sanitized error shows field names, not full validation message
+        assert "validation failed for fields" in str(exc_info.value)
 
     def test_missing_name_raises_mcp_config_error(self, temp_project: Path) -> None:
         """MCP server without name raises MCPConfigError."""

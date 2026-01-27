@@ -14,6 +14,7 @@ Usage:
 from typing import Any
 
 from nexus3.core.identifiers import build_mcp_skill_name
+from nexus3.core.text_safety import sanitize_for_display
 from nexus3.core.types import ToolResult
 from nexus3.core.validation import validate_tool_arguments
 from nexus3.mcp.client import MCPClient
@@ -80,8 +81,9 @@ class MCPSkillAdapter(BaseSkill):
                 self._original_name, validated_args
             )
             text_content = mcp_result.to_text()
+            safe_content = sanitize_for_display(text_content)
             if mcp_result.is_error:
-                return ToolResult(error=text_content)
-            return ToolResult(output=text_content)
+                return ToolResult(error=safe_content)
+            return ToolResult(output=safe_content)
         except Exception as e:
             return ToolResult(error=f"MCP execution failed: {str(e)}")

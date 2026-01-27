@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from nexus3.config.load_utils import load_json_file
 from nexus3.config.schema import ContextConfig, MCPServerConfig
 from nexus3.core.constants import get_defaults_dir, get_nexus_dir
@@ -436,11 +438,28 @@ Source: {source_path}
                         origin=layer.name,
                         source_path=mcp_path,
                     )
+                except ValidationError as e:
+                    from nexus3.core.errors import MCPConfigError
+
+                    # Sanitize: Don't include full config dict which may contain secrets
+                    # Extract field locations from errors (loc can be empty for root validators)
+                    error_fields = []
+                    for err in e.errors():
+                        loc = err.get("loc", ())
+                        if loc:
+                            error_fields.append(str(loc[-1]))
+                        else:
+                            # Root-level validation error (e.g., model_validator)
+                            error_fields.append(err.get("type", "validation_error"))
+                    raise MCPConfigError(
+                        f"Invalid MCP server config in {mcp_path}: "
+                        f"validation failed for fields: {error_fields}"
+                    ) from e
                 except Exception as e:
                     from nexus3.core.errors import MCPConfigError
 
                     raise MCPConfigError(
-                        f"Invalid MCP server config in {mcp_path}: {e}"
+                        f"Invalid MCP server config in {mcp_path}: {type(e).__name__}"
                     ) from e
 
         return list(servers_by_name.values())

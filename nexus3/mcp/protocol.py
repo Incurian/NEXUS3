@@ -10,6 +10,9 @@ MCP Spec: https://modelcontextprotocol.io/specification/2025-11-25
 from dataclasses import dataclass, field
 from typing import Any
 
+# Maximum size for MCP tool output to prevent memory exhaustion from malicious servers
+MAX_MCP_OUTPUT_SIZE: int = 10 * 1024 * 1024  # 10 MB
+
 
 @dataclass
 class MCPTool:
@@ -50,14 +53,25 @@ class MCPToolResult:
     is_error: bool = False
 
     def to_text(self) -> str:
-        """Extract text content from result.
+        """Extract text content from result with size limit.
 
         Joins all text-type content items with newlines.
+        Truncates if total size exceeds MAX_MCP_OUTPUT_SIZE.
         """
         texts = []
+        total_size = 0
+
         for item in self.content:
             if item.get("type") == "text":
-                texts.append(item.get("text", ""))
+                text = item.get("text", "")
+                total_size += len(text)
+                if total_size > MAX_MCP_OUTPUT_SIZE:
+                    texts.append(
+                        f"\n... [truncated, exceeded {MAX_MCP_OUTPUT_SIZE // 1024 // 1024}MB limit]"
+                    )
+                    break
+                texts.append(text)
+
         return "\n".join(texts)
 
     @classmethod
