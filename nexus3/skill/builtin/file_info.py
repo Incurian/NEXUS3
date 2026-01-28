@@ -3,7 +3,9 @@
 import asyncio
 import json
 import stat
+import sys
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
@@ -22,14 +24,40 @@ def _format_size(size_bytes: int) -> str:
     return f"{size_bytes:.1f} PB"
 
 
-def _format_permissions(mode: int) -> str:
-    """Format file mode as rwxrwxrwx string."""
+def _format_permissions(mode: int, path: Path | None = None) -> str:
+    """Format file permissions/attributes in a platform-appropriate way."""
+    if sys.platform == "win32" and path is not None:
+        return _format_windows_attributes(path)
+    return _format_unix_permissions(mode)
+
+
+def _format_unix_permissions(mode: int) -> str:
+    """Format Unix file mode as rwxrwxrwx string."""
     perms = []
     for who in ("USR", "GRP", "OTH"):
         for perm in ("R", "W", "X"):
             flag = getattr(stat, f"S_I{perm}{who}")
             perms.append(perm.lower() if mode & flag else "-")
     return "".join(perms)
+
+
+def _format_windows_attributes(path: Path) -> str:
+    """Format Windows file attributes as RHSA string."""
+    import ctypes
+
+    try:
+        attrs = ctypes.windll.kernel32.GetFileAttributesW(str(path))
+        if attrs == 0xFFFFFFFF:
+            return "????"
+
+        result = []
+        result.append("R" if attrs & 0x1 else "-")   # READONLY
+        result.append("H" if attrs & 0x2 else "-")   # HIDDEN
+        result.append("S" if attrs & 0x4 else "-")   # SYSTEM
+        result.append("A" if attrs & 0x20 else "-")  # ARCHIVE
+        return "".join(result)
+    except Exception:
+        return "----"
 
 
 class FileInfoSkill(FileSkill):
@@ -104,7 +132,7 @@ class FileInfoSkill(FileSkill):
                     "size": st.st_size,
                     "size_human": _format_size(st.st_size),
                     "modified": mtime.isoformat(),
-                    "permissions": _format_permissions(st.st_mode),
+                    "permissions": _format_permissions(st.st_mode, p),
                     "exists": True
                 }
 
