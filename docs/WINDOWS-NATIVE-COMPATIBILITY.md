@@ -668,12 +668,11 @@ markers = [
 - [ ] **P4.5** Add platform-specific tests
 
 ### Phase 5: Line Ending Preservation (Can Parallel P2-P4)
-- [ ] **P5.1** Add `_detect_line_ending()` helper function
-- [ ] **P5.2** Change `edit_file.py` to binary read + decode (line 118)
-- [ ] **P5.3** Update `_line_replace()` to use detected line ending
-- [ ] **P5.4** Change `regex_replace.py` to binary read + decode (line 133)
-- [ ] **P5.5** Fix `append_file.py` `do_append()` to use detected line ending (line 117)
-- [ ] **P5.6** Add tests in `tests/unit/skill/test_line_ending_preservation.py`
+- [ ] **P5.0** Add `detect_line_ending()` and `atomic_write_bytes()` to `nexus3/core/paths.py`
+- [ ] **P5.1** Update `edit_file.py`: binary read, normalize, detect, process, convert back, binary write
+- [ ] **P5.2** Update `regex_replace.py`: same pattern as edit_file
+- [ ] **P5.3** Update `append_file.py`: modify `_needs_newline_prefix()` to return (bool, line_ending) tuple
+- [ ] **P5.4** Add tests in `tests/unit/skill/test_line_ending_preservation.py`
 
 ### Phase 6: Update Consumers (Requires P1)
 - [ ] **P6.1** Update `nexus3/skill/base.py` to use `terminate_process_tree()`
@@ -756,11 +755,12 @@ markers = [
 | `nexus3/skill/builtin/bash.py` | Modify | Add CREATE_NO_WINDOW (both BashSafeSkill + ShellUnsafeSkill) |
 | `nexus3/skill/builtin/run_python.py` | Modify | Add CREATE_NO_WINDOW |
 | `nexus3/skill/builtin/grep.py` | Modify | Add process groups + CREATE_NO_WINDOW |
-| `nexus3/skill/builtin/append_file.py` | Modify | Fix hardcoded LF line ending |
-| `nexus3/skill/builtin/regex_replace.py` | Modify | Binary read for line ending preservation |
+| `nexus3/core/paths.py` | Modify | Add `detect_line_ending()` and `atomic_write_bytes()` |
+| `nexus3/skill/builtin/append_file.py` | Modify | Fix hardcoded LF line ending, return tuple |
+| `nexus3/skill/builtin/regex_replace.py` | Modify | Binary read/write for line ending preservation |
 | `nexus3/mcp/transport.py` | Modify | Replace lines 67-88; update close(); CREATE_NO_WINDOW |
 | `nexus3/skill/builtin/file_info.py` | Modify | Add Windows attributes |
-| `nexus3/skill/builtin/edit_file.py` | Modify | Add line ending detection |
+| `nexus3/skill/builtin/edit_file.py` | Modify | Binary read/write, normalize, preserve line endings |
 | `nexus3/skill/builtin/git.py` | Modify | Convert to asyncio |
 | `nexus3/skill/base.py` | Modify | Use terminate_process_tree() |
 | `nexus3/config/load_utils.py` | Modify | Use utf-8-sig for BOM handling |
@@ -957,7 +957,32 @@ Six validation agents performed final review. Only one minor issue found:
 - Code patterns confirmed correct
 - No remaining issues
 
-Plan is ready for implementation.
+### Round 6 - Security & Compatibility Review (2026-01-28)
+
+Comprehensive security and compatibility review found **critical issues** requiring plan corrections:
+
+**Phase 8 (Error Sanitization)**: ❌ CRITICAL - CORRECTED
+- **Finding**: Patterns only handled backslashes (`\\`), not forward slashes (`/`)
+- **Issue**: `C:/Users/alice` would NOT be sanitized, leaking usernames
+- **Solution**: Updated all patterns to use `[\\\/]` alternation to handle both slash types
+- **Updated**: `_UNC_PATTERN`, `_APPDATA_PATTERN`, `_WINDOWS_USER_PATTERN`
+
+**Phase 5 (Line Endings)**: ❌ CRITICAL DESIGN FLAW - CORRECTED
+- **Finding 1**: Double-CRLF bug - `content.replace('\n', '\r\n')` on content with existing `\r\n` creates `\r\r\n`
+- **Finding 2**: `atomic_write_text()` uses text mode which re-normalizes on Windows
+- **Finding 3**: DRY violation - helper function duplicated across 3 files
+- **Solution**: Complete redesign:
+  - Add shared `detect_line_ending()` and `atomic_write_bytes()` to `nexus3/core/paths.py`
+  - Normalize ALL endings to `\n` BEFORE processing
+  - Convert back to detected ending AFTER processing
+  - Write as bytes to preserve exact line endings
+
+**All other phases**: ✅ VALIDATED
+- Process termination (P1): Secure, no issues
+- Environment variables (P3): Safe, minimal risk
+- Rich console changes (P7): Compatible, no breaking changes
+
+Plan corrections applied. Ready for implementation.
 
 ---
 
@@ -1274,22 +1299,54 @@ To:
 
 ## Phase 5: Line Ending Preservation - Full Implementation
 
-**CRITICAL**: Python's `read_text()` automatically converts CRLF to LF on Windows. To preserve line endings, we must read files in binary mode.
+**CRITICAL**: Python's `read_text()` automatically converts CRLF to LF. To preserve line endings:
+1. Read in binary mode, decode manually
+2. Detect original line ending BEFORE normalizing
+3. Normalize ALL endings to `\n` for processing (avoid double-CRLF bug)
+4. Convert back to detected ending before writing
+5. Write in binary mode to preserve exact bytes
 
-### P5.1: Add helper function to `nexus3/skill/builtin/edit_file.py`
+### P5.0: Add shared utility to `nexus3/core/paths.py`
+
+Add after `atomic_write_text()` function (around line 183):
 
 ```python
-def _detect_line_ending(content: str) -> str:
-    """Detect the predominant line ending style in content."""
-    crlf_count = content.count("\r\n")
-    lf_count = content.count("\n") - crlf_count
-    cr_count = content.count("\r") - crlf_count
+def detect_line_ending(content: str) -> str:
+    """Detect the predominant line ending style in content.
 
-    if crlf_count > lf_count and crlf_count > cr_count:
-        return "\r\n"
-    elif cr_count > lf_count:
-        return "\r"
-    return "\n"
+    Returns:
+        "\\r\\n" (CRLF - Windows), "\\n" (LF - Unix), "\\r" (CR - legacy)
+    """
+    if '\r\n' in content:
+        return '\r\n'
+    elif '\r' in content:
+        return '\r'
+    return '\n'
+
+
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write bytes to a file atomically using temp file + rename.
+
+    Similar to atomic_write_text but for binary data, preserving exact bytes.
+    """
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".tmp_", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.replace(tmp_path, str(path))
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+```
+
+### P5.1: Update `nexus3/skill/builtin/edit_file.py`
+
+Add import at top:
+```python
+from nexus3.core.paths import atomic_write_bytes, detect_line_ending
 ```
 
 ### P5.2: Change file reading to binary mode (line 118)
@@ -1301,50 +1358,90 @@ content = await asyncio.to_thread(p.read_text, encoding="utf-8")
 With:
 ```python
 content_bytes = await asyncio.to_thread(p.read_bytes)
-content = content_bytes.decode("utf-8", errors="replace")
+raw_content = content_bytes.decode("utf-8", errors="replace")
+original_line_ending = detect_line_ending(raw_content)
+# Normalize ALL line endings to \n for processing (avoids double-CRLF bug)
+content = raw_content.replace('\r\n', '\n').replace('\r', '\n')
 ```
 
-### P5.3: Update `_line_replace()` method
+### P5.3: Update write logic in `_string_replace()` and `_line_replace()`
 
-Add at start of method:
-```python
-line_ending = _detect_line_ending(content)
-```
+Before calling `atomic_write_text()`, convert back to original ending and use binary write:
 
-Change the newline addition (around line 217) from:
 ```python
-if new_content and not new_content.endswith("\n") and end_idx < total_lines:
-    new_content += "\n"
-```
-To:
-```python
-if new_content and not new_content.endswith(("\n", "\r")) and end_idx < total_lines:
-    new_content += line_ending
+# Convert normalized \n back to original line ending
+if original_line_ending != '\n':
+    result_content = result_content.replace('\n', original_line_ending)
+# Write as bytes to preserve exact line endings
+await asyncio.to_thread(atomic_write_bytes, p, result_content.encode('utf-8'))
 ```
 
 ### P5.4: Update `nexus3/skill/builtin/regex_replace.py` (line 133)
 
-Same binary read pattern:
+Same pattern - add import, binary read, normalize, process, convert back, binary write:
 ```python
-# Before:
-content = await asyncio.to_thread(p.read_text, encoding="utf-8")
+from nexus3.core.paths import atomic_write_bytes, detect_line_ending
 
-# After:
+# Read and normalize
 content_bytes = await asyncio.to_thread(p.read_bytes)
-content = content_bytes.decode("utf-8", errors="replace")
+raw_content = content_bytes.decode("utf-8", errors="replace")
+original_line_ending = detect_line_ending(raw_content)
+content = raw_content.replace('\r\n', '\n').replace('\r', '\n')
+
+# ... do regex replacement on normalized content ...
+
+# Convert back and write as bytes
+if original_line_ending != '\n':
+    new_content = new_content.replace('\n', original_line_ending)
+await asyncio.to_thread(atomic_write_bytes, p, new_content.encode('utf-8'))
 ```
 
 ### P5.5: Update `nexus3/skill/builtin/append_file.py`
 
-Add `_detect_line_ending()` function (same as above), then update `_needs_newline_prefix()` (around line 35):
+Modify `_needs_newline_prefix()` to also detect line ending from tail bytes:
 
 ```python
-# Before:
-return True, "\n"
+def _needs_newline_prefix(filepath: os.PathLike[str]) -> tuple[bool, str]:
+    """Check if file needs newline prefix and detect its line ending.
 
-# After:
-line_ending = _detect_line_ending(content) if content else "\n"
-return True, line_ending
+    Returns:
+        Tuple of (needs_newline: bool, detected_line_ending: str)
+    """
+    try:
+        size = os.path.getsize(filepath)
+        if size == 0:
+            return False, "\n"
+
+        with open(filepath, "rb") as f:
+            # Read last 1KB to detect line ending style
+            read_size = min(1024, size)
+            f.seek(max(0, size - read_size))
+            tail_bytes = f.read()
+
+            # Detect line ending from tail
+            tail_str = tail_bytes.decode("utf-8", errors="replace")
+            if '\r\n' in tail_str:
+                line_ending = '\r\n'
+            elif '\r' in tail_str:
+                line_ending = '\r'
+            else:
+                line_ending = '\n'
+
+            needs_prefix = not tail_bytes.endswith(b"\n")
+            return needs_prefix, line_ending
+    except (OSError, IOError):
+        return False, "\n"
+```
+
+Update `do_append()` to use the tuple:
+```python
+def do_append() -> int:
+    to_write = content
+    if newline and p.exists():
+        needs_nl, line_ending = _needs_newline_prefix(p)
+        if needs_nl:
+            to_write = line_ending + content
+    # ... rest unchanged (still uses append mode)
 ```
 
 ### P5.6: Test file for line ending preservation
@@ -1353,17 +1450,39 @@ Create `tests/unit/skill/test_line_ending_preservation.py`:
 ```python
 import pytest
 from pathlib import Path
+from nexus3.core.paths import detect_line_ending
 
-async def test_edit_file_preserves_crlf(tmp_path: Path):
+class TestDetectLineEnding:
+    def test_detect_crlf(self):
+        assert detect_line_ending("line1\r\nline2\r\n") == "\r\n"
+
+    def test_detect_lf(self):
+        assert detect_line_ending("line1\nline2\n") == "\n"
+
+    def test_detect_cr(self):
+        assert detect_line_ending("line1\rline2\r") == "\r"
+
+    def test_empty_defaults_lf(self):
+        assert detect_line_ending("") == "\n"
+
+
+@pytest.mark.asyncio
+async def test_edit_file_preserves_crlf(tmp_path: Path, service_container):
     """Verify CRLF line endings are preserved after editing."""
     test_file = tmp_path / "crlf.txt"
     test_file.write_bytes(b"line1\r\nline2\r\nline3\r\n")
 
-    # ... run edit_file skill ...
+    skill = EditFileSkill(service_container)
+    await skill.execute(
+        path=str(test_file),
+        old_string="line2",
+        new_string="MODIFIED"
+    )
 
     result = test_file.read_bytes()
     assert b"\r\n" in result, "CRLF should be preserved"
-    assert result.count(b"\r\n") == result.count(b"\n"), "No mixed line endings"
+    assert b"\nMODIFIED\r\n" not in result, "Should not have mixed endings"
+    assert b"\r\nMODIFIED\r\n" in result, "Edit should use CRLF"
 ```
 
 ---
@@ -1466,16 +1585,24 @@ console.file.flush()
 Add after existing patterns (around line 62):
 ```python
 # Windows path patterns (order matters - most specific first)
-_UNC_PATTERN = re.compile(r'\\\\[^\\]+\\[^\\]+')  # \\server\share
-_APPDATA_PATTERN = re.compile(r'[A-Za-z]:\\Users\\[^\\]+\\AppData\\[^\\]+', re.IGNORECASE)
-_WINDOWS_USER_PATTERN = re.compile(r'[A-Za-z]:\\Users\\[^\\]+', re.IGNORECASE)
+# Handle BOTH backslashes AND forward slashes - Windows accepts either
+_UNC_PATTERN = re.compile(r'(?:\\\\|//)[^\\\/]+[\\\/][^\\\/]+')  # \\server\share or //server/share
+_APPDATA_PATTERN = re.compile(
+    r'[A-Za-z]:[\\\/]Users[\\\/][^\\\/]+[\\\/]AppData[\\\/][^\\\/]+',
+    re.IGNORECASE
+)
+_WINDOWS_USER_PATTERN = re.compile(
+    r'[A-Za-z]:[\\\/]Users[\\\/][^\\\/]+',
+    re.IGNORECASE
+)
 ```
 
-**Note**: Using `[^\\]+` (not `[^\\:\s]+`) correctly handles usernames with spaces like "John Doe".
+**Note**: Using `[\\\/]` handles both backslash AND forward slash paths. Using `[^\\\/]+` correctly handles usernames with spaces like "John Doe" and stops at either separator.
 
 Add to `sanitize_error_for_agent()` before the generic path replacement:
 ```python
 # Windows paths (apply in order: most specific first)
+# Handle both backslash and forward slash variants
 result = _UNC_PATTERN.sub(r'\\\\[server]\\[share]', result)
 result = _APPDATA_PATTERN.sub(r'C:\\Users\\[user]\\AppData\\[...]', result)
 result = _WINDOWS_USER_PATTERN.sub(r'C:\\Users\\[user]', result)
@@ -1486,8 +1613,14 @@ result = _WINDOWS_USER_PATTERN.sub(r'C:\\Users\\[user]', result)
 ```python
 def test_sanitize_windows_paths():
     """Test Windows path sanitization including edge cases."""
-    # Basic Windows path
+    # Basic Windows path (backslash)
     assert sanitize_error("Error in C:\\Users\\alice\\project") == "Error in C:\\Users\\[user]\\project"
+
+    # Forward slash variant (also valid on Windows)
+    assert sanitize_error("Error in C:/Users/alice/project") == "Error in C:\\Users\\[user]\\project"
+
+    # Mixed slashes
+    assert sanitize_error("C:\\Users/alice\\file.txt") == "C:\\Users\\[user]\\file.txt"
 
     # Username with spaces
     assert sanitize_error("Error in C:\\Users\\John Doe\\file.txt") == "Error in C:\\Users\\[user]\\file.txt"
@@ -1496,8 +1629,12 @@ def test_sanitize_windows_paths():
     assert sanitize_error("Config at C:\\Users\\bob\\AppData\\Local\\NEXUS3") == \
            "Config at C:\\Users\\[user]\\AppData\\[...]"
 
-    # UNC path
+    # UNC path (backslash)
     assert sanitize_error("Access denied: \\\\fileserver\\projects") == \
+           "Access denied: \\\\[server]\\[share]"
+
+    # UNC path (forward slash)
+    assert sanitize_error("Access denied: //fileserver/projects") == \
            "Access denied: \\\\[server]\\[share]"
 
     # Lowercase drive letter
@@ -1509,12 +1646,14 @@ def test_sanitize_windows_paths():
 | Input | Output |
 |-------|--------|
 | `C:\Users\alice\project\file.txt not found` | `C:\Users\[user]\project\file.txt not found` |
+| `C:/Users/alice/project/file.txt not found` | `C:\Users\[user]\project\file.txt not found` |
 | `C:\Users\John Doe\secrets\token.txt` | `C:\Users\[user]\secrets\token.txt` |
 | `C:\Users\bob\AppData\Local\NEXUS3\config.json` | `C:\Users\[user]\AppData\[...]` |
 | `\\fileserver\projects\secret.doc` | `\\[server]\[share]` |
+| `//fileserver/projects/secret.doc` | `\\[server]\[share]` |
 | `Error: /home/alice/.nexus3/token` | `Error: /home/[user]/.nexus3/token` |
 
-*Note: Unix paths continue to work via existing patterns. Windows patterns are additive.*
+*Note: Unix paths continue to work via existing patterns. Windows patterns handle both backslash and forward slash variants.*
 
 ---
 
