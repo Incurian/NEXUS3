@@ -5,7 +5,8 @@ preventing secret leakage from the parent process environment.
 """
 
 import os
-from typing import Mapping
+import sys
+from collections.abc import Mapping
 
 # Environment variables safe to pass to subprocesses
 # These are essential for process execution but should not contain secrets
@@ -35,10 +36,21 @@ SAFE_ENV_VARS: frozenset[str] = frozenset({
     "TMPDIR",
     "TMP",
     "TEMP",
+
+    # Windows-specific (P3 Env Variable Unification)
+    "USERPROFILE",    # Windows user home directory
+    "APPDATA",        # Windows roaming app data
+    "LOCALAPPDATA",   # Windows local app data
+    "PATHEXT",        # Windows executable extensions (.exe, .cmd, .bat)
+    "SYSTEMROOT",     # Windows system root (C:\Windows)
+    "COMSPEC",        # Windows command interpreter (cmd.exe)
 })
 
-# Default PATH if none available (POSIX standard locations)
-DEFAULT_PATH = "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
+# Default PATH if none available (platform-aware)
+if sys.platform == "win32":
+    DEFAULT_PATH = r"C:\Windows\System32;C:\Windows;C:\Windows\System32\Wbem"
+else:
+    DEFAULT_PATH = "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
 
 
 def get_safe_env(cwd: str | None = None) -> dict[str, str]:
