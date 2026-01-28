@@ -2,7 +2,7 @@
 
 **A secure, multi-agent CLI framework for AI-powered software engineering.**
 
-NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrating multiple AI agents. Each agent runs in isolation with configurable permissions, enabling safe automation of development tasks through 24 built-in skills (file operations, git, shell execution, inter-agent communication).
+NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrating multiple AI agents. Each agent runs in isolation with configurable permissions, enabling safe automation of development tasks through 25 built-in skills (file operations, git, shell execution, inter-agent communication).
 
 ---
 
@@ -45,7 +45,7 @@ NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrat
 | Requirement | Version | Notes |
 |-------------|---------|-------|
 | Python | 3.11+ | **Required.** Use `python3.11` or newer |
-| Operating System | Linux, macOS, WSL2 | Windows requires WSL2 |
+| Operating System | Linux, macOS, Windows, WSL2 | Native Windows support (3.11+) |
 | Terminal | Any modern terminal | 256-color support recommended |
 
 ### LLM Provider (At Least One)
@@ -59,8 +59,25 @@ You need an API key from at least one provider:
 | OpenAI | `OPENAI_API_KEY` | [openai.com](https://openai.com) |
 | Azure OpenAI | `AZURE_OPENAI_KEY` | Azure Portal |
 | Ollama (local) | N/A | [ollama.ai](https://ollama.ai) |
+| vLLM (local) | N/A | [vllm.ai](https://docs.vllm.ai) |
 
 **Why OpenRouter?** Single API key gives access to Claude, GPT-4, Gemini, Llama, and hundreds of other models. Great for experimentation.
+
+### Windows Compatibility
+
+NEXUS3 includes native Windows support (no WSL required):
+
+- **ESC key detection** using `msvcrt` on Windows
+- **Cross-platform process termination** (taskkill /T /F on Windows)
+- **Line ending preservation** (CRLF/LF/CR) in file operations
+- **Windows path sanitization** in error messages
+- **BOM handling** in config file loading (utf-8-sig)
+- **VT100 console mode** for ANSI sequence support
+- **Windows environment variables** (USERPROFILE, APPDATA, etc.)
+
+**Known limitations on Windows:**
+- File permission bits (`chmod`) are no-op; rely on NTFS ACLs
+- Symlink detection may miss NTFS junctions/reparse points
 
 ---
 
@@ -80,7 +97,7 @@ You need an API key from at least one provider:
 
 ```bash
 git clone https://github.com/Incurian/NEXUS3.git
-cd nexus3
+cd NEXUS3
 ```
 
 ### Step 2: Create a Virtual Environment
@@ -146,17 +163,17 @@ source ~/.bashrc
 ### Step 5: Verify Installation
 
 ```bash
-# Check Python version
-python --version  # Should show 3.11+
+# Check Python version (use virtualenv Python)
+.venv/bin/python --version  # Should show 3.11+
 
 # Check module is importable
-python -c "import nexus3; print('NEXUS3 installed successfully')"
+.venv/bin/python -c "import nexus3; print('NEXUS3 installed successfully')"
 
 # Check CLI works
-nexus3 --help
+.venv/bin/python -m nexus3 --help
 ```
 
-### Step 6: Initialize Configuration (Optional)
+### Step 6: Initialize Configuration (Recommended)
 
 ```bash
 # Create global config directory (~/.nexus3/)
@@ -280,8 +297,9 @@ Use multiple providers simultaneously:
       "base_url": "https://my-company.openai.azure.com",
       "api_key_env": "AZURE_OPENAI_KEY",
       "api_version": "2024-02-01",
+      "deployment": "gpt4-deployment",
       "models": {
-        "gpt4": {"id": "gpt-4-turbo", "deployment": "gpt4-deployment", "context_window": 128000}
+        "gpt4": {"id": "gpt-4-turbo", "context_window": 128000}
       }
     }
   },
@@ -312,6 +330,7 @@ nexus3 --model smart      # Use cloud model
 | `deployment` | string | - | Deployment name (Azure) |
 | `verify_ssl` | bool | `true` | Verify SSL certificates (set `false` for self-signed certs) |
 | `ssl_ca_cert` | string | - | Path to CA certificate file (for corporate CAs) |
+| `allow_insecure_http` | bool | `false` | Allow HTTP (non-HTTPS) for non-localhost URLs (security risk) |
 
 ### On-Prem / Self-Signed Certificates
 
@@ -408,6 +427,7 @@ Your IT department can provide the corporate CA certificate if you don't have it
 | `id` | string | (required) | Model identifier sent to API |
 | `context_window` | int | `131072` | Context window size in tokens |
 | `reasoning` | bool | `false` | Enable extended thinking mode |
+| `guidance` | string | - | Brief usage guidance (e.g., "Fast, cheap. Good for research.") |
 
 ---
 
@@ -444,7 +464,7 @@ NEXUS3 v0.1.0 - Type /help for commands
 
 you> Hello! What can you do?
 
-assistant> I'm NEXUS3, an AI assistant with access to 26 tools for
+assistant> I'm NEXUS3, an AI assistant with access to 25 tools for
 software development tasks. I can:
 
 • Read, write, and edit files
@@ -516,6 +536,7 @@ nexus3 [OPTIONS]
 | `--serve [PORT]` | Run headless HTTP server (requires `NEXUS_DEV=1`) |
 | `--connect [URL]` | Connect to existing server (auto-discovers if no URL) |
 | `--agent ID` | Agent to connect to (default: `main`, requires `--connect`) |
+| `--reload` | Auto-reload on code changes (serve mode only, requires watchfiles) |
 
 #### Options
 
@@ -523,7 +544,8 @@ nexus3 [OPTIONS]
 |------|---------|-------------|
 | `--model NAME` | Config default | Model alias or full ID |
 | `--template PATH` | - | Custom system prompt file |
-| `--verbose` | false | Enable debug logging |
+| `-v, --verbose` | false | Enable debug logging to terminal |
+| `-V, --log-verbose` | false | Write debug output to verbose.md log file |
 | `--raw-log` | false | Log raw API JSON |
 | `--log-dir PATH` | `.nexus3/logs` | Log directory |
 | `--port PORT` | 8765 | Server port |
@@ -590,14 +612,18 @@ Available when running interactively.
 |---------|-------------|
 | `/mcp` | List MCP servers |
 | `/mcp connect NAME` | Connect to MCP server |
+| `/mcp connect NAME --allow-all --shared` | Connect skipping prompts, share with all agents |
 | `/mcp disconnect NAME` | Disconnect from server |
 | `/mcp tools [SERVER]` | List available MCP tools |
+| `/mcp resources [SERVER]` | List available MCP resources |
+| `/mcp prompts [SERVER]` | List available MCP prompts |
+| `/mcp retry NAME` | Retry tool listing for failed server |
 
 #### REPL Control
 
 | Command | Description |
 |---------|-------------|
-| `/help` | Show help |
+| `/help [COMMAND]` | Show help (optionally for specific command) |
 | `/clear` | Clear screen |
 | `/quit`, `/exit`, `/q` | Exit REPL |
 
@@ -619,8 +645,8 @@ For scripting, automation, or integrating NEXUS3 with external tools, use the `n
 |---------|-------------|
 | `nexus3 rpc detect` | Check if server is running (exit code 0/1) |
 | `nexus3 rpc list` | List all agents |
-| `nexus3 rpc create ID [--preset P] [--cwd PATH]` | Create agent |
-| `nexus3 rpc send ID MESSAGE` | Send message to agent |
+| `nexus3 rpc create ID [--preset P] [--cwd PATH] [--write-path PATH] [--model M] [--message MSG]` | Create agent |
+| `nexus3 rpc send ID MESSAGE [--timeout SEC]` | Send message to agent |
 | `nexus3 rpc status ID` | Get agent status |
 | `nexus3 rpc destroy ID` | Remove agent |
 | `nexus3 rpc compact ID` | Force context compaction |
@@ -650,7 +676,7 @@ For scripting, automation, or integrating NEXUS3 with external tools, use the `n
 │  │  │              SharedComponents                            │    │   │
 │  │  │  • ProviderRegistry (LLM connections)                   │    │   │
 │  │  │  • Config (layered settings)                            │    │   │
-│  │  │  • PromptLoader (NEXUS.md templates)                    │    │   │
+│  │  │  • ContextLoader (NEXUS.md + context loading)           │    │   │
 │  │  └─────────────────────────────────────────────────────────┘    │   │
 │  └─────────────────────────────────────────────────────────────────┘   │
 │                                                                         │
@@ -678,7 +704,7 @@ For scripting, automation, or integrating NEXUS3 with external tools, use the `n
 | `provider/` | LLM provider implementations, retry logic |
 | `context/` | Context management, token counting, compaction |
 | `session/` | Session coordinator, event system, persistence |
-| `skill/` | Skill registry, base classes, 24 built-in skills |
+| `skill/` | Skill registry, base classes, 25 built-in skills |
 | `display/` | Rich terminal UI, spinner, theming |
 | `cli/` | REPL, argument parsing, lobby |
 | `rpc/` | JSON-RPC server, agent pool, authentication |
@@ -708,7 +734,8 @@ NEXUS3 implements a comprehensive security system with three permission levels.
 |--------|-------|-------------|---------------|
 | `yolo` | YOLO | Full access, no confirmations | REPL only |
 | `trusted` | TRUSTED | Confirmations for destructive actions | REPL, RPC |
-| `sandboxed` | SANDBOXED | Read-only in CWD, no execution | REPL, RPC (default) |
+| `sandboxed` | SANDBOXED | CWD only, no execution | REPL, RPC (default) |
+| `worker` | SANDBOXED | Legacy alias for sandboxed | REPL, RPC |
 
 ### Key Security Features
 
@@ -803,8 +830,11 @@ Configuration is loaded from multiple layers (later overrides earlier):
 ├── config.json                     # Global settings
 ├── NEXUS.md                        # Personal system prompt
 ├── mcp.json                        # Personal MCP servers
-├── rpc.token                       # RPC auth token
+├── rpc.token                       # RPC auth token (default port)
+├── rpc-{port}.token                # RPC auth token (non-default ports)
 ├── sessions/                       # Saved sessions
+├── last-session.json               # Auto-saved for --resume
+├── last-session-name               # Name of last session
 └── logs/                           # Logs
     └── server.log                  # Server lifecycle events
 
@@ -815,18 +845,20 @@ Configuration is loaded from multiple layers (later overrides earlier):
 └── logs/                           # Session logs
     └── {session-id}/
         ├── session.db              # SQLite message history
-        └── session.md              # Markdown transcript
+        ├── context.md              # Markdown transcript
+        ├── verbose.md              # Debug output (if -V enabled)
+        └── raw.jsonl               # Raw API JSON (if --raw-log enabled)
 ```
 
 ### Root Configuration Options
 
 ```json
 {
-  "default_model": "fast",
+  "default_model": "haiku",
   "providers": { },
   "stream_output": true,
-  "max_tool_iterations": 100,
-  "skill_timeout": 120.0,
+  "max_tool_iterations": 10,
+  "skill_timeout": 30.0,
   "max_concurrent_tools": 10,
   "default_permission_level": "trusted",
   "compaction": { },
@@ -839,13 +871,15 @@ Configuration is loaded from multiple layers (later overrides earlier):
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `default_model` | string | `"fast"` | Model alias to use by default |
+| `default_model` | string | `"haiku"` | Model alias to use by default |
 | `providers` | object | - | Provider configurations (see [Provider Configuration](#provider-configuration)) |
 | `stream_output` | bool | `true` | Stream LLM responses |
-| `max_tool_iterations` | int | `100` | Max tool calls per turn |
-| `skill_timeout` | float | `120.0` | Default tool timeout (seconds) |
+| `max_tool_iterations` | int | `10` | Max tool calls per turn (shipped defaults use 100) |
+| `skill_timeout` | float | `30.0` | Default tool timeout in seconds (shipped defaults use 120) |
 | `max_concurrent_tools` | int | `10` | Parallel tool execution limit |
 | `default_permission_level` | string | `"trusted"` | Default permission preset |
+
+**Note:** The shipped `defaults/config.json` uses `max_tool_iterations: 100` and `skill_timeout: 120.0` for a more permissive default experience.
 
 ### Compaction Configuration
 
@@ -853,10 +887,11 @@ Configuration is loaded from multiple layers (later overrides earlier):
 {
   "compaction": {
     "enabled": true,
-    "model": "fast",
+    "model": null,
     "trigger_threshold": 0.9,
     "summary_budget_ratio": 0.25,
-    "recent_preserve_ratio": 0.25
+    "recent_preserve_ratio": 0.25,
+    "redact_secrets": true
   }
 }
 ```
@@ -864,10 +899,11 @@ Configuration is loaded from multiple layers (later overrides earlier):
 | Option | Default | Description |
 |--------|---------|-------------|
 | `enabled` | `true` | Enable automatic compaction |
-| `model` | `"fast"` | Model for summarization |
+| `model` | `null` | Model for summarization (`null` = use default_model, shipped defaults use "fast") |
 | `trigger_threshold` | `0.9` | Trigger when 90% of context used |
 | `summary_budget_ratio` | `0.25` | Max 25% of tokens for summary |
 | `recent_preserve_ratio` | `0.25` | Keep 25% of recent messages verbatim |
+| `redact_secrets` | `true` | Redact secrets from content before summarization |
 
 #### Context Configuration
 
@@ -892,12 +928,13 @@ Configuration is loaded from multiple layers (later overrides earlier):
 ```json
 {
   "server": {
-    "host": "127.0.0.1",
     "port": 8765,
     "log_level": "INFO"
   }
 }
 ```
+
+**Note:** The server always binds to `127.0.0.1` for security (not configurable).
 
 ### Environment Variables
 
@@ -908,13 +945,13 @@ Configuration is loaded from multiple layers (later overrides earlier):
 | `OPENAI_API_KEY` | OpenAI API key |
 | `AZURE_OPENAI_KEY` | Azure OpenAI API key |
 | `NEXUS_DEV=1` | Enable `--serve` headless mode |
-| `NEXUS3_API_KEY` | Override RPC token |
+| `NEXUS3_API_KEY` | RPC token fallback (checked after token files) |
 
 ---
 
 ## Built-in Skills
 
-NEXUS3 includes 24 built-in skills organized by category.
+NEXUS3 includes 25 built-in skills organized by category.
 
 ### File Operations (Read)
 
@@ -925,7 +962,7 @@ NEXUS3 includes 24 built-in skills organized by category.
 | `file_info` | Get file metadata | `path` |
 | `list_directory` | List directory contents | `path`, `all`, `long` |
 | `glob` | Find files by pattern | `pattern`, `path`, `exclude` |
-| `grep` | Search file contents | `pattern`, `path`, `include`, `context` |
+| `grep` | Search file contents | `pattern`, `path`, `include`, `context`, `recursive`, `ignore_case`, `max_matches` |
 
 ### File Operations (Write)
 
@@ -934,26 +971,31 @@ NEXUS3 includes 24 built-in skills organized by category.
 | `write_file` | Write/create file | `path`, `content` |
 | `edit_file` | Edit with string/line replacement | `path`, `old_string`, `new_string` |
 | `append_file` | Append to file | `path`, `content`, `newline` |
-| `regex_replace` | Regex find/replace | `path`, `pattern`, `replacement` |
+| `regex_replace` | Regex find/replace | `path`, `pattern`, `replacement`, `count`, `ignore_case`, `multiline`, `dotall` |
 | `copy_file` | Copy file | `source`, `destination`, `overwrite` |
 | `mkdir` | Create directory | `path` |
 | `rename` | Move/rename file | `source`, `destination`, `overwrite` |
 
 ### Execution
 
-| Skill | Description | Safety |
-|-------|-------------|--------|
-| `bash_safe` | Execute command (no shell operators) | Safe from injection |
-| `shell_UNSAFE` | Execute with full shell (pipes, redirects) | **Vulnerable to injection** |
-| `run_python` | Execute Python code | Same as bash_safe |
+| Skill | Description | Key Parameters |
+|-------|-------------|----------------|
+| `bash_safe` | Execute command (no shell operators) | `command`, `timeout`, `cwd` |
+| `shell_UNSAFE` | Execute with full shell (pipes, redirects) | `command`, `timeout`, `cwd` |
+| `run_python` | Execute Python code | `code`, `timeout`, `cwd` |
 
 **Important:** `bash_safe` uses `shlex.split()` so shell operators (`|`, `&&`, `>`) do NOT work. Use `shell_UNSAFE` only when you need shell features AND trust the input.
 
+**Safety notes:**
+- `bash_safe` uses `shlex.split()` so shell operators (`|`, `&&`, `>`) do NOT work
+- Use `shell_UNSAFE` only when you need shell features AND trust the input
+- Default timeout: 30 seconds, max: 300 seconds
+
 ### Version Control
 
-| Skill | Description | Notes |
-|-------|-------------|-------|
-| `git` | Execute git commands | Permission-filtered by level |
+| Skill | Description | Key Parameters |
+|-------|-------------|----------------|
+| `git` | Execute git commands | `command`, `cwd` |
 
 Git commands are filtered by permission level:
 - **SANDBOXED**: Read-only (`status`, `diff`, `log`, `show`, `branch`, `blame`, etc.)
@@ -962,20 +1004,23 @@ Git commands are filtered by permission level:
 
 ### Agent Management
 
-| Skill | Description | Parameters |
-|-------|-------------|------------|
-| `nexus_create` | Create agent | `agent_id`, `preset`, `cwd`, `model`, `initial_message` |
-| `nexus_destroy` | Destroy agent | `agent_id` |
-| `nexus_send` | Send message to agent | `agent_id`, `content` |
-| `nexus_status` | Get agent status | `agent_id` |
-| `nexus_cancel` | Cancel request | `agent_id`, `request_id` |
-| `nexus_shutdown` | Shutdown server | - |
+| Skill | Description | Key Parameters |
+|-------|-------------|----------------|
+| `nexus_create` | Create agent | `agent_id`, `preset`, `cwd`, `allowed_write_paths`, `disable_tools`, `model`, `initial_message`, `wait_for_initial_response`, `port` |
+| `nexus_destroy` | Destroy agent | `agent_id`, `port` |
+| `nexus_send` | Send message to agent | `agent_id`, `content`, `port` |
+| `nexus_status` | Get agent status | `agent_id`, `port` |
+| `nexus_cancel` | Cancel request | `agent_id`, `request_id`, `port` |
+| `nexus_shutdown` | Shutdown server | `port` |
+
+**Note:** All `nexus_*` skills default to port 8765.
 
 ### Utility
 
-| Skill | Description | Parameters |
-|-------|-------------|------------|
+| Skill | Description | Key Parameters |
+|-------|-------------|----------------|
 | `sleep` | Pause execution | `seconds`, `label` |
+| `echo` | Echo input (testing utility) | `message` |
 
 ### Skill Availability by Permission Level
 
@@ -1001,27 +1046,27 @@ Create `mcp.json` in `~/.nexus3/` (global) or `.nexus3/` (project):
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `command` | `list[str]` | - | Command to launch stdio server |
+| `command` | `str \| list[str]` | - | Command to launch stdio server |
+| `args` | `list[str]` | `[]` | Arguments (when command is a string) |
 | `url` | `str` | - | URL for HTTP server (mutually exclusive with `command`) |
-| `env` | `dict` | `{}` | Explicit environment variables |
+| `env` | `dict[str, str]` | `{}` | Explicit environment variables |
 | `env_passthrough` | `list[str]` | `[]` | Host env var names to pass through |
 | `cwd` | `str` | - | Working directory for subprocess |
 | `enabled` | `bool` | `true` | Whether server is enabled |
+| `fail_if_no_tools` | `bool` | `false` | Fail connection if tool listing fails |
 
-### Example: AgentBridge (Unreal Engine / Tempo)
+### Example Configuration
 
-For users integrating with AgentBridge for Unreal Engine:
+**mcp.json** uses `"servers"` (NEXUS3 format) or `"mcpServers"` (official/Claude Desktop format):
 
 ```json
 {
-  "mcp_servers": [
-    {
-      "name": "test-server",
+  "servers": {
+    "test-server": {
       "command": [".venv/bin/python", "-m", "nexus3.mcp.test_server"],
       "enabled": true
     },
-    {
-      "name": "agentbridge",
+    "agentbridge": {
       "command": [
         "/mnt/d/tempo/TempoSample/TempoEnv/Scripts/python.exe",
         "-m", "mcp",
@@ -1034,9 +1079,25 @@ For users integrating with AgentBridge for Unreal Engine:
       },
       "enabled": true
     }
-  ]
+  }
 }
 ```
+
+**Alternative format (Claude Desktop compatible):**
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {"GITHUB_TOKEN": "..."}
+    }
+  }
+}
+```
+
+**Note:** In `config.json`, use `"mcp_servers": [...]` array format instead.
 
 ### Transport Types
 
@@ -1050,14 +1111,13 @@ MCP servers only receive safe environment variables by default (PATH, HOME, USER
 
 ```json
 {
-  "mcp_servers": [
-    {
-      "name": "github",
+  "servers": {
+    "github": {
       "command": ["npx", "-y", "@modelcontextprotocol/server-github"],
       "env_passthrough": ["GITHUB_TOKEN"],
       "env": {"EXTRA_VAR": "explicit-value"}
     }
-  ]
+  }
 }
 ```
 
@@ -1070,6 +1130,13 @@ MCP servers only receive safe environment variables by default (PATH, HOME, USER
 | `/mcp connect NAME --allow-all --shared` | Skip prompts, share with agents |
 | `/mcp disconnect NAME` | Disconnect |
 | `/mcp tools [SERVER]` | List available MCP tools |
+| `/mcp resources [SERVER]` | List available MCP resources |
+| `/mcp prompts [SERVER]` | List available MCP prompts |
+| `/mcp retry NAME` | Retry tool listing for server |
+
+**Connect flags:**
+- `--allow-all` / `--per-tool`: Consent mode for tool access
+- `--shared` / `--private`: Visibility mode for other agents
 
 ### Permission Requirements
 
@@ -1145,7 +1212,9 @@ NEXUS3 REPL
 
 .nexus3/logs/{session-id}/    # Session logs
 ├── session.db                # SQLite message history
-└── session.md                # Markdown transcript
+├── context.md                # Markdown transcript
+├── verbose.md                # Debug output (if -V enabled)
+└── raw.jsonl                 # Raw API JSON (if --raw-log enabled)
 ```
 
 ### Context Compaction
@@ -1280,7 +1349,18 @@ tail -f .nexus3/logs/server.log
 
 **Enable verbose logging:**
 ```bash
-nexus3 --verbose
+nexus3 --verbose          # Debug output to terminal
+nexus3 -V                 # Debug output to verbose.md log file
+```
+
+**Check if server is running:**
+```bash
+nexus3 rpc detect         # Returns exit code 0 if running, 1 if not
+```
+
+**Use a different port (if default port in use):**
+```bash
+nexus3 rpc list --port 9000
 ```
 
 **Check server logs:**
@@ -1291,7 +1371,7 @@ tail -f .nexus3/logs/server.log
 **Check session logs:**
 ```bash
 ls -la .nexus3/logs/
-cat .nexus3/logs/{session-id}/session.md
+cat .nexus3/logs/{session-id}/context.md
 ```
 
 ---
@@ -1301,7 +1381,7 @@ cat .nexus3/logs/{session-id}/session.md
 ### Running Tests
 
 ```bash
-# All tests (2300+)
+# All tests (2600+)
 .venv/bin/pytest tests/ -v
 
 # Specific categories
@@ -1329,7 +1409,8 @@ cat .nexus3/logs/{session-id}/session.md
 ### Creating Custom Skills
 
 ```python
-from nexus3.skill import BaseSkill, ToolResult
+from nexus3.skill import BaseSkill
+from nexus3.core.types import ToolResult
 
 class MySkill(BaseSkill):
     @property
@@ -1424,4 +1505,4 @@ MIT
 
 ---
 
-**Updated**: 2026-01-23
+**Updated**: 2026-01-28
