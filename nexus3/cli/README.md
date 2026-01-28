@@ -251,7 +251,20 @@ class KeyMonitor:
 
 **Platform Support:**
 - Unix: Uses `termios`/`tty` for non-blocking input with `select()`
-- Windows: Fallback mode (no ESC detection, operations run to completion)
+- Windows: Uses `msvcrt.kbhit()` and `msvcrt.getwch()` for native keyboard handling
+
+### Windows ESC Key Support
+
+On Windows, ESC key detection uses `msvcrt.kbhit()` and `msvcrt.getwch()` instead of termios. This provides native Windows keyboard handling without requiring additional dependencies.
+
+**Requirements:**
+- Windows Terminal or PowerShell 7+ recommended
+- Falls back to sleep-only loop if `msvcrt` unavailable
+
+**Behavior:**
+- Polls for keyboard input using `msvcrt.kbhit()`
+- Reads key with `msvcrt.getwch()` (wide character support)
+- Detects ESC key (character code 27) to trigger cancellation callback
 
 ### Confirmation UI (`confirmation_ui.py`)
 

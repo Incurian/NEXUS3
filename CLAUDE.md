@@ -12,18 +12,27 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ## Current Development
 
-### Nearly Complete: Windows Native Compatibility
+### Complete: Windows Native Compatibility
 
 **Plan:** `docs/WINDOWS-NATIVE-COMPATIBILITY.md`
 **Branch:** `feature/windows-native-compat` (from `feature/mcp-improvements`)
 
-Full Windows-native compatibility: ESC key detection, line ending preservation, error path sanitization, subprocess window handling, and more.
+Full Windows-native compatibility including:
+- **ESC key detection** using `msvcrt` on Windows
+- **Cross-platform process termination** (SIGTERM/SIGKILL on Unix, taskkill on Windows)
+- **Line ending preservation** in edit_file, append_file, regex_replace
+- **Windows path sanitization** in error messages (C:\Users\..., UNC paths, domain\user)
+- **Subprocess window handling** (CREATE_NO_WINDOW flag)
+- **BOM handling** in config/context file loading (utf-8-sig)
+- **Windows environment variables** (USERPROFILE, APPDATA, etc.)
+- **Windows file attributes** (RHSA instead of rwx)
+- **VT100 console mode** for ANSI sequence support
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| P1-P10: Core Implementation | ✅ COMPLETE | 12 commits, all features implemented |
-| P11: Testing Infrastructure | ⚠️ PENDING | Additional test coverage |
-| P12: Documentation | ⚠️ PENDING | Update docs after testing |
+| P1-P10: Core Implementation | ✅ COMPLETE | 20 commits, all features implemented |
+| P11: Testing Infrastructure | ✅ COMPLETE | Pytest markers, cross-platform test coverage |
+| P12: Documentation | ✅ COMPLETE | CLAUDE.md, module READMEs updated |
 
 **Test count:** 2673 passed (756 security, 136 MCP unit tests)
 
@@ -106,7 +115,7 @@ Do NOT use a NEXUS coordinator agent in the middle - Claude Code is better at co
 
 ```
 nexus3/
-├── core/           # Types, interfaces, errors, encoding, paths, URL validation, permissions
+├── core/           # Types, interfaces, errors, encoding, paths, URL validation, permissions, process termination
 ├── config/         # Pydantic schema, permission config, fail-fast loader
 ├── provider/       # AsyncProvider protocol, multi-provider support, retry logic
 ├── context/        # ContextManager, ContextLoader, TokenCounter, compaction
@@ -1234,5 +1243,20 @@ Comprehensive security hardening completed January 2026:
   - Response size limits (10MB max via `MAX_MCP_OUTPUT_SIZE`)
   - Config error sanitization (no secret leakage in validation errors)
   - Session ID validation (alphanumeric only, 256 char max)
+- **Windows compatibility** (added 2026-01-28):
+  - Error path sanitization for Windows paths (C:\Users\..., UNC, domain\user)
+  - Cross-platform process tree termination (taskkill /T /F fallback)
+  - Environment variable sanitization includes Windows-specific vars
+  - CREATE_NO_WINDOW subprocess flag prevents window flashing
 
-**Test coverage**: 2512 tests including 756 security-specific tests.
+### Known Windows Security Limitations
+
+These are documented limitations, not bugs:
+
+| Issue | Impact | Mitigation |
+|-------|--------|------------|
+| `os.chmod()` no-op | Session files, tokens may be readable by other users | Restrict home directory access |
+| Symlink detection | `is_symlink()` misses junctions/reparse points | Symlink attack assumptions weaker |
+| Permission bits | `S_IRWXG\|S_IRWXO` checks meaningless | ACL-based validation not implemented |
+
+**Test coverage**: 2673 tests including 756 security-specific tests.

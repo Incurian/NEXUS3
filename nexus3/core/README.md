@@ -544,6 +544,46 @@ build_mcp_skill_name("evil/../path", "../../etc")  # "mcp_evil_path_etc"
 
 ---
 
+### process.py - Cross-Platform Process Termination
+
+Provides robust process tree termination that works on both Unix and Windows.
+
+```python
+from nexus3.core.process import terminate_process_tree, WINDOWS_CREATIONFLAGS
+
+# Terminates process and all children
+await terminate_process_tree(process, graceful_timeout=2.0)
+```
+
+**Unix behavior:**
+1. Send SIGTERM to process group
+2. Wait for graceful timeout
+3. Send SIGKILL if still running
+
+**Windows behavior:**
+1. Send CTRL_BREAK_EVENT
+2. Wait for graceful timeout
+3. Use `taskkill /T /F` for process tree termination
+4. Fall back to `process.kill()` if needed
+
+**Constants:**
+- `GRACEFUL_TIMEOUT`: Default timeout (2.0 seconds)
+- `WINDOWS_CREATIONFLAGS`: Subprocess flags for Windows (`CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`)
+
+**Usage with subprocess creation:**
+```python
+import subprocess
+from nexus3.core.process import WINDOWS_CREATIONFLAGS
+
+# Create subprocess without visible window on Windows
+process = await asyncio.create_subprocess_exec(
+    "git", "status",
+    creationflags=WINDOWS_CREATIONFLAGS,  # 0 on Unix, flags on Windows
+)
+```
+
+---
+
 ### cancel.py - Cancellation Support
 
 Cooperative cancellation for async operations.
