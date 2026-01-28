@@ -140,27 +140,33 @@ class TestNeedsNewlineHelper:
         from nexus3.skill.builtin.append_file import _needs_newline_prefix
 
         test_file = tmp_path / "empty.txt"
-        test_file.write_text("")
+        test_file.write_bytes(b"")
 
-        assert _needs_newline_prefix(test_file) is False
+        needs_nl, line_ending = _needs_newline_prefix(test_file)
+        assert needs_nl is False
+        assert line_ending == "\n"
 
     def test_file_with_newline_no_prefix(self, tmp_path: Path) -> None:
         """File ending with newline doesn't need prefix."""
         from nexus3.skill.builtin.append_file import _needs_newline_prefix
 
         test_file = tmp_path / "test.txt"
-        test_file.write_text("content\n")
+        test_file.write_bytes(b"content\n")
 
-        assert _needs_newline_prefix(test_file) is False
+        needs_nl, line_ending = _needs_newline_prefix(test_file)
+        assert needs_nl is False
+        assert line_ending == "\n"
 
     def test_file_without_newline_needs_prefix(self, tmp_path: Path) -> None:
         """File not ending with newline needs prefix."""
         from nexus3.skill.builtin.append_file import _needs_newline_prefix
 
         test_file = tmp_path / "test.txt"
-        test_file.write_text("no newline")
+        test_file.write_bytes(b"no newline")
 
-        assert _needs_newline_prefix(test_file) is True
+        needs_nl, line_ending = _needs_newline_prefix(test_file)
+        assert needs_nl is True
+        assert line_ending == "\n"
 
     def test_nonexistent_file_no_prefix(self, tmp_path: Path) -> None:
         """Nonexistent file doesn't need prefix (will be created)."""
@@ -168,7 +174,31 @@ class TestNeedsNewlineHelper:
 
         test_file = tmp_path / "nonexistent.txt"
 
-        assert _needs_newline_prefix(test_file) is False
+        needs_nl, line_ending = _needs_newline_prefix(test_file)
+        assert needs_nl is False
+        assert line_ending == "\n"
+
+    def test_crlf_file_detection(self, tmp_path: Path) -> None:
+        """CRLF file ending is detected correctly."""
+        from nexus3.skill.builtin.append_file import _needs_newline_prefix
+
+        test_file = tmp_path / "crlf.txt"
+        test_file.write_bytes(b"line1\r\nline2\r\n")
+
+        needs_nl, line_ending = _needs_newline_prefix(test_file)
+        assert needs_nl is False
+        assert line_ending == "\r\n"
+
+    def test_crlf_file_no_trailing_newline(self, tmp_path: Path) -> None:
+        """CRLF file without trailing newline needs prefix with CRLF."""
+        from nexus3.skill.builtin.append_file import _needs_newline_prefix
+
+        test_file = tmp_path / "crlf.txt"
+        test_file.write_bytes(b"line1\r\nline2")
+
+        needs_nl, line_ending = _needs_newline_prefix(test_file)
+        assert needs_nl is True
+        assert line_ending == "\r\n"
 
 
 class TestAppendFileTrueAppend:
