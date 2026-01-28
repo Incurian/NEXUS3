@@ -183,6 +183,37 @@ def atomic_write_text(path: Path, content: str, encoding: str = "utf-8") -> None
         raise
 
 
+def detect_line_ending(content: str) -> str:
+    """Detect the predominant line ending style in content.
+
+    Returns:
+        "\\r\\n" (CRLF - Windows), "\\n" (LF - Unix), "\\r" (CR - legacy)
+    """
+    if '\r\n' in content:
+        return '\r\n'
+    elif '\r' in content:
+        return '\r'
+    return '\n'
+
+
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write bytes to a file atomically using temp file + rename.
+
+    Similar to atomic_write_text but for binary data, preserving exact bytes.
+    """
+    fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".tmp_", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.replace(tmp_path, str(path))
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
 def validate_path(
     path: str | Path,
     allowed_paths: list[Path] | None = None,
