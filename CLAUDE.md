@@ -12,52 +12,45 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ## Current Development
 
-### In Progress: MCP Improvements
+### In Progress: Windows Native Compatibility
 
-**Plan:** `docs/MCP-IMPLEMENTATION-GAPS.md`
-**Branch:** `feature/mcp-improvements` (24 commits ahead of master)
+**Plan:** `docs/WINDOWS-NATIVE-COMPATIBILITY.md`
+**Branch:** `feature/windows-native-compat` (from `feature/mcp-improvements`)
 
-**Completed:**
-- ✅ P0.5: Security hardening (SSRF redirect fix, output sanitization, size limits, error sanitization)
-- ✅ P0: Claude Desktop config format compatibility (`mcpServers` + `command`/`args`)
-- ✅ P1.1: Notification format fix (omit empty params)
-- ✅ P1.4: Pagination support for tools/list
-- ✅ P1.5-P1.6: MCPTool/MCPToolResult optional fields (title, icons, structured_content, etc.)
-- ✅ P1.7-P1.8: HTTP protocol headers and session management
-- ✅ P1.9: Improved error messages with source tracking and actionable suggestions
-- ✅ P1.10: HTTP retry logic with exponential backoff
-- ✅ P2.0: Windows compatibility (env vars, command resolution, CRLF, process groups)
-- ✅ P2.1: Registry robustness (reconnection, graceful tool listing, `/mcp retry` command)
+Full Windows-native compatibility: ESC key detection, line ending preservation, error path sanitization, subprocess window handling, and more.
 
-**Remaining:**
-- P2.0.8-11, P1.9.14: Polish items (Windows error hints, additional tests, docs) - optional
+| Phase | Status | Description |
+|-------|--------|-------------|
+| P1: Process Termination | ✅ COMPLETE | `nexus3/core/process.py` + 26 tests |
+| P6: Consumer Updates | ⚠️ NEXT | Integrate P1 into skill/base.py, transport.py |
+| P2-P5, P7-P10 | ❌ PENDING | See plan for full checklist |
+| P11-P12 | ❌ PENDING | Testing infrastructure + documentation |
 
 **Test count:** 2512 passed (756 security, 136 MCP unit tests)
 
-### Pending Live Test: Command Help System
+### Ready to Merge: MCP Improvements
 
-**Plan:** `docs/COMMAND-HELP.md`
+**Plan:** `docs/MCP-IMPLEMENTATION-GAPS.md`
+**Branch:** `feature/mcp-improvements`
 
-**Status:** Implementation complete, merged to master, awaiting user live testing.
-
-Dynamic help system for REPL commands with consistent formatting, argument documentation, and examples.
+MCP protocol compliance, security hardening, Windows compatibility foundation, registry robustness. All items complete except optional polish. Ready for final review and merge to master.
 
 ### On Deck
 
-Plans are listed in recommended implementation order. Most are independent, but dependencies are noted.
+Plans listed in recommended implementation order:
 
 | Priority | Plan | Description |
 |----------|------|-------------|
-| 1 | `YOLO-SAFETY-PLAN.md` | YOLO warning banner, remove legacy "worker" preset, block RPC send to YOLO agents. Small, security-focused. |
-| 2 | `CONCAT-FILES-PLAN.md` | New `concat_files` skill to bundle source files with token estimation. Simple, isolated, low risk. |
-| 3 | `EDIT-PATCH-PLAN.md` | Split `edit_file` into separate tools, add batched edits, new `patch` skill for unified diffs. |
-| 4 | `CLIPBOARD-PLAN.md` | Scoped clipboard system (agent/project/system) for copy/paste across files and agents. |
-| 5 | `SANDBOXED-PARENT-SEND-PLAN.md` | Allow sandboxed agents to `nexus_send` to their parent only. Extends permission system with target restrictions. |
-| 6 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration (issues, MRs, epics, CI/CD). Large feature. *Note: Uses session allowances pattern similar to #5; consider implementing #5 first to establish enforcer patterns.* |
+| 1 | `YOLO-SAFETY-PLAN.md` | YOLO warning banner, remove legacy "worker" preset, block RPC send to YOLO agents. |
+| 2 | `CONCAT-FILES-PLAN.md` | New `concat_files` skill to bundle source files with token estimation. |
+| 3 | `EDIT-PATCH-PLAN.md` | Split `edit_file` into separate tools, add batched edits, new `patch` skill. |
+| 4 | `CLIPBOARD-PLAN.md` | Scoped clipboard system for copy/paste across files and agents. |
+| 5 | `SANDBOXED-PARENT-SEND-PLAN.md` | Allow sandboxed agents to `nexus_send` to parent only. |
+| 6 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration. *Depends on #5 for enforcer patterns.* |
 
 **Reference docs** (not plans):
-- `GITHUB-REFERENCE.md` - GitHub API/CLI reference for future GitHub integration
-- `GITLAB-REFERENCE.md` - GitLab API/CLI reference used by GITLAB-TOOLS-PLAN
+- `GITHUB-REFERENCE.md` - GitHub API/CLI reference
+- `GITLAB-REFERENCE.md` - GitLab API/CLI reference
 
 ---
 
@@ -1129,7 +1122,6 @@ nexus3 rpc create coordinator --preset trusted
 | Session.py split (~1000 lines) | Large refactor | M |
 | Pool.py split (~1100 lines) | Large refactor | M |
 | Display config | Polish, no current need | S |
-| Windows ESC key | No Windows users yet | S |
 | HTTP keep-alive | Advanced feature | M |
 
 ### DRY Cleanups
@@ -1244,4 +1236,4 @@ Comprehensive security hardening completed January 2026:
   - Config error sanitization (no secret leakage in validation errors)
   - Session ID validation (alphanumeric only, 256 char max)
 
-**Test coverage**: 2494 tests including 756 security-specific tests.
+**Test coverage**: 2512 tests including 756 security-specific tests.
