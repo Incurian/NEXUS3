@@ -17,7 +17,6 @@ import os
 import random
 import re
 import shutil
-import signal
 import subprocess
 import sys
 from abc import ABC, abstractmethod
@@ -278,6 +277,7 @@ class StdioTransport(MCPTransport):
             # P2.0.5: Platform-specific process group handling
             if sys.platform == "win32":
                 # Windows: CREATE_NEW_PROCESS_GROUP allows sending CTRL_BREAK_EVENT
+                # P9: CREATE_NO_WINDOW prevents cmd.exe window from flashing
                 self._process = await asyncio.create_subprocess_exec(
                     *resolved_command,
                     stdin=asyncio.subprocess.PIPE,
@@ -285,7 +285,10 @@ class StdioTransport(MCPTransport):
                     stderr=asyncio.subprocess.PIPE,
                     env=env,
                     cwd=self._cwd,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                    creationflags=(
+                        subprocess.CREATE_NEW_PROCESS_GROUP |
+                        subprocess.CREATE_NO_WINDOW
+                    ),
                 )
             else:
                 # Unix: start_new_session creates new process group for clean termination
@@ -469,30 +472,13 @@ class StdioTransport(MCPTransport):
                 except Exception as e:
                     logger.debug("Stdin close error (expected during shutdown): %s", e)
 
-            # Give it a moment to exit
+            # Give it a moment to exit gracefully
             try:
                 await asyncio.wait_for(self._process.wait(), timeout=2.0)
             except TimeoutError:
-                # P2.0.6: Platform-specific process termination
-                try:
-                    if sys.platform == "win32":
-                        # Windows: send CTRL_BREAK_EVENT to process group
-                        os.kill(self._process.pid, signal.CTRL_BREAK_EVENT)
-                    else:
-                        # Unix: kill the entire process group
-                        try:
-                            pgid = os.getpgid(self._process.pid)
-                            os.killpg(pgid, signal.SIGTERM)
-                        except (ProcessLookupError, PermissionError):
-                            self._process.terminate()
-                except Exception:
-                    self._process.terminate()
-
-                try:
-                    await asyncio.wait_for(self._process.wait(), timeout=2.0)
-                except TimeoutError:
-                    self._process.kill()
-                    await self._process.wait()
+                # Use cross-platform process tree termination
+                from nexus3.core.process import terminate_process_tree
+                await terminate_process_tree(self._process)
 
             self._process = None
 

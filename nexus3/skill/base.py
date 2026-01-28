@@ -1014,21 +1014,8 @@ class ExecutionSkill(ABC):
                     timeout=timeout
                 )
             except TimeoutError:
-                # P2.0.7: Kill the entire process group to avoid orphan child processes
-                # Platform-specific handling for Windows vs Unix
-                try:
-                    if sys.platform == "win32":
-                        # Windows: send CTRL_BREAK_EVENT to process group
-                        # Requires CREATE_NEW_PROCESS_GROUP in process creation
-                        os.kill(process.pid, signal.CTRL_BREAK_EVENT)
-                    else:
-                        # Unix: start_new_session=True creates new group; killpg kills all
-                        pgid = os.getpgid(process.pid)
-                        os.killpg(pgid, signal.SIGKILL)
-                except (ProcessLookupError, OSError, AttributeError):
-                    # Process already dead, permission error, or missing attribute
-                    process.kill()
-                await process.wait()
+                from nexus3.core.process import terminate_process_tree
+                await terminate_process_tree(process)
                 return ToolResult(error=timeout_message.format(timeout=timeout))
 
             output = self._format_output(stdout, stderr, process.returncode)
