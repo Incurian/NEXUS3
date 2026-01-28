@@ -59,8 +59,27 @@ class MCPConfigError(ContextLoadError):
 # === Error Sanitization for Agent-Facing Messages ===
 
 # Patterns that may leak sensitive info
+
+# Unix path patterns
 _PATH_PATTERN = re.compile(r'(/[^\s:]+)+')
 _HOME_PATTERN = re.compile(r'/home/[^/\s]+')
+
+# Windows path patterns (order matters - most specific first)
+# Handle BOTH backslashes AND forward slashes - Windows accepts either
+_UNC_PATTERN = re.compile(r'(?:\\\\|//)[^\\/]+[/\\][^\\/]+')  # \\server\share or //server/share
+_APPDATA_PATTERN = re.compile(
+    r'[A-Za-z]:[/\\]Users[/\\][^\\/]+[/\\]AppData[/\\][^\\/]+',
+    re.IGNORECASE
+)
+_WINDOWS_USER_PATTERN = re.compile(
+    r'[A-Za-z]:[/\\]Users[/\\][^\\/]+',
+    re.IGNORECASE
+)
+# Relative paths without drive letter (e.g., ..\Users\alice\secrets.txt)
+_RELATIVE_USER_PATTERN = re.compile(r'(^|\s|\\|/)Users[/\\][^\\/\"]+', re.IGNORECASE)
+# Domain\username format (e.g., DOMAIN\alice, BUILTIN\Administrators)
+# Must not match drive letters (C: pattern) - requires at least 2 chars before backslash
+_DOMAIN_USER_PATTERN = re.compile(r'\b([A-Z][A-Z0-9_-]{1,})(\\)[^\\/\"\s]+', re.IGNORECASE)
 
 
 def sanitize_error_for_agent(error: str | None, tool_name: str = "") -> str | None:
@@ -107,6 +126,17 @@ def sanitize_error_for_agent(error: str | None, tool_name: str = "") -> str | No
 
     # For other errors, sanitize paths but keep the message
     result = error
+
+    # Windows paths (apply in order: most specific first)
+    # Handle both backslash and forward slash variants
+    result = _UNC_PATTERN.sub('[server]\\\\[share]', result)
+    result = _APPDATA_PATTERN.sub('C:\\\\Users\\\\[user]\\\\AppData\\\\[...]', result)
+    result = _WINDOWS_USER_PATTERN.sub('C:\\\\Users\\\\[user]', result)
+    # Relative paths and domain\user patterns
+    result = _RELATIVE_USER_PATTERN.sub(r'\1Users\\[user]', result)
+    result = _DOMAIN_USER_PATTERN.sub('[domain]\\\\[user]', result)
+
+    # Unix paths
     result = _HOME_PATTERN.sub('/home/[user]', result)
     result = _PATH_PATTERN.sub('[path]', result)
 
