@@ -670,9 +670,11 @@ markers = [
 ### Phase 5: Line Ending Preservation (Can Parallel P2-P4)
 - [ ] **P5.0** Add `detect_line_ending()` and `atomic_write_bytes()` to `nexus3/core/paths.py`
 - [ ] **P5.1** Update `edit_file.py`: binary read, normalize, detect, process, convert back, binary write
-- [ ] **P5.2** Update `regex_replace.py`: same pattern as edit_file
-- [ ] **P5.3** Update `append_file.py`: modify `_needs_newline_prefix()` to return (bool, line_ending) tuple
-- [ ] **P5.4** Add tests in `tests/unit/skill/test_line_ending_preservation.py`
+- [ ] **P5.2** Fix `_line_replace()` hardcoded LF (line 218) to use detected line ending
+- [ ] **P5.3** Update `regex_replace.py`: same pattern as edit_file
+- [ ] **P5.4** Update `append_file.py`: modify `_needs_newline_prefix()` to return (bool, line_ending) tuple
+- [ ] **P5.5** Update 4 existing tests in `test_p2_append_file.py` for tuple return type
+- [ ] **P5.6** Add new tests in `tests/unit/skill/test_line_ending_preservation.py`
 
 ### Phase 6: Update Consumers (Requires P1)
 - [ ] **P6.1** Update `nexus3/skill/base.py` to use `terminate_process_tree()`
@@ -983,6 +985,33 @@ Comprehensive security and compatibility review found **critical issues** requir
 - Rich console changes (P7): Compatible, no breaking changes
 
 Plan corrections applied. Ready for implementation.
+
+### Round 7 - Final Security & Compatibility Review (2026-01-28)
+
+Six validation agents performed final security and compatibility review:
+
+**Phase 8 (Error Sanitization)**: ⚠️ ADDITIONAL GAPS FOUND - CORRECTED
+- **Finding 1**: Relative paths without drive letter (`..\Users\alice`) not sanitized
+- **Finding 2**: Domain\username format (`DOMAIN\alice`, `BUILTIN\Administrators`) not sanitized
+- **Solution**: Added `_RELATIVE_USER_PATTERN` and `_DOMAIN_USER_PATTERN` regex patterns
+- **Updated**: Plan P8.1 with new patterns and sanitization calls
+
+**Phase 5 (Line Endings)**: ⚠️ BUG IN `_line_replace()` - CORRECTED
+- **Finding**: Line 218 in edit_file.py hardcodes `"\n"` when adding trailing newline
+- **Solution**: Added P5.2 checklist item to fix this to use detected line ending
+- **Updated**: Plan P5.3 with specific fix instructions
+
+**Phase 5 (append_file tests)**: ⚠️ TEST BREAKAGE - DOCUMENTED
+- **Finding**: 4 tests in `TestNeedsNewlineHelper` expect bool, will get tuple after P5.4
+- **Solution**: Added P5.5 checklist item with test update instructions and new CRLF tests
+- **Updated**: Plan with P5.6 section documenting exact test changes needed
+
+**All other phases**: ✅ VALIDATED
+- Process termination (P1): Secure, no new issues
+- Error sanitization (P8): Now covers all Windows path variants
+- Line ending (P5): Full pattern documented including edge cases
+
+All Round 7 corrections have been applied.
 
 ---
 
@@ -1376,6 +1405,20 @@ if original_line_ending != '\n':
 await asyncio.to_thread(atomic_write_bytes, p, result_content.encode('utf-8'))
 ```
 
+**CRITICAL**: Also fix the hardcoded LF in `_line_replace()` around line 218:
+
+```python
+# BEFORE (bug - hardcoded LF):
+if new_content and not new_content.endswith("\n"):
+    new_content += "\n"
+
+# AFTER (use detected line ending):
+if new_content and not new_content.endswith(("\n", "\r")):
+    new_content += original_line_ending
+```
+
+Note: The `original_line_ending` variable must be passed to `_line_replace()` or made accessible in that scope.
+
 ### P5.4: Update `nexus3/skill/builtin/regex_replace.py` (line 133)
 
 Same pattern - add import, binary read, normalize, process, convert back, binary write:
@@ -1444,7 +1487,44 @@ def do_append() -> int:
     # ... rest unchanged (still uses append mode)
 ```
 
-### P5.6: Test file for line ending preservation
+### P5.6: Update existing append_file tests
+
+**REQUIRED**: The `_needs_newline_prefix()` return type change from `bool` to `tuple[bool, str]` will break 4 existing tests in `tests/unit/skill/test_p2_append_file.py`:
+
+- Line 145: `TestNeedsNewlineHelper.test_empty_file` - expects `False`, will get `(False, "\n")`
+- Line 154: `TestNeedsNewlineHelper.test_file_ends_with_newline` - expects `False`, will get `(False, "\n")`
+- Line 163: `TestNeedsNewlineHelper.test_file_not_ending_with_newline` - expects `True`, will get `(True, "\n")`
+- Line 171: `TestNeedsNewlineHelper.test_file_with_content_no_trailing_newline` - expects `True`, will get `(True, "\n")`
+
+**Fix**: Update each assertion to unpack the tuple:
+```python
+# Before:
+assert _needs_newline_prefix(test_file) == False
+
+# After:
+needs_nl, line_ending = _needs_newline_prefix(test_file)
+assert needs_nl == False
+assert line_ending == "\n"
+```
+
+Also add tests for CRLF files to verify line ending detection:
+```python
+def test_crlf_file_detection(self, tmp_path: Path):
+    test_file = tmp_path / "crlf.txt"
+    test_file.write_bytes(b"line1\r\nline2\r\n")
+    needs_nl, line_ending = _needs_newline_prefix(test_file)
+    assert needs_nl == False
+    assert line_ending == "\r\n"
+
+def test_crlf_file_no_trailing_newline(self, tmp_path: Path):
+    test_file = tmp_path / "crlf.txt"
+    test_file.write_bytes(b"line1\r\nline2")
+    needs_nl, line_ending = _needs_newline_prefix(test_file)
+    assert needs_nl == True
+    assert line_ending == "\r\n"
+```
+
+### P5.7: New test file for line ending preservation
 
 Create `tests/unit/skill/test_line_ending_preservation.py`:
 ```python
@@ -1595,6 +1675,10 @@ _WINDOWS_USER_PATTERN = re.compile(
     r'[A-Za-z]:[\\\/]Users[\\\/][^\\\/]+',
     re.IGNORECASE
 )
+# Relative paths without drive letter (e.g., ..\Users\alice\secrets.txt)
+_RELATIVE_USER_PATTERN = re.compile(r'(^|\s|\\|/)Users[\\\/][^\\\/\"]+', re.IGNORECASE)
+# Domain\username format (e.g., DOMAIN\alice, BUILTIN\Administrators)
+_DOMAIN_USER_PATTERN = re.compile(r'\b([A-Z][A-Z0-9_-]*)(\\)[^\\\/\"\s]+', re.IGNORECASE)
 ```
 
 **Note**: Using `[\\\/]` handles both backslash AND forward slash paths. Using `[^\\\/]+` correctly handles usernames with spaces like "John Doe" and stops at either separator.
@@ -1606,6 +1690,9 @@ Add to `sanitize_error_for_agent()` before the generic path replacement:
 result = _UNC_PATTERN.sub(r'\\\\[server]\\[share]', result)
 result = _APPDATA_PATTERN.sub(r'C:\\Users\\[user]\\AppData\\[...]', result)
 result = _WINDOWS_USER_PATTERN.sub(r'C:\\Users\\[user]', result)
+# Relative paths and domain\user patterns
+result = _RELATIVE_USER_PATTERN.sub(r'\1Users\\[user]', result)
+result = _DOMAIN_USER_PATTERN.sub(r'[domain]\\[user]', result)
 ```
 
 ### P8.2: Add tests
@@ -1639,6 +1726,18 @@ def test_sanitize_windows_paths():
 
     # Lowercase drive letter
     assert sanitize_error("c:\\users\\test") == "C:\\Users\\[user]"
+
+    # Relative path without drive letter
+    assert sanitize_error("Error in ..\\Users\\alice\\secrets.txt") == \
+           "Error in ..\\Users\\[user]\\secrets.txt"
+
+    # Domain\username format
+    assert sanitize_error("Access denied for DOMAIN\\alice") == \
+           "Access denied for [domain]\\[user]"
+
+    # BUILTIN accounts
+    assert sanitize_error("BUILTIN\\Administrators denied") == \
+           "[domain]\\[user] denied"
 ```
 
 ### Error Message Examples
@@ -1652,8 +1751,11 @@ def test_sanitize_windows_paths():
 | `\\fileserver\projects\secret.doc` | `\\[server]\[share]` |
 | `//fileserver/projects/secret.doc` | `\\[server]\[share]` |
 | `Error: /home/alice/.nexus3/token` | `Error: /home/[user]/.nexus3/token` |
+| `..\Users\alice\secrets.txt` | `..\Users\[user]\secrets.txt` |
+| `DOMAIN\alice denied access` | `[domain]\[user] denied access` |
+| `BUILTIN\Administrators` | `[domain]\[user]` |
 
-*Note: Unix paths continue to work via existing patterns. Windows patterns handle both backslash and forward slash variants.*
+*Note: Unix paths continue to work via existing patterns. Windows patterns handle both backslash and forward slash variants, relative paths, and domain\user formats.*
 
 ---
 
