@@ -164,13 +164,30 @@ Typed exception classes with optional error sanitization.
 
 **Error Sanitization:**
 
+`sanitize_error_for_agent()` strips sensitive information from errors before showing to agents. It handles both Unix and Windows path patterns:
+
+| Pattern | Example | Sanitized To |
+|---------|---------|--------------|
+| Unix home | `/home/alice/secrets.txt` | `/home/[user]` |
+| Unix paths | `/var/log/app.log` | `[path]` |
+| Windows user | `C:\Users\alice\Documents` | `C:\Users\[user]` |
+| AppData | `C:\Users\alice\AppData\Local\...` | `C:\Users\[user]\AppData\[...]` |
+| UNC paths | `\\server\share\file.txt` | `[server]\\[share]` |
+| Domain\user | `DOMAIN\alice` | `[domain]\\[user]` |
+| Relative user paths | `..\Users\alice\secrets.txt` | `Users\[user]` |
+
 ```python
 from nexus3.core.errors import sanitize_error_for_agent
 
-# Sanitize errors before showing to agents (removes paths, usernames)
+# Unix paths
 error = "/home/alice/secret/file.txt: permission denied"
 safe = sanitize_error_for_agent(error, "write_file")
 # Returns: "Permission denied for write_file"
+
+# Windows paths (both backslash and forward slash)
+error = "C:\\Users\\alice\\secrets.txt: access denied"
+safe = sanitize_error_for_agent(error, "read_file")
+# Returns: "C:\\Users\\[user]: access denied"
 ```
 
 ---
@@ -328,7 +345,7 @@ allowances.is_mcp_server_allowed("github")  # True (all tools)
 
 ### paths.py - Path Validation
 
-Universal path validation with sandboxing.
+Universal path validation with sandboxing, plus cross-platform utilities.
 
 | Export | Description |
 |--------|-------------|
@@ -339,6 +356,8 @@ Universal path validation with sandboxing.
 | `display_path()` | Format path for display (relative to cwd or ~) |
 | `get_default_sandbox()` | Returns `[Path.cwd()]` |
 | `atomic_write_text()` | Write file atomically via temp + rename |
+| `atomic_write_bytes()` | Write binary data atomically (preserves exact bytes) |
+| `detect_line_ending()` | Detect CRLF/LF/CR line ending style |
 
 **Path Semantics:**
 
@@ -348,8 +367,14 @@ Universal path validation with sandboxing.
 | `[]` | Deny all paths (nothing allowed) |
 | `[Path(...)]` | Only paths within listed directories |
 
+**Cross-Platform Support:**
+
+- Path normalization handles both Windows backslashes (`\`) and forward slashes (`/`)
+- `detect_line_ending()` returns `"\r\n"` (CRLF), `"\n"` (LF), or `"\r"` (CR)
+- `atomic_write_bytes()` preserves exact byte content for binary files
+
 ```python
-from nexus3.core.paths import validate_path, PathSecurityError
+from nexus3.core.paths import validate_path, detect_line_ending, atomic_write_bytes
 from pathlib import Path
 
 # Unrestricted mode
@@ -364,6 +389,13 @@ try:
     )
 except PathSecurityError as e:
     print(f"Blocked: {e.reason}")
+
+# Detect and preserve line endings
+content = Path("file.txt").read_text()
+line_ending = detect_line_ending(content)  # "\r\n" on Windows files
+
+# Write binary data atomically
+atomic_write_bytes(Path("output.bin"), data)
 ```
 
 ---
@@ -548,32 +580,25 @@ build_mcp_skill_name("evil/../path", "../../etc")  # "mcp_evil_path_etc"
 
 Provides robust process tree termination that works on both Unix and Windows.
 
+| Export | Description |
+|--------|-------------|
+| `terminate_process_tree()` | Terminate process and all children gracefully, then forcefully |
+| `GRACEFUL_TIMEOUT` | Default timeout (2.0 seconds) |
+| `WINDOWS_CREATIONFLAGS` | Subprocess flags for Windows (0 on Unix) |
+
+**Termination Behavior:**
+
+| Platform | Graceful Step | Forceful Step |
+|----------|---------------|---------------|
+| Unix | SIGTERM to process group | SIGKILL to process group |
+| Windows | CTRL_BREAK_EVENT | `taskkill /T /F`, then `process.kill()` |
+
 ```python
 from nexus3.core.process import terminate_process_tree, WINDOWS_CREATIONFLAGS
+import asyncio
 
-# Terminates process and all children
+# Terminate process tree with grace period
 await terminate_process_tree(process, graceful_timeout=2.0)
-```
-
-**Unix behavior:**
-1. Send SIGTERM to process group
-2. Wait for graceful timeout
-3. Send SIGKILL if still running
-
-**Windows behavior:**
-1. Send CTRL_BREAK_EVENT
-2. Wait for graceful timeout
-3. Use `taskkill /T /F` for process tree termination
-4. Fall back to `process.kill()` if needed
-
-**Constants:**
-- `GRACEFUL_TIMEOUT`: Default timeout (2.0 seconds)
-- `WINDOWS_CREATIONFLAGS`: Subprocess flags for Windows (`CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`)
-
-**Usage with subprocess creation:**
-```python
-import subprocess
-from nexus3.core.process import WINDOWS_CREATIONFLAGS
 
 # Create subprocess without visible window on Windows
 process = await asyncio.create_subprocess_exec(
@@ -581,6 +606,14 @@ process = await asyncio.create_subprocess_exec(
     creationflags=WINDOWS_CREATIONFLAGS,  # 0 on Unix, flags on Windows
 )
 ```
+
+**WINDOWS_CREATIONFLAGS:**
+
+On Windows, this combines `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`:
+- `CREATE_NEW_PROCESS_GROUP`: Enables CTRL_BREAK_EVENT for graceful termination
+- `CREATE_NO_WINDOW`: Prevents console window from appearing
+
+On Unix, this is `0` (no-op), making it safe to use unconditionally.
 
 ---
 
@@ -815,7 +848,7 @@ StreamComplete(Message)
 
 ## Dependencies
 
-- **Stdlib**: asyncio, dataclasses, enum, ipaddress, pathlib, re, socket, stat, tempfile, unicodedata
+- **Stdlib**: asyncio, dataclasses, enum, ipaddress, logging, os, pathlib, re, signal, socket, stat, subprocess, sys, tempfile, unicodedata
 - **PyPI**: jsonschema (validation), rich (markup escaping)
 
 ---

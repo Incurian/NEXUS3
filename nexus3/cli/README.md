@@ -47,15 +47,15 @@ The unified REPL calls `Session` directly (not through HTTP) to preserve streami
 | File | Purpose | Key Exports |
 |------|---------|-------------|
 | `client_commands.py` | RPC CLI commands | `cmd_detect()`, `cmd_list()`, `cmd_create()`, `cmd_destroy()`, `cmd_send()`, `cmd_cancel()`, `cmd_status()`, `cmd_compact()`, `cmd_shutdown()` |
-| `repl_commands.py` | REPL slash command handlers | `cmd_agent()`, `cmd_whisper()`, `cmd_over()`, `cmd_cwd()`, `cmd_permissions()`, `cmd_prompt()`, `cmd_compact()`, `cmd_model()`, `cmd_mcp()`, `cmd_init()`, `cmd_help()`, `cmd_clear()`, `cmd_quit()`, `HELP_TEXT` |
-| `init_commands.py` | Configuration initialization | `init_global()`, `init_local()` |
+| `repl_commands.py` | REPL slash command handlers | `cmd_agent()`, `cmd_whisper()`, `cmd_over()`, `cmd_cwd()`, `cmd_permissions()`, `cmd_prompt()`, `cmd_compact()`, `cmd_model()`, `cmd_mcp()`, `cmd_init()`, `cmd_help()`, `cmd_clear()`, `cmd_quit()`, `HELP_TEXT`, `COMMAND_HELP`, `get_command_help()` |
+| `init_commands.py` | Configuration initialization | `init_global()`, `init_local()`, `InitSymlinkError` |
 
 ### UI Components
 
 | File | Purpose | Key Exports |
 |------|---------|-------------|
 | `lobby.py` | Session selection lobby | `show_lobby()`, `show_session_list()`, `LobbyChoice`, `LobbyResult`, `format_time_ago()` |
-| `connect_lobby.py` | Server/agent connection UI | `show_connect_lobby()`, `show_agent_picker()`, `ConnectAction`, `ConnectResult` |
+| `connect_lobby.py` | Server/agent connection UI | `show_connect_lobby()`, `show_agent_picker()`, `ConnectAction`, `ConnectResult`, `prompt_for_port()`, `prompt_for_api_key()`, `prompt_for_url()`, `prompt_for_agent_id()` |
 | `confirmation_ui.py` | Tool action confirmation | `confirm_tool_action()`, `format_tool_params()` |
 | `keys.py` | Keyboard input handling | `KeyMonitor`, `monitor_for_escape()`, `ESC` |
 | `whisper.py` | Whisper mode state | `WhisperMode` |
@@ -67,7 +67,7 @@ The unified REPL calls `Session` directly (not through HTTP) to preserve streami
 
 ### REPL Implementation (`repl.py`)
 
-The main REPL is the heart of the CLI, weighing in at ~1800 lines. It handles:
+The main REPL is the heart of the CLI, weighing in at ~1900 lines. It handles:
 
 **Startup Flow:**
 1. Load configuration and determine effective port
@@ -111,7 +111,8 @@ Defines all CLI arguments using argparse with subparsers for the `rpc` command g
 - `--serve [PORT]`: Run HTTP JSON-RPC server (requires `NEXUS_DEV=1`)
 - `--connect [URL]`: Connect to server (no URL = discover mode)
 - `--agent ID`: Agent to connect to (default: main)
-- `--verbose`: Enable verbose logging
+- `-v, --verbose`: Enable verbose logging to console
+- `-V, --log-verbose`: Enable verbose logging to file
 - `--raw-log`: Enable raw API JSON logging
 - `--log-dir PATH`: Session log directory
 - `--reload`: Auto-reload on code changes (serve mode only)
@@ -250,21 +251,38 @@ class KeyMonitor:
 5. Monitor clears `pause_ack_event` and resumes monitoring
 
 **Platform Support:**
-- Unix: Uses `termios`/`tty` for non-blocking input with `select()`
-- Windows: Uses `msvcrt.kbhit()` and `msvcrt.getwch()` for native keyboard handling
 
-### Windows ESC Key Support
+| Platform | Implementation | Details |
+|----------|----------------|---------|
+| Unix/Linux/macOS | `termios` + `tty` + `select` | Sets terminal to cbreak mode, uses `select()` for non-blocking input |
+| Windows | `msvcrt` | Uses `msvcrt.kbhit()` to check for input, `msvcrt.getwch()` to read keys |
+| Fallback | Sleep loop | No keyboard detection, just respects pause protocol |
 
-On Windows, ESC key detection uses `msvcrt.kbhit()` and `msvcrt.getwch()` instead of termios. This provides native Windows keyboard handling without requiring additional dependencies.
+**Windows ESC Key Detection:**
 
-**Requirements:**
-- Windows Terminal or PowerShell 7+ recommended
-- Falls back to sleep-only loop if `msvcrt` unavailable
+On Windows, the key monitor uses native `msvcrt` functions:
 
-**Behavior:**
-- Polls for keyboard input using `msvcrt.kbhit()`
-- Reads key with `msvcrt.getwch()` (wide character support)
-- Detects ESC key (character code 27) to trigger cancellation callback
+```python
+import msvcrt
+
+while True:
+    if msvcrt.kbhit():
+        char = msvcrt.getwch()
+        if char == ESC:  # '\x1b'
+            on_escape()
+        elif char in ('\x00', '\xe0'):
+            # Extended key - read and discard second byte
+            if msvcrt.kbhit():
+                msvcrt.getwch()
+    await asyncio.sleep(check_interval)
+```
+
+Key behaviors:
+- `msvcrt.kbhit()` checks if a key is available without blocking
+- `msvcrt.getwch()` reads a wide character (Unicode support)
+- Extended keys (function keys, arrows) send two bytes; the second is consumed
+- Works in Windows Terminal, PowerShell, and CMD
+- No terminal mode changes needed (unlike Unix `termios`)
 
 ### Confirmation UI (`confirmation_ui.py`)
 
@@ -339,6 +357,7 @@ Headless HTTP server for development and automation:
 async def run_serve(
     port: int | None = None,
     verbose: bool = False,
+    log_verbose: bool = False,
     raw_log: bool = False,
     log_dir: Path | None = None,
 ) -> None
@@ -383,6 +402,7 @@ Slash command handlers for the interactive REPL:
 - `/agent` - Show current agent status
 - `/agent <name>` - Switch to agent (prompts to create/restore if missing)
 - `/agent <name> --yolo|--trusted|--sandboxed` - Create with preset and switch
+- `/agent <name> --model <alias>` - Create with specific model
 - `/whisper <agent>` - Enter whisper mode
 - `/over` - Exit whisper mode
 
@@ -398,6 +418,9 @@ Slash command handlers for the interactive REPL:
 - `/mcp connect <name> [--allow-all|--per-tool] [--shared|--private]` - Connect to server
 - `/mcp disconnect <name>` - Disconnect from server
 - `/mcp tools [server]` - List available tools
+- `/mcp resources [server]` - List available resources
+- `/mcp prompts [server]` - List available prompts
+- `/mcp retry <server>` - Retry listing tools
 
 **Session:**
 - `/save [name]` - Save current session
@@ -406,9 +429,12 @@ Slash command handlers for the interactive REPL:
 - `/delete <name>` - Delete saved session
 
 **REPL Control:**
-- `/help` - Display help
+- `/help [command]` - Display help (detailed help with command name)
 - `/clear` - Clear display
 - `/quit`, `/exit`, `/q` - Exit REPL
+
+**Per-Command Help:**
+The module provides detailed help for each command via `COMMAND_HELP` dict and `get_command_help()`. Users can access it with `/help <command>` or `/<command> --help`.
 
 ### Init Commands (`init_commands.py`)
 
@@ -430,7 +456,7 @@ def init_local(cwd: Path | None = None, force: bool = False) -> tuple[bool, str]
 - Creates config.json template
 - Creates empty mcp.json
 
-**Security:** Uses `_safe_write_text()` which refuses to follow symlinks.
+**Security:** Uses `_safe_write_text()` which refuses to follow symlinks, raising `InitSymlinkError` if a symlink is detected.
 
 ### Live State (`live_state.py`)
 
@@ -452,8 +478,8 @@ This exists to prevent circular imports and ensure `repl.py` and `confirmation_u
 |--------|--------------|
 | `nexus3.commands` | Unified command infrastructure |
 | `nexus3.config` | Configuration loading and schema |
-| `nexus3.core` | Types, errors, encoding, permissions, validation, paths |
-| `nexus3.display` | StreamingDisplay, Activity, console, theme |
+| `nexus3.core` | Types, errors, encoding, permissions, validation, paths, text_safety |
+| `nexus3.display` | Spinner, Activity, console, theme |
 | `nexus3.rpc` | Auth, bootstrap, detection, discovery, HTTP, pool |
 | `nexus3.session` | Session, LogStream, SessionManager, persistence |
 | `nexus3.client` | NexusClient for RPC communication |
@@ -463,9 +489,16 @@ This exists to prevent circular imports and ensure `repl.py` and `confirmation_u
 
 | Package | Usage |
 |---------|-------|
-| `prompt_toolkit` | Interactive prompt with async support, styling |
+| `prompt_toolkit` | Interactive prompt with async support, styling, HTML formatting |
 | `rich` | Live display, console output, formatting |
 | `python-dotenv` | Load .env files |
+
+### Platform-Specific Dependencies
+
+| Module | Platform | Usage |
+|--------|----------|-------|
+| `termios`, `tty`, `select` | Unix/Linux/macOS | Terminal mode control for ESC detection |
+| `msvcrt` | Windows | Native keyboard input handling |
 
 ---
 
@@ -514,12 +547,19 @@ worker-1> /over            # Return to original agent
 > /mcp                      # List servers
 > /mcp connect github --allow-all --shared
 > /mcp tools github
+> /mcp resources
+> /mcp prompts
 > /mcp disconnect github
 
 # Session
 > /save my-session
 > /clone my-session backup
 > /delete old-session
+
+# Help
+> /help                     # Overview of all commands
+> /help save                # Detailed help for /save
+> /save --help              # Same as /help save
 ```
 
 ### Headless Server
@@ -588,4 +628,4 @@ nexus3 --init-global-force  # Overwrite existing
 
 ---
 
-*Updated: 2026-01-21*
+*Updated: 2026-01-28*

@@ -21,13 +21,13 @@ The `nexus3/defaults/` directory contains the **shipped default configuration an
 Defaults are the **lowest priority** layer in the config loading hierarchy:
 
 ```
-LAYER 1: Package defaults (this directory) ← LOWEST PRIORITY
-    ↓
+LAYER 1: Package defaults (this directory) <- LOWEST PRIORITY
+    |
 LAYER 2: Global (~/.nexus3/)
-    ↓
+    |
 LAYER 3: Ancestors (up to N levels above CWD)
-    ↓
-LAYER 4: Local (CWD/.nexus3/) ← HIGHEST PRIORITY
+    |
+LAYER 4: Local (CWD/.nexus3/) <- HIGHEST PRIORITY
 ```
 
 Later layers **deep-merge** into earlier layers, meaning:
@@ -120,7 +120,37 @@ The `providers` object maps provider names to their configurations:
 | `max_retries` | `int` | `3` | Max retry attempts (0-10) |
 | `retry_backoff` | `float` | `1.5` | Exponential backoff multiplier (1.0-5.0) |
 | `allow_insecure_http` | `bool` | `false` | Allow non-HTTPS for non-localhost URLs |
+| `verify_ssl` | `bool` | `true` | Verify SSL certificates (set `false` for self-signed certs) |
+| `ssl_ca_cert` | `string?` | `null` | Path to custom CA certificate file |
 | `models` | `object` | `{}` | Model aliases available through this provider |
+
+#### SSL/TLS Configuration
+
+For on-premises or private deployments with non-standard certificates:
+
+```json
+{
+  "providers": {
+    "onprem-selfsigned": {
+      "type": "openai",
+      "base_url": "https://llm.internal.company.com/v1",
+      "api_key_env": "ONPREM_API_KEY",
+      "verify_ssl": false,
+      "models": { ... }
+    },
+    "onprem-corporate-ca": {
+      "type": "openai",
+      "base_url": "https://llm.internal.company.com/v1",
+      "api_key_env": "ONPREM_API_KEY",
+      "ssl_ca_cert": "/etc/ssl/certs/corporate-ca.crt",
+      "models": { ... }
+    }
+  }
+}
+```
+
+- **`verify_ssl: false`**: Disables certificate verification entirely. Use only when necessary.
+- **`ssl_ca_cert`**: Points to a custom CA certificate file. More secure than disabling verification.
 
 #### Model Configuration
 
@@ -158,6 +188,8 @@ Each model in `providers.*.models`:
 | `sonnet-native` | anthropic | `claude-sonnet-4-5` | 200K | Balanced Claude (native API) |
 | `opus-native` | anthropic | `claude-opus-4-5` | 200K | Most capable Claude (native API) |
 
+The config also includes two example on-premises provider configurations (`onprem-example-selfsigned`, `onprem-example-corporate-ca`) demonstrating SSL configuration options.
+
 ### Compaction Configuration
 
 Context compaction summarizes old messages when context exceeds threshold:
@@ -181,7 +213,6 @@ Context compaction summarizes old messages when context exceeds threshold:
 | `summary_budget_ratio` | `float` | `0.25` | Max tokens for summary (fraction of available) |
 | `recent_preserve_ratio` | `float` | `0.25` | Recent messages to preserve (fraction of available) |
 | `trigger_threshold` | `float` | `0.9` | Compact when usage exceeds this ratio |
-| `redact_secrets` | `bool` | `true` | Redact secrets before summarization |
 
 ### Context Configuration
 
@@ -197,7 +228,7 @@ Controls NEXUS.md prompt loading:
 ```
 
 | Field | Type | Default | Description |
-|-------|------|---------|-------------|
+|------|------|---------|-------------|
 | `ancestor_depth` | `int` | `2` | Directory levels above CWD to search (0-10) |
 | `include_readme` | `bool` | `false` | Always include README.md alongside NEXUS.md |
 | `readme_as_fallback` | `bool` | `false` | Use README.md when no NEXUS.md exists |
@@ -247,6 +278,8 @@ The default `NEXUS.md` provides comprehensive agent instructions covering:
 7. **Agent Communication** - Permission defaults for RPC agents
 8. **Execution Modes** - Sequential vs parallel tool execution
 9. **Response Format** - Output formatting guidelines
+10. **Path Formats** - WSL path conversion guidance
+11. **Self-Knowledge** - Tips for NEXUS3 agents working on NEXUS3 codebase
 
 ### Key Content
 
@@ -258,6 +291,7 @@ The prompt includes:
 - **Log file locations** and query examples
 - **File operation limits** (10MB max, 1MB output, 10K lines)
 - **Parallel execution** via `_parallel: true` argument
+- **WSL path conversion** rules for Windows/Linux interop
 
 ---
 
@@ -351,7 +385,8 @@ All other settings inherit from earlier layers (global, then defaults).
 2. **Sandboxed RPC default** - `default_permission_level` is `trusted` for REPL only; RPC agents default to `sandboxed`
 3. **Safe MCP defaults** - Test MCP servers only, real servers configured per-user
 4. **README opt-in** - `readme_as_fallback: false` prevents untrusted READMEs from injecting prompts
+5. **SSL verification enabled by default** - On-prem examples show how to configure custom CAs securely
 
 ---
 
-Updated: 2026-01-21
+Updated: 2026-01-28

@@ -96,6 +96,8 @@ Load and parse a JSON file with consistent error handling.
 
 **Raises:** `LoadError` if the file doesn't exist, can't be read, contains invalid JSON, or contains non-dict JSON.
 
+**Note:** Uses `utf-8-sig` encoding to automatically handle Windows UTF-8 BOM (Byte Order Mark). See [Windows Compatibility](#windows-compatibility) section.
+
 **Example:**
 ```python
 from nexus3.config import load_json_file
@@ -307,12 +309,27 @@ Configuration for an MCP (Model Context Protocol) server.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `name` | `str` | (required) | Friendly name for the server |
-| `command` | `list[str] \| None` | `None` | Command for stdio transport |
+| `command` | `str \| list[str] \| None` | `None` | Command for stdio transport (see formats below) |
+| `args` | `list[str] \| None` | `None` | Arguments when command is a string (official format) |
 | `url` | `str \| None` | `None` | URL for HTTP transport |
 | `env` | `dict[str, str] \| None` | `None` | Explicit environment variables |
 | `env_passthrough` | `list[str] \| None` | `None` | Host env vars to pass through |
 | `cwd` | `str \| None` | `None` | Working directory for server subprocess |
 | `enabled` | `bool` | `True` | Whether server is enabled |
+
+**Command formats:** Two formats are supported for the `command` field:
+
+1. **NEXUS3 format:** Command as a list
+   ```json
+   {"command": ["npx", "-y", "@anthropic/mcp-server-github"]}
+   ```
+
+2. **Official MCP format:** Command as string with separate `args` array
+   ```json
+   {"command": "npx", "args": ["-y", "@anthropic/mcp-server-github"]}
+   ```
+
+**Method:** `get_command_list() -> list[str]` - Returns the command as a list regardless of which format was used.
 
 **Validation:** Exactly one of `command` or `url` must be set.
 
@@ -461,6 +478,27 @@ The module uses two error types from `nexus3.core.errors`:
 - **`LoadError`**: Raised by `load_json_file()` for general file loading errors.
 
 Both errors inherit from `NexusError` and are designed for fail-fast behavior.
+
+---
+
+## Windows Compatibility
+
+### BOM Handling
+
+All JSON file loading in this module uses `utf-8-sig` encoding to automatically handle Windows UTF-8 BOM (Byte Order Mark).
+
+**Background:** Windows applications (notably Notepad and PowerShell) often add a UTF-8 BOM (the bytes `EF BB BF`) to the beginning of text files. Standard `utf-8` encoding treats these bytes as content, causing JSON parsing to fail with errors like:
+
+```
+Invalid JSON: Unexpected UTF-8 BOM (decode using utf-8-sig)
+```
+
+**Solution:** The `utf-8-sig` codec automatically strips the BOM if present, and works identically to `utf-8` for files without a BOM. This ensures cross-platform compatibility without requiring users to manually fix their config files.
+
+**Affected functions:**
+- `load_json_file()` in `load_utils.py`
+- `_load_json_file()` in `loader.py`
+- `_load_from_path()` in `loader.py`
 
 ---
 

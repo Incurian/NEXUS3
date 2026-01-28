@@ -28,7 +28,8 @@ nexus3/session/
 ├── dispatcher.py        # ToolDispatcher - skill resolution
 ├── enforcer.py          # PermissionEnforcer - security checks
 ├── confirmation.py      # ConfirmationController - user prompts
-└── path_semantics.py    # Tool path semantics for confirmation
+├── path_semantics.py    # Tool path semantics for confirmation
+└── http_logging.py      # HTTP debug logging to verbose.md
 ```
 
 ---
@@ -60,6 +61,7 @@ Session(
     on_confirm: ConfirmationCallback,  # User confirmation for destructive actions
     config: Config | None,             # Compaction settings
     context_loader: ContextLoader,     # System prompt reloading
+    is_repl: bool = False,             # REPL mode affects context loading
 )
 ```
 
@@ -209,93 +211,6 @@ Handles disk persistence of sessions in `~/.nexus3/sessions/`.
 
 ---
 
-## User-Facing Session Commands
-
-### CLI Startup Flags
-
-| Flag | Description |
-|------|-------------|
-| `nexus3` | Show lobby for session selection |
-| `nexus3 --fresh` | Start fresh temp session (skip lobby) |
-| `nexus3 --resume` | Resume last session from `last-session.json` |
-| `nexus3 --session NAME` | Load specific saved session |
-| `nexus3 --template PATH` | Custom system prompt (with --fresh) |
-
-### REPL Commands
-
-| Command | Description |
-|---------|-------------|
-| `/save [name]` | Save current session to disk |
-| `/clone <src> <dest>` | Clone agent or saved session |
-| `/rename <old> <new>` | Rename agent or saved session |
-| `/delete <name>` | Delete saved session from disk |
-
-### Lobby Mode
-
-When starting without flags, NEXUS3 shows an interactive lobby:
-
-```
-NEXUS3 REPL
-
-  1) Resume: my-project (2h ago, 45 messages)
-  2) Fresh session
-  3) Choose from saved...
-
-[1/2/3/q]:
-```
-
-The lobby uses `SessionManager.load_last_session()` for option 1 and `SessionManager.list_sessions()` for option 3.
-
-### Save Command Behavior
-
-The `/save` command (`nexus3/commands/core.py:cmd_save`):
-
-1. Rejects temp session names (`.1`, `.2`) - requires a real name
-2. Serializes current agent state:
-   - Messages (full conversation history)
-   - System prompt content and path
-   - Working directory
-   - Permission level and preset
-   - Disabled tools
-   - Model alias
-   - Token usage
-   - Creation timestamp
-3. Writes to `~/.nexus3/sessions/{name}.json`
-
-### Session Restoration
-
-When loading a saved session (`nexus3/rpc/pool.py:restore_from_saved`):
-
-1. Deserialize messages back to `Message` objects
-2. Resolve model alias via config (`config.resolve_model(saved.model_alias)`)
-3. Recreate permissions from preset + disabled_tools
-4. Set working directory from saved state
-5. Rebuild agent with context, skill registry, and provider
-6. Restore creation timestamp for accurate session age display
-
-### Temp vs Named Sessions
-
-| Type | Name Pattern | Can Save? | Auto-saved? |
-|------|--------------|-----------|-------------|
-| Temp | `.1`, `.2`, etc. | No (must provide name) | Yes (to last-session.json) |
-| Named | alphanumeric | Yes | Yes |
-
-### What Gets Persisted
-
-| Field | Persisted | Restored |
-|-------|-----------|----------|
-| Messages | ✓ | ✓ |
-| System prompt | ✓ | ✓ |
-| Working directory | ✓ | ✓ |
-| Permission preset | ✓ | ✓ |
-| Disabled tools | ✓ | ✓ |
-| Model alias | ✓ | ✓ |
-| Token usage | ✓ | For display only |
-| Created timestamp | ✓ | ✓ |
-| Session allowances | ✓ | ✓ |
-
----
-
 ## Persistence
 
 The `persistence.py` module handles serialization of session state.
@@ -322,6 +237,17 @@ class SavedSession:
     schema_version: int
 ```
 
+### SessionSummary
+
+```python
+@dataclass
+class SessionSummary:
+    name: str
+    modified_at: datetime
+    message_count: int
+    agent_id: str
+```
+
 ### Serialization Functions
 
 ```python
@@ -330,6 +256,10 @@ serialize_message(msg: Message) -> dict[str, Any]
 deserialize_message(data: dict) -> Message
 serialize_messages(messages: list[Message]) -> list[dict]
 deserialize_messages(data: list[dict]) -> list[Message]
+
+# Tool call serialization
+serialize_tool_call(tc: ToolCall) -> dict[str, Any]
+deserialize_tool_call(data: dict) -> ToolCall
 
 # Full session serialization
 serialize_session(...) -> SavedSession
@@ -364,6 +294,17 @@ class LogConfig:
     session_type: str = "temp"  # 'saved' | 'temp' | 'subagent'
 ```
 
+### SessionInfo
+
+```python
+@dataclass
+class SessionInfo:
+    session_id: str      # Format: YYYY-MM-DD_HHMMSS_MODE_xxxxxx
+    session_dir: Path
+    parent_id: str | None
+    created_at: datetime
+```
+
 ### Output Files
 
 ```
@@ -386,6 +327,7 @@ class LogConfig:
 | `log_thinking(content)` | VERBOSE | Log thinking trace |
 | `log_timing(operation, duration_ms)` | VERBOSE | Log timing info |
 | `log_token_count(prompt, completion, total)` | VERBOSE | Log token usage |
+| `log_http_debug(logger_name, message)` | VERBOSE | Log HTTP debug info |
 | `log_raw_request(endpoint, payload)` | RAW | Log API request |
 | `log_raw_response(status, body)` | RAW | Log API response |
 | `log_raw_chunk(chunk)` | RAW | Log streaming chunk |
@@ -402,6 +344,14 @@ child_logger = logger.create_child_logger()
 ```python
 raw_callback = logger.get_raw_log_callback()
 # Returns RawLogCallbackAdapter implementing RawLogCallback protocol
+```
+
+### Session Markers
+
+```python
+logger.update_session_status(status)  # 'active' | 'destroyed' | 'orphaned'
+logger.mark_session_destroyed()
+logger.mark_session_saved()
 ```
 
 ---
@@ -438,11 +388,31 @@ CREATE TABLE messages (
 );
 ```
 
-### Session Markers
-
-Track session lifecycle for cleanup:
+### Data Classes
 
 ```python
+@dataclass
+class MessageRow:
+    id: int
+    role: str
+    content: str
+    meta: dict[str, Any] | None
+    name: str | None
+    tool_call_id: str | None
+    tool_calls: list[dict[str, Any]] | None
+    tokens: int | None
+    timestamp: float
+    in_context: bool
+    summary_of: list[int] | None
+
+@dataclass
+class EventRow:
+    id: int
+    message_id: int | None
+    event_type: str
+    data: dict[str, Any] | None
+    timestamp: float
+
 @dataclass
 class SessionMarkers:
     session_type: str    # 'saved' | 'temp' | 'subagent'
@@ -451,6 +421,11 @@ class SessionMarkers:
     created_at: float
     updated_at: float
 ```
+
+### Constants
+
+- `SCHEMA_VERSION = 3`
+- `MAX_JSON_FIELD_SIZE = 10 * 1024 * 1024` (10MB)
 
 ---
 
@@ -487,6 +462,12 @@ class PermissionEnforcer:
 
     def get_effective_timeout(tool_name, permissions, default) -> float:
         """Get per-tool timeout override."""
+
+    def extract_target_paths(tool_call) -> list[Path]:
+        """Extract ALL target paths from tool call."""
+
+    def extract_exec_cwd(tool_call) -> Path | None:
+        """Extract execution cwd if applicable."""
 ```
 
 Permission checks:
@@ -525,11 +506,18 @@ Confirmation results:
 The `path_semantics.py` module defines read vs write path semantics for each tool.
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class ToolPathSemantics:
     read_keys: tuple[str, ...]   # Arguments that are read paths
     write_keys: tuple[str, ...]  # Arguments that are write paths
     display_key: str | None      # Path to show in confirmation UI
+```
+
+Functions:
+```python
+get_semantics(tool_name: str) -> ToolPathSemantics
+extract_write_paths(tool_name: str, args: dict) -> list[Path]
+extract_display_path(tool_name: str, args: dict) -> Path | None
 ```
 
 Example semantics:
@@ -537,7 +525,71 @@ Example semantics:
 - `edit_file`: read=`path`, write=`path`, display=`path`
 - `read_file`: read=`path`, write=none
 
-This enables proper multi-path confirmation (Fix 1.2) where `copy_file` confirms the destination, not the source.
+---
+
+## HTTP Logging
+
+The `http_logging.py` module routes httpx/httpcore debug output to verbose.md.
+
+### Functions
+
+```python
+set_current_logger(logger: SessionLogger) -> None
+clear_current_logger() -> None
+configure_http_logging() -> None    # Call once at startup
+unconfigure_http_logging() -> None  # Cleanup on shutdown
+```
+
+### Usage
+
+```python
+from nexus3.session.http_logging import set_current_logger, clear_current_logger
+
+set_current_logger(session_logger)
+try:
+    # ... make HTTP calls ...
+finally:
+    clear_current_logger()
+```
+
+The `VerboseMdHandler` class is automatically attached to httpx/httpcore loggers when `configure_http_logging()` is called.
+
+---
+
+## Markdown Writers
+
+### MarkdownWriter
+
+Human-readable conversation logs in `context.md` and `verbose.md`.
+
+```python
+MarkdownWriter(session_dir: Path, verbose_enabled: bool = False)
+```
+
+Methods:
+- `write_system(content)` - System prompt
+- `write_user(content, meta)` - User message with source attribution
+- `write_assistant(content, tool_calls)` - Assistant response
+- `write_tool_result(name, result, error)` - Tool execution result
+- `write_separator()` - Horizontal rule
+- `write_thinking(content, timestamp)` - Thinking trace (verbose)
+- `write_timing(operation, duration_ms, metadata)` - Timing info (verbose)
+- `write_token_count(prompt, completion, total)` - Token usage (verbose)
+- `write_event(event_type, data)` - Generic event (verbose)
+- `write_http_debug(logger_name, message)` - HTTP debug entry (verbose)
+
+### RawWriter
+
+JSONL logging of raw API traffic in `raw.jsonl`.
+
+```python
+RawWriter(session_dir: Path)
+```
+
+Methods:
+- `write_request(endpoint, payload, timestamp)` - API request
+- `write_response(status, body, timestamp)` - API response
+- `write_stream_chunk(chunk, timestamp)` - SSE chunk
 
 ---
 
@@ -596,139 +648,6 @@ If `compaction.model` is configured, a separate provider is used for summarizati
 
 ---
 
-## Markdown Writers
-
-### MarkdownWriter
-
-Human-readable conversation logs in `context.md` and `verbose.md`.
-
-```python
-MarkdownWriter(session_dir: Path, verbose_enabled: bool = False)
-```
-
-Methods:
-- `write_system(content)` - System prompt
-- `write_user(content, meta)` - User message with source attribution
-- `write_assistant(content, tool_calls)` - Assistant response
-- `write_tool_result(name, result, error)` - Tool execution result
-- `write_thinking(content, timestamp)` - Thinking trace (verbose)
-- `write_timing(operation, duration_ms)` - Timing info (verbose)
-- `write_event(event_type, data)` - Generic event (verbose)
-
-### RawWriter
-
-JSONL logging of raw API traffic in `raw.jsonl`.
-
-```python
-RawWriter(session_dir: Path)
-```
-
-Methods:
-- `write_request(endpoint, payload)` - API request
-- `write_response(status, body)` - API response
-- `write_stream_chunk(chunk)` - SSE chunk
-
----
-
-## Usage Examples
-
-### Basic Session with Logging
-
-```python
-from nexus3.session import Session, LogConfig, SessionLogger, LogStream
-
-config = LogConfig(streams=LogStream.ALL)
-logger = SessionLogger(config)
-session = Session(
-    provider=provider,
-    context=context,
-    logger=logger,
-    registry=registry,
-    services=services,
-)
-
-async for chunk in session.send("Hello!", use_tools=True):
-    print(chunk, end="")
-```
-
-### Event-Based Streaming
-
-```python
-from nexus3.session import Session, ContentChunk, ToolStarted, ToolCompleted
-
-async for event in session.run_turn("Read the config file"):
-    if isinstance(event, ContentChunk):
-        print(event.text, end="")
-    elif isinstance(event, ToolStarted):
-        print(f"[Running {event.name}...]")
-    elif isinstance(event, ToolCompleted):
-        status = "OK" if event.success else f"ERROR: {event.error}"
-        print(f"[{event.name}: {status}]")
-```
-
-### Save and Load Sessions
-
-```python
-from nexus3.session import SessionManager, serialize_session
-
-manager = SessionManager()
-
-# Save
-saved = serialize_session(
-    agent_id="my-project",
-    messages=context.messages,
-    system_prompt=context.system_prompt,
-    system_prompt_path=None,
-    working_directory="/path/to/project",
-    permission_level="trusted",
-    token_usage=context.get_token_usage(),
-)
-manager.save_session(saved)
-
-# Load
-loaded = manager.load_session("my-project")
-```
-
-### User Confirmation
-
-```python
-from nexus3.core.permissions import ConfirmationResult
-
-async def on_confirm(tool_call, path, agent_cwd):
-    # Present UI prompt
-    response = await prompt_user(f"Allow {tool_call.name} on {path}?")
-    if response == "yes":
-        return ConfirmationResult.ALLOW_FILE
-    return ConfirmationResult.DENY
-
-session = Session(..., on_confirm=on_confirm)
-```
-
-### Subagent Logging
-
-```python
-# Parent session logger
-parent_logger = SessionLogger(LogConfig(mode="repl"))
-
-# Child logger (nested in parent's directory)
-child_logger = parent_logger.create_child_logger()
-child_session = Session(..., logger=child_logger)
-```
-
-### Raw API Logging
-
-```python
-# Enable raw logging
-config = LogConfig(streams=LogStream.ALL)
-logger = SessionLogger(config)
-
-# Get callback for provider
-raw_callback = logger.get_raw_log_callback()
-provider = create_provider(config, raw_callback=raw_callback)
-```
-
----
-
 ## Security Features
 
 ### Path Security
@@ -764,6 +683,7 @@ provider = create_provider(config, raw_callback=raw_callback)
 | `persistence.py` | `core.types` |
 | `enforcer.py` | `core.path_decision`, `session.path_semantics` |
 | `dispatcher.py` | `skill.registry`, `mcp.registry` |
+| `http_logging.py` | `session.logging` (TYPE_CHECKING only) |
 
 ---
 
@@ -777,4 +697,4 @@ provider = create_provider(config, raw_callback=raw_callback)
 
 ---
 
-Updated: 2026-01-21
+Updated: 2026-01-28

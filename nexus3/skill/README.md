@@ -1,6 +1,6 @@
 # nexus3.skill - NEXUS3 Skill (Tool) System
 
-**Updated: 2026-01-21**
+**Updated: 2026-01-28**
 
 The skill module provides the complete infrastructure for defining, registering, and executing skills (tools) that extend NEXUS3 agent capabilities. Skills are the fundamental unit of capability in NEXUS3 - they provide actions like file reading, command execution, agent management, and other operations the agent can perform.
 
@@ -17,9 +17,10 @@ The skill module provides the complete infrastructure for defining, registering,
 7. [Built-in Skills](#built-in-skills)
 8. [Creating New Skills](#creating-new-skills)
 9. [Security Model](#security-model)
-10. [Errors](#errors)
-11. [Module Exports](#module-exports)
-12. [Dependencies](#dependencies)
+10. [Windows Compatibility](#windows-compatibility)
+11. [Errors](#errors)
+12. [Module Exports](#module-exports)
+13. [Dependencies](#dependencies)
 
 ---
 
@@ -33,6 +34,7 @@ Skills are the tool system in NEXUS3. Each skill provides a single, well-defined
 - **Permission integration**: Per-tool path restrictions and permission-level filtering
 - **JSON Schema validation**: Automatic parameter validation before execution
 - **Security hardening**: Path validation, symlink resolution, sandbox enforcement, environment sanitization
+- **Windows compatibility**: Platform-specific process handling, line ending preservation, attribute support
 
 ---
 
@@ -51,20 +53,20 @@ nexus3/skill/
     ├── env.py            # Environment sanitization helpers
     ├── read_file.py      # File reading skill
     ├── write_file.py     # File writing skill
-    ├── edit_file.py      # File editing skill
-    ├── append_file.py    # File appending skill
+    ├── edit_file.py      # File editing skill (line ending preservation)
+    ├── append_file.py    # File appending skill (line ending preservation)
     ├── tail.py           # Read last N lines
-    ├── file_info.py      # File metadata skill
+    ├── file_info.py      # File metadata skill (Windows RHSA attributes)
     ├── list_directory.py # Directory listing skill
     ├── copy_file.py      # File copying skill
     ├── mkdir.py          # Directory creation skill
     ├── rename.py         # File/directory renaming skill
     ├── glob_search.py    # Glob pattern file search
-    ├── grep.py           # Regex content search
-    ├── regex_replace.py  # Regex find/replace
-    ├── bash.py           # Shell execution (safe + unsafe)
-    ├── run_python.py     # Python code execution
-    ├── git.py            # Git version control
+    ├── grep.py           # Regex content search (CREATE_NO_WINDOW on Windows)
+    ├── regex_replace.py  # Regex find/replace (line ending preservation)
+    ├── bash.py           # Shell execution (safe + unsafe, CREATE_NO_WINDOW on Windows)
+    ├── run_python.py     # Python code execution (CREATE_NO_WINDOW on Windows)
+    ├── git.py            # Git version control (asyncio subprocess, CREATE_NO_WINDOW on Windows)
     ├── nexus_create.py   # Create agent
     ├── nexus_destroy.py  # Destroy agent
     ├── nexus_send.py     # Send message to agent
@@ -158,26 +160,34 @@ The module provides specialized base classes that handle common patterns:
 Minimal abstract base for simple skills. Stores name/description/parameters as instance attributes:
 
 ```python
-from nexus3.skill.base import BaseSkill, base_skill_factory
+from nexus3.skill.base import base_skill_factory
 from nexus3.core.types import ToolResult
 
 @base_skill_factory
-class MySimpleSkill(BaseSkill):
-    def __init__(self):
-        super().__init__(
-            name="my_skill",
-            description="Does something useful",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "input": {"type": "string", "description": "Input value"}
-                },
-                "required": ["input"]
-            }
-        )
+class MySimpleSkill:
+    @property
+    def name(self) -> str:
+        return "my_skill"
+
+    @property
+    def description(self) -> str:
+        return "Does something useful"
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "input": {"type": "string", "description": "Input value"}
+            },
+            "required": ["input"]
+        }
 
     async def execute(self, input: str = "", **kwargs: Any) -> ToolResult:
         return ToolResult(output=f"Processed: {input}")
+
+# Factory attached by decorator
+my_skill_factory = MySimpleSkill.factory
 ```
 
 ### FileSkill
@@ -187,11 +197,9 @@ For skills that operate on files. Provides unified path validation with sandbox 
 ```python
 from nexus3.skill.base import FileSkill, file_skill_factory
 from nexus3.core.types import ToolResult
+from nexus3.core.errors import PathSecurityError
 
-@file_skill_factory
 class MyFileSkill(FileSkill):
-    # FileSkill.__init__ takes ServiceContainer automatically
-
     @property
     def name(self) -> str:
         return "my_file_skill"
@@ -218,6 +226,8 @@ class MyFileSkill(FileSkill):
             return ToolResult(output=content)
         except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
+
+my_file_skill_factory = file_skill_factory(MyFileSkill)
 ```
 
 **Key features:**
@@ -234,7 +244,6 @@ For skills that communicate with Nexus server:
 from nexus3.skill.base import NexusSkill, nexus_skill_factory
 from nexus3.core.types import ToolResult
 
-@nexus_skill_factory
 class MyNexusSkill(NexusSkill):
     @property
     def name(self) -> str:
@@ -268,6 +277,8 @@ class MyNexusSkill(NexusSkill):
             agent_id=agent_id,
             operation=lambda client: client.some_method()
         )
+
+my_nexus_skill_factory = nexus_skill_factory(MyNexusSkill)
 ```
 
 **Key features:**
@@ -286,7 +297,6 @@ from nexus3.skill.base import ExecutionSkill, execution_skill_factory
 from nexus3.core.types import ToolResult
 import asyncio
 
-@execution_skill_factory
 class MyExecSkill(ExecutionSkill):
     MAX_TIMEOUT = 300   # Override class defaults
     DEFAULT_TIMEOUT = 30
@@ -336,6 +346,8 @@ class MyExecSkill(ExecutionSkill):
             cwd=cwd,
             timeout_message="Timed out after {timeout}s"
         )
+
+my_exec_skill_factory = execution_skill_factory(MyExecSkill)
 ```
 
 **Key features:**
@@ -344,7 +356,7 @@ class MyExecSkill(ExecutionSkill):
 - `_enforce_timeout()` - Clamp timeout to valid range
 - `_resolve_working_directory()` - Validate cwd against sandbox
 - `_format_output()` - Format stdout/stderr for return
-- Process group kills on timeout (SIGKILL to pgid)
+- Process group kills on timeout (SIGKILL to pgid on Unix, CREATE_NEW_PROCESS_GROUP on Windows)
 
 ### FilteredCommandSkill
 
@@ -354,7 +366,6 @@ For skills with permission-based command filtering (e.g., git, docker):
 from nexus3.skill.base import FilteredCommandSkill, filtered_command_skill_factory
 from nexus3.core.types import ToolResult
 
-@filtered_command_skill_factory
 class MyFilteredSkill(FilteredCommandSkill):
     @property
     def name(self) -> str:
@@ -398,6 +409,8 @@ class MyFilteredSkill(FilteredCommandSkill):
             return ToolResult(error=error)
 
         # Execute command...
+
+my_filtered_skill_factory = filtered_command_skill_factory(MyFilteredSkill)
 ```
 
 **Key features:**
@@ -478,16 +491,6 @@ The `get_tool_allowed_paths()` method resolves per-tool path overrides:
 2. If None, fall back to `permissions.effective_policy.allowed_paths`
 3. If no permissions registered, fall back to `allowed_paths` service (for tests)
 
-This enables different tools to have different path restrictions:
-
-```python
-# Example: read_file can read anywhere, write_file restricted to output/
-permissions.tool_permissions = {
-    "read_file": ToolPermission(allowed_paths=None),  # Unrestricted
-    "write_file": ToolPermission(allowed_paths=[Path("/project/output")]),
-}
-```
-
 ---
 
 ## SkillRegistry
@@ -513,14 +516,6 @@ def my_skill_factory(services: ServiceContainer) -> MySkill:
     return MySkill(services)
 
 registry.register("my_skill", my_skill_factory)
-
-# Register with optional metadata (avoids instantiation for get_definitions)
-registry.register(
-    "my_skill",
-    my_skill_factory,
-    description="Does something useful",
-    parameters={"type": "object", "properties": {...}}
-)
 ```
 
 ### Retrieval
@@ -550,82 +545,57 @@ definitions = registry.get_definitions()
 definitions = registry.get_definitions_for_permissions(agent_permissions)
 ```
 
-Returns list of:
-```python
-{
-    "type": "function",
-    "function": {
-        "name": "skill_name",
-        "description": "skill description",
-        "parameters": {...json_schema...}
-    }
-}
-```
-
-### SkillSpec
-
-Internal metadata storage for skills:
-
-```python
-@dataclass(frozen=True)
-class SkillSpec:
-    name: str
-    description: str
-    parameters: dict[str, Any]
-    factory: SkillFactory
-```
-
 ---
 
 ## Built-in Skills
 
-NEXUS3 includes 24 built-in skills organized by category:
+NEXUS3 includes 25 built-in skills organized by category:
 
 ### File Operations (Read-Only)
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `read_file` | Read file contents | `path`, `offset?`, `limit?` |
-| `tail` | Read last N lines | `path`, `lines?` (default: 10) |
-| `file_info` | Get file/directory metadata | `path` |
+| `read_file` | Read file contents with streaming/size limits | `path`, `offset?`, `limit?` |
+| `tail` | Read last N lines efficiently | `path`, `lines?` (default: 10) |
+| `file_info` | Get file/directory metadata (Unix perms or Windows RHSA) | `path` |
 | `list_directory` | List directory contents | `path`, `all?`, `long?` |
 | `glob` | Find files by glob pattern | `pattern`, `path?`, `max_results?`, `exclude?` |
-| `grep` | Search file contents (regex) | `pattern`, `path`, `recursive?`, `include?`, `context?` |
+| `grep` | Search file contents (regex), uses ripgrep when available | `pattern`, `path`, `recursive?`, `include?`, `context?` |
 
 ### File Operations (Destructive)
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `write_file` | Write/create file | `path`, `content` |
-| `edit_file` | String/line replacement | `path`, `old_string`, `new_string`, `replace_all?` |
-| `append_file` | Append to file | `path`, `content`, `newline?` |
-| `regex_replace` | Pattern-based replace | `path`, `pattern`, `replacement`, `count?` |
-| `copy_file` | Copy file | `source`, `destination`, `overwrite?` |
-| `mkdir` | Create directory | `path` |
+| `write_file` | Write/create file (atomic write) | `path`, `content` |
+| `edit_file` | String/line replacement (preserves line endings) | `path`, `old_string`, `new_string`, `replace_all?` |
+| `append_file` | Append to file with true append mode (preserves line endings) | `path`, `content`, `newline?` |
+| `regex_replace` | Pattern-based replace (preserves line endings) | `path`, `pattern`, `replacement`, `count?` |
+| `copy_file` | Copy file with metadata | `source`, `destination`, `overwrite?` |
+| `mkdir` | Create directory (and parents) | `path` |
 | `rename` | Rename/move file or directory | `source`, `destination`, `overwrite?` |
 
 ### Execution
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `bash_safe` | Safe command execution (no shell) | `command`, `timeout?`, `cwd?` |
-| `shell_UNSAFE` | Full shell execution | `command`, `timeout?`, `cwd?` |
+| `bash_safe` | Safe command execution (shlex.split, no shell operators) | `command`, `timeout?`, `cwd?` |
+| `shell_UNSAFE` | Full shell execution (pipes work, injection-vulnerable) | `command`, `timeout?`, `cwd?` |
 | `run_python` | Execute Python code | `code`, `timeout?`, `cwd?` |
 
 ### Version Control
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `git` | Git operations (filtered) | `command`, `cwd?` |
+| `git` | Git operations with permission-based filtering | `command`, `cwd?` |
 
 ### Agent Management
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `nexus_create` | Create new agent | `agent_id`, `preset?`, `cwd?`, `model?`, `initial_message?` |
+| `nexus_create` | Create new agent | `agent_id`, `preset?`, `cwd?`, `model?`, `initial_message?`, `allowed_write_paths?` |
 | `nexus_destroy` | Destroy agent | `agent_id`, `port?` |
 | `nexus_send` | Send message to agent | `agent_id`, `content`, `port?` |
-| `nexus_status` | Get agent status | `agent_id`, `port?` |
+| `nexus_status` | Get agent status (tokens + context) | `agent_id`, `port?` |
 | `nexus_cancel` | Cancel agent request | `agent_id`, `request_id`, `port?` |
 | `nexus_shutdown` | Shutdown server | `port?` |
 
@@ -633,7 +603,7 @@ NEXUS3 includes 24 built-in skills organized by category:
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `sleep` | Pause execution | `seconds`, `label?` |
+| `sleep` | Pause execution (for testing) | `seconds`, `label?` |
 | `echo` | Echo input (testing) | `message` |
 
 ### Registration
@@ -642,7 +612,7 @@ NEXUS3 includes 24 built-in skills organized by category:
 from nexus3.skill.builtin.registration import register_builtin_skills
 
 registry = SkillRegistry(services)
-register_builtin_skills(registry)  # Registers all 24 skills
+register_builtin_skills(registry)  # Registers all 25 skills
 ```
 
 ---
@@ -653,7 +623,7 @@ register_builtin_skills(registry)  # Registers all 24 skills
 
 | Use Case | Base Class |
 |----------|------------|
-| Simple utility | `BaseSkill` or `@base_skill_factory` |
+| Simple utility | `@base_skill_factory` decorator |
 | File operations | `FileSkill` + `@file_skill_factory` |
 | Server communication | `NexusSkill` + `@nexus_skill_factory` |
 | Subprocess execution | `ExecutionSkill` + `@execution_skill_factory` |
@@ -661,73 +631,15 @@ register_builtin_skills(registry)  # Registers all 24 skills
 
 ### Step 2: Implement the Skill
 
-```python
-# Example: A FileSkill for counting lines
-
-from typing import Any
-from nexus3.skill.base import FileSkill, file_skill_factory
-from nexus3.core.types import ToolResult
-from nexus3.core.errors import PathSecurityError
-
-
-@file_skill_factory
-class LineCountSkill(FileSkill):
-    """Count lines in a file."""
-
-    @property
-    def name(self) -> str:
-        return "line_count"
-
-    @property
-    def description(self) -> str:
-        return "Count the number of lines in a file"
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the file"
-                }
-            },
-            "required": ["path"]
-        }
-
-    async def execute(self, path: str = "", **kwargs: Any) -> ToolResult:
-        if not path:
-            return ToolResult(error="No path provided")
-
-        try:
-            validated = self._validate_path(path)
-            content = validated.read_text(encoding="utf-8", errors="replace")
-            count = len(content.splitlines())
-            return ToolResult(output=f"{count} lines")
-        except (PathSecurityError, ValueError) as e:
-            return ToolResult(error=str(e))
-        except FileNotFoundError:
-            return ToolResult(error=f"File not found: {path}")
-        except PermissionError:
-            return ToolResult(error=f"Permission denied: {path}")
-        except Exception as e:
-            return ToolResult(error=f"Error: {e}")
-
-
-# Factory is attached by decorator
-line_count_factory = LineCountSkill.factory
-```
+See the [Base Classes](#base-classes) section for complete examples of each type.
 
 ### Step 3: Register the Skill
 
 ```python
-# Option 1: Direct registration
-registry.register("line_count", line_count_factory)
-
-# Option 2: Add to register_builtin_skills() in registration.py
+# Add to register_builtin_skills() in registration.py
 def register_builtin_skills(registry: SkillRegistry) -> None:
     # ... existing skills ...
-    registry.register("line_count", line_count_factory)
+    registry.register("my_skill", my_skill_factory)
 ```
 
 ### Best Practices
@@ -739,6 +651,7 @@ def register_builtin_skills(registry: SkillRegistry) -> None:
 5. **Use `asyncio.to_thread`** - For blocking I/O operations
 6. **Handle all errors** - Catch and convert to ToolResult errors
 7. **Document parameters** - Include descriptions in JSON schema
+8. **Preserve line endings** - Use `detect_line_ending()` and restore original endings for file edits
 
 ---
 
@@ -804,6 +717,13 @@ from nexus3.skill.builtin.env import get_safe_env
 env = get_safe_env(cwd="/some/path")
 ```
 
+**Windows-specific safe variables:**
+- `USERPROFILE` - Windows user home directory
+- `APPDATA` / `LOCALAPPDATA` - Windows app data directories
+- `PATHEXT` - Windows executable extensions
+- `SYSTEMROOT` - Windows system root
+- `COMSPEC` - Windows command interpreter
+
 ### Git Command Filtering
 
 Git commands are filtered by permission level:
@@ -811,6 +731,58 @@ Git commands are filtered by permission level:
 - **SANDBOXED**: Only read-only commands (status, diff, log, etc.)
 - **TRUSTED**: Read + write, but dangerous flags blocked (--force, --hard)
 - **YOLO**: All commands allowed
+
+---
+
+## Windows Compatibility
+
+Several skills have been updated for Windows-native compatibility:
+
+### Line Ending Preservation
+
+File editing skills preserve the original line ending style (CRLF/LF/CR):
+
+- **edit_file.py**: Detects and preserves line endings during string/line replacement
+- **regex_replace.py**: Normalizes to LF for processing, restores original on write
+- **append_file.py**: Detects existing file's line ending style for prepended newlines
+
+### Process Group Handling
+
+Subprocess skills use platform-specific flags for clean timeout kills:
+
+```python
+if sys.platform == "win32":
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        creationflags=(
+            subprocess.CREATE_NEW_PROCESS_GROUP |
+            subprocess.CREATE_NO_WINDOW  # Prevents console window popup
+        ),
+    )
+else:
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        start_new_session=True,  # For process group kills
+    )
+```
+
+Skills with CREATE_NO_WINDOW support:
+- `bash_safe`, `shell_UNSAFE`
+- `run_python`
+- `git`
+- `grep` (for ripgrep subprocess)
+
+### File Attributes
+
+`file_info.py` returns platform-appropriate attributes:
+- **Unix**: Standard rwxrwxrwx permission string
+- **Windows**: RHSA format (Readonly, Hidden, System, Archive)
+
+### Environment Variables
+
+`env.py` includes Windows-specific safe environment variables:
+- `USERPROFILE`, `APPDATA`, `LOCALAPPDATA`
+- `PATHEXT`, `SYSTEMROOT`, `COMSPEC`
 
 ---
 
@@ -888,13 +860,14 @@ __all__ = [
 |--------|----------|
 | `nexus3.core.types` | `ToolResult` |
 | `nexus3.core.errors` | `NexusError`, `PathSecurityError` |
-| `nexus3.core.paths` | `validate_path()`, `atomic_write_text()` |
+| `nexus3.core.paths` | `validate_path()`, `atomic_write_text()`, `atomic_write_bytes()`, `detect_line_ending()` |
 | `nexus3.core.resolver` | `PathResolver` for path resolution |
 | `nexus3.core.permissions` | `PermissionLevel`, `AgentPermissions` |
 | `nexus3.core.validation` | Parameter validation, agent ID validation |
 | `nexus3.core.identifiers` | `validate_tool_name()` |
-| `nexus3.core.constants` | File size limits |
+| `nexus3.core.constants` | File size limits (`MAX_FILE_SIZE_BYTES`, `MAX_OUTPUT_BYTES`, etc.) |
 | `nexus3.core.url_validator` | URL validation for NexusSkill |
+| `nexus3.core.process` | `terminate_process_tree()` for clean subprocess kills |
 | `nexus3.client` | `NexusClient` for HTTP communication |
 | `nexus3.rpc.auth` | `discover_rpc_token()` |
 | `nexus3.rpc.agent_api` | `DirectAgentAPI`, `ClientAdapter` |
@@ -907,7 +880,8 @@ __all__ = [
 | `asyncio` | Async execution |
 | `pathlib` | Path handling |
 | `shlex` | Safe command parsing |
-| `subprocess` | Git command execution |
+| `subprocess` | Process creation flags (Windows) |
+| `shutil` | File operations, ripgrep detection |
 
 ---
 

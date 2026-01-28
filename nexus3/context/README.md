@@ -35,11 +35,11 @@ Loads and merges context from multiple directory layers with a defined precedenc
 
 ```
 LAYER 1: Install Defaults (shipped with package)
-    ↓
+    |
 LAYER 2: Global (~/.nexus3/)
-    ↓
+    |
 LAYER 3: Ancestors (up to N levels above CWD)
-    ↓
+    |
 LAYER 4: Local (CWD/.nexus3/)
 ```
 
@@ -110,6 +110,18 @@ context = loader.load()
 
 # Load for subagent (avoids duplication with parent)
 subagent_prompt = loader.load_for_subagent(parent_context=context)
+```
+
+#### MCP Config Formats
+
+Two MCP config formats are supported:
+
+```json
+// Official (Claude Desktop) format
+{"mcpServers": {"test": {"command": "...", "args": [...]}}}
+
+// NEXUS3 format
+{"servers": [{"name": "test", "command": "...", "args": [...]}]}
 ```
 
 #### System Information
@@ -189,7 +201,8 @@ usage = manager.get_token_usage()
 #     "messages": 3200,    # Conversation messages tokens
 #     "total": 5500,       # Sum of above
 #     "budget": 8000,      # max_tokens from config
-#     "available": 6000    # budget - reserve_tokens
+#     "available": 6000,   # budget - reserve_tokens
+#     "remaining": 500     # available - total (space left)
 # }
 
 if manager.is_over_budget():
@@ -246,6 +259,20 @@ prompt = inject_datetime_into_prompt(
 ```
 
 This ensures the agent always knows the current time, even in long-running sessions.
+
+#### Helper Functions
+
+```python
+from nexus3.context.manager import get_current_datetime_str, get_session_start_str
+
+# Get formatted datetime for injection
+datetime_str = get_current_datetime_str()
+# "Current date: 2026-01-21, Current time: 14:30 (local)"
+
+# Get session start marker
+start_str = get_session_start_str()
+# "[Session started: 2026-01-21 14:30 (local)]"
+```
 
 ---
 
@@ -318,6 +345,7 @@ from nexus3.context import (
     create_summary_message,
     CompactionResult,
 )
+from nexus3.context.compaction import format_messages_for_summary
 
 # 1. Partition messages
 to_summarize, to_preserve = select_messages_for_compaction(
@@ -521,6 +549,7 @@ from nexus3.context import (
 | `core.redaction` | `redact_dict`, `redact_secrets` |
 | `config.load_utils` | `load_json_file` |
 | `config.schema` | `ContextConfig` (config schema), `MCPServerConfig` |
+| `mcp.errors` | `MCPErrorContext` |
 | `session.logging` | `SessionLogger` (optional, for context logging) |
 
 ### External Dependencies
@@ -528,6 +557,7 @@ from nexus3.context import (
 | Package | Usage | Required |
 |---------|-------|----------|
 | `tiktoken` | Accurate token counting | Optional (falls back to SimpleTokenCounter) |
+| `pydantic` | MCP config validation | Yes |
 
 ---
 
@@ -654,4 +684,4 @@ while True:
 
 ## Status
 
-Production-ready. Last updated: 2026-01-21
+Production-ready. Last updated: 2026-01-28
