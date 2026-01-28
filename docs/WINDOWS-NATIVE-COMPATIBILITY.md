@@ -6,7 +6,43 @@
 
 **Goal:** Achieve full Windows-native compatibility with proper testing and documentation.
 
-**Branch:** `feature/windows-native-compat` (create from `feature/mcp-improvements`)
+**Branch:** `feature/windows-native-compat` (from `feature/mcp-improvements`)
+
+---
+
+## Implementation Status
+
+*Last updated: 2026-01-28*
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| **P1: Process Termination** | ✅ COMPLETE | `nexus3/core/process.py` created, 26 tests passing |
+| **P2: ESC Key Detection** | ❌ NOT STARTED | msvcrt implementation needed |
+| **P3: Env Variables** | ❌ NOT STARTED | Missing 6 Windows vars in env.py |
+| **P4: File Attributes** | ❌ NOT STARTED | No RHSA support yet |
+| **P5: Line Endings** | ❌ NOT STARTED | Helpers missing from paths.py |
+| **P6: Consumer Updates** | ⚠️ BLOCKED | Waiting to integrate P1 into consumers |
+| **P7: ANSI Fixes** | ❌ NOT STARTED | `legacy_windows=False` missing |
+| **P8: Error Sanitization** | ❌ NOT STARTED | Windows patterns missing |
+| **P9: Subprocess Window** | ❌ NOT STARTED | CREATE_NO_WINDOW not added |
+| **P10: BOM Handling** | ❌ NOT STARTED | utf-8-sig not used |
+| **P11: Testing Infra** | ❌ NOT STARTED | Markers needed in pyproject.toml |
+| **P12: Documentation** | ❌ NOT STARTED | After all phases complete |
+
+### Recommended Implementation Order
+
+```
+1. P11.1 - Add pytest markers to pyproject.toml (prerequisite for test organization)
+2. P6   - Integrate process.py into skill/base.py and mcp/transport.py (uses completed P1)
+3. P2, P3, P4, P7, P9, P10 - Can run in PARALLEL (independent phases)
+4. P5.5 - UPDATE 4 append_file tests FIRST (blocker for P5.4)
+5. P5   - Line ending preservation (after test updates)
+6. P8   - Error path sanitization (can parallel with P5)
+7. P11  - Complete testing infrastructure
+8. P12  - Documentation (after all code complete)
+```
+
+**Critical Dependency:** P5.5 (test updates) MUST be completed before P5.4 (tuple return change) or 4 existing tests will fail.
 
 ---
 
@@ -643,44 +679,71 @@ markers = [
 
 ## Implementation Checklist
 
-### Phase 1: Process Termination Utility (Foundation - Do First)
-- [ ] **P1.1** Create `nexus3/core/process.py` with `terminate_process_tree()`
-- [ ] **P1.2** Implement `_terminate_unix()` with SIGTERM -> SIGKILL pattern
-- [ ] **P1.3** Implement `_terminate_windows()` with taskkill fallback
-- [ ] **P1.4** Add unit tests in `tests/unit/core/test_process.py`
+### Phase 1: Process Termination Utility ✅ COMPLETE
+- [x] **P1.1** Create `nexus3/core/process.py` with `terminate_process_tree()`
+- [x] **P1.2** Implement `_terminate_unix()` with SIGTERM -> SIGKILL pattern
+- [x] **P1.3** Implement `_terminate_windows()` with taskkill fallback
+- [x] **P1.4** Add unit tests in `tests/unit/core/test_process.py` (26 tests passing)
 
-### Phase 2: ESC Key Detection (Critical - Can Parallel P3-P5)
+### Phase 11.1: Pytest Markers (Do First - Enables Test Organization)
+- [ ] **P11.1** Add pytest markers to `pyproject.toml` (windows, windows_mock, unix_only)
+
+### Phase 6: Update Consumers (Do Second - Integrates P1)
+- [ ] **P6.1** Update `nexus3/skill/base.py` to use `terminate_process_tree()`
+- [ ] **P6.2** Update `nexus3/mcp/transport.py` to use `terminate_process_tree()`
+- [ ] **P6.3** Convert git skill to asyncio with process groups (currently uses blocking subprocess.run)
+- [ ] **P6.4** Verify existing tests pass
+
+### Phase 2: ESC Key Detection (Can Parallel with P3, P4, P7, P9, P10)
 - [ ] **P2.1** Update `nexus3/cli/keys.py` with Windows msvcrt implementation
 - [ ] **P2.2** Add unit tests in `tests/unit/cli/test_keys_windows.py`
 - [ ] **P2.3** Live test on Windows (if available)
 
-### Phase 3: Environment Variable Unification (Can Parallel P2, P4-P5)
-- [ ] **P3.1** Add Windows env vars to `nexus3/skill/builtin/env.py`
+### Phase 3: Environment Variable Unification (Can Parallel with P2, P4, P7, P9, P10)
+- [ ] **P3.1** Add Windows env vars to `nexus3/skill/builtin/env.py` (USERPROFILE, APPDATA, LOCALAPPDATA, PATHEXT, SYSTEMROOT, COMSPEC)
 - [ ] **P3.2** Add platform-aware DEFAULT_PATH to env.py
 - [ ] **P3.3** Update `nexus3/mcp/transport.py` to import from env.py
 - [ ] **P3.4** Add tests for Windows env vars
 
-### Phase 4: File Attributes (Can Parallel P2-P3, P5)
+### Phase 4: File Attributes (Can Parallel with P2, P3, P7, P9, P10)
 - [ ] **P4.1** Add `_format_windows_attributes()` to file_info.py
 - [ ] **P4.2** Rename existing to `_format_unix_permissions()`
 - [ ] **P4.3** Create platform-aware `_format_permissions()` wrapper
 - [ ] **P4.4** Update execute() to pass path
 - [ ] **P4.5** Add platform-specific tests
 
-### Phase 5: Line Ending Preservation (Can Parallel P2-P4)
+### Phase 7: ANSI Escape Sequence Fixes (Can Parallel with P2, P3, P4, P9, P10)
+- [ ] **P7.1** Update `console.py` to add `legacy_windows=False` (KEY FIX)
+- [ ] **P7.2** Optionally update `repl.py:907` to use console.file
+- [ ] **P7.3** Optionally update `confirmation_ui.py:226-227` to use console.file
+
+### Phase 9: Subprocess Window Handling (Can Parallel with P2, P3, P4, P7, P10)
+- [ ] **P9.1** Add CREATE_NO_WINDOW to `bash.py` BashSafeSkill (line 129)
+- [ ] **P9.2** Add CREATE_NO_WINDOW to `bash.py` ShellUnsafeSkill (line 240)
+- [ ] **P9.3** Add CREATE_NO_WINDOW to `run_python.py` (line 84)
+- [ ] **P9.4** Add CREATE_NO_WINDOW to `mcp/transport.py` (line 288)
+- [ ] **P9.5** Add process groups + CREATE_NO_WINDOW to `grep.py` (line 227)
+
+### Phase 10: Config BOM Handling (Can Parallel with P2, P3, P4, P7, P9)
+- [ ] **P10.1** Update `load_utils.py` to use `encoding="utf-8-sig"` (line 36)
+- [ ] **P10.2** Update `context/loader.py` `_load_file()` to use utf-8-sig (line 205)
+- [ ] **P10.3** Update `context/loader.py` `_get_subagent_prompt()` to use utf-8-sig (line 630)
+- [ ] **P10.4** Update `config/loader.py` `_load_json_file()` to use utf-8-sig (line 40)
+- [ ] **P10.5** Update `config/loader.py` `_load_from_path()` to use utf-8-sig (line 156)
+- [ ] **P10.6** Add test for BOM-prefixed config files
+
+### Phase 5: Line Ending Preservation (After P5.5 Test Updates)
 - [ ] **P5.0** Add `detect_line_ending()` and `atomic_write_bytes()` to `nexus3/core/paths.py`
 - [ ] **P5.1** Update `edit_file.py`: binary read, normalize, detect, process, convert back, binary write
 - [ ] **P5.2** Fix `_line_replace()` hardcoded LF (line 218) to use detected line ending
 - [ ] **P5.3** Update `regex_replace.py`: same pattern as edit_file
+- [ ] **P5.5** ⚠️ **BLOCKER** Update 4 existing tests in `test_p2_append_file.py` for tuple return type
 - [ ] **P5.4** Update `append_file.py`: modify `_needs_newline_prefix()` to return (bool, line_ending) tuple
-- [ ] **P5.5** Update 4 existing tests in `test_p2_append_file.py` for tuple return type
 - [ ] **P5.6** Add new tests in `tests/unit/skill/test_line_ending_preservation.py`
 
-### Phase 6: Update Consumers (Requires P1)
-- [ ] **P6.1** Update `nexus3/skill/base.py` to use `terminate_process_tree()`
-- [ ] **P6.2** Update `nexus3/mcp/transport.py` to use `terminate_process_tree()`
-- [ ] **P6.3** Convert git skill to asyncio with process groups
-- [ ] **P6.4** Verify existing tests pass
+### Phase 8: Error Path Sanitization (Can Parallel with P5)
+- [ ] **P8.1** Add Windows path patterns to `errors.py` (UNC, AppData, Windows user, relative, domain\\user)
+- [ ] **P8.2** Add tests for Windows path sanitization
 
 ### Phase 7: ANSI Escape Sequence Fixes (Can Parallel P2-P6)
 - [ ] **P7.1** Replace hardcoded ANSI in `repl.py:907` with Rich Control
@@ -707,12 +770,13 @@ markers = [
 - [ ] **P10.5** Update `config/loader.py` `_load_from_path()` to use utf-8-sig (line 156)
 - [ ] **P10.6** Add test for BOM-prefixed config files
 
-### Phase 11: Testing Infrastructure (Can Start After P1)
-- [ ] **P11.1** Add pytest markers to `pyproject.toml`
+### Phase 11: Testing Infrastructure (After All Code Phases)
 - [ ] **P11.2** Add auto-skip logic to `tests/conftest.py`
 - [ ] **P11.3** Add `@pytest.mark.windows_mock` to existing MCP tests
 - [ ] **P11.4** Create `tests/unit/core/test_paths_windows.py`
 - [ ] **P11.5** Create `tests/security/test_windows_process_termination.py`
+
+*Note: P11.1 (pytest markers) moved to top of checklist as prerequisite*
 
 ### Phase 12: Documentation (After Implementation)
 - [ ] **P12.1** Create `docs/WINDOWS-TROUBLESHOOTING.md`
@@ -747,7 +811,7 @@ markers = [
 
 | File | Change Type | Lines/Notes |
 |------|-------------|-------------|
-| `nexus3/core/process.py` | **NEW** | ~100 lines |
+| `nexus3/core/process.py` | ✅ **DONE** | ~100 lines, 26 tests |
 | `nexus3/cli/keys.py` | Modify | Replace lines 79-90 |
 | `nexus3/cli/repl.py` | Modify | Line 907 ANSI fix; Unicode box chars |
 | `nexus3/cli/confirmation_ui.py` | Modify | Lines 226-227 ANSI fix |
