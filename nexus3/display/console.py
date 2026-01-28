@@ -19,6 +19,7 @@ def get_console() -> Console:
             highlight=False,  # Don't auto-highlight, we control styling
             markup=True,      # Enable Rich markup like [cyan]text[/]
             force_terminal=True,  # Force terminal mode even if detection fails
+            legacy_windows=False,  # Enables VT100 mode on Windows 10+
         )
     return _console
 

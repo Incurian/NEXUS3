@@ -22,13 +22,10 @@ level and refuse to execute in SANDBOXED mode, even if mistakenly registered.
 """
 
 import asyncio
-import os
+import shlex
 import subprocess
 import sys
-import shlex
-from typing import Any
-
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nexus3.core.permissions import PermissionLevel
 from nexus3.core.types import ToolResult
@@ -126,7 +123,10 @@ class BashSafeSkill(ExecutionSkill):
                 stderr=asyncio.subprocess.PIPE,
                 cwd=work_dir,
                 env=get_safe_env(work_dir),
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                creationflags=(
+                    subprocess.CREATE_NEW_PROCESS_GROUP |
+                    subprocess.CREATE_NO_WINDOW
+                ),
             )
         else:
             return await asyncio.create_subprocess_exec(
@@ -237,7 +237,10 @@ class ShellUnsafeSkill(ExecutionSkill):
                 stderr=asyncio.subprocess.PIPE,
                 cwd=work_dir,
                 env=get_safe_env(work_dir),
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                creationflags=(
+                    subprocess.CREATE_NEW_PROCESS_GROUP |
+                    subprocess.CREATE_NO_WINDOW
+                ),
             )
         else:
             return await asyncio.create_subprocess_shell(
