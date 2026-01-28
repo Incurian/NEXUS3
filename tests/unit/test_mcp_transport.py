@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,6 +19,7 @@ from nexus3.mcp.transport import (
     MCPTransportError,
     StdioTransport,
     build_safe_env,
+    resolve_command,
 )
 
 
@@ -923,3 +925,89 @@ class TestHTTPTransportRetryBehavior:
 
         # Only 1 attempt, no retries
         assert mock_client.post.call_count == 1
+
+
+class TestResolveCommandWindowsAliases:
+    """Test Windows command alias resolution (python3 → python, etc.)."""
+
+    @pytest.mark.windows_mock
+    def test_python3_to_python_on_windows(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """On Windows, python3 resolves to python when python3 not found."""
+        monkeypatch.setattr(sys, "platform", "win32")
+
+        # Mock shutil.which: python3 not found, python found
+        def mock_which(cmd: str) -> str | None:
+            if cmd == "python3":
+                return None
+            if cmd == "python":
+                return "C:\\Python312\\python.exe"
+            return None
+
+        with patch("nexus3.mcp.transport.shutil.which", mock_which):
+            result = resolve_command(["python3", "-m", "my_module"])
+
+        assert result == ["C:\\Python312\\python.exe", "-m", "my_module"]
+
+    @pytest.mark.windows_mock
+    def test_pip3_to_pip_on_windows(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """On Windows, pip3 resolves to pip when pip3 not found."""
+        monkeypatch.setattr(sys, "platform", "win32")
+
+        def mock_which(cmd: str) -> str | None:
+            if cmd == "pip3":
+                return None
+            if cmd == "pip":
+                return "C:\\Python312\\Scripts\\pip.exe"
+            return None
+
+        with patch("nexus3.mcp.transport.shutil.which", mock_which):
+            result = resolve_command(["pip3", "install", "package"])
+
+        assert result == ["C:\\Python312\\Scripts\\pip.exe", "install", "package"]
+
+    @pytest.mark.windows_mock
+    def test_python3_found_directly_on_windows(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """On Windows, if python3 is found directly, use it without alias."""
+        monkeypatch.setattr(sys, "platform", "win32")
+
+        def mock_which(cmd: str) -> str | None:
+            if cmd == "python3":
+                return "C:\\Python312\\python3.exe"  # Some systems have python3
+            return None
+
+        with patch("nexus3.mcp.transport.shutil.which", mock_which):
+            result = resolve_command(["python3", "-m", "my_module"])
+
+        # Should use the directly found python3
+        assert result == ["C:\\Python312\\python3.exe", "-m", "my_module"]
+
+    def test_no_alias_on_unix(self) -> None:
+        """On Unix, python3 is not aliased (stays as-is)."""
+        # Don't mock platform - run on actual platform
+        if sys.platform == "win32":
+            pytest.skip("Test only runs on Unix")
+
+        # On Unix, resolve_command returns the command unchanged
+        result = resolve_command(["python3", "-m", "my_module"])
+        assert result == ["python3", "-m", "my_module"]
+
+    @pytest.mark.windows_mock
+    def test_unknown_command_unchanged(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Commands without aliases are returned unchanged when not found."""
+        monkeypatch.setattr(sys, "platform", "win32")
+
+        def mock_which(cmd: str) -> str | None:
+            return None  # Nothing found
+
+        with patch("nexus3.mcp.transport.shutil.which", mock_which):
+            result = resolve_command(["unknown_command", "arg1"])
+
+        # Should be unchanged
+        assert result == ["unknown_command", "arg1"]
+
+    @pytest.mark.windows_mock
+    def test_empty_command_unchanged(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Empty command list is returned unchanged."""
+        monkeypatch.setattr(sys, "platform", "win32")
+        result = resolve_command([])
+        assert result == []

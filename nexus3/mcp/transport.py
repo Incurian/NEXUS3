@@ -127,12 +127,23 @@ def build_safe_env(
     return env
 
 
+# Windows command aliases: commands that should be translated on Windows
+# when the original command is not found
+_WINDOWS_COMMAND_ALIASES: dict[str, str] = {
+    "python3": "python",  # Windows typically only has 'python', not 'python3'
+    "pip3": "pip",        # Same for pip
+}
+
+
 def resolve_command(command: list[str]) -> list[str]:
     """Resolve command for cross-platform execution.
 
     P2.0.2-P2.0.3: On Windows, executable extensions (.cmd, .bat, .exe) are not
     automatically resolved by create_subprocess_exec. This uses shutil.which to
     find the actual executable path, respecting PATHEXT.
+
+    Additionally, translates Unix-style commands to Windows equivalents when the
+    original command is not found (e.g., python3 → python, pip3 → pip).
 
     Args:
         command: Command and arguments list.
@@ -153,6 +164,14 @@ def resolve_command(command: list[str]) -> list[str]:
     resolved = shutil.which(executable)
     if resolved:
         return [resolved] + command[1:]
+
+    # If not found, try Windows alias (e.g., python3 → python)
+    alias = _WINDOWS_COMMAND_ALIASES.get(executable)
+    if alias:
+        resolved = shutil.which(alias)
+        if resolved:
+            logger.debug("Resolved %s → %s on Windows", executable, resolved)
+            return [resolved] + command[1:]
 
     return command
 
