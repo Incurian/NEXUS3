@@ -12,7 +12,7 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ## Current Development
 
-### In Progress: Windows Native Compatibility
+### Nearly Complete: Windows Native Compatibility
 
 **Plan:** `docs/WINDOWS-NATIVE-COMPATIBILITY.md`
 **Branch:** `feature/windows-native-compat` (from `feature/mcp-improvements`)
@@ -21,12 +21,11 @@ Full Windows-native compatibility: ESC key detection, line ending preservation, 
 
 | Phase | Status | Description |
 |-------|--------|-------------|
-| P1: Process Termination | ✅ COMPLETE | `nexus3/core/process.py` + 26 tests |
-| P6: Consumer Updates | ⚠️ NEXT | Integrate P1 into skill/base.py, transport.py |
-| P2-P5, P7-P10 | ❌ PENDING | See plan for full checklist |
-| P11-P12 | ❌ PENDING | Testing infrastructure + documentation |
+| P1-P10: Core Implementation | ✅ COMPLETE | 12 commits, all features implemented |
+| P11: Testing Infrastructure | ⚠️ PENDING | Additional test coverage |
+| P12: Documentation | ⚠️ PENDING | Update docs after testing |
 
-**Test count:** 2512 passed (756 security, 136 MCP unit tests)
+**Test count:** 2673 passed (756 security, 136 MCP unit tests)
 
 ### Ready to Merge: MCP Improvements
 

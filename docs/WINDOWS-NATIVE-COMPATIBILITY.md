@@ -16,33 +16,38 @@
 
 | Phase | Status | Notes |
 |-------|--------|-------|
-| **P1: Process Termination** | ✅ COMPLETE | `nexus3/core/process.py` created, 26 tests passing |
-| **P2: ESC Key Detection** | ❌ NOT STARTED | msvcrt implementation needed |
-| **P3: Env Variables** | ❌ NOT STARTED | Missing 6 Windows vars in env.py |
-| **P4: File Attributes** | ❌ NOT STARTED | No RHSA support yet |
-| **P5: Line Endings** | ❌ NOT STARTED | Helpers missing from paths.py |
-| **P6: Consumer Updates** | ⚠️ BLOCKED | Waiting to integrate P1 into consumers |
-| **P7: ANSI Fixes** | ❌ NOT STARTED | `legacy_windows=False` missing |
-| **P8: Error Sanitization** | ❌ NOT STARTED | Windows patterns missing |
-| **P9: Subprocess Window** | ❌ NOT STARTED | CREATE_NO_WINDOW not added |
-| **P10: BOM Handling** | ❌ NOT STARTED | utf-8-sig not used |
-| **P11: Testing Infra** | ❌ NOT STARTED | Markers needed in pyproject.toml |
-| **P12: Documentation** | ❌ NOT STARTED | After all phases complete |
+| **P1: Process Termination** | ✅ COMPLETE | `nexus3/core/process.py` + 26 tests |
+| **P2: BOM Handling** | ✅ COMPLETE | utf-8-sig in config loaders |
+| **P3: ESC Key Detection** | ✅ COMPLETE | msvcrt in cli/keys.py |
+| **P4: Env Variables** | ✅ COMPLETE | 6 Windows vars added to env.py |
+| **P5: Line Endings** | ✅ COMPLETE | detect_line_ending() + append_file preservation |
+| **P6: Consumer Updates** | ✅ COMPLETE | terminate_process_tree in base.py, transport.py |
+| **P7: Path Utilities** | ✅ COMPLETE | detect_line_ending(), atomic_write_bytes() |
+| **P8: Error Sanitization** | ✅ COMPLETE | Windows path patterns in errors.py |
+| **P9: Subprocess Window** | ✅ COMPLETE | CREATE_NO_WINDOW in skills + VT100 mode |
+| **P10: Git/File Skills** | ✅ COMPLETE | Async subprocess + Windows attributes |
+| **P11.1: Test Markers** | ✅ COMPLETE | windows/unix markers in pyproject.toml |
+| **P11: Testing Infra** | ⚠️ PENDING | Additional test coverage needed |
+| **P12: Documentation** | ⚠️ PENDING | Update CLAUDE.md and READMEs |
 
-### Recommended Implementation Order
+### Commits (feature/windows-native-compat)
 
 ```
-1. P11.1 - Add pytest markers to pyproject.toml (prerequisite for test organization)
-2. P6   - Integrate process.py into skill/base.py and mcp/transport.py (uses completed P1)
-3. P2, P3, P4, P7, P9, P10 - Can run in PARALLEL (independent phases)
-4. P5.5 - UPDATE 4 append_file tests FIRST (blocker for P5.4)
-5. P5   - Line ending preservation (after test updates)
-6. P8   - Error path sanitization (can parallel with P5)
-7. P11  - Complete testing infrastructure
-8. P12  - Documentation (after all code complete)
+18c107d feat(skill): Windows file attributes in file_info (P10)
+4c9035f feat(skill,display): Windows subprocess and console improvements (P9)
+929fe8f feat(skill): add Windows environment variables to safe list (P4)
+baaf0de feat(config): handle Windows BOM in JSON config files (P2)
+3a537ce feat(skill): convert git skill to asyncio subprocess (P10)
+9bdc8ea feat(core): add line ending detection and atomic binary write (P7)
+4a8d398 chore(test): add pytest markers for Windows/Unix tests (P11.1)
+e0d4abb feat(core): Windows path sanitization in error messages (P8)
+b589ba1 feat(skill): line ending preservation in append_file (P5)
+aefedee feat(cli): add Windows ESC key detection using msvcrt (P3)
+756f588 feat(skill,mcp): integrate terminate_process_tree (P6)
+553a21c feat(core): add cross-platform process termination utility (P1)
 ```
 
-**Critical Dependency:** P5.5 (test updates) MUST be completed before P5.4 (tuple return change) or 4 existing tests will fail.
+**Remaining Work:** P11 (additional tests) and P12 (documentation updates).
 
 ---
 
