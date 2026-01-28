@@ -33,7 +33,7 @@ def load_json_file(path: Path, error_context: str = "") -> dict[str, Any]:
         raise LoadError(f"{context_prefix}File not found: {path}")
 
     try:
-        content = path.read_text(encoding="utf-8")
+        content = path.read_text(encoding="utf-8-sig")
     except OSError as e:
         raise LoadError(f"{context_prefix}Failed to read file {path}: {e}") from e
 

@@ -37,7 +37,7 @@ def _load_json_file(path: Path) -> dict[str, Any] | None:
         return None
 
     try:
-        content = path.read_text(encoding="utf-8")
+        content = path.read_text(encoding="utf-8-sig")
     except OSError as e:
         raise ConfigError(f"Failed to read config file {path}: {e}") from e
 
@@ -153,7 +153,7 @@ def _load_from_path(path: Path) -> Config:
         raise ConfigError(f"Config file not found: {path}")
 
     try:
-        content = path.read_text(encoding="utf-8")
+        content = path.read_text(encoding="utf-8-sig")
     except OSError as e:
         raise ConfigError(f"Failed to read config file {path}: {e}") from e
 

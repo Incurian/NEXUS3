@@ -54,7 +54,7 @@ def get_system_info(is_repl: bool = True, cwd: Path | None = None) -> str:
         try:
             # Try to get distro info
             if Path("/etc/os-release").exists():
-                os_release = Path("/etc/os-release").read_text(encoding="utf-8")
+                os_release = Path("/etc/os-release").read_text(encoding="utf-8-sig")
                 for line in os_release.splitlines():
                     if line.startswith("PRETTY_NAME="):
                         distro = line.split("=", 1)[1].strip('"')
@@ -202,7 +202,7 @@ class ContextLoader:
             File contents or None if file doesn't exist.
         """
         if path.is_file():
-            return path.read_text(encoding="utf-8")
+            return path.read_text(encoding="utf-8-sig")
         return None
 
     def _load_json(self, path: Path) -> dict[str, Any] | None:
@@ -627,7 +627,7 @@ Source: {source_path}
 
         # Load agent's local NEXUS.md and prepend
         if local_nexus.is_file():
-            agent_prompt = local_nexus.read_text(encoding="utf-8")
+            agent_prompt = local_nexus.read_text(encoding="utf-8-sig")
             return f"""## Subagent Configuration
 Source: {local_nexus}
 
