@@ -10,14 +10,18 @@ SECURITY: P2.13 - Error body size caps prevent memory exhaustion from large erro
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import random
+import ssl
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from nexus3.config.schema import AuthMethod, ProviderConfig
 from nexus3.core.errors import ProviderError
@@ -172,6 +176,9 @@ class BaseProvider(ABC):
         The client is lazily created on first request and reused for subsequent
         requests. This improves connection reuse and reduces overhead.
 
+        On Windows, if certifi's certificate bundle is missing/corrupted, falls
+        back to using the Windows certificate store via ssl.create_default_context().
+
         Returns:
             The httpx.AsyncClient instance for making HTTP requests.
         """
@@ -179,11 +186,22 @@ class BaseProvider(ABC):
             # SSL verification settings for on-prem/corporate deployments
             # Priority: ssl_ca_cert (custom CA) > verify_ssl (bool)
             if self._ssl_ca_cert:
-                verify: bool | str = self._ssl_ca_cert
+                verify: bool | str | ssl.SSLContext = self._ssl_ca_cert
             else:
                 verify = self._verify_ssl
 
-            self._client = httpx.AsyncClient(timeout=self._timeout, verify=verify)
+            try:
+                self._client = httpx.AsyncClient(timeout=self._timeout, verify=verify)
+            except FileNotFoundError:
+                # Windows: certifi installed but cert bundle missing/corrupted
+                # Fall back to system certificate store
+                logger.warning(
+                    "SSL certificate bundle not found (certifi issue?), "
+                    "falling back to system certificates"
+                )
+                # Use system certificates via ssl.create_default_context()
+                ssl_context = ssl.create_default_context()
+                self._client = httpx.AsyncClient(timeout=self._timeout, verify=ssl_context)
         return self._client
 
     async def aclose(self) -> None:

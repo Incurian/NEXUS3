@@ -41,6 +41,7 @@ import logging
 import os
 import secrets
 import stat
+import sys
 from pathlib import Path
 
 from nexus3.core.constants import get_nexus_dir
@@ -83,19 +84,29 @@ def check_token_file_permissions(
     P2.8 SECURITY: Token files should only be readable by the owner.
     This function verifies the file is not readable by group or others.
 
+    Note: On Windows, POSIX permission bits (st_mode) are not meaningful.
+    Windows uses ACLs for access control, and os.chmod() is essentially a no-op.
+    We skip permission checks on Windows and assume secure (documented limitation).
+
     Args:
         path: Path to the token file.
         strict: If True, raise InsecureTokenFileError on insecure permissions.
                 If False, log a warning and return False.
 
     Returns:
-        True if permissions are secure (0600 or more restrictive).
+        True if permissions are secure (0600 or more restrictive), or on Windows.
         False if permissions are insecure (and strict=False).
 
     Raises:
         InsecureTokenFileError: If strict=True and permissions are insecure.
         OSError: If the file cannot be stat'd.
     """
+    # Windows: POSIX permission bits are meaningless, skip check
+    # Windows uses ACLs, not permission bits. st_mode doesn't reflect actual access.
+    # This is a documented security limitation in CLAUDE.md.
+    if sys.platform == "win32":
+        return True
+
     file_stat = path.stat()
     mode = file_stat.st_mode
 
