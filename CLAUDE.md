@@ -32,9 +32,11 @@ Full Windows-native compatibility including:
 |-------|--------|-------------|
 | P1-P10: Core Implementation | ✅ COMPLETE | 20 commits, all features implemented |
 | P11: Testing Infrastructure | ✅ COMPLETE | Pytest markers, cross-platform test coverage |
-| P12: Documentation | ✅ COMPLETE | CLAUDE.md, module READMEs updated |
+| P12: Documentation | ✅ COMPLETE | CLAUDE.md, module READMEs, live testing guide |
 
 **Test count:** 2673 passed (756 security, 136 MCP unit tests)
+
+**Live Testing Guide:** `docs/WINDOWS-LIVE-TESTING-GUIDE.md`
 
 ### Ready to Merge: MCP Improvements
 
@@ -120,7 +122,7 @@ nexus3/
 ├── provider/       # AsyncProvider protocol, multi-provider support, retry logic
 ├── context/        # ContextManager, ContextLoader, TokenCounter, compaction
 ├── session/        # Session coordinator, persistence, SessionManager, SQLite logging
-├── skill/          # Skill protocol, SkillRegistry, ServiceContainer, 24 builtin skills
+├── skill/          # Skill protocol, SkillRegistry, ServiceContainer, 25 builtin skills
 ├── display/        # DisplayManager, StreamingDisplay, InlinePrinter, SummaryBar, theme
 ├── cli/            # Unified REPL, lobby, whisper, HTTP server, client commands
 ├── rpc/            # JSON-RPC protocol, Dispatcher, GlobalDispatcher, AgentPool, auth
@@ -368,8 +370,11 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 |---------|-------------|
 | `/mcp` | List configured and connected MCP servers |
 | `/mcp connect <name>` | Connect to a configured MCP server |
+| `/mcp connect <name> --allow-all --shared` | Connect skipping prompts, share with all agents |
 | `/mcp disconnect <name>` | Disconnect from an MCP server |
 | `/mcp tools [server]` | List available MCP tools |
+| `/mcp resources [server]` | List available MCP resources |
+| `/mcp prompts [server]` | List available MCP prompts |
 | `/mcp retry <name>` | Retry listing tools from a server |
 
 **Key behaviors:**
@@ -425,6 +430,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `shell_UNSAFE` | `command`, `timeout`? | Execute shell=True (pipes work, but injection-vulnerable) |
 | `run_python` | `code`, `timeout`? | Execute Python code |
 | `sleep` | `seconds`, `label`? | Pause execution (for testing) |
+| `echo` | `message` | Echo input back (testing utility) |
 | `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `model`?, `initial_message`?, `wait_for_initial_response`? | Create agent (initial_message queued by default) |
 | `nexus_destroy` | `agent_id`, `port`? | Remove an agent (server keeps running) |
 | `nexus_send` | `agent_id`, `content`, `port`? | Send message to an agent |
@@ -432,7 +438,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `nexus_cancel` | `agent_id`, `request_id`, `port`? | Cancel in-progress request |
 | `nexus_shutdown` | `port`? | Shutdown the entire server |
 
-*Note: `port` defaults to 8765. `preset` can be trusted/sandboxed/worker (yolo is REPL-only). Skills mirror `nexus3 rpc` CLI commands. Destructive file tools remind agents to read files before modifying.*
+*Note: `port` defaults to 8765. `preset` can be trusted/sandboxed (yolo is REPL-only). Skills mirror `nexus3 rpc` CLI commands. Destructive file tools remind agents to read files before modifying.*
 
 ---
 
@@ -767,18 +773,23 @@ nexus3 rpc send worker "message"    # Send message
 ~/.nexus3/
 ├── config.json      # Global config
 ├── NEXUS.md         # Personal system prompt
-├── rpc.token        # Auto-generated RPC token (port-specific: rpc-{port}.token)
+├── mcp.json         # Personal MCP servers
+├── rpc.token        # Auto-generated RPC token (default port)
+├── rpc-{port}.token # Port-specific RPC tokens
 ├── sessions/        # Saved session files (JSON)
-├── logs/
-│   └── server.log   # Server lifecycle events (rotating, 5MB x 3 files)
-└── last-session.json  # Auto-saved for --resume
+├── last-session.json  # Auto-saved for --resume
+├── last-session-name  # Name of last session
+└── logs/
+    └── server.log   # Server lifecycle events (rotating, 5MB x 3 files)
 
 ./NEXUS.md           # Project system prompt (overrides personal)
 .nexus3/logs/        # Session logs (gitignored)
 ├── server.log       # Server lifecycle events when started from this directory
 └── <session-id>/    # Per-session conversation logs
     ├── session.db   # SQLite database of messages
-    └── session.md   # Markdown transcript
+    ├── context.md   # Markdown transcript
+    ├── verbose.md   # Debug output (if -V enabled)
+    └── raw.jsonl    # Raw API JSON (if --raw-log enabled)
 ```
 
 ### Server Logging
@@ -1064,8 +1075,8 @@ nexus3 --init-global-force     # Overwrite existing
 |--------|-------|-------------|
 | `yolo` | YOLO | Full access, no confirmations (REPL-only) |
 | `trusted` | TRUSTED | Confirmations for destructive actions |
-| `sandboxed` | SANDBOXED | Limited to CWD, no network, nexus tools disabled (default for RPC) |
-| `worker` | SANDBOXED | Minimal: no write_file, no agent management |
+| `sandboxed` | SANDBOXED | CWD only, no network, nexus tools disabled (default for RPC) |
+| `worker` | SANDBOXED | Legacy alias for sandboxed |
 
 ### RPC Agent Permission Quirks (IMPORTANT)
 
