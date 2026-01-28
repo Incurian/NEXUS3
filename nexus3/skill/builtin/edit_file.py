@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import atomic_write_text
+from nexus3.core.paths import atomic_write_bytes, detect_line_ending
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
 
@@ -113,9 +113,13 @@ class EditFileSkill(FileSkill):
             # Validate path (resolves symlinks, checks allowed_paths if set)
             p = self._validate_path(path)
 
-            # Read current content
+            # Read current content (binary to preserve line endings)
             try:
-                content = await asyncio.to_thread(p.read_text, encoding="utf-8")
+                content_bytes = await asyncio.to_thread(p.read_bytes)
+                raw_content = content_bytes.decode("utf-8", errors="replace")
+                original_line_ending = detect_line_ending(raw_content)
+                # Normalize to LF for processing
+                content = raw_content.replace('\r\n', '\n').replace('\r', '\n')
             except FileNotFoundError:
                 return ToolResult(error=f"File not found: {path}")
             except PermissionError:
@@ -129,8 +133,11 @@ class EditFileSkill(FileSkill):
             if result.error:
                 return result
 
-            # Write updated content atomically (temp file + rename)
-            await asyncio.to_thread(atomic_write_text, p, result.output)
+            # Convert line endings back to original and write as binary
+            output_content = result.output
+            if original_line_ending != '\n':
+                output_content = output_content.replace('\n', original_line_ending)
+            await asyncio.to_thread(atomic_write_bytes, p, output_content.encode('utf-8'))
 
             # Return success message (not the content)
             if string_mode:

@@ -18,6 +18,7 @@ import pytest
 
 from nexus3.core.process import (
     GRACEFUL_TIMEOUT,
+    WINDOWS_CREATIONFLAGS,
     terminate_process_tree,
     _terminate_unix,
     _terminate_windows,
@@ -278,6 +279,7 @@ class TestTerminateWindowsMocked:
                         "taskkill", "/T", "/F", "/PID", "1234",
                         stdout=asyncio.subprocess.DEVNULL,
                         stderr=asyncio.subprocess.DEVNULL,
+                        creationflags=WINDOWS_CREATIONFLAGS,
                     )
 
     @pytest.mark.asyncio

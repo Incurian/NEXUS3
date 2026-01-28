@@ -279,7 +279,10 @@ class GitSkill(FilteredCommandSkill):
                     stderr=asyncio.subprocess.PIPE,
                     cwd=str(work_dir),
                     env=get_safe_env(str(work_dir)),
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                    creationflags=(
+                        subprocess.CREATE_NEW_PROCESS_GROUP |
+                        subprocess.CREATE_NO_WINDOW
+                    ),
                 )
             else:
                 process = await asyncio.create_subprocess_exec(

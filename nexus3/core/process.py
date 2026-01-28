@@ -9,12 +9,22 @@ import asyncio
 import logging
 import os
 import signal
+import subprocess
 import sys
 from asyncio.subprocess import Process
 
 logger = logging.getLogger(__name__)
 
 GRACEFUL_TIMEOUT: float = 2.0
+
+# Windows-specific creation flags (only defined on Windows)
+if sys.platform == "win32":
+    WINDOWS_CREATIONFLAGS = (
+        subprocess.CREATE_NEW_PROCESS_GROUP |
+        subprocess.CREATE_NO_WINDOW
+    )
+else:
+    WINDOWS_CREATIONFLAGS = 0
 
 
 async def terminate_process_tree(
@@ -116,6 +126,7 @@ async def _terminate_windows(process: Process, pid: int, graceful_timeout: float
             "taskkill", "/T", "/F", "/PID", str(pid),
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
+            creationflags=WINDOWS_CREATIONFLAGS,
         )
         await asyncio.wait_for(taskkill.wait(), timeout=graceful_timeout)
         logger.debug("taskkill /T /F completed for PID %d", pid)

@@ -79,7 +79,7 @@ _WINDOWS_USER_PATTERN = re.compile(
 _RELATIVE_USER_PATTERN = re.compile(r'(^|\s|\\|/)Users[/\\][^\\/\"]+', re.IGNORECASE)
 # Domain\username format (e.g., DOMAIN\alice, BUILTIN\Administrators)
 # Must not match drive letters (C: pattern) - requires at least 2 chars before backslash
-_DOMAIN_USER_PATTERN = re.compile(r'\b([A-Z][A-Z0-9_-]{1,})(\\)[^\\/\"\s]+', re.IGNORECASE)
+_DOMAIN_USER_PATTERN = re.compile(r'(?<!\])\b([A-Z][A-Z0-9_-]{1,})(\\)[^\\/\"\s]+', re.IGNORECASE)
 
 
 def sanitize_error_for_agent(error: str | None, tool_name: str = "") -> str | None:
