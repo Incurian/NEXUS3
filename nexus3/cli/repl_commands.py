@@ -33,6 +33,7 @@ from nexus3.core.permissions import (
     resolve_preset,
 )
 from nexus3.core.validation import ValidationError, validate_agent_id
+from nexus3.display import get_console
 from nexus3.rpc.pool import is_temp_agent
 
 if TYPE_CHECKING:
@@ -1482,13 +1483,11 @@ async def _mcp_connection_consent(
     """
     import asyncio
 
-    from rich.console import Console
-
     # YOLO mode skips prompts
     if is_yolo:
         return (True, True)
 
-    console = Console()
+    console = get_console()
 
     console.print(f"\n[yellow]Connect to MCP server '{server_name}'?[/]")
     console.print(f"  [dim]Tools:[/] {', '.join(tool_names)}")
@@ -1528,13 +1527,11 @@ async def _mcp_sharing_prompt(
     """
     import asyncio
 
-    from rich.console import Console
-
     # YOLO mode defaults to private (no sharing)
     if is_yolo:
         return False
 
-    console = Console()
+    console = get_console()
 
     console.print("\n[yellow]Share this connection with other agents?[/]")
     console.print("  [dim](Other agents will still need to approve their own permissions)[/]")
