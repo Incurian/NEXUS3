@@ -16,6 +16,45 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ## Current Development
 
+### In Progress: YOLO Safety Improvements
+
+**Plan**: `docs/plans/YOLO-SAFETY-PLAN.md`
+
+**Goals:**
+1. YOLO warning banner on every turn (intentionally annoying)
+2. Remove legacy "worker" preset completely
+3. Block RPC `send` to YOLO agents when no REPL connected
+
+**Key Implementation Details:**
+
+| Component | File | Location |
+|-----------|------|----------|
+| YOLO warning | `nexus3/cli/repl.py` | After line 1217 (after empty input check) |
+| Agent.repl_connected field | `nexus3/rpc/pool.py` | Add to Agent dataclass |
+| Pool helper methods | `nexus3/rpc/pool.py` | `set_repl_connected()`, `is_repl_connected()` |
+| Dispatcher pool param | `nexus3/rpc/dispatcher.py` | Add to `__init__`, check in `_handle_send()` |
+| REPL connection updates | `nexus3/cli/repl.py` | Lines ~1244, ~1304, ~1352, startup, exit |
+
+**Worker Removal Files:**
+- `nexus3/core/permissions.py:312-314` - mapping
+- `nexus3/core/presets.py:176-178` - mapping
+- `nexus3/rpc/global_dispatcher.py:126,180,291,293,322` - valid_presets + checks
+- `nexus3/cli/repl.py:1072-1073` - `--worker` flag
+- `nexus3/cli/arg_parser.py` - CLI choices
+- `nexus3/commands/core.py` - valid_permissions
+- `CLAUDE.md` - documentation
+
+**Checklist:**
+- [ ] P1: YOLO warning banner (P1.1-P1.2)
+- [ ] P2: Connection tracking infrastructure (P2.1-P2.5)
+- [ ] P3: RPC-to-YOLO block (P3.1-P3.2)
+- [ ] P4: REPL connection updates (P4.1-P4.5)
+- [ ] P5: Worker preset removal (P5.1-P5.6) - can parallel with P1-P4
+- [ ] P6: Documentation (P6.1-P6.4)
+- [ ] P7: Live testing (P7.1-P7.5)
+
+---
+
 ### Ready to Merge
 
 | Branch | Status | Notes |
