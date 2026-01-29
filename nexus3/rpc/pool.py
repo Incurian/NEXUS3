@@ -275,6 +275,7 @@ class Agent:
     session: Session
     dispatcher: Dispatcher
     created_at: datetime = field(default_factory=datetime.now)
+    repl_connected: bool = False
 
 
 class AgentPool:
@@ -592,6 +593,7 @@ class AgentPool:
             context=context,
             agent_id=effective_id,
             log_multiplexer=self._log_multiplexer,
+            pool=self,
         )
 
         # Create agent instance
@@ -873,6 +875,7 @@ class AgentPool:
             context=context,
             agent_id=agent_id,
             log_multiplexer=self._log_multiplexer,
+            pool=self,
         )
 
         # Create agent instance with saved creation time if available
@@ -1085,6 +1088,29 @@ class AgentPool:
                 "write_paths": write_paths,
             })
         return result
+
+    def set_repl_connected(self, agent_id: str, connected: bool) -> None:
+        """Set REPL connection state for an agent.
+
+        Args:
+            agent_id: The agent to update.
+            connected: True if REPL is connected, False otherwise.
+        """
+        agent = self._agents.get(agent_id)
+        if agent:
+            agent.repl_connected = connected
+
+    def is_repl_connected(self, agent_id: str) -> bool:
+        """Check if REPL is connected to an agent.
+
+        Args:
+            agent_id: The agent to check.
+
+        Returns:
+            True if REPL is connected, False otherwise.
+        """
+        agent = self._agents.get(agent_id)
+        return agent.repl_connected if agent else False
 
     @property
     def should_shutdown(self) -> bool:

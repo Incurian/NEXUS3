@@ -640,6 +640,10 @@ class TestSkillRegistryPermissionFiltering:
 
         This is the key security test - we want to ensure that agents with
         restricted permissions cannot even see tools they're not allowed to use.
+
+        Note: nexus_send IS visible because sandboxed agents can send to their
+        parent (allowed_targets="parent"). This enables child-to-parent reporting
+        without breaking the security sandbox.
         """
         from nexus3.core.permissions import resolve_preset
 
@@ -649,15 +653,16 @@ class TestSkillRegistryPermissionFiltering:
         registry.register("nexus_create", self._create_test_skill_factory("nexus_create", "Create agent"))
         registry.register("nexus_send", self._create_test_skill_factory("nexus_send", "Send message"))
 
-        # Get sandboxed permissions which has nexus tools disabled
+        # Get sandboxed permissions which has most nexus tools disabled
         permissions = resolve_preset("sandboxed")
 
         definitions = registry.get_definitions_for_permissions(permissions)
 
         names = {d["function"]["name"] for d in definitions}
-        # Sandboxed agents should not see nexus_create or nexus_send
+        # Sandboxed agents should not see nexus_create (agent management disabled)
         assert "nexus_create" not in names
-        assert "nexus_send" not in names
-        # But should see file tools
+        # But CAN see nexus_send (enabled with parent-only target restriction)
+        assert "nexus_send" in names
+        # And should see file tools
         assert "read_file" in names
         assert "write_file" in names

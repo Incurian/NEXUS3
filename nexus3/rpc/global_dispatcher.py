@@ -123,7 +123,7 @@ class GlobalDispatcher:
             params: Optional parameters:
                 - agent_id: Optional[str] - ID for the agent (auto-generated if omitted)
                 - system_prompt: Optional[str] - System prompt override for this agent
-                - preset: Optional[str] - Permission preset (yolo, trusted, sandboxed, worker)
+                - preset: Optional[str] - Permission preset (trusted, sandboxed)
                 - disable_tools: Optional[list[str]] - Tools to disable for the agent
                 - parent_agent_id: Optional[str] - ID of parent agent for ceiling enforcement
                 - cwd: Optional[str] - Working directory / sandbox root for the agent
@@ -177,7 +177,7 @@ class GlobalDispatcher:
                     f"preset must be string, got: {type(preset).__name__}"
                 )
             # yolo is NOT allowed via RPC - only through interactive REPL
-            valid_presets = {"trusted", "sandboxed", "worker"}
+            valid_presets = {"trusted", "sandboxed"}
             if preset not in valid_presets:
                 raise InvalidParamsError(
                     f"Invalid preset: {preset}. Valid: {sorted(valid_presets)}"
@@ -298,9 +298,9 @@ class GlobalDispatcher:
                 write_paths.append(wp_path.resolve())
 
         # SECURITY: Validate write paths are within cwd (sandbox root)
-        # Applies to ALL sandboxed/worker agents, not just subagents
+        # Applies to ALL sandboxed agents, not just subagents
         effective_preset = preset or "sandboxed"
-        if effective_preset in ("sandboxed", "worker") and write_paths:
+        if effective_preset == "sandboxed" and write_paths:
             sandbox_root = cwd_path if cwd_path is not None else Path.cwd()
             for wp in write_paths:
                 try:
@@ -341,7 +341,7 @@ class GlobalDispatcher:
         WRITE_FILE_TOOLS = ("write_file", "edit_file", "append_file", "regex_replace", "mkdir")
         MIXED_FILE_TOOLS = ("copy_file", "rename")  # Read source, write destination
 
-        if effective_preset in ("sandboxed", "worker"):
+        if effective_preset == "sandboxed":
             tool_overrides: dict[str, ToolPermission] = {}
 
             if write_paths is not None and write_paths:

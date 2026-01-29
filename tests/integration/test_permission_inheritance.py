@@ -179,8 +179,8 @@ class TestParentCanCreateChildWithMoreRestrictivePreset:
             assert child_permissions.base_preset == "trusted"
 
     @pytest.mark.asyncio
-    async def test_trusted_parent_creates_worker_child_backwards_compat(self, tmp_path: Path) -> None:
-        """Parent with 'trusted' can create child with 'worker' (maps to sandboxed)."""
+    async def test_unknown_preset_falls_back_to_sandboxed(self, tmp_path: Path) -> None:
+        """Unknown preset (including removed worker) falls back to sandboxed for security."""
         shared = create_mock_shared_components(tmp_path)
 
         with patch("nexus3.skill.builtin.register_builtin_skills"):
@@ -192,19 +192,18 @@ class TestParentCanCreateChildWithMoreRestrictivePreset:
             )
             parent_permissions = parent.services.get("permissions")
 
-            # Create child with worker preset (now maps to sandboxed for backwards compat)
+            # Unknown preset falls back to sandboxed (security: unknown -> most restrictive)
             child = await pool.create(
                 config=AgentConfig(
                     agent_id="child",
-                    preset="worker",
+                    preset="unknown_preset_xyz",
                     parent_permissions=parent_permissions,
                 )
             )
 
-            # Child should be created successfully with sandboxed preset (worker maps to sandboxed)
+            # Child should be sandboxed due to fallback
             assert child.agent_id == "child"
             child_permissions = child.services.get("permissions")
-            # Worker now maps to sandboxed
             assert child_permissions.base_preset == "sandboxed"
             assert child_permissions.effective_policy.level == PermissionLevel.SANDBOXED
 
@@ -375,33 +374,6 @@ class TestYoloParentCanCreateLowerPresets:
             assert child.agent_id == "child"
             child_permissions = child.services.get("permissions")
             assert child_permissions.base_preset == "sandboxed"
-
-    @pytest.mark.asyncio
-    async def test_yolo_parent_creates_worker_child_backwards_compat(self, tmp_path: Path) -> None:
-        """YOLO parent can create child with worker preset (maps to sandboxed)."""
-        shared = create_mock_shared_components(tmp_path)
-
-        with patch("nexus3.skill.builtin.register_builtin_skills"):
-            pool = AgentPool(shared)
-
-            parent = await pool.create(
-                config=AgentConfig(agent_id="parent", preset="yolo")
-            )
-            parent_permissions = parent.services.get("permissions")
-
-            child = await pool.create(
-                config=AgentConfig(
-                    agent_id="child",
-                    preset="worker",
-                    parent_permissions=parent_permissions,
-                )
-            )
-
-            assert child.agent_id == "child"
-            child_permissions = child.services.get("permissions")
-            # Worker now maps to sandboxed
-            assert child_permissions.base_preset == "sandboxed"
-
 
 class TestChildInheritsCeilingFromParent:
     """Child's ceiling should be set to parent's permissions."""

@@ -616,6 +616,21 @@ Handles circular dependency between AgentPool and GlobalDispatcher:
 - Write tools are disabled by default
 - `yolo` preset is NOT available via RPC
 
+### YOLO Agent Safety
+
+YOLO agents have no permission confirmations, making them dangerous for unattended operation. RPC enforces two safety restrictions:
+
+1. **Cannot create via RPC**: `create_agent` with `preset=yolo` returns an error
+2. **Cannot send unless REPL connected**: RPC `send` to a YOLO agent is blocked unless the REPL is actively connected to that agent
+
+The second restriction prevents scenarios where a YOLO agent could run unattended after being created via REPL but controlled via RPC. Connection state is tracked via:
+
+- `Agent.repl_connected`: Boolean field on the Agent dataclass
+- `AgentPool.set_repl_connected(agent_id, connected)`: Set connection state
+- `AgentPool.is_repl_connected(agent_id)`: Check connection state
+
+When blocked, returns error: `"Cannot send to YOLO agent - no REPL connected"`
+
 ### Enabling Writes
 
 ```bash
@@ -638,7 +653,6 @@ nexus3 rpc create writer --cwd /tmp/project --write-path /tmp/project/output
 | Preset | Capabilities |
 |--------|--------------|
 | `sandboxed` | Read-only in cwd, no network, no agent management |
-| `worker` | Minimal: sandboxed minus write_file |
 | `trusted` | Full read/write, agent management allowed |
 
 ### Ceiling Enforcement

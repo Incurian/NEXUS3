@@ -473,9 +473,29 @@ class PermissionEnforcer:
 Permission checks:
 1. Tool enabled (not disabled by policy)
 2. Action allowed (by permission level)
-3. Path allowed (sandbox, per-tool, blocked paths)
+3. **Target allowed** (for nexus_* tools with `allowed_targets` restriction)
+4. Path allowed (sandbox, per-tool, blocked paths)
 
 Uses `PathDecisionEngine` for consistent path validation across all checks.
+
+### Target Validation
+
+For inter-agent communication tools (`nexus_send`, `nexus_status`, `nexus_cancel`, `nexus_destroy`), the enforcer validates that the target `agent_id` is permitted by the tool's `allowed_targets` setting:
+
+```python
+# Tools checked for target restrictions
+AGENT_TARGET_TOOLS = frozenset({
+    "nexus_send", "nexus_status", "nexus_cancel", "nexus_destroy"
+})
+```
+
+The `_check_target_allowed()` method resolves relationship-based restrictions:
+- `"parent"`: Compares against `permissions.parent_agent_id`
+- `"children"`: Checks `services.get_child_agent_ids()`
+- `"family"`: Allows either parent or children
+- `list[str]`: Explicit allowlist comparison
+
+This enables sandboxed agents to report results back to their parent while being isolated from all other agents.
 
 ### ConfirmationController
 

@@ -58,7 +58,7 @@ from nexus3.commands.protocol import CommandResult as CmdResult
 from nexus3.config.loader import load_config
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
-from nexus3.core.permissions import ConfirmationResult
+from nexus3.core.permissions import ConfirmationResult, PermissionLevel
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.core.types import ToolCall
 from nexus3.display import Activity, Spinner, get_console
@@ -462,6 +462,7 @@ async def run_repl(
 
     # Phase 6: Agent management state
     current_agent_id = agent_name
+    pool.set_repl_connected(agent_name, True)
     whisper = WhisperMode()
 
     # Helper to create command context (captures current state)
@@ -1106,8 +1107,6 @@ async def run_repl(
                     perm = "trusted"
                 elif p_lower in ("--sandboxed", "-s"):
                     perm = "sandboxed"
-                elif p_lower in ("--worker", "-w"):
-                    perm = "worker"
                 elif p_lower in ("--model", "-m"):
                     if i + 1 >= len(create_parts):
                         return CommandOutput.error(
@@ -1253,6 +1252,13 @@ async def run_repl(
             if not user_input.strip():
                 continue
 
+            # YOLO mode warning - every turn
+            agent = pool.get(current_agent_id)
+            if agent:
+                perms = agent.services.get("permissions")
+                if perms and perms.effective_policy.level == PermissionLevel.YOLO:
+                    console.print("[bold red]⚠️  YOLO MODE - All actions execute without confirmation[/]")
+
             # Track whisper state before handling command (for /over visual)
             was_whisper = whisper.is_active()
 
@@ -1278,7 +1284,9 @@ async def run_repl(
                         new_id = output.new_agent_id
                         new_agent = pool.get(new_id)
                         if new_agent:
+                            pool.set_repl_connected(current_agent_id, False)
                             current_agent_id = new_id
+                            pool.set_repl_connected(new_id, True)
                             session = new_agent.session
                             logger = new_agent.logger
                             # Detach callbacks from old session, attach to new
@@ -1338,7 +1346,9 @@ async def run_repl(
                                             style="dim green",
                                         )
                                         # Switch to restored agent
+                                        pool.set_repl_connected(current_agent_id, False)
                                         current_agent_id = agent_name_to_restore
+                                        pool.set_repl_connected(agent_name_to_restore, True)
                                         session = new_agent.session
                                         logger = new_agent.logger
                                         # Detach callbacks from old session, attach to new
@@ -1386,7 +1396,9 @@ async def run_repl(
 
                                     if action == "prompt_create":
                                         # Switch to the new agent
+                                        pool.set_repl_connected(current_agent_id, False)
                                         current_agent_id = agent_name_to_create
+                                        pool.set_repl_connected(agent_name_to_create, True)
                                         session = new_agent.session
                                         logger = new_agent.logger
                                         # Detach callbacks from old session, attach to new
@@ -1590,15 +1602,18 @@ async def run_repl(
     # 3. Delete the API key file
     token_manager.delete()
 
-    # 4. Destroy all agents (cleans up loggers)
+    # 4. Clear REPL connection state before destroying agents
+    pool.set_repl_connected(current_agent_id, False)
+
+    # 5. Destroy all agents (cleans up loggers)
     for agent_info in pool.list():
         await pool.destroy(agent_info["agent_id"])
 
-    # 5. G1: Close provider HTTP clients
+    # 6. Close provider HTTP clients
     if shared and shared.provider_registry:
         await shared.provider_registry.aclose()
 
-    # 6. Close MCP connections (prevents unclosed transport warnings on Windows)
+    # 7. Close MCP connections (prevents unclosed transport warnings on Windows)
     if shared and shared.mcp_registry:
         await shared.mcp_registry.close_all()
 

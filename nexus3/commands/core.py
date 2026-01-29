@@ -126,7 +126,7 @@ async def cmd_create(
     Args:
         ctx: Command context with pool and session_manager.
         name: Name for the new agent.
-        permission: Permission level ("sandboxed", "trusted", "yolo", "worker").
+        permission: Permission level ("sandboxed", "trusted", "yolo").
         model: Model name/alias to use (None for default).
 
     Returns:
@@ -135,7 +135,7 @@ async def cmd_create(
     from nexus3.rpc.pool import AgentConfig
 
     # Validate permission level
-    valid_permissions = {"sandboxed", "trusted", "yolo", "worker"}
+    valid_permissions = {"sandboxed", "trusted", "yolo"}
     if permission not in valid_permissions:
         return CommandOutput.error(
             f"Invalid permission level: {permission}. "

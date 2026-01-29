@@ -195,7 +195,7 @@ Create a new agent without switching to it.
 
 **Parameters:**
 - `name`: Agent ID (must not exist)
-- `permission`: One of `"sandboxed"`, `"trusted"`, `"yolo"`, `"worker"`
+- `permission`: One of `"sandboxed"`, `"trusted"`, `"yolo"`
 - `model`: Optional model alias or ID (None for default)
 
 **Returns** in `data`:

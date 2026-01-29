@@ -16,42 +16,42 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ## Current Development
 
-### In Progress: YOLO Safety Improvements
+### In Progress: Sandboxed Parent Send
 
-**Plan**: `docs/plans/YOLO-SAFETY-PLAN.md`
+**Plan**: `docs/plans/SANDBOXED-PARENT-SEND-PLAN.md`
 
-**Goals:**
-1. YOLO warning banner on every turn (intentionally annoying)
-2. Remove legacy "worker" preset completely
-3. Block RPC `send` to YOLO agents when no REPL connected
+**Goal:** Allow sandboxed agents to use `nexus_send` but **only to their parent agent**. This enables child agents to report back results without breaking the security sandbox.
 
-**Key Implementation Details:**
+**Key Design:**
+- Add `allowed_targets` field to `ToolPermission` dataclass
+- Extend `PermissionEnforcer` with `_check_target_allowed()` method
+- Update sandboxed preset: `nexus_send` enabled with `allowed_targets="parent"`
 
-| Component | File | Location |
-|-----------|------|----------|
-| YOLO warning | `nexus3/cli/repl.py` | After line 1217 (after empty input check) |
-| Agent.repl_connected field | `nexus3/rpc/pool.py` | Add to Agent dataclass |
-| Pool helper methods | `nexus3/rpc/pool.py` | `set_repl_connected()`, `is_repl_connected()` |
-| Dispatcher pool param | `nexus3/rpc/dispatcher.py` | Add to `__init__`, check in `_handle_send()` |
-| REPL connection updates | `nexus3/cli/repl.py` | Lines ~1244, ~1304, ~1352, startup, exit |
+**Target Restriction Types:**
+| Value | Meaning |
+|-------|---------|
+| `None` | No restriction - can send to any agent |
+| `"parent"` | Can only send to parent_agent_id |
+| `"children"` | Can only send to agents in child_agent_ids |
+| `"family"` | Can send to parent OR children |
+| `["id1", "id2"]` | Explicit allowlist of agent IDs |
 
-**Worker Removal Files:**
-- `nexus3/core/permissions.py:312-314` - mapping
-- `nexus3/core/presets.py:176-178` - mapping
-- `nexus3/rpc/global_dispatcher.py:126,180,291,293,322` - valid_presets + checks
-- `nexus3/cli/repl.py:1072-1073` - `--worker` flag
-- `nexus3/cli/arg_parser.py` - CLI choices
-- `nexus3/commands/core.py` - valid_permissions
-- `CLAUDE.md` - documentation
+**Key Files:**
+| Component | File |
+|-----------|------|
+| ToolPermission dataclass | `nexus3/core/presets.py` |
+| TargetRestriction type | `nexus3/core/presets.py` |
+| PermissionEnforcer | `nexus3/session/enforcer.py` |
+| Sandboxed preset | `nexus3/core/presets.py` |
 
 **Checklist:**
-- [ ] P1: YOLO warning banner (P1.1-P1.2)
-- [ ] P2: Connection tracking infrastructure (P2.1-P2.5)
-- [ ] P3: RPC-to-YOLO block (P3.1-P3.2)
-- [ ] P4: REPL connection updates (P4.1-P4.5)
-- [ ] P5: Worker preset removal (P5.1-P5.6) - can parallel with P1-P4
-- [ ] P6: Documentation (P6.1-P6.4)
-- [ ] P7: Live testing (P7.1-P7.5)
+- [x] P0: Pre-implementation fixes (P0.1-P0.3)
+- [x] P1: Extend ToolPermission (P1.1-P1.4)
+- [x] P2: Extend PermissionEnforcer (P2.1-P2.4)
+- [x] P3: Update sandboxed preset (P3.1-P3.2)
+- [x] P4: Integration testing (P4.1-P4.4)
+- [ ] P5: Live testing (P5.1-P5.2)
+- [x] P6: Documentation (P6.1-P6.4)
 
 ---
 
@@ -70,6 +70,7 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 - `WINDOWS-NATIVE-COMPATIBILITY.md` - ESC key, process termination, line endings, BOM, etc.
 - `MCP-IMPLEMENTATION-GAPS.md` - Resources, Prompts, ping, Windows polish
 - `MCP-REMAINING-PHASES.md` - Detailed breakout of MCP work
+- `YOLO-SAFETY-PLAN.md` - YOLO warning banner, worker removal, RPC-to-YOLO block
 
 ### On Deck
 
@@ -77,11 +78,9 @@ Plans listed in recommended implementation order (in `docs/plans/`):
 
 | Priority | Plan | Description |
 |----------|------|-------------|
-| 1 | `YOLO-SAFETY-PLAN.md` | YOLO warning banner, remove legacy "worker" preset, block RPC send to YOLO agents. |
-| 2 | `CONCAT-FILES-PLAN.md` | New `concat_files` skill to bundle source files with token estimation. |
-| 3 | `CLIPBOARD-PLAN.md` | Scoped clipboard system for copy/paste across files and agents. |
-| 4 | `SANDBOXED-PARENT-SEND-PLAN.md` | Allow sandboxed agents to `nexus_send` to parent only. |
-| 5 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration. *Depends on #4 for enforcer patterns.* |
+| 1 | `CONCAT-FILES-PLAN.md` | New `concat_files` skill to bundle source files with token estimation. |
+| 2 | `CLIPBOARD-PLAN.md` | Scoped clipboard system for copy/paste across files and agents. |
+| 3 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration. *Depends on SANDBOXED-PARENT-SEND for enforcer patterns.* |
 
 **Plan templates** (in `docs/plans/examples/`):
 - `EXAMPLE-PLAN-SIMPLE.md` - Template for focused single-feature plans
@@ -89,6 +88,7 @@ Plans listed in recommended implementation order (in `docs/plans/`):
 
 **Pending testing** (in `docs/testing/`):
 - `WINDOWS-LIVE-TESTING-GUIDE.md` - Manual testing matrix for Windows shell environments
+- `YOLO-SAFETY-LIVE-TESTING.md` - YOLO warning, RPC blocking, worker removal verification
 
 **Reference docs** (in `docs/references/`):
 - `GITHUB-REFERENCE.md` - GitHub API/CLI reference
@@ -1111,8 +1111,21 @@ nexus3 --init-global-force     # Overwrite existing
 |--------|-------|-------------|
 | `yolo` | YOLO | Full access, no confirmations (REPL-only) |
 | `trusted` | TRUSTED | Confirmations for destructive actions |
-| `sandboxed` | SANDBOXED | CWD only, no network, nexus tools disabled (default for RPC) |
-| `worker` | SANDBOXED | Legacy alias for sandboxed |
+| `sandboxed` | SANDBOXED | CWD only, no network, limited nexus tools (default for RPC) |
+
+### Target Restrictions
+
+Some tools support `allowed_targets` restrictions that limit which agents they can communicate with:
+
+| Restriction | Meaning |
+|-------------|---------|
+| `None` | No restriction - can target any agent |
+| `"parent"` | Can only target the agent's parent (who created it) |
+| `"children"` | Can only target agents this one created |
+| `"family"` | Can target parent OR children |
+| `["id1", "id2"]` | Explicit allowlist of agent IDs |
+
+This is used by `nexus_send`, `nexus_status`, `nexus_cancel`, and `nexus_destroy` to control inter-agent communication.
 
 ### RPC Agent Permission Quirks (IMPORTANT)
 
@@ -1131,11 +1144,11 @@ nexus3 --init-global-force     # Overwrite existing
 
 5. **Trusted agents in RPC mode**: Can read anywhere, but destructive operations follow the same confirmation logic (which auto-allows within CWD in non-interactive mode).
 
-6. **YOLO is REPL-only**: You CANNOT create a yolo agent via RPC. The yolo preset is only available in interactive REPL mode.
+6. **YOLO is REPL-only**: You CANNOT create a yolo agent via RPC (blocked in global_dispatcher). YOLO agents can only be created in the interactive REPL. Additionally, RPC `send` to YOLO agents is blocked unless the REPL is actively connected to that agent. If a user creates a YOLO agent in REPL, switches to another agent, then tries `nexus3 rpc send` to the YOLO agent, it fails with "Cannot send to YOLO agent - no REPL connected". This ensures YOLO operations always have active user supervision.
 
 7. **Trusted agents can only create sandboxed subagents**: A trusted agent cannot spawn another trusted agent - all subagents are sandboxed (ceiling enforcement).
 
-8. **Sandboxed agents cannot create agents at all**: The `nexus_create`, `nexus_destroy`, `nexus_send`, and other nexus tools are completely disabled for sandboxed agents.
+8. **Sandboxed agents have limited nexus tools**: Most nexus tools (`nexus_create`, `nexus_destroy`, `nexus_status`, `nexus_cancel`, `nexus_shutdown`) are disabled for sandboxed agents. However, **`nexus_send` IS enabled with `allowed_targets="parent"`** - sandboxed agents can send messages back to their parent agent to report results. They cannot message any other agent.
 
 9. **Subagent cwd must be within parent's cwd**: When creating a subagent, the child's `cwd` must be within the parent's `cwd`. This prevents privilege escalation where a child could operate in a directory the parent shouldn't access.
 

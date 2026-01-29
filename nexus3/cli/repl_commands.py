@@ -1099,11 +1099,6 @@ async def _change_preset(
 ) -> CommandOutput:
     """Change agent to a new preset."""
 
-    # Handle legacy "worker" preset by mapping to sandboxed
-    original_preset_name = preset_name
-    if preset_name == "worker":
-        preset_name = "sandboxed"
-
     builtin = get_builtin_presets()
     all_presets = dict(builtin)
     if custom_presets:
@@ -1112,7 +1107,7 @@ async def _change_preset(
     if preset_name not in all_presets:
         valid = ", ".join(all_presets.keys())
         return CommandOutput.error(
-            f"Unknown preset: {original_preset_name}. Valid: {valid}"
+            f"Unknown preset: {preset_name}. Valid: {valid}"
         )
 
     # Check ceiling

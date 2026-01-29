@@ -273,11 +273,28 @@ Named permission configurations and tool permissions.
 
 | Export | Description |
 |--------|-------------|
-| `ToolPermission` | Per-tool config: `enabled`, `allowed_paths`, `timeout`, `requires_confirmation` |
+| `ToolPermission` | Per-tool config: `enabled`, `allowed_paths`, `timeout`, `requires_confirmation`, `allowed_targets` |
 | `PermissionPreset` | Named preset: `name`, `level`, `description`, paths, `tool_permissions` |
 | `PermissionDelta` | Changes to apply: `disable_tools`, `enable_tools`, `allowed_paths`, etc. |
+| `TargetRestriction` | Type alias for `allowed_targets` values |
 | `get_builtin_presets()` | Returns dict of yolo/trusted/sandboxed presets |
 | `load_custom_presets_from_config()` | Load custom presets from config dict |
+
+**TargetRestriction Type:**
+
+The `TargetRestriction` type alias defines valid values for `ToolPermission.allowed_targets`:
+
+```python
+TargetRestriction = list[str] | Literal["parent"] | Literal["children"] | Literal["family"] | None
+```
+
+| Value | Meaning |
+|-------|---------|
+| `None` | No restriction - can target any agent |
+| `"parent"` | Can only target the agent's parent_agent_id |
+| `"children"` | Can only target agents in child_agent_ids |
+| `"family"` | Can target parent OR children |
+| `["id1", "id2"]` | Explicit allowlist of agent IDs |
 
 **Built-in Presets:**
 
@@ -285,7 +302,7 @@ Named permission configurations and tool permissions.
 |--------|-------|-------------|
 | `yolo` | YOLO | Full access, no confirmations |
 | `trusted` | TRUSTED | CWD auto-allowed, prompts for other paths |
-| `sandboxed` | SANDBOXED | No execution, no agent management, sandbox only |
+| `sandboxed` | SANDBOXED | No execution, limited agent management, sandbox only |
 
 ```python
 from nexus3.core.presets import get_builtin_presets, ToolPermission
@@ -296,6 +313,11 @@ sandboxed = presets["sandboxed"]
 # Sandboxed disables these tools
 assert sandboxed.tool_permissions["bash_safe"].enabled is False
 assert sandboxed.tool_permissions["nexus_create"].enabled is False
+
+# But nexus_send is enabled with parent-only restriction
+send_perm = sandboxed.tool_permissions["nexus_send"]
+assert send_perm.enabled is True
+assert send_perm.allowed_targets == "parent"
 ```
 
 ---
