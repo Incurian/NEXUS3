@@ -16,106 +16,6 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ## Current Development
 
-### Recently Completed
-
-| Feature | Branch | Status |
-|---------|--------|--------|
-| Windows Shell Compatibility | `feature/windows-native-compat` | ✅ COMPLETE |
-| Edit/Patch Skills | `feature/windows-native-compat` | ✅ COMPLETE |
-
-**Edit/Patch Skills** (`EDIT-PATCH-PLAN.md`):
-- Split `edit_file` into `edit_file` (string replacement) and `edit_lines` (line-based)
-- Added batched edits to `edit_file` with `edits` array parameter
-- New `patch` skill for applying unified diffs with strict/tolerant/fuzzy modes
-- New `nexus3/patch/` module with parser, validator, and applier
-
-### Edit/Patch Tools Live Testing Protocol
-
-**Setup:**
-```bash
-# Create test directory and file
-mkdir -p /tmp/nexus-edit-test
-cat > /tmp/nexus-edit-test/test.py << 'EOF'
-#!/usr/bin/env python3
-"""Test file for edit tools."""
-
-def greet(name):
-    """Greet someone."""
-    print(f"Hello, {name}!")
-
-def add(a, b):
-    """Add two numbers."""
-    return a + b
-
-def subtract(a, b):
-    """Subtract b from a."""
-    return a - b
-
-class Calculator:
-    """Simple calculator class."""
-
-    def __init__(self):
-        self.value = 0
-
-    def add(self, x):
-        self.value += x
-        return self
-
-    def subtract(self, x):
-        self.value -= x
-        return self
-
-    def result(self):
-        return self.value
-
-if __name__ == "__main__":
-    greet("World")
-    print(f"2 + 3 = {add(2, 3)}")
-    print(f"5 - 2 = {subtract(5, 2)}")
-
-    calc = Calculator()
-    print(f"Calculator: {calc.add(10).subtract(3).result()}")
-EOF
-
-# Start server and create agent
-NEXUS_DEV=1 .venv/bin/python -m nexus3 --serve 9000 &
-sleep 2
-.venv/bin/python -m nexus3 rpc create tester --preset trusted --cwd /tmp/nexus-edit-test --port 9000
-```
-
-**Test Protocol:**
-1. For each test, send a message to the agent asking it to use the specific tool/mode
-2. After each test, READ THE FULL FILE to verify changes and check for side effects
-3. Reset the file before moving to next test group if needed
-4. Note any errors or unexpected behavior
-
-**Test Checklist:**
-
-| # | Tool | Test | Command to Agent | Verify |
-|---|------|------|------------------|--------|
-| 1 | `edit_file` | single replacement | "Change 'Hello' to 'Hi' on line 6" | Only line 6 changed |
-| 2 | `edit_file` | `replace_all=true` | "Change all 'self.value' to 'self._data'" | All 4 occurrences changed |
-| 3 | `edit_file` | `edits` array | "Change 'Add two numbers' to 'Sum' AND 'Subtract b from a' to 'Diff' in one call using edits array" | Both docstrings changed |
-| 4 | `edit_lines` | single line | "Replace line 34 with greet('Universe')" | Only line 34 changed |
-| 5 | `edit_lines` | line range | "Replace lines 35-36 with single line" | Two lines become one |
-| 6 | `edit_lines` | delete | "Delete lines 37-38 using empty new_content" | Lines removed |
-| 7 | `patch` | strict inline | "Use patch with inline diff to change 'Hello' to 'Howdy'" | Patch applied |
-| 8 | `patch` | dry_run | "Use patch with dry_run=true" | No file changes |
-| 9 | `patch` | tolerant | "Use patch mode=tolerant to add multiply function" | No trailing whitespace |
-| 10 | `patch` | fuzzy | "Use patch mode=fuzzy with threshold" | Patch applied |
-| 11 | `patch` | diff_file | "Create fix.patch file, then apply with diff_file param and mode=tolerant" | Patch applied from file |
-
-**Cleanup:**
-```bash
-.venv/bin/python -m nexus3 rpc destroy tester --port 9000
-.venv/bin/python -m nexus3 rpc shutdown --port 9000
-```
-
-**Previous Test Results (2026-01-29):**
-- Tests 1-10: PASS
-- Test 11: Initially FAILED, then FIXED (validation skipped for tolerant/fuzzy modes)
-- Bugs fixed: tolerant mode whitespace artifacts, diff_file validation bypass
-
 ### Ready to Merge
 
 | Branch | Status | Notes |
@@ -124,6 +24,10 @@ sleep 2
 | `feature/mcp-improvements` | ✅ COMPLETE | Parent branch, merge to master |
 
 **Archived plans** (in `.archive/`, verified complete):
+- `EDIT-PATCH-PLAN.md` - edit_file batching, edit_lines, patch skill with unified diff support
+- `COMMAND-HELP.md` - Per-command help system (COMMAND_HELP dict in repl_commands.py)
+- `WINDOWS-SHELL-COMPATIBILITY.md` - Shell detection, ANSI adaptation, startup warnings
+- `WINDOWS-TROUBLESHOOTING.md` - User troubleshooting guide for Windows
 - `WINDOWS-NATIVE-COMPATIBILITY.md` - ESC key, process termination, line endings, BOM, etc.
 - `MCP-IMPLEMENTATION-GAPS.md` - Resources, Prompts, ping, Windows polish
 - `MCP-REMAINING-PHASES.md` - Detailed breakout of MCP work
@@ -139,6 +43,9 @@ Plans listed in recommended implementation order:
 | 3 | `CLIPBOARD-PLAN.md` | Scoped clipboard system for copy/paste across files and agents. |
 | 4 | `SANDBOXED-PARENT-SEND-PLAN.md` | Allow sandboxed agents to `nexus_send` to parent only. |
 | 5 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration. *Depends on #4 for enforcer patterns.* |
+
+**Pending testing** (implementation complete, needs Windows validation):
+- `WINDOWS-LIVE-TESTING-GUIDE.md` - Manual testing matrix for Windows shell environments
 
 **Reference docs** (not plans):
 - `GITHUB-REFERENCE.md` - GitHub API/CLI reference
@@ -1361,7 +1268,7 @@ These are documented limitations, not bugs:
 | Symlink detection | `is_symlink()` misses junctions/reparse points | Symlink attack assumptions weaker |
 | Permission bits | `S_IRWXG\|S_IRWXO` checks meaningless | ACL-based validation not implemented |
 
-**Test coverage**: 2673 tests including 756 security-specific tests.
+**Test coverage**: 2853 tests including 756 security-specific tests.
 
 ---
 
