@@ -28,6 +28,51 @@ def get_session_start_str() -> str:
     return f"[Session started: {now.strftime('%Y-%m-%d %H:%M')} (local)]"
 
 
+# Maximum length for tool result prefix (tool name + args)
+TOOL_RESULT_PREFIX_MAX_LEN = 120
+
+
+def format_tool_result_prefix(
+    call_index: int,
+    name: str,
+    arguments: dict[str, Any] | None,
+) -> str:
+    """Format a prefix for tool results to help models correlate calls with results.
+
+    Args:
+        call_index: 1-based index of this call in the batch
+        name: Tool name
+        arguments: Tool arguments (will be truncated if too long)
+
+    Returns:
+        Formatted prefix like "[#1: list_directory(path="nexus3/core/")]"
+    """
+    if not arguments:
+        return f"[#{call_index}: {name}()]\n"
+
+    # Format arguments, skipping internal ones like _parallel
+    # Also skip 'content' for write operations (too long, potentially sensitive)
+    skip_keys = {"_parallel", "content", "new_content", "code"}
+    args_parts = []
+    for k, v in arguments.items():
+        if k in skip_keys:
+            continue
+        # Truncate long values
+        v_str = str(v)
+        if len(v_str) > 50:
+            v_str = v_str[:47] + "..."
+        args_parts.append(f'{k}="{v_str}"')
+
+    args_str = ", ".join(args_parts)
+
+    # Build prefix and truncate if needed
+    prefix = f"[#{call_index}: {name}({args_str})]"
+    if len(prefix) > TOOL_RESULT_PREFIX_MAX_LEN:
+        prefix = prefix[: TOOL_RESULT_PREFIX_MAX_LEN - 4] + "...)]"
+
+    return prefix + "\n"
+
+
 def inject_datetime_into_prompt(prompt: str, datetime_line: str) -> str:
     """Inject datetime line into prompt at the Environment section.
 
@@ -231,6 +276,8 @@ class ContextManager:
         tool_call_id: str,
         name: str,
         result: ToolResult,
+        call_index: int | None = None,
+        arguments: dict[str, Any] | None = None,
     ) -> None:
         """Add a tool result to context.
 
@@ -238,8 +285,16 @@ class ContextManager:
             tool_call_id: ID of the tool call this is responding to
             name: Name of the tool
             result: Tool execution result
+            call_index: 1-based index of this call in the batch (for correlation prefix)
+            arguments: Original arguments (for correlation prefix)
         """
         content = result.error if result.error else result.output
+
+        # Add correlation prefix if index provided
+        if call_index is not None:
+            prefix = format_tool_result_prefix(call_index, name, arguments)
+            content = prefix + content
+
         msg = Message(
             role=Role.TOOL,
             content=content,

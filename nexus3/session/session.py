@@ -486,8 +486,13 @@ class Session:
                         self._log_event(tool_start)
                         yield tool_start
                     tool_results = await self._execute_tools_parallel(final_message.tool_calls)
-                    for tc, tool_result in zip(final_message.tool_calls, tool_results, strict=True):
-                        self.context.add_tool_result(tc.id, tc.name, tool_result)
+                    for i, (tc, tool_result) in enumerate(
+                        zip(final_message.tool_calls, tool_results, strict=True), start=1
+                    ):
+                        self.context.add_tool_result(
+                            tc.id, tc.name, tool_result,
+                            call_index=i, arguments=tc.arguments,
+                        )
                         tool_complete = ToolCompleted(
                             name=tc.name,
                             tool_id=tc.id,
@@ -508,7 +513,10 @@ class Session:
                         self._log_event(tool_start)
                         yield tool_start
                         tool_result = await self._execute_single_tool(tc)
-                        self.context.add_tool_result(tc.id, tc.name, tool_result)
+                        self.context.add_tool_result(
+                            tc.id, tc.name, tool_result,
+                            call_index=i + 1, arguments=tc.arguments,
+                        )
                         tool_complete = ToolCompleted(
                             name=tc.name,
                             tool_id=tc.id,
