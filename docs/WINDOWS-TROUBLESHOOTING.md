@@ -71,6 +71,116 @@ Get-Process python | Where-Object {$_.MainWindowTitle -eq ""} | Stop-Process
 
 **For older versions:** Save config files as "UTF-8" not "UTF-8 with BOM" in your editor.
 
+## Shell-Specific Troubleshooting
+
+Different Windows shells have different capabilities. NEXUS3 detects your shell and adapts automatically, but some issues are shell-specific.
+
+### Detecting Your Shell
+
+Run this to see what shell NEXUS3 detects:
+
+```bash
+.venv/bin/python -c "
+from nexus3.core.shell_detection import detect_windows_shell, supports_ansi, supports_unicode, check_console_codepage
+shell = detect_windows_shell()
+print(f'Detected shell: {shell}')
+print(f'Supports ANSI: {supports_ansi()}')
+print(f'Supports Unicode: {supports_unicode()}')
+codepage, is_utf8 = check_console_codepage()
+print(f'Console codepage: {codepage} (UTF-8: {is_utf8})')
+"
+```
+
+### CMD.exe Issues
+
+**Symptom:** Output shows plain text without colors or formatting.
+
+**Cause:** CMD.exe does not support ANSI escape sequences. NEXUS3 detects this and uses legacy mode automatically.
+
+**Solutions:**
+1. **Best:** Use Windows Terminal instead (free from Microsoft Store)
+2. **Alternative:** Use PowerShell 7+ which has better ANSI support
+3. **Workaround:** If you must use CMD.exe, the plain text output is functional but less readable
+
+**Symptom:** Unicode characters show as `?` or boxes.
+
+**Cause:** CMD.exe default code page doesn't support Unicode box drawing.
+
+**Solutions:**
+1. Run `chcp 65001` before starting NEXUS3 to switch to UTF-8
+2. Use Windows Terminal which defaults to UTF-8
+
+### PowerShell 5.1 Issues
+
+**Symptom:** ANSI escape sequences visible as `[32m` etc.
+
+**Cause:** PowerShell 5.1 has limited ANSI support outside Windows Terminal.
+
+**Solutions:**
+1. **Best:** Upgrade to PowerShell 7+ (`winget install Microsoft.PowerShell`)
+2. **Alternative:** Use Windows Terminal which wraps PowerShell with proper ANSI
+3. **Workaround:** Set `$env:TERM = "dumb"` to force plain text mode
+
+### Git Bash (MSYS2) Issues
+
+**Symptom:** Windows paths like `C:\Users\foo` converted to `/c/Users/foo`.
+
+**Cause:** MSYS2 automatic path conversion (intended for Unix tool compatibility).
+
+**Solutions:**
+1. Disable path conversion for specific commands: `MSYS2_ARG_CONV_EXCL="*" command`
+2. Use forward slashes: `C:/Users/foo` (works in most Windows tools)
+3. Use quotes around paths: `"C:\Users\foo"`
+
+**Symptom:** SSL certificate errors when connecting to APIs.
+
+**Cause:** Git Bash uses its own certificate store, not Windows.
+
+**Solutions:**
+1. Set `ssl_ca_cert` in config to point to Git's CA bundle:
+   ```json
+   {"provider": {"ssl_ca_cert": "C:/Program Files/Git/mingw64/ssl/certs/ca-bundle.crt"}}
+   ```
+2. Or set environment variable: `SSL_CERT_FILE=/c/Program Files/Git/mingw64/ssl/certs/ca-bundle.crt`
+
+### Windows Terminal Issues
+
+**Symptom:** Colors or Unicode not working in Windows Terminal.
+
+**Cause:** Rare - Windows Terminal has excellent ANSI/Unicode support.
+
+**Solutions:**
+1. Ensure Windows Terminal is up to date
+2. Check terminal profile settings (Settings > Defaults > Appearance)
+3. Verify the shell inside Terminal is correctly detected (run detection script above)
+
+### Shell Detection Wrong
+
+If NEXUS3 detects the wrong shell:
+
+**Symptom:** Getting plain text when colors should work, or ANSI garbage when they shouldn't.
+
+**Debugging:**
+1. Check environment variables:
+   ```powershell
+   echo WT_SESSION=$env:WT_SESSION MSYSTEM=$env:MSYSTEM PSModulePath=$env:PSModulePath COMSPEC=$env:COMSPEC
+   ```
+2. Detection order: WT_SESSION > MSYSTEM > PSModulePath > COMSPEC
+
+**Workaround:** Force a specific mode by setting environment variables before starting NEXUS3:
+- For full ANSI: `$env:WT_SESSION = "forced"`
+- For legacy mode: Clear all detection vars and set only COMSPEC
+
+### Shell Capability Reference
+
+| Shell | ANSI Colors | Unicode | UTF-8 Default | Notes |
+|-------|-------------|---------|---------------|-------|
+| Windows Terminal | Yes | Yes | Yes | Best experience |
+| PowerShell 7+ | Yes | Yes | Yes | Good experience |
+| PowerShell 5.1 | No* | Partial | No | *Yes inside Windows Terminal |
+| Git Bash | Yes | Yes | Yes | MSYS2 path conversion issues |
+| CMD.exe | No | No | No | Plain text fallback |
+
 ## Known Limitations
 
 These are documented platform differences, not bugs:

@@ -1264,3 +1264,34 @@ These are documented limitations, not bugs:
 | Permission bits | `S_IRWXG\|S_IRWXO` checks meaningless | ACL-based validation not implemented |
 
 **Test coverage**: 2673 tests including 756 security-specific tests.
+
+---
+
+## Windows Shell Compatibility
+
+NEXUS3 detects the Windows shell environment at startup and adapts its output accordingly.
+
+### Detected Shells
+
+| Shell | Detection | ANSI Support | Unicode | Notes |
+|-------|-----------|--------------|---------|-------|
+| Windows Terminal | `WT_SESSION` env var | Full | Full | Best experience |
+| PowerShell 7+ | Via Windows Terminal | Full | Full | |
+| Git Bash | `MSYSTEM` env var | Full | Full | MSYS2 environment |
+| PowerShell 5.1 | `PSModulePath` set | Limited | Limited | Legacy mode |
+| CMD.exe | `COMSPEC` check | None | None | Plain text only |
+
+### Startup Warnings
+
+When running in CMD.exe or PowerShell 5.1, NEXUS3 displays a warning suggesting better alternatives. Users can suppress these by running in Windows Terminal.
+
+### Console Code Page
+
+For proper UTF-8 display, the console should use code page 65001. NEXUS3 warns if a different code page is detected. Run `chcp 65001` before starting NEXUS3 to fix character display issues.
+
+### Key Functions
+
+- `detect_windows_shell()` - Returns WindowsShell enum
+- `supports_ansi()` - Check ANSI escape support
+- `supports_unicode()` - Check Unicode box drawing support
+- `check_console_codepage()` - Get current code page

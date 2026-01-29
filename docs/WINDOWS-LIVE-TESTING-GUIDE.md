@@ -671,9 +671,192 @@ asyncio.run(test())
 
 ---
 
-## Part 10: REPL Integration Testing
+## Part 10: Shell Testing Matrix
 
-### 10.1 Start NEXUS3 on Windows
+Test NEXUS3 in each Windows shell environment to verify shell detection and appropriate output mode.
+
+### Shell Testing Checklist
+
+| Shell | Detection | ANSI Output | Unicode | Test Status |
+|-------|-----------|-------------|---------|-------------|
+| Windows Terminal | `WINDOWS_TERMINAL` | Colors work | Box chars work | [ ] |
+| PowerShell 7+ | `POWERSHELL_7` or `WINDOWS_TERMINAL` | Colors work | Box chars work | [ ] |
+| PowerShell 5.1 | `POWERSHELL_5` | No colors | Partial | [ ] |
+| Git Bash | `GIT_BASH` | Colors work | Box chars work | [ ] |
+| CMD.exe | `CMD` | No colors | No box chars | [ ] |
+
+### 10.0 Shell Detection Verification
+
+Run in each shell to verify detection:
+
+```bash
+# Verify shell detection
+.venv/bin/python -c "
+from nexus3.core.shell_detection import detect_windows_shell, supports_ansi, supports_unicode
+shell = detect_windows_shell()
+print(f'Shell: {shell.name}')
+print(f'ANSI: {supports_ansi()}')
+print(f'Unicode: {supports_unicode()}')
+"
+```
+
+**Expected results:**
+
+| Shell | Detected As | ANSI | Unicode |
+|-------|-------------|------|---------|
+| Windows Terminal | WINDOWS_TERMINAL | True | True |
+| PowerShell 7 (standalone) | POWERSHELL_7 or POWERSHELL_5 | True/False | True/False |
+| PowerShell 5.1 (standalone) | POWERSHELL_5 | False | False |
+| Git Bash (standalone) | GIT_BASH | True | True |
+| CMD.exe (standalone) | CMD | False | False |
+| Any shell inside WT | WINDOWS_TERMINAL | True | True |
+
+### 10.0.1 Windows Terminal Test
+
+```powershell
+# Open Windows Terminal (any profile)
+# Verify WT_SESSION is set
+echo $env:WT_SESSION
+
+# Start NEXUS3
+.venv\Scripts\python.exe -m nexus3 --fresh
+
+# Verify:
+# - Colors in output
+# - Unicode box drawing characters render
+# - No shell warnings at startup
+```
+
+### 10.0.2 PowerShell 5.1 Standalone Test
+
+```powershell
+# Open PowerShell 5.1 directly (NOT via Windows Terminal)
+# Usually: Win+R, type "powershell", Enter
+# Verify it's 5.1:
+$PSVersionTable.PSVersion
+
+# Verify no WT_SESSION
+echo $env:WT_SESSION  # Should be empty
+
+# Start NEXUS3
+.venv\Scripts\python.exe -m nexus3 --fresh
+
+# Verify:
+# - Warning about PowerShell 5.1 appears
+# - Plain text output (no ANSI escapes visible)
+# - Basic functionality works
+```
+
+### 10.0.3 PowerShell 7 Standalone Test
+
+```powershell
+# Open PowerShell 7 directly (NOT via Windows Terminal)
+# Usually: Win+R, type "pwsh", Enter
+# Verify it's 7+:
+$PSVersionTable.PSVersion
+
+# Clear WT_SESSION if set
+$env:WT_SESSION = $null
+
+# Start NEXUS3
+.venv\Scripts\python.exe -m nexus3 --fresh
+
+# Verify:
+# - Colors may or may not work depending on console mode
+# - No ANSI garbage visible
+```
+
+### 10.0.4 Git Bash Standalone Test
+
+```bash
+# Open Git Bash directly (NOT via Windows Terminal)
+# Usually: Start Menu > Git Bash
+
+# Verify MSYSTEM is set
+echo $MSYSTEM  # Should be MINGW64 or similar
+
+# Verify no WT_SESSION
+echo $WT_SESSION  # Should be empty
+
+# Start NEXUS3
+.venv/bin/python -m nexus3 --fresh
+
+# Verify:
+# - Colors work
+# - Unicode box drawing works
+# - No shell warnings
+```
+
+### 10.0.5 CMD.exe Standalone Test
+
+```cmd
+REM Open CMD.exe directly (NOT via Windows Terminal)
+REM Usually: Win+R, type "cmd", Enter
+
+REM Verify no WT_SESSION
+echo %WT_SESSION%
+
+REM Start NEXUS3
+.venv\Scripts\python.exe -m nexus3 --fresh
+
+REM Verify:
+REM - Warning about CMD.exe appears
+REM - Plain text output (no ANSI escapes visible)
+REM - Basic functionality works
+```
+
+### 10.0.6 Code Page Test (All Shells)
+
+```bash
+# In each shell, check code page handling
+
+# Check current code page
+.venv/bin/python -c "
+from nexus3.core.shell_detection import check_console_codepage
+cp, is_utf8 = check_console_codepage()
+print(f'Code page: {cp}, UTF-8: {is_utf8}')
+"
+
+# If not UTF-8, test with explicit code page
+# CMD/PowerShell:
+chcp 65001
+.venv\Scripts\python.exe -m nexus3 --fresh
+
+# Verify:
+# - Unicode characters display correctly after chcp 65001
+# - Warning about code page appears if not UTF-8
+```
+
+### 10.0.7 shlex.split() Path Handling Test
+
+Test Windows path handling in bash_safe skill:
+
+```bash
+# In each shell, verify Windows paths work
+.venv/bin/python -c "
+import asyncio
+from pathlib import Path
+from nexus3.skill.builtin.bash import BashSafeSkill
+from nexus3.skill.container import ServiceContainer
+
+async def test():
+    container = ServiceContainer(cwd=Path('.'), permission_level='YOLO')
+    skill = BashSafeSkill(container)
+
+    # Test Windows path handling
+    result = await skill.execute(command='echo C:\\\\Users\\\\test')
+    print(f'Result: {result.output}')
+
+    # Path should be preserved, not treated as escape sequences
+    assert 'C:\\\\Users' in result.output or 'C:Users' not in result.output
+
+asyncio.run(test())
+"
+```
+
+## Part 11: REPL Integration Testing
+
+### 11.1 Start NEXUS3 on Windows
 
 ```powershell
 # Windows PowerShell
