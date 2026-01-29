@@ -153,9 +153,23 @@ class BashSafeSkill(ExecutionSkill):
         if not command:
             return ToolResult(error="Command is required")
 
-        # Parse command with shlex - this is the security fix
+        # Parse command with shlex
+        # Use non-POSIX mode on Windows to preserve backslash paths
+        # POSIX mode: C:\Users\foo → C:Usersfoo (backslash escapes)
+        # Non-POSIX: C:\Users\foo → C:\Users\foo (preserved)
         try:
-            self._args = shlex.split(command)
+            posix_mode = sys.platform != "win32"
+            args = shlex.split(command, posix=posix_mode)
+
+            # On Windows, posix=False preserves quotes in output which breaks
+            # downstream processing. Strip matching outer quotes.
+            if sys.platform == "win32":
+                args = [
+                    arg[1:-1] if len(arg) >= 2 and arg[0] in "\"'" and arg[-1] == arg[0] else arg
+                    for arg in args
+                ]
+
+            self._args = args
         except ValueError as e:
             return ToolResult(error=f"Invalid command syntax: {e}")
 

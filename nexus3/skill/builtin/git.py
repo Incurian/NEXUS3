@@ -125,8 +125,18 @@ class GitSkill(FilteredCommandSkill):
 
         # Parse command FIRST - this is the key security fix
         # Validation must operate on the same form that will be executed
+        # Use non-POSIX mode on Windows to preserve backslash paths
         try:
-            args = shlex.split(command)
+            posix_mode = sys.platform != "win32"
+            args = shlex.split(command, posix=posix_mode)
+
+            # On Windows, posix=False preserves quotes in output which breaks
+            # dangerous flag detection. Strip matching outer quotes.
+            if sys.platform == "win32":
+                args = [
+                    arg[1:-1] if len(arg) >= 2 and arg[0] in "\"'" and arg[-1] == arg[0] else arg
+                    for arg in args
+                ]
         except ValueError as e:
             return False, None, f"Invalid command syntax: {e}"
 
