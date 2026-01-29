@@ -1232,6 +1232,13 @@ async def run_repl(
     # Main REPL loop
     while True:
         try:
+            # YOLO mode warning - show before prompt so user sees it before typing
+            agent = pool.get(current_agent_id)
+            if agent:
+                perms = agent.services.get("permissions")
+                if perms and perms.effective_policy.level == PermissionLevel.YOLO:
+                    console.print("[bold red]⚠️  YOLO MODE - All actions execute without confirmation[/]")
+
             # Dynamic prompt based on whisper mode
             if whisper.is_active():
                 prompt_text = f"{whisper.target_agent_id}> "
@@ -1251,13 +1258,6 @@ async def run_repl(
             # Handle empty input
             if not user_input.strip():
                 continue
-
-            # YOLO mode warning - every turn
-            agent = pool.get(current_agent_id)
-            if agent:
-                perms = agent.services.get("permissions")
-                if perms and perms.effective_policy.level == PermissionLevel.YOLO:
-                    console.print("[bold red]⚠️  YOLO MODE - All actions execute without confirmation[/]")
 
             # Track whisper state before handling command (for /over visual)
             was_whisper = whisper.is_active()
