@@ -183,10 +183,20 @@ class TestLayeredConfigLoading:
         home.mkdir()
         monkeypatch.setenv("HOME", str(home))
 
-        # Create global config
+        # Create global config with minimal valid structure
+        # (needs default_model and matching provider since defaults aren't merged)
         global_nexus = home / ".nexus3"
         global_nexus.mkdir()
         (global_nexus / "config.json").write_text(json.dumps({
+            "default_model": "test",
+            "providers": {
+                "test": {
+                    "type": "openrouter",
+                    "models": {
+                        "test": {"id": "test/model", "context_window": 4096}
+                    }
+                }
+            },
             "stream_output": True,
             "max_tool_iterations": 5,
         }))
