@@ -53,7 +53,8 @@ nexus3/skill/
     ├── env.py            # Environment sanitization helpers
     ├── read_file.py      # File reading skill
     ├── write_file.py     # File writing skill
-    ├── edit_file.py      # File editing skill (line ending preservation)
+    ├── edit_file.py      # String replacement editing (single or batched, line ending preservation)
+    ├── edit_lines.py     # Line-based editing skill (line ending preservation)
     ├── append_file.py    # File appending skill (line ending preservation)
     ├── tail.py           # Read last N lines
     ├── file_info.py      # File metadata skill (Windows RHSA attributes)
@@ -73,6 +74,7 @@ nexus3/skill/
     ├── nexus_status.py   # Get agent status
     ├── nexus_cancel.py   # Cancel agent request
     ├── nexus_shutdown.py # Shutdown server
+    ├── patch.py          # Apply unified diffs (uses nexus3/patch module)
     ├── sleep.py          # Testing utility
     └── echo.py           # Testing utility
 ```
@@ -549,7 +551,7 @@ definitions = registry.get_definitions_for_permissions(agent_permissions)
 
 ## Built-in Skills
 
-NEXUS3 includes 25 built-in skills organized by category:
+NEXUS3 includes 27 built-in skills organized by category:
 
 ### File Operations (Read-Only)
 
@@ -567,9 +569,11 @@ NEXUS3 includes 25 built-in skills organized by category:
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
 | `write_file` | Write/create file (atomic write) | `path`, `content` |
-| `edit_file` | String/line replacement (preserves line endings) | `path`, `old_string`, `new_string`, `replace_all?` |
+| `edit_file` | String replacement, single or batched (preserves line endings) | `path`, `old_string`, `new_string`, `edits?`, `replace_all?` |
+| `edit_lines` | Line-based replacement (preserves line endings) | `path`, `start_line`, `end_line?`, `new_content` |
 | `append_file` | Append to file with true append mode (preserves line endings) | `path`, `content`, `newline?` |
 | `regex_replace` | Pattern-based replace (preserves line endings) | `path`, `pattern`, `replacement`, `count?` |
+| `patch` | Apply unified diffs with validation | `target`, `diff?`, `diff_file?`, `mode?`, `dry_run?` |
 | `copy_file` | Copy file with metadata | `source`, `destination`, `overwrite?` |
 | `mkdir` | Create directory (and parents) | `path` |
 | `rename` | Rename/move file or directory | `source`, `destination`, `overwrite?` |
@@ -612,7 +616,7 @@ NEXUS3 includes 25 built-in skills organized by category:
 from nexus3.skill.builtin.registration import register_builtin_skills
 
 registry = SkillRegistry(services)
-register_builtin_skills(registry)  # Registers all 25 skills
+register_builtin_skills(registry)  # Registers all 27 skills
 ```
 
 ---

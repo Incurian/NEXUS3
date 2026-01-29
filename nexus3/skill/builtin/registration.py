@@ -5,6 +5,7 @@ from nexus3.skill.builtin.bash import bash_safe_factory, shell_unsafe_factory
 from nexus3.skill.builtin.copy_file import copy_file_factory
 from nexus3.skill.builtin.echo import echo_skill_factory
 from nexus3.skill.builtin.edit_file import edit_file_factory
+from nexus3.skill.builtin.edit_lines import edit_lines_factory
 from nexus3.skill.builtin.file_info import file_info_factory
 from nexus3.skill.builtin.git import git_factory
 from nexus3.skill.builtin.glob_search import glob_factory
@@ -12,6 +13,7 @@ from nexus3.skill.builtin.grep import grep_factory
 from nexus3.skill.builtin.list_directory import list_directory_factory
 from nexus3.skill.builtin.mkdir import mkdir_factory
 from nexus3.skill.builtin.nexus_cancel import nexus_cancel_factory
+from nexus3.skill.builtin.patch import patch_factory
 from nexus3.skill.builtin.nexus_create import nexus_create_factory
 from nexus3.skill.builtin.nexus_destroy import nexus_destroy_factory
 from nexus3.skill.builtin.nexus_send import nexus_send_factory
@@ -49,8 +51,10 @@ def register_builtin_skills(registry: SkillRegistry) -> None:
     # File operations (destructive)
     registry.register("write_file", write_file_factory)
     registry.register("edit_file", edit_file_factory)
+    registry.register("edit_lines", edit_lines_factory)
     registry.register("append_file", append_file_factory)
     registry.register("regex_replace", regex_replace_factory)
+    registry.register("patch", patch_factory)
     registry.register("copy_file", copy_file_factory)
     registry.register("mkdir", mkdir_factory)
     registry.register("rename", rename_factory)

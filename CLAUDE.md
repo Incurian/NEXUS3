@@ -12,25 +12,24 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ## Current Development
 
-### In Progress: Windows Shell Compatibility
+### Recently Completed
 
-**Plan:** `docs/WINDOWS-SHELL-COMPATIBILITY.md`
-**Branch:** `feature/windows-native-compat`
+| Feature | Branch | Status |
+|---------|--------|--------|
+| Windows Shell Compatibility | `feature/windows-native-compat` | ✅ COMPLETE |
+| Edit/Patch Skills | `feature/windows-native-compat` | ✅ COMPLETE |
 
-Shell-specific compatibility for Git Bash, PowerShell, CMD.exe, and Windows Terminal:
-- **Shell detection** via environment variables (WT_SESSION, MSYSTEM, PSModulePath)
-- **Rich Console** dynamic configuration based on ANSI support
-- **shlex.split()** fix for Windows paths (posix=False + quote cleanup)
-- **MCP pipe cleanup** to prevent unclosed transport warnings on quit
-- **Startup messages** warning about limited shell capabilities
+**Edit/Patch Skills** (`EDIT-PATCH-PLAN.md`):
+- Split `edit_file` into `edit_file` (string replacement) and `edit_lines` (line-based)
+- Added batched edits to `edit_file` with `edits` array parameter
+- New `patch` skill for applying unified diffs with strict/tolerant/fuzzy modes
+- New `nexus3/patch/` module with parser, validator, and applier
 
-**Status:** Plan validated by explorers, ready to implement.
-
-### Ready to Merge: Windows Native + MCP Improvements
+### Ready to Merge
 
 | Branch | Status | Notes |
 |--------|--------|-------|
-| `feature/windows-native-compat` | ✅ COMPLETE | Merge after shell compat done |
+| `feature/windows-native-compat` | ✅ COMPLETE | Includes shell compat + edit/patch skills |
 | `feature/mcp-improvements` | ✅ COMPLETE | Parent branch, merge to master |
 
 **Archived plans** (in `.archive/`, verified complete):
@@ -44,12 +43,11 @@ Plans listed in recommended implementation order:
 
 | Priority | Plan | Description |
 |----------|------|-------------|
-| 1 | `EDIT-PATCH-PLAN.md` | Split `edit_file` into separate tools, add batched edits, new `patch` skill. |
-| 2 | `YOLO-SAFETY-PLAN.md` | YOLO warning banner, remove legacy "worker" preset, block RPC send to YOLO agents. |
-| 3 | `CONCAT-FILES-PLAN.md` | New `concat_files` skill to bundle source files with token estimation. |
-| 4 | `CLIPBOARD-PLAN.md` | Scoped clipboard system for copy/paste across files and agents. |
-| 5 | `SANDBOXED-PARENT-SEND-PLAN.md` | Allow sandboxed agents to `nexus_send` to parent only. |
-| 6 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration. *Depends on #5 for enforcer patterns.* |
+| 1 | `YOLO-SAFETY-PLAN.md` | YOLO warning banner, remove legacy "worker" preset, block RPC send to YOLO agents. |
+| 2 | `CONCAT-FILES-PLAN.md` | New `concat_files` skill to bundle source files with token estimation. |
+| 3 | `CLIPBOARD-PLAN.md` | Scoped clipboard system for copy/paste across files and agents. |
+| 4 | `SANDBOXED-PARENT-SEND-PLAN.md` | Allow sandboxed agents to `nexus_send` to parent only. |
+| 5 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration. *Depends on #4 for enforcer patterns.* |
 
 **Reference docs** (not plans):
 - `GITHUB-REFERENCE.md` - GitHub API/CLI reference
@@ -115,7 +113,8 @@ nexus3/
 ├── provider/       # AsyncProvider protocol, multi-provider support, retry logic
 ├── context/        # ContextManager, ContextLoader, TokenCounter, compaction
 ├── session/        # Session coordinator, persistence, SessionManager, SQLite logging
-├── skill/          # Skill protocol, SkillRegistry, ServiceContainer, 25 builtin skills
+├── skill/          # Skill protocol, SkillRegistry, ServiceContainer, 27 builtin skills
+├── patch/          # Unified diff parsing, validation, and application
 ├── display/        # DisplayManager, StreamingDisplay, InlinePrinter, SummaryBar, theme
 ├── cli/            # Unified REPL, lobby, whisper, HTTP server, client commands
 ├── rpc/            # JSON-RPC protocol, Dispatcher, GlobalDispatcher, AgentPool, auth
@@ -409,9 +408,11 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `tail` | `path`, `lines`? | Read last N lines of a file (default: 10) |
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
 | `write_file` | `path`, `content` | Write/create files (read file first!) |
-| `edit_file` | `path`, `old_string`, `new_string` | Edit files with string replacement (read file first!) |
+| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | String replacement, single or batched (read file first!) |
+| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | Replace lines by number (work bottom-to-top for multiple edits) |
 | `append_file` | `path`, `content`, `newline`? | Append content to a file (read file first!) |
 | `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | Pattern-based find/replace (read file first!) |
+| `patch` | `target`, `diff`?, `diff_file`?, `mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy modes) |
 | `copy_file` | `source`, `destination`, `overwrite`? | Copy a file to a new location |
 | `mkdir` | `path` | Create directory (and parents) |
 | `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory |

@@ -1,0 +1,193 @@
+# Patch Module
+
+Pure Python unified diff parsing, validation, and application.
+
+## Overview
+
+The patch module provides tools for working with unified diffs (the format used by `git diff`, `diff -u`, etc.). It's designed to handle LLM-generated patches gracefully, with validation that can auto-fix common errors.
+
+## Components
+
+| File | Purpose |
+|------|---------|
+| `types.py` | `Hunk`, `PatchFile`, `PatchSet` dataclasses |
+| `parser.py` | Parse unified diff text into structured objects |
+| `validator.py` | Validate patches and auto-fix common LLM errors |
+| `applier.py` | Apply patches with configurable strictness |
+
+## Quick Start
+
+```python
+from nexus3.patch import (
+    parse_unified_diff,
+    validate_patch,
+    apply_patch,
+    ApplyMode,
+)
+
+# Parse a diff
+diff_text = """--- a/example.py
++++ b/example.py
+@@ -1,3 +1,4 @@
+ import os
++import sys
+
+ def main():
+"""
+patches = parse_unified_diff(diff_text)
+
+# Validate against target file
+target_content = "import os\n\ndef main():\n    pass\n"
+result = validate_patch(patches[0], target_content)
+if not result.valid:
+    print(f"Errors: {result.errors}")
+    # Use auto-fixed version if available
+    if result.fixed_patch:
+        patches[0] = result.fixed_patch
+
+# Apply the patch
+apply_result = apply_patch(target_content, patches[0], mode=ApplyMode.STRICT)
+if apply_result.success:
+    new_content = apply_result.new_content
+    print(f"Applied {len(apply_result.applied_hunks)} hunks")
+```
+
+## Apply Modes
+
+| Mode | Description |
+|------|-------------|
+| `STRICT` | Exact context match required. Fails on any whitespace difference. |
+| `TOLERANT` | Ignores trailing whitespace differences. Good for minor formatting issues. |
+| `FUZZY` | Uses similarity matching to find context. Configurable threshold (default 0.8). |
+
+```python
+# Tolerant mode for whitespace-insensitive matching
+result = apply_patch(content, patch, mode=ApplyMode.TOLERANT)
+
+# Fuzzy mode with custom threshold
+result = apply_patch(content, patch, mode=ApplyMode.FUZZY, fuzzy_threshold=0.7)
+if result.warnings:
+    print(f"Fuzzy matches: {result.warnings}")
+```
+
+## Validation Features
+
+The validator detects and can auto-fix:
+
+| Issue | Detection | Auto-Fix |
+|-------|-----------|----------|
+| Line count mismatch | Header says 3 lines, hunk has 4 | Recomputes header from actual lines |
+| Trailing whitespace | Diff has `line ` but file has `line` | Normalizes to match file |
+| Context mismatch | Context line doesn't match file | Reports error (not fixable) |
+
+```python
+result = validate_patch(patch, target_content)
+if result.fixed_patch:
+    # Use the corrected version
+    patch = result.fixed_patch
+```
+
+## Data Types
+
+### Hunk
+
+Represents a single change region in a file.
+
+```python
+@dataclass
+class Hunk:
+    old_start: int      # Line number in original (1-indexed)
+    old_count: int      # Lines affected in original
+    new_start: int      # Line number in new version
+    new_count: int      # Lines in new version
+    lines: list[tuple[str, str]]  # (prefix, content)
+    context: str = ""   # Optional function context from @@ line
+```
+
+Line prefixes:
+- `" "` (space) - Context line (unchanged)
+- `"-"` - Line removed
+- `"+"` - Line added
+
+### PatchFile
+
+Represents all changes to a single file.
+
+```python
+@dataclass
+class PatchFile:
+    old_path: str       # Original file path
+    new_path: str       # New file path
+    hunks: list[Hunk]
+    is_new_file: bool   # True if old_path is /dev/null
+    is_deleted: bool    # True if new_path is /dev/null
+
+    @property
+    def path(self) -> str:
+        """Effective file path (prefers new_path unless deleted)."""
+```
+
+### ApplyResult
+
+Result of applying a patch.
+
+```python
+@dataclass
+class ApplyResult:
+    success: bool
+    new_content: str
+    applied_hunks: list[int]     # Indices of applied hunks
+    failed_hunks: list[tuple[int, str]]  # (index, reason)
+    warnings: list[str]          # Fuzzy match warnings, etc.
+```
+
+## Diff Format Reference
+
+Standard unified diff format:
+
+```diff
+--- a/path/to/file.py
++++ b/path/to/file.py
+@@ -start,count +start,count @@ optional context
+ context line (unchanged)
+-removed line
++added line
+ context line
+```
+
+Git extended format (also supported):
+
+```diff
+diff --git a/file.py b/file.py
+index abc123..def456 100644
+--- a/file.py
++++ b/file.py
+@@ -1,3 +1,4 @@
+...
+```
+
+## Integration with Skill System
+
+The `patch` skill (`nexus3/skill/builtin/patch.py`) wraps this module:
+
+```python
+# Via skill
+result = await patch_skill.execute(
+    target="example.py",
+    diff=diff_text,
+    mode="fuzzy",
+    dry_run=True
+)
+```
+
+See the skill's parameters for full options including `diff_file` for loading patches from disk.
+
+## Error Handling
+
+The module is designed to fail gracefully:
+
+- Malformed diffs return empty `PatchFile` lists (parser)
+- Invalid patches return `ValidationResult` with errors (validator)
+- Failed hunks result in `ApplyResult` with `success=False` (applier)
+
+No exceptions are raised for invalid input - check return values instead.

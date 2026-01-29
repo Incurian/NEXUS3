@@ -578,78 +578,78 @@ Use this checklist to track implementation progress. Each item can be assigned t
 
 ### Part 0: Tool Separation (edit_file → edit_file + edit_lines)
 
-- [ ] **P0.1** Create `nexus3/skill/builtin/edit_lines.py` with class skeleton
-- [ ] **P0.2** Move line-based replacement logic from edit_file.py to EditLinesSkill
-- [ ] **P0.3** Implement EditLinesSkill parameters (path, start_line, end_line, new_content)
-- [ ] **P0.4** Add `edit_lines_factory = file_skill_factory(EditLinesSkill)`
-- [ ] **P0.5** Register edit_lines in registration.py
-- [ ] **P0.6** Remove line-based parameters from edit_file.py (start_line, end_line, new_content)
-- [ ] **P0.7** Add migration error in edit_file for line params: "Use edit_lines instead"
-- [ ] **P0.8** Update edit_file description to focus on string replacement only
-- [ ] **P0.9** Add unit tests for edit_lines (single line, range, bounds validation)
-- [ ] **P0.10** Update any existing edit_file tests
+- [x] **P0.1** Create `nexus3/skill/builtin/edit_lines.py` with class skeleton
+- [x] **P0.2** Move line-based replacement logic from edit_file.py to EditLinesSkill
+- [x] **P0.3** Implement EditLinesSkill parameters (path, start_line, end_line, new_content)
+- [x] **P0.4** Add `edit_lines_factory = file_skill_factory(EditLinesSkill)`
+- [x] **P0.5** Register edit_lines in registration.py
+- [x] **P0.6** Remove line-based parameters from edit_file.py (start_line, end_line, new_content)
+- [x] **P0.7** Add migration error in edit_file for line params: "Use edit_lines instead"
+- [x] **P0.8** Update edit_file description to focus on string replacement only
+- [x] **P0.9** Add unit tests for edit_lines (single line, range, bounds validation)
+- [x] **P0.10** Update any existing edit_file tests
 
 ### Part 1: Batched edit_file
 
-- [ ] **P1.1** Add `edits` array parameter to edit_file schema
-- [ ] **P1.2** Implement `_batch_replace()` method with validation-first logic
-- [ ] **P1.3** Add mutual exclusion check (edits vs single-edit params)
-- [ ] **P1.4** Implement line number tracking for original file positions
-- [ ] **P1.5** Add unit tests for batch success
-- [ ] **P1.6** Add unit tests for batch rollback on failure
-- [ ] **P1.7** Add unit tests for batch order matters
-- [ ] **P1.8** Add unit tests for mutual exclusion check
+- [x] **P1.1** Add `edits` array parameter to edit_file schema
+- [x] **P1.2** Implement `_batch_replace()` method with validation-first logic
+- [x] **P1.3** Add mutual exclusion check (edits vs single-edit params)
+- [x] **P1.4** Implement line number tracking for original file positions
+- [x] **P1.5** Add unit tests for batch success
+- [x] **P1.6** Add unit tests for batch rollback on failure
+- [x] **P1.7** Add unit tests for batch order matters
+- [x] **P1.8** Add unit tests for mutual exclusion check
 
 ### Part 2: Patch Module Core
 
-- [ ] **P2.1** Create `nexus3/patch/` directory
-- [ ] **P2.2** Implement `nexus3/patch/types.py` (Hunk, PatchFile, PatchSet dataclasses)
-- [ ] **P2.3** Implement `nexus3/patch/parser.py` (parse_unified_diff function)
-- [ ] **P2.4** Implement `nexus3/patch/validator.py` (ValidationResult, validate_patch)
-- [ ] **P2.5** Implement `nexus3/patch/__init__.py` (public API exports)
-- [ ] **P2.6** Add unit tests for parser (simple hunk, multiple hunks, git format)
-- [ ] **P2.7** Add unit tests for validator (line count mismatch, whitespace)
+- [x] **P2.1** Create `nexus3/patch/` directory
+- [x] **P2.2** Implement `nexus3/patch/types.py` (Hunk, PatchFile, PatchSet dataclasses)
+- [x] **P2.3** Implement `nexus3/patch/parser.py` (parse_unified_diff function)
+- [x] **P2.4** Implement `nexus3/patch/validator.py` (ValidationResult, validate_patch)
+- [x] **P2.5** Implement `nexus3/patch/__init__.py` (public API exports)
+- [x] **P2.6** Add unit tests for parser (simple hunk, multiple hunks, git format)
+- [x] **P2.7** Add unit tests for validator (line count mismatch, whitespace)
 
 ### Part 3: Patch Application
 
-- [ ] **P3.1** Implement `nexus3/patch/applier.py` with ApplyMode enum
-- [ ] **P3.2** Implement strict mode (exact context match)
-- [ ] **P3.3** Implement tolerant mode (whitespace tolerance)
-- [ ] **P3.4** Implement fuzzy mode (SequenceMatcher fallback)
-- [ ] **P3.5** Implement offset tracking for multi-hunk patches
-- [ ] **P3.6** Add unit tests for each mode
-- [ ] **P3.7** Add unit tests for offset tracking
-- [ ] **P3.8** Add unit tests for rollback on failure
+- [x] **P3.1** Implement `nexus3/patch/applier.py` with ApplyMode enum
+- [x] **P3.2** Implement strict mode (exact context match)
+- [x] **P3.3** Implement tolerant mode (whitespace tolerance)
+- [x] **P3.4** Implement fuzzy mode (SequenceMatcher fallback)
+- [x] **P3.5** Implement offset tracking for multi-hunk patches
+- [x] **P3.6** Add unit tests for each mode
+- [x] **P3.7** Add unit tests for offset tracking
+- [x] **P3.8** Add unit tests for rollback on failure
 
 ### Part 4: Patch Skill
 
-- [ ] **P4.1** Create `nexus3/skill/builtin/patch.py` with PatchSkill class
-- [ ] **P4.2** Implement parameters (diff, diff_file, target, mode, fuzzy_threshold, dry_run)
-- [ ] **P4.3** Implement path validation for target file
-- [ ] **P4.4** Implement path validation for diff_file
-- [ ] **P4.5** Add `patch_factory = file_skill_factory(PatchSkill)`
-- [ ] **P4.6** Register patch in registration.py
-- [ ] **P4.7** Add unit tests for inline diff
-- [ ] **P4.8** Add unit tests for file-based diff
-- [ ] **P4.9** Add unit tests for dry-run mode
+- [x] **P4.1** Create `nexus3/skill/builtin/patch.py` with PatchSkill class
+- [x] **P4.2** Implement parameters (diff, diff_file, target, mode, fuzzy_threshold, dry_run)
+- [x] **P4.3** Implement path validation for target file
+- [x] **P4.4** Implement path validation for diff_file
+- [x] **P4.5** Add `patch_factory = file_skill_factory(PatchSkill)`
+- [x] **P4.6** Register patch in registration.py
+- [x] **P4.7** Add unit tests for inline diff
+- [x] **P4.8** Add unit tests for file-based diff
+- [x] **P4.9** Add unit tests for dry-run mode
 
 ### Phase 5: Integration & Live Testing
 
-- [ ] **P5.1** Integration test: edit_lines atomic write
-- [ ] **P5.2** Integration test: batch edit atomic rollback
-- [ ] **P5.3** Integration test: patch inline diff
-- [ ] **P5.4** Integration test: patch from file
-- [ ] **P5.5** Integration test: patch permission enforcement
-- [ ] **P5.6** Live test with real NEXUS3 agent (all three tools)
-- [ ] **P5.7** Verify no regressions in existing file skills
+- [x] **P5.1** Integration test: edit_lines atomic write
+- [x] **P5.2** Integration test: batch edit atomic rollback
+- [x] **P5.3** Integration test: patch inline diff
+- [x] **P5.4** Integration test: patch from file
+- [x] **P5.5** Integration test: patch permission enforcement
+- [ ] **P5.6** Live test with real NEXUS3 agent (all three tools) *(requires manual testing)*
+- [x] **P5.7** Verify no regressions in existing file skills
 
 ### Phase 6: Documentation
 
-- [ ] **P6.1** Update `CLAUDE.md` Built-in Skills table with `edit_lines` and `patch` skills
-- [ ] **P6.2** Update `edit_file` entry in `CLAUDE.md` to note batched edits parameter
-- [ ] **P6.3** Create `nexus3/patch/README.md` with module documentation
-- [ ] **P6.4** Update `nexus3/skill/README.md` with new skills
-- [ ] **P6.5** Ensure all new skill `description` properties are comprehensive with examples
+- [x] **P6.1** Update `CLAUDE.md` Built-in Skills table with `edit_lines` and `patch` skills
+- [x] **P6.2** Update `edit_file` entry in `CLAUDE.md` to note batched edits parameter
+- [x] **P6.3** Create `nexus3/patch/README.md` with module documentation
+- [x] **P6.4** Update `nexus3/skill/README.md` with new skills
+- [x] **P6.5** Ensure all new skill `description` properties are comprehensive with examples
 
 ---
 

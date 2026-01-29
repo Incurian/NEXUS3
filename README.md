@@ -2,7 +2,7 @@
 
 **A secure, multi-agent CLI framework for AI-powered software engineering.**
 
-NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrating multiple AI agents. Each agent runs in isolation with configurable permissions, enabling safe automation of development tasks through 25 built-in skills (file operations, git, shell execution, inter-agent communication).
+NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrating multiple AI agents. Each agent runs in isolation with configurable permissions, enabling safe automation of development tasks through 27 built-in skills (file operations, git, shell execution, inter-agent communication).
 
 ---
 
@@ -464,7 +464,7 @@ NEXUS3 v0.1.0 - Type /help for commands
 
 you> Hello! What can you do?
 
-assistant> I'm NEXUS3, an AI assistant with access to 25 tools for
+assistant> I'm NEXUS3, an AI assistant with access to 27 tools for
 software development tasks. I can:
 
 • Read, write, and edit files
@@ -704,7 +704,7 @@ For scripting, automation, or integrating NEXUS3 with external tools, use the `n
 | `provider/` | LLM provider implementations, retry logic |
 | `context/` | Context management, token counting, compaction |
 | `session/` | Session coordinator, event system, persistence |
-| `skill/` | Skill registry, base classes, 25 built-in skills |
+| `skill/` | Skill registry, base classes, 27 built-in skills |
 | `display/` | Rich terminal UI, spinner, theming |
 | `cli/` | REPL, argument parsing, lobby |
 | `rpc/` | JSON-RPC server, agent pool, authentication |
@@ -951,7 +951,7 @@ Configuration is loaded from multiple layers (later overrides earlier):
 
 ## Built-in Skills
 
-NEXUS3 includes 25 built-in skills organized by category.
+NEXUS3 includes 27 built-in skills organized by category.
 
 ### File Operations (Read)
 
@@ -969,9 +969,11 @@ NEXUS3 includes 25 built-in skills organized by category.
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
 | `write_file` | Write/create file | `path`, `content` |
-| `edit_file` | Edit with string/line replacement | `path`, `old_string`, `new_string` |
+| `edit_file` | String replacement (single or batched) | `path`, `old_string`, `new_string`, `edits` |
+| `edit_lines` | Line-based replacement | `path`, `start_line`, `end_line`, `new_content` |
 | `append_file` | Append to file | `path`, `content`, `newline` |
 | `regex_replace` | Regex find/replace | `path`, `pattern`, `replacement`, `count`, `ignore_case`, `multiline`, `dotall` |
+| `patch` | Apply unified diffs | `target`, `diff`, `diff_file`, `mode`, `dry_run` |
 | `copy_file` | Copy file | `source`, `destination`, `overwrite` |
 | `mkdir` | Create directory | `path` |
 | `rename` | Move/rename file | `source`, `destination`, `overwrite` |

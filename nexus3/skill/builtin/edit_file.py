@@ -10,14 +10,16 @@ from nexus3.skill.base import FileSkill, file_skill_factory
 
 
 class EditFileSkill(FileSkill):
-    """Skill that makes targeted edits to files.
+    """Skill that makes targeted edits to files using string replacement.
 
-    Supports two modes:
-    1. String replacement: Find and replace text (old_string -> new_string)
-    2. Line-based: Replace lines by line number range
+    Finds and replaces text in files. The old_string must be unique in the
+    file unless replace_all=true. This is safer than line-based editing
+    because it doesn't depend on line numbers.
 
-    String replacement is preferred as it's safer for multiple edits.
-    Line-based edits should be done bottom-to-top to avoid line drift.
+    Supports batched edits via the `edits` parameter for multiple string
+    replacements in a single atomic operation.
+
+    For line-based editing, use the edit_lines skill instead.
 
     Inherits path validation from FileSkill.
     """
@@ -29,8 +31,10 @@ class EditFileSkill(FileSkill):
     @property
     def description(self) -> str:
         return (
-            "Edit a file using string replacement or line-based editing. "
-            "IMPORTANT: Read the file first to verify your old_string matches exactly."
+            "Edit a file using string replacement. "
+            "IMPORTANT: Read the file first to verify your old_string matches exactly. "
+            "For line-based editing, use edit_lines instead. "
+            "For multiple edits, use the 'edits' array parameter for atomic batch operations."
         )
 
     @property
@@ -42,10 +46,12 @@ class EditFileSkill(FileSkill):
                     "type": "string",
                     "description": "Path to the file to edit"
                 },
-                # String replacement mode
                 "old_string": {
                     "type": "string",
-                    "description": "Text to find and replace (must be unique in file unless replace_all=true)"
+                    "description": (
+                        "Text to find and replace "
+                        "(must be unique in file unless replace_all=true)"
+                    )
                 },
                 "new_string": {
                     "type": "string",
@@ -53,21 +59,36 @@ class EditFileSkill(FileSkill):
                 },
                 "replace_all": {
                     "type": "boolean",
-                    "description": "Replace all occurrences (default: false, requires unique match)",
+                    "description": (
+                        "Replace all occurrences (default: false, requires unique match)"
+                    ),
                     "default": False
                 },
-                # Line-based mode
-                "start_line": {
-                    "type": "integer",
-                    "description": "First line to replace (1-indexed, for line-based mode)"
-                },
-                "end_line": {
-                    "type": "integer",
-                    "description": "Last line to replace (inclusive, defaults to start_line)"
-                },
-                "new_content": {
-                    "type": "string",
-                    "description": "Content to insert (for line-based mode)"
+                "edits": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "old_string": {
+                                "type": "string",
+                                "description": "Text to find"
+                            },
+                            "new_string": {
+                                "type": "string",
+                                "description": "Replacement text"
+                            },
+                            "replace_all": {
+                                "type": "boolean",
+                                "default": False,
+                                "description": "Replace all occurrences"
+                            }
+                        },
+                        "required": ["old_string", "new_string"]
+                    },
+                    "description": (
+                        "Array of string replacements (atomic - all or none). "
+                        "Cannot be used with old_string/new_string."
+                    )
                 }
             },
             "required": ["path"]
@@ -79,35 +100,35 @@ class EditFileSkill(FileSkill):
         old_string: str | None = None,
         new_string: str | None = None,
         replace_all: bool = False,
-        start_line: int | None = None,
-        end_line: int | None = None,
-        new_content: str | None = None,
+        edits: list[dict[str, Any]] | None = None,
         **kwargs: Any
     ) -> ToolResult:
-        """Edit the file using specified mode.
+        """Edit the file using string replacement.
 
         Args:
             path: File to edit
-            old_string: Text to find (string mode)
-            new_string: Replacement text (string mode)
-            replace_all: Replace all occurrences (string mode)
-            start_line: First line to replace (line mode)
-            end_line: Last line to replace (line mode)
-            new_content: Replacement content (line mode)
+            old_string: Text to find (single edit mode)
+            new_string: Replacement text (single edit mode)
+            replace_all: Replace all occurrences (single edit mode)
+            edits: Array of string replacements (batch mode)
 
         Returns:
             ToolResult with success message or error
         """
-        # Note: 'path' required by schema
-        # Determine which mode to use
-        string_mode = old_string is not None
-        line_mode = start_line is not None
+        # Detect batch mode
+        batch_mode = edits is not None and len(edits) > 0
 
-        if string_mode and line_mode:
-            return ToolResult(error="Cannot use both string replacement and line-based mode")
-
-        if not string_mode and not line_mode:
-            return ToolResult(error="Must provide either old_string (string mode) or start_line (line mode)")
+        if batch_mode:
+            # Cannot mix with single-edit params
+            if old_string is not None or new_string is not None:
+                return ToolResult(
+                    error="Cannot use 'edits' array with single-edit parameters "
+                    "(old_string/new_string)"
+                )
+        else:
+            # Single edit mode requires old_string
+            if old_string is None:
+                return ToolResult(error="old_string is required")
 
         try:
             # Validate path (resolves symlinks, checks allowed_paths if set)
@@ -125,32 +146,40 @@ class EditFileSkill(FileSkill):
             except PermissionError:
                 return ToolResult(error=f"Permission denied: {path}")
 
-            if string_mode:
-                result = self._string_replace(content, old_string, new_string or "", replace_all)
+            if batch_mode:
+                # Batch edit mode
+                result = self._batch_replace(content, edits)  # type: ignore[arg-type]
             else:
-                result = self._line_replace(content, start_line, end_line, new_content or "")
+                # Single edit mode
+                result = self._string_replace(
+                    content, old_string, new_string or "", replace_all
+                )
 
             if result.error:
                 return result
 
             # Convert line endings back to original and write as binary
-            output_content = result.output
+            # For batch mode, result.output is the new content
+            # For single mode with success message, we need to get the actual content
+            if batch_mode:
+                output_content = result._new_content  # type: ignore[attr-defined]
+            else:
+                output_content = result.output
+
             if original_line_ending != '\n':
                 output_content = output_content.replace('\n', original_line_ending)
             await asyncio.to_thread(atomic_write_bytes, p, output_content.encode('utf-8'))
 
-            # Return success message (not the content)
-            if string_mode:
-                if replace_all:
-                    count = content.count(old_string)
-                    return ToolResult(output=f"Replaced {count} occurrence(s) in {path}")
-                else:
-                    return ToolResult(output=f"Replaced text in {path}")
+            # For batch mode, result.output already has the success message
+            if batch_mode:
+                return ToolResult(output=result.output)
+
+            # Return success message (not the content) for single edit
+            if replace_all:
+                count = content.count(old_string)  # type: ignore[arg-type]
+                return ToolResult(output=f"Replaced {count} occurrence(s) in {path}")
             else:
-                if end_line and end_line != start_line:
-                    return ToolResult(output=f"Replaced lines {start_line}-{end_line} in {path}")
-                else:
-                    return ToolResult(output=f"Replaced line {start_line} in {path}")
+                return ToolResult(output=f"Replaced text in {path}")
 
         except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
@@ -175,7 +204,10 @@ class EditFileSkill(FileSkill):
 
         if not replace_all and count > 1:
             return ToolResult(
-                error=f"String appears {count} times. Use replace_all=true or provide more context for unique match."
+                error=(
+                    f"String appears {count} times. "
+                    "Use replace_all=true or provide more context for unique match."
+                )
             )
 
         if replace_all:
@@ -185,50 +217,124 @@ class EditFileSkill(FileSkill):
 
         return ToolResult(output=new_content)
 
-    def _line_replace(
+    def _find_line_number(self, content: str, substring: str, occurrence: int = 1) -> int:
+        """Find line number where substring starts (1-indexed).
+
+        Args:
+            content: The file content to search
+            substring: The substring to find
+            occurrence: Which occurrence to find (1-indexed, default 1)
+
+        Returns:
+            Line number (1-indexed) where the occurrence starts
+        """
+        start_pos = 0
+        for _ in range(occurrence):
+            pos = content.find(substring, start_pos)
+            if pos == -1:
+                return -1
+            start_pos = pos + 1
+
+        # Count newlines before the found position to get line number
+        return content[:start_pos - 1].count('\n') + 1
+
+    def _batch_replace(
         self,
         content: str,
-        start_line: int | None,
-        end_line: int | None,
-        new_content: str
+        edits: list[dict[str, Any]]
     ) -> ToolResult:
-        """Perform line-based replacement."""
-        if start_line is None or start_line < 1:
-            return ToolResult(error="start_line must be >= 1")
+        """Apply multiple string replacements atomically.
 
-        lines = content.splitlines(keepends=True)
-        total_lines = len(lines)
+        Validates all edits first, then applies sequentially.
+        Returns error if any edit would fail (no partial changes).
 
-        # Handle files that don't end with newline
-        if content and not content.endswith("\n"):
-            # Last line doesn't have a newline
-            pass
+        Line numbers in output reference original file positions.
 
-        if start_line > total_lines:
-            return ToolResult(error=f"start_line {start_line} exceeds file length ({total_lines} lines)")
+        Args:
+            content: The file content to edit
+            edits: List of edit dictionaries with old_string, new_string, replace_all
 
-        if end_line is None:
-            end_line = start_line
+        Returns:
+            ToolResult with success message or error. On success, the result
+            has a _new_content attribute with the modified content.
+        """
+        if not edits:
+            return ToolResult(error="edits array cannot be empty")
 
-        if end_line < start_line:
-            return ToolResult(error=f"end_line ({end_line}) cannot be less than start_line ({start_line})")
+        # Phase 1: Validate all edits and record original line numbers
+        edit_info: list[dict[str, Any]] = []
 
-        if end_line > total_lines:
-            return ToolResult(error=f"end_line {end_line} exceeds file length ({total_lines} lines)")
+        for i, edit in enumerate(edits, 1):
+            old_string = edit.get("old_string")
+            new_string = edit.get("new_string", "")
+            replace_all_edit = edit.get("replace_all", False)
 
-        # Convert to 0-indexed
-        start_idx = start_line - 1
-        end_idx = end_line  # exclusive, so end_line is correct for slicing
+            if not old_string:
+                return ToolResult(
+                    error=f"Batch edit failed (no changes made):\n"
+                    f"  Edit {i}: old_string cannot be empty"
+                )
 
-        # Ensure new_content ends with newline if we're not at end of file
-        if new_content and not new_content.endswith("\n") and end_idx < total_lines:
-            new_content += "\n"
+            count = content.count(old_string)
 
-        # Build new content
-        new_lines = lines[:start_idx] + [new_content] + lines[end_idx:]
-        result = "".join(new_lines)
+            if count == 0:
+                truncated = old_string[:50] + "..." if len(old_string) > 50 else old_string
+                return ToolResult(
+                    error=f"Batch edit failed (no changes made):\n"
+                    f"  Edit {i}: \"{truncated}\" not found in file"
+                )
 
-        return ToolResult(output=result)
+            if not replace_all_edit and count > 1:
+                truncated = old_string[:50] + "..." if len(old_string) > 50 else old_string
+                return ToolResult(
+                    error=(
+                        f"Batch edit failed (no changes made):\n"
+                        f"  Edit {i}: \"{truncated}\" appears {count} times. "
+                        f"Use replace_all=true or provide more context."
+                    )
+                )
+
+            # Record line number(s) in original content
+            line_num = self._find_line_number(content, old_string)
+            edit_info.append({
+                "index": i,
+                "old_string": old_string,
+                "new_string": new_string,
+                "replace_all": replace_all_edit,
+                "line_num": line_num,
+                "count": count
+            })
+
+        # Phase 2: Apply all edits sequentially to in-memory content
+        new_content = content
+        for info in edit_info:
+            if info["replace_all"]:
+                new_content = new_content.replace(info["old_string"], info["new_string"])
+            else:
+                new_content = new_content.replace(info["old_string"], info["new_string"], 1)
+
+        # Build success message with original line numbers
+        lines = []
+        for info in edit_info:
+            truncated = info["old_string"][:30]
+            if len(info["old_string"]) > 30:
+                truncated += "..."
+            truncated = truncated.replace('\n', '\\n')
+
+            if info["replace_all"] and info["count"] > 1:
+                lines.append(
+                    f"  {info['index']}. Replaced \"{truncated}\" ({info['count']} occurrences)"
+                )
+            else:
+                lines.append(
+                    f"  {info['index']}. Replaced \"{truncated}\" (line {info['line_num']})"
+                )
+
+        # Create result with embedded content for the caller
+        result = ToolResult(output=f"Applied {len(edits)} edits:\n" + "\n".join(lines))
+        # Attach the new content as a private attribute for the execute method
+        object.__setattr__(result, '_new_content', new_content)
+        return result
 
 
 # Factory for dependency injection
