@@ -1171,6 +1171,12 @@ nexus3 rpc create coordinator --preset trusted
 | ToolResult file errors | 22 skill files with repeated error handlers |
 | Git double timeout | `subprocess.run(timeout)` + `asyncio.wait_for()` is redundant |
 
+### Known Bugs
+
+| Bug | Description | Severity |
+|-----|-------------|----------|
+| Anthropic tool_result mismatch | When a multi-tool call is interrupted/cancelled, Anthropic API returns error: `tool_use ids were found without tool_result blocks immediately after`. Suggests we're not sending tool_results for all tool_use blocks when a batch is interrupted. | Medium |
+
 ---
 
 ## Skill Type Hierarchy
