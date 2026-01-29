@@ -1561,6 +1561,10 @@ async def run_repl(
     if shared and shared.provider_registry:
         await shared.provider_registry.aclose()
 
+    # 6. Close MCP connections (prevents unclosed transport warnings on Windows)
+    if shared and shared.mcp_registry:
+        await shared.mcp_registry.close_all()
+
 
 async def run_repl_client(url: str, agent_id: str, api_key: str | None = None) -> None:
     """Run REPL as client to a remote Nexus server.

@@ -483,13 +483,26 @@ class StdioTransport(MCPTransport):
             self._stderr_task = None
 
         if self._process is not None:
-            # Try graceful shutdown first
+            # Close all pipes explicitly (Windows ProactorEventLoop requires this)
+            # Close stdin first to signal EOF to subprocess
             if self._process.stdin is not None:
                 try:
                     self._process.stdin.close()
                     await self._process.stdin.wait_closed()
                 except Exception as e:
                     logger.debug("Stdin close error (expected during shutdown): %s", e)
+
+            # Close stdout and stderr to prevent "unclosed transport" warnings on Windows
+            if self._process.stdout is not None:
+                try:
+                    self._process.stdout.feed_eof()
+                except Exception:
+                    pass  # May already be closed
+            if self._process.stderr is not None:
+                try:
+                    self._process.stderr.feed_eof()
+                except Exception:
+                    pass  # May already be closed
 
             # Give it a moment to exit gracefully
             try:
