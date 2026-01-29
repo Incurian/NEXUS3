@@ -29,38 +29,92 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 - New `patch` skill for applying unified diffs with strict/tolerant/fuzzy modes
 - New `nexus3/patch/` module with parser, validator, and applier
 
-### Edit/Patch Tools Live Testing (2026-01-29)
+### Edit/Patch Tools Live Testing Protocol
 
-Live tested with a trusted NEXUS3 agent. Results:
+**Setup:**
+```bash
+# Create test directory and file
+mkdir -p /tmp/nexus-edit-test
+cat > /tmp/nexus-edit-test/test.py << 'EOF'
+#!/usr/bin/env python3
+"""Test file for edit tools."""
 
-| Test | Tool | Mode/Option | Result | Notes |
-|------|------|-------------|--------|-------|
-| 1 | `edit_file` | single replacement | ✅ PASS | |
-| 2 | `edit_file` | `replace_all=true` | ✅ PASS | |
-| 3 | `edit_file` | `edits` array (batched) | ✅ PASS | |
-| 4 | `edit_lines` | single line | ✅ PASS | |
-| 5 | `edit_lines` | line range (`start_line`, `end_line`) | ✅ PASS | |
-| 6 | `edit_lines` | delete lines (empty `new_content`) | ✅ PASS | |
-| 7 | `patch` | `mode=strict` (inline diff) | ✅ PASS | |
-| 8 | `patch` | `dry_run=true` | ✅ PASS | |
-| 9 | `patch` | `mode=tolerant` | ⚠️ PASS | Left trailing space artifact on line 20 |
-| 10 | `patch` | `mode=fuzzy` with `fuzzy_threshold` | ✅ PASS | |
-| 11 | `patch` | `diff_file` parameter | ❌ FAIL | Patch didn't apply even with correct line numbers |
+def greet(name):
+    """Greet someone."""
+    print(f"Hello, {name}!")
 
-**Bugs Found and Fixed:**
+def add(a, b):
+    """Add two numbers."""
+    return a + b
 
-1. **Tolerant mode trailing whitespace** (`nexus3/patch/applier.py`) - ✅ FIXED
-   - **Root cause**: Addition lines appended without normalization in `_perform_replacement()`
-   - **Fix**: Pass `mode` to `_perform_replacement()`, normalize content for non-strict modes
+def subtract(a, b):
+    """Subtract b from a."""
+    return a - b
 
-2. **diff_file parameter always fails in tolerant/fuzzy mode** (`nexus3/skill/builtin/patch.py`) - ✅ FIXED
-   - **Root cause**: `validate_patch()` called before mode evaluated, error returned for non-strict modes
-   - **Fix**: Move mode parsing before validation, skip strict validation failure for tolerant/fuzzy modes
+class Calculator:
+    """Simple calculator class."""
 
-**Remaining Tests:**
-- [ ] `edit_lines` inserting new lines (using line number that doesn't exist?)
-- [ ] Edge cases: empty file, file with only whitespace, very long lines
-- [ ] Concurrent edits (two agents editing same file)
+    def __init__(self):
+        self.value = 0
+
+    def add(self, x):
+        self.value += x
+        return self
+
+    def subtract(self, x):
+        self.value -= x
+        return self
+
+    def result(self):
+        return self.value
+
+if __name__ == "__main__":
+    greet("World")
+    print(f"2 + 3 = {add(2, 3)}")
+    print(f"5 - 2 = {subtract(5, 2)}")
+
+    calc = Calculator()
+    print(f"Calculator: {calc.add(10).subtract(3).result()}")
+EOF
+
+# Start server and create agent
+NEXUS_DEV=1 .venv/bin/python -m nexus3 --serve 9000 &
+sleep 2
+.venv/bin/python -m nexus3 rpc create tester --preset trusted --cwd /tmp/nexus-edit-test --port 9000
+```
+
+**Test Protocol:**
+1. For each test, send a message to the agent asking it to use the specific tool/mode
+2. After each test, READ THE FULL FILE to verify changes and check for side effects
+3. Reset the file before moving to next test group if needed
+4. Note any errors or unexpected behavior
+
+**Test Checklist:**
+
+| # | Tool | Test | Command to Agent | Verify |
+|---|------|------|------------------|--------|
+| 1 | `edit_file` | single replacement | "Change 'Hello' to 'Hi' on line 6" | Only line 6 changed |
+| 2 | `edit_file` | `replace_all=true` | "Change all 'self.value' to 'self._data'" | All 4 occurrences changed |
+| 3 | `edit_file` | `edits` array | "Change 'Add two numbers' to 'Sum' AND 'Subtract b from a' to 'Diff' in one call using edits array" | Both docstrings changed |
+| 4 | `edit_lines` | single line | "Replace line 34 with greet('Universe')" | Only line 34 changed |
+| 5 | `edit_lines` | line range | "Replace lines 35-36 with single line" | Two lines become one |
+| 6 | `edit_lines` | delete | "Delete lines 37-38 using empty new_content" | Lines removed |
+| 7 | `patch` | strict inline | "Use patch with inline diff to change 'Hello' to 'Howdy'" | Patch applied |
+| 8 | `patch` | dry_run | "Use patch with dry_run=true" | No file changes |
+| 9 | `patch` | tolerant | "Use patch mode=tolerant to add multiply function" | No trailing whitespace |
+| 10 | `patch` | fuzzy | "Use patch mode=fuzzy with threshold" | Patch applied |
+| 11 | `patch` | diff_file | "Create fix.patch file, then apply with diff_file param and mode=tolerant" | Patch applied from file |
+
+**Cleanup:**
+```bash
+.venv/bin/python -m nexus3 rpc destroy tester --port 9000
+.venv/bin/python -m nexus3 rpc shutdown --port 9000
+```
+
+**Previous Test Results (2026-01-29):**
+- Tests 1-10: PASS
+- Test 11: Initially FAILED, then FIXED (validation skipped for tolerant/fuzzy modes)
+- Bugs fixed: tolerant mode whitespace artifacts, diff_file validation bypass
 
 ### Ready to Merge
 
