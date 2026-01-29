@@ -16,45 +16,6 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ## Current Development
 
-### In Progress: Sandboxed Parent Send
-
-**Plan**: `docs/plans/SANDBOXED-PARENT-SEND-PLAN.md`
-
-**Goal:** Allow sandboxed agents to use `nexus_send` but **only to their parent agent**. This enables child agents to report back results without breaking the security sandbox.
-
-**Key Design:**
-- Add `allowed_targets` field to `ToolPermission` dataclass
-- Extend `PermissionEnforcer` with `_check_target_allowed()` method
-- Update sandboxed preset: `nexus_send` enabled with `allowed_targets="parent"`
-
-**Target Restriction Types:**
-| Value | Meaning |
-|-------|---------|
-| `None` | No restriction - can send to any agent |
-| `"parent"` | Can only send to parent_agent_id |
-| `"children"` | Can only send to agents in child_agent_ids |
-| `"family"` | Can send to parent OR children |
-| `["id1", "id2"]` | Explicit allowlist of agent IDs |
-
-**Key Files:**
-| Component | File |
-|-----------|------|
-| ToolPermission dataclass | `nexus3/core/presets.py` |
-| TargetRestriction type | `nexus3/core/presets.py` |
-| PermissionEnforcer | `nexus3/session/enforcer.py` |
-| Sandboxed preset | `nexus3/core/presets.py` |
-
-**Checklist:**
-- [x] P0: Pre-implementation fixes (P0.1-P0.3)
-- [x] P1: Extend ToolPermission (P1.1-P1.4)
-- [x] P2: Extend PermissionEnforcer (P2.1-P2.4)
-- [x] P3: Update sandboxed preset (P3.1-P3.2)
-- [x] P4: Integration testing (P4.1-P4.4)
-- [ ] P5: Live testing (P5.1-P5.2)
-- [x] P6: Documentation (P6.1-P6.4)
-
----
-
 ### Ready to Merge
 
 | Branch | Status | Notes |
@@ -71,6 +32,7 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 - `MCP-IMPLEMENTATION-GAPS.md` - Resources, Prompts, ping, Windows polish
 - `MCP-REMAINING-PHASES.md` - Detailed breakout of MCP work
 - `YOLO-SAFETY-PLAN.md` - YOLO warning banner, worker removal, RPC-to-YOLO block
+- `SANDBOXED-PARENT-SEND-PLAN.md` - Sandboxed agents can nexus_send to parent only
 
 ### On Deck
 
@@ -80,7 +42,7 @@ Plans listed in recommended implementation order (in `docs/plans/`):
 |----------|------|-------------|
 | 1 | `CONCAT-FILES-PLAN.md` | New `concat_files` skill to bundle source files with token estimation. |
 | 2 | `CLIPBOARD-PLAN.md` | Scoped clipboard system for copy/paste across files and agents. |
-| 3 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration. *Depends on SANDBOXED-PARENT-SEND for enforcer patterns.* |
+| 3 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration. |
 
 **Plan templates** (in `docs/plans/examples/`):
 - `EXAMPLE-PLAN-SIMPLE.md` - Template for focused single-feature plans
@@ -89,6 +51,7 @@ Plans listed in recommended implementation order (in `docs/plans/`):
 **Pending testing** (in `docs/testing/`):
 - `WINDOWS-LIVE-TESTING-GUIDE.md` - Manual testing matrix for Windows shell environments
 - `YOLO-SAFETY-LIVE-TESTING.md` - YOLO warning, RPC blocking, worker removal verification
+- `SANDBOXED-PARENT-SEND-LIVE-TESTING.md` - Sandboxed child-to-parent messaging verification
 
 **Reference docs** (in `docs/references/`):
 - `GITHUB-REFERENCE.md` - GitHub API/CLI reference
