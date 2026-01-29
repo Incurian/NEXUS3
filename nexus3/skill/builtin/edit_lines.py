@@ -26,8 +26,11 @@ class EditLinesSkill(FileSkill):
     @property
     def description(self) -> str:
         return (
-            "Replace lines by line number. For multiple edits, work bottom-to-top "
-            "to avoid line number drift. Use edit_file for safer string-based edits."
+            "Replace lines by line number. "
+            "IMPORTANT: new_content must include proper indentation - the entire line is replaced. "
+            "For Python, match the original indentation (spaces/tabs) exactly. "
+            "For multiple edits, work bottom-to-top to avoid line number drift. "
+            "Use edit_file for safer string-based edits that preserve context."
         )
 
     @property
@@ -49,7 +52,10 @@ class EditLinesSkill(FileSkill):
                 },
                 "new_content": {
                     "type": "string",
-                    "description": "Content to insert in place of the removed lines"
+                    "description": (
+                        "Content to insert (must include proper indentation - "
+                        "the entire line is replaced, not just the text)"
+                    )
                 }
             },
             "required": ["path", "start_line", "new_content"]
