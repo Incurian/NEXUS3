@@ -47,12 +47,17 @@ Live tested with a trusted NEXUS3 agent. Results:
 | 10 | `patch` | `mode=fuzzy` with `fuzzy_threshold` | ✅ PASS | |
 | 11 | `patch` | `diff_file` parameter | ❌ FAIL | Patch didn't apply even with correct line numbers |
 
-**Issues to Investigate:**
-1. **Tolerant mode trailing whitespace**: When applying patch in tolerant mode, a stray space character was left on a line. May be artifact of how context lines are handled.
-2. **diff_file parameter failing**: Even after regenerating the patch file with correct line numbers matching current file state, the patch failed to apply. Agent reported "context/line mismatches" and suggested using tolerant mode.
+**Bugs Found (root causes identified via log analysis):**
+
+1. **Tolerant mode trailing whitespace** (`nexus3/patch/applier.py`)
+   - **Root cause**: Parser extracts `content = line[1:]` for diff lines like `+ ` (plus-space), yielding `content = " "` (single space). During validation, `_normalize_line()` strips whitespace so it validates. During application (line 244), `content` is appended directly without normalization.
+   - **Fix needed**: Normalize content during application in tolerant mode, not just validation. Or strip trailing space from blank addition lines in parser.
+
+2. **diff_file parameter always fails in tolerant/fuzzy mode** (`nexus3/skill/builtin/patch.py:214-230`)
+   - **Root cause**: `validate_patch()` is called in STRICT mode before the `mode` parameter is evaluated. If strict validation fails (line 229), error returns immediately. The `mode` parameter only applies to `apply_patch()`, never to validation.
+   - **Fix needed**: Either pass mode to `validate_patch()`, or skip strict validation when mode is tolerant/fuzzy and let `apply_patch()` handle validation.
 
 **Remaining Tests:**
-- [ ] `patch` with `diff_file` in tolerant mode
 - [ ] `edit_lines` inserting new lines (using line number that doesn't exist?)
 - [ ] Edge cases: empty file, file with only whitespace, very long lines
 - [ ] Concurrent edits (two agents editing same file)
