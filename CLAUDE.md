@@ -12,38 +12,31 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ## Current Development
 
-### Complete: Windows Native Compatibility
+### In Progress: Windows Shell Compatibility
 
-**Plan:** `docs/WINDOWS-NATIVE-COMPATIBILITY.md`
-**Branch:** `feature/windows-native-compat` (from `feature/mcp-improvements`)
+**Plan:** `docs/WINDOWS-SHELL-COMPATIBILITY.md`
+**Branch:** `feature/windows-native-compat`
 
-Full Windows-native compatibility including:
-- **ESC key detection** using `msvcrt` on Windows
-- **Cross-platform process termination** (SIGTERM/SIGKILL on Unix, taskkill on Windows)
-- **Line ending preservation** in edit_file, append_file, regex_replace
-- **Windows path sanitization** in error messages (C:\Users\..., UNC paths, domain\user)
-- **Subprocess window handling** (CREATE_NO_WINDOW flag)
-- **BOM handling** in config/context file loading (utf-8-sig)
-- **Windows environment variables** (USERPROFILE, APPDATA, etc.)
-- **Windows file attributes** (RHSA instead of rwx)
-- **VT100 console mode** for ANSI sequence support
+Shell-specific compatibility for Git Bash, PowerShell, CMD.exe, and Windows Terminal:
+- **Shell detection** via environment variables (WT_SESSION, MSYSTEM, PSModulePath)
+- **Rich Console** dynamic configuration based on ANSI support
+- **shlex.split()** fix for Windows paths (posix=False + quote cleanup)
+- **MCP pipe cleanup** to prevent unclosed transport warnings on quit
+- **Startup messages** warning about limited shell capabilities
 
-| Phase | Status | Description |
-|-------|--------|-------------|
-| P1-P10: Core Implementation | ✅ COMPLETE | 20 commits, all features implemented |
-| P11: Testing Infrastructure | ✅ COMPLETE | Pytest markers, cross-platform test coverage |
-| P12: Documentation | ✅ COMPLETE | CLAUDE.md, module READMEs, live testing guide |
+**Status:** Plan validated by explorers, ready to implement.
 
-**Test count:** 2673 passed (756 security, 136 MCP unit tests)
+### Ready to Merge: Windows Native + MCP Improvements
 
-**Live Testing Guide:** `docs/WINDOWS-LIVE-TESTING-GUIDE.md`
+| Branch | Status | Notes |
+|--------|--------|-------|
+| `feature/windows-native-compat` | ✅ COMPLETE | Merge after shell compat done |
+| `feature/mcp-improvements` | ✅ COMPLETE | Parent branch, merge to master |
 
-### Ready to Merge: MCP Improvements
-
-**Plan:** `docs/MCP-IMPLEMENTATION-GAPS.md`
-**Branch:** `feature/mcp-improvements`
-
-MCP protocol compliance, security hardening, Windows compatibility foundation, registry robustness. All items complete except optional polish. Ready for final review and merge to master.
+**Archived plans** (in `.archive/`, verified complete):
+- `WINDOWS-NATIVE-COMPATIBILITY.md` - ESC key, process termination, line endings, BOM, etc.
+- `MCP-IMPLEMENTATION-GAPS.md` - Resources, Prompts, ping, Windows polish
+- `MCP-REMAINING-PHASES.md` - Detailed breakout of MCP work
 
 ### On Deck
 
