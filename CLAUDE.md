@@ -44,9 +44,9 @@ Plans listed in recommended implementation order:
 
 | Priority | Plan | Description |
 |----------|------|-------------|
-| 1 | `YOLO-SAFETY-PLAN.md` | YOLO warning banner, remove legacy "worker" preset, block RPC send to YOLO agents. |
-| 2 | `CONCAT-FILES-PLAN.md` | New `concat_files` skill to bundle source files with token estimation. |
-| 3 | `EDIT-PATCH-PLAN.md` | Split `edit_file` into separate tools, add batched edits, new `patch` skill. |
+| 1 | `EDIT-PATCH-PLAN.md` | Split `edit_file` into separate tools, add batched edits, new `patch` skill. |
+| 2 | `YOLO-SAFETY-PLAN.md` | YOLO warning banner, remove legacy "worker" preset, block RPC send to YOLO agents. |
+| 3 | `CONCAT-FILES-PLAN.md` | New `concat_files` skill to bundle source files with token estimation. |
 | 4 | `CLIPBOARD-PLAN.md` | Scoped clipboard system for copy/paste across files and agents. |
 | 5 | `SANDBOXED-PARENT-SEND-PLAN.md` | Allow sandboxed agents to `nexus_send` to parent only. |
 | 6 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration. *Depends on #5 for enforcer patterns.* |
