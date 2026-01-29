@@ -432,47 +432,47 @@ Update documentation with shell-specific guidance.
 
 ### Phase 1: Shell Detection Module
 
-- [ ] **P1.1** Create `nexus3/core/shell_detection.py` with WindowsShell enum
-- [ ] **P1.2** Implement `detect_windows_shell()` with caching
-- [ ] **P1.3** Implement `supports_ansi()` helper
-- [ ] **P1.4** Implement `supports_unicode()` helper
-- [ ] **P1.5** Implement `check_console_codepage()` function
-- [ ] **P1.6** Export from `nexus3/core/__init__.py`
-- [ ] **P1.7** Add unit tests for shell detection
+- [x] **P1.1** Create `nexus3/core/shell_detection.py` with WindowsShell enum
+- [x] **P1.2** Implement `detect_windows_shell()` with caching
+- [x] **P1.3** Implement `supports_ansi()` helper
+- [x] **P1.4** Implement `supports_unicode()` helper
+- [x] **P1.5** Implement `check_console_codepage()` function
+- [x] **P1.6** Export from `nexus3/core/__init__.py`
+- [x] **P1.7** Add unit tests for shell detection
 
 ### Phase 2: Rich Console Fix
 
-- [ ] **P2.1** Modify `nexus3/display/console.py` to use dynamic configuration
-- [ ] **P2.2** Fix `nexus3/cli/repl_commands.py` lines 1485, 1537 to use `get_console()`
+- [x] **P2.1** Modify `nexus3/display/console.py` to use dynamic configuration
+- [x] **P2.2** Fix `nexus3/cli/repl_commands.py` lines 1485, 1537 to use `get_console()`
 - [ ] **P2.3** Test in CMD.exe - verify no ANSI escape sequences visible
 - [ ] **P2.4** Test in Windows Terminal - verify colors still work
 
 ### Phase 3: shlex.split() Fix (CRITICAL: includes quote cleanup)
 
-- [ ] **P3.1** Modify `nexus3/skill/builtin/bash.py` with posix=False AND quote cleanup
-- [ ] **P3.2** Modify `nexus3/skill/builtin/git.py` with posix=False AND quote cleanup
-- [ ] **P3.3** Add test for Windows path preservation in shlex.split()
-- [ ] **P3.4** Add test for quoted argument handling (quotes stripped correctly)
+- [x] **P3.1** Modify `nexus3/skill/builtin/bash.py` with posix=False AND quote cleanup
+- [x] **P3.2** Modify `nexus3/skill/builtin/git.py` with posix=False AND quote cleanup
+- [x] **P3.3** Add test for Windows path preservation in shlex.split()
+- [x] **P3.4** Add test for quoted argument handling (quotes stripped correctly)
 - [ ] **P3.5** Live test: `bash_safe "dir C:\Users"` works
 - [ ] **P3.6** Live test: `git "log --oneline"` works (flag detection not broken)
 
 ### Phase 3.5: MCP Pipe Cleanup (Windows)
 
-- [ ] **P3.5.1** Fix `nexus3/mcp/transport.py` to close stdout/stderr in `close()`
-- [ ] **P3.5.2** Add `mcp_registry.close_all()` to REPL shutdown in `nexus3/cli/repl.py`
+- [x] **P3.5.1** Fix `nexus3/mcp/transport.py` to close stdout/stderr in `close()`
+- [x] **P3.5.2** Add `mcp_registry.close_all()` to REPL shutdown in `nexus3/cli/repl.py`
 - [ ] **P3.5.3** Live test: `/q` with MCP connected shows no pipe warnings on Windows
 
 ### Phase 4: Startup Messages
 
-- [ ] **P4.1** Add shell detection message to REPL startup
-- [ ] **P4.2** Add code page warning to REPL startup
+- [x] **P4.1** Add shell detection message to REPL startup
+- [x] **P4.2** Add code page warning to REPL startup
 - [ ] **P4.3** Verify messages appear in CMD.exe
 
 ### Phase 5: Documentation (After Implementation Complete)
 
-- [ ] **P5.1** Add "Windows Shell Compatibility" section to `CLAUDE.md`
-- [ ] **P5.2** Update `docs/WINDOWS-TROUBLESHOOTING.md` with shell-specific issues
-- [ ] **P5.3** Update `docs/WINDOWS-LIVE-TESTING-GUIDE.md` with shell testing matrix
+- [x] **P5.1** Add "Windows Shell Compatibility" section to `CLAUDE.md`
+- [x] **P5.2** Update `docs/WINDOWS-TROUBLESHOOTING.md` with shell-specific issues
+- [x] **P5.3** Update `docs/WINDOWS-LIVE-TESTING-GUIDE.md` with shell testing matrix
 
 ### Phase 6: Live Testing
 
