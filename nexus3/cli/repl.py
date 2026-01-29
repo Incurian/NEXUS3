@@ -955,6 +955,43 @@ async def run_repl(
     console.print("Commands: /help | ESC to cancel", style="dim")
     console.print("")
 
+    # Shell environment detection and warnings (Windows only)
+    if sys.platform == "win32":
+        from nexus3.core.shell_detection import (
+            detect_windows_shell,
+            WindowsShell,
+            check_console_codepage,
+        )
+
+        shell = detect_windows_shell()
+        if shell == WindowsShell.CMD:
+            console.print(
+                "[yellow]Detected CMD.exe[/] - using simplified output mode.",
+                style="dim",
+            )
+            console.print(
+                "[dim]For best experience, use Windows Terminal or PowerShell 7+[/]"
+            )
+        elif shell == WindowsShell.POWERSHELL_5:
+            console.print(
+                "[yellow]Detected PowerShell 5.1[/] - ANSI colors may not work.",
+                style="dim",
+            )
+            console.print(
+                "[dim]For best experience, upgrade to PowerShell 7+[/]"
+            )
+
+        # Code page warning
+        codepage, is_utf8 = check_console_codepage()
+        if not is_utf8 and codepage != 0:
+            console.print(
+                f"[yellow]Console code page is {codepage}[/], not UTF-8 (65001).",
+                style="dim",
+            )
+            console.print(
+                "[dim]Run 'chcp 65001' before NEXUS3 for proper character display.[/]"
+            )
+
     # Toolbar state - tracks ready/active and whether there were errors
     toolbar_has_errors = False
 
