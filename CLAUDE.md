@@ -34,7 +34,7 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ### On Deck
 
-Plans listed in recommended implementation order:
+Plans listed in recommended implementation order (in `docs/plans/`):
 
 | Priority | Plan | Description |
 |----------|------|-------------|
@@ -44,12 +44,17 @@ Plans listed in recommended implementation order:
 | 4 | `SANDBOXED-PARENT-SEND-PLAN.md` | Allow sandboxed agents to `nexus_send` to parent only. |
 | 5 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration. *Depends on #4 for enforcer patterns.* |
 
-**Pending testing** (implementation complete, needs Windows validation):
+**Plan templates** (in `docs/plans/examples/`):
+- `EXAMPLE-PLAN-SIMPLE.md` - Template for focused single-feature plans
+- `EXAMPLE-PLAN-COMPLEX.md` - Comprehensive example for large multi-phase features
+
+**Pending testing** (in `docs/testing/`):
 - `WINDOWS-LIVE-TESTING-GUIDE.md` - Manual testing matrix for Windows shell environments
 
-**Reference docs** (not plans):
+**Reference docs** (in `docs/references/`):
 - `GITHUB-REFERENCE.md` - GitHub API/CLI reference
 - `GITLAB-REFERENCE.md` - GitLab API/CLI reference
+- `concat_files.py`, `concat_files.sh` - Standalone file concatenation scripts
 
 ---
 
@@ -517,8 +522,8 @@ feat(clipboard): implement ClipboardManager (CLIPBOARD-PLAN P1.4)
 All non-trivial features should follow this planning process. Plans live in `docs/` as markdown files.
 
 **Reference examples:**
-- `docs/EXAMPLE-PLAN-SIMPLE.md` - Template for focused single-feature plans
-- `docs/EXAMPLE-PLAN-COMPLEX.md` - Comprehensive example for large multi-phase features
+- `docs/plans/examples/EXAMPLE-PLAN-SIMPLE.md` - Template for focused single-feature plans
+- `docs/plans/examples/EXAMPLE-PLAN-COMPLEX.md` - Comprehensive example for large multi-phase features
 
 #### Planning Process
 
