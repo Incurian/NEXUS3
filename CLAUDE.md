@@ -20,7 +20,7 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 | Branch | Status | Notes |
 |--------|--------|-------|
-| `feature/windows-native-compat` | ✅ COMPLETE | Includes shell compat + edit/patch skills |
+| `feature/windows-native-compat` | ✅ COMPLETE | Includes shell compat + edit/patch skills + config loading fix |
 | `feature/mcp-improvements` | ✅ COMPLETE | Parent branch, merge to master |
 
 **Archived plans** (in `.archive/`, verified complete):
@@ -33,6 +33,7 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 - `MCP-REMAINING-PHASES.md` - Detailed breakout of MCP work
 - `YOLO-SAFETY-PLAN.md` - YOLO warning banner, worker removal, RPC-to-YOLO block
 - `SANDBOXED-PARENT-SEND-PLAN.md` - Sandboxed agents can nexus_send to parent only
+- `CONFIG-LOADING-FIX-PLAN.md` - Unified JSON loading, Windows path handling, global/ancestor dedup
 
 ### On Deck
 

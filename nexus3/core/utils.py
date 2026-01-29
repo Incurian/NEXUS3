@@ -45,7 +45,11 @@ def deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]
     return result
 
 
-def find_ancestor_config_dirs(cwd: Path, max_depth: int = 2) -> list[Path]:
+def find_ancestor_config_dirs(
+    cwd: Path,
+    max_depth: int = 2,
+    exclude_paths: list[Path] | None = None,
+) -> list[Path]:
     """Find .nexus3 directories in ancestor paths.
 
     Searches up to max_depth parent directories for .nexus3 config directories.
@@ -53,20 +57,29 @@ def find_ancestor_config_dirs(cwd: Path, max_depth: int = 2) -> list[Path]:
     Args:
         cwd: Starting directory.
         max_depth: Maximum number of ancestor levels to check.
+        exclude_paths: Paths to exclude (e.g., global dir). Uses resolve() for comparison.
 
     Returns:
         List of ancestor config directories in order from
         furthest (grandparent) to nearest (parent).
     """
     ancestors = []
-    current = cwd.parent
+    # Use resolve() for consistent cross-platform comparison
+    current = cwd.resolve().parent
+
+    # Normalize exclude paths for comparison
+    excluded_resolved: set[Path] = set()
+    if exclude_paths:
+        excluded_resolved = {p.resolve() for p in exclude_paths}
 
     for _ in range(max_depth):
         if current == current.parent:  # Reached root
             break
         config_dir = current / NEXUS_DIR_NAME
         if config_dir.is_dir():
-            ancestors.append(config_dir)
+            # Skip if this matches an excluded path (e.g., global dir)
+            if config_dir.resolve() not in excluded_resolved:
+                ancestors.append(config_dir)
         current = current.parent
 
     # Return in order: grandparent first, then parent (for correct merge order)

@@ -29,8 +29,9 @@ Later layers override earlier layers using deep merge. Validation occurs after a
 ```python
 from nexus3.config import (
     # Functions
-    load_config,      # Load and merge configuration from multiple layers
-    load_json_file,   # Safe JSON file loader with error handling
+    load_config,              # Load and merge configuration from multiple layers
+    load_json_file,           # Safe JSON file loader with error handling
+    load_json_file_optional,  # Optional JSON loader (returns None if missing)
 
     # Constants
     DEFAULTS_DIR,     # Path to shipped defaults directory
@@ -104,6 +105,34 @@ from nexus3.config import load_json_file
 from pathlib import Path
 
 data = load_json_file(Path("settings.json"), error_context="settings")
+```
+
+### `load_json_file_optional(path: Path, error_context: str = "") -> dict[str, Any] | None`
+
+Load JSON file if it exists, returning None for missing files.
+
+Use this for optional config layers (global, ancestor, local) where the file may or may not exist.
+
+**Parameters:**
+- `path`: Path to the JSON file to load.
+- `error_context`: Optional context string for error messages.
+
+**Returns:** Parsed JSON as dict, empty dict for empty files, or None if file missing.
+
+**Raises:** `LoadError` if file exists but can't be read or contains invalid JSON.
+
+**Note:** Uses `Path.resolve()` for Windows/Git Bash compatibility where paths may have different formats (e.g., `/c/Users/...`).
+
+**Example:**
+```python
+from nexus3.config import load_json_file_optional
+from pathlib import Path
+
+# Returns None if file doesn't exist
+data = load_json_file_optional(Path("~/.nexus3/config.json"))
+if data is not None:
+    # Process config
+    pass
 ```
 
 ---
@@ -497,8 +526,7 @@ Invalid JSON: Unexpected UTF-8 BOM (decode using utf-8-sig)
 
 **Affected functions:**
 - `load_json_file()` in `load_utils.py`
-- `_load_json_file()` in `loader.py`
-- `_load_from_path()` in `loader.py`
+- `load_json_file_optional()` in `load_utils.py`
 
 ---
 

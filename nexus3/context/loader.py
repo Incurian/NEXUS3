@@ -14,7 +14,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from nexus3.config.load_utils import load_json_file
+from nexus3.config.load_utils import load_json_file_optional
 from nexus3.config.schema import ContextConfig, MCPServerConfig
 from nexus3.core.constants import get_defaults_dir, get_nexus_dir
 from nexus3.core.errors import ContextLoadError, LoadError, MCPConfigError
@@ -205,26 +205,6 @@ class ContextLoader:
             return path.read_text(encoding="utf-8-sig")
         return None
 
-    def _load_json(self, path: Path) -> dict[str, Any] | None:
-        """Load a JSON file if it exists.
-
-        Args:
-            path: Path to the JSON file.
-
-        Returns:
-            Parsed JSON as dict, empty dict for empty files, or None if missing.
-
-        Raises:
-            ContextLoadError: If file contains invalid JSON or non-dict content.
-        """
-        if not path.is_file():
-            return None
-
-        try:
-            return load_json_file(path)
-        except LoadError as e:
-            raise ContextLoadError(e.message) from e
-
     def _load_layer(self, directory: Path, layer_name: str) -> ContextLayer:
         """Load all context files from a directory.
 
@@ -259,11 +239,17 @@ class ContextLoader:
 
         # Load config.json - ContextLoadError propagates for fail-fast behavior
         config_path = directory / "config.json"
-        layer.config = self._load_json(config_path)
+        try:
+            layer.config = load_json_file_optional(config_path)
+        except LoadError as e:
+            raise ContextLoadError(e.message) from e
 
         # Load mcp.json - ContextLoadError propagates for fail-fast behavior
         mcp_path = directory / "mcp.json"
-        layer.mcp = self._load_json(mcp_path)
+        try:
+            layer.mcp = load_json_file_optional(mcp_path)
+        except LoadError as e:
+            raise ContextLoadError(e.message) from e
 
         return layer
 
@@ -530,8 +516,11 @@ Source: {source_path}
                 merged_config = deep_merge(merged_config, global_layer.config)
                 sources.config_sources.append(global_layer.path / "config.json")
 
-        # 2. Load ancestors
-        ancestor_dirs = find_ancestor_config_dirs(self._cwd, self._config.ancestor_depth)
+        # 2. Load ancestors (exclude global dir to avoid loading it twice)
+        global_dir = self._get_global_dir()
+        ancestor_dirs = find_ancestor_config_dirs(
+            self._cwd, self._config.ancestor_depth, exclude_paths=[global_dir]
+        )
         sources.ancestor_dirs = [d.parent for d in ancestor_dirs]
 
         for ancestor_dir in ancestor_dirs:

@@ -61,7 +61,7 @@ The config loader in `nexus3/config/loader.py` similarly starts from defaults:
 
 ```python
 # Layer 1: Shipped defaults
-default_data = _load_json_file(DEFAULT_CONFIG)  # nexus3/defaults/config.json
+default_data = load_json_file_optional(DEFAULT_CONFIG)  # nexus3/defaults/config.json
 if default_data:
     merged = deep_merge(merged, default_data)
 ```

@@ -32,6 +32,7 @@ from nexus3.core.permissions import (
     get_builtin_presets,
     resolve_preset,
 )
+from nexus3.core.errors import ProviderError
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.display import get_console
 from nexus3.rpc.pool import is_temp_agent
@@ -1442,10 +1443,13 @@ async def cmd_model(
     if provider_registry is not None:
         provider_registry = getattr(provider_registry, "provider_registry", None)
     if provider_registry is not None:
-        new_provider = provider_registry.get(
-            new_model.provider_name, new_model.model_id, new_model.reasoning
-        )
-        agent.session.provider = new_provider
+        try:
+            new_provider = provider_registry.get(
+                new_model.provider_name, new_model.model_id, new_model.reasoning
+            )
+            agent.session.provider = new_provider
+        except ProviderError as e:
+            return CommandOutput.error(f"Failed to switch model: {e.message}")
 
     alias_info = f" (alias: {new_model.alias})" if new_model.alias else ""
     return CommandOutput.success(

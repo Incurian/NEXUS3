@@ -228,9 +228,20 @@ class BaseProvider(ABC):
 
         api_key = os.environ.get(self._config.api_key_env)
         if not api_key:
-            raise ProviderError(
-                f"API key not found. Set the {self._config.api_key_env} environment variable."
-            )
+            from nexus3.core.constants import get_nexus_dir
+
+            global_config = get_nexus_dir() / "config.json"
+            msg = f"API key not found. Set the {self._config.api_key_env} environment variable."
+
+            # Help diagnose config loading issues
+            if not global_config.resolve().is_file():
+                msg += f"\n\nNote: No config found at {global_config}"
+                msg += "\nExpected location: ~/.nexus3/config.json"
+            else:
+                msg += f"\n\nConfig exists at: {global_config}"
+                msg += "\nCheck your provider's api_key_env setting."
+
+            raise ProviderError(msg)
         return api_key
 
     def _build_headers(self) -> dict[str, str]:

@@ -166,24 +166,31 @@ class TestContextLoader:
         assert ancestors[0] == tmp_path / "a" / "b" / "c" / ".nexus3"
 
     def test_load_json_empty_file(self, tmp_path: Path) -> None:
-        """Test loading empty JSON file returns empty dict."""
+        """Test loading empty JSON file returns empty dict.
+
+        Tests via load_json_file_optional (the unified function).
+        """
+        from nexus3.config.load_utils import load_json_file_optional
+
         empty_file = tmp_path / "empty.json"
         empty_file.write_text("")
 
-        loader = ContextLoader(cwd=tmp_path)
-        result = loader._load_json(empty_file)
+        result = load_json_file_optional(empty_file)
         assert result == {}
 
     def test_load_json_invalid(self, tmp_path: Path) -> None:
-        """Test loading invalid JSON raises error."""
-        from nexus3.core.errors import ContextLoadError
+        """Test loading invalid JSON raises error.
+
+        Tests via load_json_file_optional (the unified function).
+        """
+        from nexus3.config.load_utils import load_json_file_optional
+        from nexus3.core.errors import LoadError
 
         bad_file = tmp_path / "bad.json"
         bad_file.write_text("not json")
 
-        loader = ContextLoader(cwd=tmp_path)
-        with pytest.raises(ContextLoadError, match="Invalid JSON"):
-            loader._load_json(bad_file)
+        with pytest.raises(LoadError, match="Invalid JSON"):
+            load_json_file_optional(bad_file)
 
     def test_labeled_sections(self, tmp_path: Path) -> None:
         """Test that loaded context has labeled sections."""

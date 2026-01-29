@@ -16,7 +16,7 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 
-from nexus3.core.errors import PathSecurityError
+from nexus3.core.errors import PathSecurityError, ProviderError
 from nexus3.core.paths import validate_path
 
 logger = logging.getLogger(__name__)
@@ -392,7 +392,11 @@ class GlobalDispatcher:
             parent_agent_id=parent_agent_id,  # Pass actual parent agent ID
             model=model,  # Model name/alias for this agent
         )
-        agent = await self._pool.create(agent_id=agent_id, config=config)
+        try:
+            agent = await self._pool.create(agent_id=agent_id, config=config)
+        except ProviderError as e:
+            # Provider initialization failed (e.g., missing API key)
+            raise InvalidParamsError(f"Failed to initialize provider: {e.message}") from e
 
         logger.info(
             "Agent created: %s (preset=%s, cwd=%s, model=%s)",

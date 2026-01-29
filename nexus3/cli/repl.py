@@ -57,7 +57,7 @@ from nexus3.commands.protocol import CommandContext, CommandOutput
 from nexus3.commands.protocol import CommandResult as CmdResult
 from nexus3.config.loader import load_config
 from nexus3.core.encoding import configure_stdio
-from nexus3.core.errors import NexusError
+from nexus3.core.errors import NexusError, ProviderError
 from nexus3.core.permissions import ConfirmationResult, PermissionLevel
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.core.types import ToolCall
@@ -380,24 +380,29 @@ async def run_repl(
     # =========================================================================
     # Create agent based on startup mode
     # =========================================================================
-    if startup_mode in ("resume", "session") and saved_session is not None:
-        main_agent = await pool.restore_from_saved(saved_session)
-        # Note: restored sessions keep their original model, --model flag is ignored
-    else:
-        # Create with trusted preset for REPL (user is interactive)
-        # RPC-created agents default to sandboxed via config.permissions.default_preset
-        agent_config = AgentConfig(model=model, preset="trusted")
-        main_agent = await pool.create(agent_id=agent_name, config=agent_config)
-        if template:
-            # Load custom prompt from template
-            try:
-                content = template.read_text(encoding="utf-8")
-                main_agent.context.set_system_prompt(content)
-            except OSError as e:
-                console.print(f"[red]Error loading template: {e}[/]")
-                token_manager.delete()
-                await pool.destroy(agent_name)
-                return
+    try:
+        if startup_mode in ("resume", "session") and saved_session is not None:
+            main_agent = await pool.restore_from_saved(saved_session)
+            # Note: restored sessions keep their original model, --model flag is ignored
+        else:
+            # Create with trusted preset for REPL (user is interactive)
+            # RPC-created agents default to sandboxed via config.permissions.default_preset
+            agent_config = AgentConfig(model=model, preset="trusted")
+            main_agent = await pool.create(agent_id=agent_name, config=agent_config)
+            if template:
+                # Load custom prompt from template
+                try:
+                    content = template.read_text(encoding="utf-8")
+                    main_agent.context.set_system_prompt(content)
+                except OSError as e:
+                    console.print(f"[red]Error loading template: {e}[/]")
+                    token_manager.delete()
+                    await pool.destroy(agent_name)
+                    return
+    except ProviderError as e:
+        console.print(f"[red]Provider initialization failed:[/]\n{e.message}")
+        token_manager.delete()
+        return
 
     # Wire up confirmation callback for main agent
     main_agent.session.on_confirm = confirm_with_pause
