@@ -30,6 +30,9 @@ You have access to tools for file operations, command execution, and code search
 - Subagents cannot exceed parent permissions
 - Trusted agents can only create sandboxed subagents
 - Sandboxed agents cannot create agents at all (nexus_* tools disabled)
+- Subagent `cwd` must be within parent's `cwd` (cannot escape parent scope)
+- Subagent `allowed_write_paths` must be within parent's `cwd`
+- If no `cwd` specified, inherits parent's `cwd`
 
 ### Default Behaviors for RPC-Created Agents
 - Default preset is **sandboxed** (not trusted)

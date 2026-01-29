@@ -255,7 +255,7 @@ class GlobalDispatcher:
             # Inherit cwd from parent if not specified
             cwd_path = parent_cwd
 
-        # SECURITY: Validate cwd is within parent's allowed paths
+        # SECURITY: Validate cwd is within parent's allowed paths AND parent's cwd
         if cwd_path is not None and parent_permissions is not None:
             parent_allowed = parent_permissions.effective_policy.allowed_paths
             if parent_allowed is not None:
@@ -266,6 +266,16 @@ class GlobalDispatcher:
                     raise InvalidParamsError(
                         f"cwd '{cwd_path}' is outside parent's allowed paths"
                     ) from e
+
+            # For TRUSTED parents (allowed_paths=None), still validate against parent's cwd
+            # This ensures subagent can only operate within parent's working directory
+            if parent_cwd is not None and isinstance(parent_cwd, Path):
+                try:
+                    cwd_path.resolve().relative_to(parent_cwd.resolve())
+                except ValueError:
+                    raise InvalidParamsError(
+                        f"cwd '{cwd_path}' is outside parent's cwd '{parent_cwd}'"
+                    )
 
         # Validate allowed_write_paths if provided
         write_paths: list[Path] | None = None
@@ -299,6 +309,18 @@ class GlobalDispatcher:
                     raise InvalidParamsError(
                         f"allowed_write_path '{wp}' is outside sandbox root '{sandbox_root}'"
                     ) from e
+
+        # SECURITY: For subagents, validate write paths are within parent's cwd
+        # This prevents a parent from granting child write access outside parent's scope
+        if write_paths and parent_cwd is not None and isinstance(parent_cwd, Path):
+            parent_cwd_resolved = parent_cwd.resolve()
+            for wp in write_paths:
+                try:
+                    wp.relative_to(parent_cwd_resolved)
+                except ValueError:
+                    raise InvalidParamsError(
+                        f"allowed_write_path '{wp}' is outside parent's cwd '{parent_cwd}'"
+                    )
 
         # Build delta from parameters (disable_tools and write permissions)
         delta: PermissionDelta | None = None

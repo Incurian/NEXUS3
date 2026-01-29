@@ -219,9 +219,18 @@ class PermissionPolicy:
         return False
 
     def is_within_cwd(self, path: Path) -> bool:
-        """Check if path is within the working directory."""
+        """Check if path is within the working directory.
+
+        For relative paths, resolves against self.cwd (not process cwd).
+        This is critical for multi-agent servers where each agent has
+        its own configured cwd but the process cwd is the server's.
+        """
         try:
-            resolved = path.resolve()
+            # Resolve relative paths against self.cwd, not process cwd
+            if not path.is_absolute():
+                resolved = (self.cwd / path).resolve()
+            else:
+                resolved = path.resolve()
             return resolved.is_relative_to(self.cwd.resolve())
         except (OSError, ValueError):
             return False

@@ -8,6 +8,10 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 **Status:** Feature-complete. Multi-provider support, permission system, MCP integration, context compaction.
 
+**Claude Code Skills:** Local skills for Claude Code are in `.claude/skills/`:
+- `.claude/skills/nexus/SKILL.md` - REPL/server startup modes
+- `.claude/skills/nexus-rpc/SKILL.md` - RPC commands documentation
+
 ---
 
 ## Current Development
@@ -1094,6 +1098,12 @@ nexus3 --init-global-force     # Overwrite existing
 7. **Trusted agents can only create sandboxed subagents**: A trusted agent cannot spawn another trusted agent - all subagents are sandboxed (ceiling enforcement).
 
 8. **Sandboxed agents cannot create agents at all**: The `nexus_create`, `nexus_destroy`, `nexus_send`, and other nexus tools are completely disabled for sandboxed agents.
+
+9. **Subagent cwd must be within parent's cwd**: When creating a subagent, the child's `cwd` must be within the parent's `cwd`. This prevents privilege escalation where a child could operate in a directory the parent shouldn't access.
+
+10. **Subagent write paths must be within parent's cwd**: Similarly, `allowed_write_paths` for a subagent must be within the parent's `cwd`. A parent cannot grant write access to paths outside its own working directory.
+
+11. **Subagent cwd defaults to parent's cwd**: If no `cwd` is specified when creating a subagent, it inherits the parent's `cwd` (not the server process's cwd).
 
 **Example secure agent creation:**
 ```bash
