@@ -237,6 +237,82 @@ self._args = args
 
 Without cleanup, git skill's dangerous flag detection fails (`"--force"` ≠ `--force`).
 
+### Phase 3.5: Fix MCP Subprocess Pipe Cleanup (Windows)
+
+On Windows, MCP subprocess pipes (stdout/stderr) cause `ResourceWarning: unclosed transport` on quit.
+
+**Root cause:** Two issues:
+1. `StdioTransport.close()` only closes stdin, not stdout/stderr
+2. `mcp_registry.close_all()` never called during REPL shutdown
+
+**File 1:** `nexus3/mcp/transport.py` - Close all pipes
+
+**Current (lines 485-502):**
+```python
+        if self._process is not None:
+            # Try graceful shutdown first
+            if self._process.stdin is not None:
+                try:
+                    self._process.stdin.close()
+                    await self._process.stdin.wait_closed()
+                except Exception as e:
+                    logger.debug("Stdin close error (expected during shutdown): %s", e)
+
+            # Give it a moment to exit gracefully
+            try:
+                await asyncio.wait_for(self._process.wait(), timeout=2.0)
+            except TimeoutError:
+                # Use cross-platform process tree termination
+                from nexus3.core.process import terminate_process_tree
+                await terminate_process_tree(self._process)
+
+            self._process = None
+```
+
+**New:**
+```python
+        if self._process is not None:
+            # Close all pipes explicitly (Windows ProactorEventLoop requires this)
+            # Close stdin first to signal EOF to subprocess
+            if self._process.stdin is not None:
+                try:
+                    self._process.stdin.close()
+                    await self._process.stdin.wait_closed()
+                except Exception as e:
+                    logger.debug("Stdin close error (expected during shutdown): %s", e)
+
+            # Close stdout and stderr to prevent "unclosed transport" warnings on Windows
+            if self._process.stdout is not None:
+                try:
+                    self._process.stdout.feed_eof()
+                except Exception:
+                    pass  # May already be closed
+            if self._process.stderr is not None:
+                try:
+                    self._process.stderr.feed_eof()
+                except Exception:
+                    pass  # May already be closed
+
+            # Give it a moment to exit gracefully
+            try:
+                await asyncio.wait_for(self._process.wait(), timeout=2.0)
+            except TimeoutError:
+                # Use cross-platform process tree termination
+                from nexus3.core.process import terminate_process_tree
+                await terminate_process_tree(self._process)
+
+            self._process = None
+```
+
+**File 2:** `nexus3/cli/repl.py` - Add MCP cleanup to shutdown sequence
+
+**After line 1562** (after `await shared.provider_registry.aclose()`):
+```python
+    # 6. Close MCP connections (prevents unclosed transport warnings on Windows)
+    if shared and shared.mcp_registry:
+        await shared.mcp_registry.close_all()
+```
+
 ### Phase 4: Add Startup Shell Detection Message
 
 Show detected shell at startup for debugging.
@@ -379,6 +455,12 @@ Update documentation with shell-specific guidance.
 - [ ] **P3.4** Add test for quoted argument handling (quotes stripped correctly)
 - [ ] **P3.5** Live test: `bash_safe "dir C:\Users"` works
 - [ ] **P3.6** Live test: `git "log --oneline"` works (flag detection not broken)
+
+### Phase 3.5: MCP Pipe Cleanup (Windows)
+
+- [ ] **P3.5.1** Fix `nexus3/mcp/transport.py` to close stdout/stderr in `close()`
+- [ ] **P3.5.2** Add `mcp_registry.close_all()` to REPL shutdown in `nexus3/cli/repl.py`
+- [ ] **P3.5.3** Live test: `/q` with MCP connected shows no pipe warnings on Windows
 
 ### Phase 4: Startup Messages
 
