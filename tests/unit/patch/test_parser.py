@@ -172,6 +172,27 @@ index abc1234..def5678 100644
         assert hunk.lines[1] == ("-", "old last line")
         assert hunk.lines[2] == ("+", "new last line")
 
+    def test_bare_empty_line_treated_as_context(self) -> None:
+        """Test that bare empty lines in hunk are treated as blank context lines.
+
+        LLMs often forget the space prefix for blank context lines.
+        A bare empty line should be auto-fixed to context, not skipped.
+        """
+        # Note: The empty line between +new and "next" has no space prefix
+        # (LLM mistake). Parser should treat it as blank context.
+        diff_text = "--- a/file.py\n+++ b/file.py\n@@ -1,4 +1,4 @@\n line1\n-old\n+new\n\n next\n"
+        files = parse_unified_diff(diff_text)
+
+        assert len(files) == 1
+        hunk = files[0].hunks[0]
+        # Should have 5 lines: context, removal, addition, blank context, context
+        assert len(hunk.lines) == 5
+        assert hunk.lines[0] == (" ", "line1")
+        assert hunk.lines[1] == ("-", "old")
+        assert hunk.lines[2] == ("+", "new")
+        assert hunk.lines[3] == (" ", "")  # Bare empty line -> blank context
+        assert hunk.lines[4] == (" ", "next")
+
     def test_parse_multiple_files(self) -> None:
         """Test parsing diff with multiple files."""
         diff_text = """\

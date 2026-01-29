@@ -224,10 +224,10 @@ def _parse_single_file(lines: list[str], start_idx: int) -> tuple[PatchFile | No
                     content = line[1:]
                     hunk.lines.append((prefix, content))
                 elif line == "":
-                    # Empty line in diff - could be context or end of hunk
-                    # In unified diff, empty context lines have a space prefix
-                    # A truly empty line might indicate end of hunk
-                    pass
+                    # Empty line in diff - treat as blank context line
+                    # LLMs often forget the space prefix for blank lines
+                    # In valid unified diff, blank context = " \n" not "\n"
+                    hunk.lines.append((" ", ""))
 
                 idx += 1
 
