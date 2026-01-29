@@ -174,7 +174,7 @@ def _apply_hunk(
 
     # Apply the hunk at match_pos
     result_lines, lines_added, lines_removed = _perform_replacement(
-        lines, hunk, match_pos
+        lines, hunk, match_pos, mode
     )
 
     new_offset = offset + lines_added - lines_removed
@@ -209,7 +209,7 @@ def _verify_match(
 
 
 def _perform_replacement(
-    lines: list[str], hunk: Hunk, pos: int
+    lines: list[str], hunk: Hunk, pos: int, mode: ApplyMode = ApplyMode.STRICT
 ) -> tuple[list[str], int, int]:
     """Perform the actual line replacement for a hunk.
 
@@ -217,6 +217,7 @@ def _perform_replacement(
         lines: File lines
         hunk: Hunk with lines to apply
         pos: Position to apply at (0-indexed)
+        mode: Matching mode (affects whitespace handling for additions)
 
     Returns:
         Tuple of (new_lines, additions_count, removals_count)
@@ -241,6 +242,10 @@ def _perform_replacement(
             removals += 1
         elif prefix == "+":
             # Addition - insert new line
+            # In tolerant/fuzzy mode, normalize to avoid whitespace artifacts
+            # (e.g., diff line "+ " becomes content=" " which should be "")
+            if mode != ApplyMode.STRICT:
+                content = _normalize_line(content)
             new_section.append(content)
             additions += 1
 

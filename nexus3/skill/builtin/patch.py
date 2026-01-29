@@ -211,6 +211,12 @@ class PatchSkill(FileSkill):
         # Detect original line ending
         original_line_ending = detect_line_ending(target_content)
 
+        # Convert mode string to ApplyMode enum early (needed for validation decision)
+        try:
+            apply_mode = ApplyMode(mode)
+        except ValueError:
+            return ToolResult(error=f"Invalid mode '{mode}'. Use: strict, tolerant, fuzzy")
+
         # Validate the patch against target content
         validation_result = validate_patch(matching_patch, target_content)
 
@@ -225,15 +231,12 @@ class PatchSkill(FileSkill):
                 multi_file_warning,
             )
 
-        # If validation failed and no auto-fix, report errors
+        # If validation failed and no auto-fix in STRICT mode, report errors
+        # For tolerant/fuzzy modes, skip validation failure and let apply_patch() handle it
         if not validation_result.valid and validation_result.fixed_patch is None:
-            return self._format_validation_failure(validation_result, matching_patch)
-
-        # Convert mode string to ApplyMode enum
-        try:
-            apply_mode = ApplyMode(mode)
-        except ValueError:
-            return ToolResult(error=f"Invalid mode '{mode}'. Use: strict, tolerant, fuzzy")
+            if apply_mode == ApplyMode.STRICT:
+                return self._format_validation_failure(validation_result, matching_patch)
+            # For tolerant/fuzzy, proceed to apply_patch() which has its own matching logic
 
         # Apply the patch
         apply_result = apply_patch(
