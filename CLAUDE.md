@@ -29,6 +29,34 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 - New `patch` skill for applying unified diffs with strict/tolerant/fuzzy modes
 - New `nexus3/patch/` module with parser, validator, and applier
 
+### Edit/Patch Tools Live Testing (2026-01-29)
+
+Live tested with a trusted NEXUS3 agent. Results:
+
+| Test | Tool | Mode/Option | Result | Notes |
+|------|------|-------------|--------|-------|
+| 1 | `edit_file` | single replacement | ✅ PASS | |
+| 2 | `edit_file` | `replace_all=true` | ✅ PASS | |
+| 3 | `edit_file` | `edits` array (batched) | ✅ PASS | |
+| 4 | `edit_lines` | single line | ✅ PASS | |
+| 5 | `edit_lines` | line range (`start_line`, `end_line`) | ✅ PASS | |
+| 6 | `edit_lines` | delete lines (empty `new_content`) | ✅ PASS | |
+| 7 | `patch` | `mode=strict` (inline diff) | ✅ PASS | |
+| 8 | `patch` | `dry_run=true` | ✅ PASS | |
+| 9 | `patch` | `mode=tolerant` | ⚠️ PASS | Left trailing space artifact on line 20 |
+| 10 | `patch` | `mode=fuzzy` with `fuzzy_threshold` | ✅ PASS | |
+| 11 | `patch` | `diff_file` parameter | ❌ FAIL | Patch didn't apply even with correct line numbers |
+
+**Issues to Investigate:**
+1. **Tolerant mode trailing whitespace**: When applying patch in tolerant mode, a stray space character was left on a line. May be artifact of how context lines are handled.
+2. **diff_file parameter failing**: Even after regenerating the patch file with correct line numbers matching current file state, the patch failed to apply. Agent reported "context/line mismatches" and suggested using tolerant mode.
+
+**Remaining Tests:**
+- [ ] `patch` with `diff_file` in tolerant mode
+- [ ] `edit_lines` inserting new lines (using line number that doesn't exist?)
+- [ ] Edge cases: empty file, file with only whitespace, very long lines
+- [ ] Concurrent edits (two agents editing same file)
+
 ### Ready to Merge
 
 | Branch | Status | Notes |
