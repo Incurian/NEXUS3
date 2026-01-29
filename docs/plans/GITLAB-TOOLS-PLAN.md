@@ -2,6 +2,9 @@
 
 This document outlines the implementation plan for GitLab integration in NEXUS3. The design prioritizes GitLab features while maintaining abstractions that allow future GitHub support.
 
+**Related documents:**
+- `docs/references/GITLAB-REFERENCE.md` - GitLab API/CLI reference documentation
+
 ---
 
 ## Goals

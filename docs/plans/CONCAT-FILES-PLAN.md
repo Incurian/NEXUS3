@@ -4,7 +4,7 @@
 
 Add a `concat_files` skill that recursively finds files by extension and concatenates them into a single output file. This enables agents to bundle source code for analysis, context loading, or export.
 
-Based on the CLI tool in `.archive/concat_files.py`.
+Based on the CLI tool in `docs/references/concat_files.py`.
 
 ---
 
@@ -812,7 +812,7 @@ Use this checklist to track implementation progress. Each item can be assigned t
 | Skill registration | `nexus3/skill/builtin/registration.py` |
 | Base class | `nexus3/skill/base.py` (FileSkill) |
 | TokenCounter | `nexus3/context/token_counter.py` |
-| Reference implementation | `.archive/concat_files.py` |
+| Reference implementation | `docs/references/concat_files.py` |
 | Unit tests | `tests/unit/skill/test_concat_files.py` |
 | Integration tests | `tests/integration/test_concat_files.py` |
 
