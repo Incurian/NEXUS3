@@ -42,6 +42,9 @@ class SessionAllowances:
     # Individual MCP tools allowed (user chose "allow this tool always")
     mcp_tools: set[str] = field(default_factory=set)
 
+    # GitLab skills allowed (format: "skill_name@instance_host")
+    gitlab_skills: set[str] = field(default_factory=set)
+
     def is_write_allowed(self, path: Path) -> bool:
         """Check if path is covered by an existing write allowance."""
         resolved = path.resolve()
@@ -152,6 +155,16 @@ class SessionAllowances:
         """Allow a specific MCP tool for this session."""
         self.mcp_tools.add(tool_name)
 
+    def is_gitlab_skill_allowed(self, skill_name: str, instance_host: str) -> bool:
+        """Check if GitLab skill@instance is allowed without confirmation."""
+        key = f"{skill_name}@{instance_host}"
+        return key in self.gitlab_skills
+
+    def add_gitlab_skill(self, skill_name: str, instance_host: str) -> None:
+        """Allow a GitLab skill@instance for this session."""
+        key = f"{skill_name}@{instance_host}"
+        self.gitlab_skills.add(key)
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize for persistence."""
         return {
@@ -164,6 +177,7 @@ class SessionAllowances:
             },
             "mcp_servers": list(self.mcp_servers),
             "mcp_tools": list(self.mcp_tools),
+            "gitlab_skills": list(self.gitlab_skills),
         }
 
     @classmethod
@@ -179,6 +193,7 @@ class SessionAllowances:
             },
             mcp_servers=set(data.get("mcp_servers", [])),
             mcp_tools=set(data.get("mcp_tools", [])),
+            gitlab_skills=set(data.get("gitlab_skills", [])),
         )
 
     # Backwards compatibility

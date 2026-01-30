@@ -90,9 +90,9 @@ Phase 5 - Config & Premium: ✅ COMPLETE (2026-01-30)
 - [x] P5.3-P5.5 Implement 3 skills (deploy_key, deploy_token, feature_flag)
 - [ ] P5.6 Unit tests
 
-Phase 6 - Integration:
-- [ ] P6.1-P6.2 Permission/confirmation integration
-- [ ] P6.3-P6.4 E2E + live testing
+Phase 6 - Integration: ✅ COMPLETE (2026-01-30)
+- [x] P6.1-P6.2 Permission/confirmation integration (allowances, permissions.py, session.py)
+- [x] P6.3-P6.4 E2E + live testing
 
 Phase 7 - Documentation:
 - [ ] P7.1-P7.6 Update CLAUDE.md, skill READMEs, REPL docs

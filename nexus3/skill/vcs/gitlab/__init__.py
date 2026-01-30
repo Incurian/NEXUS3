@@ -9,19 +9,10 @@ if TYPE_CHECKING:
     from nexus3.skill.registry import SkillRegistry
     from nexus3.skill.services import ServiceContainer
 
-from nexus3.core.permissions import PermissionLevel
+from nexus3.skill.vcs.gitlab.permissions import can_use_gitlab
 
-
-def can_use_gitlab(permissions: AgentPermissions | None) -> bool:
-    """Check if agent can use GitLab tools.
-
-    GitLab tools require TRUSTED+ (no SANDBOXED).
-    Returns True if YOLO or TRUSTED, False otherwise.
-    """
-    if permissions is None:
-        return False
-    level = permissions.effective_policy.level
-    return level in (PermissionLevel.YOLO, PermissionLevel.TRUSTED)
+# Re-export for backwards compatibility
+__all__ = ["can_use_gitlab", "register_gitlab_skills"]
 
 
 def register_gitlab_skills(

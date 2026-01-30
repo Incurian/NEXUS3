@@ -30,7 +30,6 @@ from nexus3.core.validation import ValidationError, validate_tool_arguments
 from nexus3.session.confirmation import ConfirmationController
 from nexus3.session.dispatcher import ToolDispatcher
 from nexus3.session.enforcer import PermissionEnforcer
-from nexus3.session.http_logging import clear_current_logger, set_current_logger
 from nexus3.session.events import (
     ContentChunk,
     IterationCompleted,
@@ -46,6 +45,7 @@ from nexus3.session.events import (
     ToolDetected,
     ToolStarted,
 )
+from nexus3.session.http_logging import clear_current_logger, set_current_logger
 
 if TYPE_CHECKING:
     from nexus3.config.schema import CompactionConfig, Config
@@ -730,6 +730,14 @@ class Session:
             if error:
                 return error
 
+        # 4b. GitLab permission check and confirmation (if GitLab skill)
+        if tool_call.name.startswith("gitlab_") and permissions:
+            error = await self._handle_gitlab_permissions(
+                tool_call, skill, permissions
+            )
+            if error:
+                return error
+
         # 5. Unknown skill check
         if not skill:
             logger.debug("Unknown skill requested: %s", tool_call.name)
@@ -799,6 +807,66 @@ class Session:
                 self._confirmation.apply_mcp_result(
                     permissions, result, tool_call.name, server_name
                 )
+
+        return None
+
+    async def _handle_gitlab_permissions(
+        self,
+        tool_call: "ToolCall",
+        skill: "Skill | None",
+        permissions: AgentPermissions,
+    ) -> ToolResult | None:
+        """Handle GitLab-specific permission checks and confirmation.
+
+        Args:
+            tool_call: The GitLab tool call.
+            skill: The resolved GitLab skill (may be None).
+            permissions: Agent permissions.
+
+        Returns:
+            ToolResult with error if permission denied, None if allowed.
+        """
+        from nexus3.skill.vcs.gitlab.permissions import (
+            can_use_gitlab,
+            requires_gitlab_confirmation,
+        )
+
+        # Check GitLab permission level
+        if not can_use_gitlab(permissions):
+            return ToolResult(error="GitLab tools require TRUSTED or YOLO permission level")
+
+        if not skill:
+            return None  # Let caller handle unknown skill
+
+        # Extract action and instance from arguments
+        action = tool_call.arguments.get("action", "")
+        instance_name = tool_call.arguments.get("instance")
+
+        # Resolve instance to get host
+        gitlab_config = self._services.get_gitlab_config() if self._services else None
+        if not gitlab_config:
+            return None  # Should not happen if skill exists
+
+        instance = gitlab_config.get_instance(instance_name)
+        if not instance:
+            # Let skill handle the error (will produce better error message)
+            return None
+
+        instance_host = instance.host
+
+        # Check if confirmation needed
+        if requires_gitlab_confirmation(permissions, tool_call.name, instance_host, action):
+            agent_cwd = self._services.get_cwd() if self._services else Path.cwd()
+            result = await self._confirmation.request(
+                tool_call, None, agent_cwd, self.on_confirm
+            )
+
+            if result == ConfirmationResult.DENY:
+                return ToolResult(error="GitLab action denied by user")
+
+            self._confirmation.apply_gitlab_result(
+                permissions, result, tool_call.name, instance_host
+            )
 
         return None
 
