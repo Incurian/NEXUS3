@@ -109,6 +109,36 @@ Phase 7 - Documentation:
 - Project resolution: Auto-detect from git remote or explicit path
 - Native async HTTP client (no python-gitlab dependency)
 
+**Live Testing Setup:**
+
+| Resource | Value |
+|----------|-------|
+| Token | `~/.gitlabtoken` (full `api` scope, expires 2026-03-01) |
+| User | `Incurian` (ID: 33331319) |
+| Group | `incurian-group` (ID: 123209181) |
+| Project | `incurian-group/Incurian-project` (ID: 78120084) |
+
+Test each skill against real GitLab after implementation, not just with mocks.
+
+**Curl + JSON Parsing Gotcha:**
+
+Piping curl directly to Python for JSON parsing is unreliable (race condition causes empty input). Use temp files instead:
+
+```bash
+# BAD - intermittent JSON parse errors
+TOKEN=$(cat ~/.gitlabtoken) && curl -s -H "PRIVATE-TOKEN: $TOKEN" \
+  "https://gitlab.com/api/v4/user" | .venv/bin/python -c "import sys,json; print(json.load(sys.stdin))"
+
+# GOOD - use temp file
+TOKEN=$(cat ~/.gitlabtoken) && curl -s -H "PRIVATE-TOKEN: $TOKEN" \
+  "https://gitlab.com/api/v4/user" > /tmp/resp.json && \
+  .venv/bin/python -c "import json; print(json.load(open('/tmp/resp.json')))"
+
+# ALSO GOOD - just print raw output for quick checks
+TOKEN=$(cat ~/.gitlabtoken) && curl -s -w "\nHTTP: %{http_code}" \
+  -H "PRIVATE-TOKEN: $TOKEN" "https://gitlab.com/api/v4/user"
+```
+
 **Reference:** `docs/references/GITLAB-REFERENCE.md` for API documentation
 
 ---
