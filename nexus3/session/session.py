@@ -503,16 +503,25 @@ class Session:
                         self._log_event(tool_complete)
                         yield tool_complete
                 else:
-                    # Sequential execution - halts on first error
+                    # Sequential execution - halts on first error or cancellation
                     error_index = -1
+                    cancel_index = -1
                     for i, tc in enumerate(final_message.tool_calls):
+                        # Check cancellation before starting each tool
                         if cancel_token and cancel_token.is_cancelled:
-                            yield SessionCancelled()
-                            return
+                            cancel_index = i
+                            break
                         tool_start = ToolStarted(name=tc.name, tool_id=tc.id)
                         self._log_event(tool_start)
                         yield tool_start
-                        tool_result = await self._execute_single_tool(tc)
+                        # Handle mid-execution cancellation
+                        try:
+                            tool_result = await self._execute_single_tool(tc)
+                        except asyncio.CancelledError:
+                            # Tool was interrupted mid-execution
+                            tool_result = ToolResult(
+                                error="Cancelled by user: tool execution was interrupted"
+                            )
                         self.context.add_tool_result(
                             tc.id, tc.name, tool_result,
                             call_index=i + 1, arguments=tc.arguments,
@@ -526,12 +535,33 @@ class Session:
                         )
                         self._log_event(tool_complete)
                         yield tool_complete
+                        # Check cancellation after tool completes (for next iteration)
+                        if cancel_token and cancel_token.is_cancelled:
+                            cancel_index = i + 1  # This tool finished, cancel starts after
+                            break
                         if not tool_result.success:
                             error_index = i
                             batch_halted = ToolBatchHalted()
                             self._log_event(batch_halted)
                             yield batch_halted
                             break
+
+                    # Add cancelled results for remaining tools (ensures Anthropic
+                    # API gets matching tool_result for every tool_use block)
+                    if cancel_index >= 0:
+                        for j, tc in enumerate(
+                            final_message.tool_calls[cancel_index:],
+                            start=cancel_index,
+                        ):
+                            cancelled_result = ToolResult(
+                                error="Cancelled by user: tool execution was interrupted"
+                            )
+                            self.context.add_tool_result(
+                                tc.id, tc.name, cancelled_result,
+                                call_index=j + 1, arguments=tc.arguments,
+                            )
+                        yield SessionCancelled()
+                        return
 
                     # Add halted results for remaining tools
                     if error_index >= 0:

@@ -34,6 +34,7 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 - `YOLO-SAFETY-PLAN.md` - YOLO warning banner, worker removal, RPC-to-YOLO block
 - `SANDBOXED-PARENT-SEND-PLAN.md` - Sandboxed agents can nexus_send to parent only
 - `CONFIG-LOADING-FIX-PLAN.md` - Unified JSON loading, Windows path handling, global/ancestor dedup
+- `ANTHROPIC-TOOL-RESULT-FIX-PLAN.md` - Fix cancelled tool batches leaving orphaned tool_use blocks
 
 ### On Deck
 
@@ -1173,9 +1174,7 @@ nexus3 rpc create coordinator --preset trusted
 
 ### Known Bugs
 
-| Bug | Description | Severity |
-|-----|-------------|----------|
-| Anthropic tool_result mismatch | When a multi-tool call is interrupted/cancelled, Anthropic API returns error: `tool_use ids were found without tool_result blocks immediately after`. Suggests we're not sending tool_results for all tool_use blocks when a batch is interrupted. | Medium |
+No known bugs at this time.
 
 ---
 
