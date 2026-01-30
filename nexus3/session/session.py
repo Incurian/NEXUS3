@@ -457,6 +457,12 @@ class Session:
                 yield SessionCompleted(halted_at_limit=False)
                 return
 
+            # Check cancellation before adding assistant message with tool_calls
+            # This prevents orphaned tool_use blocks if cancelled during streaming
+            if cancel_token and cancel_token.is_cancelled:
+                yield SessionCancelled()
+                return
+
             if final_message.tool_calls:
                 # Add assistant message with tool calls
                 self.context.add_assistant_message(

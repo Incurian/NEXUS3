@@ -1176,7 +1176,39 @@ nexus3 rpc create coordinator --preset trusted
 
 | Bug | Description | Severity |
 |-----|-------------|----------|
-| Client timeout doesn't cancel | When `nexus3 rpc send --timeout` fires, the client stops waiting but doesn't send a cancel request. Server continues processing, potentially leaving context incomplete. Workaround: Use explicit `rpc cancel` for reliable cancellation. | Low |
+| Client timeout cancel arrives too late | Client now sends cancel on timeout, but there's a race condition: if provider responds before timeout, the server continues processing before cancel arrives. The cancel arrives after the assistant message is added but before/during tool execution. Need to either: (1) interrupt streaming, or (2) check cancellation more frequently, or (3) add cancelled tool_results lazily in the provider. | Medium |
+
+### Work in Progress: Client Timeout + Cancel Fix
+
+**Problem**: When `nexus3 rpc send --timeout N` fires:
+1. Client timeout triggers after N seconds
+2. Client sends cancel request
+3. BUT server may have already processed provider response and added assistant message
+4. Cancel arrives too late - context has orphaned tool_use blocks
+
+**Root cause**: Race condition between:
+- Provider response time + server processing
+- Client timeout + cancel send
+
+**Timeline example (2s timeout, 1.5s provider response)**:
+- T=0: Client sends request
+- T=0.1: Server calls provider.stream()
+- T=1.5: Provider responds, server adds assistant message, starts tools
+- T=2.0: Client timeout fires, sends cancel
+- T=2.1: Cancel arrives, but assistant message already in context
+
+**Fixes implemented**:
+1. `session.py`: Check cancellation before adding assistant message (helps if cancel arrives during streaming)
+2. `session.py`: Add cancelled results for remaining tools if cancel detected during tool loop
+3. `client_commands.py`: Pre-generate request_id, send cancel on timeout
+
+**Remaining issue**: Cancel arrives after assistant message is added but cancellation check already passed.
+
+**Potential solutions**:
+1. **Interrupt streaming**: Use `asyncio.wait_for()` with short timeout in provider.stream() loop, check cancellation between chunks
+2. **Lazy fix in provider**: In `anthropic.py:_convert_messages()`, detect orphaned tool_use blocks and synthesize tool_result blocks
+3. **Periodic check during streaming**: Yield a heartbeat event periodically from provider to allow cancellation check
+4. **Accept limitation**: Document that very short timeouts may not cancel in time
 
 ---
 
