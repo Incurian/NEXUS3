@@ -35,71 +35,7 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 - `SANDBOXED-PARENT-SEND-PLAN.md` - Sandboxed agents can nexus_send to parent only
 - `CONFIG-LOADING-FIX-PLAN.md` - Unified JSON loading, Windows path handling, global/ancestor dedup
 - `ANTHROPIC-TOOL-RESULT-FIX-PLAN.md` - Fix cancelled tool batches leaving orphaned tool_use blocks
-
-### Active Implementation: concat_files Skill
-
-**Goal:** Add `concat_files` skill that recursively finds files by extension and concatenates them into a single output file with token estimation.
-
-**File:** `nexus3/skill/builtin/concat_files.py`
-
-**Key Parameters:**
-- `extensions`: List of file extensions (required, e.g., `["py", "ts"]`)
-- `path`: Directory to search (default: ".")
-- `exclude`: Additional patterns to exclude
-- `lines`: Max lines per file (0 = unlimited)
-- `max_total`: Max total lines (0 = unlimited)
-- `format`: "plain" | "markdown" | "xml"
-- `sort`: "alpha" | "mtime" | "size"
-- `gitignore`: Use .gitignore rules
-- `dry_run`: Return stats without creating file (default: True)
-
-**Implementation Checklist:**
-
-Phase 1 - Core:
-- [ ] P1.1 Create skill file with class skeleton
-- [ ] P1.2 Add parameter schema
-- [ ] P1.3 Add DEFAULT_EXCLUDES and EXT_TO_LANG constants
-- [ ] P1.4 Implement `_is_binary()` helper
-- [ ] P1.5 Implement `_find_files_glob()` for file discovery
-- [ ] P1.6 Implement `_should_exclude()` for pattern matching
-- [ ] P1.7 Add FileInfo and DryRunResult dataclasses
-
-Phase 2 - Processing:
-- [ ] P2.1 Implement `_collect_file_info()`
-- [ ] P2.2 Implement `_sort_files()`
-- [ ] P2.3 Implement `_compute_dry_run()` with token estimation
-- [ ] P2.4 Implement `_generate_output_path()`
-
-Phase 3 - Output:
-- [ ] P3.1 Implement `_write_concatenated()` plain format
-- [ ] P3.2 Add markdown format
-- [ ] P3.3 Add XML format
-- [ ] P3.4 Implement `_get_lang_for_file()`
-
-Phase 4 - Git:
-- [ ] P4.1 Implement `_git_available()`
-- [ ] P4.2 Implement `_find_files_git()`
-
-Phase 5 - Registration:
-- [ ] P5.1 Add factory: `concat_files_factory = file_skill_factory(ConcatFilesSkill)`
-- [ ] P5.2 Register in `registration.py`
-
-Phase 6 - Testing:
-- [ ] P6.1-P6.6 Unit and integration tests
-- [ ] Live test with real agent
-
-Phase 7 - Docs:
-- [ ] P7.1 Add to CLAUDE.md Built-in Skills table
-
-**Key Patterns:**
-- Extends `FileSkill` (provides `_validate_path()`)
-- Use `@handle_file_errors` decorator
-- Factory pattern: `concat_files_factory = file_skill_factory(ConcatFilesSkill)`
-- Register: `registry.register("concat_files", concat_files_factory)`
-
-**Reference:** `docs/references/concat_files.py` has standalone implementation
-
----
+- `CONCAT-FILES-PLAN.md` - concat_files skill for bundling source files with token estimation
 
 ### On Deck
 
@@ -107,9 +43,8 @@ Plans listed in recommended implementation order (in `docs/plans/`):
 
 | Priority | Plan | Description |
 |----------|------|-------------|
-| 1 | `CONCAT-FILES-PLAN.md` | New `concat_files` skill to bundle source files with token estimation. |
-| 2 | `CLIPBOARD-PLAN.md` | Scoped clipboard system for copy/paste across files and agents. |
-| 3 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration. |
+| 1 | `CLIPBOARD-PLAN.md` | Scoped clipboard system for copy/paste across files and agents. |
+| 2 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration. |
 
 **Plan templates** (in `docs/plans/examples/`):
 - `EXAMPLE-PLAN-SIMPLE.md` - Template for focused single-feature plans
@@ -491,6 +426,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `list_directory` | `path` | List directory contents |
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern (with exclusions) |
 | `grep` | `pattern`, `path`?, `include`?, `context`? | Search file contents with file filter and context lines |
+| `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate files by extension with token estimation (dry_run=True by default) |
 | `git` | `command`, `cwd`? | Execute git commands (permission-filtered by level) |
 | `bash_safe` | `command`, `timeout`? | Execute shell commands (shlex.split, no shell operators) |
 | `shell_UNSAFE` | `command`, `timeout`? | Execute shell=True (pipes work, but injection-vulnerable) |
