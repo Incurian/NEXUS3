@@ -85,9 +85,9 @@ Phase 4 - CI/CD: ✅ COMPLETE (2026-01-30)
 - [x] P4.5 Live tested against `incurian-group/Incurian-project`
 - Note: Test project has no CI/CD configured, but skills execute correctly
 
-Phase 5 - Config & Premium:
-- [ ] P5.1-P5.2 Add protection to branch/tag
-- [ ] P5.3-P5.5 Implement 3 skills (deploy_key, deploy_token, feature_flag)
+Phase 5 - Config & Premium: ✅ COMPLETE (2026-01-30)
+- [x] P5.1-P5.2 Add protection to branch/tag (protect, unprotect, list-protected)
+- [x] P5.3-P5.5 Implement 3 skills (deploy_key, deploy_token, feature_flag)
 - [ ] P5.6 Unit tests
 
 Phase 6 - Integration:
@@ -542,8 +542,8 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `gitlab_issue` | `action`, `project`?, `iid`?, `title`?, ... | Issue CRUD (list, get, create, update, close, reopen, comment) |
 | `gitlab_mr` | `action`, `project`?, `iid`?, `source_branch`?, ... | Merge request operations (list, get, create, update, merge, close, diff, commits, pipelines) |
 | `gitlab_label` | `action`, `project`?, `name`?, `color`? | Label management (list, get, create, update, delete) |
-| `gitlab_branch` | `action`, `project`?, `name`?, `ref`? | Branch operations (list, get, create, delete) |
-| `gitlab_tag` | `action`, `project`?, `name`?, `ref`? | Tag operations (list, get, create, delete) |
+| `gitlab_branch` | `action`, `project`?, `name`?, `ref`?, `push_level`?, `merge_level`?, `allow_force_push`? | Branch operations (list, get, create, delete, protect, unprotect, list-protected) |
+| `gitlab_tag` | `action`, `project`?, `name`?, `ref`?, `create_level`? | Tag operations (list, get, create, delete, protect, unprotect, list-protected) |
 | `gitlab_epic` | `action`, `group`, `iid`?, `title`?, ... | Epic management (list, get, create, update, close, add/remove issues) [Premium] |
 | `gitlab_iteration` | `action`, `group`, `iteration_id`?, `title`?, ... | Iteration/sprint management (list, get, create, cadences) [Premium] |
 | `gitlab_milestone` | `action`, `project` OR `group`, `milestone_id`?, `title`?, ... | Milestone operations (list, get, create, update, close, issues, MRs) |
@@ -556,6 +556,9 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `gitlab_job` | `action`, `project`, `job_id`?, `scope`?, `tail`?, ... | Job operations (list, get, log, retry, cancel, play, erase) |
 | `gitlab_artifact` | `action`, `project`, `job_id`?, `output_path`?, ... | Artifact management (download, download-file, browse, delete, keep, download-ref) |
 | `gitlab_variable` | `action`, `project` OR `group`, `key`?, `value`?, ... | CI/CD variables (list, get, create, update, delete) for project or group |
+| `gitlab_deploy_key` | `action`, `project`, `key_id`?, `title`?, `key`?, `can_push`? | Deploy key management (list, get, create, update, delete, enable) |
+| `gitlab_deploy_token` | `action`, `project` OR `group`, `token_id`?, `name`?, `scopes`?, ... | Deploy token management (list, get, create, delete) - token only shown on create |
+| `gitlab_feature_flag` | `action`, `project`, `name`?, `active`?, `strategies`?, ... | Feature flag management (list, get, create, update, delete, user-lists) [Premium] |
 
 *Note: `port` defaults to 8765. `preset` can be trusted/sandboxed (yolo is REPL-only). Skills mirror `nexus3 rpc` CLI commands. Destructive file tools remind agents to read files before modifying. GitLab skills require TRUSTED+ and configured GitLab instance. [Premium] skills require GitLab Premium subscription.*
 

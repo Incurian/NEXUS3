@@ -21,7 +21,7 @@ class GitLabTagSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "List, create, and delete GitLab tags"
+        return "List, create, delete, and protect GitLab tags"
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -30,7 +30,15 @@ class GitLabTagSkill(GitLabSkill):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["list", "get", "create", "delete"],
+                    "enum": [
+                        "list",
+                        "get",
+                        "create",
+                        "delete",
+                        "protect",
+                        "unprotect",
+                        "list-protected",
+                    ],
                     "description": "Action to perform",
                 },
                 "instance": {
@@ -73,6 +81,14 @@ class GitLabTagSkill(GitLabSkill):
                     "type": "integer",
                     "description": "Maximum results (default: 20)",
                 },
+                "create_level": {
+                    "type": "string",
+                    "enum": ["no_access", "developer", "maintainer"],
+                    "description": (
+                        "Who can create tags matching pattern (protect action). "
+                        "Default: maintainer"
+                    ),
+                },
             },
             "required": ["action"],
         }
@@ -87,7 +103,10 @@ class GitLabTagSkill(GitLabSkill):
         project_encoded = client._encode_path(project)
 
         # Filter out consumed kwargs to avoid passing them twice
-        filtered = {k: v for k, v in kwargs.items() if k not in ("action", "project", "instance")}
+        filtered = {
+            k: v for k, v in kwargs.items()
+            if k not in ("action", "project", "instance", "name", "create_level")
+        }
 
         match action:
             case "list":
@@ -110,6 +129,19 @@ class GitLabTagSkill(GitLabSkill):
                 if not name:
                     return ToolResult(error="name parameter required for delete action")
                 return await self._delete_tag(client, project_encoded, name)
+            case "protect":
+                name = kwargs.get("name")
+                if not name:
+                    return ToolResult(error="name parameter required for protect action")
+                create_level = kwargs.get("create_level", "maintainer")
+                return await self._protect_tag(client, project_encoded, name, create_level)
+            case "unprotect":
+                name = kwargs.get("name")
+                if not name:
+                    return ToolResult(error="name parameter required for unprotect action")
+                return await self._unprotect_tag(client, project_encoded, name)
+            case "list-protected":
+                return await self._list_protected_tags(client, project_encoded, **filtered)
             case _:
                 return ToolResult(error=f"Unknown action: {action}")
 
@@ -231,3 +263,75 @@ class GitLabTagSkill(GitLabSkill):
         tag_encoded = client._encode_path(name)
         await client.delete(f"/projects/{project}/repository/tags/{tag_encoded}")
         return ToolResult(output=f"Deleted tag '{name}'")
+
+    async def _protect_tag(
+        self,
+        client: GitLabClient,
+        project: str,
+        name: str,
+        create_level: str,
+    ) -> ToolResult:
+        # Map level names to GitLab access level integers
+        level_map = {
+            "no_access": 0,
+            "developer": 30,
+            "maintainer": 40,
+        }
+        access_level = level_map.get(create_level, 40)
+
+        await client.post(
+            f"/projects/{project}/protected_tags",
+            name=name,
+            create_access_level=access_level,
+        )
+
+        return ToolResult(output=f"Protected tag pattern '{name}' (create: {create_level})")
+
+    async def _unprotect_tag(
+        self,
+        client: GitLabClient,
+        project: str,
+        name: str,
+    ) -> ToolResult:
+        name_encoded = client._encode_path(name)
+        await client.delete(f"/projects/{project}/protected_tags/{name_encoded}")
+        return ToolResult(output=f"Removed protection from tag pattern '{name}'")
+
+    async def _list_protected_tags(
+        self,
+        client: GitLabClient,
+        project: str,
+        **kwargs: Any,
+    ) -> ToolResult:
+        limit = kwargs.get("limit", 20)
+
+        # Reverse map for displaying level names
+        level_names = {
+            0: "no_access",
+            30: "developer",
+            40: "maintainer",
+        }
+
+        protected_tags = [
+            tag async for tag in
+            client.paginate(f"/projects/{project}/protected_tags", limit=limit)
+        ]
+
+        if not protected_tags:
+            return ToolResult(output="No protected tag patterns found")
+
+        lines = [f"Found {len(protected_tags)} protected tag pattern(s):"]
+        for tag in protected_tags:
+            name = tag.get("name", "")
+
+            # Get create access level
+            create_access_levels = tag.get("create_access_levels", [])
+            if create_access_levels:
+                level_value = create_access_levels[0].get("access_level", 40)
+                level_name = level_names.get(level_value, f"level_{level_value}")
+            else:
+                level_name = "maintainer"
+
+            lines.append(f"  {name} (create: {level_name})")
+
+        return ToolResult(output="\n".join(lines))

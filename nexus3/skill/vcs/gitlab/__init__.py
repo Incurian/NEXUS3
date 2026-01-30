@@ -52,9 +52,12 @@ def register_gitlab_skills(
         from nexus3.skill.vcs.gitlab.artifact import GitLabArtifactSkill
         from nexus3.skill.vcs.gitlab.board import GitLabBoardSkill
         from nexus3.skill.vcs.gitlab.branch import GitLabBranchSkill
+        from nexus3.skill.vcs.gitlab.deploy_key import GitLabDeployKeySkill
+        from nexus3.skill.vcs.gitlab.deploy_token import GitLabDeployTokenSkill
         from nexus3.skill.vcs.gitlab.discussion import GitLabDiscussionSkill
         from nexus3.skill.vcs.gitlab.draft_note import GitLabDraftSkill
         from nexus3.skill.vcs.gitlab.epic import GitLabEpicSkill
+        from nexus3.skill.vcs.gitlab.feature_flag import GitLabFeatureFlagSkill
         from nexus3.skill.vcs.gitlab.issue import GitLabIssueSkill
         from nexus3.skill.vcs.gitlab.iteration import GitLabIterationSkill
         from nexus3.skill.vcs.gitlab.job import GitLabJobSkill
@@ -103,6 +106,10 @@ def register_gitlab_skills(
         ("gitlab_job", GitLabJobSkill),
         ("gitlab_artifact", GitLabArtifactSkill),
         ("gitlab_variable", GitLabVariableSkill),
+        # Phase 5: Config
+        ("gitlab_deploy_key", GitLabDeployKeySkill),
+        ("gitlab_deploy_token", GitLabDeployTokenSkill),
+        ("gitlab_feature_flag", GitLabFeatureFlagSkill),
     ]
 
     for name, skill_class in skills:

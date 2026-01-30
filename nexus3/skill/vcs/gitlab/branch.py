@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class GitLabBranchSkill(GitLabSkill):
-    """List, create, and delete GitLab branches."""
+    """List, create, delete, and protect GitLab branches."""
 
     @property
     def name(self) -> str:
@@ -21,7 +21,7 @@ class GitLabBranchSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "List, create, and delete GitLab branches"
+        return "List, create, delete, and protect GitLab branches"
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -30,7 +30,10 @@ class GitLabBranchSkill(GitLabSkill):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["list", "get", "create", "delete"],
+                    "enum": [
+                        "list", "get", "create", "delete",
+                        "protect", "unprotect", "list-protected",
+                    ],
                     "description": "Action to perform",
                 },
                 "instance": {
@@ -46,7 +49,7 @@ class GitLabBranchSkill(GitLabSkill):
                 },
                 "name": {
                     "type": "string",
-                    "description": "Branch name (required for get/create/delete)",
+                    "description": "Branch name (required for get/create/delete/protect/unprotect)",
                 },
                 "ref": {
                     "type": "string",
@@ -59,6 +62,20 @@ class GitLabBranchSkill(GitLabSkill):
                 "limit": {
                     "type": "integer",
                     "description": "Maximum results (default: 20)",
+                },
+                "push_level": {
+                    "type": "string",
+                    "enum": ["no_access", "developer", "maintainer"],
+                    "description": "Who can push to protected branch (default: maintainer)",
+                },
+                "merge_level": {
+                    "type": "string",
+                    "enum": ["no_access", "developer", "maintainer"],
+                    "description": "Who can merge to protected branch (default: maintainer)",
+                },
+                "allow_force_push": {
+                    "type": "boolean",
+                    "description": "Allow force push to protected branch (default: false)",
                 },
             },
             "required": ["action"],
@@ -74,7 +91,11 @@ class GitLabBranchSkill(GitLabSkill):
         project_encoded = client._encode_path(project)
 
         # Filter out consumed kwargs to avoid passing them twice
-        filtered = {k: v for k, v in kwargs.items() if k not in ("action", "project", "instance")}
+        excluded = (
+            "action", "project", "instance", "name", "ref",
+            "push_level", "merge_level", "allow_force_push",
+        )
+        filtered = {k: v for k, v in kwargs.items() if k not in excluded}
 
         match action:
             case "list":
@@ -97,6 +118,23 @@ class GitLabBranchSkill(GitLabSkill):
                 if not name:
                     return ToolResult(error="name parameter required for delete action")
                 return await self._delete_branch(client, project_encoded, name)
+            case "protect":
+                name = kwargs.get("name")
+                if not name:
+                    return ToolResult(error="name parameter required for protect action")
+                push_level = kwargs.get("push_level", "maintainer")
+                merge_level = kwargs.get("merge_level", "maintainer")
+                allow_force_push = kwargs.get("allow_force_push", False)
+                return await self._protect_branch(
+                    client, project_encoded, name, push_level, merge_level, allow_force_push
+                )
+            case "unprotect":
+                name = kwargs.get("name")
+                if not name:
+                    return ToolResult(error="name parameter required for unprotect action")
+                return await self._unprotect_branch(client, project_encoded, name)
+            case "list-protected":
+                return await self._list_protected_branches(client, project_encoded, **filtered)
             case _:
                 return ToolResult(error=f"Unknown action: {action}")
 
@@ -203,3 +241,97 @@ class GitLabBranchSkill(GitLabSkill):
         branch_encoded = client._encode_path(name)
         await client.delete(f"/projects/{project}/repository/branches/{branch_encoded}")
         return ToolResult(output=f"Deleted branch '{name}'")
+
+    def _access_level_to_int(self, level: str) -> int:
+        """Convert access level string to GitLab API integer."""
+        level_map = {
+            "no_access": 0,
+            "developer": 30,
+            "maintainer": 40,
+        }
+        return level_map.get(level, 40)  # Default to maintainer
+
+    def _access_level_to_str(self, level: int) -> str:
+        """Convert GitLab API integer to human-readable string."""
+        level_map = {
+            0: "no_access",
+            30: "developer",
+            40: "maintainer",
+            60: "admin",
+        }
+        return level_map.get(level, f"level_{level}")
+
+    async def _protect_branch(
+        self,
+        client: GitLabClient,
+        project: str,
+        name: str,
+        push_level: str,
+        merge_level: str,
+        allow_force_push: bool,
+    ) -> ToolResult:
+        push_access_level = self._access_level_to_int(push_level)
+        merge_access_level = self._access_level_to_int(merge_level)
+
+        await client.post(
+            f"/projects/{project}/protected_branches",
+            name=name,
+            push_access_level=push_access_level,
+            merge_access_level=merge_access_level,
+            allow_force_push=allow_force_push,
+        )
+
+        return ToolResult(
+            output=f"Protected branch '{name}' (push: {push_level}, merge: {merge_level})"
+        )
+
+    async def _unprotect_branch(
+        self,
+        client: GitLabClient,
+        project: str,
+        name: str,
+    ) -> ToolResult:
+        branch_encoded = client._encode_path(name)
+        await client.delete(f"/projects/{project}/protected_branches/{branch_encoded}")
+        return ToolResult(output=f"Removed protection from branch '{name}'")
+
+    async def _list_protected_branches(
+        self,
+        client: GitLabClient,
+        project: str,
+        **kwargs: Any,
+    ) -> ToolResult:
+        limit = kwargs.get("limit", 20)
+
+        branches = [
+            branch async for branch in
+            client.paginate(f"/projects/{project}/protected_branches", limit=limit)
+        ]
+
+        if not branches:
+            return ToolResult(output="No protected branches found")
+
+        lines = [f"Found {len(branches)} protected branch(es):"]
+        for branch in branches:
+            name = branch.get("name", "unknown")
+
+            # Extract push access levels
+            push_levels = branch.get("push_access_levels", [])
+            push_str = ", ".join(
+                self._access_level_to_str(p.get("access_level", 0))
+                for p in push_levels
+            ) or "none"
+
+            # Extract merge access levels
+            merge_levels = branch.get("merge_access_levels", [])
+            merge_str = ", ".join(
+                self._access_level_to_str(m.get("access_level", 0))
+                for m in merge_levels
+            ) or "none"
+
+            force_push = "yes" if branch.get("allow_force_push") else "no"
+
+            lines.append(f"  {name}")
+            lines.append(f"      push: {push_str}, merge: {merge_str}, force_push: {force_push}")
+
+        return ToolResult(output="\n".join(lines))
