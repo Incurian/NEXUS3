@@ -591,6 +591,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | **Plan First** | **Non-trivial features require a plan in `docs/`. See Feature Planning SOP below.** |
 | **Commit Often** | **Commit after each phase/logical unit. Don't wait for "everything done."** |
 | **Branch per Plan** | **One feature branch per plan. Merge only after checklist complete + user sign-off.** |
+| **Don't Revert Unrelated Changes** | **When committing, only stage files YOU modified. NEVER use `git checkout` or `git restore` on files you didn't change - they may contain the user's work from other tasks.** |
 
 ### Live Testing Requirement (MANDATORY)
 
