@@ -37,6 +37,82 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 - `ANTHROPIC-TOOL-RESULT-FIX-PLAN.md` - Fix cancelled tool batches leaving orphaned tool_use blocks
 - `CONCAT-FILES-PLAN.md` - concat_files skill for bundling source files with token estimation
 
+### Active Implementation: GitLab Tools
+
+**Goal:** Full GitLab integration covering project management, code review, and CI/CD.
+
+**Plan:** `docs/plans/GITLAB-TOOLS-PLAN.md` (detailed spec, 33k tokens)
+
+**Directory:** `nexus3/skill/vcs/gitlab/`
+
+**Security Model:**
+- Pre-configured instances only (no arbitrary server connections)
+- TRUSTED+ required (SANDBOXED agents cannot use GitLab tools)
+- Per-skill confirmation prompts on first use
+- Skills only registered if GitLab is configured
+
+**Skills to implement:**
+
+| Phase | Skills |
+|-------|--------|
+| P1: Foundation | `gitlab_repo`, `gitlab_issue`, `gitlab_mr`, `gitlab_label`, `gitlab_branch`, `gitlab_tag` |
+| P2: Project Mgmt | `gitlab_epic`, `gitlab_iteration`, `gitlab_milestone`, `gitlab_board`, `gitlab_time` |
+| P3: Code Review | `gitlab_approval`, `gitlab_draft`, `gitlab_discussion` |
+| P4: CI/CD | `gitlab_pipeline`, `gitlab_job`, `gitlab_artifact`, `gitlab_variable` |
+| P5: Config | `gitlab_deploy_key`, `gitlab_deploy_token`, `gitlab_feature_flag` |
+
+**Implementation Checklist:**
+
+Phase 1 - Foundation (Required First):
+- [ ] P1.1 Create `nexus3/skill/vcs/` directory structure
+- [ ] P1.2 Implement `nexus3/skill/vcs/config.py` (GitLabConfig, GitLabInstance)
+- [ ] P1.3 Implement `nexus3/skill/vcs/gitlab/client.py` (GitLabClient)
+- [ ] P1.4 Implement `nexus3/skill/vcs/gitlab/base.py` (GitLabSkill base class)
+- [ ] P1.5 Add GitLab config to `nexus3/config/schema.py`
+- [ ] P1.6 Add `get_gitlab_config()` to ServiceContainer
+- [ ] P1.7 Implement `nexus3/skill/vcs/gitlab/__init__.py` (registration)
+- [ ] P1.8 Integrate with skill registry in `nexus3/skill/registry.py`
+- [ ] P1.9 Add session_allowances support to ServiceContainer
+- [ ] P1.10-P1.15 Implement 6 core skills (repo, issue, mr, label, branch, tag)
+- [ ] P1.16 Implement `/gitlab` REPL command
+- [ ] P1.17-P1.20 Unit tests + optional integration test
+
+Phase 2 - Project Management:
+- [ ] P2.1-P2.5 Implement 5 skills (epic, iteration, milestone, board, time)
+- [ ] P2.6-P2.7 Add link actions to issue/epic
+- [ ] P2.8 Unit tests
+
+Phase 3 - Code Review:
+- [ ] P3.1 Add diff/commits/pipelines to `gitlab_mr`
+- [ ] P3.2-P3.4 Implement 3 skills (approval, draft, discussion)
+- [ ] P3.5 Unit tests
+
+Phase 4 - CI/CD:
+- [ ] P4.1-P4.4 Implement 4 skills (pipeline, job, artifact, variable)
+- [ ] P4.5 Unit tests
+
+Phase 5 - Config & Premium:
+- [ ] P5.1-P5.2 Add protection to branch/tag
+- [ ] P5.3-P5.5 Implement 3 skills (deploy_key, deploy_token, feature_flag)
+- [ ] P5.6 Unit tests
+
+Phase 6 - Integration:
+- [ ] P6.1-P6.2 Permission/confirmation integration
+- [ ] P6.3-P6.4 E2E + live testing
+
+Phase 7 - Documentation:
+- [ ] P7.1-P7.6 Update CLAUDE.md, skill READMEs, REPL docs
+
+**Key Patterns:**
+- Base class: `GitLabSkill(VCSSkill)` with client management
+- Action-based dispatch: `action` parameter with match/case
+- Project resolution: Auto-detect from git remote or explicit path
+- Native async HTTP client (no python-gitlab dependency)
+
+**Reference:** `docs/references/GITLAB-REFERENCE.md` for API documentation
+
+---
+
 ### On Deck
 
 Plans listed in recommended implementation order (in `docs/plans/`):
@@ -44,7 +120,6 @@ Plans listed in recommended implementation order (in `docs/plans/`):
 | Priority | Plan | Description |
 |----------|------|-------------|
 | 1 | `CLIPBOARD-PLAN.md` | Scoped clipboard system for copy/paste across files and agents. |
-| 2 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration. |
 
 **Plan templates** (in `docs/plans/examples/`):
 - `EXAMPLE-PLAN-SIMPLE.md` - Template for focused single-feature plans
