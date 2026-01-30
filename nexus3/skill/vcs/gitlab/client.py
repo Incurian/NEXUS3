@@ -145,14 +145,14 @@ class GitLabClient:
                 return None
             return response.json()
 
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as e:
             if retry < self.MAX_RETRIES:
                 await asyncio.sleep(self.RETRY_BACKOFF ** retry)
                 return await self._request(method, path, params, json, retry + 1)
-            raise GitLabAPIError(0, "Request timeout")
+            raise GitLabAPIError(0, "Request timeout") from e
 
         except httpx.RequestError as e:
-            raise GitLabAPIError(0, f"Request failed: {e}")
+            raise GitLabAPIError(0, f"Request failed: {e}") from e
 
     async def get(self, path: str, **params: Any) -> Any:
         """GET request."""

@@ -30,7 +30,10 @@ class GitLabMilestoneSkill(GitLabSkill):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["list", "get", "create", "update", "close", "issues", "merge-requests"],
+                    "enum": [
+                        "list", "get", "create", "update", "close",
+                        "issues", "merge-requests",
+                    ],
                     "description": "Action to perform",
                 },
                 "instance": {
@@ -39,11 +42,17 @@ class GitLabMilestoneSkill(GitLabSkill):
                 },
                 "project": {
                     "type": "string",
-                    "description": "Project path (e.g., 'group/repo'). Either project or group required.",
+                    "description": (
+                        "Project path (e.g., 'group/repo'). "
+                        "Either project or group required."
+                    ),
                 },
                 "group": {
                     "type": "string",
-                    "description": "Group path (e.g., 'my-group'). Either project or group required.",
+                    "description": (
+                        "Group path (e.g., 'my-group'). "
+                        "Either project or group required."
+                    ),
                 },
                 "milestone_id": {
                     "type": "integer",
@@ -102,7 +111,8 @@ class GitLabMilestoneSkill(GitLabSkill):
         group = kwargs.get("group")
 
         # Filter out consumed kwargs to avoid passing them twice
-        filtered = {k: v for k, v in kwargs.items() if k not in ("action", "project", "group", "instance", "milestone_id")}
+        excluded = ("action", "project", "group", "instance", "milestone_id")
+        filtered = {k: v for k, v in kwargs.items() if k not in excluded}
 
         match action:
             case "list":
@@ -121,7 +131,9 @@ class GitLabMilestoneSkill(GitLabSkill):
                 milestone_id = kwargs.get("milestone_id")
                 if not milestone_id:
                     return ToolResult(error="milestone_id parameter required for update action")
-                return await self._update_milestone(client, project, group, milestone_id, **filtered)
+                return await self._update_milestone(
+                    client, project, group, milestone_id, **filtered
+                )
             case "close":
                 milestone_id = kwargs.get("milestone_id")
                 if not milestone_id:
@@ -135,8 +147,12 @@ class GitLabMilestoneSkill(GitLabSkill):
             case "merge-requests":
                 milestone_id = kwargs.get("milestone_id")
                 if not milestone_id:
-                    return ToolResult(error="milestone_id parameter required for merge-requests action")
-                return await self._list_milestone_merge_requests(client, project, group, milestone_id)
+                    return ToolResult(
+                        error="milestone_id parameter required for merge-requests action"
+                    )
+                return await self._list_milestone_merge_requests(
+                    client, project, group, milestone_id
+                )
             case _:
                 return ToolResult(error=f"Unknown action: {action}")
 
@@ -165,7 +181,8 @@ class GitLabMilestoneSkill(GitLabSkill):
 
         lines = [f"Found {len(milestones)} milestone(s):"]
         for ms in milestones:
-            state_icon = "\U0001f7e2" if ms.get("state") == "active" else "\U0001f534"  # green/red circle
+            # green/red circle for active/inactive
+            state_icon = "\U0001f7e2" if ms.get("state") == "active" else "\U0001f534"
             title = ms.get("title", "Untitled")
 
             # Date range

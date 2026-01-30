@@ -39,7 +39,10 @@ class GitLabIssueSkill(GitLabSkill):
                 },
                 "project": {
                     "type": "string",
-                    "description": "Project path (e.g., 'group/repo'). Auto-detected from git remote if omitted.",
+                    "description": (
+                        "Project path (e.g., 'group/repo'). "
+                        "Auto-detected from git remote if omitted."
+                    ),
                 },
                 "iid": {
                     "type": "integer",
@@ -179,7 +182,8 @@ class GitLabIssueSkill(GitLabSkill):
         lines = [
             f"# {issue['title']}",
             "",
-            f"IID: #{issue['iid']} | State: {issue['state']} | Author: @{issue['author']['username']}",
+            f"IID: #{issue['iid']} | State: {issue['state']} "
+            f"| Author: @{issue['author']['username']}",
             f"Created: {issue['created_at']} | Updated: {issue['updated_at']}",
         ]
 

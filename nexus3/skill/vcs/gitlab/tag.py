@@ -39,7 +39,10 @@ class GitLabTagSkill(GitLabSkill):
                 },
                 "project": {
                     "type": "string",
-                    "description": "Project path (e.g., 'group/repo'). Auto-detected from git remote if omitted.",
+                    "description": (
+                        "Project path (e.g., 'group/repo'). "
+                        "Auto-detected from git remote if omitted."
+                    ),
                 },
                 "name": {
                     "type": "string",

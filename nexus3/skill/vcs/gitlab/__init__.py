@@ -49,8 +49,12 @@ def register_gitlab_skills(
     # Skills may not exist yet during phased implementation
     try:
         # Phase 1: Foundation
+        # Phase 3: Code Review
+        from nexus3.skill.vcs.gitlab.approval import GitLabApprovalSkill
         from nexus3.skill.vcs.gitlab.board import GitLabBoardSkill
         from nexus3.skill.vcs.gitlab.branch import GitLabBranchSkill
+        from nexus3.skill.vcs.gitlab.discussion import GitLabDiscussionSkill
+        from nexus3.skill.vcs.gitlab.draft_note import GitLabDraftSkill
 
         # Phase 2: Project Management
         from nexus3.skill.vcs.gitlab.epic import GitLabEpicSkill
@@ -90,6 +94,10 @@ def register_gitlab_skills(
         ("gitlab_milestone", GitLabMilestoneSkill),
         ("gitlab_board", GitLabBoardSkill),
         ("gitlab_time", GitLabTimeSkill),
+        # Phase 3: Code Review
+        ("gitlab_approval", GitLabApprovalSkill),
+        ("gitlab_draft", GitLabDraftSkill),
+        ("gitlab_discussion", GitLabDiscussionSkill),
     ]
 
     for name, skill_class in skills:

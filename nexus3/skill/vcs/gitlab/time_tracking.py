@@ -52,7 +52,10 @@ class GitLabTimeSkill(GitLabSkill):
                 },
                 "duration": {
                     "type": "string",
-                    "description": "Time duration (e.g., '2d', '8h', '1w 2d'). Required for estimate/spend.",
+                    "description": (
+                        "Time duration (e.g., '2d', '8h', '1w 2d'). "
+                        "Required for estimate/spend."
+                    ),
                 },
                 "summary": {
                     "type": "string",
@@ -94,7 +97,8 @@ class GitLabTimeSkill(GitLabSkill):
             return ToolResult(error="target_type must be 'issue' or 'mr'")
 
         # Filter out consumed kwargs to avoid passing them twice
-        filtered = {k: v for k, v in kwargs.items() if k not in ("action", "project", "instance", "iid", "target_type")}
+        excluded = ("action", "project", "instance", "iid", "target_type")
+        filtered = {k: v for k, v in kwargs.items() if k not in excluded}
 
         # Get base path for the target
         try:

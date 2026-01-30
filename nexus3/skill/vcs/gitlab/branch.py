@@ -39,7 +39,10 @@ class GitLabBranchSkill(GitLabSkill):
                 },
                 "project": {
                     "type": "string",
-                    "description": "Project path (e.g., 'group/repo'). Auto-detected from git remote if omitted.",
+                    "description": (
+                        "Project path (e.g., 'group/repo'). "
+                        "Auto-detected from git remote if omitted."
+                    ),
                 },
                 "name": {
                     "type": "string",
@@ -166,7 +169,9 @@ class GitLabBranchSkill(GitLabSkill):
             lines.append("")
             lines.append("Latest Commit:")
             lines.append(f"  SHA: {commit.get('id', 'N/A')}")
-            lines.append(f"  Author: {commit.get('author_name', 'N/A')} <{commit.get('author_email', '')}>")
+            author_name = commit.get('author_name', 'N/A')
+            author_email = commit.get('author_email', '')
+            lines.append(f"  Author: {author_name} <{author_email}>")
             lines.append(f"  Date: {commit.get('created_at', 'N/A')}")
             lines.append(f"  Message: {commit.get('title', 'N/A')}")
 

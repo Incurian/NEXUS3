@@ -30,7 +30,10 @@ class GitLabIterationSkill(GitLabSkill):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["list", "get", "create", "update", "delete", "list-cadences", "create-cadence"],
+                    "enum": [
+                        "list", "get", "create", "update", "delete",
+                        "list-cadences", "create-cadence",
+                    ],
                     "description": "Action to perform",
                 },
                 "instance": {
@@ -104,7 +107,8 @@ class GitLabIterationSkill(GitLabSkill):
         group_encoded = client._encode_path(group)
 
         # Filter out consumed kwargs to avoid passing them twice
-        filtered = {k: v for k, v in kwargs.items() if k not in ("action", "group", "instance", "iteration_id")}
+        excluded = ("action", "group", "instance", "iteration_id")
+        filtered = {k: v for k, v in kwargs.items() if k not in excluded}
 
         match action:
             case "list":
@@ -144,9 +148,13 @@ class GitLabIterationSkill(GitLabSkill):
                 if not title:
                     return ToolResult(error="title parameter required for create-cadence action")
                 if not start_date:
-                    return ToolResult(error="start_date parameter required for create-cadence action")
+                    return ToolResult(
+                        error="start_date parameter required for create-cadence action"
+                    )
                 if not duration:
-                    return ToolResult(error="duration_in_weeks parameter required for create-cadence action")
+                    return ToolResult(
+                        error="duration_in_weeks parameter required for create-cadence action"
+                    )
                 return await self._create_cadence(client, group_encoded, **filtered)
             case _:
                 return ToolResult(error=f"Unknown action: {action}")

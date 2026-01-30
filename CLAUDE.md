@@ -75,10 +75,10 @@ Phase 2 - Project Management: ✅ COMPLETE (2026-01-30)
 - [x] P2.8 Live tested against `incurian-group/Incurian-project`
 - Note: Epic/Iteration require GitLab Premium (403 on free accounts)
 
-Phase 3 - Code Review:
-- [ ] P3.1 Add diff/commits/pipelines to `gitlab_mr`
-- [ ] P3.2-P3.4 Implement 3 skills (approval, draft, discussion)
-- [ ] P3.5 Unit tests
+Phase 3 - Code Review: ✅ COMPLETE (2026-01-30)
+- [x] P3.1 Add diff/commits/pipelines to `gitlab_mr`
+- [x] P3.2-P3.4 Implement 3 skills (approval, draft, discussion)
+- [x] P3.5 Live tested against `incurian-group/Incurian-project`
 
 Phase 4 - CI/CD:
 - [ ] P4.1-P4.4 Implement 4 skills (pipeline, job, artifact, variable)
@@ -539,7 +539,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `nexus_shutdown` | `port`? | Shutdown the entire server |
 | `gitlab_repo` | `action`, `project`?, `instance`? | Repository operations (get, list, fork, search) |
 | `gitlab_issue` | `action`, `project`?, `iid`?, `title`?, ... | Issue CRUD (list, get, create, update, close, reopen, comment) |
-| `gitlab_mr` | `action`, `project`?, `iid`?, `source_branch`?, ... | Merge request operations (list, get, create, update, merge, close) |
+| `gitlab_mr` | `action`, `project`?, `iid`?, `source_branch`?, ... | Merge request operations (list, get, create, update, merge, close, diff, commits, pipelines) |
 | `gitlab_label` | `action`, `project`?, `name`?, `color`? | Label management (list, get, create, update, delete) |
 | `gitlab_branch` | `action`, `project`?, `name`?, `ref`? | Branch operations (list, get, create, delete) |
 | `gitlab_tag` | `action`, `project`?, `name`?, `ref`? | Tag operations (list, get, create, delete) |
@@ -548,6 +548,9 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `gitlab_milestone` | `action`, `project` OR `group`, `milestone_id`?, `title`?, ... | Milestone operations (list, get, create, update, close, issues, MRs) |
 | `gitlab_board` | `action`, `project` OR `group`, `board_id`?, `name`?, ... | Issue board management (list, get, create, lists) |
 | `gitlab_time` | `action`, `project`, `iid`, `target_type`, `duration`?, ... | Time tracking (estimate, spend, reset, stats) on issues/MRs |
+| `gitlab_approval` | `action`, `project`, `iid`?, `rule_id`?, `name`?, ... | MR approval management (status, approve, unapprove, rules) [Premium for rules] |
+| `gitlab_draft` | `action`, `project`, `iid`, `draft_id`?, `body`?, ... | Draft notes for batch MR reviews (list, add, update, delete, publish) |
+| `gitlab_discussion` | `action`, `project`, `iid`, `target_type`, `discussion_id`?, ... | Threaded discussions on MRs/issues (list, create, reply, resolve) |
 
 *Note: `port` defaults to 8765. `preset` can be trusted/sandboxed (yolo is REPL-only). Skills mirror `nexus3 rpc` CLI commands. Destructive file tools remind agents to read files before modifying. GitLab skills require TRUSTED+ and configured GitLab instance. [Premium] skills require GitLab Premium subscription.*
 

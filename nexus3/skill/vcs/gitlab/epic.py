@@ -123,7 +123,8 @@ class GitLabEpicSkill(GitLabSkill):
         group_encoded = client._encode_path(group)
 
         # Filter out consumed kwargs to avoid passing them twice
-        filtered = {k: v for k, v in kwargs.items() if k not in ("action", "group", "instance", "iid", "issue_id", "epic_issue_id")}
+        excluded = ("action", "group", "instance", "iid", "issue_id", "epic_issue_id")
+        filtered = {k: v for k, v in kwargs.items() if k not in excluded}
 
         match action:
             case "list":

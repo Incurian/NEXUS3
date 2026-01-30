@@ -30,7 +30,10 @@ class GitLabMRSkill(GitLabSkill):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["list", "get", "create", "update", "merge", "close", "reopen", "comment"],
+                    "enum": [
+                        "list", "get", "create", "update", "merge",
+                        "close", "reopen", "comment", "diff", "commits", "pipelines",
+                    ],
                     "description": "Action to perform",
                 },
                 "instance": {
@@ -39,11 +42,17 @@ class GitLabMRSkill(GitLabSkill):
                 },
                 "project": {
                     "type": "string",
-                    "description": "Project path (e.g., 'group/repo'). Auto-detected from git remote if omitted.",
+                    "description": (
+                        "Project path (e.g., 'group/repo'). "
+                        "Auto-detected from git remote if omitted."
+                    ),
                 },
                 "iid": {
                     "type": "integer",
-                    "description": "MR IID (required for get/update/merge/close/reopen/comment)",
+                    "description": (
+                        "MR IID (required for get/update/merge/close/reopen/"
+                        "comment/diff/commits/pipelines)"
+                    ),
                 },
                 "title": {
                     "type": "string",
@@ -165,6 +174,21 @@ class GitLabMRSkill(GitLabSkill):
                 if not body:
                     return ToolResult(error="body parameter required for comment action")
                 return await self._add_comment(client, project_encoded, iid, body)
+            case "diff":
+                iid = kwargs.get("iid")
+                if not iid:
+                    return ToolResult(error="iid parameter required for diff action")
+                return await self._get_diff(client, project_encoded, iid)
+            case "commits":
+                iid = kwargs.get("iid")
+                if not iid:
+                    return ToolResult(error="iid parameter required for commits action")
+                return await self._list_commits(client, project_encoded, iid)
+            case "pipelines":
+                iid = kwargs.get("iid")
+                if not iid:
+                    return ToolResult(error="iid parameter required for pipelines action")
+                return await self._list_pipelines(client, project_encoded, iid)
             case _:
                 return ToolResult(error=f"Unknown action: {action}")
 
@@ -353,3 +377,110 @@ class GitLabMRSkill(GitLabSkill):
     ) -> ToolResult:
         await client.post(f"/projects/{project}/merge_requests/{iid}/notes", body=body)
         return ToolResult(output=f"Added comment to MR !{iid}")
+
+    async def _get_diff(
+        self,
+        client: GitLabClient,
+        project: str,
+        iid: int,
+    ) -> ToolResult:
+        """Get MR diff (files changed with stats)."""
+        # Use /diffs endpoint for cleaner diff data
+        diffs = await client.get(f"/projects/{project}/merge_requests/{iid}/diffs")
+
+        if not diffs:
+            return ToolResult(output=f"MR !{iid} has no changes")
+
+        total_additions = 0
+        total_deletions = 0
+        lines = []
+
+        for diff in diffs:
+            old_path = diff.get("old_path", "")
+            new_path = diff.get("new_path", "")
+            new_file = diff.get("new_file", False)
+            deleted_file = diff.get("deleted_file", False)
+            renamed_file = diff.get("renamed_file", False)
+
+            # Count additions/deletions from diff content
+            diff_content = diff.get("diff", "")
+            additions = diff_content.count("\n+") - diff_content.count("\n+++")
+            deletions = diff_content.count("\n-") - diff_content.count("\n---")
+            total_additions += additions
+            total_deletions += deletions
+
+            # Determine change type indicator
+            if new_file:
+                indicator = "A"
+                path_display = new_path
+            elif deleted_file:
+                indicator = "D"
+                path_display = old_path
+            elif renamed_file:
+                indicator = "R"
+                path_display = f"{new_path} (renamed from {old_path})"
+            else:
+                indicator = "M"
+                path_display = new_path
+
+            lines.append(f"  {indicator} {path_display} (+{additions}/-{deletions})")
+
+        header = f"MR !{iid} Changes ({len(diffs)} file(s), +{total_additions}/-{total_deletions}):"
+        return ToolResult(output="\n".join([header] + lines))
+
+    async def _list_commits(
+        self,
+        client: GitLabClient,
+        project: str,
+        iid: int,
+    ) -> ToolResult:
+        """List commits in MR."""
+        commits = await client.get(f"/projects/{project}/merge_requests/{iid}/commits")
+
+        if not commits:
+            return ToolResult(output=f"MR !{iid} has no commits")
+
+        lines = [f"MR !{iid} has {len(commits)} commit(s):"]
+        for commit in commits:
+            short_sha = commit["short_id"]
+            author = commit.get("author_name", "unknown")
+            # Get first line of commit message
+            message = commit.get("title", commit.get("message", "")).split("\n")[0]
+            lines.append(f"  {short_sha} @{author}: {message}")
+
+        return ToolResult(output="\n".join(lines))
+
+    async def _list_pipelines(
+        self,
+        client: GitLabClient,
+        project: str,
+        iid: int,
+    ) -> ToolResult:
+        """List pipelines for MR."""
+        pipelines = await client.get(f"/projects/{project}/merge_requests/{iid}/pipelines")
+
+        if not pipelines:
+            return ToolResult(output=f"MR !{iid} has no pipelines")
+
+        status_icons = {
+            "success": "🟢",
+            "passed": "🟢",
+            "failed": "🔴",
+            "running": "🔵",
+            "pending": "🟡",
+            "canceled": "⚪",
+            "skipped": "⚪",
+            "manual": "🟠",
+            "created": "🟡",
+        }
+
+        lines = [f"MR !{iid} has {len(pipelines)} pipeline(s):"]
+        for pipeline in pipelines:
+            status = pipeline.get("status", "unknown")
+            icon = status_icons.get(status, "❓")
+            pipeline_id = pipeline["id"]
+            ref = pipeline.get("ref", "")
+            created_at = pipeline.get("created_at", "")
+            lines.append(f"  {icon} #{pipeline_id} {status} ({ref}) - {created_at}")
+
+        return ToolResult(output="\n".join(lines))
