@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 from nexus3.core.permissions import PermissionLevel
 
 
-def can_use_gitlab(permissions: "AgentPermissions | None") -> bool:
+def can_use_gitlab(permissions: AgentPermissions | None) -> bool:
     """Check if agent can use GitLab tools.
 
     GitLab tools require TRUSTED+ (no SANDBOXED).
@@ -25,9 +25,9 @@ def can_use_gitlab(permissions: "AgentPermissions | None") -> bool:
 
 
 def register_gitlab_skills(
-    registry: "SkillRegistry",
-    services: "ServiceContainer",
-    permissions: "AgentPermissions | None",
+    registry: SkillRegistry,
+    services: ServiceContainer,
+    permissions: AgentPermissions | None,
 ) -> int:
     """
     Register GitLab skills if configured and permitted.
@@ -48,33 +48,48 @@ def register_gitlab_skills(
     # Import skill classes (deferred to avoid circular imports)
     # Skills may not exist yet during phased implementation
     try:
-        from nexus3.skill.vcs.gitlab.repo import GitLabRepoSkill
-        from nexus3.skill.vcs.gitlab.issue import GitLabIssueSkill
-        from nexus3.skill.vcs.gitlab.mr import GitLabMRSkill
-        from nexus3.skill.vcs.gitlab.label import GitLabLabelSkill
+        # Phase 1: Foundation
+        from nexus3.skill.vcs.gitlab.board import GitLabBoardSkill
         from nexus3.skill.vcs.gitlab.branch import GitLabBranchSkill
+
+        # Phase 2: Project Management
+        from nexus3.skill.vcs.gitlab.epic import GitLabEpicSkill
+        from nexus3.skill.vcs.gitlab.issue import GitLabIssueSkill
+        from nexus3.skill.vcs.gitlab.iteration import GitLabIterationSkill
+        from nexus3.skill.vcs.gitlab.label import GitLabLabelSkill
+        from nexus3.skill.vcs.gitlab.milestone import GitLabMilestoneSkill
+        from nexus3.skill.vcs.gitlab.mr import GitLabMRSkill
+        from nexus3.skill.vcs.gitlab.repo import GitLabRepoSkill
         from nexus3.skill.vcs.gitlab.tag import GitLabTagSkill
+        from nexus3.skill.vcs.gitlab.time_tracking import GitLabTimeSkill
     except ImportError:
         # Skills not yet implemented - return 0 during phased development
         return 0
 
     # Create factories that capture services and config
     def make_factory(skill_class):
-        def factory(svc: "ServiceContainer"):
+        def factory(svc: ServiceContainer):
             config = svc.get_gitlab_config()
             if not config:
                 raise ValueError("GitLab not configured")
             return skill_class(svc, config)
         return factory
 
-    # Register all Phase 1 GitLab skill factories
+    # Register all GitLab skill factories
     skills = [
+        # Phase 1: Foundation
         ("gitlab_repo", GitLabRepoSkill),
         ("gitlab_issue", GitLabIssueSkill),
         ("gitlab_mr", GitLabMRSkill),
         ("gitlab_label", GitLabLabelSkill),
         ("gitlab_branch", GitLabBranchSkill),
         ("gitlab_tag", GitLabTagSkill),
+        # Phase 2: Project Management
+        ("gitlab_epic", GitLabEpicSkill),
+        ("gitlab_iteration", GitLabIterationSkill),
+        ("gitlab_milestone", GitLabMilestoneSkill),
+        ("gitlab_board", GitLabBoardSkill),
+        ("gitlab_time", GitLabTimeSkill),
     ]
 
     for name, skill_class in skills:

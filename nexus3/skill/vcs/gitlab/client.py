@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 from urllib.parse import quote
 
 import httpx
@@ -76,7 +77,7 @@ class GitLabClient:
             await self._http.aclose()
             self._http = None
 
-    async def __aenter__(self) -> "GitLabClient":
+    async def __aenter__(self) -> GitLabClient:
         await self._ensure_client()
         return self
 

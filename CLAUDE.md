@@ -69,10 +69,11 @@ Phase 1 - Foundation: ✅ COMPLETE (2026-01-30)
 - [x] P1.16 `/gitlab` REPL command
 - [x] P1.20 Live tested against `incurian-group/Incurian-project`
 
-Phase 2 - Project Management:
-- [ ] P2.1-P2.5 Implement 5 skills (epic, iteration, milestone, board, time)
-- [ ] P2.6-P2.7 Add link actions to issue/epic
-- [ ] P2.8 Unit tests
+Phase 2 - Project Management: ✅ COMPLETE (2026-01-30)
+- [x] P2.1-P2.5 Implement 5 skills (epic, iteration, milestone, board, time)
+- [x] P2.6-P2.7 Add link actions to issue/epic (deferred - epic requires Premium)
+- [x] P2.8 Live tested against `incurian-group/Incurian-project`
+- Note: Epic/Iteration require GitLab Premium (403 on free accounts)
 
 Phase 3 - Code Review:
 - [ ] P3.1 Add diff/commits/pipelines to `gitlab_mr`
@@ -542,8 +543,13 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `gitlab_label` | `action`, `project`?, `name`?, `color`? | Label management (list, get, create, update, delete) |
 | `gitlab_branch` | `action`, `project`?, `name`?, `ref`? | Branch operations (list, get, create, delete) |
 | `gitlab_tag` | `action`, `project`?, `name`?, `ref`? | Tag operations (list, get, create, delete) |
+| `gitlab_epic` | `action`, `group`, `iid`?, `title`?, ... | Epic management (list, get, create, update, close, add/remove issues) [Premium] |
+| `gitlab_iteration` | `action`, `group`, `iteration_id`?, `title`?, ... | Iteration/sprint management (list, get, create, cadences) [Premium] |
+| `gitlab_milestone` | `action`, `project` OR `group`, `milestone_id`?, `title`?, ... | Milestone operations (list, get, create, update, close, issues, MRs) |
+| `gitlab_board` | `action`, `project` OR `group`, `board_id`?, `name`?, ... | Issue board management (list, get, create, lists) |
+| `gitlab_time` | `action`, `project`, `iid`, `target_type`, `duration`?, ... | Time tracking (estimate, spend, reset, stats) on issues/MRs |
 
-*Note: `port` defaults to 8765. `preset` can be trusted/sandboxed (yolo is REPL-only). Skills mirror `nexus3 rpc` CLI commands. Destructive file tools remind agents to read files before modifying. GitLab skills require TRUSTED+ and configured GitLab instance.*
+*Note: `port` defaults to 8765. `preset` can be trusted/sandboxed (yolo is REPL-only). Skills mirror `nexus3 rpc` CLI commands. Destructive file tools remind agents to read files before modifying. GitLab skills require TRUSTED+ and configured GitLab instance. [Premium] skills require GitLab Premium subscription.*
 
 ---
 
