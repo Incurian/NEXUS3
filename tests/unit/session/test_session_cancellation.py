@@ -1,13 +1,14 @@
 """Tests for session cancellation handling.
 
-These tests verify that when tool execution is cancelled, all tool_use blocks
-get matching tool_result blocks to satisfy Anthropic API protocol requirements.
+These tests verify:
+1. Session-level cancellation handling (prevents orphans by early exit)
+2. Session adds results for remaining tools when cancelled mid-execution
+3. Provider-level synthesis handles any orphans that slip through
 """
 
 import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -100,12 +101,12 @@ class SlowSkill(BaseSkill):
         return ToolResult(output=f"Executed {self.execution_count}")
 
 
-class TestSequentialCancellationAddsResults:
-    """Test that sequential cancellation adds results for remaining tools."""
+class TestEarlyCancellationPreventsOrphans:
+    """Test that cancellation before assistant message prevents orphans."""
 
     @pytest.mark.asyncio
-    async def test_cancellation_before_first_tool_adds_all_results(self):
-        """When cancelled before any tool executes, all tools get results."""
+    async def test_cancellation_before_assistant_message_no_orphans(self):
+        """When cancelled before assistant message added, no orphans exist."""
         tool_calls = [
             ToolCall(id="tc1", name="slow_skill", arguments={}),
             ToolCall(id="tc2", name="slow_skill", arguments={}),
@@ -127,7 +128,8 @@ class TestSequentialCancellationAddsResults:
             services=services,
         )
 
-        # Cancel immediately
+        # Cancel immediately - this will be detected after provider returns
+        # but BEFORE the assistant message is added to context
         cancel_token = CancellationToken()
         cancel_token.cancel()
 
@@ -139,13 +141,30 @@ class TestSequentialCancellationAddsResults:
         # Verify SessionCancelled was yielded
         assert any(isinstance(e, SessionCancelled) for e in events)
 
-        # Verify all 3 tools got results in context
+        # Key invariant: NO orphaned tool_use blocks because assistant message
+        # was never added to context
+        assistant_messages = [
+            m for m in context.messages if m.role == Role.ASSISTANT
+        ]
         tool_results = [
             m for m in context.messages if m.role == Role.TOOL
         ]
-        assert len(tool_results) == 3
-        for result in tool_results:
-            assert "Cancelled by user" in result.content
+
+        # Either no assistant message (clean early exit), or if there is one,
+        # all its tool_calls have matching results
+        if assistant_messages:
+            tool_call_ids = set()
+            for msg in assistant_messages:
+                tool_call_ids.update(tc.id for tc in msg.tool_calls)
+            result_ids = {m.tool_call_id for m in tool_results}
+            assert result_ids == tool_call_ids
+        else:
+            # No assistant message = no orphans possible
+            assert len(tool_results) == 0
+
+
+class TestSequentialCancellationAddsResults:
+    """Test that sequential cancellation adds results for remaining tools."""
 
     @pytest.mark.asyncio
     async def test_cancellation_after_first_tool_adds_remaining_results(self):
@@ -244,8 +263,8 @@ class TestToolResultCompleteness:
     """Test that context always has matching tool_use/tool_result pairs."""
 
     @pytest.mark.asyncio
-    async def test_all_tool_calls_have_results_after_cancellation(self):
-        """After any cancellation scenario, all tool_calls have results."""
+    async def test_tool_calls_have_results_when_cancelled_mid_execution(self):
+        """When cancelled during tool execution, all tool_calls have results."""
         tool_calls = [
             ToolCall(id="tc1", name="slow_skill", arguments={}),
             ToolCall(id="tc2", name="slow_skill", arguments={}),
@@ -257,9 +276,13 @@ class TestToolResultCompleteness:
         context = ContextManager(config=ContextConfig(max_tokens=10000))
         context.set_system_prompt("System prompt")
 
+        cancel_token = CancellationToken()
+
         services = create_services_with_permissions()
         registry = SkillRegistry(services=services)
-        registry.register("slow_skill", lambda _: SlowSkill())
+        # Cancel after first tool executes
+        skill = SlowSkill(cancel_token=cancel_token)
+        registry.register("slow_skill", lambda _: skill)
 
         session = Session(
             provider=provider,
@@ -267,10 +290,6 @@ class TestToolResultCompleteness:
             registry=registry,
             services=services,
         )
-
-        # Cancel immediately
-        cancel_token = CancellationToken()
-        cancel_token.cancel()
 
         async for _ in session.run_turn("Test", cancel_token=cancel_token):
             pass
@@ -285,3 +304,100 @@ class TestToolResultCompleteness:
         assert result_ids == tool_call_ids, (
             f"Missing results for tool_calls: {tool_call_ids - result_ids}"
         )
+
+
+class TestProviderSynthesizesMissingResults:
+    """Test that Anthropic provider synthesizes missing tool_results."""
+
+    def test_provider_synthesizes_orphaned_tool_use_blocks(self):
+        """Provider synthesizes results for orphaned tool_use blocks."""
+        from nexus3.provider.anthropic import AnthropicProvider
+        from nexus3.config.schema import ProviderConfig
+
+        # Create a minimal provider config
+        config = ProviderConfig(
+            type="anthropic",
+            base_url="https://api.anthropic.com",
+            api_key_env="ANTHROPIC_API_KEY",
+        )
+
+        # We can't fully instantiate without API key, so test the method directly
+        # by creating a mock instance
+        provider = object.__new__(AnthropicProvider)
+
+        # Create messages with orphaned tool_use blocks (no tool_results)
+        messages = [
+            Message(role=Role.USER, content="Read some files"),
+            Message(
+                role=Role.ASSISTANT,
+                content="",
+                tool_calls=(
+                    ToolCall(id="tc1", name="read_file", arguments={"path": "a.txt"}),
+                    ToolCall(id="tc2", name="read_file", arguments={"path": "b.txt"}),
+                    ToolCall(id="tc3", name="read_file", arguments={"path": "c.txt"}),
+                ),
+            ),
+            # Only one tool_result - orphaning tc2 and tc3
+            Message(role=Role.TOOL, content="contents of a.txt", tool_call_id="tc1"),
+        ]
+
+        # Call _convert_messages directly
+        result = provider._convert_messages(messages)
+
+        # Should have: user message, assistant message, user message with tool_results
+        assert len(result) == 3
+
+        # The last user message should have all 3 tool_results
+        last_user = result[-1]
+        assert last_user["role"] == "user"
+
+        tool_result_ids = {
+            block["tool_use_id"]
+            for block in last_user["content"]
+            if block["type"] == "tool_result"
+        }
+
+        # All 3 tool_use blocks should have results
+        assert tool_result_ids == {"tc1", "tc2", "tc3"}
+
+        # The synthetic results should indicate interruption
+        for block in last_user["content"]:
+            if block["type"] == "tool_result" and block["tool_use_id"] in {"tc2", "tc3"}:
+                assert "interrupted" in block["content"].lower()
+
+    def test_provider_no_synthesis_when_all_results_present(self):
+        """Provider doesn't synthesize when all tool_results are present."""
+        from nexus3.provider.anthropic import AnthropicProvider
+
+        provider = object.__new__(AnthropicProvider)
+
+        # Create messages with complete tool_use/tool_result pairs
+        messages = [
+            Message(role=Role.USER, content="Read some files"),
+            Message(
+                role=Role.ASSISTANT,
+                content="",
+                tool_calls=(
+                    ToolCall(id="tc1", name="read_file", arguments={"path": "a.txt"}),
+                    ToolCall(id="tc2", name="read_file", arguments={"path": "b.txt"}),
+                ),
+            ),
+            Message(role=Role.TOOL, content="contents of a.txt", tool_call_id="tc1"),
+            Message(role=Role.TOOL, content="contents of b.txt", tool_call_id="tc2"),
+        ]
+
+        result = provider._convert_messages(messages)
+
+        # Should have: user message, assistant message, user message with tool_results
+        assert len(result) == 3
+
+        # The last user message should have exactly 2 tool_results
+        last_user = result[-1]
+        tool_results = [
+            b for b in last_user["content"] if b["type"] == "tool_result"
+        ]
+        assert len(tool_results) == 2
+
+        # No synthetic "interrupted" messages
+        for block in tool_results:
+            assert "interrupted" not in block["content"].lower()
