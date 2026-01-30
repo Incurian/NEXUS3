@@ -143,7 +143,12 @@ Plans listed in recommended implementation order (in `docs/plans/`):
 
 | Priority | Plan | Description |
 |----------|------|-------------|
-| 1 | `CLIPBOARD-PLAN.md` | Scoped clipboard system for copy/paste across files and agents. |
+| 1 | `CLIPBOARD-PLAN.md` | Scoped clipboard system for copy/paste across files and agents. **FIRST: Restore enhanced plan** (see below). |
+
+**Clipboard Plan Restoration Required:**
+The plan was reverted to a simplified version. Before implementation, restore enhancements (TTL, tags, search, import/export, session persistence) and pattern fixes (async file I/O, try/except validation, PRAGMA foreign_keys, TOCTOU protection). Instructions:
+- `docs/plans/RESTORE-CLIPBOARD-PLAN.md` - What to restore
+- `docs/plans/clipboard-validation-report.md` - Validation findings with code
 
 **Plan templates** (in `docs/plans/examples/`):
 - `EXAMPLE-PLAN-SIMPLE.md` - Template for focused single-feature plans
