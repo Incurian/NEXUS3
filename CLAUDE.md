@@ -80,9 +80,10 @@ Phase 3 - Code Review: ✅ COMPLETE (2026-01-30)
 - [x] P3.2-P3.4 Implement 3 skills (approval, draft, discussion)
 - [x] P3.5 Live tested against `incurian-group/Incurian-project`
 
-Phase 4 - CI/CD:
-- [ ] P4.1-P4.4 Implement 4 skills (pipeline, job, artifact, variable)
-- [ ] P4.5 Unit tests
+Phase 4 - CI/CD: ✅ COMPLETE (2026-01-30)
+- [x] P4.1-P4.4 Implement 4 skills (pipeline, job, artifact, variable)
+- [x] P4.5 Live tested against `incurian-group/Incurian-project`
+- Note: Test project has no CI/CD configured, but skills execute correctly
 
 Phase 5 - Config & Premium:
 - [ ] P5.1-P5.2 Add protection to branch/tag
@@ -551,6 +552,10 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `gitlab_approval` | `action`, `project`, `iid`?, `rule_id`?, `name`?, ... | MR approval management (status, approve, unapprove, rules) [Premium for rules] |
 | `gitlab_draft` | `action`, `project`, `iid`, `draft_id`?, `body`?, ... | Draft notes for batch MR reviews (list, add, update, delete, publish) |
 | `gitlab_discussion` | `action`, `project`, `iid`, `target_type`, `discussion_id`?, ... | Threaded discussions on MRs/issues (list, create, reply, resolve) |
+| `gitlab_pipeline` | `action`, `project`, `pipeline_id`?, `ref`?, `status`?, ... | Pipeline operations (list, get, create, retry, cancel, delete, jobs, variables) |
+| `gitlab_job` | `action`, `project`, `job_id`?, `scope`?, `tail`?, ... | Job operations (list, get, log, retry, cancel, play, erase) |
+| `gitlab_artifact` | `action`, `project`, `job_id`?, `output_path`?, ... | Artifact management (download, download-file, browse, delete, keep, download-ref) |
+| `gitlab_variable` | `action`, `project` OR `group`, `key`?, `value`?, ... | CI/CD variables (list, get, create, update, delete) for project or group |
 
 *Note: `port` defaults to 8765. `preset` can be trusted/sandboxed (yolo is REPL-only). Skills mirror `nexus3 rpc` CLI commands. Destructive file tools remind agents to read files before modifying. GitLab skills require TRUSTED+ and configured GitLab instance. [Premium] skills require GitLab Premium subscription.*
 

@@ -48,24 +48,24 @@ def register_gitlab_skills(
     # Import skill classes (deferred to avoid circular imports)
     # Skills may not exist yet during phased implementation
     try:
-        # Phase 1: Foundation
-        # Phase 3: Code Review
         from nexus3.skill.vcs.gitlab.approval import GitLabApprovalSkill
+        from nexus3.skill.vcs.gitlab.artifact import GitLabArtifactSkill
         from nexus3.skill.vcs.gitlab.board import GitLabBoardSkill
         from nexus3.skill.vcs.gitlab.branch import GitLabBranchSkill
         from nexus3.skill.vcs.gitlab.discussion import GitLabDiscussionSkill
         from nexus3.skill.vcs.gitlab.draft_note import GitLabDraftSkill
-
-        # Phase 2: Project Management
         from nexus3.skill.vcs.gitlab.epic import GitLabEpicSkill
         from nexus3.skill.vcs.gitlab.issue import GitLabIssueSkill
         from nexus3.skill.vcs.gitlab.iteration import GitLabIterationSkill
+        from nexus3.skill.vcs.gitlab.job import GitLabJobSkill
         from nexus3.skill.vcs.gitlab.label import GitLabLabelSkill
         from nexus3.skill.vcs.gitlab.milestone import GitLabMilestoneSkill
         from nexus3.skill.vcs.gitlab.mr import GitLabMRSkill
+        from nexus3.skill.vcs.gitlab.pipeline import GitLabPipelineSkill
         from nexus3.skill.vcs.gitlab.repo import GitLabRepoSkill
         from nexus3.skill.vcs.gitlab.tag import GitLabTagSkill
         from nexus3.skill.vcs.gitlab.time_tracking import GitLabTimeSkill
+        from nexus3.skill.vcs.gitlab.variable import GitLabVariableSkill
     except ImportError:
         # Skills not yet implemented - return 0 during phased development
         return 0
@@ -98,6 +98,11 @@ def register_gitlab_skills(
         ("gitlab_approval", GitLabApprovalSkill),
         ("gitlab_draft", GitLabDraftSkill),
         ("gitlab_discussion", GitLabDiscussionSkill),
+        # Phase 4: CI/CD
+        ("gitlab_pipeline", GitLabPipelineSkill),
+        ("gitlab_job", GitLabJobSkill),
+        ("gitlab_artifact", GitLabArtifactSkill),
+        ("gitlab_variable", GitLabVariableSkill),
     ]
 
     for name, skill_class in skills:

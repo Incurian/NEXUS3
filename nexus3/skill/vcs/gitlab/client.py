@@ -158,6 +158,38 @@ class GitLabClient:
         """GET request."""
         return await self._request("GET", path, params=params or None)
 
+    async def get_raw(self, path: str, **params: Any) -> str:
+        """GET request returning raw text (for endpoints like job trace)."""
+        client = await self._ensure_client()
+        url = f"{self._base_url}{path}"
+
+        # Validate URL before request (defense in depth)
+        validate_url(url, allow_localhost=True, allow_private=False)
+
+        try:
+            response = await client.request(
+                method="GET",
+                url=url,
+                params=params or None,
+            )
+
+            # Handle errors
+            if response.status_code >= 400:
+                try:
+                    body = response.json()
+                    message = body.get("message", body.get("error", str(body)))
+                except Exception:
+                    body = None
+                    message = response.text
+                raise GitLabAPIError(response.status_code, message, body)
+
+            return response.text
+
+        except httpx.TimeoutException as e:
+            raise GitLabAPIError(0, "Request timeout") from e
+        except httpx.RequestError as e:
+            raise GitLabAPIError(0, f"Request failed: {e}") from e
+
     async def post(self, path: str, **data: Any) -> Any:
         """POST request."""
         return await self._request("POST", path, json=data or None)
