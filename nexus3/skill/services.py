@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from nexus3.core.permissions import AgentPermissions, PermissionLevel
     from nexus3.rpc.agent_api import DirectAgentAPI
+    from nexus3.skill.vcs.config import GitLabConfig
 
 
 @dataclass
@@ -255,3 +256,47 @@ class ServiceContainer:
             MCPServerRegistry instance if registered, None otherwise.
         """
         return self.get("mcp_registry")
+
+    def get_gitlab_config(self) -> "GitLabConfig | None":
+        """Get GitLab configuration if available.
+
+        Returns:
+            GitLabConfig object if registered, None otherwise.
+        """
+        from nexus3.skill.vcs.config import GitLabConfig
+
+        config = self.get("gitlab_config")
+        if isinstance(config, GitLabConfig):
+            return config
+        return None
+
+    def get_session_allowances(self) -> dict[str, bool]:
+        """Get session allowances for per-skill confirmations.
+
+        Session allowances track user confirmations for skill+instance combinations,
+        allowing the session to remember that a user has approved access to a
+        particular service (e.g., GitLab instance) for the duration of the session.
+
+        Returns:
+            Dictionary mapping allowance keys to boolean values.
+            Keys are typically in format "{skill_name}@{instance_host}".
+            Empty dict if no allowances have been set.
+        """
+        allowances = self.get("session_allowances")
+        if isinstance(allowances, dict):
+            return allowances
+        return {}
+
+    def set_session_allowance(self, key: str, allowed: bool) -> None:
+        """Set a session allowance for a skill+instance combination.
+
+        This allows per-skill confirmation prompts to remember user decisions
+        for the duration of the session.
+
+        Args:
+            key: Allowance key, typically in format "{skill_name}@{instance_host}"
+            allowed: Whether access is allowed
+        """
+        allowances = self.get_session_allowances()
+        allowances[key] = allowed
+        self.register("session_allowances", allowances)

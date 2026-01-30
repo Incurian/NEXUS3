@@ -1084,6 +1084,8 @@ async def run_repl(
             return await repl_commands.cmd_model(ctx, cmd_args or None)
         elif cmd_name == "mcp":
             return await repl_commands.cmd_mcp(ctx, cmd_args or None)
+        elif cmd_name == "gitlab":
+            return await repl_commands.cmd_gitlab(ctx, cmd_args or None)
         elif cmd_name == "init":
             return await repl_commands.cmd_init(ctx, cmd_args or None)
 

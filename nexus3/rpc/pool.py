@@ -55,6 +55,9 @@ from nexus3.rpc.log_multiplexer import LogMultiplexer
 from nexus3.session import LogConfig, LogStream, Session, SessionLogger
 from nexus3.session.persistence import SavedSession, deserialize_messages
 from nexus3.skill import ServiceContainer, SkillRegistry
+from nexus3.skill.vcs import register_vcs_skills
+from nexus3.skill.vcs.config import GitLabConfig as VCSGitLabConfig
+from nexus3.skill.vcs.config import GitLabInstance
 
 if TYPE_CHECKING:
     from nexus3.config.schema import Config
@@ -66,6 +69,38 @@ if TYPE_CHECKING:
 # Maximum nesting depth for agent creation
 # 0 = root, 1 = child, 2 = grandchild, etc.
 MAX_AGENT_DEPTH = 5
+
+
+def _convert_gitlab_config(config: Config) -> VCSGitLabConfig | None:
+    """Convert schema GitLabConfig to VCS GitLabConfig.
+
+    Returns None if no GitLab instances are configured or if gitlab
+    is not properly configured (e.g., mock in tests).
+    """
+    try:
+        schema_config = config.gitlab
+        # Guard against mocks or missing instances attribute
+        if not hasattr(schema_config, "instances") or not isinstance(schema_config.instances, dict):
+            return None
+        if not schema_config.instances:
+            return None
+
+        # Convert each instance
+        instances: dict[str, GitLabInstance] = {}
+        for name, inst in schema_config.instances.items():
+            instances[name] = GitLabInstance(
+                url=inst.url,
+                token=inst.token,
+                token_env=inst.token_env,
+            )
+
+        return VCSGitLabConfig(
+            instances=instances,
+            default_instance=schema_config.default_instance,
+        )
+    except (AttributeError, TypeError, ValueError):
+        # Handle any conversion errors gracefully (e.g., mocked config in tests)
+        return None
 
 
 class AuthorizationError(Exception):
@@ -197,7 +232,7 @@ class SharedComponents:
     """
 
     config: Config
-    provider_registry: "ProviderRegistry"
+    provider_registry: ProviderRegistry
     base_log_dir: Path
     base_context: LoadedContext
     context_loader: ContextLoader
@@ -336,7 +371,7 @@ class AgentPool:
         # Set via set_global_dispatcher() after GlobalDispatcher is created
         self._global_dispatcher: GlobalDispatcher | None = None
 
-    def set_global_dispatcher(self, dispatcher: "GlobalDispatcher") -> None:
+    def set_global_dispatcher(self, dispatcher: GlobalDispatcher) -> None:
         """Set the global dispatcher for in-process AgentAPI.
 
         This enables skills to use DirectAgentAPI instead of HTTP for
@@ -531,6 +566,11 @@ class AgentPool:
         agent_cwd = effective_config.cwd or Path.cwd()
         services.register("cwd", agent_cwd)
 
+        # Register GitLab config for VCS skills
+        gitlab_config = _convert_gitlab_config(self._shared.config)
+        if gitlab_config:
+            services.register("gitlab_config", gitlab_config)
+
         # Register AgentAPI for in-process communication (bypasses HTTP)
         # Pass effective_id as requester_id for authorization checks (H5 fix)
         if self._global_dispatcher is not None:
@@ -540,6 +580,9 @@ class AgentPool:
 
         registry = SkillRegistry(services)
         register_builtin_skills(registry)
+
+        # Register VCS skills (GitLab, GitHub) if configured
+        register_vcs_skills(registry, services, permissions)
 
         # SECURITY FIX: Inject only enabled tool definitions into context
         # Disabled tools should not be visible to the LLM at all
@@ -685,7 +728,7 @@ class AgentPool:
     async def get_or_restore(
         self,
         agent_id: str,
-        session_manager: "SessionManager | None" = None,
+        session_manager: SessionManager | None = None,
     ) -> Agent | None:
         """Get agent, restoring from saved session if needed.
 
@@ -813,6 +856,11 @@ class AgentPool:
         agent_cwd = Path(saved.working_directory) if saved.working_directory else Path.cwd()
         services.register("cwd", agent_cwd)
 
+        # Register GitLab config for VCS skills
+        gitlab_config = _convert_gitlab_config(self._shared.config)
+        if gitlab_config:
+            services.register("gitlab_config", gitlab_config)
+
         # Register AgentAPI for in-process communication (bypasses HTTP)
         # Pass agent_id as requester_id for authorization checks (H5 fix)
         if self._global_dispatcher is not None:
@@ -822,6 +870,9 @@ class AgentPool:
 
         registry = SkillRegistry(services)
         register_builtin_skills(registry)
+
+        # Register VCS skills (GitLab, GitHub) if configured
+        register_vcs_skills(registry, services, permissions)
 
         # SECURITY FIX: Inject only enabled tool definitions into context
         # Disabled tools should not be visible to the LLM at all

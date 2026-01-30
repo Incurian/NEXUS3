@@ -27,6 +27,8 @@ class TestMainHelpCompleteness:
         "cwd", "model", "permissions", "prompt", "compact",
         # MCP
         "mcp",
+        # GitLab
+        "gitlab",
         # Initialization
         "init",
         # REPL control

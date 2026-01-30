@@ -329,6 +329,90 @@ class ServerConfig(BaseModel):
     """Logging level for server operations."""
 
 
+class GitLabInstanceConfig(BaseModel):
+    """Configuration for a single GitLab instance.
+
+    Each instance represents a GitLab server (gitlab.com or self-hosted)
+    with its authentication credentials.
+
+    SECURITY: GitLab tokens should be stored in environment variables,
+    not directly in config files. Use `token_env` to specify the
+    environment variable name.
+
+    Example in config.json:
+        "gitlab": {
+            "instances": {
+                "default": {
+                    "url": "https://gitlab.com",
+                    "token_env": "GITLAB_TOKEN"
+                },
+                "work": {
+                    "url": "https://gitlab.company.com",
+                    "token_env": "WORK_GITLAB_TOKEN"
+                }
+            }
+        }
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = "https://gitlab.com"
+    """Base URL for the GitLab instance (e.g., 'https://gitlab.com')."""
+
+    token_env: str | None = None
+    """Environment variable containing the GitLab API token."""
+
+    token: str | None = None
+    """Direct token value (NOT RECOMMENDED - use token_env instead).
+    If both token and token_env are set, token takes precedence."""
+
+    @model_validator(mode="after")
+    def validate_token_config(self) -> "GitLabInstanceConfig":
+        """Ensure at least one authentication method is configured."""
+        if not self.token and not self.token_env:
+            raise ValueError(
+                "GitLabInstanceConfig: Must specify either 'token' or 'token_env'"
+            )
+        return self
+
+
+class GitLabConfig(BaseModel):
+    """Top-level GitLab configuration.
+
+    Supports multiple GitLab instances (e.g., gitlab.com and self-hosted)
+    with a default instance for convenience.
+
+    Example in config.json:
+        "gitlab": {
+            "instances": {
+                "default": {
+                    "url": "https://gitlab.com",
+                    "token_env": "GITLAB_TOKEN"
+                }
+            },
+            "default_instance": "default"
+        }
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    instances: dict[str, GitLabInstanceConfig] = {}
+    """Named GitLab instance configurations."""
+
+    default_instance: str | None = None
+    """Name of the default instance to use when not specified."""
+
+    @model_validator(mode="after")
+    def validate_default_instance(self) -> "GitLabConfig":
+        """Ensure default_instance references a valid instance."""
+        if self.default_instance and self.default_instance not in self.instances:
+            raise ValueError(
+                f"GitLabConfig: default_instance '{self.default_instance}' "
+                f"not found in instances"
+            )
+        return self
+
+
 class MCPServerConfig(BaseModel):
     """Configuration for an MCP server.
 
@@ -487,6 +571,7 @@ class Config(BaseModel):
     context: ContextConfig = ContextConfig()
     mcp_servers: list[MCPServerConfig] = []
     server: ServerConfig = ServerConfig()
+    gitlab: GitLabConfig = GitLabConfig()
 
     @model_validator(mode="after")
     def validate_unique_aliases(self) -> "Config":

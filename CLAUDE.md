@@ -63,19 +63,11 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 **Implementation Checklist:**
 
-Phase 1 - Foundation (Required First):
-- [ ] P1.1 Create `nexus3/skill/vcs/` directory structure
-- [ ] P1.2 Implement `nexus3/skill/vcs/config.py` (GitLabConfig, GitLabInstance)
-- [ ] P1.3 Implement `nexus3/skill/vcs/gitlab/client.py` (GitLabClient)
-- [ ] P1.4 Implement `nexus3/skill/vcs/gitlab/base.py` (GitLabSkill base class)
-- [ ] P1.5 Add GitLab config to `nexus3/config/schema.py`
-- [ ] P1.6 Add `get_gitlab_config()` to ServiceContainer
-- [ ] P1.7 Implement `nexus3/skill/vcs/gitlab/__init__.py` (registration)
-- [ ] P1.8 Integrate with skill registry in `nexus3/skill/registry.py`
-- [ ] P1.9 Add session_allowances support to ServiceContainer
-- [ ] P1.10-P1.15 Implement 6 core skills (repo, issue, mr, label, branch, tag)
-- [ ] P1.16 Implement `/gitlab` REPL command
-- [ ] P1.17-P1.20 Unit tests + optional integration test
+Phase 1 - Foundation: ✅ COMPLETE (2026-01-30)
+- [x] P1.1-P1.9 Infrastructure (config, client, base class, registration)
+- [x] P1.10-P1.15 Core skills (repo, issue, mr, label, branch, tag)
+- [x] P1.16 `/gitlab` REPL command
+- [x] P1.20 Live tested against `incurian-group/Incurian-project`
 
 Phase 2 - Project Management:
 - [ ] P2.1-P2.5 Implement 5 skills (epic, iteration, milestone, board, time)
@@ -544,8 +536,14 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `nexus_status` | `agent_id`, `port`? | Get agent tokens + context |
 | `nexus_cancel` | `agent_id`, `request_id`, `port`? | Cancel in-progress request |
 | `nexus_shutdown` | `port`? | Shutdown the entire server |
+| `gitlab_repo` | `action`, `project`?, `instance`? | Repository operations (get, list, fork, search) |
+| `gitlab_issue` | `action`, `project`?, `iid`?, `title`?, ... | Issue CRUD (list, get, create, update, close, reopen, comment) |
+| `gitlab_mr` | `action`, `project`?, `iid`?, `source_branch`?, ... | Merge request operations (list, get, create, update, merge, close) |
+| `gitlab_label` | `action`, `project`?, `name`?, `color`? | Label management (list, get, create, update, delete) |
+| `gitlab_branch` | `action`, `project`?, `name`?, `ref`? | Branch operations (list, get, create, delete) |
+| `gitlab_tag` | `action`, `project`?, `name`?, `ref`? | Tag operations (list, get, create, delete) |
 
-*Note: `port` defaults to 8765. `preset` can be trusted/sandboxed (yolo is REPL-only). Skills mirror `nexus3 rpc` CLI commands. Destructive file tools remind agents to read files before modifying.*
+*Note: `port` defaults to 8765. `preset` can be trusted/sandboxed (yolo is REPL-only). Skills mirror `nexus3 rpc` CLI commands. Destructive file tools remind agents to read files before modifying. GitLab skills require TRUSTED+ and configured GitLab instance.*
 
 ---
 

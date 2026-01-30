@@ -169,33 +169,26 @@ This means:
 
 def register_gitlab_skills(
     registry: SkillRegistry,
-    container: ServiceContainer,
-    config: Config,
+    services: ServiceContainer,
+    config: GitLabConfig,
 ) -> int:
     """
     Register GitLab skills if GitLab is configured.
 
     Returns the number of skills registered (0 if no GitLab config).
     """
-    gitlab_config = config.get("gitlab", {})
-    instances = gitlab_config.get("instances", {})
-
-    if not instances:
+    if not config.instances:
         # No GitLab configured - don't pollute tool context
         return 0
 
-    # Register all GitLab skills
-    skills = [
-        gitlab_repo_factory(container),
-        gitlab_issue_factory(container),
-        gitlab_mr_factory(container),
-        # ... etc
-    ]
+    # Register all GitLab skill factories
+    # Note: factories take services, instantiation is lazy
+    registry.register("gitlab_repo", GitLabRepoSkill.factory)
+    registry.register("gitlab_issue", GitLabIssueSkill.factory)
+    registry.register("gitlab_mr", GitLabMRSkill.factory)
+    # ... etc
 
-    for skill in skills:
-        registry.register(skill)
-
-    return len(skills)
+    return len(registry._factories)  # Or track count manually
 ```
 
 **Benefits:**
@@ -332,8 +325,8 @@ nexus3/skill/vcs/
 class VCSSkill(BaseSkill):
     """Base class for version control skills with platform detection."""
 
-    def __init__(self, container: ServiceContainer) -> None:
-        self._container = container
+    def __init__(self, services: ServiceContainer) -> None:
+        self._services = services
         self._clients: dict[str, GitLabClient | GitHubClient] = {}
 
     def _detect_platform(self, remote_url: str | None = None) -> Platform:
@@ -1020,11 +1013,12 @@ GitLab skills are conditionally registered based on configuration and permission
 ```python
 # nexus3/skill/vcs/gitlab/__init__.py
 
+from nexus3.skill.vcs.gitlab.permissions import can_use_gitlab
+
 def register_gitlab_skills(
     registry: SkillRegistry,
-    container: ServiceContainer,
-    config: Config,
-    permissions: PermissionConfig,
+    services: ServiceContainer,
+    permissions: AgentPermissions | None,
 ) -> int:
     """
     Register GitLab skills if configured and permitted.
@@ -1033,30 +1027,28 @@ def register_gitlab_skills(
     - No GitLab instances configured (don't pollute context)
     - Permission level is SANDBOXED (network blocked)
     """
+    # Check permission level first (defense in depth)
+    if not can_use_gitlab(permissions):
+        return 0  # SANDBOXED or no permissions
+
     # Check configuration
-    gitlab_config = config.get("gitlab", {})
-    instances = gitlab_config.get("instances", {})
-    if not instances:
+    gitlab_config = services.get_gitlab_config()
+    if not gitlab_config or not gitlab_config.instances:
         return 0  # No GitLab configured
 
-    # Check permission level
-    if permissions.level == PermissionLevel.SANDBOXED:
-        return 0  # Network access blocked
+    # Register all GitLab skill factories
+    # Factories are decorated with @gitlab_skill_factory
+    from nexus3.skill.vcs.gitlab.repo import GitLabRepoSkill
+    from nexus3.skill.vcs.gitlab.issue import GitLabIssueSkill
+    from nexus3.skill.vcs.gitlab.mr import GitLabMRSkill
+    # ... all skill imports
 
-    # Register all GitLab skills
-    skills = [
-        gitlab_repo_factory(container, gitlab_config),
-        gitlab_issue_factory(container, gitlab_config),
-        gitlab_mr_factory(container, gitlab_config),
-        gitlab_epic_factory(container, gitlab_config),
-        gitlab_pipeline_factory(container, gitlab_config),
-        # ... all 20 skills
-    ]
+    registry.register("gitlab_repo", GitLabRepoSkill.factory)
+    registry.register("gitlab_issue", GitLabIssueSkill.factory)
+    registry.register("gitlab_mr", GitLabMRSkill.factory)
+    # ... all 20 skills
 
-    for skill in skills:
-        registry.register(skill)
-
-    return len(skills)
+    return 20  # Or count dynamically
 ```
 
 ### Confirmation Integration
@@ -1076,7 +1068,8 @@ class GitLabSkill(VCSSkill):
 
         # Check session allowance
         allowance_key = f"{self.name}@{instance_host}"
-        if not self._container.session_allowances.get(allowance_key):
+        session_allowances = self._services.get("session_allowances") or {}
+        if not session_allowances.get(allowance_key):
             # Request confirmation (handled by REPL/display layer)
             allowed = await self._request_confirmation(
                 skill=self.name,
@@ -1087,13 +1080,13 @@ class GitLabSkill(VCSSkill):
 
             if not allowed:
                 return ToolResult(
-                    success=False,
                     error=f"Access to {instance.url} denied by user"
                 )
 
             # User selected "Allow for session"
             if allowed == "session":
-                self._container.session_allowances[allowance_key] = True
+                session_allowances[allowance_key] = True
+                self._services.register("session_allowances", session_allowances)
 
         # Proceed with actual execution
         return await self._execute_impl(**kwargs)
@@ -1344,12 +1337,13 @@ from nexus3.core.permissions import PermissionLevel
 
 
 @pytest.fixture
-def mock_services():
+def mock_services(gitlab_config):
     """Create mock ServiceContainer for testing."""
     services = MagicMock(spec=ServiceContainer)
     services.get.return_value = None
     services.get_cwd.return_value = Path("/tmp/test")
     services.get_permission_level.return_value = PermissionLevel.TRUSTED
+    services.get_gitlab_config.return_value = gitlab_config
     return services
 
 
@@ -1415,17 +1409,20 @@ This section provides copy-paste ready code and exact specifications for impleme
 ```python
 """VCS (Version Control Service) skills for GitLab and GitHub integration."""
 
-from nexus3.config import Config
-from nexus3.core.permissions import PermissionConfig, PermissionLevel
-from nexus3.skill import SkillRegistry
-from nexus3.session import ServiceContainer
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nexus3.core.permissions import AgentPermissions
+    from nexus3.skill import SkillRegistry
+    from nexus3.skill.services import ServiceContainer
 
 
 def register_vcs_skills(
     registry: SkillRegistry,
-    container: ServiceContainer,
-    config: Config,
-    permissions: PermissionConfig,
+    services: ServiceContainer,
+    permissions: AgentPermissions | None,
 ) -> int:
     """
     Register VCS skills based on configuration and permissions.
@@ -1435,23 +1432,19 @@ def register_vcs_skills(
 
     Returns total number of skills registered.
     """
-    # SANDBOXED agents cannot use network - don't register any VCS skills
-    if permissions.level == PermissionLevel.SANDBOXED:
-        return 0
-
     count = 0
 
     # GitLab skills
-    gitlab_config = config.get("gitlab", {})
-    if gitlab_config.get("instances"):
+    gitlab_config = services.get_gitlab_config()
+    if gitlab_config and gitlab_config.instances:
         from nexus3.skill.vcs.gitlab import register_gitlab_skills
-        count += register_gitlab_skills(registry, container, gitlab_config)
+        count += register_gitlab_skills(registry, services, permissions)
 
     # GitHub skills (future)
-    github_config = config.get("github", {})
-    if github_config.get("instances"):
-        from nexus3.skill.vcs.github import register_github_skills
-        count += register_github_skills(registry, container, github_config)
+    # github_config = services.get_github_config()
+    # if github_config and github_config.instances:
+    #     from nexus3.skill.vcs.github import register_github_skills
+    #     count += register_github_skills(registry, services, permissions)
 
     return count
 ```
@@ -1827,10 +1820,10 @@ class GitLabSkill(BaseSkill):
 
     def __init__(
         self,
-        container: "ServiceContainer",
+        services: "ServiceContainer",
         gitlab_config: GitLabConfig,
     ):
-        self._container = container
+        self._services = services
         self._config = gitlab_config
         self._clients: dict[str, GitLabClient] = {}
 
@@ -1873,7 +1866,7 @@ class GitLabSkill(BaseSkill):
                 capture_output=True,
                 text=True,
                 timeout=5,
-                cwd=self._container.cwd,
+                cwd=self._services.get_cwd(),
             )
             if result.returncode != 0:
                 return None
@@ -1922,7 +1915,7 @@ class GitLabSkill(BaseSkill):
 
         # Try to detect from git remote
         try:
-            work_dir = cwd or self._container.cwd
+            work_dir = cwd or self._services.get_cwd()
             result = subprocess.run(
                 ["git", "remote", "get-url", "origin"],
                 capture_output=True,
@@ -1969,16 +1962,18 @@ class GitLabSkill(BaseSkill):
         Returns False if user denies.
         """
         # Check if YOLO mode (no confirmation needed)
-        if self._container.permissions.level.name == "YOLO":
+        level = self._services.get_permission_level()
+        if level == PermissionLevel.YOLO:
             return True
 
         # Check session allowance
         allowance_key = f"{self.name}@{instance.host}"
-        if self._container.session_allowances.get(allowance_key):
+        session_allowances = self._services.get("session_allowances") or {}
+        if session_allowances.get(allowance_key):
             return True
 
-        # Request confirmation via container's confirmation handler
-        result = await self._container.request_confirmation(
+        # Request confirmation via services confirmation handler
+        result = await self._services.request_confirmation(
             title="GitLab Access",
             message=f"{self.name} wants to connect to:\n{instance.url}\n\nAction: {action} on \"{target}\"",
             options=["Allow once", "Allow for session", "Deny"],
@@ -1988,7 +1983,8 @@ class GitLabSkill(BaseSkill):
             return False
 
         if result == "Allow for session":
-            self._container.session_allowances[allowance_key] = True
+            session_allowances[allowance_key] = True
+            self._services.register("session_allowances", session_allowances)
 
         return True
 
@@ -2906,15 +2902,15 @@ def test_project():
 class TestGitLabIssueSkillIntegration:
     """Integration tests for issue skill."""
 
-    async def test_list_issues(self, gitlab_config, test_project, mock_container):
+    async def test_list_issues(self, gitlab_config, test_project, mock_services):
         """Test listing issues."""
-        skill = GitLabIssueSkill(mock_container, gitlab_config)
+        skill = GitLabIssueSkill(mock_services, gitlab_config)
         result = await skill.execute(action="list", project=test_project, limit=5)
         assert result.success
 
-    async def test_create_and_close_issue(self, gitlab_config, test_project, mock_container):
+    async def test_create_and_close_issue(self, gitlab_config, test_project, mock_services):
         """Test creating and closing an issue."""
-        skill = GitLabIssueSkill(mock_container, gitlab_config)
+        skill = GitLabIssueSkill(mock_services, gitlab_config)
 
         # Create
         result = await skill.execute(
@@ -2941,28 +2937,18 @@ class TestGitLabIssueSkillIntegration:
 
 ---
 
-### Integration Point: `nexus3/skill/registry.py` Changes
+### Integration Point: `nexus3/rpc/pool.py` Changes
 
-Add to existing skill registration:
+Add VCS skill registration alongside MCP skill registration (around line 548):
 
 ```python
-# In register_default_skills() or equivalent
+# After register_builtin_skills(registry) in _create_agent()
 
-def register_default_skills(
-    registry: SkillRegistry,
-    container: ServiceContainer,
-    config: Config,
-    permissions: PermissionConfig,
-) -> None:
-    """Register all default skills."""
-
-    # ... existing skill registration ...
-
-    # VCS skills (conditional based on config)
-    from nexus3.skill.vcs import register_vcs_skills
-    vcs_count = register_vcs_skills(registry, container, config, permissions)
-    if vcs_count > 0:
-        logger.info(f"Registered {vcs_count} VCS skills")
+# Register VCS skills (conditional based on config and permissions)
+from nexus3.skill.vcs import register_vcs_skills
+vcs_count = register_vcs_skills(registry, services, permissions)
+if vcs_count > 0:
+    logger.info(f"Registered {vcs_count} VCS skills")
 ```
 
 ---
@@ -3413,6 +3399,99 @@ def gitlab_skill_factory(cls: type[GitLabSkill]):
 
 ---
 
+## Codebase Validation Notes
+
+**Validated 2026-01-30** via explorer agents against actual codebase patterns.
+
+### ✅ Base Class Pattern
+- Plan's `GitLabSkill(VCSSkill(BaseSkill))` approach is sound
+- **Fix applied**: Use `services` parameter name instead of `container` (consistency with FileSkill, NexusSkill)
+- Factory decorator pattern (`gitlab_skill_factory`) follows existing patterns in `nexus3/skill/base.py`
+- Client caching pattern in skill base class is valid (similar to NexusSkill)
+
+### ✅ Config Schema Pattern
+- Follow `MCPServerConfig` pattern from `nexus3/config/schema.py`
+- Add `gitlab: GitLabConfig = GitLabConfig()` to Config class (optional, defaults to empty)
+- Pydantic v2 with `ConfigDict(extra="forbid")` for strict validation
+- Config is optional - skills only register if instances configured
+
+### ✅ ServiceContainer Pattern
+- Config is NOT directly in ServiceContainer currently - add accessor method
+- Add `get_gitlab_config()` typed accessor to `nexus3/skill/services.py`
+- Register `gitlab_config` in `nexus3/rpc/pool.py` during agent creation:
+  ```python
+  services.register("gitlab_config", self._shared.config.gitlab)
+  ```
+- Skills access via `self._services.get_gitlab_config()`
+
+### ✅ Registration Pattern
+- Follow MCP's conditional registration pattern from `nexus3/rpc/pool.py:548-564`
+- Create `register_gitlab_skills(registry, services, config)` function
+- Check config before registering - no config = no skills registered (saves ~2-3k tokens)
+- Use factory pattern: `registry.register("gitlab_repo", gitlab_repo_factory)`
+
+### ✅ Permission Pattern
+- Create `can_use_gitlab(permissions)` function in `nexus3/skill/vcs/gitlab/permissions.py`
+  (mirror `nexus3/mcp/permissions.py:can_use_mcp`)
+- Add all `gitlab_*` tools to sandboxed preset with `enabled=False` in `nexus3/core/presets.py`
+- Check permission in session before skill execution (same as MCP pattern)
+- Defense-in-depth: level check + preset disable
+
+### Factory Decorator Pattern to Implement
+
+```python
+# nexus3/skill/vcs/gitlab/base.py
+
+from typing import TypeVar, Callable
+from nexus3.skill.services import ServiceContainer
+from nexus3.skill.base import _wrap_with_validation
+
+_GL = TypeVar("_GL", bound="GitLabSkill")
+
+def gitlab_skill_factory(cls: type[_GL]) -> type[_GL]:
+    """Factory decorator for GitLab skills."""
+    def factory(services: ServiceContainer) -> _GL:
+        gitlab_config = services.get_gitlab_config()
+        if not gitlab_config:
+            raise ValueError("GitLab not configured")
+        skill = cls(services, gitlab_config)
+        _wrap_with_validation(skill)
+        return skill
+    cls.factory = factory  # type: ignore[attr-defined]
+    return cls
+```
+
+### Permission Check Function
+
+```python
+# nexus3/skill/vcs/gitlab/permissions.py
+
+from nexus3.core.permissions import AgentPermissions, PermissionLevel
+
+def can_use_gitlab(permissions: AgentPermissions | None) -> bool:
+    """Check if agent can use GitLab tools.
+
+    GitLab tools require TRUSTED+ (no SANDBOXED).
+    Returns True if YOLO or TRUSTED, False otherwise.
+    """
+    if permissions is None:
+        return False
+    level = permissions.effective_policy.level
+    return level in (PermissionLevel.YOLO, PermissionLevel.TRUSTED)
+```
+
+### Key Discrepancies Fixed
+
+| Issue | Original Plan | Corrected |
+|-------|---------------|-----------|
+| Parameter name | `container: ServiceContainer` | `services: ServiceContainer` |
+| Factory pattern | Implicit | Explicit `gitlab_skill_factory()` decorator |
+| Config registration | Not specified | `services.register("gitlab_config", ...)` in pool.py |
+| Permission function | Not explicit | `can_use_gitlab()` in `permissions.py` |
+| Sandboxed preset | Not explicit | All gitlab_* tools `enabled=False` |
+
+---
+
 ## Implementation Checklist
 
 Use this checklist to track implementation progress. Each item can be assigned to a task agent.
@@ -3426,7 +3505,7 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P1.5** Add GitLab config to `nexus3/config/schema.py`
 - [ ] **P1.6** Add `get_gitlab_config()` to ServiceContainer
 - [ ] **P1.7** Implement `nexus3/skill/vcs/gitlab/__init__.py` (registration)
-- [ ] **P1.8** Integrate with skill registry in `nexus3/skill/registry.py`
+- [ ] **P1.8** Integrate with skill registry in `nexus3/rpc/pool.py`
 - [ ] **P1.9** Add session_allowances support to ServiceContainer
 - [ ] **P1.10** Implement `gitlab_repo` skill
 - [ ] **P1.11** Implement `gitlab_issue` skill
@@ -3438,7 +3517,13 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P1.17** Add unit tests for GitLabClient
 - [ ] **P1.18** Add unit tests for GitLabConfig
 - [ ] **P1.19** Add unit tests for base skill patterns
-- [ ] **P1.20** Integration test with real GitLab (optional, requires token)
+- [ ] **P1.20** **LIVE TEST:** Test each P1 skill against real GitLab (`incurian-group/Incurian-project`)
+  - [ ] `gitlab_repo`: get project info, list projects
+  - [ ] `gitlab_issue`: create, list, get, close issue
+  - [ ] `gitlab_mr`: list MRs (create if test branch exists)
+  - [ ] `gitlab_label`: list, create, delete label
+  - [ ] `gitlab_branch`: list branches
+  - [ ] `gitlab_tag`: list tags
 
 ### Phase 2: Project Management
 
@@ -3450,6 +3535,13 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P2.6** Add link actions to `gitlab_issue`
 - [ ] **P2.7** Add link actions to `gitlab_epic`
 - [ ] **P2.8** Unit tests for Phase 2 skills
+- [ ] **P2.9** **LIVE TEST:** Test each P2 skill against real GitLab
+  - [ ] `gitlab_epic`: list epics (requires Premium - may skip)
+  - [ ] `gitlab_iteration`: list iterations (requires Premium - may skip)
+  - [ ] `gitlab_milestone`: create, list, close milestone
+  - [ ] `gitlab_board`: list boards
+  - [ ] `gitlab_time`: estimate/spend on issue
+  - [ ] Issue/epic linking operations
 
 ### Phase 3: Code Review
 
@@ -3458,6 +3550,10 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P3.3** Implement `gitlab_draft` skill
 - [ ] **P3.4** Implement `gitlab_discussion` skill
 - [ ] **P3.5** Unit tests for Phase 3 skills
+- [ ] **P3.6** **LIVE TEST:** Test each P3 skill against real GitLab
+  - [ ] `gitlab_mr`: get diff, list commits
+  - [ ] `gitlab_approval`: get approval status (requires Premium - may skip)
+  - [ ] `gitlab_discussion`: list discussions on MR/issue
 
 ### Phase 4: CI/CD
 
@@ -3466,6 +3562,10 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P4.3** Implement `gitlab_artifact` skill
 - [ ] **P4.4** Implement `gitlab_variable` skill
 - [ ] **P4.5** Unit tests for Phase 4 skills
+- [ ] **P4.6** **LIVE TEST:** Test each P4 skill against real GitLab
+  - [ ] `gitlab_pipeline`: list pipelines (if CI configured)
+  - [ ] `gitlab_job`: list jobs
+  - [ ] `gitlab_variable`: list, create, delete variable
 
 ### Phase 5: Config & Premium
 
@@ -3475,13 +3575,23 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P5.4** Implement `gitlab_deploy_token` skill
 - [ ] **P5.5** Implement `gitlab_feature_flag` skill
 - [ ] **P5.6** Unit tests for Phase 5 skills
+- [ ] **P5.7** **LIVE TEST:** Test each P5 skill against real GitLab
+  - [ ] `gitlab_branch`: list protected branches
+  - [ ] `gitlab_deploy_key`: list deploy keys
+  - [ ] `gitlab_deploy_token`: list deploy tokens
+  - [ ] `gitlab_feature_flag`: list feature flags (requires Premium - may skip)
 
 ### Phase 6: Integration & Testing
 
 - [ ] **P6.1** Add GitLab confirmation handling to PermissionEnforcer
 - [ ] **P6.2** Add destructive GitLab skills to confirmation list
 - [ ] **P6.3** E2E test: Full workflow (create issue → link to epic → track time)
-- [ ] **P6.4** Live testing with real GitLab instance
+- [ ] **P6.4** **LIVE TEST:** Full integration with NEXUS3 agent
+  - [ ] Start NEXUS3, create trusted agent with GitLab config
+  - [ ] Agent creates issue, adds labels, sets milestone
+  - [ ] Agent creates MR, adds discussion comment
+  - [ ] Verify permission prompts work correctly (TRUSTED mode)
+  - [ ] Verify SANDBOXED agent cannot access GitLab tools
 
 ### Phase 7: Documentation
 
@@ -3491,6 +3601,27 @@ Use this checklist to track implementation progress. Each item can be assigned t
 - [ ] **P7.4** Create `nexus3/skill/vcs/README.md` with module documentation
 - [ ] **P7.5** Document `/gitlab` command in REPL Commands Reference
 - [ ] **P7.6** Ensure all skill `description` properties are comprehensive
+
+### Live Testing Notes
+
+**Test environment:**
+- Token: `~/.gitlabtoken` (full `api` scope)
+- User: `Incurian` (ID: 33331319)
+- Group: `incurian-group` (ID: 123209181)
+- Project: `incurian-group/Incurian-project` (ID: 78120084)
+
+**Testing approach:**
+- Test each skill immediately after implementation (not at end of phase)
+- Use curl first to verify API works, then test skill
+- Clean up test resources (close issues, delete labels) after testing
+- Premium features may not be available - document which tests were skipped
+
+**Curl testing pattern (avoid pipe race condition):**
+```bash
+TOKEN=$(cat ~/.gitlabtoken) && curl -s -H "PRIVATE-TOKEN: $TOKEN" \
+  "https://gitlab.com/api/v4/projects/78120084" > /tmp/resp.json && \
+  cat /tmp/resp.json | jq .
+```
 
 ---
 

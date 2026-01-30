@@ -150,6 +150,10 @@ MCP (External Tools):
   /mcp prompts [server]    List available prompts
   /mcp retry <name>   Retry listing tools from a server
 
+GitLab:
+  /gitlab             List configured GitLab instances and auth status
+  /gitlab test [name] Test connection to a GitLab instance
+
 Initialization:
   /init               Create .nexus3/ in current directory with templates
   /init --force       Overwrite existing config files
@@ -497,6 +501,35 @@ Examples:
   /mcp resources                          # List all resources
   /mcp prompts filesystem                 # List prompts from filesystem server
   /mcp retry filesystem                   # Retry failed server""",
+
+    "gitlab": """/gitlab [test <name>]
+
+Manage GitLab instances and test connections.
+
+Subcommands:
+  /gitlab             List configured instances and authentication status
+  /gitlab test [name] Test connection to instance (default instance if no name)
+
+Examples:
+  /gitlab                           # List all configured instances
+  /gitlab test                      # Test connection to default instance
+  /gitlab test work                 # Test connection to "work" instance
+
+Configuration:
+  Add GitLab instances to config.json:
+    "gitlab": {
+      "instances": {
+        "default": {
+          "url": "https://gitlab.com",
+          "token_env": "GITLAB_TOKEN"
+        }
+      },
+      "default_instance": "default"
+    }
+
+Notes:
+  - Tokens should be stored in environment variables (token_env), not directly
+  - Test verifies authentication and shows the authenticated user""",
 
     "init": """/init [--force|-f] [--global|-g]
 
@@ -2106,3 +2139,177 @@ async def cmd_init(ctx: CommandContext, args: str | None) -> CommandOutput:
         return CommandOutput.success(message=message)
     else:
         return CommandOutput.error(message)
+
+
+async def cmd_gitlab(ctx: CommandContext, args: str | None = None) -> CommandOutput:
+    """Handle /gitlab commands for GitLab instance management.
+
+    Subcommands:
+        /gitlab             List configured instances and auth status
+        /gitlab test [name] Test connection to an instance
+
+    Args:
+        ctx: Command context with pool access.
+        args: Subcommand and arguments.
+
+    Returns:
+        CommandOutput with result.
+    """
+    # Get shared components for config access
+    shared = getattr(ctx.pool, "_shared", None)
+    if shared is None:
+        return CommandOutput.error("Pool shared components not available")
+
+    config = shared.config
+
+    # Parse subcommand
+    parts = (args or "").strip().split()
+
+    if len(parts) == 0:
+        # List instances
+        return await _gitlab_list_instances(config)
+
+    subcmd = parts[0].lower()
+
+    if subcmd == "test":
+        instance_name = parts[1] if len(parts) > 1 else None
+        return await _gitlab_test_instance(config, instance_name)
+    else:
+        return CommandOutput.error(
+            f"Unknown GitLab subcommand: {subcmd}\n"
+            f"Usage: /gitlab [test <name>]"
+        )
+
+
+async def _gitlab_list_instances(config: Any) -> CommandOutput:
+    """List configured GitLab instances."""
+    import os
+
+    gitlab_config = config.gitlab
+
+    if not gitlab_config.instances:
+        return CommandOutput.success(
+            message=(
+                "No GitLab instances configured.\n\n"
+                "To configure GitLab, add to ~/.nexus3/config.json:\n"
+                '{\n'
+                '  "gitlab": {\n'
+                '    "instances": {\n'
+                '      "default": {\n'
+                '        "url": "https://gitlab.com",\n'
+                '        "token_env": "GITLAB_TOKEN"\n'
+                '      }\n'
+                '    }\n'
+                '  }\n'
+                '}'
+            ),
+            data={"instances": [], "configured": False},
+        )
+
+    lines = ["GitLab Instances:", ""]
+
+    instance_data = []
+    for name, instance in gitlab_config.instances.items():
+        # Check if token is available
+        token = None
+        if instance.token:
+            token = instance.token
+        elif instance.token_env:
+            token = os.environ.get(instance.token_env)
+
+        token_status = "token configured" if token else "no token"
+        default_marker = " (default)" if name == gitlab_config.default_instance else ""
+
+        lines.append(f"  {name}: {instance.url}")
+        lines.append(f"    Status: {token_status}{default_marker}")
+        if instance.token_env:
+            env_set = "set" if token else "not set"
+            lines.append(f"    Token env: {instance.token_env} ({env_set})")
+
+        instance_data.append({
+            "name": name,
+            "url": instance.url,
+            "has_token": token is not None,
+            "token_env": instance.token_env,
+            "is_default": name == gitlab_config.default_instance,
+        })
+
+    return CommandOutput.success(
+        message="\n".join(lines),
+        data={"instances": instance_data, "configured": True},
+    )
+
+
+async def _gitlab_test_instance(config: Any, instance_name: str | None) -> CommandOutput:
+    """Test connection to a GitLab instance."""
+    import os
+    from nexus3.skill.vcs.config import GitLabInstance
+    from nexus3.skill.vcs.gitlab.client import GitLabAPIError, GitLabClient
+
+    gitlab_config = config.gitlab
+
+    if not gitlab_config.instances:
+        return CommandOutput.error("No GitLab instances configured")
+
+    # Resolve instance name
+    effective_name = instance_name or gitlab_config.default_instance
+    if not effective_name:
+        return CommandOutput.error(
+            "No instance specified and no default instance configured"
+        )
+
+    schema_instance = gitlab_config.instances.get(effective_name)
+    if not schema_instance:
+        available = ", ".join(gitlab_config.instances.keys())
+        return CommandOutput.error(
+            f"Instance '{effective_name}' not found.\n"
+            f"Available instances: {available}"
+        )
+
+    # Resolve token
+    token = None
+    if schema_instance.token:
+        token = schema_instance.token
+    elif schema_instance.token_env:
+        token = os.environ.get(schema_instance.token_env)
+
+    if not token:
+        env_hint = f" (set {schema_instance.token_env})" if schema_instance.token_env else ""
+        return CommandOutput.error(
+            f"No token configured for instance '{effective_name}'{env_hint}"
+        )
+
+    # Convert to VCS GitLabInstance for client
+    vcs_instance = GitLabInstance(
+        url=schema_instance.url,
+        token=token,
+    )
+
+    # Test connection
+    client = GitLabClient(vcs_instance)
+    try:
+        user = await client.get_current_user()
+        await client.close()
+        return CommandOutput.success(
+            message=(
+                f"Connected to {schema_instance.url}\n"
+                f"Authenticated as: @{user['username']} ({user['name']})"
+            ),
+            data={
+                "instance": effective_name,
+                "url": schema_instance.url,
+                "username": user["username"],
+                "name": user["name"],
+                "user_id": user.get("id"),
+            },
+        )
+    except GitLabAPIError as e:
+        await client.close()
+        return CommandOutput.error(
+            f"Connection to '{effective_name}' failed: {e.message}"
+        )
+    except Exception as e:
+        await client.close()
+        return CommandOutput.error(
+            f"Connection to '{effective_name}' failed: {e}"
+        )
