@@ -1174,7 +1174,9 @@ nexus3 rpc create coordinator --preset trusted
 
 ### Known Bugs
 
-No known bugs at this time.
+| Bug | Description | Severity |
+|-----|-------------|----------|
+| Client timeout doesn't cancel | When `nexus3 rpc send --timeout` fires, the client stops waiting but doesn't send a cancel request. Server continues processing, potentially leaving context incomplete. Workaround: Use explicit `rpc cancel` for reliable cancellation. | Low |
 
 ---
 
