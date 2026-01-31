@@ -6,11 +6,12 @@ structure.
 """
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from nexus3.clipboard.types import ClipboardEntry, ClipboardScope
 from nexus3.core.errors import NexusError
 from nexus3.core.types import Message, Role, ToolCall
 
@@ -58,6 +59,7 @@ class SavedSession:
     disabled_tools: list[str] = field(default_factory=list)
     session_allowances: dict[str, Any] = field(default_factory=dict)
     model_alias: str | None = None  # Model alias used for this session (e.g., "haiku", "gpt")
+    clipboard_agent_entries: list[dict[str, Any]] = field(default_factory=list)
     schema_version: int = SESSION_SCHEMA_VERSION
 
     def to_json(self) -> str:
@@ -80,6 +82,7 @@ class SavedSession:
             "disabled_tools": self.disabled_tools,
             "session_allowances": self.session_allowances,
             "model_alias": self.model_alias,
+            "clipboard_agent_entries": self.clipboard_agent_entries,
             "token_usage": self.token_usage,
             "provenance": self.provenance,
         }
@@ -113,6 +116,7 @@ class SavedSession:
             disabled_tools=data.get("disabled_tools", []),
             session_allowances=data.get("session_allowances", {}),
             model_alias=data.get("model_alias"),
+            clipboard_agent_entries=data.get("clipboard_agent_entries", []),
             token_usage=data.get("token_usage", {}),
             provenance=data.get("provenance", "user"),
             schema_version=data.get("schema_version", 1),
@@ -246,6 +250,49 @@ def deserialize_messages(data: list[dict[str, Any]]) -> list[Message]:
     return [deserialize_message(msg_data) for msg_data in data]
 
 
+def serialize_clipboard_entries(entries: dict[str, ClipboardEntry]) -> list[dict[str, Any]]:
+    """Serialize clipboard entries to a list of dictionaries.
+
+    Converts a dict of {key: ClipboardEntry} to a list of serialized entries
+    for JSON persistence. The ClipboardScope enum is converted to its string value.
+
+    Args:
+        entries: Dictionary mapping entry keys to ClipboardEntry objects.
+
+    Returns:
+        List of serialized entry dictionaries.
+    """
+    result = []
+    for entry in entries.values():
+        entry_dict = asdict(entry)
+        # Convert ClipboardScope enum to string for JSON serialization
+        entry_dict["scope"] = entry.scope.value
+        result.append(entry_dict)
+    return result
+
+
+def deserialize_clipboard_entries(data: list[dict[str, Any]]) -> dict[str, ClipboardEntry]:
+    """Deserialize clipboard entries from a list of dictionaries.
+
+    Converts a list of serialized entry dicts back to {key: ClipboardEntry}.
+    The scope string is converted back to ClipboardScope enum.
+
+    Args:
+        data: List of serialized entry dictionaries.
+
+    Returns:
+        Dictionary mapping entry keys to ClipboardEntry objects.
+    """
+    result: dict[str, ClipboardEntry] = {}
+    for entry_dict in data:
+        # Convert scope string back to enum
+        scope_str = entry_dict.get("scope", "agent")
+        entry_dict["scope"] = ClipboardScope(scope_str)
+        entry = ClipboardEntry(**entry_dict)
+        result[entry.key] = entry
+    return result
+
+
 def serialize_session(
     agent_id: str,
     messages: list[Message],
@@ -260,6 +307,7 @@ def serialize_session(
     disabled_tools: list[str] | None = None,
     session_allowances: dict[str, Any] | None = None,
     model_alias: str | None = None,
+    clipboard_agent_entries: list[dict[str, Any]] | None = None,
 ) -> SavedSession:
     """Create a SavedSession from runtime state.
 
@@ -277,6 +325,7 @@ def serialize_session(
         disabled_tools: List of tool names that are disabled for this agent.
         session_allowances: Dynamic allowances (write paths, exec permissions) for TRUSTED mode.
         model_alias: Model alias for this session (e.g., "haiku", "gpt").
+        clipboard_agent_entries: Serialized agent-scope clipboard entries.
 
     Returns:
         SavedSession ready for disk storage.
@@ -297,4 +346,5 @@ def serialize_session(
         disabled_tools=disabled_tools or [],
         session_allowances=session_allowances or {},
         model_alias=model_alias,
+        clipboard_agent_entries=clipboard_agent_entries or [],
     )

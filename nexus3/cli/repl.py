@@ -75,6 +75,7 @@ from nexus3.session import LogStream, SessionManager
 from nexus3.session.persistence import (
     SavedSession,
     deserialize_messages,
+    serialize_clipboard_entries,
     serialize_session,
 )
 
@@ -444,6 +445,16 @@ async def run_repl(
         except Exception:
             return None
 
+    def get_clipboard_entries(agent: Agent) -> list[dict[str, Any]]:
+        """Get serialized clipboard entries from an agent for persistence."""
+        try:
+            clipboard_manager = agent.services.get("clipboard_manager")
+            if clipboard_manager:
+                return serialize_clipboard_entries(clipboard_manager.get_agent_entries())
+        except Exception:
+            pass
+        return []
+
     # Update last-session immediately after startup (so resume works after quit)
     try:
         perm_level, perm_preset, disabled_tools = get_permission_data(main_agent)
@@ -460,6 +471,7 @@ async def run_repl(
             permission_preset=perm_preset,
             disabled_tools=disabled_tools,
             model_alias=get_model_alias(main_agent),
+            clipboard_agent_entries=get_clipboard_entries(main_agent),
         )
         session_manager.save_last_session(startup_saved, agent_name)
     except Exception as e:
@@ -499,6 +511,7 @@ async def run_repl(
                     permission_preset=perm_preset,
                     disabled_tools=disabled_tools,
                     model_alias=get_model_alias(agent),
+                    clipboard_agent_entries=get_clipboard_entries(agent),
                 )
                 session_manager.save_last_session(saved, agent_id)
         except Exception as e:
@@ -1577,6 +1590,7 @@ async def run_repl(
                         permission_preset=perm_preset,
                         disabled_tools=disabled_tools,
                         model_alias=get_model_alias(save_agent),
+                        clipboard_agent_entries=get_clipboard_entries(save_agent),
                     )
                     session_manager.save_last_session(saved, current_agent_id)
             except Exception as e:

@@ -53,6 +53,14 @@ def format_clipboard_context(
         'Use `paste(key="...")` to insert content. Use `clipboard_list(verbose=True)` to preview.',
     ])
 
+    # Add note about expired entries if any
+    expired_count = manager.count_expired()
+    if expired_count > 0:
+        lines.extend([
+            "",
+            f"*Note: {expired_count} expired entries pending cleanup. Use clipboard_list to review.*",
+        ])
+
     return "\n".join(lines)
 
 

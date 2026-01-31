@@ -24,12 +24,12 @@ Example:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nexus3.commands.protocol import CommandContext, CommandOutput
 from nexus3.core.permissions import AgentPermissions
 from nexus3.rpc.pool import is_temp_agent
-from nexus3.session.persistence import serialize_session
+from nexus3.session.persistence import serialize_clipboard_entries, serialize_session
 from nexus3.session.session_manager import SessionManagerError, SessionNotFoundError
 
 if TYPE_CHECKING:
@@ -569,6 +569,17 @@ async def cmd_save(
     except Exception:
         model_alias = None
 
+    # Get clipboard entries for persistence
+    clipboard_entries: list[dict[str, Any]] = []
+    try:
+        clipboard_manager = agent.services.get("clipboard_manager")
+        if clipboard_manager:
+            clipboard_entries = serialize_clipboard_entries(
+                clipboard_manager.get_agent_entries()
+            )
+    except Exception:
+        pass
+
     # Create saved session from agent state
     saved = serialize_session(
         agent_id=save_name,
@@ -583,6 +594,7 @@ async def cmd_save(
         permission_preset=perm_preset,
         disabled_tools=disabled_tools,
         model_alias=model_alias,
+        clipboard_agent_entries=clipboard_entries,
     )
 
     try:

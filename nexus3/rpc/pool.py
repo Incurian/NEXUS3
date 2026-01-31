@@ -55,7 +55,11 @@ from nexus3.mcp.registry import MCPServerRegistry
 from nexus3.rpc.dispatcher import Dispatcher
 from nexus3.rpc.log_multiplexer import LogMultiplexer
 from nexus3.session import LogConfig, LogStream, Session, SessionLogger
-from nexus3.session.persistence import SavedSession, deserialize_messages
+from nexus3.session.persistence import (
+    SavedSession,
+    deserialize_clipboard_entries,
+    deserialize_messages,
+)
 from nexus3.skill import ServiceContainer, SkillRegistry
 from nexus3.skill.vcs import register_vcs_skills
 from nexus3.skill.vcs.config import GitLabConfig as VCSGitLabConfig
@@ -879,6 +883,11 @@ class AgentPool:
             permissions=clipboard_perms,
         )
         services.register("clipboard_manager", clipboard_manager)
+
+        # Restore agent-scope clipboard entries if present
+        if saved.clipboard_agent_entries:
+            entries = deserialize_clipboard_entries(saved.clipboard_agent_entries)
+            clipboard_manager.restore_agent_entries(entries)
 
         # Create context manager with saved model's context window
         context_config = ContextConfig(
