@@ -1221,11 +1221,11 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 | Plan | Description | Effort |
 |------|-------------|--------|
 | `STATUS-MESSAGE-FIX-PLAN.md` | Fix spinner showing "Running" after tool completes | 5 min |
-| `EDIT-FILE-ERROR-PLAN.md` | Fix "not found" error sanitization bug | 10 min |
 | `STATUS-BAR-PLAN.md` | Add agent/model/cwd to status bar | 15 min |
 | `YOLO-WARNING-PLAN.md` | Enhanced YOLO mode warning with Rich Panel | 20 min |
 | `TOOL-PREVIEW-PLAN.md` | Expand tool params from 70→140 chars, smart path truncation | 30 min |
-| `PERMISSIONS-PREVIEW-PLAN.md` | Auto-save long permissions output to file | 30 min |
+| `EDIT-FILE-ERROR-PLAN.md` | Fix error sanitization patterns (not found + path regex) | 30 min |
+| `TOOL-CONFIRMATION-POPUP-PLAN.md` | Add "press p for popup" to see full tool details | 45 min |
 | `PROMPT-CACHING-PLAN.md` | Multi-provider prompt caching support | 2-3 hrs |
 | `SPLIT-CONTEXT-PLAN.md` | Split NEXUS.md into updatable defaults + user customization | 2-3 hrs |
 | `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | 2 weeks |
