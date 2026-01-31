@@ -6,12 +6,15 @@ A clipboard system that lets agents move large text chunks without passing conte
 
 **Core benefit**: Moving 100 lines from file A to file B currently costs ~200 lines of context (read + write). With clipboard tools, it costs ~2 tool calls with minimal token overhead.
 
-**Estimated effort**: ~12-16 hours total
-- Phase 1 (Infrastructure): 4-5 hours
-- Phase 2 (Core Skills): 3-4 hours
-- Phase 3 (Management Skills): 2-3 hours
-- Phase 4 (Context Injection): 1-2 hours
-- Phase 5 (Permission Integration): 2 hours
+**Estimated effort**: ~20-26 hours total
+- Phase 1 (Infrastructure + Tags + TTL schema): 5-6 hours
+- Phase 2 (Core Skills + tags/ttl params): 3-4 hours
+- Phase 3 (Management + Search + Tags + Import/Export): 4-5 hours
+- Phase 4 (Service Integration): 1-2 hours
+- Phase 5 (Context Injection): 1-2 hours
+- Phase 5b (TTL/Expiry Tracking): 1-2 hours
+- Phase 6 (Session Persistence): 2-3 hours
+- Phases 7-9 (Testing + Docs): 3-4 hours
 
 ---
 
@@ -21,8 +24,8 @@ A clipboard system that lets agents move large text chunks without passing conte
 
 | Scope | Database Path | Lifetime | Visibility |
 |-------|---------------|----------|------------|
-| `system` | `~/.nexus3/clipboard.db` | Permanent | All agents (permission-gated) |
-| `project` | `.nexus3/clipboard.db` | Permanent | Agents in this project (permission-gated) |
+| `system` | `~/.nexus3/clipboard.db` | Persistent | All agents (permission-gated) |
+| `project` | `.nexus3/clipboard.db` | Persistent | Agents in this project (permission-gated) |
 | `agent` | In-memory dict | Session only | Single agent |
 
 ### Module Structure
@@ -30,7 +33,7 @@ A clipboard system that lets agents move large text chunks without passing conte
 ```
 nexus3/clipboard/
 ├── __init__.py          # Public API exports
-├── types.py             # ClipboardEntry, ClipboardScope, PasteMode, InsertionMode
+├── types.py             # ClipboardEntry, ClipboardScope, ClipboardTag, InsertionMode
 ├── storage.py           # ClipboardStorage - SQLite operations
 ├── manager.py           # ClipboardManager - coordinates storage + permissions + scopes
 └── injection.py         # format_clipboard_context() for system prompt injection
@@ -60,7 +63,7 @@ if TYPE_CHECKING:
 class ClipboardScope(Enum):
     """Clipboard entry scope levels."""
     AGENT = "agent"      # In-memory, session-only
-    PROJECT = "project"  # .nexus3/clipboard.db in project root
+    PROJECT = "project"  # <agent_cwd>/.nexus3/clipboard.db
     SYSTEM = "system"    # ~/.nexus3/clipboard.db
 
 
@@ -74,6 +77,15 @@ class InsertionMode(Enum):
     AT_MARKER_BEFORE = "at_marker_before"
     APPEND = "append"
     PREPEND = "prepend"
+
+
+@dataclass
+class ClipboardTag:
+    """A tag for organizing clipboard entries."""
+    id: int
+    name: str
+    description: str | None = None
+    created_at: float = 0.0
 
 
 @dataclass
@@ -91,6 +103,9 @@ class ClipboardEntry:
     modified_at: float = 0.0             # Unix timestamp
     created_by_agent: str | None = None
     modified_by_agent: str | None = None
+    expires_at: float | None = None      # Unix timestamp for TTL expiry (None = permanent)
+    ttl_seconds: int | None = None       # TTL in seconds (informational)
+    tags: list[str] = field(default_factory=list)  # Tag names
 
     @classmethod
     def from_content(
@@ -103,10 +118,13 @@ class ClipboardEntry:
         source_path: str | None = None,
         source_lines: str | None = None,
         agent_id: str | None = None,
+        ttl_seconds: int | None = None,
+        tags: list[str] | None = None,
     ) -> ClipboardEntry:
         """Create entry from content, computing line/byte counts."""
         import time
         now = time.time()
+        expires_at = now + ttl_seconds if ttl_seconds is not None else None
         return cls(
             key=key,
             scope=scope,
@@ -120,7 +138,18 @@ class ClipboardEntry:
             modified_at=now,
             created_by_agent=agent_id,
             modified_by_agent=agent_id,
+            expires_at=expires_at,
+            ttl_seconds=ttl_seconds,
+            tags=tags or [],
         )
+
+    @property
+    def is_expired(self) -> bool:
+        """Check if this entry has expired (TTL exceeded)."""
+        if self.expires_at is None:
+            return False
+        import time
+        return time.time() >= self.expires_at
 
 
 @dataclass
@@ -171,8 +200,8 @@ CLIPBOARD_PRESETS: dict[str, ClipboardPermissions] = {
         system_read=False, system_write=False,
     ),
     }
-# Note: "worker" preset is deprecated and maps to "sandboxed" internally.
-# Agents created with preset="worker" will use sandboxed clipboard permissions.
+# Note: This plan assumes the permission presets are `yolo`, `trusted`, and `sandboxed`.
+# If legacy preset names exist (e.g. "worker"), treat them as aliases for sandboxed for clipboard purposes.
 
 
 # Size limits
@@ -212,10 +241,32 @@ CREATE TABLE IF NOT EXISTS clipboard (
     modified_at REAL NOT NULL,
     created_by_agent TEXT,
     modified_by_agent TEXT,
+    expires_at REAL,
+    ttl_seconds INTEGER,
     UNIQUE(key)
 );
 
 CREATE INDEX IF NOT EXISTS idx_clipboard_key ON clipboard(key);
+CREATE INDEX IF NOT EXISTS idx_clipboard_expires ON clipboard(expires_at) WHERE expires_at IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    created_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
+
+CREATE TABLE IF NOT EXISTS clipboard_tags (
+    clipboard_id INTEGER NOT NULL,
+    tag_id INTEGER NOT NULL,
+    PRIMARY KEY (clipboard_id, tag_id),
+    FOREIGN KEY (clipboard_id) REFERENCES clipboard(id) ON DELETE CASCADE,
+    FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_clipboard_tags_tag ON clipboard_tags(tag_id);
 
 CREATE TABLE IF NOT EXISTS metadata (
     key TEXT PRIMARY KEY,
@@ -241,13 +292,33 @@ class ClipboardStorage:
 
     def _ensure_db(self) -> None:
         """Create database and tables if they don't exist."""
+        import os
+
+        from nexus3.core.secure_io import SECURE_FILE_MODE, secure_mkdir
+
         # Create parent directory with secure permissions
-        self._db_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        secure_mkdir(self._db_path.parent)
+
+        # TOCTOU protection: atomically create DB file with secure permissions
+        # (matches pattern from nexus3/session/storage.py)
+        if not self._db_path.exists():
+            fd = os.open(
+                str(self._db_path),
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                SECURE_FILE_MODE,  # 0o600 rw------- (user only)
+            )
+            os.close(fd)
 
         self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        # Enable foreign keys (required for ON DELETE CASCADE in clipboard_tags)
+        self._conn.execute("PRAGMA foreign_keys = ON")
+        # WAL is fine here; session storage does not use WAL, but clipboard can.
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(SCHEMA_SQL)
+
+        # Optional hardening (mirrors session/storage.py): ensure DB file perms are correct
+        # os.chmod(self._db_path, 0o600)
 
         # Check/set schema version
         cur = self._conn.execute("SELECT value FROM metadata WHERE key = 'schema_version'")
@@ -261,8 +332,9 @@ class ClipboardStorage:
 
     def _row_to_entry(self, row: sqlite3.Row) -> ClipboardEntry:
         """Convert database row to ClipboardEntry."""
+        key = row["key"]
         return ClipboardEntry(
-            key=row["key"],
+            key=key,
             scope=self._scope,
             content=row["content"],
             line_count=row["line_count"],
@@ -274,6 +346,9 @@ class ClipboardStorage:
             modified_at=row["modified_at"],
             created_by_agent=row["created_by_agent"],
             modified_by_agent=row["modified_by_agent"],
+            expires_at=row["expires_at"],
+            ttl_seconds=row["ttl_seconds"],
+            tags=self.get_tags(key),
         )
 
     def get(self, key: str) -> ClipboardEntry | None:
@@ -299,17 +374,22 @@ class ClipboardStorage:
             """INSERT INTO clipboard
                (key, content, short_description, source_path, source_lines,
                 line_count, byte_count, created_at, modified_at,
-                created_by_agent, modified_by_agent)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                created_by_agent, modified_by_agent, expires_at, ttl_seconds)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 entry.key, entry.content, entry.short_description,
                 entry.source_path, entry.source_lines,
                 entry.line_count, entry.byte_count,
                 entry.created_at, entry.modified_at,
                 entry.created_by_agent, entry.modified_by_agent,
+                entry.expires_at, entry.ttl_seconds,
             )
         )
         self._conn.commit()
+
+        # Set tags if provided
+        if entry.tags:
+            self.set_tags(entry.key, entry.tags)
 
     def update(
         self,
@@ -321,6 +401,7 @@ class ClipboardStorage:
         source_lines: str | None = None,
         new_key: str | None = None,
         agent_id: str | None = None,
+        ttl_seconds: int | None = None,
     ) -> ClipboardEntry:
         """Update existing entry. Returns updated entry. Raises KeyError if not found."""
         assert self._conn is not None
@@ -357,6 +438,10 @@ class ClipboardStorage:
         if new_key is not None:
             updates.append("key = ?")
             params.append(new_key)
+
+        if ttl_seconds is not None:
+            updates.extend(["ttl_seconds = ?", "expires_at = ?"])
+            params.extend([ttl_seconds, time.time() + ttl_seconds])
 
         # Always update modified_at and modified_by_agent
         updates.append("modified_at = ?")
@@ -395,6 +480,72 @@ class ClipboardStorage:
             "SELECT * FROM clipboard ORDER BY modified_at DESC"
         )
         return [self._row_to_entry(row) for row in cur.fetchall()]
+
+    def count_expired(self, now: float) -> int:
+        """Count entries where expires_at <= now. Does NOT delete them.
+
+        Note: Actual cleanup requires user confirmation - see Future Work.
+        """
+        assert self._conn is not None
+        cur = self._conn.execute(
+            "SELECT COUNT(*) FROM clipboard WHERE expires_at IS NOT NULL AND expires_at <= ?",
+            (now,)
+        )
+        return cur.fetchone()[0]
+
+    def get_expired(self, now: float) -> list[ClipboardEntry]:
+        """Get all expired entries for review before cleanup."""
+        assert self._conn is not None
+        cur = self._conn.execute(
+            "SELECT * FROM clipboard WHERE expires_at IS NOT NULL AND expires_at <= ? ORDER BY expires_at",
+            (now,)
+        )
+        return [self._row_to_entry(row) for row in cur.fetchall()]
+
+    def set_tags(self, key: str, tags: list[str]) -> None:
+        """Set tags for an entry (replaces existing tags)."""
+        assert self._conn is not None
+
+        # Get clipboard entry ID
+        cur = self._conn.execute("SELECT id FROM clipboard WHERE key = ?", (key,))
+        row = cur.fetchone()
+        if row is None:
+            raise KeyError(f"Key '{key}' not found")
+        clipboard_id = row["id"]
+
+        # Remove existing tags for this entry
+        self._conn.execute("DELETE FROM clipboard_tags WHERE clipboard_id = ?", (clipboard_id,))
+
+        # Add new tags (creating tags if needed)
+        for tag_name in tags:
+            # Ensure tag exists
+            self._conn.execute(
+                "INSERT OR IGNORE INTO tags (name, created_at) VALUES (?, ?)",
+                (tag_name, time.time())
+            )
+            # Get tag ID
+            cur = self._conn.execute("SELECT id FROM tags WHERE name = ?", (tag_name,))
+            tag_id = cur.fetchone()["id"]
+            # Link to clipboard entry
+            self._conn.execute(
+                "INSERT INTO clipboard_tags (clipboard_id, tag_id) VALUES (?, ?)",
+                (clipboard_id, tag_id)
+            )
+
+        self._conn.commit()
+
+    def get_tags(self, key: str) -> list[str]:
+        """Get tags for an entry."""
+        assert self._conn is not None
+        cur = self._conn.execute(
+            """SELECT t.name FROM tags t
+               JOIN clipboard_tags ct ON ct.tag_id = t.id
+               JOIN clipboard c ON c.id = ct.clipboard_id
+               WHERE c.key = ?
+               ORDER BY t.name""",
+            (key,)
+        )
+        return [row["name"] for row in cur.fetchall()]
 
     def close(self) -> None:
         """Close database connection."""
@@ -448,6 +599,8 @@ class ClipboardManager:
         self._agent_id = agent_id
         self._cwd = cwd
         self._permissions = permissions or CLIPBOARD_PRESETS["sandboxed"]
+        # NOTE: For system-scope clipboard paths, prefer nexus3.core.constants.get_nexus_dir()
+        # rather than hardcoding Path.home() / ".nexus3". Home override remains useful for tests.
         self._home_dir = home_dir or Path.home()
 
         # Agent scope: in-memory only
@@ -503,8 +656,20 @@ class ClipboardManager:
         short_description: str | None = None,
         source_path: str | None = None,
         source_lines: str | None = None,
+        tags: list[str] | None = None,
+        ttl_seconds: int | None = None,
     ) -> tuple[ClipboardEntry, str | None]:
         """Copy content to clipboard.
+
+        Args:
+            key: Clipboard key name
+            content: Content to store
+            scope: Clipboard scope (agent/project/system)
+            short_description: Optional description
+            source_path: Original file path
+            source_lines: Line range (e.g., "50-150")
+            tags: Optional tags for organizing entries
+            ttl_seconds: Optional TTL in seconds (None = permanent)
 
         Returns:
             Tuple of (created entry, warning message or None)
@@ -516,6 +681,10 @@ class ClipboardManager:
         self._check_write_permission(scope)
         warning = self._validate_size(content)
 
+        # Apply scope-specific default TTL if not specified
+        if ttl_seconds is None:
+            ttl_seconds = self._get_ttl_for_scope(scope)
+
         entry = ClipboardEntry.from_content(
             key=key,
             scope=scope,
@@ -524,6 +693,8 @@ class ClipboardManager:
             source_path=source_path,
             source_lines=source_lines,
             agent_id=self._agent_id,
+            ttl_seconds=ttl_seconds,
+            tags=tags,
         )
 
         if scope == ClipboardScope.AGENT:
@@ -602,6 +773,7 @@ class ClipboardManager:
         source_path: str | None = None,
         source_lines: str | None = None,
         new_key: str | None = None,
+        ttl_seconds: int | None = None,
     ) -> tuple[ClipboardEntry, str | None]:
         """Update existing entry.
 
@@ -631,6 +803,9 @@ class ClipboardManager:
                 entry.source_path = source_path
             if source_lines is not None:
                 entry.source_lines = source_lines
+            if ttl_seconds is not None:
+                entry.ttl_seconds = ttl_seconds
+                entry.expires_at = time.time() + ttl_seconds
             entry.modified_at = time.time()
             entry.modified_by_agent = self._agent_id
 
@@ -650,6 +825,7 @@ class ClipboardManager:
                 source_lines=source_lines,
                 new_key=new_key,
                 agent_id=self._agent_id,
+                ttl_seconds=ttl_seconds,
             )
             return entry, warning
 
@@ -662,6 +838,7 @@ class ClipboardManager:
                 source_lines=source_lines,
                 new_key=new_key,
                 agent_id=self._agent_id,
+                ttl_seconds=ttl_seconds,
             )
             return entry, warning
 
@@ -730,6 +907,172 @@ class ClipboardManager:
             self._project_storage.close()
         if self._system_storage:
             self._system_storage.close()
+
+    # --- TTL Support ---
+
+    def _get_ttl_for_scope(self, scope: ClipboardScope) -> int | None:
+        """Get default TTL for scope from config, or None for permanent."""
+        # In implementation, this reads from ClipboardConfig
+        # For now, return None (permanent) - will be wired in Phase 5b
+        return None
+
+    def count_expired(self, scope: ClipboardScope | None = None) -> int:
+        """Count expired entries (does NOT delete them).
+
+        Args:
+            scope: Specific scope to check, or None for all accessible scopes
+
+        Returns count of expired entries. Use get_expired() to see them,
+        or a future cleanup command with user confirmation to delete.
+        """
+        import time
+        now = time.time()
+        count = 0
+
+        scopes = [scope] if scope else [ClipboardScope.AGENT, ClipboardScope.PROJECT, ClipboardScope.SYSTEM]
+
+        for s in scopes:
+            if not self._permissions.can_read(s):
+                continue
+
+            if s == ClipboardScope.AGENT:
+                count += sum(
+                    1 for e in self._agent_clipboard.values()
+                    if e.expires_at is not None and e.expires_at <= now
+                )
+            elif s == ClipboardScope.PROJECT:
+                count += self._get_project_storage().count_expired(now)
+            elif s == ClipboardScope.SYSTEM:
+                count += self._get_system_storage().count_expired(now)
+
+        return count
+
+    def get_expired(self, scope: ClipboardScope | None = None) -> list[ClipboardEntry]:
+        """Get all expired entries for review.
+
+        Args:
+            scope: Specific scope to check, or None for all accessible scopes
+
+        Returns list of expired entries. User can review before cleanup.
+        """
+        import time
+        now = time.time()
+        expired: list[ClipboardEntry] = []
+
+        scopes = [scope] if scope else [ClipboardScope.AGENT, ClipboardScope.PROJECT, ClipboardScope.SYSTEM]
+
+        for s in scopes:
+            if not self._permissions.can_read(s):
+                continue
+
+            if s == ClipboardScope.AGENT:
+                expired.extend(
+                    e for e in self._agent_clipboard.values()
+                    if e.expires_at is not None and e.expires_at <= now
+                )
+            elif s == ClipboardScope.PROJECT:
+                expired.extend(self._get_project_storage().get_expired(now))
+            elif s == ClipboardScope.SYSTEM:
+                expired.extend(self._get_system_storage().get_expired(now))
+
+        return expired
+
+    # --- Search Support ---
+
+    def search(
+        self,
+        query: str,
+        scope: ClipboardScope | None = None,
+        search_content: bool = True,
+        search_keys: bool = True,
+        search_descriptions: bool = True,
+        tags: list[str] | None = None,
+    ) -> list[ClipboardEntry]:
+        """Search clipboard entries.
+
+        Args:
+            query: Search string (case-insensitive substring match)
+            scope: Specific scope to search, or None for all accessible
+            search_content: Search in content
+            search_keys: Search in keys
+            search_descriptions: Search in descriptions
+            tags: Filter by tags (entries must have ALL specified tags)
+
+        Returns:
+            Matching entries, sorted by relevance (key match > desc > content)
+        """
+        entries = self.list_entries(scope)  # Already filters by permission
+        query_lower = query.lower()
+        results = []
+
+        for entry in entries:
+            # Filter by tags first (if specified)
+            if tags:
+                if not all(t in entry.tags for t in tags):
+                    continue
+
+            # Search in specified fields
+            matches = False
+            if search_keys and query_lower in entry.key.lower():
+                matches = True
+            elif search_descriptions and entry.short_description and query_lower in entry.short_description.lower():
+                matches = True
+            elif search_content and query_lower in entry.content.lower():
+                matches = True
+
+            if matches:
+                results.append(entry)
+
+        return results
+
+    # --- Tag Management ---
+
+    def add_tags(self, key: str, scope: ClipboardScope, tags: list[str]) -> ClipboardEntry:
+        """Add tags to an entry. Creates tags if they don't exist."""
+        self._check_write_permission(scope)
+        entry = self._get_from_scope(key, scope)
+        if entry is None:
+            raise KeyError(f"Key '{key}' not found in {scope.value} scope")
+
+        # Add new tags (avoid duplicates)
+        new_tags = list(set(entry.tags + tags))
+        entry.tags = new_tags
+        entry.modified_at = time.time()
+        entry.modified_by_agent = self._agent_id
+
+        # Persist if not agent scope
+        if scope != ClipboardScope.AGENT:
+            storage = self._get_project_storage() if scope == ClipboardScope.PROJECT else self._get_system_storage()
+            storage.set_tags(key, new_tags)
+
+        return entry
+
+    def remove_tags(self, key: str, scope: ClipboardScope, tags: list[str]) -> ClipboardEntry:
+        """Remove tags from an entry."""
+        self._check_write_permission(scope)
+        entry = self._get_from_scope(key, scope)
+        if entry is None:
+            raise KeyError(f"Key '{key}' not found in {scope.value} scope")
+
+        # Remove specified tags
+        entry.tags = [t for t in entry.tags if t not in tags]
+        entry.modified_at = time.time()
+        entry.modified_by_agent = self._agent_id
+
+        # Persist if not agent scope
+        if scope != ClipboardScope.AGENT:
+            storage = self._get_project_storage() if scope == ClipboardScope.PROJECT else self._get_system_storage()
+            storage.set_tags(key, entry.tags)
+
+        return entry
+
+    def list_tags(self, scope: ClipboardScope | None = None) -> list[str]:
+        """List all tags in use across accessible scopes."""
+        entries = self.list_entries(scope)
+        all_tags = set()
+        for entry in entries:
+            all_tags.update(entry.tags)
+        return sorted(all_tags)
 ```
 
 #### `nexus3/clipboard/injection.py`
@@ -874,6 +1217,7 @@ from nexus3.clipboard.types import (
     ClipboardEntry,
     ClipboardPermissions,
     ClipboardScope,
+    ClipboardTag,
     InsertionMode,
     MAX_ENTRY_SIZE_BYTES,
     WARN_ENTRY_SIZE_BYTES,
@@ -885,6 +1229,7 @@ __all__ = [
     "ClipboardEntry",
     "ClipboardPermissions",
     "ClipboardScope",
+    "ClipboardTag",
     "InsertionMode",
     "CLIPBOARD_PRESETS",
     "MAX_ENTRY_SIZE_BYTES",
@@ -900,16 +1245,21 @@ __all__ = [
 
 #### `nexus3/skill/builtin/clipboard_copy.py`
 
+Implementation note (matches current NEXUS3 patterns):
+- Consider using `@handle_file_errors` from `nexus3.skill.base` to convert `PathSecurityError`/`ValueError` into `ToolResult` automatically.
+- Continue using `asyncio.to_thread(...)` for file I/O, as in other file tools.
+
 ```python
 """Copy and cut skills for clipboard operations."""
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nexus3.clipboard import ClipboardManager, ClipboardScope
 from nexus3.core.types import ToolResult
-from nexus3.skill.base import FileSkill, file_skill_factory
+from nexus3.skill.base import FileSkill, file_skill_factory, handle_file_errors
 
 if TYPE_CHECKING:
     from nexus3.skill.services import ServiceContainer
@@ -963,6 +1313,16 @@ class CopySkill(FileSkill):
                     "type": "string",
                     "description": "Optional description for clipboard_list display",
                 },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional tags for organizing entries (e.g., ['refactor', 'cleanup'])",
+                },
+                "ttl_seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Optional TTL in seconds. Entry auto-expires after this time. Omit for permanent.",
+                },
             },
             "required": ["source", "key"],
         }
@@ -975,17 +1335,21 @@ class CopySkill(FileSkill):
         start_line: int | None = None,
         end_line: int | None = None,
         short_description: str | None = None,
+        tags: list[str] | None = None,
+        ttl_seconds: int | None = None,
         **kwargs: Any,
     ) -> ToolResult:
-        # Validate source path
-        validated = self._validate_path(source)
-        if isinstance(validated, ToolResult):
-            return validated
-        source_path: Path = validated
-
-        # Read file content
+        # Validate source path (NEXUS3 pattern: try/except, not isinstance)
         try:
-            content = source_path.read_text(encoding="utf-8", errors="replace")
+            source_path = self._validate_path(source)
+        except (PathSecurityError, ValueError) as e:
+            return ToolResult(error=str(e))
+
+        # Read file content (async file I/O via to_thread)
+        try:
+            content = await asyncio.to_thread(
+                source_path.read_text, encoding="utf-8", errors="replace"
+            )
         except OSError as e:
             return ToolResult(error=f"Cannot read file: {e}")
 
@@ -1025,6 +1389,8 @@ class CopySkill(FileSkill):
                 short_description=short_description,
                 source_path=str(source_path),
                 source_lines=source_lines_str,
+                tags=tags,
+                ttl_seconds=ttl_seconds,
             )
         except PermissionError as e:
             return ToolResult(error=str(e))
@@ -1087,15 +1453,16 @@ class CutSkill(CopySkill):
             return result
 
         # Now remove the lines from source file
-        validated = self._validate_path(source)
-        if isinstance(validated, ToolResult):
-            return validated
-        source_path: Path = validated
-
-        # Check write permission (FileSkill handles allowed_paths)
-        # Re-read to ensure we have current content
         try:
-            content = source_path.read_text(encoding="utf-8", errors="replace")
+            source_path = self._validate_path(source)
+        except (PathSecurityError, ValueError) as e:
+            return ToolResult(error=str(e))
+
+        # Re-read to ensure we have current content (async file I/O)
+        try:
+            content = await asyncio.to_thread(
+                source_path.read_text, encoding="utf-8", errors="replace"
+            )
         except OSError as e:
             return ToolResult(error=f"Cannot read file for cut: {e}")
 
@@ -1111,7 +1478,9 @@ class CutSkill(CopySkill):
             new_content = ""
 
         try:
-            source_path.write_text(new_content, encoding="utf-8")
+            await asyncio.to_thread(
+                source_path.write_text, new_content, encoding="utf-8"
+            )
         except OSError as e:
             return ToolResult(error=f"Copied to clipboard but failed to remove from source: {e}")
 
@@ -1131,10 +1500,12 @@ cut_skill_factory = file_skill_factory(CutSkill)
 """Paste skill for clipboard operations."""
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nexus3.clipboard import ClipboardManager, ClipboardScope, InsertionMode
+from nexus3.core.errors import PathSecurityError
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
 
@@ -1227,11 +1598,11 @@ class PasteSkill(FileSkill):
         prepend: bool = False,
         **kwargs: Any,
     ) -> ToolResult:
-        # Validate target path
-        validated = self._validate_path(target)
-        if isinstance(validated, ToolResult):
-            return validated
-        target_path: Path = validated
+        # Validate target path (NEXUS3 pattern: try/except)
+        try:
+            target_path = self._validate_path(target)
+        except (PathSecurityError, ValueError) as e:
+            return ToolResult(error=str(e))
 
         # Determine insertion mode
         mode_count = sum([
@@ -1283,7 +1654,9 @@ class PasteSkill(FileSkill):
         # Read target file (create if doesn't exist for append/prepend)
         if target_path.exists():
             try:
-                file_content = target_path.read_text(encoding="utf-8", errors="replace")
+                file_content = await asyncio.to_thread(
+                    target_path.read_text, encoding="utf-8", errors="replace"
+                )
             except OSError as e:
                 return ToolResult(error=f"Cannot read target file: {e}")
         else:
@@ -1308,10 +1681,14 @@ class PasteSkill(FileSkill):
         except ValueError as e:
             return ToolResult(error=str(e))
 
-        # Write result
+        # Write result (async file I/O)
         try:
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            target_path.write_text(new_content, encoding="utf-8")
+            await asyncio.to_thread(
+                target_path.parent.mkdir, parents=True, exist_ok=True
+            )
+            await asyncio.to_thread(
+                target_path.write_text, new_content, encoding="utf-8"
+            )
         except OSError as e:
             return ToolResult(error=f"Cannot write to target file: {e}")
 
@@ -1474,6 +1851,16 @@ class ClipboardListSkill(BaseSkill):
                     "default": False,
                     "description": "Include content preview (first/last 3 lines)",
                 },
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Filter to entries having ALL of these tags (AND logic)",
+                },
+                "any_tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Filter to entries having ANY of these tags (OR logic)",
+                },
             },
         }
 
@@ -1481,6 +1868,8 @@ class ClipboardListSkill(BaseSkill):
         self,
         scope: str | None = None,
         verbose: bool = False,
+        tags: list[str] | None = None,
+        any_tags: list[str] | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         manager = self._services.get("clipboard_manager")
@@ -1498,6 +1887,12 @@ class ClipboardListSkill(BaseSkill):
             entries = manager.list_entries(clip_scope)
         except PermissionError as e:
             return ToolResult(error=str(e))
+
+        # Apply tag filters
+        if tags:
+            entries = [e for e in entries if all(t in e.tags for t in tags)]
+        if any_tags:
+            entries = [e for e in entries if any(t in e.tags for t in any_tags)]
 
         if not entries:
             if scope:
@@ -1657,6 +2052,11 @@ class ClipboardUpdateSkill(BaseSkill):
                     "type": "string",
                     "description": "Rename entry to this key",
                 },
+                "ttl_seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Set new TTL in seconds. Entry expires after this time. Omit to keep current TTL.",
+                },
             },
             "required": ["key", "scope"],
         }
@@ -1671,6 +2071,7 @@ class ClipboardUpdateSkill(BaseSkill):
         end_line: int | None = None,
         short_description: str | None = None,
         new_key: str | None = None,
+        ttl_seconds: int | None = None,
         **kwargs: Any,
     ) -> ToolResult:
         manager = self._services.get("clipboard_manager")
@@ -1688,10 +2089,13 @@ class ClipboardUpdateSkill(BaseSkill):
         source_lines_str: str | None = None
 
         if source is not None:
+            import asyncio
             from pathlib import Path
             source_path = Path(source).expanduser().resolve()
             try:
-                file_content = source_path.read_text(encoding="utf-8", errors="replace")
+                file_content = await asyncio.to_thread(
+                    source_path.read_text, encoding="utf-8", errors="replace"
+                )
             except OSError as e:
                 return ToolResult(error=f"Cannot read source file: {e}")
 
@@ -1866,6 +2270,10 @@ from nexus3.skill.builtin.clipboard_manage import (
     clipboard_delete_factory,
     clipboard_clear_factory,
 )
+from nexus3.skill.builtin.clipboard_search import clipboard_search_factory
+from nexus3.skill.builtin.clipboard_tag import clipboard_tag_factory
+from nexus3.skill.builtin.clipboard_export import clipboard_export_factory
+from nexus3.skill.builtin.clipboard_import import clipboard_import_factory
 
 # Add registrations in register_builtin_skills():
 def register_builtin_skills(registry: SkillRegistry) -> None:
@@ -1875,100 +2283,198 @@ def register_builtin_skills(registry: SkillRegistry) -> None:
     registry.register("copy", copy_skill_factory)
     registry.register("cut", cut_skill_factory)
     registry.register("paste", paste_skill_factory)
+
     registry.register("clipboard_list", clipboard_list_factory)
     registry.register("clipboard_get", clipboard_get_factory)
     registry.register("clipboard_update", clipboard_update_factory)
     registry.register("clipboard_delete", clipboard_delete_factory)
     registry.register("clipboard_clear", clipboard_clear_factory)
+
+    registry.register("clipboard_search", clipboard_search_factory)
+    registry.register("clipboard_tag", clipboard_tag_factory)
+    registry.register("clipboard_export", clipboard_export_factory)
+    registry.register("clipboard_import", clipboard_import_factory)
 ```
 
 ---
 
 ### Phase 4: Service Integration
 
-#### Update `nexus3/skill/services.py`
+#### Update `nexus3/skill/services.py` (Optional)
 
-Add typed accessor for clipboard manager:
+**Optional:** Add a typed accessor for clipboard manager.
+
+Note: In the current codebase, `ServiceContainer` already supports `.get()` and `.require()` and also has a section for typed accessors (see `nexus3/skill/services.py`). It is perfectly acceptable to just use:
 
 ```python
-# Add import
+manager = self._services.get("clipboard_manager")
+```
+
+If you prefer type hints / discoverability, you may add:
+
+```python
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from nexus3.clipboard import ClipboardManager
 
-# Add method to ServiceContainer class
-def get_clipboard_manager(self) -> ClipboardManager | None:
-    """Get the clipboard manager for this agent."""
-    return self._services.get("clipboard_manager")
+
+def get_clipboard_manager(self) -> "ClipboardManager | None":
+    return self.get("clipboard_manager")
 ```
 
 #### Update Agent Pool initialization
 
-In `nexus3/rpc/pool.py` (in `create_agent()` method), register the clipboard manager after ServiceContainer is created:
+In `nexus3/rpc/pool.py`, register the clipboard manager after `ServiceContainer` is created (in both `_create_unlocked()` and `_restore_unlocked()`).
 
 ```python
-# During agent setup, after ServiceContainer is created:
+# During agent setup, after permissions + agent_cwd are resolved:
 from nexus3.clipboard import ClipboardManager, CLIPBOARD_PRESETS
 from nexus3.core.permissions import PermissionLevel
 
-# Map permission level to clipboard permissions
-# AgentPermissions doesn't have a base_preset attribute - use the PermissionLevel enum
+# Map AgentPermissions -> clipboard permissions
+# (PermissionLevel is available as permissions.effective_policy.level)
 permission_level = permissions.effective_policy.level
 if permission_level == PermissionLevel.YOLO:
     clipboard_perms = CLIPBOARD_PRESETS["yolo"]
 elif permission_level == PermissionLevel.TRUSTED:
     clipboard_perms = CLIPBOARD_PRESETS["trusted"]
-else:  # SANDBOXED or unknown - use sandboxed (fail-safe)
+else:  # SANDBOXED or unknown - fail safe
     clipboard_perms = CLIPBOARD_PRESETS["sandboxed"]
 
-# Create and register clipboard manager
 clipboard_manager = ClipboardManager(
     agent_id=agent_id,
-    cwd=agent_cwd,  # Use agent_cwd from the pool context
+    cwd=agent_cwd,
     permissions=clipboard_perms,
 )
 services.register("clipboard_manager", clipboard_manager)
 ```
 
+**Note:** `AgentPermissions.base_preset` exists, but it reflects the named preset string (e.g. `"trusted"`). For gating clipboard scope access, `permissions.effective_policy.level` is the reliable source of truth.
+
 **Location in pool.py:** Add after `services.register("cwd", agent_cwd)` and before skill registry setup.
 
----
+#### Pass ClipboardManager to ContextManager
 
-### Phase 5: Context Injection Integration
-
-#### Update `nexus3/context/loader.py`
-
-Add clipboard injection to the context loading process:
-
+The same `ClipboardManager` instance must be passed to `ContextManager` so `build_messages()` can inject the clipboard index per-turn:
 ```python
-# Add import
-from nexus3.clipboard import format_clipboard_context
+# In pool.py, when creating ContextManager for the agent:
+context = ContextManager(
+    config=context_config,
+    logger=logger,
+    clipboard_manager=clipboard_manager,                 # Pass the same instance
+    clipboard_config=self._shared.config.clipboard,      # NEW (root Config field)
+)
 
-# In ContextLoader or wherever system prompt is assembled:
-def build_system_prompt(
-    self,
-    clipboard_manager: ClipboardManager | None = None,
-    # ... other params
-) -> str:
-    parts = []
-
-    # ... existing system prompt assembly ...
-
-    # Add clipboard context if available and has entries
-    if clipboard_manager is not None:
-        clipboard_section = format_clipboard_context(
-            clipboard_manager,
-            max_entries=10,
-            show_source=True,
-        )
-        if clipboard_section:
-            parts.append(clipboard_section)
-
-    return "\n\n".join(parts)
+# Do the same in _restore_unlocked() when constructing ContextManager.
 ```
 
----
+
+
+
+#### Update `nexus3/context/manager.py`
+
+Add clipboard injection to `build_messages()` for **per-turn** injection. This follows the same pattern as datetime injection - the clipboard index must be current every turn, not stale from session start.
+
+**Why `build_messages()` and not `ContextLoader.load()`?**
+- `ContextLoader.load()` runs once at agent creation (and on compaction)
+- `build_messages()` runs every turn before API calls
+- If clipboard injection happened at load time, an agent could `copy()` something and not see it in context until compaction
+- Datetime uses this pattern: base prompt is cached, dynamic content injected per-turn
+
+```python
+# Add imports at top of manager.py
+from typing import TYPE_CHECKING
+
+from nexus3.clipboard import format_clipboard_context
+from nexus3.config.schema import ClipboardConfig
+
+if TYPE_CHECKING:
+    from nexus3.clipboard import ClipboardManager
+
+
+# Add agent_id, clipboard_manager and clipboard_config to ContextManager.__init__()
+def __init__(
+    self,
+    config: ContextConfig | None = None,
+    token_counter: TokenCounter | None = None,
+    logger: "SessionLogger | None" = None,
+    agent_id: str | None = None,                           # NEW - needed for clipboard scoping
+    clipboard_manager: "ClipboardManager | None" = None,   # NEW
+    clipboard_config: ClipboardConfig | None = None,       # NEW
+) -> None:
+    # ... existing init ...
+    self._agent_id = agent_id                              # NEW
+    self._clipboard_manager = clipboard_manager            # NEW
+    self._clipboard_config = clipboard_config or ClipboardConfig()  # NEW
+
+
+# In build_messages(), after datetime injection:
+def build_messages(self) -> list[Message]:
+    result: list[Message] = []
+
+    if self._system_prompt:
+        # Inject current date/time (existing code)
+        datetime_line = get_current_datetime_str()
+        prompt_with_time = inject_datetime_into_prompt(
+            self._system_prompt, datetime_line
+        )
+
+        # NEW: Inject clipboard index if manager available and has entries
+        if self._clipboard_manager is not None and self._clipboard_config.inject_into_context:
+            clipboard_section = format_clipboard_context(
+                self._clipboard_manager,
+                max_entries=self._clipboard_config.max_injected_entries,
+                show_source=self._clipboard_config.show_source_in_injection,
+            )
+            if clipboard_section:
+                prompt_with_time += "\n\n" + clipboard_section
+
+        result.append(Message(role=Role.SYSTEM, content=prompt_with_time))
+
+    # ... rest of method unchanged ...
+```
+
+**Note:** The `ClipboardManager` reference is passed at `ContextManager` construction time, but the injection happens per-turn. The manager's state (entries) is read fresh each turn.
+
+**Token Counting Consistency:** In the current codebase, truncation happens in `ContextManager._truncate_oldest_first()` and `ContextManager._truncate_middle_out()`.
+
+Today both methods compute:
+
+```python
+system_tokens = self._counter.count(self._system_prompt)  # RAW (no datetime injection)
+```
+
+But `build_messages()` (and `get_token_usage()`) inject datetime first, so truncation undercounts. When clipboard injection is added, the mismatch gets worse.
+
+**Fix:** centralize dynamic system-prompt construction in a helper (so `build_messages()`, `get_token_usage()`, and both truncation methods all use the same injected prompt):
+
+```python
+def _build_system_prompt_for_api_call(self) -> str:
+    # Datetime injection (existing)
+    datetime_line = get_current_datetime_str()
+    prompt = inject_datetime_into_prompt(self._system_prompt, datetime_line)
+
+    # Clipboard injection (NEW)
+    if self._clipboard_manager is not None and self._clipboard_config.inject_into_context:
+        clipboard_section = format_clipboard_context(
+            self._clipboard_manager,
+            max_entries=self._clipboard_config.max_injected_entries,
+            show_source=self._clipboard_config.show_source_in_injection,
+        )
+        if clipboard_section:
+            prompt += "\n\n" + clipboard_section
+
+    return prompt
+```
+
+Then:
+- `build_messages()` uses `prompt = self._build_system_prompt_for_api_call()` for the `Role.SYSTEM` message.
+- `get_token_usage()` uses `system_tokens = self._counter.count(self._build_system_prompt_for_api_call())`.
+- `_truncate_oldest_first()` and `_truncate_middle_out()` use `system_tokens = self._counter.count(self._build_system_prompt_for_api_call())`.
+
+This ensures truncation decisions account for the full system prompt size actually sent to the model.
+
 
 ### Phase 6: Config Schema
 
@@ -2011,15 +2517,181 @@ class ClipboardConfig(BaseModel):
         description="Size threshold for warning on large entries",
     )
 
+    # TTL settings
+    default_ttl_seconds: int | None = Field(
+        default=None,
+        description="Default TTL for new entries (seconds). None = permanent.",
+    )
+    per_scope_ttl: dict[str, int | None] = Field(
+        default={
+            "agent": None,         # Agent scope: permanent (session-only anyway)
+            "project": 2592000,    # Project scope: 30 days
+            "system": 31536000,    # System scope: 365 days (1 year)
+        },
+        description="Per-scope TTL overrides (seconds). None = permanent.",
+    )
 
-# Add to root Config class
+
+# Add to root Config class (matches existing pattern at lines 569-574 of schema.py)
 class Config(BaseModel):
     # ... existing fields ...
 
-    clipboard: ClipboardConfig = Field(
-        default_factory=ClipboardConfig,
-        description="Clipboard system configuration",
-    )
+    clipboard: ClipboardConfig = ClipboardConfig()  # Direct instantiation pattern
+```
+
+---
+
+### Additional Skills (Search, Tags, Import/Export)
+
+#### `clipboard_search` Skill
+
+Simple LIKE-based search across clipboard entries:
+
+```python
+class ClipboardSearchSkill(BaseSkill):
+    """Search clipboard entries by content substring."""
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search substring (case-insensitive)"},
+                "scope": {"type": "string", "enum": ["agent", "project", "system"], "description": "Scope to search (omit for all)"},
+                "max_results": {"type": "integer", "default": 50, "description": "Maximum results to return"},
+            },
+            "required": ["query"],
+        }
+
+    async def execute(self, query: str, scope: str | None = None, max_results: int = 50, **kwargs) -> ToolResult:
+        manager = self._services.get("clipboard_manager")
+        results = manager.search(query, scope=scope, limit=max_results)
+        # Format results as list with key, scope, line count, description
+        ...
+```
+
+Storage method uses SQLite LIKE with escaped wildcards:
+
+```sql
+SELECT * FROM clipboard
+WHERE content LIKE ? ESCAPE '\\' OR short_description LIKE ? ESCAPE '\\'
+ORDER BY modified_at DESC LIMIT ?
+```
+
+#### `clipboard_tag` Skill
+
+Tag management with action-based dispatch (mirrors `gitlab_label` pattern):
+
+```python
+@property
+def parameters(self) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["list", "add", "remove", "create", "delete"]},
+            "name": {"type": "string", "description": "Tag name"},
+            "entry_key": {"type": "string", "description": "Clipboard entry key (for add/remove)"},
+            "scope": {"type": "string", "enum": ["agent", "project", "system"], "description": "Entry scope (for add/remove)"},
+            "description": {"type": "string", "description": "Tag description (for create)"},
+        },
+        "required": ["action"],
+    }
+```
+
+Actions:
+- `list`: List all tags (optionally filter by scope)
+- `add`: Add tag to entry (`entry_key` + `scope` + `name` required)
+- `remove`: Remove tag from entry
+- `create`: Create a new tag with optional description
+- `delete`: Delete a tag (removes from all entries via CASCADE)
+
+#### `clipboard_export` / `clipboard_import` Skills
+
+**Export:**
+
+```python
+async def execute(self, path: str, scope: str = "all", **kwargs) -> ToolResult:
+    import asyncio
+
+    entries = manager.list_entries(scope if scope != "all" else None)
+    data = {
+        "version": "1.0",
+        "exported_at": datetime.now().isoformat(),
+        "entries": [asdict(e) for e in entries],
+    }
+    json_content = json.dumps(data, indent=2)
+
+    await asyncio.to_thread(Path(path).write_text, json_content)
+    return ToolResult(output=f"Exported {len(entries)} entries to {path}")
+```
+
+**Import:**
+
+```python
+async def execute(
+    self,
+    path: str,
+    scope: str = "agent",
+    conflict: str = "skip",
+    dry_run: bool = True,
+    **kwargs,
+) -> ToolResult:
+    import asyncio
+
+    file_content = await asyncio.to_thread(Path(path).read_text)
+    data = json.loads(file_content)
+    if data.get("version") != "1.0":
+        return ToolResult(error="Unsupported export format version")
+
+    imported, skipped = 0, 0
+    for entry_dict in data["entries"]:
+        if manager.get(entry_dict["key"], scope) and conflict == "skip":
+            skipped += 1
+            continue
+        if not dry_run:
+            manager.copy(key=entry_dict["key"], content=entry_dict["content"], scope=scope, ...)
+        imported += 1
+
+    if dry_run:
+        return ToolResult(output=f"Would import {imported}, skip {skipped}. Run with dry_run=false to import.")
+    return ToolResult(output=f"Imported {imported}, skipped {skipped}")
+```
+
+---
+
+### Session Persistence Integration
+
+Add `clipboard_agent_entries` to `SavedSession` for agent scope persistence across `--resume`:
+
+```python
+# In nexus3/session/persistence.py
+
+@dataclass
+class SavedSession:
+    # ... existing fields ...
+    clipboard_agent_entries: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            # ... existing fields ...
+            "clipboard_agent_entries": self.clipboard_agent_entries,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> SavedSession:
+        return cls(
+            # ... existing fields ...
+            clipboard_agent_entries=data.get("clipboard_agent_entries", {}),
+        )
+```
+
+Restoration in `pool.py`:
+
+```python
+# In _restore_unlocked(), after creating ClipboardManager:
+if saved_session.clipboard_agent_entries:
+    for key, entry_dict in saved_session.clipboard_agent_entries.items():
+        clipboard_manager._agent_clipboard[key] = ClipboardEntry(**entry_dict)
 ```
 
 ---
@@ -2028,29 +2700,36 @@ class Config(BaseModel):
 
 | File | Change | LOC Est. |
 |------|--------|----------|
-| `nexus3/clipboard/__init__.py` | **New** - Public API exports | ~30 |
-| `nexus3/clipboard/types.py` | **New** - Types, enums, dataclasses | ~150 |
-| `nexus3/clipboard/storage.py` | **New** - SQLite operations | ~180 |
-| `nexus3/clipboard/manager.py` | **New** - ClipboardManager | ~280 |
+| `nexus3/clipboard/__init__.py` | **New** - Public API exports | ~40 |
+| `nexus3/clipboard/types.py` | **New** - Types, enums, dataclasses (incl. ClipboardTag) | ~180 |
+| `nexus3/clipboard/storage.py` | **New** - SQLite operations (incl. tags, TTL, search) | ~280 |
+| `nexus3/clipboard/manager.py` | **New** - ClipboardManager (incl. tags, TTL, search) | ~380 |
 | `nexus3/clipboard/injection.py` | **New** - Context formatting | ~120 |
-| `nexus3/skill/builtin/clipboard_copy.py` | **New** - copy/cut skills | ~200 |
+| `nexus3/skill/builtin/clipboard_copy.py` | **New** - copy/cut skills (with tags, ttl params) | ~220 |
 | `nexus3/skill/builtin/clipboard_paste.py` | **New** - paste skill | ~220 |
-| `nexus3/skill/builtin/clipboard_manage.py` | **New** - list/get/update/delete/clear | ~300 |
-| `nexus3/skill/builtin/registration.py` | Add imports + registrations | ~15 |
-| `nexus3/skill/services.py` | Add `get_clipboard_manager()` | ~5 |
-| `nexus3/config/schema.py` | Add `ClipboardConfig` | ~40 |
-| `nexus3/context/loader.py` | Integrate clipboard injection | ~15 |
-| `nexus3/session/session.py` (or similar) | Register ClipboardManager | ~15 |
+| `nexus3/skill/builtin/clipboard_manage.py` | **New** - list/get/update/delete/clear (with tag filters) | ~350 |
+| `nexus3/skill/builtin/clipboard_search.py` | **New** - search skill | ~60 |
+| `nexus3/skill/builtin/clipboard_tag.py` | **New** - tag management skill | ~120 |
+| `nexus3/skill/builtin/clipboard_export.py` | **New** - export to JSON | ~80 |
+| `nexus3/skill/builtin/clipboard_import.py` | **New** - import from JSON | ~100 |
+| `nexus3/skill/builtin/registration.py` | Add imports + registrations | ~25 |
+| `nexus3/skill/services.py` | (Optional) add `get_clipboard_manager()` | ~5 |
+| `nexus3/config/schema.py` | Add `ClipboardConfig` (incl. TTL options) | ~60 |
+| `nexus3/context/manager.py` | Integrate clipboard injection in `build_messages()` | ~20 |
+| `nexus3/session/persistence.py` | Add `clipboard_agent_entries` to SavedSession | ~40 |
+| `nexus3/rpc/pool.py` | Register ClipboardManager, TTL expiry tracking, session restore | ~50 |
 | **Tests** | | |
-| `tests/unit/clipboard/test_types.py` | **New** | ~80 |
-| `tests/unit/clipboard/test_storage.py` | **New** | ~150 |
-| `tests/unit/clipboard/test_manager.py` | **New** | ~200 |
-| `tests/unit/skill/test_clipboard_copy.py` | **New** | ~150 |
+| `tests/unit/clipboard/test_types.py` | **New** | ~100 |
+| `tests/unit/clipboard/test_storage.py` | **New** (incl. tags, TTL, search) | ~250 |
+| `tests/unit/clipboard/test_manager.py` | **New** (incl. tags, TTL, search) | ~300 |
+| `tests/unit/skill/test_clipboard_copy.py` | **New** | ~180 |
 | `tests/unit/skill/test_clipboard_paste.py` | **New** | ~200 |
-| `tests/unit/skill/test_clipboard_manage.py` | **New** | ~150 |
-| `tests/integration/test_clipboard.py` | **New** | ~200 |
+| `tests/unit/skill/test_clipboard_manage.py` | **New** | ~200 |
+| `tests/unit/skill/test_clipboard_extras.py` | **New** - search, tag, import/export | ~200 |
+| `tests/unit/test_clipboard_persistence.py` | **New** - SavedSession serialization of agent clipboard | ~120 |
+| `tests/integration/test_clipboard.py` | **New** | ~300 |
 
-**Total new code**: ~2,500 LOC (including tests)
+**Total new code**: ~3,900 LOC (including tests)
 
 ---
 
@@ -2143,12 +2822,13 @@ nexus3 --fresh
 > clipboard_list(scope="project")  # Should still be there
 
 # Test cross-agent
-> /agent worker
-> clipboard_list()  # Should only see agent scope (sandboxed)
-> /agent main
-> Copy to project scope
-> /agent worker --trusted
-> clipboard_list()  # Should see project scope now
+> Create a sandboxed agent and verify it cannot see project scope entries
+> clipboard_list()  # Should only show agent scope when SANDBOXED
+>
+> Create a trusted agent and verify it can see project scope entries
+> clipboard_list(scope="project")  # Should show entries when TRUSTED allows project_read
+>
+> (Optional) Create a YOLO agent and verify system scope read/write if enabled by policy
 ```
 
 ---
@@ -2189,19 +2869,16 @@ nexus3 --fresh
 
 ## Future Enhancements (Out of Scope)
 
-- **Clipboard history**: Track previous versions of entries
-- **Expiry/TTL**: Auto-delete old entries
-- **Tags**: Categorize entries beyond scope
-- **Search**: Find entries by content substring
-- **Import/export**: Dump clipboard to file, load from file
-- **Binary support**: Images, compiled files, etc.
-- **Agent scope persistence**: Save to session JSON for resume
+- **User-in-the-loop TTL cleanup**: Currently TTL just flags entries as expired but doesn't auto-delete. Need to design a user confirmation flow for cleanup - options include: (1) REPL command `/clipboard cleanup` with confirmation, (2) Agent prompts user when expired entries accumulate, (3) Periodic summary in context injection showing expired count. **TODO: Design this before v2.**
+- **Clipboard history**: Track previous versions of entries (separate `clipboard_history` table)
+- **Binary support**: Images, compiled files (BLOB column + MIME types)
+- **FTS5 search upgrade**: Full-text search for large clipboards (when LIKE becomes slow)
 
 ---
 
 ## Codebase Validation Notes
 
-*Validated against NEXUS3 codebase on 2026-01-23*
+*Validated against NEXUS3 codebase on 2026-01-30, 2026-01-31 (three validation passes with explorer agents)*
 
 ### Confirmed Patterns
 
@@ -2219,9 +2896,149 @@ nexus3 --fresh
 
 1. **Removed "worker" preset** - Only `yolo`, `trusted`, `sandboxed` are first-class presets. "worker" is legacy and maps to sandboxed internally.
 
-2. **Fixed initialization location** - Changed from `session/session.py` to `rpc/pool.py` in `create_agent()` method.
+2. **Fixed initialization location** - Changed from `session/session.py` to `rpc/pool.py` (ContextManager is constructed in `_create_unlocked()` / `_restore_unlocked()`).
 
 3. **Fixed permission mapping** - Changed from `agent_permissions.base_preset` (doesn't exist) to `permissions.effective_policy.level` (PermissionLevel enum).
+
+4. **Added tags and TTL to SCHEMA_SQL** - Added `expires_at`, `ttl_seconds` columns to clipboard table; added `tags` and `clipboard_tags` junction tables; added `PRAGMA foreign_keys = ON`.
+
+5. **Added ClipboardTag dataclass** - Defined in types.py with id, name, description, created_at fields.
+
+6. **Added expires_at/ttl_seconds to ClipboardEntry** - Entry now tracks expiration time and original TTL value, plus tags list.
+
+7. **Added tags/ttl_seconds to CopySkill** - Both parameters added to skill with proper JSON Schema definitions.
+
+8. **Fixed path validation pattern** - Prefer `@handle_file_errors` (or try/except) to convert PathSecurityError/ValueError into ToolResult (matches NEXUS3 pattern).
+
+9. **Added async file I/O** - Used `asyncio.to_thread()` for file read operations.
+
+10. **Wired ClipboardConfig into injection** - Removed hardcoded values, now uses `self._clipboard_config.max_injected_entries` etc.
+
+11. **Added token counting fix note** - Documented that truncation methods must account for injected content.
+
+12. **Added TYPE_CHECKING import pattern** - ContextManager uses TYPE_CHECKING for ClipboardManager to avoid circular imports.
+
+13. **Fixed duplicate `field` import** - Removed duplicate import in types.py.
+
+14. **Fixed checklist method names** - Changed `add_tag`/`remove_tag` to `add_tags`/`remove_tags` (plural) to match implementation.
+
+15. **Fixed config patterns** - Changed `Field(default_factory=...)` to direct instantiation for ClipboardConfig, and `default={}` for per_scope_ttl (matches existing schema.py patterns).
+
+16. **Added TOCTOU protection** - Added atomic file creation with secure permissions in `_ensure_db()` (matches session/storage.py pattern).
+
+17. **Updated TTL defaults** - Project scope: 30 days (was 7), System scope: 1 year (was 30 days).
+
+18. **Changed TTL to check-only** - `cleanup_expired()` renamed to `count_expired()`/`get_expired()`. TTL flags entries as expired but does NOT auto-delete. User-in-the-loop cleanup deferred to Future Enhancements.
+
+19. **Added `is_expired` property** - ClipboardEntry now has `is_expired` property for easy expiry checking.
+
+20. **Added agent_id to ContextManager** - Added `agent_id: str | None = None` parameter to `__init__()` for clipboard scoping (identified by validation agents 2026-01-31).
+
+21. **Added tags/any_tags to clipboard_list** - Added `tags` (AND filter) and `any_tags` (OR filter) parameters to ClipboardListSkill to match checklist P3.2 (identified by validation agents 2026-01-31).
+
+22. **Added ttl_seconds to clipboard_update** - Added `ttl_seconds` parameter to ClipboardUpdateSkill, manager.update(), and storage.update() to match checklist P3.3 (identified by validation agents 2026-01-31).
+
+23. **Use SECURE_FILE_MODE constant** - Changed hardcoded `0o600` to `SECURE_FILE_MODE` from `nexus3.core.secure_io` and use `secure_mkdir()` for consistency with session/storage.py (identified by validation agents 2026-01-31).
+
+---
+
+## Recommended Implementation Order (and Parallelization)
+
+This plan touches multiple subsystems (clipboard core, skills, context injection, config, pool integration, persistence, tests). The order below minimizes merge conflicts and keeps each step testable.
+
+### Step 0: Scaffolding / contracts (safe to do first)
+
+- Create `nexus3/clipboard/` package skeleton and minimal exports.
+- Decide the public API surface (`ClipboardManager`, `ClipboardScope`, `InsertionMode`, etc.) and keep it stable.
+
+**Parallelizable:** yes (one agent can create the package skeleton while another drafts tests stubs).
+
+### Step 1: Core data model + storage (unblocks everything)
+
+- Implement `nexus3/clipboard/types.py` (ClipboardEntry, ClipboardTag, permissions, size limits).
+- Implement `nexus3/clipboard/storage.py` including schema, TOCTOU-safe DB creation, foreign keys, and tag helpers.
+- Implement `nexus3/clipboard/manager.py` core CRUD (`copy/get/update/delete/list_entries`) with TTL + tags behavior.
+
+**Why first:** skills, injection, and persistence all depend on these types.
+
+**Parallelizable:** partially.
+- Agent A: `types.py`
+- Agent B: `storage.py` (once schema shape is agreed)
+- Agent C: `manager.py` (can start once types+storage interfaces are stable)
+
+Avoid parallel edits to the same file until interfaces are agreed.
+
+### Step 2: Unit tests for core clipboard modules (stabilizes the API)
+
+- Add `tests/unit/clipboard/test_types.py`, `test_storage.py`, `test_manager.py`.
+
+**Parallelizable:** yes (tests can be written alongside implementation, but expect small follow-up edits).
+
+### Step 3: Skills (copy/cut/paste/manage + extras)
+
+- Implement file I/O skills in `nexus3/skill/builtin/`:
+  - `clipboard_copy.py` / `clipboard_paste.py`
+  - `clipboard_manage.py`
+  - `clipboard_search.py`, `clipboard_tag.py`, `clipboard_export.py`, `clipboard_import.py`
+
+Use repo-native patterns:
+- `@handle_file_errors` for path validation errors
+- `asyncio.to_thread(...)` for file reads/writes
+
+**Parallelizable:** mostly.
+- Agent A: copy/cut
+- Agent B: paste
+- Agent C: manage (list/get/update/delete/clear)
+- Agent D: extras (search/tag/import/export)
+
+These files don’t overlap, but all depend on the core clipboard API.
+
+### Step 4: Register skills
+
+- Update `nexus3/skill/builtin/registration.py` to import and register all clipboard skills.
+
+**Parallelizable:** no (small, centralized edit).
+
+### Step 5: Config + Context injection (per-turn)
+
+- Add `ClipboardConfig` to `nexus3/config/schema.py` and add `clipboard: ClipboardConfig = ClipboardConfig()` to root `Config`.
+- Update `nexus3/context/manager.py` to:
+  - accept `clipboard_manager` + `clipboard_config`
+  - inject clipboard index in `build_messages()`
+  - fix truncation token counting by using a shared helper (see Token Counting Consistency section)
+
+**Parallelizable:** limited.
+- Agent A: config schema changes
+- Agent B: context manager injection + truncation changes
+
+But coordinate carefully because ContextManager will reference ClipboardConfig.
+
+### Step 6: Pool integration
+
+- Update `nexus3/rpc/pool.py`:
+  - create/register a `ClipboardManager` in both `_create_unlocked()` and `_restore_unlocked()`
+  - pass it + `self._shared.config.clipboard` into `ContextManager(...)`
+
+**Parallelizable:** no (central file).
+
+### Step 7: Session persistence for agent-scope clipboard
+
+- Update `nexus3/session/persistence.py` to include `clipboard_agent_entries` in `SavedSession` and in `to_dict()/from_dict()`.
+- Update `pool.py` restore path to repopulate agent clipboard entries.
+
+**Parallelizable:** partially.
+- Agent A: persistence.py
+- Agent B: pool.py restore wiring
+
+But pool.py is also touched in Step 6; do Step 6 first or coordinate via a single owner.
+
+### Step 8: Skill and integration tests
+
+- Add unit tests under `tests/unit/skill/` for new clipboard skills.
+- Add `tests/unit/test_clipboard_persistence.py` for SavedSession serialization.
+- Add integration tests `tests/integration/test_clipboard.py` (or split into multiple files if desired).
+
+**Parallelizable:** yes (tests can be split by file/module).
 
 ---
 
@@ -2232,62 +3049,104 @@ Use this checklist to track implementation progress. Each item can be assigned t
 ### Phase 1: Core Infrastructure
 
 - [ ] **P1.1** Create `nexus3/clipboard/` directory
-- [ ] **P1.2** Implement `nexus3/clipboard/types.py` (ClipboardEntry, ClipboardScope, ClipboardPermissions, CLIPBOARD_PRESETS)
+- [ ] **P1.2** Implement `nexus3/clipboard/types.py` (ClipboardEntry, ClipboardScope, ClipboardPermissions, CLIPBOARD_PRESETS, ClipboardTag)
 - [ ] **P1.3** Implement `nexus3/clipboard/storage.py` (ClipboardStorage SQLite operations)
-- [ ] **P1.4** Implement `nexus3/clipboard/manager.py` (ClipboardManager with all CRUD operations)
-- [ ] **P1.5** Implement `nexus3/clipboard/injection.py` (format_clipboard_context, format_entry_detail)
-- [ ] **P1.6** Implement `nexus3/clipboard/__init__.py` (public API exports)
-- [ ] **P1.7** Add unit tests for types.py (ClipboardEntry.from_content, permission checks)
-- [ ] **P1.8** Add unit tests for storage.py (CRUD operations, key uniqueness)
-- [ ] **P1.9** Add unit tests for manager.py (scope resolution, permission enforcement)
+- [ ] **P1.4** Add `tags` + `clipboard_tags` junction tables to schema (for tag support)
+- [ ] **P1.5** Add `expires_at` column to schema (for TTL support)
+- [ ] **P1.6** Implement `nexus3/clipboard/manager.py` (ClipboardManager with all CRUD operations)
+- [ ] **P1.7** Add tag methods to ClipboardManager (`add_tags`, `remove_tags`, `list_tags`)
+- [ ] **P1.8** Add TTL methods to ClipboardManager (`count_expired`, `get_expired`, `_get_ttl_for_scope`)
+- [ ] **P1.9** Implement `nexus3/clipboard/injection.py` (format_clipboard_context, format_entry_detail)
+- [ ] **P1.10** Implement `nexus3/clipboard/__init__.py` (public API exports)
+- [ ] **P1.11** Add unit tests for types.py (ClipboardEntry.from_content, permission checks)
+- [ ] **P1.12** Add unit tests for storage.py (CRUD operations, key uniqueness, tags, TTL)
+- [ ] **P1.13** Add unit tests for manager.py (scope resolution, permission enforcement, tags, TTL)
 
 ### Phase 2: Core Skills
 
 - [ ] **P2.1** Implement `nexus3/skill/builtin/clipboard_copy.py` (CopySkill, CutSkill)
-- [ ] **P2.2** Implement `nexus3/skill/builtin/clipboard_paste.py` (PasteSkill)
-- [ ] **P2.3** Add unit tests for copy/cut skills
-- [ ] **P2.4** Add unit tests for paste skill (all insertion modes)
+- [ ] **P2.2** Add `tags` parameter to CopySkill (optional list of tag names)
+- [ ] **P2.3** Add `ttl_seconds` parameter to CopySkill (optional TTL override)
+- [ ] **P2.4** Implement `nexus3/skill/builtin/clipboard_paste.py` (PasteSkill)
+- [ ] **P2.5** Add unit tests for copy/cut skills (including tags and TTL)
+- [ ] **P2.6** Add unit tests for paste skill (all insertion modes)
 
 ### Phase 3: Management Skills
 
 - [ ] **P3.1** Implement `nexus3/skill/builtin/clipboard_manage.py` (clipboard_list, clipboard_get, clipboard_update, clipboard_delete, clipboard_clear)
-- [ ] **P3.2** Add unit tests for management skills
-- [ ] **P3.3** Register all clipboard skills in `nexus3/skill/builtin/registration.py`
+- [ ] **P3.2** Add `tags` and `any_tags` filter parameters to `clipboard_list`
+- [ ] **P3.3** Add `ttl_seconds` parameter to `clipboard_update`
+- [ ] **P3.4** Implement `nexus3/skill/builtin/clipboard_search.py` (ClipboardSearchSkill - LIKE-based content search)
+- [ ] **P3.5** Implement `nexus3/skill/builtin/clipboard_tag.py` (ClipboardTagSkill - list/add/remove/create/delete tags)
+- [ ] **P3.6** Implement `nexus3/skill/builtin/clipboard_export.py` (export entries to JSON file)
+- [ ] **P3.7** Implement `nexus3/skill/builtin/clipboard_import.py` (import entries from JSON file)
+- [ ] **P3.8** Add unit tests for management skills
+- [ ] **P3.9** Add unit tests for search, tag, import/export skills
+- [ ] **P3.10** Register all clipboard skills in `nexus3/skill/builtin/registration.py`
 
 ### Phase 4: Service Integration
 
-- [ ] **P4.1** Add `get_clipboard_manager()` to `nexus3/skill/services.py`
-- [ ] **P4.2** Add ClipboardManager registration to `nexus3/rpc/pool.py` in `create_agent()`
-- [ ] **P4.3** Add cleanup logic for ClipboardManager in agent destruction
+- [ ] **P4.1 (Optional)** Add `get_clipboard_manager()` to `nexus3/skill/services.py`
+- [ ] **P4.2** Add ClipboardManager registration to `nexus3/rpc/pool.py` in `_create_unlocked()` and `_restore_unlocked()`
+- [ ] **P4.3** Pass ClipboardManager (+ ClipboardConfig) into ContextManager constructor in both `_create_unlocked()` and `_restore_unlocked()`
+- [ ] **P4.4** Add cleanup logic for ClipboardManager in agent destruction
 
 ### Phase 5: Context Injection
 
-- [ ] **P5.1** Integrate `format_clipboard_context()` with system prompt assembly
+- [ ] **P5.1** Integrate `format_clipboard_context()` in `ContextManager.build_messages()` (per-turn injection)
 - [ ] **P5.2** Add `ClipboardConfig` to `nexus3/config/schema.py`
 - [ ] **P5.3** Wire config options (inject_into_context, max_injected_entries) into injection
+- [ ] **P5.4** Add TTL config options (`default_ttl_seconds`, `per_scope_ttl`) to `ClipboardConfig`
 
-### Phase 6: Integration Testing
+### Phase 5b: TTL/Expiry Tracking (No Auto-Delete)
 
-- [ ] **P6.1** Integration test: copy/paste roundtrip (copy from A, paste to B)
-- [ ] **P6.2** Integration test: cut/paste roundtrip (verify source modified)
-- [ ] **P6.3** Integration test: cross-agent project scope sharing
-- [ ] **P6.4** Integration test: context injection appears in system prompt
-- [ ] **P6.5** Integration test: permission boundaries (sandboxed can't access project)
-- [ ] **P6.6** Integration test: persistence (project/system entries survive restart)
+Note: TTL marks entries as expired but does NOT auto-delete. User-in-the-loop cleanup is deferred to Future Enhancements.
 
-### Phase 7: Live Testing
+- [ ] **P5b.1** Add `is_expired` property to ClipboardEntry (checks expires_at vs now)
+- [ ] **P5b.2** Update `list_entries()` to optionally filter/flag expired entries
+- [ ] **P5b.3** Add expired count to context injection (e.g., "3 expired entries pending cleanup")
+- [ ] **P5b.4** Add unit tests for TTL expiry detection (count_expired, get_expired, is_expired)
 
-- [ ] **P7.1** Live test with real NEXUS3 REPL (create test files, copy/paste flow)
-- [ ] **P7.2** Verify no regressions in existing skills
+### Phase 6: Session Persistence
 
-### Phase 8: Documentation
+- [ ] **P6.1** Add `clipboard_agent_entries` field to `SavedSession` in `nexus3/session/persistence.py`
+- [ ] **P6.2** Update `SavedSession.to_dict()` / `from_dict()` to include the new field with backwards-compatible defaults (`data.get(...)`).
+- [ ] **P6.3** Decide whether to bump `SESSION_SCHEMA_VERSION` (currently `1`) in `nexus3/session/persistence.py`.
+      - The existing pattern already uses `data.get("schema_version", 1)` and defaulted fields for backwards compatibility.
+      - If you can tolerate older saves silently missing `clipboard_agent_entries`, you may *not* need to bump.
+- [ ] **P6.4** Wire restoration in `nexus3/rpc/pool.py` `_restore_unlocked()` method (after `ContextManager` and services are created).
+- [ ] **P6.5** Add unit tests for clipboard serialization/deserialization
+- [ ] **P6.6** Add integration test: copy → save → resume → verify clipboard intact
 
-- [ ] **P8.1** Add all clipboard skills to `CLAUDE.md` Built-in Skills table
-- [ ] **P8.2** Add Clipboard section to `CLAUDE.md` describing the system
-- [ ] **P8.3** Add clipboard section to `nexus3/skill/README.md`
-- [ ] **P8.4** Create `nexus3/clipboard/README.md` with module documentation
-- [ ] **P8.5** Update `CLAUDE.md` Configuration section with clipboard config options
-- [ ] **P8.6** Ensure all skill `description` properties are comprehensive with examples
+### Phase 7: Integration Testing
+
+- [ ] **P7.1** Integration test: copy/paste roundtrip (copy from A, paste to B)
+- [ ] **P7.2** Integration test: cut/paste roundtrip (verify source modified)
+- [ ] **P7.3** Integration test: cross-agent project scope sharing
+- [ ] **P7.4** Integration test: context injection appears in system prompt
+- [ ] **P7.5** Integration test: permission boundaries (sandboxed can't access project)
+- [ ] **P7.6** Integration test: persistence (project/system entries survive restart)
+- [ ] **P7.7** Integration test: search finds entries by content substring
+- [ ] **P7.8** Integration test: tags filter entries correctly (AND/OR logic)
+- [ ] **P7.9** Integration test: import/export roundtrip preserves entries
+
+### Phase 8: Live Testing
+
+- [ ] **P8.1** Live test with real NEXUS3 REPL (create test files, copy/paste flow)
+- [ ] **P8.2** Live test tags workflow (copy with tags, filter by tags)
+- [ ] **P8.3** Live test TTL (copy with ttl_seconds, verify expiry flagging - no auto-delete)
+- [ ] **P8.4** Live test session persistence (copy, /save, restart, --resume, verify)
+- [ ] **P8.5** Verify no regressions in existing skills
+
+### Phase 9: Documentation
+
+- [ ] **P9.1** Add all clipboard skills to `CLAUDE.md` Built-in Skills table
+- [ ] **P9.2** Add Clipboard section to `CLAUDE.md` describing the system
+- [ ] **P9.3** Add clipboard section to `nexus3/skill/README.md`
+- [ ] **P9.4** Create `nexus3/clipboard/README.md` with module documentation
+- [ ] **P9.5** Update `CLAUDE.md` Configuration section with clipboard config options (including TTL)
+- [ ] **P9.6** Document tags, search, import/export, and TTL features
+- [ ] **P9.7** Ensure all skill `description` properties are comprehensive with examples
 
 ---
 
@@ -2298,16 +3157,22 @@ Use this checklist to track implementation progress. Each item can be assigned t
 | Types & dataclasses | `nexus3/clipboard/types.py` |
 | SQLite storage | `nexus3/clipboard/storage.py` |
 | Manager (main logic) | `nexus3/clipboard/manager.py` |
-| Context injection | `nexus3/clipboard/injection.py` |
+| Context formatting | `nexus3/clipboard/injection.py` |
+| Per-turn injection | `nexus3/context/manager.py` (`build_messages()`) |
 | Public API exports | `nexus3/clipboard/__init__.py` |
 | Copy/cut skills | `nexus3/skill/builtin/clipboard_copy.py` |
 | Paste skill | `nexus3/skill/builtin/clipboard_paste.py` |
 | Management skills | `nexus3/skill/builtin/clipboard_manage.py` |
+| Search skill | `nexus3/skill/builtin/clipboard_search.py` |
+| Tag skill | `nexus3/skill/builtin/clipboard_tag.py` |
+| Export skill | `nexus3/skill/builtin/clipboard_export.py` |
+| Import skill | `nexus3/skill/builtin/clipboard_import.py` |
 | Skill registration | `nexus3/skill/builtin/registration.py` |
 | Service accessor | `nexus3/skill/services.py` |
-| Agent creation | `nexus3/rpc/pool.py` |
+| Agent creation + TTL expiry tracking | `nexus3/rpc/pool.py` |
+| Session persistence | `nexus3/session/persistence.py` |
 | Config schema | `nexus3/config/schema.py` |
-| Unit tests | `tests/unit/clipboard/` |
+| Unit tests | `tests/unit/clipboard/` + `tests/unit/skill/` |
 | Integration tests | `tests/integration/test_clipboard.py` |
 
 ---
@@ -2330,6 +3195,25 @@ Use this checklist to track implementation progress. Each item can be assigned t
 | modified_at | REAL NOT NULL | Unix timestamp |
 | created_by_agent | TEXT | Agent ID that created |
 | modified_by_agent | TEXT | Agent ID that modified |
+| expires_at | REAL | Unix timestamp for TTL expiry (NULL = permanent) |
+| ttl_seconds | INTEGER | TTL in seconds (informational, NULL = permanent) |
+
+**Tags table:**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER PRIMARY KEY | Auto-increment ID |
+| name | TEXT NOT NULL UNIQUE | Tag name (indexed) |
+| description | TEXT | Optional tag description |
+| created_at | REAL NOT NULL | Unix timestamp |
+
+**Clipboard-Tags junction table:**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| clipboard_id | INTEGER NOT NULL | FK to clipboard.id (CASCADE delete) |
+| tag_id | INTEGER NOT NULL | FK to tags.id (CASCADE delete) |
+| PRIMARY KEY | (clipboard_id, tag_id) | Composite primary key |
 
 **Metadata table:**
 
