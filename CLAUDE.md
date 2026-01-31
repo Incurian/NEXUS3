@@ -14,209 +14,6 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ---
 
-## Current Development
-
-### Ready to Merge
-
-| Branch | Status | Notes |
-|--------|--------|-------|
-| `feature/windows-native-compat` | ✅ COMPLETE | Includes shell compat + edit/patch skills + config loading fix |
-| `feature/mcp-improvements` | ✅ COMPLETE | Parent branch, merge to master |
-
-**Archived plans** (in `.archive/`, verified complete):
-- `EDIT-PATCH-PLAN.md` - edit_file batching, edit_lines, patch skill with unified diff support
-- `COMMAND-HELP.md` - Per-command help system (COMMAND_HELP dict in repl_commands.py)
-- `WINDOWS-SHELL-COMPATIBILITY.md` - Shell detection, ANSI adaptation, startup warnings
-- `WINDOWS-TROUBLESHOOTING.md` - User troubleshooting guide for Windows
-- `WINDOWS-NATIVE-COMPATIBILITY.md` - ESC key, process termination, line endings, BOM, etc.
-- `MCP-IMPLEMENTATION-GAPS.md` - Resources, Prompts, ping, Windows polish
-- `MCP-REMAINING-PHASES.md` - Detailed breakout of MCP work
-- `YOLO-SAFETY-PLAN.md` - YOLO warning banner, worker removal, RPC-to-YOLO block
-- `SANDBOXED-PARENT-SEND-PLAN.md` - Sandboxed agents can nexus_send to parent only
-- `CONFIG-LOADING-FIX-PLAN.md` - Unified JSON loading, Windows path handling, global/ancestor dedup
-- `ANTHROPIC-TOOL-RESULT-FIX-PLAN.md` - Fix cancelled tool batches leaving orphaned tool_use blocks
-- `CONCAT-FILES-PLAN.md` - concat_files skill for bundling source files with token estimation
-
-### Active Implementation: GitLab Tools
-
-**Goal:** Full GitLab integration covering project management, code review, and CI/CD.
-
-**Plan:** `docs/plans/GITLAB-TOOLS-PLAN.md` (detailed spec, 33k tokens)
-
-**Directory:** `nexus3/skill/vcs/gitlab/`
-
-**Security Model:**
-- Pre-configured instances only (no arbitrary server connections)
-- TRUSTED+ required (SANDBOXED agents cannot use GitLab tools)
-- Per-skill confirmation prompts on first use
-- Skills only registered if GitLab is configured
-
-**Skills to implement:**
-
-| Phase | Skills |
-|-------|--------|
-| P1: Foundation | `gitlab_repo`, `gitlab_issue`, `gitlab_mr`, `gitlab_label`, `gitlab_branch`, `gitlab_tag` |
-| P2: Project Mgmt | `gitlab_epic`, `gitlab_iteration`, `gitlab_milestone`, `gitlab_board`, `gitlab_time` |
-| P3: Code Review | `gitlab_approval`, `gitlab_draft`, `gitlab_discussion` |
-| P4: CI/CD | `gitlab_pipeline`, `gitlab_job`, `gitlab_artifact`, `gitlab_variable` |
-| P5: Config | `gitlab_deploy_key`, `gitlab_deploy_token`, `gitlab_feature_flag` |
-
-**Implementation Checklist:**
-
-Phase 1 - Foundation: ✅ COMPLETE (2026-01-30)
-- [x] P1.1-P1.9 Infrastructure (config, client, base class, registration)
-- [x] P1.10-P1.15 Core skills (repo, issue, mr, label, branch, tag)
-- [x] P1.16 `/gitlab` REPL command
-- [x] P1.20 Live tested against `incurian-group/Incurian-project`
-
-Phase 2 - Project Management: ✅ COMPLETE (2026-01-30)
-- [x] P2.1-P2.5 Implement 5 skills (epic, iteration, milestone, board, time)
-- [x] P2.6-P2.7 Add link actions to issue/epic (deferred - epic requires Premium)
-- [x] P2.8 Live tested against `incurian-group/Incurian-project`
-- Note: Epic/Iteration require GitLab Premium (403 on free accounts)
-
-Phase 3 - Code Review: ✅ COMPLETE (2026-01-30)
-- [x] P3.1 Add diff/commits/pipelines to `gitlab_mr`
-- [x] P3.2-P3.4 Implement 3 skills (approval, draft, discussion)
-- [x] P3.5 Live tested against `incurian-group/Incurian-project`
-
-Phase 4 - CI/CD: ✅ COMPLETE (2026-01-30)
-- [x] P4.1-P4.4 Implement 4 skills (pipeline, job, artifact, variable)
-- [x] P4.5 Live tested against `incurian-group/Incurian-project`
-- Note: Test project has no CI/CD configured, but skills execute correctly
-
-Phase 5 - Config & Premium: ✅ COMPLETE (2026-01-30)
-- [x] P5.1-P5.2 Add protection to branch/tag (protect, unprotect, list-protected)
-- [x] P5.3-P5.5 Implement 3 skills (deploy_key, deploy_token, feature_flag)
-
-Phase 6 - Integration: ✅ COMPLETE (2026-01-30)
-- [x] P6.1-P6.2 Permission/confirmation integration (allowances, permissions.py, session.py)
-- [x] P6.3-P6.4 E2E + live testing
-
-Phase 7 - Documentation: ✅ COMPLETE (2026-01-31)
-- [x] P7.1-P7.6 Update CLAUDE.md, skill READMEs, REPL docs
-
-**Deferred/Not Implemented:**
-- Epic link actions (P2.6-P2.7) - requires GitLab Premium
-
-**Completed (2026-01-31):**
-- `/gitlab skills` command - quick reference for all 21 skills with actions and examples
-- Unit tests - 167 tests covering config, client, permissions, and skill execution
-
-**Key Patterns:**
-- Base class: `GitLabSkill(VCSSkill)` with client management
-- Action-based dispatch: `action` parameter with match/case
-- Project resolution: Auto-detect from git remote or explicit path
-- Native async HTTP client (no python-gitlab dependency)
-
-**Live Testing Setup:**
-
-| Resource | Value |
-|----------|-------|
-| Token | `~/.gitlabtoken` (full `api` scope, expires 2026-03-01) |
-| User | `Incurian` (ID: 33331319) |
-| Group | `incurian-group` (ID: 123209181) |
-| Project | `incurian-group/Incurian-project` (ID: 78120084) |
-
-Test each skill against real GitLab after implementation, not just with mocks.
-
-**Curl + JSON Parsing Gotcha:**
-
-Piping curl directly to Python for JSON parsing is unreliable (race condition causes empty input). Use temp files instead:
-
-```bash
-# BAD - intermittent JSON parse errors
-TOKEN=$(cat ~/.gitlabtoken) && curl -s -H "PRIVATE-TOKEN: $TOKEN" \
-  "https://gitlab.com/api/v4/user" | .venv/bin/python -c "import sys,json; print(json.load(sys.stdin))"
-
-# GOOD - use temp file
-TOKEN=$(cat ~/.gitlabtoken) && curl -s -H "PRIVATE-TOKEN: $TOKEN" \
-  "https://gitlab.com/api/v4/user" > /tmp/resp.json && \
-  .venv/bin/python -c "import json; print(json.load(open('/tmp/resp.json')))"
-
-# ALSO GOOD - just print raw output for quick checks
-TOKEN=$(cat ~/.gitlabtoken) && curl -s -w "\nHTTP: %{http_code}" \
-  -H "PRIVATE-TOKEN: $TOKEN" "https://gitlab.com/api/v4/user"
-```
-
-**Reference:** `docs/references/GITLAB-REFERENCE.md` for API documentation
-
----
-
-### Active Implementation: Clipboard System
-
-**Goal:** Scoped clipboard for copy/paste across files and agents without LLM context overhead.
-
-**Plan:** `docs/plans/CLIPBOARD-PLAN-V2.md`
-
-**Directory:** `nexus3/clipboard/`
-
-**Core Benefit:** Moving 100 lines from file A to file B currently costs ~200 lines of context. With clipboard tools, it costs ~2 tool calls with minimal token overhead.
-
-**Architecture:**
-
-| Scope | Storage | Lifetime | Visibility |
-|-------|---------|----------|------------|
-| `agent` | In-memory dict | Session only | Single agent |
-| `project` | `.nexus3/clipboard.db` | Persistent | Agents in project |
-| `system` | `~/.nexus3/clipboard.db` | Persistent | All agents (permission-gated) |
-
-**Skills (12 total):**
-
-| Category | Skills |
-|----------|--------|
-| Core | `copy`, `cut`, `paste` |
-| Management | `clipboard_list`, `clipboard_get`, `clipboard_update`, `clipboard_delete`, `clipboard_clear` |
-| Advanced | `clipboard_search`, `clipboard_tag`, `clipboard_export`, `clipboard_import` |
-
-**Implementation Checklist:**
-
-Phase 1 - Infrastructure: ✅ COMPLETE
-- [x] P1.1-P1.13 types.py, storage.py, manager.py, injection.py, unit tests
-
-Phase 2 - Core Skills: ✅ COMPLETE
-- [x] P2.1-P2.6 copy, cut, paste skills with tags/ttl_seconds params
-
-Phase 3 - Management Skills: ✅ COMPLETE
-- [x] P3.1-P3.10 list/get/update/delete/clear/search/tag/export/import skills
-
-Phase 4-6 - Integration: ✅ COMPLETE
-- [x] P4.2-P4.4 Pool.py integration (ClipboardManager in _create_unlocked/_restore_unlocked)
-- [x] P5.1-P5.4 Context injection in ContextManager, ClipboardConfig in schema.py
-- [x] P5b.1-P5b.4 TTL tracking (check-only, no auto-delete)
-- [x] P6.1-P6.6 Session persistence (clipboard_agent_entries in SavedSession)
-
-Phase 7 - Integration Tests: ✅ COMPLETE
-- [x] P7.1-P7.9 35 integration tests in tests/integration/test_clipboard.py
-
-Phase 8 - Live Testing: ✅ COMPLETE
-- [x] P8.1-P8.5 Verified copy/paste, tags, TTL, persistence, no regressions
-
-Phase 9 - Documentation: 🔄 IN PROGRESS
-- [ ] P9.1-P9.7 Update CLAUDE.md, skill READMEs, clipboard module README
-
-**Key Files:**
-- `nexus3/clipboard/` - types.py, storage.py, manager.py, injection.py
-- `nexus3/skill/builtin/clipboard_*.py` - 6 skill files
-- `nexus3/config/schema.py` - ClipboardConfig
-- `tests/integration/test_clipboard.py` - 35 integration tests
-- `tests/unit/skill/test_clipboard_*.py` - 68 unit tests
-
-**Commits:**
-- `5ce37e7` - Phase 1 Infrastructure
-- `5c2a99f` - Phase 2 Core Skills
-- `c876191` - Phase 3 Management Skills
-- `c655d70` - Phase 4-5 Service Integration
-- `5779f28` - Phase 5b-6 TTL + Session Persistence
-- `9450581` - Phase 7 Integration Tests
-- `8d7e1d1` - Fix ClipboardConfig attribute names (found in P8 live testing)
-
-**Reference docs** (in `docs/references/`):
-- `GITHUB-REFERENCE.md` - GitHub API/CLI reference
-- `GITLAB-REFERENCE.md` - GitLab API/CLI reference
-
----
-
 ## Dogfooding: Use NEXUS Subagents
 
 **When working on this codebase, use NEXUS3 subagents for research and exploration tasks.** This is dogfooding - we use our own product.
@@ -275,7 +72,8 @@ nexus3/
 ├── provider/       # AsyncProvider protocol, multi-provider support, retry logic
 ├── context/        # ContextManager, ContextLoader, TokenCounter, compaction
 ├── session/        # Session coordinator, persistence, SessionManager, SQLite logging
-├── skill/          # Skill protocol, SkillRegistry, ServiceContainer, 27 builtin skills
+├── skill/          # Skill protocol, SkillRegistry, ServiceContainer, builtin skills
+├── clipboard/      # Scoped clipboard system (agent/project/system), SQLite storage
 ├── patch/          # Unified diff parsing, validation, and application
 ├── display/        # DisplayManager, StreamingDisplay, InlinePrinter, SummaryBar, theme
 ├── cli/            # Unified REPL, lobby, whisper, HTTP server, client commands
@@ -595,6 +393,18 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `nexus_status` | `agent_id`, `port`? | Get agent tokens + context |
 | `nexus_cancel` | `agent_id`, `request_id`, `port`? | Cancel in-progress request |
 | `nexus_shutdown` | `port`? | Shutdown the entire server |
+| `copy` | `path`, `key`, `scope`?, `start_line`?, `end_line`?, `description`?, `tags`?, `ttl_seconds`? | Copy file content to clipboard |
+| `cut` | `path`, `key`, `scope`?, `start_line`?, `end_line`?, `description`?, `tags`?, `ttl_seconds`? | Cut file content to clipboard (removes from source) |
+| `paste` | `key`, `path`, `scope`?, `mode`?, `line`?, `start_line`?, `end_line`?, `marker`? | Paste clipboard content to file |
+| `clipboard_list` | `scope`?, `tags`?, `any_tags`?, `verbose`? | List clipboard entries with optional tag filtering |
+| `clipboard_get` | `key`, `scope`? | Get full content of a clipboard entry |
+| `clipboard_update` | `key`, `scope`?, `new_key`?, `description`?, `content`?, `ttl_seconds`? | Update clipboard entry metadata or content |
+| `clipboard_delete` | `key`, `scope`? | Delete a clipboard entry |
+| `clipboard_clear` | `scope`?, `confirm`? | Clear all entries in a scope |
+| `clipboard_search` | `query`, `scope`?, `search_content`?, `search_keys`?, `search_descriptions`?, `tags`? | Search clipboard entries |
+| `clipboard_tag` | `action`, `key`?, `scope`?, `tag`?, `tags`?, `description`? | Manage clipboard tags (list/add/remove/create/delete) |
+| `clipboard_export` | `output_path`, `scope`?, `keys`?, `tags`? | Export clipboard entries to JSON file |
+| `clipboard_import` | `input_path`, `scope`?, `conflict`?, `dry_run`? | Import clipboard entries from JSON file |
 | `gitlab_repo` | `action`, `project`?, `instance`? | Repository operations (get, list, fork, search) |
 | `gitlab_issue` | `action`, `project`?, `iid`?, `title`?, ... | Issue CRUD (list, get, create, update, close, reopen, comment) |
 | `gitlab_mr` | `action`, `project`?, `iid`?, `source_branch`?, ... | Merge request operations (list, get, create, update, merge, close, diff, commits, pipelines) |
@@ -617,7 +427,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `gitlab_deploy_token` | `action`, `project` OR `group`, `token_id`?, `name`?, `scopes`?, ... | Deploy token management (list, get, create, delete) - token only shown on create |
 | `gitlab_feature_flag` | `action`, `project`, `name`?, `active`?, `strategies`?, ... | Feature flag management (list, get, create, update, delete, user-lists) [Premium] |
 
-*Note: `port` defaults to 8765. `preset` can be trusted/sandboxed (yolo is REPL-only). Skills mirror `nexus3 rpc` CLI commands. Destructive file tools remind agents to read files before modifying. GitLab skills require TRUSTED+ and configured GitLab instance. [Premium] skills require GitLab Premium subscription.*
+*Notes: `port` defaults to 8765. `preset` can be trusted/sandboxed (yolo is REPL-only). Clipboard `scope` can be agent/project/system (agent is session-only, project/system are persistent SQLite). GitLab skills require TRUSTED+ and configured GitLab instance. [Premium] skills require GitLab Premium subscription.*
 
 ---
 
@@ -1062,6 +872,27 @@ GitLab tools require pre-configured instances in `~/.nexus3/config.json` or `.ne
 - TRUSTED or YOLO level required (SANDBOXED blocked)
 - Read-only actions: No confirmation needed
 - Destructive actions: Confirmation in TRUSTED mode (stored per skill@instance)
+
+### Clipboard Configuration
+
+```json
+{
+  "clipboard": {
+    "enabled": true,
+    "inject_into_context": true,
+    "max_injected_entries": 10,
+    "show_source_in_injection": true,
+    "max_entry_bytes": 1048576,
+    "warn_entry_bytes": 102400,
+    "default_ttl_seconds": null
+  }
+}
+```
+
+**Scope permissions by preset:**
+- `yolo`: Full access to agent/project/system scopes
+- `trusted`: Read/write agent+project, read-only system
+- `sandboxed`: Agent scope only (in-memory, session-only)
 
 ### Server Config Example
 
@@ -1511,7 +1342,7 @@ These are documented limitations, not bugs:
 | Symlink detection | `is_symlink()` misses junctions/reparse points | Symlink attack assumptions weaker |
 | Permission bits | `S_IRWXG\|S_IRWXO` checks meaningless | ACL-based validation not implemented |
 
-**Test coverage**: 2853 tests including 756 security-specific tests.
+**Test coverage**: 3400+ tests including 770+ security-specific tests.
 
 ---
 
