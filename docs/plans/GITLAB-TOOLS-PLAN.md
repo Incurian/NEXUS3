@@ -3595,12 +3595,13 @@ Use this checklist to track implementation progress. Each item can be assigned t
 
 ### Phase 7: Documentation
 
-- [ ] **P7.1** Update `CLAUDE.md` Built-in Skills table with all GitLab skills
-- [ ] **P7.2** Update `CLAUDE.md` Configuration section with GitLab config example
-- [ ] **P7.3** Add GitLab section to `nexus3/skill/README.md`
-- [ ] **P7.4** Create `nexus3/skill/vcs/README.md` with module documentation
-- [ ] **P7.5** Document `/gitlab` command in REPL Commands Reference
-- [ ] **P7.6** Ensure all skill `description` properties are comprehensive
+- [ ] **P7.1** Update main `README.md` with GitLab feature overview and config example
+- [ ] **P7.2** Update `CLAUDE.md` Built-in Skills table with all GitLab skills (mostly done)
+- [ ] **P7.3** Update `CLAUDE.md` Configuration section with GitLab config example
+- [ ] **P7.4** Add GitLab section to `nexus3/skill/README.md`
+- [ ] **P7.5** Create `nexus3/skill/vcs/README.md` with module documentation
+- [ ] **P7.6** Document `/gitlab` command in REPL Commands Reference
+- [ ] **P7.7** Ensure all skill `description` properties are comprehensive
 
 ### Live Testing Notes
 
