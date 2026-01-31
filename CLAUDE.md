@@ -97,9 +97,11 @@ Phase 7 - Documentation: ✅ COMPLETE (2026-01-31)
 - [x] P7.1-P7.6 Update CLAUDE.md, skill READMEs, REPL docs
 
 **Deferred/Not Implemented:**
-- `/gitlab` REPL command (P1.16) - documented but not created
-- Unit tests for GitLab skills (P5.6) - live tested only
 - Epic link actions (P2.6-P2.7) - requires GitLab Premium
+
+**Completed (2026-01-31):**
+- `/gitlab skills` command - quick reference for all 21 skills with actions and examples
+- Unit tests - 167 tests covering config, client, permissions, and skill execution
 
 **Key Patterns:**
 - Base class: `GitLabSkill(VCSSkill)` with client management
