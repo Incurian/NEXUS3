@@ -1,6 +1,6 @@
 # nexus3.skill - NEXUS3 Skill (Tool) System
 
-**Updated: 2026-01-28**
+**Updated: 2026-01-31**
 
 The skill module provides the complete infrastructure for defining, registering, and executing skills (tools) that extend NEXUS3 agent capabilities. Skills are the fundamental unit of capability in NEXUS3 - they provide actions like file reading, command execution, agent management, and other operations the agent can perform.
 
@@ -75,6 +75,13 @@ nexus3/skill/
     ├── nexus_cancel.py   # Cancel agent request
     ├── nexus_shutdown.py # Shutdown server
     ├── patch.py          # Apply unified diffs (uses nexus3/patch module)
+    ├── clipboard_copy.py    # copy, cut skills
+    ├── clipboard_paste.py   # paste skill
+    ├── clipboard_manage.py  # clipboard_list, clipboard_get, clipboard_update, clipboard_delete, clipboard_clear
+    ├── clipboard_search.py  # clipboard_search skill
+    ├── clipboard_tag.py     # clipboard_tag skill
+    ├── clipboard_export.py  # clipboard_export skill
+    ├── clipboard_import.py  # clipboard_import skill
     ├── sleep.py          # Testing utility
     └── echo.py           # Testing utility
 ```
@@ -551,7 +558,7 @@ definitions = registry.get_definitions_for_permissions(agent_permissions)
 
 ## Built-in Skills
 
-NEXUS3 includes 27 built-in skills organized by category:
+NEXUS3 includes 40+ built-in skills organized by category:
 
 ### File Operations (Read-Only)
 
@@ -626,6 +633,35 @@ NEXUS3 includes 27 built-in skills organized by category:
 - GitLab configuration in `config.json` (see `vcs/config.py`)
 - TRUSTED+ permission level (SANDBOXED agents cannot use GitLab)
 - Pre-configured instances only (no arbitrary server connections)
+
+### Clipboard
+
+12 skills for clipboard operations. See `clipboard/README.md` for details.
+
+| Skill | Description | Key Parameters |
+|-------|-------------|----------------|
+| `copy` | Copy file content to clipboard | `path`, `key`, `scope?`, `start_line?`, `end_line?`, `tags?`, `ttl_seconds?` |
+| `cut` | Cut file content to clipboard (copy + delete) | `path`, `key`, `scope?`, `start_line?`, `end_line?`, `tags?` |
+| `paste` | Paste clipboard content to file | `key`, `path`, `scope?`, `mode?`, `line?`, `marker?` |
+| `clipboard_list` | List clipboard entries | `scope?`, `tags?`, `any_tags?`, `verbose?` |
+| `clipboard_get` | Get full content of entry | `key`, `scope?` |
+| `clipboard_update` | Update entry metadata/content | `key`, `scope?`, `new_key?`, `description?`, `content?` |
+| `clipboard_delete` | Delete clipboard entry | `key`, `scope?` |
+| `clipboard_clear` | Clear all entries in scope | `scope?`, `confirm?` |
+| `clipboard_search` | Search entries by content/key/description | `query`, `scope?`, `search_content?`, `tags?` |
+| `clipboard_tag` | Manage tags (list/add/remove/create/delete) | `action`, `key?`, `scope?`, `tag?`, `tags?` |
+| `clipboard_export` | Export entries to JSON file | `output_path`, `scope?`, `keys?`, `tags?` |
+| `clipboard_import` | Import entries from JSON file | `input_path`, `scope?`, `conflict?`, `dry_run?` |
+
+**Scopes:**
+- `agent`: In-memory, session-only (default, safest)
+- `project`: Persistent SQLite at `<cwd>/.nexus3/clipboard.db`
+- `system`: Global SQLite at `~/.nexus3/clipboard.db`
+
+**Permissions by preset:**
+- `yolo`: Full access to all scopes
+- `trusted`: Read/write agent+project, read-only system
+- `sandboxed`: Agent scope only
 
 **Key patterns:**
 - Base class: `GitLabSkill` in `vcs/gitlab/base.py`

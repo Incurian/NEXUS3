@@ -3132,21 +3132,21 @@ Note: TTL marks entries as expired but does NOT auto-delete. User-in-the-loop cl
 
 ### Phase 8: Live Testing
 
-- [ ] **P8.1** Live test with real NEXUS3 REPL (create test files, copy/paste flow)
-- [ ] **P8.2** Live test tags workflow (copy with tags, filter by tags)
-- [ ] **P8.3** Live test TTL (copy with ttl_seconds, verify expiry flagging - no auto-delete)
-- [ ] **P8.4** Live test session persistence (copy, /save, restart, --resume, verify)
-- [ ] **P8.5** Verify no regressions in existing skills
+- [x] **P8.1** Live test with real NEXUS3 REPL (create test files, copy/paste flow)
+- [x] **P8.2** Live test tags workflow (copy with tags, filter by tags)
+- [x] **P8.3** Live test TTL (copy with ttl_seconds, verify expiry flagging - no auto-delete)
+- [x] **P8.4** Live test session persistence (copy, /save, restart, --resume, verify)
+- [x] **P8.5** Verify no regressions in existing skills
 
 ### Phase 9: Documentation
 
-- [ ] **P9.1** Add all clipboard skills to `CLAUDE.md` Built-in Skills table
-- [ ] **P9.2** Add Clipboard section to `CLAUDE.md` describing the system
-- [ ] **P9.3** Add clipboard section to `nexus3/skill/README.md`
-- [ ] **P9.4** Create `nexus3/clipboard/README.md` with module documentation
-- [ ] **P9.5** Update `CLAUDE.md` Configuration section with clipboard config options (including TTL)
-- [ ] **P9.6** Document tags, search, import/export, and TTL features
-- [ ] **P9.7** Ensure all skill `description` properties are comprehensive with examples
+- [x] **P9.1** Add all clipboard skills to `CLAUDE.md` Built-in Skills table
+- [x] **P9.2** Add Clipboard section to `CLAUDE.md` describing the system
+- [x] **P9.3** Add clipboard section to `nexus3/skill/README.md`
+- [x] **P9.4** Create `nexus3/clipboard/README.md` with module documentation
+- [x] **P9.5** Update `CLAUDE.md` Configuration section with clipboard config options (including TTL)
+- [x] **P9.6** Document tags, search, import/export, and TTL features (in module README)
+- [x] **P9.7** Ensure all skill `description` properties are comprehensive with examples
 
 ---
 
