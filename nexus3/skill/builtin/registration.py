@@ -2,6 +2,19 @@
 
 from nexus3.skill.builtin.append_file import append_file_factory
 from nexus3.skill.builtin.bash import bash_safe_factory, shell_unsafe_factory
+from nexus3.skill.builtin.clipboard_copy import copy_factory, cut_factory
+from nexus3.skill.builtin.clipboard_export import clipboard_export_factory
+from nexus3.skill.builtin.clipboard_import import clipboard_import_factory
+from nexus3.skill.builtin.clipboard_manage import (
+    clipboard_clear_factory,
+    clipboard_delete_factory,
+    clipboard_get_factory,
+    clipboard_list_factory,
+    clipboard_update_factory,
+)
+from nexus3.skill.builtin.clipboard_paste import paste_skill_factory
+from nexus3.skill.builtin.clipboard_search import clipboard_search_factory
+from nexus3.skill.builtin.clipboard_tag import clipboard_tag_factory
 from nexus3.skill.builtin.concat_files import concat_files_factory
 from nexus3.skill.builtin.copy_file import copy_file_factory
 from nexus3.skill.builtin.edit_file import edit_file_factory
@@ -80,3 +93,17 @@ def register_builtin_skills(registry: SkillRegistry) -> None:
 
     # Utility
     registry.register("sleep", sleep_skill_factory)
+
+    # Clipboard skills
+    registry.register("copy", copy_factory)
+    registry.register("cut", cut_factory)
+    registry.register("paste", paste_skill_factory)
+    registry.register("clipboard_list", clipboard_list_factory)
+    registry.register("clipboard_get", clipboard_get_factory)
+    registry.register("clipboard_update", clipboard_update_factory)
+    registry.register("clipboard_delete", clipboard_delete_factory)
+    registry.register("clipboard_clear", clipboard_clear_factory)
+    registry.register("clipboard_search", clipboard_search_factory)
+    registry.register("clipboard_tag", clipboard_tag_factory)
+    registry.register("clipboard_export", clipboard_export_factory)
+    registry.register("clipboard_import", clipboard_import_factory)

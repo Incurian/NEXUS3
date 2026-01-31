@@ -1,9 +1,12 @@
 """Echo skill for testing the skill system."""
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import base_skill_factory
+
+if TYPE_CHECKING:
+    from nexus3.skill.services import ServiceContainer
 
 
 @base_skill_factory
@@ -12,6 +15,9 @@ class EchoSkill:
 
     Useful for testing the skill infrastructure without side effects.
     """
+
+    def __init__(self, services: "ServiceContainer | None" = None) -> None:
+        pass  # Echo doesn't need services
 
     @property
     def name(self) -> str:

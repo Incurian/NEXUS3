@@ -1,10 +1,13 @@
 """Sleep skill for testing execution modes and timeouts."""
 
 import asyncio
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import base_skill_factory
+
+if TYPE_CHECKING:
+    from nexus3.skill.services import ServiceContainer
 
 # Maximum allowed sleep duration (1 hour)
 MAX_SLEEP_SECONDS = 3600
@@ -13,6 +16,9 @@ MAX_SLEEP_SECONDS = 3600
 @base_skill_factory
 class SleepSkill:
     """Sleep for a specified duration. Useful for testing parallel execution."""
+
+    def __init__(self, services: "ServiceContainer | None" = None) -> None:
+        pass  # Sleep doesn't need services
 
     @property
     def name(self) -> str:

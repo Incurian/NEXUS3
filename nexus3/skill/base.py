@@ -259,7 +259,7 @@ def base_skill_factory(cls: type[_BS]) -> type[_BS]:
         The same class with a .factory attribute attached.
     """
     def factory(services: "ServiceContainer") -> _BS:
-        skill = cls()
+        skill = cls(services)
         _wrap_with_validation(skill)
         return skill
 
