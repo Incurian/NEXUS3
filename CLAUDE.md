@@ -88,7 +88,6 @@ Phase 4 - CI/CD: ✅ COMPLETE (2026-01-30)
 Phase 5 - Config & Premium: ✅ COMPLETE (2026-01-30)
 - [x] P5.1-P5.2 Add protection to branch/tag (protect, unprotect, list-protected)
 - [x] P5.3-P5.5 Implement 3 skills (deploy_key, deploy_token, feature_flag)
-- [ ] P5.6 Unit tests
 
 Phase 6 - Integration: ✅ COMPLETE (2026-01-30)
 - [x] P6.1-P6.2 Permission/confirmation integration (allowances, permissions.py, session.py)
@@ -96,6 +95,11 @@ Phase 6 - Integration: ✅ COMPLETE (2026-01-30)
 
 Phase 7 - Documentation: ✅ COMPLETE (2026-01-31)
 - [x] P7.1-P7.6 Update CLAUDE.md, skill READMEs, REPL docs
+
+**Deferred/Not Implemented:**
+- `/gitlab` REPL command (P1.16) - documented but not created
+- Unit tests for GitLab skills (P5.6) - live tested only
+- Epic link actions (P2.6-P2.7) - requires GitLab Premium
 
 **Key Patterns:**
 - Base class: `GitLabSkill(VCSSkill)` with client management
