@@ -260,12 +260,12 @@ class ContextManager:
         # Add clipboard context if enabled and manager is available
         if (
             self._clipboard_manager is not None
-            and self._clipboard_config.inject_context
+            and self._clipboard_config.inject_into_context
         ):
             clipboard_section = format_clipboard_context(
                 self._clipboard_manager,
-                agent_id=self._agent_id,
-                max_preview_chars=self._clipboard_config.preview_chars,
+                max_entries=self._clipboard_config.max_injected_entries,
+                show_source=self._clipboard_config.show_source_in_injection,
             )
             if clipboard_section:
                 prompt = f"{prompt}\n\n{clipboard_section}"
