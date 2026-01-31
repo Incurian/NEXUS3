@@ -1213,6 +1213,7 @@ nexus3 rpc create coordinator --preset trusted
 | HTTP error send | `http.py` has 9 similar `make_error_response()` + `send_http_response()` calls |
 | ToolResult file errors | 22 skill files with repeated error handlers |
 | Git double timeout | `subprocess.run(timeout)` + `asyncio.wait_for()` is redundant |
+| Confirmation menu duplication | `confirmation_ui.py` has 4 separate menu sections per tool type; refactor to table-driven |
 
 ### Planned Improvements
 
