@@ -143,18 +143,72 @@ TOKEN=$(cat ~/.gitlabtoken) && curl -s -w "\nHTTP: %{http_code}" \
 
 ---
 
-### On Deck
+### Active Implementation: Clipboard System
 
-Plans listed in recommended implementation order (in `docs/plans/`):
+**Goal:** Scoped clipboard for copy/paste across files and agents without LLM context overhead.
 
-| Priority | Plan | Description |
-|----------|------|-------------|
-| 1 | `CLIPBOARD-PLAN.md` | Scoped clipboard system for copy/paste across files and agents. **FIRST: Restore enhanced plan** (see below). |
+**Plan:** `docs/plans/CLIPBOARD-PLAN-V2.md` (validated 3x with explorer agents)
 
-**Clipboard Plan Restoration Required:**
-The plan was reverted to a simplified version. Before implementation, restore enhancements (TTL, tags, search, import/export, session persistence) and pattern fixes (async file I/O, try/except validation, PRAGMA foreign_keys, TOCTOU protection). Instructions:
-- `docs/plans/RESTORE-CLIPBOARD-PLAN.md` - What to restore
-- `docs/plans/clipboard-validation-report.md` - Validation findings with code
+**Directory:** `nexus3/clipboard/`
+
+**Core Benefit:** Moving 100 lines from file A to file B currently costs ~200 lines of context. With clipboard tools, it costs ~2 tool calls with minimal token overhead.
+
+**Architecture:**
+
+| Scope | Storage | Lifetime | Visibility |
+|-------|---------|----------|------------|
+| `agent` | In-memory dict | Session only | Single agent |
+| `project` | `.nexus3/clipboard.db` | Persistent | Agents in project |
+| `system` | `~/.nexus3/clipboard.db` | Persistent | All agents (permission-gated) |
+
+**Skills to implement:**
+
+| Phase | Skills |
+|-------|--------|
+| P2: Core | `copy`, `cut`, `paste` |
+| P3: Management | `clipboard_list`, `clipboard_get`, `clipboard_update`, `clipboard_delete`, `clipboard_clear`, `clipboard_search`, `clipboard_tag`, `clipboard_export`, `clipboard_import` |
+
+**Implementation Checklist:**
+
+Phase 1 - Infrastructure:
+- [ ] P1.1 Create `nexus3/clipboard/` directory
+- [ ] P1.2 Implement types.py (ClipboardEntry, ClipboardScope, ClipboardTag, ClipboardPermissions)
+- [ ] P1.3 Implement storage.py (SQLite with PRAGMA foreign_keys, TOCTOU protection)
+- [ ] P1.4-P1.5 Add tags/clipboard_tags tables, expires_at column
+- [ ] P1.6 Implement manager.py (ClipboardManager CRUD)
+- [ ] P1.7-P1.8 Add tag methods (add_tags, remove_tags) and TTL methods (count_expired, get_expired)
+- [ ] P1.9 Implement injection.py (format_clipboard_context)
+- [ ] P1.10 Implement __init__.py exports
+- [ ] P1.11-P1.13 Unit tests
+
+Phase 2 - Core Skills:
+- [ ] P2.1 Implement clipboard_copy.py (CopySkill, CutSkill with tags/ttl_seconds params)
+- [ ] P2.4 Implement clipboard_paste.py (PasteSkill with insertion modes)
+- [ ] P2.5-P2.6 Unit tests
+
+Phase 3 - Management Skills:
+- [ ] P3.1 Implement clipboard_manage.py (list/get/update/delete/clear)
+- [ ] P3.4-P3.7 Implement search, tag, export, import skills
+- [ ] P3.10 Register all skills in registration.py
+
+Phase 4-6 - Integration:
+- [ ] P4.2-P4.4 Pool.py integration (register ClipboardManager in _create_unlocked/_restore_unlocked)
+- [ ] P5.1-P5.4 Context injection in ContextManager.build_messages(), add ClipboardConfig
+- [ ] P5b.1-P5b.4 TTL tracking (check-only, no auto-delete)
+- [ ] P6.1-P6.6 Session persistence (clipboard_agent_entries in SavedSession)
+
+Phase 7-9 - Testing & Docs:
+- [ ] P7.1-P7.9 Integration tests
+- [ ] P8.1-P8.5 Live testing
+- [ ] P9.1-P9.7 Documentation
+
+**Key Patterns (validated):**
+- FileSkill with try/except (PathSecurityError, ValueError) for path validation
+- `asyncio.to_thread()` for file I/O
+- `SECURE_FILE_MODE` and `secure_mkdir()` from nexus3.core.secure_io
+- `PRAGMA foreign_keys = ON` for cascade deletes
+- ContextManager needs `agent_id` parameter for clipboard scoping
+- TTL is check-only (count_expired/get_expired) - no auto-delete
 
 **Plan templates** (in `docs/plans/examples/`):
 - `EXAMPLE-PLAN-SIMPLE.md` - Template for focused single-feature plans
