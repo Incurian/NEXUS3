@@ -86,6 +86,7 @@ class MockSavedSession:
     working_directory: str | None = None
     created_at: datetime = field(default_factory=datetime.now)
     model_alias: str | None = None
+    clipboard_agent_entries: list[dict[str, Any]] = field(default_factory=list)
 
 
 class MockSessionManager:
