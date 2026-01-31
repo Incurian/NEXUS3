@@ -42,10 +42,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from nexus3.clipboard import CLIPBOARD_PRESETS, ClipboardManager
 from nexus3.context import ContextConfig, ContextLoader, ContextManager, LoadedContext
 from nexus3.core.permissions import (
     AgentPermissions,
     PermissionDelta,
+    PermissionLevel,
     PermissionPreset,
     resolve_preset,
 )
@@ -488,19 +490,6 @@ class AgentPool:
         # Resolve model name/alias to full settings
         resolved_model = self._shared.config.resolve_model(effective_config.model)
 
-        # Create context manager with model's context window
-        context_config = ContextConfig(
-            max_tokens=resolved_model.context_window,
-        )
-        context = ContextManager(
-            config=context_config,
-            logger=logger,
-        )
-        context.set_system_prompt(system_prompt)
-
-        # Add session start timestamp as first message in history
-        context.add_session_start_message()
-
         # Create skill registry with services
         # Import here to avoid circular import (skills -> client -> rpc -> pool)
         from nexus3.skill.builtin import register_builtin_skills
@@ -565,6 +554,38 @@ class AgentPool:
         # Per-agent cwd for isolation (avoids global os.chdir)
         agent_cwd = effective_config.cwd or Path.cwd()
         services.register("cwd", agent_cwd)
+
+        # Create ClipboardManager based on permission level
+        permission_level = permissions.effective_policy.level
+        if permission_level == PermissionLevel.YOLO:
+            clipboard_perms = CLIPBOARD_PRESETS["yolo"]
+        elif permission_level == PermissionLevel.TRUSTED:
+            clipboard_perms = CLIPBOARD_PRESETS["trusted"]
+        else:  # SANDBOXED or unknown - fail safe
+            clipboard_perms = CLIPBOARD_PRESETS["sandboxed"]
+
+        clipboard_manager = ClipboardManager(
+            agent_id=effective_id,
+            cwd=agent_cwd,
+            permissions=clipboard_perms,
+        )
+        services.register("clipboard_manager", clipboard_manager)
+
+        # Create context manager with model's context window
+        context_config = ContextConfig(
+            max_tokens=resolved_model.context_window,
+        )
+        context = ContextManager(
+            config=context_config,
+            logger=logger,
+            agent_id=effective_id,
+            clipboard_manager=clipboard_manager,
+            clipboard_config=self._shared.config.clipboard,
+        )
+        context.set_system_prompt(system_prompt)
+
+        # Add session start timestamp as first message in history
+        context.add_session_start_message()
 
         # Register GitLab config for VCS skills
         gitlab_config = _convert_gitlab_config(self._shared.config)
@@ -808,21 +829,8 @@ class AgentPool:
         # Use system prompt from saved session
         system_prompt = saved.system_prompt
 
-        # Create context manager with saved model's context window (or default if not saved)
+        # Resolve model for context window
         resolved_model = self._shared.config.resolve_model(saved.model_alias)
-        context_config = ContextConfig(
-            max_tokens=resolved_model.context_window,
-        )
-        context = ContextManager(
-            config=context_config,
-            logger=logger,
-        )
-        context.set_system_prompt(system_prompt)
-
-        # Restore conversation history from saved session
-        messages = deserialize_messages(saved.messages)
-        for msg in messages:
-            context._messages.append(msg)
 
         # Create skill registry with services
         from nexus3.skill.builtin import register_builtin_skills
@@ -855,6 +863,40 @@ class AgentPool:
         # Per-agent cwd for isolation (restored from saved session)
         agent_cwd = Path(saved.working_directory) if saved.working_directory else Path.cwd()
         services.register("cwd", agent_cwd)
+
+        # Create ClipboardManager based on permission level
+        permission_level = permissions.effective_policy.level
+        if permission_level == PermissionLevel.YOLO:
+            clipboard_perms = CLIPBOARD_PRESETS["yolo"]
+        elif permission_level == PermissionLevel.TRUSTED:
+            clipboard_perms = CLIPBOARD_PRESETS["trusted"]
+        else:  # SANDBOXED or unknown - fail safe
+            clipboard_perms = CLIPBOARD_PRESETS["sandboxed"]
+
+        clipboard_manager = ClipboardManager(
+            agent_id=agent_id,
+            cwd=agent_cwd,
+            permissions=clipboard_perms,
+        )
+        services.register("clipboard_manager", clipboard_manager)
+
+        # Create context manager with saved model's context window
+        context_config = ContextConfig(
+            max_tokens=resolved_model.context_window,
+        )
+        context = ContextManager(
+            config=context_config,
+            logger=logger,
+            agent_id=agent_id,
+            clipboard_manager=clipboard_manager,
+            clipboard_config=self._shared.config.clipboard,
+        )
+        context.set_system_prompt(system_prompt)
+
+        # Restore conversation history from saved session
+        messages = deserialize_messages(saved.messages)
+        for msg in messages:
+            context._messages.append(msg)
 
         # Register GitLab config for VCS skills
         gitlab_config = _convert_gitlab_config(self._shared.config)
@@ -1048,6 +1090,11 @@ class AgentPool:
 
             # Unregister from log multiplexer
             self._log_multiplexer.unregister(agent_id)
+
+            # Clean up clipboard manager (closes DB connections)
+            clipboard_manager: ClipboardManager | None = agent.services.get("clipboard_manager")
+            if clipboard_manager:
+                clipboard_manager.close()
 
             # Clean up logger (closes DB connection, flushes files)
             agent.logger.close()

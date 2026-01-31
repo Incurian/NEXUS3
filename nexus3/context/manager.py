@@ -131,7 +131,11 @@ def inject_datetime_into_prompt(prompt: str, datetime_line: str) -> str:
         search_start = pos + 1
 
 
+from nexus3.clipboard import format_clipboard_context
+from nexus3.config.schema import ClipboardConfig
+
 if TYPE_CHECKING:
+    from nexus3.clipboard import ClipboardManager
     from nexus3.session.logging import SessionLogger
 
 
@@ -174,6 +178,9 @@ class ContextManager:
         config: ContextConfig | None = None,
         token_counter: TokenCounter | None = None,
         logger: "SessionLogger | None" = None,
+        agent_id: str | None = None,
+        clipboard_manager: "ClipboardManager | None" = None,
+        clipboard_config: ClipboardConfig | None = None,
     ) -> None:
         """Initialize context manager.
 
@@ -181,10 +188,16 @@ class ContextManager:
             config: Context configuration (uses defaults if None)
             token_counter: Token counter implementation (uses SimpleTokenCounter if None)
             logger: Optional session logger for context logging
+            agent_id: Agent ID for clipboard scoping
+            clipboard_manager: Optional clipboard manager for context injection
+            clipboard_config: Clipboard configuration (uses defaults if None)
         """
         self.config = config or ContextConfig()
         self._counter = token_counter or get_token_counter()
         self._logger = logger
+        self._agent_id = agent_id
+        self._clipboard_manager = clipboard_manager
+        self._clipboard_config = clipboard_config or ClipboardConfig()
 
         # Context state
         self._system_prompt: str = ""
@@ -226,6 +239,38 @@ class ContextManager:
     def system_prompt(self) -> str:
         """Get the current system prompt."""
         return self._system_prompt
+
+    def _build_system_prompt_for_api_call(self) -> str:
+        """Build the full system prompt with all dynamic injections.
+
+        This centralizes all system prompt modifications:
+        1. Inject current date/time at the Environment section
+        2. Inject clipboard context if enabled
+
+        Returns:
+            The fully constructed system prompt ready for API calls.
+        """
+        if not self._system_prompt:
+            return ""
+
+        # Start with datetime injection
+        datetime_line = get_current_datetime_str()
+        prompt = inject_datetime_into_prompt(self._system_prompt, datetime_line)
+
+        # Add clipboard context if enabled and manager is available
+        if (
+            self._clipboard_manager is not None
+            and self._clipboard_config.inject_context
+        ):
+            clipboard_section = format_clipboard_context(
+                self._clipboard_manager,
+                agent_id=self._agent_id,
+                max_preview_chars=self._clipboard_config.preview_chars,
+            )
+            if clipboard_section:
+                prompt = f"{prompt}\n\n{clipboard_section}"
+
+        return prompt
 
     @property
     def token_counter(self) -> TokenCounter:
@@ -338,8 +383,8 @@ class ContextManager:
     def build_messages(self) -> list[Message]:
         """Build message list for API call.
 
-        Includes system prompt (with dynamic date/time) and messages that fit
-        in context budget. Applies truncation if over budget.
+        Includes system prompt (with dynamic date/time and clipboard context)
+        and messages that fit in context budget. Applies truncation if over budget.
 
         The current date/time is injected fresh on every call to ensure the
         agent always has accurate temporal context.
@@ -349,15 +394,10 @@ class ContextManager:
         """
         result: list[Message] = []
 
-        # System prompt always first, with dynamic date/time injected
-        if self._system_prompt:
-            # Inject current date/time at the start of the Environment section
-            # or at the end of the prompt if no Environment section exists
-            datetime_line = get_current_datetime_str()
-            prompt_with_time = inject_datetime_into_prompt(
-                self._system_prompt, datetime_line
-            )
-            result.append(Message(role=Role.SYSTEM, content=prompt_with_time))
+        # System prompt always first, with all dynamic injections
+        prompt = self._build_system_prompt_for_api_call()
+        if prompt:
+            result.append(Message(role=Role.SYSTEM, content=prompt))
 
         # Get messages that fit (with truncation if needed)
         context_messages = self._get_context_messages()
@@ -384,15 +424,9 @@ class ContextManager:
             - available: Budget minus reserve tokens (what's usable for context)
             - remaining: Available minus total (how much space is left)
         """
-        # Count system prompt WITH injected datetime (matches what build_messages sends)
-        if self._system_prompt:
-            datetime_line = get_current_datetime_str()
-            prompt_with_time = inject_datetime_into_prompt(
-                self._system_prompt, datetime_line
-            )
-            system_tokens = self._counter.count(prompt_with_time)
-        else:
-            system_tokens = 0
+        # Count system prompt with all dynamic injections (matches build_messages)
+        prompt = self._build_system_prompt_for_api_call()
+        system_tokens = self._counter.count(prompt) if prompt else 0
 
         tools_tokens = self._count_tools_tokens()
         message_tokens = self._counter.count_messages(self._messages)
@@ -512,7 +546,8 @@ class ContextManager:
         Preserves tool call/result pairs as atomic units.
         """
         available = self.config.max_tokens - self.config.reserve_tokens
-        system_tokens = self._counter.count(self._system_prompt)
+        prompt = self._build_system_prompt_for_api_call()
+        system_tokens = self._counter.count(prompt) if prompt else 0
         tools_tokens = self._count_tools_tokens()
         budget_for_messages = available - system_tokens - tools_tokens
 
@@ -552,7 +587,8 @@ class ContextManager:
             return self._messages.copy()
 
         available = self.config.max_tokens - self.config.reserve_tokens
-        system_tokens = self._counter.count(self._system_prompt)
+        prompt = self._build_system_prompt_for_api_call()
+        system_tokens = self._counter.count(prompt) if prompt else 0
         tools_tokens = self._count_tools_tokens()
         budget_for_messages = available - system_tokens - tools_tokens
 

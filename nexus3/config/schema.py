@@ -270,6 +270,46 @@ class CompactionConfig(BaseModel):
     """Whether to redact secrets before summarization."""
 
 
+class ClipboardConfig(BaseModel):
+    """Configuration for clipboard system."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable clipboard tools",
+    )
+    inject_into_context: bool = Field(
+        default=True,
+        description="Auto-inject clipboard index into system prompt",
+    )
+    max_injected_entries: int = Field(
+        default=10,
+        ge=0,
+        le=50,
+        description="Maximum entries to show in context injection",
+    )
+    show_source_in_injection: bool = Field(
+        default=True,
+        description="Show source path/lines in context injection",
+    )
+    max_entry_bytes: int = Field(
+        default=1 * 1024 * 1024,  # 1 MB
+        ge=1024,
+        le=10 * 1024 * 1024,
+        description="Maximum size of a single clipboard entry",
+    )
+    warn_entry_bytes: int = Field(
+        default=100 * 1024,  # 100 KB
+        ge=1024,
+        description="Size threshold for warning on large entries",
+    )
+    default_ttl_seconds: int | None = Field(
+        default=None,
+        description="Default TTL for new entries (seconds). None = permanent.",
+    )
+
+
 class ContextConfig(BaseModel):
     """Configuration for context loading.
 
@@ -568,6 +608,7 @@ class Config(BaseModel):
     max_concurrent_tools: int = 10
     permissions: PermissionsConfig = PermissionsConfig()
     compaction: CompactionConfig = CompactionConfig()
+    clipboard: ClipboardConfig = ClipboardConfig()
     context: ContextConfig = ContextConfig()
     mcp_servers: list[MCPServerConfig] = []
     server: ServerConfig = ServerConfig()
