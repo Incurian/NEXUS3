@@ -1232,6 +1232,8 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 
 Each plan includes validated implementation details with exact line numbers and copy-paste ready code.
 
+**Before implementing any plan, review the OPEN QUESTIONS section at the top of each plan with the user.** These contain design decisions that need user input before proceeding.
+
 ### Known Bugs
 
 No known bugs at this time.
