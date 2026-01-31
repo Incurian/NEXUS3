@@ -128,7 +128,8 @@ class GitLabMRSkill(GitLabSkill):
         project_encoded = client._encode_path(project)
 
         # Filter out consumed kwargs to avoid passing them twice
-        filtered = {k: v for k, v in kwargs.items() if k not in ("action", "project", "instance")}
+        # Note: iid is filtered here because some methods receive it positionally
+        filtered = {k: v for k, v in kwargs.items() if k not in ("action", "project", "instance", "iid")}
 
         match action:
             case "list":

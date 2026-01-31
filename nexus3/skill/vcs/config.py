@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from nexus3.core.url_validator import validate_url
+from nexus3.core.url_validator import UrlSecurityError, validate_url
 
 
 class GitLabInstance(BaseModel):
@@ -26,7 +26,11 @@ class GitLabInstance(BaseModel):
         """Validate URL is well-formed and safe."""
         # Use existing SSRF protection
         # allow_localhost=True for local GitLab development instances
-        return validate_url(v, allow_localhost=True, allow_private=False)
+        # Convert UrlSecurityError to ValueError for Pydantic wrapping
+        try:
+            return validate_url(v, allow_localhost=True, allow_private=False)
+        except UrlSecurityError as e:
+            raise ValueError(str(e)) from e
 
     def get_token(self) -> str | None:
         """

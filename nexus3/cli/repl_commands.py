@@ -502,18 +502,21 @@ Examples:
   /mcp prompts filesystem                 # List prompts from filesystem server
   /mcp retry filesystem                   # Retry failed server""",
 
-    "gitlab": """/gitlab [test <name>]
+    "gitlab": """/gitlab [test <name>] [skills]
 
-Manage GitLab instances and test connections.
+Manage GitLab instances and view skill reference.
 
 Subcommands:
   /gitlab             List configured instances and authentication status
   /gitlab test [name] Test connection to instance (default instance if no name)
+  /gitlab skills      Show all GitLab skills with actions and examples
+  /gitlab help        Same as /gitlab skills
 
 Examples:
   /gitlab                           # List all configured instances
   /gitlab test                      # Test connection to default instance
   /gitlab test work                 # Test connection to "work" instance
+  /gitlab skills                    # Show GitLab skill reference
 
 Configuration:
   Add GitLab instances to config.json:
@@ -529,7 +532,8 @@ Configuration:
 
 Notes:
   - Tokens should be stored in environment variables (token_env), not directly
-  - Test verifies authentication and shows the authenticated user""",
+  - Test verifies authentication and shows the authenticated user
+  - GitLab skills require TRUSTED or YOLO permission level""",
 
     "init": """/init [--force|-f] [--global|-g]
 
@@ -2174,10 +2178,12 @@ async def cmd_gitlab(ctx: CommandContext, args: str | None = None) -> CommandOut
     if subcmd == "test":
         instance_name = parts[1] if len(parts) > 1 else None
         return await _gitlab_test_instance(config, instance_name)
+    elif subcmd in ("skills", "help"):
+        return _gitlab_skill_reference()
     else:
         return CommandOutput.error(
             f"Unknown GitLab subcommand: {subcmd}\n"
-            f"Usage: /gitlab [test <name>]"
+            f"Usage: /gitlab [test <name>] [skills]"
         )
 
 
@@ -2313,3 +2319,177 @@ async def _gitlab_test_instance(config: Any, instance_name: str | None) -> Comma
         return CommandOutput.error(
             f"Connection to '{effective_name}' failed: {e}"
         )
+
+
+def _gitlab_skill_reference() -> CommandOutput:
+    """Return GitLab skills reference with actions and examples."""
+    reference = """GitLab Skills Reference
+=======================
+
+All GitLab skills require TRUSTED or YOLO permission level.
+Project can often be auto-detected from git remote.
+
+PHASE 1: FOUNDATION
+--------------------
+
+gitlab_repo - Repository operations
+  Actions: get, list, fork, search
+  Examples:
+    gitlab_repo(action="get", project="my-org/my-repo")
+    gitlab_repo(action="list", owned=True, limit=10)
+    gitlab_repo(action="search", search="keyword")
+    gitlab_repo(action="fork", project="other/repo", namespace="my-org")
+
+gitlab_issue - Issue management
+  Actions: list, get, create, update, close, reopen, comment
+  Examples:
+    gitlab_issue(action="list", project="my-org/repo", state="opened")
+    gitlab_issue(action="get", project="my-org/repo", iid=42)
+    gitlab_issue(action="create", project="my-org/repo", title="Bug report", labels=["bug"])
+    gitlab_issue(action="comment", project="my-org/repo", iid=42, body="Fixed in MR !5")
+
+gitlab_mr - Merge request operations
+  Actions: list, get, create, update, merge, close, reopen, comment, diff, commits, pipelines
+  Examples:
+    gitlab_mr(action="list", project="my-org/repo", state="opened")
+    gitlab_mr(action="create", project="my-org/repo", source_branch="feature", target_branch="main", title="Add feature")
+    gitlab_mr(action="diff", project="my-org/repo", iid=10)
+    gitlab_mr(action="merge", project="my-org/repo", iid=10, squash=True)
+
+gitlab_label - Label management
+  Actions: list, get, create, update, delete
+  Examples:
+    gitlab_label(action="list", project="my-org/repo")
+    gitlab_label(action="create", project="my-org/repo", name="priority:high", color="#FF0000")
+
+gitlab_branch - Branch operations
+  Actions: list, get, create, delete, protect, unprotect, list-protected
+  Examples:
+    gitlab_branch(action="list", project="my-org/repo")
+    gitlab_branch(action="create", project="my-org/repo", name="feature-x", ref="main")
+    gitlab_branch(action="protect", project="my-org/repo", name="main", push_level="maintainer")
+
+gitlab_tag - Tag operations
+  Actions: list, get, create, delete, protect, unprotect, list-protected
+  Examples:
+    gitlab_tag(action="list", project="my-org/repo")
+    gitlab_tag(action="create", project="my-org/repo", name="v1.0.0", ref="main", message="Release 1.0")
+
+PHASE 2: PROJECT MANAGEMENT
+---------------------------
+
+gitlab_epic - Epic management (group-level, Premium)
+  Actions: list, get, create, update, close, reopen, add-issue, remove-issue, list-issues
+  Examples:
+    gitlab_epic(action="list", group="my-group")
+    gitlab_epic(action="create", group="my-group", title="Q1 Goals", start_date="2026-01-01")
+
+gitlab_iteration - Iteration/sprint management (group-level, Premium)
+  Actions: list, get, create, update, delete, list-cadences, create-cadence
+  Examples:
+    gitlab_iteration(action="list", group="my-group", state="current")
+    gitlab_iteration(action="create", group="my-group", title="Sprint 1", start_date="2026-01-01", due_date="2026-01-14")
+
+gitlab_milestone - Milestone operations (project or group)
+  Actions: list, get, create, update, close, issues, merge-requests
+  Examples:
+    gitlab_milestone(action="list", project="my-org/repo", state="active")
+    gitlab_milestone(action="create", project="my-org/repo", title="v2.0", due_date="2026-03-01")
+    gitlab_milestone(action="issues", project="my-org/repo", milestone_id=5)
+
+gitlab_board - Issue board management
+  Actions: list, get, create, update, delete, list-lists, create-list, update-list, delete-list
+  Examples:
+    gitlab_board(action="list", project="my-org/repo")
+    gitlab_board(action="list-lists", project="my-org/repo", board_id=1)
+
+gitlab_time - Time tracking on issues/MRs
+  Actions: estimate, reset-estimate, spend, reset-spent, stats
+  Examples:
+    gitlab_time(action="estimate", project="my-org/repo", iid=42, target_type="issue", duration="2d")
+    gitlab_time(action="spend", project="my-org/repo", iid=42, target_type="issue", duration="4h")
+    gitlab_time(action="stats", project="my-org/repo", iid=42, target_type="issue")
+
+PHASE 3: CODE REVIEW
+--------------------
+
+gitlab_approval - MR approval management
+  Actions: status, approve, unapprove, rules, create-rule, delete-rule
+  Examples:
+    gitlab_approval(action="status", project="my-org/repo", iid=10)
+    gitlab_approval(action="approve", project="my-org/repo", iid=10)
+    gitlab_approval(action="rules", project="my-org/repo")
+
+gitlab_draft - Draft notes for batch MR reviews
+  Actions: list, add, update, delete, publish
+  Examples:
+    gitlab_draft(action="list", project="my-org/repo", iid=10)
+    gitlab_draft(action="add", project="my-org/repo", iid=10, body="LGTM!")
+    gitlab_draft(action="add", project="my-org/repo", iid=10, body="Fix this", path="src/main.py", line=42)
+    gitlab_draft(action="publish", project="my-org/repo", iid=10)
+
+gitlab_discussion - Threaded discussions on MRs/issues
+  Actions: list, get, create, reply, resolve, unresolve
+  Examples:
+    gitlab_discussion(action="list", project="my-org/repo", iid=10, target_type="mr")
+    gitlab_discussion(action="create", project="my-org/repo", iid=10, target_type="mr", body="Question about this change")
+    gitlab_discussion(action="resolve", project="my-org/repo", iid=10, target_type="mr", discussion_id="abc123")
+
+PHASE 4: CI/CD
+--------------
+
+gitlab_pipeline - Pipeline operations
+  Actions: list, get, create, retry, cancel, delete, jobs, variables
+  Examples:
+    gitlab_pipeline(action="list", project="my-org/repo", status="failed")
+    gitlab_pipeline(action="create", project="my-org/repo", ref="main")
+    gitlab_pipeline(action="retry", project="my-org/repo", pipeline_id=12345)
+    gitlab_pipeline(action="jobs", project="my-org/repo", pipeline_id=12345)
+
+gitlab_job - Job operations
+  Actions: list, get, log, retry, cancel, play, erase
+  Examples:
+    gitlab_job(action="list", project="my-org/repo", scope="failed")
+    gitlab_job(action="log", project="my-org/repo", job_id=67890, tail=100)
+    gitlab_job(action="play", project="my-org/repo", job_id=67890)
+
+gitlab_artifact - Artifact management
+  Actions: download, download-file, browse, delete, keep, download-ref
+  Examples:
+    gitlab_artifact(action="browse", project="my-org/repo", job_id=67890)
+    gitlab_artifact(action="download", project="my-org/repo", job_id=67890, output_path="./artifacts.zip")
+    gitlab_artifact(action="download-ref", project="my-org/repo", ref="main", job_name="build", output_path="./build.zip")
+
+gitlab_variable - CI/CD variable management (project or group)
+  Actions: list, get, create, update, delete
+  Examples:
+    gitlab_variable(action="list", project="my-org/repo")
+    gitlab_variable(action="create", project="my-org/repo", key="API_KEY", value="secret", masked=True, protected=True)
+
+PHASE 5: CONFIGURATION
+----------------------
+
+gitlab_deploy_key - Deploy key management
+  Actions: list, get, create, update, delete, enable
+  Examples:
+    gitlab_deploy_key(action="list", project="my-org/repo")
+    gitlab_deploy_key(action="create", project="my-org/repo", title="CI Key", key="ssh-rsa AAA...", can_push=False)
+
+gitlab_deploy_token - Deploy token management (project or group)
+  Actions: list, get, create, delete
+  Examples:
+    gitlab_deploy_token(action="list", project="my-org/repo")
+    gitlab_deploy_token(action="create", project="my-org/repo", name="registry-token", scopes=["read_registry"])
+
+gitlab_feature_flag - Feature flag management (Premium)
+  Actions: list, get, create, update, delete, list-user-lists, create-user-list, update-user-list, delete-user-list
+  Examples:
+    gitlab_feature_flag(action="list", project="my-org/repo")
+    gitlab_feature_flag(action="create", project="my-org/repo", name="new_feature", active=False)
+    gitlab_feature_flag(action="update", project="my-org/repo", name="new_feature", active=True)
+
+---
+Note: Skills marked (Premium) require GitLab Premium subscription.
+Use /gitlab test to verify your GitLab connection."""
+
+    return CommandOutput.success(message=reference)
