@@ -1214,6 +1214,24 @@ nexus3 rpc create coordinator --preset trusted
 | ToolResult file errors | 22 skill files with repeated error handlers |
 | Git double timeout | `subprocess.run(timeout)` + `asyncio.wait_for()` is redundant |
 
+### Planned Improvements
+
+Implementation plans for UI/UX improvements, bug fixes, and features are in `docs/plans/`:
+
+| Plan | Description | Effort |
+|------|-------------|--------|
+| `STATUS-MESSAGE-FIX-PLAN.md` | Fix spinner showing "Running" after tool completes | 5 min |
+| `EDIT-FILE-ERROR-PLAN.md` | Fix "not found" error sanitization bug | 10 min |
+| `STATUS-BAR-PLAN.md` | Add agent/model/cwd to status bar | 15 min |
+| `YOLO-WARNING-PLAN.md` | Enhanced YOLO mode warning with Rich Panel | 20 min |
+| `TOOL-PREVIEW-PLAN.md` | Expand tool params from 70→140 chars, smart path truncation | 30 min |
+| `PERMISSIONS-PREVIEW-PLAN.md` | Auto-save long permissions output to file | 30 min |
+| `PROMPT-CACHING-PLAN.md` | Multi-provider prompt caching support | 2-3 hrs |
+| `SPLIT-CONTEXT-PLAN.md` | Split NEXUS.md into updatable defaults + user customization | 2-3 hrs |
+| `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | 2 weeks |
+
+Each plan includes validated implementation details with exact line numbers and copy-paste ready code.
+
 ### Known Bugs
 
 No known bugs at this time.
