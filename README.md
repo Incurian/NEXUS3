@@ -9,6 +9,7 @@ NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrat
 ## Table of Contents
 
 - [Key Features](#key-features)
+- [GitLab Integration](#gitlab-integration)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Provider Configuration](#provider-configuration)
@@ -35,6 +36,53 @@ NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrat
 - **Multi-Provider Support**: OpenRouter, Anthropic, OpenAI, Azure, Ollama, vLLM.
 - **Context Compaction**: LLM-powered summarization when context gets full.
 - **MCP Integration**: Connect external tools via Model Context Protocol.
+
+---
+
+## GitLab Integration
+
+Full GitLab integration with 21 skills covering issues, merge requests, CI/CD, and more.
+
+### Configuration
+
+Add GitLab configuration to your `config.json`:
+
+```json
+{
+  "gitlab": {
+    "instances": {
+      "default": {
+        "url": "https://gitlab.com",
+        "token_env": "GITLAB_TOKEN"
+      }
+    },
+    "default_instance": "default"
+  }
+}
+```
+
+Set your GitLab personal access token (requires `api` scope):
+```bash
+export GITLAB_TOKEN="glpat-..."
+```
+
+### Permission Requirements
+
+GitLab tools require **TRUSTED** or **YOLO** permission level. SANDBOXED agents cannot use GitLab tools (security restriction for external API access).
+
+### Available Skills
+
+| Category | Skills | Description |
+|----------|--------|-------------|
+| **Foundation** | `gitlab_repo`, `gitlab_issue`, `gitlab_mr`, `gitlab_label`, `gitlab_branch`, `gitlab_tag` | Core repository operations |
+| **Project Management** | `gitlab_epic`, `gitlab_iteration`, `gitlab_milestone`, `gitlab_board`, `gitlab_time` | Planning and tracking (some require GitLab Premium) |
+| **Code Review** | `gitlab_approval`, `gitlab_draft`, `gitlab_discussion` | MR reviews and discussions |
+| **CI/CD** | `gitlab_pipeline`, `gitlab_job`, `gitlab_artifact`, `gitlab_variable` | Pipeline and job management |
+| **Config** | `gitlab_deploy_key`, `gitlab_deploy_token`, `gitlab_feature_flag` | Deployment configuration |
+
+### REPL Command
+
+Use `/gitlab` for quick access to GitLab operations from the REPL.
 
 ---
 
@@ -1507,4 +1555,4 @@ MIT
 
 ---
 
-**Updated**: 2026-01-28
+**Updated**: 2026-01-31

@@ -610,6 +610,29 @@ NEXUS3 includes 27 built-in skills organized by category:
 | `sleep` | Pause execution (for testing) | `seconds`, `label?` |
 | `echo` | Echo input (testing) | `message` |
 
+### GitLab Integration
+
+21 skills for GitLab API integration located in `vcs/gitlab/`. See `vcs/README.md` for details.
+
+| Category | Skills |
+|----------|--------|
+| Foundation | `gitlab_repo`, `gitlab_issue`, `gitlab_mr`, `gitlab_label`, `gitlab_branch`, `gitlab_tag` |
+| Project Management | `gitlab_epic`, `gitlab_iteration`, `gitlab_milestone`, `gitlab_board`, `gitlab_time` |
+| Code Review | `gitlab_approval`, `gitlab_draft`, `gitlab_discussion` |
+| CI/CD | `gitlab_pipeline`, `gitlab_job`, `gitlab_artifact`, `gitlab_variable` |
+| Config | `gitlab_deploy_key`, `gitlab_deploy_token`, `gitlab_feature_flag` |
+
+**Requirements:**
+- GitLab configuration in `config.json` (see `vcs/config.py`)
+- TRUSTED+ permission level (SANDBOXED agents cannot use GitLab)
+- Pre-configured instances only (no arbitrary server connections)
+
+**Key patterns:**
+- Base class: `GitLabSkill` in `vcs/gitlab/base.py`
+- Native async HTTP client via httpx (no python-gitlab dependency)
+- Action-based dispatch: `action` parameter with match/case
+- Project auto-detection from git remote
+
 ### Registration
 
 ```python

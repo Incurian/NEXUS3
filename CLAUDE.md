@@ -466,6 +466,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `/permissions --list-tools` | List tool enable/disable status |
 | `/prompt [file]` | Show or set system prompt |
 | `/compact` | Force context compaction/summarization |
+| `/gitlab` | Quick reference for GitLab skill actions and examples |
 
 ### MCP (External Tools)
 
@@ -978,6 +979,38 @@ NEXUS3 supports multiple LLM providers via the `provider` config:
 ```
 
 See `nexus3/provider/README.md` for full documentation and adding new providers.
+
+### GitLab Configuration
+
+GitLab tools require pre-configured instances in `~/.nexus3/config.json` or `.nexus3/config.json`:
+
+```json
+{
+  "gitlab": {
+    "instances": {
+      "default": {
+        "url": "https://gitlab.com",
+        "token_env": "GITLAB_TOKEN"
+      },
+      "work": {
+        "url": "https://gitlab.mycompany.com",
+        "token_env": "GITLAB_WORK_TOKEN"
+      }
+    },
+    "default_instance": "default"
+  }
+}
+```
+
+**Token setup:**
+- Create a GitLab Personal Access Token with `api` scope
+- Store in environment variable (e.g., `GITLAB_TOKEN`)
+- Reference via `token_env` in config (recommended) or `token` field directly
+
+**Permission requirements:**
+- TRUSTED or YOLO level required (SANDBOXED blocked)
+- Read-only actions: No confirmation needed
+- Destructive actions: Confirmation in TRUSTED mode (stored per skill@instance)
 
 ### Server Config Example
 
