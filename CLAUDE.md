@@ -147,7 +147,7 @@ TOKEN=$(cat ~/.gitlabtoken) && curl -s -w "\nHTTP: %{http_code}" \
 
 **Goal:** Scoped clipboard for copy/paste across files and agents without LLM context overhead.
 
-**Plan:** `docs/plans/CLIPBOARD-PLAN-V2.md` (validated 3x with explorer agents)
+**Plan:** `docs/plans/CLIPBOARD-PLAN-V2.md`
 
 **Directory:** `nexus3/clipboard/`
 
@@ -161,68 +161,59 @@ TOKEN=$(cat ~/.gitlabtoken) && curl -s -w "\nHTTP: %{http_code}" \
 | `project` | `.nexus3/clipboard.db` | Persistent | Agents in project |
 | `system` | `~/.nexus3/clipboard.db` | Persistent | All agents (permission-gated) |
 
-**Skills to implement:**
+**Skills (12 total):**
 
-| Phase | Skills |
-|-------|--------|
-| P2: Core | `copy`, `cut`, `paste` |
-| P3: Management | `clipboard_list`, `clipboard_get`, `clipboard_update`, `clipboard_delete`, `clipboard_clear`, `clipboard_search`, `clipboard_tag`, `clipboard_export`, `clipboard_import` |
+| Category | Skills |
+|----------|--------|
+| Core | `copy`, `cut`, `paste` |
+| Management | `clipboard_list`, `clipboard_get`, `clipboard_update`, `clipboard_delete`, `clipboard_clear` |
+| Advanced | `clipboard_search`, `clipboard_tag`, `clipboard_export`, `clipboard_import` |
 
 **Implementation Checklist:**
 
-Phase 1 - Infrastructure:
-- [ ] P1.1 Create `nexus3/clipboard/` directory
-- [ ] P1.2 Implement types.py (ClipboardEntry, ClipboardScope, ClipboardTag, ClipboardPermissions)
-- [ ] P1.3 Implement storage.py (SQLite with PRAGMA foreign_keys, TOCTOU protection)
-- [ ] P1.4-P1.5 Add tags/clipboard_tags tables, expires_at column
-- [ ] P1.6 Implement manager.py (ClipboardManager CRUD)
-- [ ] P1.7-P1.8 Add tag methods (add_tags, remove_tags) and TTL methods (count_expired, get_expired)
-- [ ] P1.9 Implement injection.py (format_clipboard_context)
-- [ ] P1.10 Implement __init__.py exports
-- [ ] P1.11-P1.13 Unit tests
+Phase 1 - Infrastructure: ✅ COMPLETE
+- [x] P1.1-P1.13 types.py, storage.py, manager.py, injection.py, unit tests
 
-Phase 2 - Core Skills:
-- [ ] P2.1 Implement clipboard_copy.py (CopySkill, CutSkill with tags/ttl_seconds params)
-- [ ] P2.4 Implement clipboard_paste.py (PasteSkill with insertion modes)
-- [ ] P2.5-P2.6 Unit tests
+Phase 2 - Core Skills: ✅ COMPLETE
+- [x] P2.1-P2.6 copy, cut, paste skills with tags/ttl_seconds params
 
-Phase 3 - Management Skills:
-- [ ] P3.1 Implement clipboard_manage.py (list/get/update/delete/clear)
-- [ ] P3.4-P3.7 Implement search, tag, export, import skills
-- [ ] P3.10 Register all skills in registration.py
+Phase 3 - Management Skills: ✅ COMPLETE
+- [x] P3.1-P3.10 list/get/update/delete/clear/search/tag/export/import skills
 
-Phase 4-6 - Integration:
-- [ ] P4.2-P4.4 Pool.py integration (register ClipboardManager in _create_unlocked/_restore_unlocked)
-- [ ] P5.1-P5.4 Context injection in ContextManager.build_messages(), add ClipboardConfig
-- [ ] P5b.1-P5b.4 TTL tracking (check-only, no auto-delete)
-- [ ] P6.1-P6.6 Session persistence (clipboard_agent_entries in SavedSession)
+Phase 4-6 - Integration: ✅ COMPLETE
+- [x] P4.2-P4.4 Pool.py integration (ClipboardManager in _create_unlocked/_restore_unlocked)
+- [x] P5.1-P5.4 Context injection in ContextManager, ClipboardConfig in schema.py
+- [x] P5b.1-P5b.4 TTL tracking (check-only, no auto-delete)
+- [x] P6.1-P6.6 Session persistence (clipboard_agent_entries in SavedSession)
 
-Phase 7-9 - Testing & Docs:
-- [ ] P7.1-P7.9 Integration tests
-- [ ] P8.1-P8.5 Live testing
-- [ ] P9.1-P9.7 Documentation
+Phase 7 - Integration Tests: ✅ COMPLETE
+- [x] P7.1-P7.9 35 integration tests in tests/integration/test_clipboard.py
 
-**Key Patterns (validated):**
-- FileSkill with try/except (PathSecurityError, ValueError) for path validation
-- `asyncio.to_thread()` for file I/O
-- `SECURE_FILE_MODE` and `secure_mkdir()` from nexus3.core.secure_io
-- `PRAGMA foreign_keys = ON` for cascade deletes
-- ContextManager needs `agent_id` parameter for clipboard scoping
-- TTL is check-only (count_expired/get_expired) - no auto-delete
+Phase 8 - Live Testing: ✅ COMPLETE
+- [x] P8.1-P8.5 Verified copy/paste, tags, TTL, persistence, no regressions
 
-**Plan templates** (in `docs/plans/examples/`):
-- `EXAMPLE-PLAN-SIMPLE.md` - Template for focused single-feature plans
-- `EXAMPLE-PLAN-COMPLEX.md` - Comprehensive example for large multi-phase features
+Phase 9 - Documentation: 🔄 IN PROGRESS
+- [ ] P9.1-P9.7 Update CLAUDE.md, skill READMEs, clipboard module README
 
-**Pending testing** (in `docs/testing/`):
-- `WINDOWS-LIVE-TESTING-GUIDE.md` - Manual testing matrix for Windows shell environments
-- `YOLO-SAFETY-LIVE-TESTING.md` - YOLO warning, RPC blocking, worker removal verification
-- `SANDBOXED-PARENT-SEND-LIVE-TESTING.md` - Sandboxed child-to-parent messaging verification
+**Key Files:**
+- `nexus3/clipboard/` - types.py, storage.py, manager.py, injection.py
+- `nexus3/skill/builtin/clipboard_*.py` - 6 skill files
+- `nexus3/config/schema.py` - ClipboardConfig
+- `tests/integration/test_clipboard.py` - 35 integration tests
+- `tests/unit/skill/test_clipboard_*.py` - 68 unit tests
+
+**Commits:**
+- `5ce37e7` - Phase 1 Infrastructure
+- `5c2a99f` - Phase 2 Core Skills
+- `c876191` - Phase 3 Management Skills
+- `c655d70` - Phase 4-5 Service Integration
+- `5779f28` - Phase 5b-6 TTL + Session Persistence
+- `9450581` - Phase 7 Integration Tests
+- `8d7e1d1` - Fix ClipboardConfig attribute names (found in P8 live testing)
 
 **Reference docs** (in `docs/references/`):
 - `GITHUB-REFERENCE.md` - GitHub API/CLI reference
 - `GITLAB-REFERENCE.md` - GitLab API/CLI reference
-- `concat_files.py`, `concat_files.sh` - Standalone file concatenation scripts
 
 ---
 
