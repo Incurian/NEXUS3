@@ -900,4 +900,4 @@ from nexus3.rpc.auth import InsecureTokenFileError, check_token_file_permissions
 
 ---
 
-Updated: 2026-01-28 from comprehensive source analysis.
+Updated: 2026-02-01

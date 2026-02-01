@@ -1,5 +1,9 @@
 # nexus3/mcp
 
+MCP (Model Context Protocol) client implementation for NEXUS3 agents.
+
+**Updated: 2026-02-01**
+
 ## Overview
 
 The `nexus3.mcp` module provides a secure, client-side implementation of the **Model Context Protocol (MCP)** for NEXUS3 agents. MCP is a standardized protocol for connecting AI agents to external tool providers, enabling agents to discover and invoke tools, resources, and prompts from external servers.
@@ -9,10 +13,11 @@ The `nexus3.mcp` module provides a secure, client-side implementation of the **M
 ### Key Capabilities
 
 - **Multi-transport support:** Connect to MCP servers via stdio (subprocess) or HTTP
-- **Full MCP feature support:** Tools, Resources, and Prompts
+- **Full MCP feature support:** Tools, Resources, and Prompts with cursor-based pagination
 - **Skill integration:** MCP tools are seamlessly exposed as NEXUS3 skills with prefixed names
 - **Multi-server registry:** Manage connections to multiple MCP servers with visibility controls
 - **Security hardening:** Environment sanitization, response validation, permission enforcement
+- **Cross-platform support:** Windows-specific process handling (CREATE_NO_WINDOW, PATHEXT resolution)
 
 ---
 
@@ -103,6 +108,24 @@ from nexus3.mcp import (
     MCPSkillAdapter,        # Wraps MCPTool as NEXUS3 Skill
 )
 ```
+
+---
+
+## Constants
+
+Important constants defined in the module:
+
+| Constant | Value | Location | Description |
+|----------|-------|----------|-------------|
+| `PROTOCOL_VERSION` | `"2025-11-25"` | `protocol.py` | MCP specification version |
+| `MAX_MCP_OUTPUT_SIZE` | 10 MB | `protocol.py` | Max tool output size before truncation |
+| `MAX_STDIO_LINE_LENGTH` | 10 MB | `transport.py` | Max line length for stdio transport |
+| `MAX_NOTIFICATIONS_TO_DISCARD` | 100 | `client.py` | Max notifications to skip waiting for response |
+| `MAX_SESSION_ID_LENGTH` | 256 | `transport.py` | Max HTTP session ID length |
+| `DEFAULT_MAX_RETRIES` | 3 | `transport.py` | HTTP retry attempts |
+| `DEFAULT_RETRY_BACKOFF` | 1.0 | `transport.py` | HTTP retry base delay (seconds) |
+| `RETRYABLE_STATUS_CODES` | 429, 5xx | `transport.py` | HTTP status codes to retry |
+| `SAFE_ENV_KEYS` | see below | `transport.py` | Env vars safe to pass to subprocesses |
 
 ---
 
@@ -198,6 +221,14 @@ transport = StdioTransport(
 - **Explicit opt-in:** Use `env` for explicit values or `env_passthrough` for host variables
 - **Line length limit:** 10MB max to prevent memory exhaustion
 
+**Cross-Platform Features:**
+- **Windows command resolution:** Uses `shutil.which()` to resolve `.cmd`, `.bat`, `.exe` extensions via PATHEXT
+- **Windows command aliases:** Translates Unix commands (e.g., `python3` to `python`, `pip3` to `pip`)
+- **Process group handling:** Uses `start_new_session` on Unix, `CREATE_NEW_PROCESS_GROUP` on Windows
+- **Window suppression:** Uses `CREATE_NO_WINDOW` on Windows to prevent cmd.exe window flashing
+- **CRLF handling:** Strips both LF and CRLF line endings when parsing responses
+- **Read buffering:** Properly buffers data read past newlines for fast response sequences
+
 **Safe environment variables passed by default:**
 ```
 # Cross-platform
@@ -206,6 +237,10 @@ PATH, HOME, USER, LOGNAME, LANG, LC_ALL, LC_CTYPE, TERM, SHELL, TMPDIR, TMP, TEM
 # Windows-specific
 USERPROFILE, APPDATA, LOCALAPPDATA, PATHEXT, SYSTEMROOT, COMSPEC
 ```
+
+**Properties:**
+- `is_connected` - Whether subprocess is running (returncode is None)
+- `stderr_lines` - Last 20 lines of stderr for error context
 
 #### HTTPTransport
 
@@ -227,7 +262,19 @@ transport = HTTPTransport(
 - **SSRF protection:** URL validation (allows localhost for local MCP servers)
 - **SSRF redirect prevention:** `follow_redirects=False` prevents redirect-based attacks
 - **Session management:** Captures and sends `mcp-session-id` header
-- **Retry logic:** Exponential backoff for 429 and 5xx responses
+- **Session ID validation:** Alphanumeric + dash/underscore only, max 256 chars
+- **Retry logic:** Exponential backoff with jitter for 429 and 5xx responses
+- **MCP headers:** Sends `MCP-Protocol-Version` and `Accept` headers per spec
+- **Direct request method:** `request()` method for atomic request/response (no shared state)
+
+**Properties:**
+- `is_connected` - Whether HTTP client is open
+- `session_id` - Current MCP session ID (if set by server)
+
+**Retry Configuration:**
+- `max_retries`: Maximum retry attempts (default 3)
+- `retry_backoff`: Base delay in seconds (default 1.0)
+- Retryable status codes: 429, 500, 502, 503, 504
 
 ### Protocol Types (`protocol.py`)
 
@@ -240,6 +287,8 @@ class MCPTool:
     input_schema: dict[str, Any]        # JSON Schema for parameters
     title: str | None                   # Display title (optional)
     output_schema: dict[str, Any] | None  # Output validation schema (optional)
+    icons: list[dict[str, Any]] | None  # Icon identifiers for UI display (optional)
+    annotations: dict[str, Any] | None  # Server-specific metadata (optional)
 ```
 
 **MCPToolResult:** Result from tool invocation
@@ -248,6 +297,7 @@ class MCPTool:
 class MCPToolResult:
     content: list[dict[str, Any]]       # Content items (text, images, etc.)
     is_error: bool                      # Whether result is an error
+    structured_content: dict[str, Any] | None  # Structured content (optional)
 
     def to_text(self) -> str: ...       # Extract text content (with size limit)
 ```
@@ -269,6 +319,7 @@ class MCPResource:
     name: str                           # Human-readable name
     description: str | None             # Optional description
     mime_type: str                      # Content MIME type
+    annotations: dict[str, Any] | None  # Server-specific metadata (optional)
 ```
 
 **MCPResourceContent:** Content from resources/read
@@ -290,6 +341,25 @@ class MCPPrompt:
     arguments: list[MCPPromptArgument]  # Argument definitions
 ```
 
+**MCPPromptArgument:** Argument definition for prompts
+```python
+@dataclass
+class MCPPromptArgument:
+    name: str                           # Argument name
+    description: str | None             # Optional description
+    required: bool                      # Whether required (default True)
+```
+
+**MCPPromptMessage:** Message in a prompt result
+```python
+@dataclass
+class MCPPromptMessage:
+    role: str                           # Message role (user, assistant, system)
+    content: dict[str, Any] | str       # Message content
+
+    def get_text(self) -> str: ...      # Extract text from content
+```
+
 **MCPPromptResult:** Result from prompts/get
 ```python
 @dataclass
@@ -297,6 +367,9 @@ class MCPPromptResult:
     description: str                    # Description of this instance
     messages: list[MCPPromptMessage]    # Messages to send
 ```
+
+**Internal types (not exported):**
+- `MCPClientInfo`: Client identification sent during initialization (defaults to `nexus3/1.0.0`)
 
 ### MCPServerRegistry (`registry.py`)
 
@@ -336,8 +409,9 @@ await registry.close_all()
 | `disconnect(name)` | Disconnect from server |
 | `get(name, agent_id)` | Get connected server |
 | `list_servers(agent_id)` | List server names |
-| `get_all_skills(agent_id)` | Get all skill adapters |
-| `find_skill(tool_name)` | Find skill by name |
+| `get_all_skills(agent_id)` | Get all skill adapters (with lazy reconnection) |
+| `find_skill(tool_name)` | Find skill by name, returns `(skill, server_name)` |
+| `get_server_for_skill(skill_name)` | Find server providing a skill |
 | `check_connections()` | Remove dead connections |
 | `retry_tools(name)` | Retry tool listing |
 | `close_all()` | Disconnect all servers |
@@ -349,6 +423,28 @@ await registry.close_all()
 **Graceful Degradation:**
 - Connections succeed even if `list_tools()` fails (skills will be empty)
 - Set `fail_if_no_tools=True` in config to require tools
+
+**Lazy Reconnection:**
+- `get_all_skills()` automatically reconnects dead stdio connections
+- HTTP connections are checked on next request
+
+### ConnectedServer
+
+Active connection wrapper with reconnection support:
+
+```python
+@dataclass
+class ConnectedServer:
+    config: MCPServerConfig         # Server configuration
+    client: MCPClient               # Active MCP client
+    skills: list[MCPSkillAdapter]   # Skill adapters for this server's tools
+    owner_agent_id: str             # Agent that created this connection
+    shared: bool                    # Whether visible to all agents
+
+    def is_visible_to(agent_id: str) -> bool  # Check visibility
+    def is_alive() -> bool                    # Check if connection alive
+    async def reconnect(timeout: float)       # Reconnect and refresh tools
+```
 
 ### MCPSkillAdapter (`skill_adapter.py`)
 
@@ -369,6 +465,12 @@ result = await adapter.execute(owner="octocat", repo="hello-world")
 **Naming Convention:**
 - MCP tools are prefixed with `mcp_{server_name}_` to avoid collisions
 - Names are sanitized via `build_mcp_skill_name()` from `nexus3.core.identifiers`
+
+**Features:**
+- Validates parameters against tool's input_schema before calling server
+- Sanitizes MCP output via `sanitize_for_display()` for terminal safety
+- Converts `MCPToolResult` to NEXUS3 `ToolResult` with error handling
+- Provides formatted error messages for timeout and transport errors
 
 ### Permission Checks (`permissions.py`)
 
@@ -427,6 +529,17 @@ Each formatter provides:
 - Server and config context
 - Likely causes
 - Actionable troubleshooting steps
+- Platform-specific hints (Windows PATHEXT, etc.)
+
+**Formatters:**
+
+| Function | When Used |
+|----------|-----------|
+| `format_command_not_found` | Executable not found (FileNotFoundError) |
+| `format_server_crash` | Server exited unexpectedly (with exit code) |
+| `format_json_error` | Invalid JSON response from server |
+| `format_timeout_error` | Connection or operation timeout |
+| `format_config_validation_error` | Invalid mcp.json configuration |
 
 ---
 
@@ -504,8 +617,11 @@ Both formats are supported. The `mcpServers` key is an alias for `servers`.
 |---------|-------------|
 | `/mcp` | List configured and connected servers |
 | `/mcp connect <name>` | Connect to a configured server |
+| `/mcp connect <name> --allow-all --shared` | Connect skipping prompts, share with all agents |
 | `/mcp disconnect <name>` | Disconnect from a server |
 | `/mcp tools [server]` | List available MCP tools |
+| `/mcp resources [server]` | List available MCP resources |
+| `/mcp prompts [server]` | List available MCP prompts |
 | `/mcp retry <name>` | Retry tool listing from server |
 
 ---
@@ -594,6 +710,7 @@ MCP_TOOL_COUNT=10 MCP_PAGE_SIZE=3 python -m nexus3.mcp.test_server.paginating_se
 | `nexus3.core.validation` | `validate_tool_arguments()` |
 | `nexus3.core.url_validator` | `validate_url()`, `UrlSecurityError` |
 | `nexus3.core.text_safety` | `sanitize_for_display()` |
+| `nexus3.core.process` | `terminate_process_tree()` |
 | `nexus3.skill.base` | `BaseSkill` |
 
 ### External Dependencies
@@ -630,4 +747,4 @@ except MCPConfigError as e:
 
 ---
 
-*Updated: 2026-01-28*
+*Updated: 2026-02-01*

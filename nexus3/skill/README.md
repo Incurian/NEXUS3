@@ -1,6 +1,6 @@
 # nexus3.skill - NEXUS3 Skill (Tool) System
 
-**Updated: 2026-01-31**
+**Updated: 2026-02-01**
 
 The skill module provides the complete infrastructure for defining, registering, and executing skills (tools) that extend NEXUS3 agent capabilities. Skills are the fundamental unit of capability in NEXUS3 - they provide actions like file reading, command execution, agent management, and other operations the agent can perform.
 
@@ -47,43 +47,54 @@ nexus3/skill/
 ├── registry.py           # SkillRegistry for managing skills
 ├── services.py           # ServiceContainer for dependency injection
 ├── errors.py             # Skill-specific error classes
-└── builtin/              # Built-in skill implementations
-    ├── __init__.py       # Builtin exports
-    ├── registration.py   # register_builtin_skills() function
-    ├── env.py            # Environment sanitization helpers
-    ├── read_file.py      # File reading skill
-    ├── write_file.py     # File writing skill
-    ├── edit_file.py      # String replacement editing (single or batched, line ending preservation)
-    ├── edit_lines.py     # Line-based editing skill (line ending preservation)
-    ├── append_file.py    # File appending skill (line ending preservation)
-    ├── tail.py           # Read last N lines
-    ├── file_info.py      # File metadata skill (Windows RHSA attributes)
-    ├── list_directory.py # Directory listing skill
-    ├── copy_file.py      # File copying skill
-    ├── mkdir.py          # Directory creation skill
-    ├── rename.py         # File/directory renaming skill
-    ├── glob_search.py    # Glob pattern file search
-    ├── grep.py           # Regex content search (CREATE_NO_WINDOW on Windows)
-    ├── regex_replace.py  # Regex find/replace (line ending preservation)
-    ├── bash.py           # Shell execution (safe + unsafe, CREATE_NO_WINDOW on Windows)
-    ├── run_python.py     # Python code execution (CREATE_NO_WINDOW on Windows)
-    ├── git.py            # Git version control (asyncio subprocess, CREATE_NO_WINDOW on Windows)
-    ├── nexus_create.py   # Create agent
-    ├── nexus_destroy.py  # Destroy agent
-    ├── nexus_send.py     # Send message to agent
-    ├── nexus_status.py   # Get agent status
-    ├── nexus_cancel.py   # Cancel agent request
-    ├── nexus_shutdown.py # Shutdown server
-    ├── patch.py          # Apply unified diffs (uses nexus3/patch module)
-    ├── clipboard_copy.py    # copy, cut skills
-    ├── clipboard_paste.py   # paste skill
-    ├── clipboard_manage.py  # clipboard_list, clipboard_get, clipboard_update, clipboard_delete, clipboard_clear
-    ├── clipboard_search.py  # clipboard_search skill
-    ├── clipboard_tag.py     # clipboard_tag skill
-    ├── clipboard_export.py  # clipboard_export skill
-    ├── clipboard_import.py  # clipboard_import skill
-    ├── sleep.py          # Testing utility
-    └── echo.py           # Testing utility
+├── builtin/              # Built-in skill implementations
+│   ├── __init__.py       # Builtin exports
+│   ├── registration.py   # register_builtin_skills() function
+│   ├── env.py            # Environment sanitization helpers
+│   ├── read_file.py      # File reading skill
+│   ├── write_file.py     # File writing skill
+│   ├── edit_file.py      # String replacement editing (single or batched, line ending preservation)
+│   ├── edit_lines.py     # Line-based editing skill (line ending preservation)
+│   ├── append_file.py    # File appending skill (line ending preservation)
+│   ├── tail.py           # Read last N lines
+│   ├── file_info.py      # File metadata skill (Windows RHSA attributes)
+│   ├── list_directory.py # Directory listing skill
+│   ├── copy_file.py      # File copying skill
+│   ├── mkdir.py          # Directory creation skill
+│   ├── rename.py         # File/directory renaming skill
+│   ├── glob_search.py    # Glob pattern file search
+│   ├── grep.py           # Regex content search (CREATE_NO_WINDOW on Windows)
+│   ├── concat_files.py   # Find and concatenate files by extension
+│   ├── regex_replace.py  # Regex find/replace (line ending preservation)
+│   ├── bash.py           # Shell execution (safe + unsafe, CREATE_NO_WINDOW on Windows)
+│   ├── run_python.py     # Python code execution (CREATE_NO_WINDOW on Windows)
+│   ├── git.py            # Git version control (asyncio subprocess, CREATE_NO_WINDOW on Windows)
+│   ├── nexus_create.py   # Create agent
+│   ├── nexus_destroy.py  # Destroy agent
+│   ├── nexus_send.py     # Send message to agent
+│   ├── nexus_status.py   # Get agent status
+│   ├── nexus_cancel.py   # Cancel agent request
+│   ├── nexus_shutdown.py # Shutdown server
+│   ├── patch.py          # Apply unified diffs (uses nexus3/patch module)
+│   ├── clipboard_copy.py    # copy, cut skills
+│   ├── clipboard_paste.py   # paste skill
+│   ├── clipboard_manage.py  # clipboard_list, clipboard_get, clipboard_update, clipboard_delete, clipboard_clear
+│   ├── clipboard_search.py  # clipboard_search skill
+│   ├── clipboard_tag.py     # clipboard_tag skill
+│   ├── clipboard_export.py  # clipboard_export skill
+│   ├── clipboard_import.py  # clipboard_import skill
+│   ├── sleep.py          # Testing utility
+│   └── echo.py           # Testing utility (not registered by default)
+└── vcs/                  # VCS platform integrations
+    ├── __init__.py       # register_vcs_skills() entry point
+    ├── README.md         # VCS module documentation
+    ├── config.py         # GitLabConfig, GitLabInstance dataclasses
+    └── gitlab/           # GitLab skill implementations (21 skills)
+        ├── __init__.py   # register_gitlab_skills() function
+        ├── base.py       # GitLabSkill base class
+        ├── client.py     # Async HTTP client (httpx-based)
+        ├── permissions.py # Permission checks and confirmation logic
+        └── <skill>.py    # Individual skill files (repo, issue, mr, etc.)
 ```
 
 ---
@@ -244,6 +255,18 @@ my_file_skill_factory = file_skill_factory(MyFileSkill)
 - `_allowed_paths` property - Access to effective allowed paths for this tool
 - Symlink resolution prevents sandbox escape
 - Per-tool path overrides via ServiceContainer
+
+**Error handling decorator:**
+```python
+from nexus3.skill.base import handle_file_errors
+
+@handle_file_errors
+async def execute(self, path: str = "", **kwargs: Any) -> ToolResult:
+    # PathSecurityError and ValueError are auto-converted to ToolResult errors
+    validated = self._validate_path(path)  # Guaranteed to be Path or raises
+    content = validated.read_text()
+    return ToolResult(output=content)
+```
 
 ### NexusSkill
 
@@ -474,6 +497,11 @@ services.get_cwd()                   # Path (defaults to process cwd)
 services.get_agent_api()             # DirectAgentAPI | None
 services.get_child_agent_ids()       # set[str] | None
 services.get_mcp_registry()          # MCPServerRegistry | None
+
+# VCS and session-related
+services.get_gitlab_config()         # GitLabConfig | None
+services.get_session_allowances()    # dict[str, bool]
+services.set_session_allowance(key, allowed)  # Set per-skill confirmations
 ```
 
 ### Common Services
@@ -491,6 +519,8 @@ services.get_mcp_registry()          # MCPServerRegistry | None
 | `api_key` | `str` | RPC authentication token |
 | `child_agent_ids` | `set[str]` | IDs of child agents |
 | `mcp_registry` | `MCPServerRegistry` | MCP server registry |
+| `gitlab_config` | `GitLabConfig` | GitLab instance configuration |
+| `session_allowances` | `dict[str, bool]` | Per-skill confirmation state |
 
 ### Per-Tool Path Resolution
 
@@ -558,7 +588,7 @@ definitions = registry.get_definitions_for_permissions(agent_permissions)
 
 ## Built-in Skills
 
-NEXUS3 includes 40+ built-in skills organized by category:
+NEXUS3 includes 39 core built-in skills plus 21 GitLab skills (when configured), organized by category:
 
 ### File Operations (Read-Only)
 
@@ -570,6 +600,7 @@ NEXUS3 includes 40+ built-in skills organized by category:
 | `list_directory` | List directory contents | `path`, `all?`, `long?` |
 | `glob` | Find files by glob pattern | `pattern`, `path?`, `max_results?`, `exclude?` |
 | `grep` | Search file contents (regex), uses ripgrep when available | `pattern`, `path`, `recursive?`, `include?`, `context?` |
+| `concat_files` | Find and concatenate files by extension with token estimation | `extensions`, `path?`, `exclude?`, `lines?`, `max_total?`, `format?`, `sort?`, `gitignore?`, `dry_run?` |
 
 ### File Operations (Destructive)
 
@@ -610,12 +641,13 @@ NEXUS3 includes 40+ built-in skills organized by category:
 | `nexus_cancel` | Cancel agent request | `agent_id`, `request_id`, `port?` |
 | `nexus_shutdown` | Shutdown server | `port?` |
 
-### Utility
+### Utility (Testing)
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
 | `sleep` | Pause execution (for testing) | `seconds`, `label?` |
-| `echo` | Echo input (testing) | `message` |
+
+Note: `echo` skill exists in the codebase but is not registered by default (used for testing only).
 
 ### GitLab Integration
 
@@ -673,9 +705,13 @@ NEXUS3 includes 40+ built-in skills organized by category:
 
 ```python
 from nexus3.skill.builtin.registration import register_builtin_skills
+from nexus3.skill.vcs import register_vcs_skills
 
 registry = SkillRegistry(services)
-register_builtin_skills(registry)  # Registers all 27 skills
+register_builtin_skills(registry)  # Registers 39 core skills
+
+# VCS skills are registered separately (requires config + TRUSTED+ permissions)
+count = register_vcs_skills(registry, services, permissions)  # Up to 21 GitLab skills
 ```
 
 ---
@@ -957,21 +993,32 @@ import asyncio
 from pathlib import Path
 from nexus3.skill import SkillRegistry, ServiceContainer
 from nexus3.skill.builtin.registration import register_builtin_skills
+from nexus3.skill.vcs import register_vcs_skills
 from nexus3.core.permissions import resolve_preset
 
 async def main():
     # Set up service container
     services = ServiceContainer()
-    services.register("cwd", Path.cwd())
-    services.register("permissions", resolve_preset("sandboxed", cwd=Path.cwd()))
+    cwd = Path.cwd()
+    permissions = resolve_preset("trusted", cwd=cwd)
+
+    services.register("cwd", cwd)
+    services.register("permissions", permissions)
 
     # Create registry and register skills
     registry = SkillRegistry(services)
-    register_builtin_skills(registry)
+    register_builtin_skills(registry)  # 39 core skills
+
+    # Register VCS skills if configured (requires gitlab_config in services)
+    # vcs_count = register_vcs_skills(registry, services, permissions)
 
     # Get tool definitions for LLM
     definitions = registry.get_definitions()
     print(f"Registered {len(definitions)} skills")
+
+    # Get definitions filtered by permissions (excludes disabled tools)
+    filtered_defs = registry.get_definitions_for_permissions(permissions)
+    print(f"Enabled tools: {len(filtered_defs)}")
 
     # Use a skill
     read_skill = registry.get("read_file")

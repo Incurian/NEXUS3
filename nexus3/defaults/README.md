@@ -2,32 +2,48 @@
 
 ## Overview
 
-The `nexus3/defaults/` directory contains the **shipped default configuration and system prompt** that NEXUS3 uses when no user configuration exists. These files serve as:
+The `nexus3/defaults/` directory contains the **shipped default configuration and system prompts** that NEXUS3 uses. These files serve as:
 
-1. **Fallback configuration** when no `~/.nexus3/` or `./.nexus3/` exists
-2. **Templates** for `nexus3 --init-global` to copy to `~/.nexus3/`
-3. **Reference implementation** showing all available configuration options
+1. **System documentation** (`NEXUS-DEFAULT.md`) - Always loaded, provides tool docs, permissions, limits
+2. **User prompt template** (`NEXUS.md`) - Copied to `~/.nexus3/` on init, user can customize
+3. **Default configuration** (`config.json`) - Fallback when no user config exists
+4. **Reference implementation** showing all available configuration options
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `__init__.py` | Package marker (docstring only, no exports) |
+| `NEXUS-DEFAULT.md` | System defaults prompt (tools, permissions, limits) - always loaded |
+| `NEXUS.md` | User prompt template - copied to ~/.nexus3/ on init |
 | `config.json` | Default LLM providers, models, and settings |
-| `NEXUS.md` | Default agent system prompt |
+
+## Split Context Design
+
+NEXUS3 uses a two-file prompt system to separate auto-updating system documentation from user customizations:
+
+| File | Location | Purpose | Updates |
+|------|----------|---------|---------|
+| `NEXUS-DEFAULT.md` | Package only | Tool docs, permissions, limits | Auto-updates with package upgrades |
+| `NEXUS.md` | User's ~/.nexus3/ | Custom instructions | Preserved across upgrades |
+
+This ensures:
+- Users get new tool documentation automatically when NEXUS3 is upgraded
+- User customizations in `~/.nexus3/NEXUS.md` are never overwritten
+- The system prompt is always complete (system defaults + user additions)
 
 ## Configuration Loading Hierarchy
 
 Defaults are the **lowest priority** layer in the config loading hierarchy:
 
 ```
-LAYER 1: Package defaults (this directory) <- LOWEST PRIORITY
+LAYER 1a: System Defaults (NEXUS-DEFAULT.md in package) <- ALWAYS LOADED
     |
-LAYER 2: Global (~/.nexus3/)
+LAYER 1b: Global (~/.nexus3/NEXUS.md + config.json + mcp.json)
     |
-LAYER 3: Ancestors (up to N levels above CWD)
+LAYER 2: Ancestors (up to N levels above CWD)
     |
-LAYER 4: Local (CWD/.nexus3/) <- HIGHEST PRIORITY
+LAYER 3: Local (CWD/.nexus3/) <- HIGHEST PRIORITY
 ```
 
 Later layers **deep-merge** into earlier layers, meaning:
@@ -37,24 +53,51 @@ Later layers **deep-merge** into earlier layers, meaning:
 
 ### Loading Logic
 
-The `ContextLoader` in `nexus3/context/loader.py` handles defaults:
+The `ContextLoader` in `nexus3/context/loader.py` handles defaults with a two-stage approach:
 
 ```python
-def _load_global_layer(self) -> ContextLayer | None:
-    """Load the global layer with fallback to defaults."""
+def _load_global_and_defaults(self) -> list[ContextLayer]:
+    """Load system defaults and global user configuration.
+
+    NEXUS-DEFAULT.md from the package is always loaded first (system docs/tools).
+    User customization (NEXUS.md) comes from ~/.nexus3/ if it exists,
+    otherwise falls back to package template.
+    """
+    layers: list[ContextLayer] = []
     global_dir = self._get_global_dir()  # ~/.nexus3/
-
-    if global_dir.is_dir():
-        layer = self._load_layer(global_dir, "global")
-        if layer.prompt or layer.config or layer.mcp:
-            return layer  # Use global config if it has content
-
-    # Fall back to install defaults
     defaults_dir = self._get_defaults_dir()  # nexus3/defaults/
-    if defaults_dir.is_dir():
-        return self._load_layer(defaults_dir, "defaults")
 
-    return None
+    # 1. Always load NEXUS-DEFAULT.md from package (system docs/tools)
+    pkg_default = defaults_dir / "NEXUS-DEFAULT.md"
+    if pkg_default.is_file():
+        layer = ContextLayer(name="system-defaults", path=defaults_dir)
+        layer.prompt = pkg_default.read_text(encoding="utf-8-sig")
+        layers.append(layer)
+
+    # 2. Load user's global config (config.json, mcp.json always from global dir)
+    global_config = load_json_file_optional(global_dir / "config.json")
+    global_mcp = load_json_file_optional(global_dir / "mcp.json")
+
+    # 3. Load user's NEXUS.md from global dir, or fall back to package template
+    user_nexus = global_dir / "NEXUS.md"
+    if user_nexus.is_file():
+        layer = ContextLayer(name="global", path=global_dir)
+        layer.prompt = user_nexus.read_text(encoding="utf-8-sig")
+        layer.config = global_config
+        layer.mcp = global_mcp
+        layers.append(layer)
+    else:
+        # Fall back to package NEXUS.md template for prompt
+        pkg_nexus = defaults_dir / "NEXUS.md"
+        if pkg_nexus.is_file() or global_config or global_mcp:
+            layer = ContextLayer(name="global", path=global_dir or defaults_dir)
+            if pkg_nexus.is_file():
+                layer.prompt = pkg_nexus.read_text(encoding="utf-8-sig")
+            layer.config = global_config
+            layer.mcp = global_mcp
+            layers.append(layer)
+
+    return layers
 ```
 
 The config loader in `nexus3/config/loader.py` similarly starts from defaults:
@@ -263,35 +306,47 @@ Example MCP server definitions (for testing):
 
 ---
 
-## NEXUS.md System Prompt
+## Prompt Files
 
-The default `NEXUS.md` provides comprehensive agent instructions covering:
+### NEXUS-DEFAULT.md (System Defaults)
 
-### Sections
+The `NEXUS-DEFAULT.md` file is **always loaded** and provides system-level documentation:
 
-1. **Introduction** - Agent identity and capabilities
-2. **Principles** - Behavioral guidelines (be direct, use tools, respect boundaries)
-3. **Permission System** - YOLO/TRUSTED/SANDBOXED levels, ceiling enforcement
-4. **Logs** - Server logging, session logs, SQLite schema, finding things
-5. **Tool Limits** - File size limits, timeouts, context recovery
-6. **Available Tools** - Complete tool reference with parameters
-7. **Agent Communication** - Permission defaults for RPC agents
-8. **Execution Modes** - Sequential vs parallel tool execution
-9. **Response Format** - Output formatting guidelines
-10. **Path Formats** - WSL path conversion guidance
-11. **Self-Knowledge** - Tips for NEXUS3 agents working on NEXUS3 codebase
+| Section | Content |
+|---------|---------|
+| Introduction | Agent identity and capabilities |
+| Principles | Behavioral guidelines (be direct, use tools, respect boundaries) |
+| Permission System | YOLO/TRUSTED/SANDBOXED levels, ceiling enforcement |
+| Logs | Server logging, session logs, SQLite schema, finding things |
+| Tool Limits | File size limits (10MB), output limits (1MB), timeouts |
+| Available Tools | Complete tool reference with parameters |
+| Agent Communication | Permission defaults for RPC agents |
+| Execution Modes | Sequential vs parallel (`_parallel: true`) tool execution |
+| Response Format | Output formatting guidelines |
+| Path Formats | WSL path conversion (Windows/Linux interop) |
+| Self-Knowledge | Tips for NEXUS3 agents working on NEXUS3 codebase |
 
-### Key Content
+This file auto-updates when NEXUS3 is upgraded, ensuring agents always have current tool documentation.
 
-The prompt includes:
+### NEXUS.md (User Template)
 
-- **Tool reference table** with all parameters
-- **Permission explanations** for YOLO, TRUSTED, SANDBOXED presets
-- **RPC security defaults** (sandboxed by default, write tools disabled)
-- **Log file locations** and query examples
-- **File operation limits** (10MB max, 1MB output, 10K lines)
-- **Parallel execution** via `_parallel: true` argument
-- **WSL path conversion** rules for Windows/Linux interop
+The `NEXUS.md` file is a minimal template that gets copied to `~/.nexus3/NEXUS.md` during initialization:
+
+```markdown
+# Agent Instructions
+
+You are NEXUS3, an AI-powered CLI agent.
+
+<!-- Add your custom instructions below -->
+```
+
+Users can edit their copy to add:
+- Project-specific guidelines
+- Personal preferences (response style, etc.)
+- Team conventions
+- Domain-specific knowledge
+
+This file is **never overwritten** by upgrades, preserving user customizations.
 
 ---
 
@@ -381,12 +436,13 @@ All other settings inherit from earlier layers (global, then defaults).
 
 ## Security Considerations
 
-1. **No secrets in defaults** - API keys come from environment variables
+1. **No secrets in defaults** - API keys come from environment variables via `api_key_env`
 2. **Sandboxed RPC default** - `default_permission_level` is `trusted` for REPL only; RPC agents default to `sandboxed`
 3. **Safe MCP defaults** - Test MCP servers only, real servers configured per-user
 4. **README opt-in** - `readme_as_fallback: false` prevents untrusted READMEs from injecting prompts
 5. **SSL verification enabled by default** - On-prem examples show how to configure custom CAs securely
+6. **Split prompt design** - System docs auto-update, user customizations preserved
 
 ---
 
-Updated: 2026-01-28
+Updated: 2026-02-01

@@ -1,6 +1,6 @@
 # NEXUS3 Provider Module
 
-LLM provider implementations for NEXUS3 with unified async interface, multi-provider support, streaming, tool calling, retries, and security hardening.
+LLM provider implementations for NEXUS3 with unified async interface, multi-provider support, streaming, tool calling, prompt caching, retries, and security hardening.
 
 ## Overview
 
@@ -8,14 +8,14 @@ This module abstracts LLM API differences behind a common `AsyncProvider` protoc
 
 ## Supported Providers
 
-| Type | API Format | Endpoint | Auth Method | Use Case |
-|------|------------|----------|-------------|----------|
-| `openrouter` | OpenAI-compatible | `/v1/chat/completions` | Bearer token | Default, access to many models |
-| `openai` | OpenAI-compatible | `/v1/chat/completions` | Bearer token | Direct OpenAI API |
-| `azure` | OpenAI-compatible | `/openai/deployments/{name}/chat/completions` | api-key header | Azure OpenAI Service |
-| `anthropic` | Native Anthropic | `/v1/messages` | x-api-key header | Direct Anthropic Claude API |
-| `ollama` | OpenAI-compatible | `/v1/chat/completions` | None | Local Ollama server |
-| `vllm` | OpenAI-compatible | `/v1/chat/completions` | None | vLLM OpenAI-compatible server |
+| Type | API Format | Endpoint | Auth Method | Prompt Caching |
+|------|------------|----------|-------------|----------------|
+| `openrouter` | OpenAI-compatible | `/v1/chat/completions` | Bearer token | Pass-through (Anthropic models) |
+| `openai` | OpenAI-compatible | `/v1/chat/completions` | Bearer token | Automatic |
+| `azure` | OpenAI-compatible | `/openai/deployments/{name}/chat/completions` | api-key header | Automatic |
+| `anthropic` | Native Anthropic | `/v1/messages` | x-api-key header | Full support |
+| `ollama` | OpenAI-compatible | `/v1/chat/completions` | None | N/A (local) |
+| `vllm` | OpenAI-compatible | `/v1/chat/completions` | None | N/A (local) |
 
 ## Module Structure
 
@@ -325,6 +325,37 @@ Native Anthropic Messages API (different from OpenAI format).
 - Different streaming event types
 - Requires `max_tokens` parameter (default: 4096)
 
+**Prompt Caching:**
+When `prompt_caching` is enabled (default), the system prompt is sent with `cache_control`:
+```python
+# System prompt with caching enabled
+{
+    "system": [
+        {
+            "type": "text",
+            "text": "<system prompt content>",
+            "cache_control": {"type": "ephemeral"}
+        }
+    ]
+}
+```
+
+Cache metrics are logged at DEBUG level when present in the response:
+```
+Cache: created=1500, read=0 tokens
+```
+
+**Orphaned Tool Use Handling:**
+The provider synthesizes missing `tool_result` blocks for orphaned `tool_use` blocks (e.g., from cancellation or crash):
+```python
+# Automatically synthesized for tool calls without results
+{
+    "type": "tool_result",
+    "tool_use_id": "<orphaned_id>",
+    "content": "[Tool execution was interrupted]"
+}
+```
+
 **Message Conversion:**
 ```python
 # NEXUS3 Message with tool_calls
@@ -350,7 +381,7 @@ Message(role=Role.ASSISTANT, content="Let me check...", tool_calls=[...])
 ```
 
 **SSE Stream Events:**
-- `message_start` - Initial metadata
+- `message_start` - Initial metadata (includes cache metrics in `usage`)
 - `content_block_start` - New text or tool_use block
 - `content_block_delta` - Incremental content (`text_delta` or `input_json_delta`)
 - `content_block_stop` - Block finished
@@ -413,6 +444,22 @@ Message(role=Role.ASSISTANT, content="Let me check...", tool_calls=[...])
         }
     },
     "default_model": "haiku"
+}
+```
+
+### Disabling Prompt Caching
+
+Prompt caching is enabled by default. To disable for a specific provider:
+
+```json
+{
+    "providers": {
+        "anthropic": {
+            "type": "anthropic",
+            "api_key_env": "ANTHROPIC_API_KEY",
+            "prompt_caching": false
+        }
+    }
 }
 ```
 
@@ -596,6 +643,65 @@ await registry.aclose()
 
 ---
 
+## Prompt Caching
+
+Prompt caching reduces costs by caching static portions of prompts (primarily the system prompt) for reuse across requests. NEXUS3 supports prompt caching across multiple providers.
+
+### Provider Support
+
+| Provider | Status | How It Works |
+|----------|--------|--------------|
+| Anthropic | Full | `cache_control: {"type": "ephemeral"}` on system prompt |
+| OpenAI | Automatic | Built-in caching, no special configuration needed |
+| Azure | Automatic | Same as OpenAI |
+| OpenRouter | Pass-through | Forwards `cache_control` for Anthropic models |
+| Ollama/vLLM | N/A | Local providers, no caching needed |
+
+### Cost Savings
+
+Prompt caching typically provides ~90% cost reduction on cached tokens:
+- **Anthropic**: Cache writes at 1.25x input token cost, cache reads at 0.1x
+- **OpenAI**: Automatic caching with 50% discount on cached tokens
+
+### Configuration
+
+Caching is **enabled by default**. To disable:
+
+```json
+{
+    "providers": {
+        "anthropic": {
+            "type": "anthropic",
+            "prompt_caching": false
+        }
+    }
+}
+```
+
+### Cache Metrics
+
+Cache hit/miss metrics are logged at DEBUG level (visible with `-v` flag):
+
+```
+DEBUG:nexus3.provider.anthropic:Cache: created=1500, read=0 tokens
+DEBUG:nexus3.provider.openai_compat:Cache: read=2500 tokens
+```
+
+- `created` (Anthropic): Tokens written to cache this request
+- `read`: Tokens read from cache (cache hit)
+
+### OpenRouter + Anthropic
+
+When using OpenRouter with Anthropic models (detected via `anthropic` in model name), NEXUS3 automatically adds `cache_control` to the system prompt. This is passed through to Anthropic's API for caching.
+
+```python
+# Automatic detection
+if config.type == "openrouter" and "anthropic" in model.lower():
+    # Add cache_control to system message
+```
+
+---
+
 ## Security Features
 
 ### SSRF Protection
@@ -712,4 +818,4 @@ PROVIDER_DEFAULTS["myprovider"] = {
 
 ---
 
-Last updated: 2026-01-28
+Last updated: 2026-02-01

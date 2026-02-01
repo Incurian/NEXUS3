@@ -104,6 +104,13 @@ async def compact(force: bool = False) -> CompactionResult | None:
 
 Compaction uses a separate LLM call to summarize conversation history when token usage exceeds the configured threshold.
 
+#### `add_cancelled_tools()` - Track cancelled tool calls
+
+```python
+def add_cancelled_tools(tools: list[tuple[str, str]]) -> None:
+    """Store cancelled tool calls to report on next send()."""
+```
+
 ### Session Lifecycle
 
 1. **Initialization**: Create Session with provider, context, and services
@@ -203,11 +210,19 @@ Handles disk persistence of sessions in `~/.nexus3/sessions/`.
 └── last-session-name    # Name of last session
 ```
 
+### Exceptions
+
+| Exception | Description |
+|-----------|-------------|
+| `SessionManagerError` | Base error for session manager operations |
+| `SessionNotFoundError` | Raised when a session does not exist |
+
 ### Security
 
 - Session names are validated via `validate_agent_id()` to prevent path traversal
 - Files written with secure permissions (0o600) using `O_NOFOLLOW` to reject symlinks
 - Directories created with 0o700 permissions
+- Windows compatibility: explicit symlink check when `O_NOFOLLOW` unavailable
 
 ---
 
@@ -234,6 +249,7 @@ class SavedSession:
     disabled_tools: list[str]
     session_allowances: dict[str, Any]
     model_alias: str | None          # Model alias used (e.g., "haiku", "gpt")
+    clipboard_agent_entries: list[dict[str, Any]]  # Agent-scope clipboard entries
     schema_version: int
 ```
 
@@ -260,6 +276,10 @@ deserialize_messages(data: list[dict]) -> list[Message]
 # Tool call serialization
 serialize_tool_call(tc: ToolCall) -> dict[str, Any]
 deserialize_tool_call(data: dict) -> ToolCall
+
+# Clipboard serialization
+serialize_clipboard_entries(entries: dict[str, ClipboardEntry]) -> list[dict[str, Any]]
+deserialize_clipboard_entries(data: list[dict[str, Any]]) -> dict[str, ClipboardEntry]
 
 # Full session serialization
 serialize_session(...) -> SavedSession
@@ -427,6 +447,12 @@ class SessionMarkers:
 - `SCHEMA_VERSION = 3`
 - `MAX_JSON_FIELD_SIZE = 10 * 1024 * 1024` (10MB)
 
+### Schema Migrations
+
+The storage automatically handles migrations between schema versions:
+- **1 -> 2**: Added `session_markers` table for cleanup tracking
+- **2 -> 3**: Added `meta` column to messages table for source attribution
+
 ---
 
 ## Tool Execution Components
@@ -511,6 +537,9 @@ class ConfirmationController:
 
     def apply_mcp_result(permissions, result, tool_name, server_name):
         """Apply MCP-specific allowances."""
+
+    def apply_gitlab_result(permissions, result, skill_name, instance_host):
+        """Apply GitLab-specific allowances."""
 ```
 
 Confirmation results:
@@ -620,6 +649,7 @@ Methods:
 3. **Permission check**: Each tool checked against permissions
    - Tool enabled?
    - Action allowed by level?
+   - Target allowed (for nexus_* tools)?
    - Path allowed (sandbox, blocked)?
 4. **Confirmation**: If TRUSTED level, prompt for destructive actions
 5. **Skill resolution**: ToolDispatcher finds implementing skill
@@ -700,7 +730,7 @@ If `compaction.model` is configured, a separate provider is used for summarizati
 | `session.py` | `core.types`, `core.errors`, `core.permissions`, `context.compaction` |
 | `logging.py` | `core.secure_io`, `session.storage`, `session.markdown` |
 | `storage.py` | `core.secure_io` (sqlite3 stdlib) |
-| `persistence.py` | `core.types` |
+| `persistence.py` | `core.types`, `clipboard.types` |
 | `enforcer.py` | `core.path_decision`, `session.path_semantics` |
 | `dispatcher.py` | `skill.registry`, `mcp.registry` |
 | `http_logging.py` | `session.logging` (TYPE_CHECKING only) |
@@ -714,7 +744,8 @@ If `compaction.model` is configured, a separate provider is used for summarizati
 - **nexus3/core/**: Types, errors, permissions, path validation
 - **nexus3/provider/**: AsyncProvider implementations
 - **nexus3/mcp/**: MCP server integration
+- **nexus3/clipboard/**: Clipboard system for agent-scope persistence
 
 ---
 
-Updated: 2026-01-28
+Updated: 2026-02-01

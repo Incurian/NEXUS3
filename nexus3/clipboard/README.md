@@ -1,6 +1,6 @@
 # nexus3.clipboard - Scoped Clipboard System
 
-**Updated: 2026-01-31**
+**Updated: 2026-02-01**
 
 The clipboard module provides a multi-scope clipboard system for NEXUS3 agents. It enables agents to copy, cut, and paste content between files with persistent storage, tagging, search, and context injection.
 
@@ -21,7 +21,9 @@ The clipboard module provides a multi-scope clipboard system for NEXUS3 agents. 
 11. [Configuration](#configuration)
 12. [Permission Model](#permission-model)
 13. [Module Exports](#module-exports)
-14. [Dependencies](#dependencies)
+14. [ClipboardManager API](#clipboardmanager-api)
+15. [ClipboardStorage API](#clipboardstorage-api)
+16. [Dependencies](#dependencies)
 
 ---
 
@@ -34,7 +36,7 @@ The clipboard system provides a structured way for agents to:
 - **Paste** clipboard content into files (multiple insertion modes)
 - **Organize** entries with tags for categorization
 - **Search** entries by key, description, or content
-- **Import/Export** clipboard entries as JSON for backup or transfer
+- **Import/Export** clipboard entries as JSON for backup or transfer (via skills)
 - **Auto-inject** clipboard contents into system prompt for context
 
 Key features:
@@ -379,13 +381,144 @@ __all__ = [
 
 ---
 
+## ClipboardManager API
+
+The `ClipboardManager` class coordinates storage, permissions, and scope resolution.
+
+### Constructor
+
+```python
+ClipboardManager(
+    agent_id: str,          # Current agent's ID (for tracking modifications)
+    cwd: Path,              # Current working directory (for project scope resolution)
+    permissions: ClipboardPermissions | None = None,  # Defaults to sandboxed
+    home_dir: Path | None = None,  # Home directory override (for testing)
+)
+```
+
+### Core Methods
+
+| Method | Parameters | Returns | Description |
+|--------|------------|---------|-------------|
+| `copy` | `key, content, scope?, short_description?, source_path?, source_lines?, tags?, ttl_seconds?` | `tuple[ClipboardEntry, str\|None]` | Copy content to clipboard. Returns (entry, warning). |
+| `get` | `key, scope?` | `ClipboardEntry \| None` | Get entry by key. If scope=None, searches agent->project->system. |
+| `update` | `key, scope, content?, short_description?, source_path?, source_lines?, new_key?, ttl_seconds?` | `tuple[ClipboardEntry, str\|None]` | Update existing entry. Returns (entry, warning). |
+| `delete` | `key, scope` | `bool` | Delete entry. Returns True if deleted. |
+| `clear` | `scope` | `int` | Clear all entries in scope. Returns count deleted. |
+| `list_entries` | `scope?, tags?, any_tags?, include_expired?` | `list[ClipboardEntry]` | List entries, filtered by scope/tags. |
+| `close` | - | `None` | Close database connections. |
+
+### Search Methods
+
+| Method | Parameters | Returns | Description |
+|--------|------------|---------|-------------|
+| `search` | `query, scope?, search_content?, search_keys?, search_descriptions?, tags?` | `list[ClipboardEntry]` | Search entries (case-insensitive substring). |
+
+### Tag Methods
+
+| Method | Parameters | Returns | Description |
+|--------|------------|---------|-------------|
+| `add_tags` | `key, scope, tags` | `ClipboardEntry` | Add tags to an entry. |
+| `remove_tags` | `key, scope, tags` | `ClipboardEntry` | Remove tags from an entry. |
+| `list_tags` | `scope?` | `list[str]` | List all tags in use. |
+
+### TTL Methods
+
+| Method | Parameters | Returns | Description |
+|--------|------------|---------|-------------|
+| `count_expired` | `scope?` | `int` | Count expired entries (does NOT delete). |
+| `get_expired` | `scope?` | `list[ClipboardEntry]` | Get all expired entries for review. |
+
+### Session Persistence Methods
+
+| Method | Parameters | Returns | Description |
+|--------|------------|---------|-------------|
+| `get_agent_entries` | - | `dict[str, ClipboardEntry]` | Get agent-scope entries for session save. |
+| `restore_agent_entries` | `entries` | `None` | Restore agent-scope entries from session load. |
+
+---
+
+## ClipboardStorage API
+
+The `ClipboardStorage` class provides SQLite backend for PROJECT and SYSTEM scopes.
+
+### Constructor
+
+```python
+ClipboardStorage(
+    db_path: Path,          # Path to SQLite database file
+    scope: ClipboardScope,  # The scope this storage represents
+)
+```
+
+### Methods
+
+| Method | Parameters | Returns | Description |
+|--------|------------|---------|-------------|
+| `get` | `key` | `ClipboardEntry \| None` | Get entry by key. |
+| `exists` | `key` | `bool` | Check if key exists. |
+| `create` | `entry` | `None` | Create new entry. Raises ValueError if key exists. |
+| `update` | `key, content?, short_description?, source_path?, source_lines?, new_key?, agent_id?, ttl_seconds?` | `ClipboardEntry` | Update entry. Raises KeyError if not found. |
+| `delete` | `key` | `bool` | Delete entry. Returns True if deleted. |
+| `clear` | - | `int` | Delete all entries. Returns count. |
+| `list_all` | - | `list[ClipboardEntry]` | List all entries (ordered by modified_at DESC). |
+| `count_expired` | `now` | `int` | Count entries where expires_at <= now. |
+| `get_expired` | `now` | `list[ClipboardEntry]` | Get expired entries for review. |
+| `set_tags` | `key, tags` | `None` | Set tags for entry (replaces existing). |
+| `get_tags` | `key` | `list[str]` | Get tags for entry. |
+| `close` | - | `None` | Close database connection. |
+
+### Schema
+
+```sql
+-- Schema version: 1
+CREATE TABLE clipboard (
+    id INTEGER PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
+    content TEXT NOT NULL,
+    short_description TEXT,
+    source_path TEXT,
+    source_lines TEXT,
+    line_count INTEGER NOT NULL,
+    byte_count INTEGER NOT NULL,
+    created_at REAL NOT NULL,
+    modified_at REAL NOT NULL,
+    created_by_agent TEXT,
+    modified_by_agent TEXT,
+    expires_at REAL,
+    ttl_seconds INTEGER
+);
+
+CREATE TABLE tags (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    created_at REAL NOT NULL
+);
+
+CREATE TABLE clipboard_tags (
+    clipboard_id INTEGER NOT NULL,
+    tag_id INTEGER NOT NULL,
+    PRIMARY KEY (clipboard_id, tag_id),
+    FOREIGN KEY (clipboard_id) REFERENCES clipboard(id) ON DELETE CASCADE,
+    FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+);
+
+CREATE TABLE metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+```
+
+---
+
 ## Dependencies
 
 ### Internal Dependencies
 
 | Module | Used For |
 |--------|----------|
-| `nexus3.core.paths` | Path validation, atomic writes |
+| `nexus3.core.secure_io` | Secure directory creation, TOCTOU-safe file operations |
 | `nexus3.config.schema` | ClipboardConfig |
 | `nexus3.session.persistence` | SavedSession clipboard field |
 
@@ -410,8 +543,8 @@ manager = ClipboardManager(
     permissions=CLIPBOARD_PRESETS["trusted"],
 )
 
-# Copy file content
-manager.copy(
+# Copy content to clipboard
+entry, warning = manager.copy(
     key="utils",
     content=Path("utils.py").read_text(),
     scope=ClipboardScope.PROJECT,
@@ -419,23 +552,41 @@ manager.copy(
     source_path="utils.py",
     tags=["code", "helpers"],
 )
+if warning:
+    print(warning)  # Large entry warning
 
 # List entries
 entries = manager.list_entries(scope=ClipboardScope.PROJECT)
 for entry in entries:
     print(f"{entry.key}: {entry.line_count} lines")
 
-# Get and paste
+# Get entry (auto-searches agent->project->system if scope=None)
 entry = manager.get("utils", scope=ClipboardScope.PROJECT)
 if entry:
     print(entry.content)
 
-# Search
+# Search by content
 results = manager.search("def helper", scope=ClipboardScope.PROJECT)
 
-# Export
-manager.export_entries(
-    output_path=Path("backup.json"),
-    scope=ClipboardScope.PROJECT,
+# Add tags
+entry = manager.add_tags("utils", ClipboardScope.PROJECT, ["refactor"])
+
+# Update entry
+entry, _ = manager.update(
+    "utils",
+    ClipboardScope.PROJECT,
+    short_description="Updated utilities",
 )
+
+# Check expired entries
+expired_count = manager.count_expired()
+if expired_count > 0:
+    expired = manager.get_expired()
+    for e in expired:
+        print(f"Expired: {e.key}")
+
+# Cleanup
+manager.close()
 ```
+
+**Note**: Export/import functionality is available through the `clipboard_export` and `clipboard_import` skills, not through ClipboardManager methods directly.

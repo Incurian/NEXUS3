@@ -16,6 +16,7 @@ The core module serves as the foundation for NEXUS3, providing:
 - **Secret redaction** - Pattern-based detection and removal of sensitive data
 - **Secure I/O** - Atomic file operations with proper permissions
 - **Text safety** - Terminal escape sequence and Rich markup sanitization
+- **Shell detection** - Windows shell environment detection for terminal configuration
 
 ---
 
@@ -72,6 +73,13 @@ from nexus3.core import (
     AgentPermissions,  # Runtime permission state
     get_builtin_presets,  # Get yolo/trusted/sandboxed presets
     resolve_preset,    # Resolve preset name to AgentPermissions
+
+    # === Shell Detection (Windows) ===
+    WindowsShell,      # Enum: WINDOWS_TERMINAL, POWERSHELL_7, POWERSHELL_5, GIT_BASH, CMD, UNKNOWN
+    detect_windows_shell,  # Detect current Windows shell environment
+    supports_ansi,     # Check ANSI escape support
+    supports_unicode,  # Check Unicode box drawing support
+    check_console_codepage,  # Get Windows console code page
 )
 ```
 
@@ -806,6 +814,69 @@ from nexus3.core.text_safety import sanitize_for_display
 untrusted = "\x1b[31m[red]malicious[/red]\x1b[0m"
 safe = sanitize_for_display(untrusted)
 # Returns: "\\[red]malicious\\[/red]" (escapes visible, ANSI stripped)
+```
+
+---
+
+### shell_detection.py - Windows Shell Detection
+
+Detection of Windows shell environments for appropriate terminal configuration.
+
+| Export | Description |
+|--------|-------------|
+| `WindowsShell` | Enum: `WINDOWS_TERMINAL`, `POWERSHELL_7`, `POWERSHELL_5`, `GIT_BASH`, `CMD`, `UNKNOWN` |
+| `detect_windows_shell()` | Detect current Windows shell (cached) |
+| `supports_ansi()` | Check if shell supports ANSI escape sequences |
+| `supports_unicode()` | Check if shell supports Unicode box drawing |
+| `check_console_codepage()` | Get Windows console output code page |
+
+**Detection Order (first match wins):**
+
+1. `WT_SESSION` env var -> Windows Terminal
+2. `MSYSTEM` env var -> Git Bash / MSYS2
+3. `PSModulePath` env var -> PowerShell (assumes 5.1 conservatively)
+4. `COMSPEC` ends with `cmd.exe` -> CMD.exe
+5. Otherwise -> UNKNOWN
+
+**Shell Capabilities:**
+
+| Shell | ANSI Support | Unicode Support |
+|-------|--------------|-----------------|
+| Windows Terminal | Full | Full |
+| PowerShell 7+ | Full | Full |
+| Git Bash | Full | Full |
+| PowerShell 5.1 | Limited | Limited |
+| CMD.exe | None | None |
+
+```python
+from nexus3.core import (
+    WindowsShell,
+    detect_windows_shell,
+    supports_ansi,
+    supports_unicode,
+    check_console_codepage,
+)
+
+# Detect shell environment
+shell = detect_windows_shell()
+if shell == WindowsShell.CMD:
+    print("Running in CMD.exe - limited display capabilities")
+
+# Check capabilities
+if supports_ansi():
+    print("\x1b[32mGreen text\x1b[0m")  # Safe to use colors
+else:
+    print("Green text")  # Plain text fallback
+
+if supports_unicode():
+    print("└── Box drawing")  # Safe to use Unicode
+else:
+    print("+-- ASCII fallback")
+
+# Check code page (65001 = UTF-8)
+codepage, is_utf8 = check_console_codepage()
+if not is_utf8:
+    print(f"Warning: Console code page {codepage} may cause display issues")
 ```
 
 ---

@@ -1,4 +1,4 @@
-# Patch Module
+# nexus3/patch
 
 Pure Python unified diff parsing, validation, and application.
 
@@ -6,14 +6,16 @@ Pure Python unified diff parsing, validation, and application.
 
 The patch module provides tools for working with unified diffs (the format used by `git diff`, `diff -u`, etc.). It's designed to handle LLM-generated patches gracefully, with validation that can auto-fix common errors.
 
-## Components
+## Architecture
 
-| File | Purpose |
-|------|---------|
-| `types.py` | `Hunk`, `PatchFile`, `PatchSet` dataclasses |
-| `parser.py` | Parse unified diff text into structured objects |
-| `validator.py` | Validate patches and auto-fix common LLM errors |
-| `applier.py` | Apply patches with configurable strictness |
+```
+nexus3/patch/
+├── __init__.py     # Public exports
+├── types.py        # Hunk, PatchFile, PatchSet dataclasses
+├── parser.py       # Parse unified diff text into structured objects
+├── validator.py    # Validate patches and auto-fix common LLM errors
+└── applier.py      # Apply patches with configurable strictness
+```
 
 ## Quick Start
 
@@ -87,6 +89,24 @@ if result.fixed_patch:
     patch = result.fixed_patch
 ```
 
+### Multi-File Validation
+
+Use `validate_patch_set()` to validate multiple patches at once:
+
+```python
+from nexus3.patch import validate_patch_set
+
+def read_file(path: str) -> str:
+    return Path(path).read_text()
+
+patches = parse_unified_diff(multi_file_diff)
+results = validate_patch_set(patches, get_content=read_file)
+
+for path, result in results.items():
+    if not result.valid:
+        print(f"{path}: {result.errors}")
+```
+
 ## Data Types
 
 ### Hunk
@@ -102,6 +122,12 @@ class Hunk:
     new_count: int      # Lines in new version
     lines: list[tuple[str, str]]  # (prefix, content)
     context: str = ""   # Optional function context from @@ line
+
+    # Helper methods
+    def count_removals(self) -> int: ...   # Count '-' lines
+    def count_additions(self) -> int: ...  # Count '+' lines
+    def count_context(self) -> int: ...    # Count ' ' lines
+    def compute_counts(self) -> tuple[int, int]: ...  # (old_count, new_count) from lines
 ```
 
 Line prefixes:
@@ -116,15 +142,44 @@ Represents all changes to a single file.
 ```python
 @dataclass
 class PatchFile:
-    old_path: str       # Original file path
-    new_path: str       # New file path
+    old_path: str       # Original file path (without a/ prefix)
+    new_path: str       # New file path (without b/ prefix)
     hunks: list[Hunk]
     is_new_file: bool   # True if old_path is /dev/null
     is_deleted: bool    # True if new_path is /dev/null
 
     @property
     def path(self) -> str:
-        """Effective file path (prefers new_path unless deleted)."""
+        """Effective file path (new_path for edits/creates, old_path for deletes)."""
+```
+
+### PatchSet
+
+A collection of patches for multiple files.
+
+```python
+@dataclass
+class PatchSet:
+    files: list[PatchFile]
+
+    def get_file(self, path: str) -> PatchFile | None:
+        """Get patch for a specific file path."""
+
+    def file_paths(self) -> list[str]:
+        """Get list of all affected file paths."""
+```
+
+### ValidationResult
+
+Result of patch validation.
+
+```python
+@dataclass
+class ValidationResult:
+    valid: bool                    # True if patch can be applied
+    errors: list[str]              # Critical errors preventing application
+    warnings: list[str]            # Non-critical issues (patch may still apply)
+    fixed_patch: PatchFile | None  # Auto-corrected version if fixable
 ```
 
 ### ApplyResult
@@ -189,5 +244,51 @@ The module is designed to fail gracefully:
 - Malformed diffs return empty `PatchFile` lists (parser)
 - Invalid patches return `ValidationResult` with errors (validator)
 - Failed hunks result in `ApplyResult` with `success=False` (applier)
+- Missing target files return `ValidationResult` with file-not-found error
 
 No exceptions are raised for invalid input - check return values instead.
+
+---
+
+## Public API
+
+All exports from `nexus3.patch`:
+
+```python
+from nexus3.patch import (
+    # Types
+    Hunk,
+    PatchFile,
+    PatchSet,
+    # Parser
+    parse_unified_diff,
+    # Validator
+    ValidationResult,
+    validate_patch,
+    validate_patch_set,
+    # Applier
+    ApplyMode,
+    ApplyResult,
+    apply_patch,
+)
+```
+
+---
+
+## Dependencies
+
+### Internal Dependencies
+
+None - this module is self-contained.
+
+### External Dependencies
+
+| Package | Usage | Required |
+|---------|-------|----------|
+| `difflib` | Fuzzy matching (SequenceMatcher) | Yes (stdlib) |
+
+---
+
+## Status
+
+Production-ready. Last updated: 2026-02-01

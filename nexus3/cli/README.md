@@ -31,100 +31,154 @@ The unified REPL calls `Session` directly (not through HTTP) to preserve streami
 
 ---
 
-## Module Files
+## Module Structure
 
-### Core Entry Points
-
-| File | Purpose | Key Exports |
-|------|---------|-------------|
-| `__init__.py` | Package entry point | `main()` |
-| `repl.py` | Main REPL implementation | `run_repl()`, `run_repl_client()`, `main()` |
-| `serve.py` | Headless HTTP server mode | `run_serve()` |
-| `arg_parser.py` | CLI argument parsing | `parse_args()`, `add_api_key_arg()`, `add_port_arg()`, `add_verbose_arg()`, `add_log_verbose_arg()` |
-
-### Commands and Handlers
-
-| File | Purpose | Key Exports |
-|------|---------|-------------|
-| `client_commands.py` | RPC CLI commands | `cmd_detect()`, `cmd_list()`, `cmd_create()`, `cmd_destroy()`, `cmd_send()`, `cmd_cancel()`, `cmd_status()`, `cmd_compact()`, `cmd_shutdown()` |
-| `repl_commands.py` | REPL slash command handlers | `cmd_agent()`, `cmd_whisper()`, `cmd_over()`, `cmd_cwd()`, `cmd_permissions()`, `cmd_prompt()`, `cmd_compact()`, `cmd_model()`, `cmd_mcp()`, `cmd_init()`, `cmd_help()`, `cmd_clear()`, `cmd_quit()`, `HELP_TEXT`, `COMMAND_HELP`, `get_command_help()` |
-| `init_commands.py` | Configuration initialization | `init_global()`, `init_local()`, `InitSymlinkError` |
-
-### UI Components
-
-| File | Purpose | Key Exports |
-|------|---------|-------------|
-| `lobby.py` | Session selection lobby | `show_lobby()`, `show_session_list()`, `LobbyChoice`, `LobbyResult`, `format_time_ago()` |
-| `connect_lobby.py` | Server/agent connection UI | `show_connect_lobby()`, `show_agent_picker()`, `ConnectAction`, `ConnectResult`, `prompt_for_port()`, `prompt_for_api_key()`, `prompt_for_url()`, `prompt_for_agent_id()` |
-| `confirmation_ui.py` | Tool action confirmation | `confirm_tool_action()`, `format_tool_params()` |
-| `keys.py` | Keyboard input handling | `KeyMonitor`, `monitor_for_escape()`, `ESC` |
-| `whisper.py` | Whisper mode state | `WhisperMode` |
-| `live_state.py` | Shared Rich Live context | `_current_live` (ContextVar) |
+```
+nexus3/cli/
+├── __init__.py          # Package entry point, exports main()
+├── repl.py              # Main REPL implementation (~1900 lines)
+├── serve.py             # Headless HTTP server mode
+├── arg_parser.py        # CLI argument parsing with subparsers
+├── client_commands.py   # RPC CLI command handlers
+├── repl_commands.py     # REPL slash command handlers (~2800 lines)
+├── lobby.py             # Session selection lobby UI
+├── connect_lobby.py     # Server/agent connection UI
+├── confirmation_ui.py   # Tool action confirmation dialogs
+├── keys.py              # Keyboard input handling (ESC detection)
+├── whisper.py           # Whisper mode state management
+├── live_state.py        # Shared Rich Live context
+└── init_commands.py     # Configuration initialization
+```
 
 ---
 
-## Detailed Component Documentation
+## Module Reference
 
-### REPL Implementation (`repl.py`)
+### `__init__.py` - Package Entry Point
 
-The main REPL is the heart of the CLI, weighing in at ~1900 lines. It handles:
+```python
+from nexus3.cli import main
+```
 
-**Startup Flow:**
+Exports only `main()` from `repl.py`.
+
+---
+
+### `repl.py` - Main REPL Implementation
+
+The heart of the CLI, implementing the unified REPL architecture.
+
+#### Key Functions
+
+| Function | Description |
+|----------|-------------|
+| `run_repl()` | Main REPL loop with embedded server |
+| `run_repl_client()` | Client mode connecting to existing server |
+| `main()` | Entry point parsing args and dispatching to modes |
+
+#### `run_repl()` Parameters
+
+```python
+async def run_repl(
+    verbose: bool = False,      # DEBUG output to console (-v)
+    log_verbose: bool = False,  # Verbose logging to file (-V)
+    raw_log: bool = False,      # Raw API JSON logging
+    log_dir: Path | None = None,  # Session log directory
+    port: int | None = None,    # HTTP server port
+    resume: bool = False,       # Resume last session
+    fresh: bool = False,        # Fresh temp session
+    session_name: str | None = None,  # Load specific session
+    template: Path | None = None,     # Custom system prompt
+    model: str | None = None,   # Model name/alias
+) -> None
+```
+
+#### Startup Flow
+
 1. Load configuration and determine effective port
 2. Discover existing servers on candidate ports
-3. Show connect lobby if servers found (options: connect, start new, scan more ports)
+3. Show connect lobby if servers found
 4. Bootstrap server components (`AgentPool`, `GlobalDispatcher`, `SharedComponents`)
 5. Generate API key and start embedded HTTP server
 6. Show session lobby (resume last, fresh, select from saved)
 7. Create/restore main agent with trusted preset
 8. Enter main input loop
 
-**Key Features:**
-- **Session Callbacks**: Attaches streaming callbacks to Session for rich display (tool calls, reasoning, batch progress)
-- **Callback Leak Prevention**: `_set_display_session()` detaches callbacks from previous session when switching agents
-- **Incoming Turn Notifications**: When RPC messages arrive, interrupts prompt and shows spinner
+#### Key Features
+
+- **Session Callbacks**: Attaches streaming callbacks to Session for rich display
+- **Callback Leak Prevention**: `_set_display_session()` detaches callbacks when switching agents
+- **Incoming Turn Notifications**: RPC messages interrupt prompt and show spinner
 - **Token Toolbar**: Bottom toolbar shows token usage and ready/error state
 - **Auto-Save**: Saves session after each interaction for resume capability
 
-**Session Management:**
-```python
-# Save current agent as last session
-save_as_last_session(current_agent_id)
+---
 
-# Serialize session state
-serialize_session(
-    agent_id=agent_name,
-    messages=agent.context.messages,
-    system_prompt=agent.context.system_prompt,
-    working_directory=str(agent.services.get_cwd()),
-    permission_level=perm_level,
-    token_usage=agent.context.get_token_usage(),
-    # ...
-)
+### `serve.py` - Headless HTTP Server
+
+Development-only headless server mode.
+
+```python
+async def run_serve(
+    port: int | None = None,
+    verbose: bool = False,
+    log_verbose: bool = False,
+    raw_log: bool = False,
+    log_dir: Path | None = None,
+) -> None
 ```
 
-### Argument Parser (`arg_parser.py`)
+**Security**: Requires `NEXUS_DEV=1` environment variable.
 
-Defines all CLI arguments using argparse with subparsers for the `rpc` command group.
+**Startup sequence:**
+1. Load configuration
+2. Check for existing server on port
+3. Bootstrap server components
+4. Generate API key (write to disk only after bind succeeds)
+5. Run until shutdown requested
 
-**Main Mode Flags:**
-- `--serve [PORT]`: Run HTTP JSON-RPC server (requires `NEXUS_DEV=1`)
-- `--connect [URL]`: Connect to server (no URL = discover mode)
-- `--agent ID`: Agent to connect to (default: main)
-- `-v, --verbose`: Enable verbose logging to console
-- `-V, --log-verbose`: Enable verbose logging to file
-- `--raw-log`: Enable raw API JSON logging
-- `--log-dir PATH`: Session log directory
-- `--reload`: Auto-reload on code changes (serve mode only)
+---
 
-**Session Startup Flags (skip lobby):**
-- `--resume`: Resume last session
-- `--fresh`: Start fresh temp session
-- `--session NAME`: Load specific saved session
-- `--template PATH`: Custom system prompt file
-- `--model NAME`: Model name/alias to use
+### `arg_parser.py` - Argument Parsing
 
-**RPC Subcommands:**
+Defines CLI arguments using argparse with subparsers for `rpc` commands.
+
+#### Helper Functions
+
+| Function | Description |
+|----------|-------------|
+| `add_api_key_arg()` | Add `--api-key` argument |
+| `add_port_arg()` | Add `--port/-p` argument |
+| `add_verbose_arg()` | Add `-v/--verbose` argument |
+| `add_log_verbose_arg()` | Add `-V/--log-verbose` argument |
+| `parse_args()` | Parse all CLI arguments |
+
+#### Main Mode Flags
+
+| Flag | Description |
+|------|-------------|
+| `--serve [PORT]` | Run HTTP JSON-RPC server (requires `NEXUS_DEV=1`) |
+| `--connect [URL]` | Connect to server (no URL = discover mode) |
+| `--agent ID` | Agent to connect to (default: main) |
+| `--scan PORTSPEC` | Additional ports to scan |
+| `-v, --verbose` | DEBUG output to console |
+| `-V, --log-verbose` | Verbose logging to file |
+| `--raw-log` | Raw API JSON logging |
+| `--log-dir PATH` | Session log directory |
+| `--reload` | Auto-reload on code changes (serve mode only) |
+
+#### Session Startup Flags
+
+| Flag | Description |
+|------|-------------|
+| `--resume` | Resume last session (skip lobby) |
+| `--fresh` | Start fresh temp session (skip lobby) |
+| `--session NAME` | Load specific saved session (skip lobby) |
+| `--template PATH` | Custom system prompt file (with `--fresh`) |
+| `--model NAME` | Model name/alias to use |
+
+#### RPC Subcommands
+
 ```
 nexus3 rpc detect [--port]
 nexus3 rpc list [--port] [--api-key]
@@ -137,9 +191,120 @@ nexus3 rpc compact AGENT [--port] [--api-key]
 nexus3 rpc shutdown [--port] [--api-key]
 ```
 
-### Lobby System (`lobby.py`)
+---
 
-The lobby provides session selection on REPL startup:
+### `client_commands.py` - RPC CLI Commands
+
+Thin wrappers around `NexusClient` for CLI access. All commands print JSON to stdout and return exit codes.
+
+| Function | Description |
+|----------|-------------|
+| `cmd_detect(port)` | Check if server is running |
+| `cmd_list(port, api_key)` | List all agents |
+| `cmd_create(agent_id, port, api_key, preset, cwd, ...)` | Create agent |
+| `cmd_destroy(agent_id, port, api_key)` | Remove agent |
+| `cmd_send(agent_id, content, port, api_key, timeout)` | Send message |
+| `cmd_cancel(agent_id, request_id, port, api_key)` | Cancel request |
+| `cmd_status(agent_id, port, api_key)` | Get agent status |
+| `cmd_compact(agent_id, port, api_key)` | Force compaction |
+| `cmd_shutdown(port, api_key)` | Shutdown server |
+
+**Security**: Commands do NOT auto-start servers.
+
+---
+
+### `repl_commands.py` - REPL Slash Commands
+
+Slash command implementations for the interactive REPL.
+
+#### Agent Management
+
+| Command | Description |
+|---------|-------------|
+| `/agent` | Show current agent status |
+| `/agent <name>` | Switch to agent (prompts to create if missing) |
+| `/agent <name> --yolo\|--trusted\|--sandboxed` | Create with preset and switch |
+| `/agent <name> --model <alias>` | Create with specific model |
+| `/whisper <agent>` | Enter whisper mode |
+| `/over` | Exit whisper mode |
+| `/list` | List all active agents |
+| `/create <name> [--preset] [--model]` | Create without switching |
+| `/destroy <name>` | Remove agent from pool |
+| `/send <agent> <msg>` | One-shot message to another agent |
+| `/status [agent] [--tools] [--tokens] [-a]` | Get status |
+| `/cancel [agent]` | Cancel in-progress request |
+
+#### Session Management
+
+| Command | Description |
+|---------|-------------|
+| `/save [name]` | Save current session |
+| `/clone <src> <dest>` | Clone agent or session |
+| `/rename <old> <new>` | Rename agent or session |
+| `/delete <name>` | Delete saved session |
+
+#### Configuration
+
+| Command | Description |
+|---------|-------------|
+| `/cwd [path]` | Show or change working directory |
+| `/model [name]` | Show or switch model |
+| `/permissions [preset]` | Show or set permissions |
+| `/permissions --disable <tool>` | Disable a tool |
+| `/permissions --enable <tool>` | Re-enable a tool |
+| `/permissions --list-tools` | List tool status |
+| `/prompt [file]` | Show or set system prompt |
+| `/compact` | Force context compaction |
+
+#### MCP (External Tools)
+
+| Command | Description |
+|---------|-------------|
+| `/mcp` | List servers |
+| `/mcp connect <name> [--allow-all] [--shared]` | Connect to server |
+| `/mcp disconnect <name>` | Disconnect from server |
+| `/mcp tools [server]` | List available tools |
+| `/mcp resources [server]` | List available resources |
+| `/mcp prompts [server]` | List available prompts |
+| `/mcp retry <name>` | Retry listing tools |
+
+#### GitLab
+
+| Command | Description |
+|---------|-------------|
+| `/gitlab` | List configured instances |
+| `/gitlab test [name]` | Test connection |
+
+#### Initialization
+
+| Command | Description |
+|---------|-------------|
+| `/init` | Create `.nexus3/` in current directory |
+| `/init --force` | Overwrite existing config |
+| `/init --global` | Initialize `~/.nexus3/` instead |
+
+#### REPL Control
+
+| Command | Description |
+|---------|-------------|
+| `/help [command]` | Show help (detailed with command name) |
+| `/clear` | Clear display (preserves context) |
+| `/quit`, `/exit`, `/q` | Exit REPL |
+
+#### Exports
+
+| Export | Description |
+|--------|-------------|
+| `HELP_TEXT` | Full help text string |
+| `COMMAND_HELP` | Dict of per-command detailed help |
+| `get_command_help(cmd)` | Get help for specific command |
+| `print_yolo_warning(console)` | Display YOLO mode warning |
+
+---
+
+### `lobby.py` - Session Selection Lobby
+
+Interactive session selection on REPL startup.
 
 ```
 NEXUS3 REPL
@@ -151,14 +316,15 @@ NEXUS3 REPL
 [1/2/3/q]:
 ```
 
-**LobbyChoice Enum:**
-- `RESUME`: Resume last session
-- `FRESH`: Create fresh temp session
-- `SELECT`: User selected from saved list
-- `QUIT`: Exit
+#### Data Types
 
-**LobbyResult Dataclass:**
 ```python
+class LobbyChoice(Enum):
+    RESUME = auto()   # Resume last session
+    FRESH = auto()    # Create fresh temp session
+    SELECT = auto()   # User selected from saved list
+    QUIT = auto()     # Exit
+
 @dataclass
 class LobbyResult:
     choice: LobbyChoice
@@ -166,9 +332,19 @@ class LobbyResult:
     template_path: Path | None = None
 ```
 
-### Connect Lobby (`connect_lobby.py`)
+#### Functions
 
-When servers are discovered, shows options for connecting:
+| Function | Description |
+|----------|-------------|
+| `show_lobby(session_manager, console)` | Display lobby menu |
+| `show_session_list(session_manager, console)` | Show saved sessions picker |
+| `format_time_ago(dt)` | Format datetime as relative time |
+
+---
+
+### `connect_lobby.py` - Server/Agent Connection
+
+Interactive UI for connecting to discovered servers.
 
 ```
 NEXUS3 Connect
@@ -184,20 +360,168 @@ Options:
   q) Quit
 ```
 
-**ConnectAction Enum:**
-- `CONNECT`: Connect to selected server+agent
-- `START_NEW_SERVER`: Start embedded server
-- `START_DIFFERENT_PORT`: Start on user-specified port
-- `SHUTDOWN_AND_REPLACE`: Shutdown selected server then start new
-- `RESCAN`: Scan more ports
-- `MANUAL_URL`: User entered URL manually
-- `QUIT`: Exit
+#### Data Types
 
-**Agent Picker:** After selecting a server, shows agent list with options to connect, create new, or go back.
+```python
+class ConnectAction(Enum):
+    CONNECT = "connect"              # Connect to server+agent
+    START_NEW_SERVER = "start_new"   # Start embedded server
+    START_DIFFERENT_PORT = "start_different_port"
+    SHUTDOWN_AND_REPLACE = "shutdown"
+    RESCAN = "rescan"                # Scan more ports
+    MANUAL_URL = "manual_url"        # User entered URL
+    QUIT = "quit"
 
-### Whisper Mode (`whisper.py`)
+@dataclass
+class ConnectResult:
+    action: ConnectAction
+    server_url: str | None = None
+    agent_id: str | None = None
+    port: int | None = None
+    api_key: str | None = None
+    scan_spec: str | None = None
+    create_agent: bool = False
+```
 
-Whisper mode enables persistent message redirection to another agent:
+#### Functions
+
+| Function | Description |
+|----------|-------------|
+| `show_connect_lobby(console, servers, default_port, ...)` | Main connect UI |
+| `show_agent_picker(console, server)` | Agent selection menu |
+| `prompt_for_port(console, default)` | Port number prompt |
+| `prompt_for_port_spec(console)` | Port range specification |
+| `prompt_for_api_key(console)` | API key prompt (uses getpass) |
+| `prompt_for_url(console)` | URL and agent ID prompt |
+| `prompt_for_agent_id(console)` | Agent ID prompt |
+
+---
+
+### `confirmation_ui.py` - Tool Action Confirmation
+
+Interactive confirmation prompts for destructive actions (TRUSTED mode).
+
+```python
+async def confirm_tool_action(
+    tool_call: ToolCall,
+    target_path: Path | None,
+    agent_cwd: Path,
+    pause_event: asyncio.Event,
+    pause_ack_event: asyncio.Event,
+) -> ConfirmationResult
+```
+
+#### Confirmation Menus by Tool Type
+
+**Write operations** (write_file, edit_file):
+```
+Allow write_file?
+  Path: /path/to/file.py
+
+  [1] Allow once
+  [2] Allow always for this file
+  [3] Allow always in this directory
+  [4] Deny
+  [p] View full details
+```
+
+**Execution operations** (bash_safe, run_python):
+```
+Execute bash_safe?
+  Command: ls -la
+  Directory: /home/user
+
+  [1] Allow once
+  [2] Allow always in this directory
+  [3] Deny
+  [p] View full details
+```
+
+**shell_UNSAFE** (always requires per-use approval):
+```
+Execute shell_UNSAFE?
+  Command: rm -rf temp/
+
+  [1] Allow once
+  [2] Deny
+  [p] View full details
+```
+
+**MCP tools**:
+```
+Allow MCP tool 'mcp_github_create_issue'?
+  Server: github
+  Arguments: {"title": "Bug report"...}
+
+  [1] Allow once
+  [2] Allow this tool always (this session)
+  [3] Allow all tools from this server (this session)
+  [4] Deny
+  [p] View full details
+```
+
+#### Helper Functions
+
+| Function | Description |
+|----------|-------------|
+| `format_tool_params(arguments, max_length)` | Format args as truncated string |
+| `smart_truncate(value, max_length, preserve_ends)` | Smart string truncation |
+
+#### Security Features
+
+- All values escaped with `escape_rich_markup()` to prevent injection
+- Pauses Live display and KeyMonitor during prompts
+- Uses `asyncio.to_thread()` for blocking input
+- External editor popup for full tool details (`[p]` option)
+
+---
+
+### `keys.py` - Keyboard Input Handling
+
+ESC key detection during async operations for cancellation.
+
+```python
+class KeyMonitor:
+    def __init__(
+        self,
+        on_escape: Callable[[], None],
+        pause_event: asyncio.Event,
+        pause_ack_event: asyncio.Event,
+    ) -> None
+
+    async def __aenter__(self) -> "KeyMonitor"
+    async def __aexit__(self, ...) -> None
+```
+
+#### Pause Protocol
+
+1. Caller clears `pause_event` to request pause
+2. Monitor sets `pause_ack_event` when paused (terminal restored)
+3. Caller waits for `pause_ack_event` before taking input
+4. Caller sets `pause_event` to signal resume
+5. Monitor clears `pause_ack_event` and resumes monitoring
+
+#### Platform Support
+
+| Platform | Implementation | Details |
+|----------|----------------|---------|
+| Unix/Linux/macOS | `termios` + `tty` + `select` | Sets terminal to cbreak mode |
+| Windows | `msvcrt` | Uses `kbhit()` and `getwch()` |
+| Fallback | Sleep loop | No keyboard detection, respects pause protocol |
+
+#### Exports
+
+| Export | Description |
+|--------|-------------|
+| `ESC` | ESC key code (`"\x1b"`) |
+| `KeyMonitor` | Context manager class |
+| `monitor_for_escape()` | Low-level monitor function |
+
+---
+
+### `whisper.py` - Whisper Mode State
+
+Manages persistent message redirection to another agent.
 
 ```python
 @dataclass
@@ -224,249 +548,45 @@ worker-1> /over
 >
 ```
 
-### Key Monitor (`keys.py`)
+---
 
-Provides ESC key detection during async operations for cancellation:
+### `live_state.py` - Shared Live Context
 
-```python
-class KeyMonitor:
-    """Context manager for monitoring keys during an operation."""
-
-    def __init__(
-        self,
-        on_escape: Callable[[], None],
-        pause_event: asyncio.Event,
-        pause_ack_event: asyncio.Event,
-    ) -> None
-
-    async def __aenter__(self) -> "KeyMonitor"
-    async def __aexit__(self, ...) -> None
-```
-
-**Pause Protocol (for confirmation dialogs):**
-1. Caller clears `pause_event` to request pause
-2. Monitor sets `pause_ack_event` when paused (terminal restored)
-3. Caller waits for `pause_ack_event` before taking input
-4. Caller sets `pause_event` to signal resume
-5. Monitor clears `pause_ack_event` and resumes monitoring
-
-**Platform Support:**
-
-| Platform | Implementation | Details |
-|----------|----------------|---------|
-| Unix/Linux/macOS | `termios` + `tty` + `select` | Sets terminal to cbreak mode, uses `select()` for non-blocking input |
-| Windows | `msvcrt` | Uses `msvcrt.kbhit()` to check for input, `msvcrt.getwch()` to read keys |
-| Fallback | Sleep loop | No keyboard detection, just respects pause protocol |
-
-**Windows ESC Key Detection:**
-
-On Windows, the key monitor uses native `msvcrt` functions:
+Shared ContextVar for Rich Live display coordination.
 
 ```python
-import msvcrt
-
-while True:
-    if msvcrt.kbhit():
-        char = msvcrt.getwch()
-        if char == ESC:  # '\x1b'
-            on_escape()
-        elif char in ('\x00', '\xe0'):
-            # Extended key - read and discard second byte
-            if msvcrt.kbhit():
-                msvcrt.getwch()
-    await asyncio.sleep(check_interval)
+_current_live: ContextVar[Live | None] = ContextVar("_current_live", default=None)
 ```
 
-Key behaviors:
-- `msvcrt.kbhit()` checks if a key is available without blocking
-- `msvcrt.getwch()` reads a wide character (Unicode support)
-- Extended keys (function keys, arrows) send two bytes; the second is consumed
-- Works in Windows Terminal, PowerShell, and CMD
-- No terminal mode changes needed (unlike Unix `termios`)
+Exists to prevent circular imports and ensure `repl.py` and `confirmation_ui.py` share the same ContextVar instance for pausing/resuming the Live display.
 
-### Confirmation UI (`confirmation_ui.py`)
+---
 
-Provides interactive confirmation prompts for destructive tool actions (TRUSTED mode):
+### `init_commands.py` - Configuration Initialization
 
-```python
-async def confirm_tool_action(
-    tool_call: ToolCall,
-    target_path: Path | None,
-    agent_cwd: Path,
-    pause_event: asyncio.Event,
-    pause_ack_event: asyncio.Event,
-) -> ConfirmationResult
-```
-
-**Confirmation Options by Tool Type:**
-
-*Write operations (write_file, edit_file):*
-```
-Allow write_file?
-  Path: /path/to/file.py
-
-  [1] Allow once
-  [2] Allow always for this file
-  [3] Allow always in this directory
-  [4] Deny
-```
-
-*Execution operations (bash_safe, run_python):*
-```
-Execute bash_safe?
-  Command: ls -la
-  Directory: /home/user
-
-  [1] Allow once
-  [2] Allow always in this directory
-  [3] Deny
-```
-
-*shell_UNSAFE (always requires per-use approval):*
-```
-Execute shell_UNSAFE?
-  Command: rm -rf temp/
-
-  [1] Allow once
-  [2] Deny
-  (shell_UNSAFE requires approval each time)
-```
-
-*MCP tools:*
-```
-Allow MCP tool 'mcp_github_create_issue'?
-  Server: github
-  Arguments: {"title": "Bug report"...}
-
-  [1] Allow once
-  [2] Allow this tool always (this session)
-  [3] Allow all tools from this server (this session)
-  [4] Deny
-```
-
-**Security Features:**
-- All values escaped with `escape_rich_markup()` to prevent injection
-- Pauses Live display and KeyMonitor during prompts
-- Uses `asyncio.to_thread()` for blocking input
-
-### HTTP Server Mode (`serve.py`)
-
-Headless HTTP server for development and automation:
-
-```python
-async def run_serve(
-    port: int | None = None,
-    verbose: bool = False,
-    log_verbose: bool = False,
-    raw_log: bool = False,
-    log_dir: Path | None = None,
-) -> None
-```
-
-**Startup:**
-1. Load configuration
-2. Check for existing server on port
-3. Bootstrap server components
-4. Generate API key and write to token file after bind succeeds
-5. Run until shutdown requested
-
-**Security:** Requires `NEXUS_DEV=1` environment variable to prevent unattended servers.
-
-### Client Commands (`client_commands.py`)
-
-Thin wrappers around `NexusClient` for CLI access:
-
-```python
-async def cmd_detect(port: int) -> int
-async def cmd_list(port: int, api_key: str | None) -> int
-async def cmd_create(agent_id: str, port: int, api_key: str | None, preset: str, ...) -> int
-async def cmd_destroy(agent_id: str, port: int, api_key: str | None) -> int
-async def cmd_send(agent_id: str, content: str, port: int, api_key: str | None, timeout: float) -> int
-async def cmd_cancel(agent_id: str, request_id: str, port: int, api_key: str | None) -> int
-async def cmd_status(agent_id: str, port: int, api_key: str | None) -> int
-async def cmd_compact(agent_id: str, port: int, api_key: str | None) -> int
-async def cmd_shutdown(port: int, api_key: str | None) -> int
-```
-
-All commands:
-- Print JSON to stdout for parsing
-- Print errors to stderr
-- Return exit code (0 = success, 1 = error)
-- Do NOT auto-start servers (security measure)
-
-### REPL Commands (`repl_commands.py`)
-
-Slash command handlers for the interactive REPL:
-
-**Agent Management:**
-- `/agent` - Show current agent status
-- `/agent <name>` - Switch to agent (prompts to create/restore if missing)
-- `/agent <name> --yolo|--trusted|--sandboxed` - Create with preset and switch
-- `/agent <name> --model <alias>` - Create with specific model
-- `/whisper <agent>` - Enter whisper mode
-- `/over` - Exit whisper mode
-
-**Configuration:**
-- `/cwd [path]` - Show or change working directory
-- `/permissions [preset|--disable TOOL|--enable TOOL|--list-tools]` - Permission management
-- `/prompt [file]` - Show or set system prompt
-- `/model [name]` - Show or switch model
-- `/compact` - Force context compaction
-
-**MCP:**
-- `/mcp` - List servers
-- `/mcp connect <name> [--allow-all|--per-tool] [--shared|--private]` - Connect to server
-- `/mcp disconnect <name>` - Disconnect from server
-- `/mcp tools [server]` - List available tools
-- `/mcp resources [server]` - List available resources
-- `/mcp prompts [server]` - List available prompts
-- `/mcp retry <server>` - Retry listing tools
-
-**Session:**
-- `/save [name]` - Save current session
-- `/clone <src> <dest>` - Clone session
-- `/rename <old> <new>` - Rename session
-- `/delete <name>` - Delete saved session
-
-**REPL Control:**
-- `/help [command]` - Display help (detailed help with command name)
-- `/clear` - Clear display
-- `/quit`, `/exit`, `/q` - Exit REPL
-
-**Per-Command Help:**
-The module provides detailed help for each command via `COMMAND_HELP` dict and `get_command_help()`. Users can access it with `/help <command>` or `/<command> --help`.
-
-### Init Commands (`init_commands.py`)
-
-Configuration directory initialization with symlink attack protection:
+Initialize configuration directories with security protections.
 
 ```python
 def init_global(force: bool = False) -> tuple[bool, str]
 def init_local(cwd: Path | None = None, force: bool = False) -> tuple[bool, str]
 ```
 
-**Global Init (`~/.nexus3/`):**
-- Copies NEXUS.md from defaults
-- Copies config.json from defaults
-- Creates empty mcp.json
-- Creates sessions/ directory
+#### Global Init (`~/.nexus3/`)
 
-**Local Init (`./.nexus3/`):**
-- Creates NEXUS.md template
-- Creates config.json template
-- Creates empty mcp.json
+- Copies `NEXUS.md` from defaults
+- Copies `config.json` from defaults
+- Creates empty `mcp.json`
+- Creates `sessions/` directory
 
-**Security:** Uses `_safe_write_text()` which refuses to follow symlinks, raising `InitSymlinkError` if a symlink is detected.
+#### Local Init (`./.nexus3/`)
 
-### Live State (`live_state.py`)
+- Creates `NEXUS.md` template
+- Creates `config.json` template
+- Creates empty `mcp.json`
 
-Shared ContextVar for Rich Live display coordination:
+#### Security
 
-```python
-_current_live: ContextVar[Live | None] = ContextVar("_current_live", default=None)
-```
-
-This exists to prevent circular imports and ensure `repl.py` and `confirmation_ui.py` share the same ContextVar instance for pausing/resuming the Live display during confirmation prompts.
+Uses `_safe_write_text()` which refuses to follow symlinks, raising `InitSymlinkError` if detected.
 
 ---
 
@@ -491,7 +611,7 @@ This exists to prevent circular imports and ensure `repl.py` and `confirmation_u
 |---------|-------|
 | `prompt_toolkit` | Interactive prompt with async support, styling, HTML formatting |
 | `rich` | Live display, console output, formatting |
-| `python-dotenv` | Load .env files |
+| `python-dotenv` | Load `.env` files |
 
 ### Platform-Specific Dependencies
 
@@ -524,6 +644,9 @@ nexus3 --connect http://localhost:8765 --agent worker-1
 
 # Connect with server discovery
 nexus3 --connect
+
+# Scan additional ports
+nexus3 --connect --scan 9000-9050
 ```
 
 ### REPL Commands
@@ -547,8 +670,6 @@ worker-1> /over            # Return to original agent
 > /mcp                      # List servers
 > /mcp connect github --allow-all --shared
 > /mcp tools github
-> /mcp resources
-> /mcp prompts
 > /mcp disconnect github
 
 # Session
@@ -626,6 +747,8 @@ nexus3 --init-global-force  # Overwrite existing
 
 6. **Idle Timeout**: Embedded server auto-shuts down after 30 minutes of no RPC activity (WSL-safe monotonic clock)
 
+7. **Input Validation**: Agent IDs validated via `validate_agent_id()` to prevent path traversal
+
 ---
 
-*Updated: 2026-01-28*
+*Updated: 2026-02-01*

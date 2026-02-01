@@ -1,6 +1,6 @@
 # NEXUS3 Context Module
 
-Context management for NEXUS3 agents: layered configuration loading, conversation history, token budgeting, truncation strategies, compaction via LLM summarization, and structured prompt construction.
+Context management for NEXUS3 agents: layered configuration loading, conversation history, token budgeting, truncation strategies, compaction via LLM summarization, clipboard context injection, and structured prompt construction.
 
 ## Overview
 
@@ -11,7 +11,7 @@ The context module is responsible for everything related to what an agent "knows
 3. **Tracking token usage** and enforcing budgets
 4. **Truncating** old messages when over budget
 5. **Compacting** via LLM summarization for longer sessions
-6. **Injecting dynamic content** (date/time) safely into prompts
+6. **Injecting dynamic content** (date/time, clipboard) safely into prompts
 
 ## Architecture
 
@@ -34,13 +34,13 @@ Loads and merges context from multiple directory layers with a defined precedenc
 #### Layer Hierarchy
 
 ```
-LAYER 1: Install Defaults (shipped with package)
+LAYER 1a: System Defaults (NEXUS-DEFAULT.md in package - auto-updates)
     |
-LAYER 2: Global (~/.nexus3/)
+LAYER 1b: Global (~/.nexus3/NEXUS.md - user customizations)
     |
-LAYER 3: Ancestors (up to N levels above CWD)
+LAYER 2: Ancestors (up to N levels above CWD)
     |
-LAYER 4: Local (CWD/.nexus3/)
+LAYER 3: Local (CWD/.nexus3/)
 ```
 
 Each layer can provide:
@@ -147,7 +147,7 @@ Note: Current date/time is NOT included here - it's injected dynamically per-req
 
 ### ContextManager (`manager.py`)
 
-Manages runtime conversation state, token budgets, and message truncation.
+Manages runtime conversation state, token budgets, message truncation, and dynamic context injection.
 
 #### Configuration
 
@@ -164,7 +164,20 @@ class ContextConfig:
 1. **Message Management** - Add/clear user messages, assistant responses, tool results
 2. **Token Tracking** - Track usage across system prompt, tools, and messages
 3. **Truncation** - Remove old messages when over budget (preserving tool call/result pairs)
-4. **Dynamic Injection** - Inject current date/time into prompts per-request
+4. **Dynamic Injection** - Inject current date/time and clipboard context into prompts per-request
+
+#### Constructor Parameters
+
+```python
+ContextManager(
+    config: ContextConfig | None = None,       # Context configuration
+    token_counter: TokenCounter | None = None, # Token counter implementation
+    logger: SessionLogger | None = None,       # Optional session logger
+    agent_id: str | None = None,               # Agent ID for clipboard scoping
+    clipboard_manager: ClipboardManager | None = None,  # Clipboard for context injection
+    clipboard_config: ClipboardConfig | None = None,    # Clipboard settings
+)
+```
 
 #### Message Types
 
@@ -174,7 +187,32 @@ The manager handles three message roles:
 |------|--------|-------|
 | USER | `add_user_message(content, meta?)` | User input, supports metadata (e.g., source attribution) |
 | ASSISTANT | `add_assistant_message(content, tool_calls?)` | LLM responses, with optional tool calls |
-| TOOL | `add_tool_result(tool_call_id, name, result)` | Tool execution results |
+| TOOL | `add_tool_result(tool_call_id, name, result, call_index?, arguments?)` | Tool execution results with optional correlation prefix |
+
+#### Tool Result Correlation
+
+When multiple tool calls are made in parallel, the manager can add correlation prefixes to help the model match results to calls:
+
+```python
+# Add tool result with correlation prefix
+manager.add_tool_result(
+    tool_call_id="tc_123",
+    name="list_directory",
+    result=ToolResult(output="file1.txt\nfile2.txt"),
+    call_index=1,  # 1-based index in the batch
+    arguments={"path": "nexus3/core/"}
+)
+
+# Result content becomes:
+# [#1: list_directory(path="nexus3/core/")]
+# file1.txt
+# file2.txt
+```
+
+The `format_tool_result_prefix()` function handles:
+- Truncating long argument values (>50 chars)
+- Skipping internal arguments (`_parallel`, `content`, `new_content`, `code`)
+- Limiting overall prefix length to 120 characters
 
 #### Truncation Strategies
 
@@ -196,7 +234,7 @@ When context exceeds budget, the manager truncates messages while preserving too
 usage = manager.get_token_usage()
 # Returns:
 # {
-#     "system": 1500,      # System prompt tokens
+#     "system": 1500,      # System prompt tokens (with dynamic content)
 #     "tools": 800,        # Tool definitions tokens
 #     "messages": 3200,    # Conversation messages tokens
 #     "total": 5500,       # Sum of above
@@ -232,7 +270,7 @@ manager.add_assistant_message("Hi! How can I help?")
 
 # After tool calls
 manager.add_assistant_message("Let me read that file.", tool_calls=[...])
-manager.add_tool_result(tool_call_id, "read_file", result)
+manager.add_tool_result(tool_call_id, "read_file", result, call_index=1, arguments={"path": "x.txt"})
 
 # Check budget
 if manager.is_over_budget():
@@ -259,6 +297,29 @@ prompt = inject_datetime_into_prompt(
 ```
 
 This ensures the agent always knows the current time, even in long-running sessions.
+
+#### Clipboard Context Injection
+
+When a `ClipboardManager` is provided and `clipboard_config.inject_into_context` is enabled, clipboard entries are automatically appended to the system prompt:
+
+```python
+from nexus3.context import ContextManager
+from nexus3.clipboard import ClipboardManager
+from nexus3.config.schema import ClipboardConfig
+
+clipboard_config = ClipboardConfig(
+    inject_into_context=True,
+    max_injected_entries=10,
+    show_source_in_injection=True,
+)
+
+manager = ContextManager(
+    clipboard_manager=clipboard_manager,
+    clipboard_config=clipboard_config,
+)
+```
+
+The clipboard section is appended after the environment block during `build_messages()`.
 
 #### Helper Functions
 
@@ -547,9 +608,10 @@ from nexus3.context import (
 | `core.constants` | `get_defaults_dir`, `get_nexus_dir` |
 | `core.utils` | `deep_merge`, `find_ancestor_config_dirs` |
 | `core.redaction` | `redact_dict`, `redact_secrets` |
-| `config.load_utils` | `load_json_file` |
-| `config.schema` | `ContextConfig` (config schema), `MCPServerConfig` |
+| `config.load_utils` | `load_json_file_optional` |
+| `config.schema` | `ContextConfig`, `MCPServerConfig`, `ClipboardConfig` |
 | `mcp.errors` | `MCPErrorContext` |
+| `clipboard` | `ClipboardManager`, `format_clipboard_context` |
 | `session.logging` | `SessionLogger` (optional, for context logging) |
 
 ### External Dependencies
@@ -596,6 +658,21 @@ tools = context.get_tool_definitions()
 response = await provider.complete(messages, tools)
 ```
 
+### Clipboard Module
+
+When clipboard injection is enabled, the manager integrates with `ClipboardManager`:
+
+```python
+from nexus3.clipboard import ClipboardManager, format_clipboard_context
+
+# In build_messages(), clipboard context is appended to system prompt
+clipboard_section = format_clipboard_context(
+    clipboard_manager,
+    max_entries=clipboard_config.max_injected_entries,
+    show_source=clipboard_config.show_source_in_injection,
+)
+```
+
 ---
 
 ## Configuration Options
@@ -615,6 +692,12 @@ Context behavior is configured via `config.json`:
     "summary_budget_ratio": 0.25,
     "recent_preserve_ratio": 0.25,
     "trigger_threshold": 0.9
+  },
+  "clipboard": {
+    "enabled": true,
+    "inject_into_context": true,
+    "max_injected_entries": 10,
+    "show_source_in_injection": true
   }
 }
 ```
@@ -651,17 +734,17 @@ while True:
     user_input = input("> ")
     manager.add_user_message(user_input)
 
-    # Build messages with dynamic datetime
+    # Build messages with dynamic datetime and clipboard context
     messages = manager.build_messages()
 
     # Send to LLM
     response = await provider.complete(messages, manager.get_tool_definitions())
     manager.add_assistant_message(response.content, response.tool_calls)
 
-    # Handle tool calls
-    for tc in response.tool_calls or []:
+    # Handle tool calls with correlation prefixes
+    for i, tc in enumerate(response.tool_calls or [], 1):
         result = await execute_tool(tc)
-        manager.add_tool_result(tc.id, tc.name, result)
+        manager.add_tool_result(tc.id, tc.name, result, call_index=i, arguments=tc.arguments)
 
     # Check if compaction needed
     if manager.is_over_budget():
@@ -684,4 +767,4 @@ while True:
 
 ## Status
 
-Production-ready. Last updated: 2026-01-28
+Production-ready. Last updated: 2026-02-01

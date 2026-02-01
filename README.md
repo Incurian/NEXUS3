@@ -2,7 +2,7 @@
 
 **A secure, multi-agent CLI framework for AI-powered software engineering.**
 
-NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrating multiple AI agents. Each agent runs in isolation with configurable permissions, enabling safe automation of development tasks through 27 built-in skills (file operations, git, shell execution, inter-agent communication).
+NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrating multiple AI agents. Each agent runs in isolation with configurable permissions, enabling safe automation of development tasks through 39 built-in skills (file operations, git, shell execution, clipboard, inter-agent communication) plus 21 GitLab integration skills.
 
 ---
 
@@ -33,9 +33,12 @@ NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrat
 - **Async-First**: Built on asyncio throughout—no threading, predictable concurrency.
 - **Fail-Fast**: Errors surface immediately with clear messages—no silent failures.
 - **Security by Default**: Sandboxed by default for RPC agents, permission ceilings prevent escalation.
-- **Multi-Provider Support**: OpenRouter, Anthropic, OpenAI, Azure, Ollama, vLLM.
-- **Context Compaction**: LLM-powered summarization when context gets full.
+- **Multi-Provider Support**: OpenRouter, Anthropic, OpenAI, Azure, Ollama, vLLM with prompt caching support.
+- **Session Persistence**: Save, resume, and manage conversation sessions with full state restoration.
+- **Context Compaction**: LLM-powered summarization when context gets full, with automatic system prompt reload.
+- **Scoped Clipboard**: Agent, project, and system-level clipboard with tagging, search, and export/import.
 - **MCP Integration**: Connect external tools via Model Context Protocol.
+- **GitLab Integration**: 21 skills for issues, MRs, CI/CD, epics, and more (requires TRUSTED+).
 
 ---
 
@@ -512,7 +515,7 @@ NEXUS3 v0.1.0 - Type /help for commands
 
 you> Hello! What can you do?
 
-assistant> I'm NEXUS3, an AI assistant with access to 27 tools for
+assistant> I'm NEXUS3, an AI assistant with access to 60 tools for
 software development tasks. I can:
 
 • Read, write, and edit files
@@ -590,13 +593,13 @@ nexus3 [OPTIONS]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--model NAME` | Config default | Model alias or full ID |
+| `-m, --model NAME` | Config default | Model alias or full ID |
 | `--template PATH` | - | Custom system prompt file |
 | `-v, --verbose` | false | Enable debug logging to terminal |
 | `-V, --log-verbose` | false | Write debug output to verbose.md log file |
 | `--raw-log` | false | Log raw API JSON |
 | `--log-dir PATH` | `.nexus3/logs` | Log directory |
-| `--port PORT` | 8765 | Server port |
+| `-p, --port PORT` | 8765 | Server port |
 | `--api-key KEY` | Auto | Explicit API key |
 | `--scan PORTS` | - | Additional ports to scan (e.g., `9000,9001-9010`) |
 
@@ -615,15 +618,15 @@ Available when running interactively.
 
 | Command | Description |
 |---------|-------------|
-| `/agent` | Show current agent status |
+| `/agent` | Show current agent detailed status |
 | `/agent NAME` | Switch to agent (creates if needed) |
-| `/agent NAME --trusted` | Create trusted agent and switch |
+| `/agent NAME --yolo\|--trusted\|--sandboxed` | Create agent with preset and switch |
 | `/agent NAME --model ALIAS` | Create agent with specific model |
 | `/list` | List all active agents |
-| `/create NAME [--preset]` | Create agent without switching |
-| `/destroy NAME` | Remove agent |
+| `/create NAME [--preset] [--model]` | Create agent without switching |
+| `/destroy NAME` | Remove agent from pool |
 | `/send AGENT MESSAGE` | One-shot message to agent |
-| `/status [AGENT] [-a]` | Get agent status (use `-a` for all details) |
+| `/status [AGENT] [--tools] [--tokens] [-a]` | Get agent status (`-a` for all details) |
 | `/cancel [AGENT]` | Cancel in-progress request |
 
 #### Inter-Agent Communication
@@ -649,23 +652,31 @@ Available when running interactively.
 | `/cwd [PATH]` | Show or change working directory |
 | `/model [NAME]` | Show or switch model |
 | `/permissions [PRESET]` | Show or change permissions |
+| `/permissions --disable TOOL` | Disable a specific tool |
+| `/permissions --enable TOOL` | Re-enable a disabled tool |
 | `/permissions --list-tools` | List all tools and their status |
 | `/prompt [FILE]` | Show or set system prompt |
 | `/compact` | Force context compaction |
-| `/init [--global]` | Initialize project config |
+| `/init [--force] [--global]` | Initialize project config |
+| `/gitlab` | Show GitLab configuration and skill reference |
 
 #### MCP (External Tools)
 
 | Command | Description |
 |---------|-------------|
-| `/mcp` | List MCP servers |
-| `/mcp connect NAME` | Connect to MCP server |
-| `/mcp connect NAME --allow-all --shared` | Connect skipping prompts, share with all agents |
+| `/mcp` | List configured and connected MCP servers |
+| `/mcp connect NAME [flags]` | Connect to MCP server |
 | `/mcp disconnect NAME` | Disconnect from server |
 | `/mcp tools [SERVER]` | List available MCP tools |
 | `/mcp resources [SERVER]` | List available MCP resources |
 | `/mcp prompts [SERVER]` | List available MCP prompts |
 | `/mcp retry NAME` | Retry tool listing for failed server |
+
+**MCP connect flags:**
+- `--allow-all` - Skip consent prompt, allow all tools
+- `--per-tool` - Skip consent prompt, require per-tool confirmation
+- `--shared` - Skip sharing prompt, share with all agents
+- `--private` - Skip sharing prompt, keep private to this agent
 
 #### REPL Control
 
@@ -679,27 +690,36 @@ Available when running interactively.
 
 | Key | Action |
 |-----|--------|
-| `ESC` | Cancel current response |
-| `Ctrl+C` | Interrupt input |
+| `ESC` | Cancel in-progress response |
+| `Ctrl+C` | Interrupt current input |
 | `Ctrl+D` | Exit REPL |
+| `p` | View full tool details (during confirmation prompt) |
 
 ### RPC Commands (Programmatic Access)
 
 For scripting, automation, or integrating NEXUS3 with external tools, use the `nexus3 rpc` subcommands. These provide the same functionality as REPL commands but from the shell.
 
-**Note:** RPC commands require a running server (started via `nexus3` REPL or `NEXUS_DEV=1 nexus3 --serve`). They do **not** auto-start servers.
+**Note:** RPC commands require a running server (started via `nexus3` REPL or `NEXUS_DEV=1 nexus3 --serve`). They do **not** auto-start servers. All RPC commands support `-p, --port PORT` (default: 8765) and `--api-key KEY`.
 
 | Command | Description |
 |---------|-------------|
 | `nexus3 rpc detect` | Check if server is running (exit code 0/1) |
 | `nexus3 rpc list` | List all agents |
-| `nexus3 rpc create ID [--preset P] [--cwd PATH] [--write-path PATH] [--model M] [--message MSG]` | Create agent |
-| `nexus3 rpc send ID MESSAGE [--timeout SEC]` | Send message to agent |
-| `nexus3 rpc status ID` | Get agent status |
+| `nexus3 rpc create ID [flags]` | Create agent |
+| `nexus3 rpc send ID MESSAGE [-t SEC]` | Send message to agent |
+| `nexus3 rpc status ID` | Get agent status (tokens + context) |
 | `nexus3 rpc destroy ID` | Remove agent |
 | `nexus3 rpc compact ID` | Force context compaction |
 | `nexus3 rpc cancel ID REQ_ID` | Cancel in-progress request |
 | `nexus3 rpc shutdown` | Stop the server |
+
+**RPC create flags:**
+- `--preset P` - Permission preset (`trusted` or `sandboxed`, default: sandboxed)
+- `--cwd PATH` - Working directory / sandbox root
+- `--write-path PATH` - Path where writes are allowed (can be repeated)
+- `-m, --model NAME` - Model name/alias to use
+- `-M, --message MSG` - Initial message to send immediately after creation
+- `-t, --timeout SEC` - Timeout for initial message (default: 300)
 
 **Security note:** RPC-created agents default to `sandboxed` (read-only). Use `--preset trusted` for write access or `--write-path PATH` for specific directories.
 
@@ -747,18 +767,20 @@ For scripting, automation, or integrating NEXUS3 with external tools, use the `n
 
 | Module | Purpose |
 |--------|---------|
-| `core/` | Types, interfaces, errors, encoding, security primitives |
-| `config/` | Pydantic schemas, layered config loading |
-| `provider/` | LLM provider implementations, retry logic |
-| `context/` | Context management, token counting, compaction |
-| `session/` | Session coordinator, event system, persistence |
-| `skill/` | Skill registry, base classes, 27 built-in skills |
-| `display/` | Rich terminal UI, spinner, theming |
-| `cli/` | REPL, argument parsing, lobby |
-| `rpc/` | JSON-RPC server, agent pool, authentication |
-| `mcp/` | Model Context Protocol client |
-| `commands/` | Unified command infrastructure |
-| `defaults/` | Default configuration and prompts |
+| `core/` | Types, interfaces, errors, encoding, paths, URL validation, permissions, process termination |
+| `config/` | Pydantic schema, permission config, fail-fast loader |
+| `provider/` | AsyncProvider protocol, multi-provider support, prompt caching, retry logic |
+| `context/` | ContextManager, ContextLoader, TokenCounter, compaction |
+| `session/` | Session coordinator, persistence, SessionManager, SQLite logging |
+| `skill/` | Skill protocol, SkillRegistry, ServiceContainer, 39 built-in + 21 GitLab skills |
+| `clipboard/` | Scoped clipboard system (agent/project/system), SQLite storage |
+| `patch/` | Unified diff parsing, validation, and application |
+| `display/` | DisplayManager, StreamingDisplay, InlinePrinter, SummaryBar, theme |
+| `cli/` | Unified REPL, lobby, whisper, HTTP server, client commands |
+| `rpc/` | JSON-RPC protocol, Dispatcher, GlobalDispatcher, AgentPool, auth |
+| `mcp/` | Model Context Protocol client, external tool integration |
+| `commands/` | Unified command infrastructure for CLI and REPL |
+| `defaults/` | Default configuration and system prompts |
 
 Each module has its own `README.md` with detailed documentation.
 
@@ -772,40 +794,42 @@ NEXUS3 implements a comprehensive security system with three permission levels.
 
 | Level | Description | File Access | Execution | Agent Creation |
 |-------|-------------|-------------|-----------|----------------|
-| **YOLO** | Full access, no confirmations | Unrestricted | No prompts | Any preset |
-| **TRUSTED** | Interactive with confirmations | Read anywhere, write prompts outside CWD | Prompts required | Sandboxed only |
-| **SANDBOXED** | Isolated sandbox | CWD only | Disabled | Disabled |
+| **YOLO** | Full access, no confirmations | Unrestricted | No prompts | TRUSTED or SANDBOXED children |
+| **TRUSTED** | Interactive with confirmations | Read anywhere, write prompts outside CWD | Prompts required | SANDBOXED only |
+| **SANDBOXED** | Isolated sandbox | CWD only | Disabled | Cannot create agents |
 
 ### Permission Presets
 
 | Preset | Level | Description | Available Via |
 |--------|-------|-------------|---------------|
 | `yolo` | YOLO | Full access, no confirmations | REPL only |
-| `trusted` | TRUSTED | Confirmations for destructive actions | REPL, RPC |
-| `sandboxed` | SANDBOXED | CWD only, no execution | REPL, RPC (default) |
-| `worker` | SANDBOXED | Legacy alias for sandboxed | REPL, RPC |
+| `trusted` | TRUSTED | CWD auto-allowed, prompts for other paths | REPL, RPC |
+| `sandboxed` | SANDBOXED | CWD only, no execution, limited nexus tools | REPL, RPC (default) |
 
 ### Key Security Features
 
 #### Permission Ceiling Enforcement
 
 Child agents cannot exceed parent permissions:
-- YOLO agents can create TRUSTED or SANDBOXED children
+- YOLO agents can create TRUSTED or SANDBOXED children (not YOLO)
 - TRUSTED agents can only create SANDBOXED children
-- SANDBOXED agents cannot create any agents
+- SANDBOXED agents cannot create any agents (`nexus_create` disabled)
 
 #### Path Sandboxing
 
 - **Sandboxed agents**: Can only access files within their `cwd`
 - **Symlink protection**: Resolved paths checked for sandbox escape
-- **Per-tool paths**: Individual tools can have their own path restrictions
+- **Per-tool paths**: Individual tools can have their own path restrictions via `allowed_paths`
+- **Frozen paths**: SANDBOXED policy has `frozen=True`, preventing path modifications
 
 #### RPC Security
 
 - **Localhost binding**: Server only binds to `127.0.0.1`
-- **Token authentication**: 256-bit tokens with constant-time comparison
+- **Token authentication**: 256-bit tokens (32 bytes) with constant-time comparison via `hmac.compare_digest`
+- **Token format**: `nxk_` prefix + URL-safe Base64 (e.g., `nxk_7Ks9XmN2pLqR4Tv8YbHc...`)
 - **Request limits**: Body size (1MB), header limits, timeout protection
-- **Secure tokens**: `0o600` permissions, per-port token files
+- **Secure tokens**: `0o600` permissions, per-port token files (`rpc.token` or `rpc-{port}.token`)
+- **Permission checks**: Token files with insecure permissions (readable by group/others) are rejected in strict mode
 
 #### SSRF Protection
 
@@ -820,6 +844,14 @@ URL validation blocks access to:
 - Process group kills on timeout (no orphaned processes)
 - Environment sanitization (API keys not passed to subprocesses)
 - `bash_safe` uses `shlex.split()` (no shell injection)
+- `shell_UNSAFE` always requires confirmation (no "allow always" option)
+
+### Sandboxed Agent Tool Restrictions
+
+SANDBOXED agents have these tools disabled:
+- **Execution**: `bash_safe`, `shell_UNSAFE`, `run_python`
+- **Agent management**: `nexus_create`, `nexus_destroy`, `nexus_shutdown`, `nexus_cancel`, `nexus_status`
+- **Exception**: `nexus_send` is enabled but restricted to `allowed_targets="parent"` (can only message parent)
 
 ### RPC Default Permissions (Important!)
 
@@ -853,6 +885,15 @@ Options:
 - **n**: Deny
 - **a**: Allow all operations in this directory for the session
 - **s**: Skip this tool call
+
+### Session Allowances
+
+TRUSTED mode supports dynamic "allow always" allowances that persist for the session:
+- **File allowances**: Allow writes to specific files
+- **Directory allowances**: Allow writes anywhere in a directory
+- **Execution allowances**: Allow execution tools in specific directories (not global)
+
+These are stored in `SessionAllowances` and checked before prompting for confirmation.
 
 ---
 
@@ -911,21 +952,30 @@ Configuration is loaded from multiple layers (later overrides earlier):
   "default_permission_level": "trusted",
   "compaction": { },
   "context": { },
+  "clipboard": { },
   "mcp_servers": [ ],
   "server": { },
-  "permissions": { }
+  "permissions": { },
+  "gitlab": { }
 }
 ```
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `default_model` | string | `"haiku"` | Model alias to use by default |
-| `providers` | object | - | Provider configurations (see [Provider Configuration](#provider-configuration)) |
+| `providers` | object | `{}` | Provider configurations (see [Provider Configuration](#provider-configuration)) |
 | `stream_output` | bool | `true` | Stream LLM responses |
 | `max_tool_iterations` | int | `10` | Max tool calls per turn (shipped defaults use 100) |
 | `skill_timeout` | float | `30.0` | Default tool timeout in seconds (shipped defaults use 120) |
 | `max_concurrent_tools` | int | `10` | Parallel tool execution limit |
 | `default_permission_level` | string | `"trusted"` | Default permission preset |
+| `compaction` | object | see below | Context compaction settings |
+| `context` | object | see below | Context loading settings |
+| `clipboard` | object | see below | Clipboard system settings |
+| `mcp_servers` | array | `[]` | MCP server configurations (see [MCP Integration](#mcp-integration)) |
+| `server` | object | see below | HTTP server settings |
+| `permissions` | object | see below | Permission presets and tool configs |
+| `gitlab` | object | see below | GitLab instance configurations (see [GitLab Integration](#gitlab-integration)) |
 
 **Note:** The shipped `defaults/config.json` uses `max_tool_iterations: 100` and `skill_timeout: 120.0` for a more permissive default experience.
 
@@ -976,13 +1026,86 @@ Configuration is loaded from multiple layers (later overrides earlier):
 ```json
 {
   "server": {
+    "host": "127.0.0.1",
     "port": 8765,
     "log_level": "INFO"
   }
 }
 ```
 
-**Note:** The server always binds to `127.0.0.1` for security (not configurable).
+| Option | Default | Description |
+|--------|---------|-------------|
+| `host` | `"127.0.0.1"` | Host address to bind (use `0.0.0.0` for all interfaces) |
+| `port` | `8765` | Port number (1-65535) |
+| `log_level` | `"INFO"` | Logging level: DEBUG, INFO, WARNING, ERROR |
+
+**Security note:** Default `127.0.0.1` binding restricts access to localhost only. Using `0.0.0.0` exposes the server to the network.
+
+#### Clipboard Configuration
+
+```json
+{
+  "clipboard": {
+    "enabled": true,
+    "inject_into_context": true,
+    "max_injected_entries": 10,
+    "show_source_in_injection": true,
+    "max_entry_bytes": 1048576,
+    "warn_entry_bytes": 102400,
+    "default_ttl_seconds": null
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `true` | Enable clipboard tools |
+| `inject_into_context` | `true` | Auto-inject clipboard index into system prompt |
+| `max_injected_entries` | `10` | Maximum entries to show in context injection (0-50) |
+| `show_source_in_injection` | `true` | Show source path/lines in context injection |
+| `max_entry_bytes` | `1048576` | Maximum size per entry (1MB default) |
+| `warn_entry_bytes` | `102400` | Warning threshold for large entries (100KB) |
+| `default_ttl_seconds` | `null` | Default TTL for new entries (`null` = permanent) |
+
+**Scope permissions by preset:**
+- `yolo`: Full access to agent/project/system scopes
+- `trusted`: Read/write agent+project, read-only system
+- `sandboxed`: Agent scope only (in-memory, session-only)
+
+#### GitLab Configuration
+
+```json
+{
+  "gitlab": {
+    "instances": {
+      "default": {
+        "url": "https://gitlab.com",
+        "token_env": "GITLAB_TOKEN"
+      },
+      "work": {
+        "url": "https://gitlab.mycompany.com",
+        "token_env": "GITLAB_WORK_TOKEN"
+      }
+    },
+    "default_instance": "default"
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `instances` | `{}` | Named GitLab instance configurations |
+| `default_instance` | `"default"` | Instance to use when not specified |
+
+**Instance options:**
+
+| Option | Description |
+|--------|-------------|
+| `url` | GitLab instance URL |
+| `token_env` | Environment variable containing API token (recommended) |
+| `token` | Direct token value (not recommended - use `token_env`) |
+
+**Permission requirements:** GitLab tools require TRUSTED or YOLO level. SANDBOXED agents cannot use GitLab tools.
 
 ### Environment Variables
 
@@ -999,7 +1122,7 @@ Configuration is loaded from multiple layers (later overrides earlier):
 
 ## Built-in Skills
 
-NEXUS3 includes 27 built-in skills organized by category.
+NEXUS3 includes 39 built-in skills organized by category, plus 21 GitLab integration skills (see [GitLab Integration](#gitlab-integration)).
 
 ### File Operations (Read)
 
@@ -1011,17 +1134,18 @@ NEXUS3 includes 27 built-in skills organized by category.
 | `list_directory` | List directory contents | `path`, `all`, `long` |
 | `glob` | Find files by pattern | `pattern`, `path`, `exclude` |
 | `grep` | Search file contents | `pattern`, `path`, `include`, `context`, `recursive`, `ignore_case`, `max_matches` |
+| `concat_files` | Concatenate files by extension | `extensions`, `path`, `exclude`, `lines`, `max_total`, `format`, `sort`, `gitignore`, `dry_run` |
 
 ### File Operations (Write)
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
 | `write_file` | Write/create file | `path`, `content` |
-| `edit_file` | String replacement (single or batched) | `path`, `old_string`, `new_string`, `edits` |
+| `edit_file` | String replacement (single or batched) | `path`, `old_string`, `new_string`, `replace_all`, `edits` |
 | `edit_lines` | Line-based replacement | `path`, `start_line`, `end_line`, `new_content` |
 | `append_file` | Append to file | `path`, `content`, `newline` |
 | `regex_replace` | Regex find/replace | `path`, `pattern`, `replacement`, `count`, `ignore_case`, `multiline`, `dotall` |
-| `patch` | Apply unified diffs | `target`, `diff`, `diff_file`, `mode`, `dry_run` |
+| `patch` | Apply unified diffs | `target`, `diff`, `diff_file`, `mode`, `fuzzy_threshold`, `dry_run` |
 | `copy_file` | Copy file | `source`, `destination`, `overwrite` |
 | `mkdir` | Create directory | `path` |
 | `rename` | Move/rename file | `source`, `destination`, `overwrite` |
@@ -1070,7 +1194,35 @@ Git commands are filtered by permission level:
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
 | `sleep` | Pause execution | `seconds`, `label` |
-| `echo` | Echo input (testing utility) | `message` |
+
+### Clipboard
+
+Scoped clipboard system for sharing content between agents and sessions.
+
+| Skill | Description | Key Parameters |
+|-------|-------------|----------------|
+| `copy` | Copy file content to clipboard | `source`, `key`, `scope`, `start_line`, `end_line`, `short_description`, `tags`, `ttl_seconds` |
+| `cut` | Cut file content to clipboard (removes from source) | `source`, `key`, `scope`, `start_line`, `end_line`, `short_description`, `tags`, `ttl_seconds` |
+| `paste` | Paste clipboard content to file | `key`, `path`, `scope`, `mode`, `line`, `start_line`, `end_line`, `marker` |
+| `clipboard_list` | List clipboard entries | `scope`, `tags`, `any_tags`, `verbose` |
+| `clipboard_get` | Get full content of an entry | `key`, `scope` |
+| `clipboard_update` | Update entry metadata or content | `key`, `scope`, `new_key`, `description`, `content`, `ttl_seconds` |
+| `clipboard_delete` | Delete an entry | `key`, `scope` |
+| `clipboard_clear` | Clear all entries in a scope | `scope`, `confirm` |
+| `clipboard_search` | Search entries by query | `query`, `scope`, `search_content`, `search_keys`, `search_descriptions`, `tags` |
+| `clipboard_tag` | Manage tags | `action`, `key`, `scope`, `tag`, `tags`, `description` |
+| `clipboard_export` | Export entries to JSON | `output_path`, `scope`, `keys`, `tags` |
+| `clipboard_import` | Import entries from JSON | `input_path`, `scope`, `conflict`, `dry_run` |
+
+**Scopes:**
+- `agent`: Session-only (in-memory), isolated per agent
+- `project`: Persistent (SQLite), shared within project
+- `system`: Persistent (SQLite), shared globally
+
+**Permission restrictions:**
+- YOLO: Full access to all scopes
+- TRUSTED: Read/write agent+project, read-only system
+- SANDBOXED: Agent scope only
 
 ### Skill Availability by Permission Level
 
@@ -1078,15 +1230,25 @@ Git commands are filtered by permission level:
 |----------------|------|---------|-----------|
 | File read | All | All | CWD only |
 | File write | All | Confirmations | Disabled (unless `allowed_write_paths`) |
+| Clipboard | All scopes | Agent + project (read/write), system (read) | Agent scope only |
 | Execution | All | Confirmations | Disabled |
 | Git | All | Write commands | Read-only |
-| Agent management | All | Sandboxed children only | Disabled |
+| Agent management | All | Sandboxed children only | `nexus_send` to parent only |
+| GitLab | All | Confirmations for destructive | Disabled |
 
 ---
 
 ## MCP Integration
 
-NEXUS3 supports the Model Context Protocol (MCP) for connecting external tools.
+NEXUS3 supports the Model Context Protocol (MCP) for connecting external tools. MCP enables agents to discover and invoke tools, resources, and prompts from external servers.
+
+### Key Features
+
+- **Multi-transport support:** Connect via stdio (subprocess) or HTTP
+- **Full MCP support:** Tools, Resources, and Prompts with cursor-based pagination
+- **Graceful degradation:** Connections succeed even if initial tool listing fails
+- **Lazy reconnection:** Dead connections automatically reconnect when tools are needed
+- **Security hardening:** Environment sanitization, response validation, permission enforcement
 
 ### Configuration
 
@@ -1196,7 +1358,13 @@ MCP servers only receive safe environment variables by default (PATH, HOME, USER
 | TRUSTED | Yes | First access per server |
 | SANDBOXED | No | N/A |
 
-For detailed MCP configuration and protocol coverage, see `nexus3/mcp/README.md` and `MCP-IMPLEMENTATION-GAPS.md`.
+### Key Behaviors
+
+- **Servers connect even if initial tool listing fails** (graceful degradation)
+- **Dead connections automatically reconnect** when tools are needed (lazy reconnection)
+- Use `/mcp retry <server>` to manually retry tool listing after fixing configuration issues
+
+For detailed MCP configuration and protocol coverage, see `nexus3/mcp/README.md`.
 
 ---
 
@@ -1243,13 +1411,19 @@ NEXUS3 REPL
 |------|-------|----------|
 | Messages | Yes | Yes |
 | System prompt | Yes | Yes |
+| System prompt path | Yes | Yes |
 | Working directory | Yes | Yes |
+| Permission level | Yes | Yes |
 | Permission preset | Yes | Yes |
 | Disabled tools | Yes | Yes |
+| Session allowances | Yes | Yes |
 | Model alias | Yes | Yes |
 | Token usage | Yes | Display only |
-| Created timestamp | Yes | Yes |
-| Session allowances | Yes | Yes |
+| Created/modified timestamps | Yes | Yes |
+| Provenance | Yes | Yes |
+| Agent-scope clipboard entries | Yes | Yes |
+
+Sessions use schema version 1 with backwards-compatible field defaults.
 
 ### Session Files Location
 
@@ -1271,8 +1445,9 @@ NEXUS3 REPL
 
 When context gets full (90% by default), NEXUS3 automatically:
 1. Preserves recent messages (25%)
-2. Summarizes older messages using a fast model
+2. Summarizes older messages using a fast model (with secrets redacted)
 3. Reloads NEXUS.md (picking up any changes)
+4. Adds a timestamped summary marker for temporal context
 
 Manual compaction:
 ```bash
@@ -1384,6 +1559,104 @@ nexus3 rpc create AGENT_ID --preset trusted
 nexus3 rpc compact AGENT_ID  # RPC
 ```
 
+**Problem: Sandboxed agent can't read files outside its cwd**
+
+This is intentional security behavior. Sandboxed agents have `allowed_paths` set to their `cwd` only:
+```bash
+# Set cwd to project root
+nexus3 rpc create worker --cwd /path/to/project
+
+# Or use trusted preset for broader read access
+nexus3 rpc create worker --preset trusted --cwd /path/to/project
+```
+
+**Problem: `nexus_send` fails with "Cannot send to YOLO agent"**
+
+YOLO agents can only receive messages when the REPL is actively connected to them. This prevents unsupervised YOLO operations. Use trusted preset for RPC agents instead.
+
+### Session Issues
+
+**Problem: `--resume` says "No last session found"**
+
+The last session file (`~/.nexus3/last-session.json`) is created on REPL exit. If the previous session crashed or was force-killed, no file exists. Start a new session with `--fresh`.
+
+**Problem: Session won't save with `/save`**
+
+Temp sessions (named `.1`, `.2`, etc.) require a name argument:
+```bash
+/save my-session    # Provide a name for temp sessions
+```
+
+**Problem: Session not found when using `--session NAME`**
+
+Session files are stored in `~/.nexus3/sessions/`. Check available sessions:
+```bash
+ls ~/.nexus3/sessions/
+```
+
+### MCP Issues
+
+**Problem: MCP server connection fails**
+
+Check if the server is configured correctly:
+```bash
+/mcp                # List configured servers and connection status
+```
+
+Common causes:
+- Server executable not in PATH
+- Missing environment variables referenced in config
+- Firewall blocking local connections
+
+**Problem: MCP tools not showing after connect**
+
+Servers connect even if initial tool listing fails (graceful degradation). Retry tool listing:
+```bash
+/mcp retry <server-name>
+```
+
+**Problem: SANDBOXED agent can't use MCP tools**
+
+Only TRUSTED and YOLO agents can access MCP tools. This is a security restriction:
+```bash
+nexus3 rpc create worker --preset trusted
+```
+
+### Permission Issues
+
+**Problem: Clipboard operations fail with "No permission for system clipboard"**
+
+Clipboard scope permissions depend on preset:
+- `yolo`: Full access to agent/project/system
+- `trusted`: Read/write agent+project, read-only system
+- `sandboxed`: Agent scope only (in-memory)
+
+**Problem: GitLab tools blocked**
+
+GitLab tools require TRUSTED or YOLO permission level:
+```bash
+/permissions trusted    # In REPL
+nexus3 rpc create worker --preset trusted  # RPC
+```
+
+### Windows-Specific Issues
+
+**Problem: Characters display incorrectly (boxes, question marks)**
+
+Set UTF-8 code page before running:
+```cmd
+chcp 65001
+nexus3
+```
+
+**Problem: ANSI colors/formatting not working**
+
+Use Windows Terminal or Git Bash for full ANSI support. CMD.exe and PowerShell 5.1 have limited or no ANSI support. NEXUS3 auto-detects the shell and displays a warning.
+
+**Problem: Process cleanup warnings on timeout**
+
+Windows uses `taskkill /T /F` for process tree termination. Some processes may not clean up as gracefully as on Unix.
+
 ### WSL-Specific Issues
 
 **Problem: Server dies with false idle timeout**
@@ -1399,13 +1672,16 @@ tail -f .nexus3/logs/server.log
 
 **Enable verbose logging:**
 ```bash
-nexus3 --verbose          # Debug output to terminal
+nexus3 -v                 # Debug output to terminal (short form)
+nexus3 --verbose          # Debug output to terminal (long form)
 nexus3 -V                 # Debug output to verbose.md log file
+nexus3 --log-verbose      # Debug output to verbose.md log file (long form)
 ```
 
 **Check if server is running:**
 ```bash
 nexus3 rpc detect         # Returns exit code 0 if running, 1 if not
+nexus3 rpc detect --port 9000  # Check specific port
 ```
 
 **Use a different port (if default port in use):**
@@ -1422,6 +1698,11 @@ tail -f .nexus3/logs/server.log
 ```bash
 ls -la .nexus3/logs/
 cat .nexus3/logs/{session-id}/context.md
+```
+
+**Enable raw API logging:**
+```bash
+nexus3 --raw-log          # Log raw API JSON to raw.jsonl
 ```
 
 ---
@@ -1555,4 +1836,4 @@ MIT
 
 ---
 
-**Updated**: 2026-01-31
+**Updated**: 2026-02-01

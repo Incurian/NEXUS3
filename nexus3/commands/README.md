@@ -4,6 +4,10 @@ Unified command infrastructure for NEXUS3 CLI and REPL.
 
 This module provides a centralized, structured command system that works identically for both the `nexus3 rpc` CLI tool and `/slash` commands in the interactive REPL. Commands return structured `CommandOutput` objects, allowing callers to format output appropriately for their context (JSON for CLI, rich text for REPL).
 
+**Key files:**
+- `protocol.py` - Core types: `CommandResult`, `CommandOutput`, `CommandContext`
+- `core.py` - Command implementations (11 commands)
+
 ---
 
 ## Overview
@@ -178,16 +182,22 @@ List all active agents in the pool.
             "model": "anthropic/claude-sonnet-4",
             "permission_level": "trusted",
             "cwd": "/home/user/project",
-            "write_paths": None,  # None = any, [] = none, [...] = specific
+            "write_paths": None,  # None = any, [] = none, [...] = specific paths
             "child_count": 2,
             "parent_agent_id": None,
             "halted_at_iteration_limit": False,
-            "last_action_at": "2026-01-21T14:30:00"
+            "last_action_at": "2026-01-21T14:30:00"  # ISO format timestamp
         },
         ...
     ]
 }
 ```
+
+**Message formatting:**
+- Shows agent type (temp/named), model, permission level
+- Displays last action time (HH:MM:SS format)
+- Lists children count and parent ID if applicable
+- Write paths shown as last path component (e.g., "output" for `/path/to/output`)
 
 #### `cmd_create(ctx, name, permission="trusted", model=None) -> CommandOutput`
 
@@ -232,9 +242,9 @@ Remove an agent from the pool. Log files are preserved.
 Get comprehensive agent status.
 
 **Parameters:**
-- `agent_id`: Target agent (defaults to current)
-- `show_tools`: Include full tool list
-- `show_tokens`: Include detailed token breakdown
+- `agent_id`: Target agent (defaults to current agent in REPL)
+- `show_tools`: Include full list of available tools
+- `show_tokens`: Include detailed token breakdown (system, tools, messages)
 
 **Returns** in `data`:
 ```python
@@ -243,7 +253,7 @@ Get comprehensive agent status.
     "is_temp": False,
     "created_at": "2026-01-21T14:00:00",
     "message_count": 42,
-    "context_usage_pct": 35.2,
+    "context_usage_pct": 35.2,  # Based on available tokens (matches is_over_budget)
     "tokens": {
         "total": 35200,
         "available": 64800,
@@ -264,21 +274,23 @@ Get comprehensive agent status.
     "preset": "trusted",
     "cwd": "/home/user/project",
     "allowed_paths": ["/home/user/project"],
-    "allowed_write_paths": ["/home/user/project/output"],
-    "disabled_tools": ["shell_UNSAFE"],
+    "allowed_write_paths": ["/home/user/project/output"],  # None if omitted
+    "disabled_tools": ["shell_UNSAFE"],  # None if omitted
     "mcp_servers": [
         {"name": "filesystem", "tool_count": 5, "shared": True}
-    ],
+    ],  # None if omitted
     "compaction": {
         "enabled": True,
         "trigger_threshold": 0.9,
         "model": "anthropic/claude-haiku"
     },
     "parent_agent_id": None,
-    "children": ["worker-1", "worker-2"],
-    "tools": ["read_file", "write_file", ...]  # If show_tools=True
+    "children": ["worker-1", "worker-2"],  # None if omitted
+    "tools": ["read_file", "write_file", ...]  # Only if show_tools=True
 }
 ```
+
+**Note:** `context_usage_pct` is calculated as `total / available * 100`, which matches the `is_over_budget()` threshold logic.
 
 ### Message Operations
 
@@ -327,8 +339,15 @@ Save the current agent's session to disk.
 - `name`: Save name (defaults to current agent ID)
 
 **Behavior:**
-- Cannot save with temp agent names (e.g., `temp-abc123`)
-- Saves messages, system prompt, permissions, token usage, and metadata
+- Cannot save with temp agent names (e.g., `.1`, `.2`)
+- Saves messages, system prompt, permissions, token usage, model alias, and clipboard entries
+
+**Saved data includes:**
+- Conversation messages and system prompt
+- Permission preset and disabled tools
+- Model alias (for restoration on resume)
+- Agent-scope clipboard entries
+- Working directory and token usage
 
 **Returns** in `data`:
 ```python
@@ -424,9 +443,9 @@ Request graceful server shutdown.
 | Module | Usage |
 |--------|-------|
 | `nexus3.core.permissions` | `AgentPermissions` for status extraction |
-| `nexus3.rpc.pool` | `AgentPool`, `is_temp_agent()` |
-| `nexus3.session.persistence` | `serialize_session()` for saving |
-| `nexus3.session.session_manager` | `SessionManager`, exception types |
+| `nexus3.rpc.pool` | `AgentPool`, `AgentConfig`, `is_temp_agent()` |
+| `nexus3.session.persistence` | `serialize_session()`, `serialize_clipboard_entries()` |
+| `nexus3.session.session_manager` | `SessionManager`, `SessionManagerError`, `SessionNotFoundError` |
 
 ### Standard Library
 
@@ -626,4 +645,4 @@ All commands are async because:
 
 ---
 
-Updated: 2026-01-28
+Updated: 2026-02-01

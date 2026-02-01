@@ -8,10 +8,11 @@ This module provides robust, fail-fast configuration loading with comprehensive 
 
 ### Load Order (base to override)
 
-1. **Shipped defaults** (`<install_dir>/defaults/config.json`)
-2. **Global user** (`~/.nexus3/config.json`)
-3. **Ancestor directories** (up to `context.ancestor_depth` levels above CWD, default 2)
-4. **Project local** (`CWD/.nexus3/config.json`)
+1. **Global user** (`~/.nexus3/config.json`) OR **Shipped defaults** (`<install_dir>/defaults/config.json`) if no global config exists
+2. **Ancestor directories** (up to `context.ancestor_depth` levels above CWD, default 2)
+3. **Project local** (`CWD/.nexus3/config.json`)
+
+**Important:** Defaults are ONLY used as a fallback when no home config exists. If `~/.nexus3/config.json` exists, defaults are NOT merged.
 
 Later layers override earlier layers using deep merge. Validation occurs after all layers are merged.
 
@@ -53,6 +54,8 @@ from nexus3.config import (
     MCPServerConfig,  # MCP server configuration
 )
 ```
+
+**Note:** `ModelConfig`, `ResolvedModel`, `ClipboardConfig`, `ContextConfig`, `CompactionConfig`, `ServerConfig`, `GitLabConfig`, and `GitLabInstanceConfig` are defined in `schema.py` but not exported from the package. Import them directly from `nexus3.config.schema` if needed.
 
 ---
 
@@ -154,9 +157,11 @@ The root configuration model containing all NEXUS3 settings.
 | `max_concurrent_tools` | `int` | `10` | Maximum concurrent tool executions |
 | `permissions` | `PermissionsConfig` | `PermissionsConfig()` | Permission system configuration |
 | `compaction` | `CompactionConfig` | `CompactionConfig()` | Context compaction settings |
+| `clipboard` | `ClipboardConfig` | `ClipboardConfig()` | Clipboard system configuration |
 | `context` | `ContextConfig` | `ContextConfig()` | Context loading settings |
 | `mcp_servers` | `list[MCPServerConfig]` | `[]` | MCP server configurations |
 | `server` | `ServerConfig` | `ServerConfig()` | HTTP server configuration |
+| `gitlab` | `GitLabConfig` | `GitLabConfig()` | GitLab integration configuration |
 
 **Key Methods:**
 
@@ -204,6 +209,7 @@ Configuration for an LLM provider.
 | `max_retries` | `int` | `3` | Max retry attempts (0-10) |
 | `retry_backoff` | `float` | `1.5` | Exponential backoff multiplier (1.0-5.0) |
 | `allow_insecure_http` | `bool` | `False` | Allow HTTP for non-localhost URLs |
+| `prompt_caching` | `bool` | `True` | Enable prompt caching (~90% savings on cached tokens) |
 | `verify_ssl` | `bool` | `True` | Verify SSL certificates (false for self-signed) |
 | `ssl_ca_cert` | `str \| None` | `None` | Path to CA certificate for SSL verification |
 | `models` | `dict[str, ModelConfig]` | `{}` | Model aliases for this provider |
@@ -311,6 +317,20 @@ Configuration for context compaction/summarization.
 | `trigger_threshold` | `float` | `0.9` | Compact when context exceeds this ratio |
 | `redact_secrets` | `bool` | `True` | Redact secrets before summarization |
 
+### `ClipboardConfig`
+
+Configuration for the clipboard system.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | `bool` | `True` | Enable clipboard tools |
+| `inject_into_context` | `bool` | `True` | Auto-inject clipboard index into system prompt |
+| `max_injected_entries` | `int` | `10` | Maximum entries to show in context injection (0-50) |
+| `show_source_in_injection` | `bool` | `True` | Show source path/lines in context injection |
+| `max_entry_bytes` | `int` | `1048576` | Maximum size of a single clipboard entry (1KB-10MB) |
+| `warn_entry_bytes` | `int` | `102400` | Size threshold for warning on large entries |
+| `default_ttl_seconds` | `int \| None` | `None` | Default TTL for new entries (None = permanent) |
+
 ### `ContextConfig`
 
 Configuration for context loading.
@@ -319,7 +339,7 @@ Configuration for context loading.
 |-------|------|---------|-------------|
 | `ancestor_depth` | `int` | `2` | Directory levels above CWD to search (0-10) |
 | `include_readme` | `bool` | `False` | Always include README.md |
-| `readme_as_fallback` | `bool` | `False` | Use README when no NEXUS.md exists |
+| `readme_as_fallback` | `bool` | `False` | Use README when no NEXUS.md exists (opt-in for security) |
 
 ### `ServerConfig`
 
@@ -363,6 +383,31 @@ Configuration for an MCP (Model Context Protocol) server.
 **Validation:** Exactly one of `command` or `url` must be set.
 
 **Security:** MCP servers receive only safe environment variables by default (PATH, HOME, USER, etc.). Use `env` for explicit values or `env_passthrough` to copy from host.
+
+### `GitLabConfig`
+
+Top-level GitLab configuration supporting multiple instances.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `instances` | `dict[str, GitLabInstanceConfig]` | `{}` | Named GitLab instance configurations |
+| `default_instance` | `str \| None` | `None` | Name of the default instance to use when not specified |
+
+**Validation:** If `default_instance` is set, it must reference an existing instance in `instances`.
+
+### `GitLabInstanceConfig`
+
+Configuration for a single GitLab instance.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `url` | `str` | `"https://gitlab.com"` | Base URL for the GitLab instance |
+| `token_env` | `str \| None` | `None` | Environment variable containing the GitLab API token |
+| `token` | `str \| None` | `None` | Direct token value (NOT RECOMMENDED - use `token_env`) |
+
+**Validation:** At least one of `token` or `token_env` must be specified. If both are set, `token` takes precedence.
+
+**Security:** Store GitLab tokens in environment variables (via `token_env`), not directly in config files.
 
 ---
 
@@ -458,6 +503,39 @@ Configuration for an MCP (Model Context Protocol) server.
 }
 ```
 
+### GitLab Configuration
+
+```json
+{
+  "gitlab": {
+    "instances": {
+      "default": {
+        "url": "https://gitlab.com",
+        "token_env": "GITLAB_TOKEN"
+      },
+      "work": {
+        "url": "https://gitlab.company.com",
+        "token_env": "WORK_GITLAB_TOKEN"
+      }
+    },
+    "default_instance": "default"
+  }
+}
+```
+
+### Clipboard Configuration
+
+```json
+{
+  "clipboard": {
+    "enabled": true,
+    "inject_into_context": true,
+    "max_injected_entries": 10,
+    "default_ttl_seconds": 3600
+  }
+}
+```
+
 ### Resolving Models
 
 ```python
@@ -537,3 +615,9 @@ Invalid JSON: Unexpected UTF-8 BOM (decode using utf-8-sig)
 - `nexus3/session/` - Uses `PermissionsConfig` for permission enforcement
 - `nexus3/rpc/` - Uses `ServerConfig` for HTTP server settings
 - `nexus3/mcp/` - Uses `MCPServerConfig` to launch MCP servers
+- `nexus3/clipboard/` - Uses `ClipboardConfig` for clipboard system settings
+- `nexus3/skill/builtins/gitlab/` - Uses `GitLabConfig` for GitLab API integration
+
+---
+
+Last updated: 2026-02-01
