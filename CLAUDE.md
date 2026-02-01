@@ -358,6 +358,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `ESC` | Cancel in-progress request |
 | `Ctrl+C` | Interrupt current input |
 | `Ctrl+D` | Exit REPL |
+| `p` | View full tool details (during confirmation prompt) |
 
 ---
 
@@ -1044,20 +1045,24 @@ Context is loaded from multiple directory layers and merged together. Each layer
 ### Layer Hierarchy
 
 ```
-LAYER 1: Install Defaults (shipped with package)
+LAYER 1a: System Defaults (NEXUS-DEFAULT.md in package - auto-updates)
     ↓
-LAYER 2: Global (~/.nexus3/)
+LAYER 1b: Global (~/.nexus3/NEXUS.md - user customizations)
     ↓
-LAYER 3: Ancestors (up to N levels above CWD, default 2)
+LAYER 2: Ancestors (up to N levels above CWD, default 2)
     ↓
-LAYER 4: Local (CWD/.nexus3/)
+LAYER 3: Local (CWD/.nexus3/)
 ```
 
 ### Directory Structure
 
 ```
-~/.nexus3/                    # Global (user defaults)
-├── NEXUS.md                  # Personal system prompt
+nexus3/defaults/              # Package (auto-updates with upgrades)
+├── NEXUS-DEFAULT.md          # System docs, tools, permissions (ALWAYS loaded)
+└── NEXUS.md                  # Template (copied to ~/.nexus3/ on init)
+
+~/.nexus3/                    # Global (user customizations)
+├── NEXUS.md                  # User's custom instructions
 ├── config.json               # Personal configuration
 └── mcp.json                  # Personal MCP servers
 
@@ -1070,6 +1075,13 @@ LAYER 4: Local (CWD/.nexus3/)
 ├── config.json               # Project config overrides
 └── mcp.json                  # Project MCP servers
 ```
+
+### Split Context Design
+
+- **NEXUS-DEFAULT.md** (package only): Contains tool docs, permissions, limits - auto-updates with package upgrades
+- **NEXUS.md** (user's): Contains custom instructions - preserved across upgrades
+
+This split ensures users get new tool documentation automatically while keeping their customizations safe.
 
 ### Configuration Merging
 
@@ -1221,14 +1233,7 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 
 | Plan | Description | Effort |
 |------|-------------|--------|
-| `STATUS-MESSAGE-FIX-PLAN.md` | Fix spinner showing "Running" after tool completes | 5 min |
-| `STATUS-BAR-PLAN.md` | Add agent/model/cwd to status bar | 15 min |
-| `YOLO-WARNING-PLAN.md` | Enhanced YOLO mode warning with Rich Panel | 20 min |
-| `TOOL-PREVIEW-PLAN.md` | Expand tool params from 70→140 chars, smart path truncation | 30 min |
-| `EDIT-FILE-ERROR-PLAN.md` | Fix error sanitization patterns (not found + path regex) | 30 min |
-| `TOOL-CONFIRMATION-POPUP-PLAN.md` | Add "press p for popup" to see full tool details | 45 min |
 | `PROMPT-CACHING-PLAN.md` | Multi-provider prompt caching support | 2-3 hrs |
-| `SPLIT-CONTEXT-PLAN.md` | Split NEXUS.md into updatable defaults + user customization | 2-3 hrs |
 | `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | 2 weeks |
 
 Each plan includes validated implementation details with exact line numbers and copy-paste ready code.

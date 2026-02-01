@@ -253,42 +253,54 @@ class ContextLoader:
 
         return layer
 
-    def _load_global_layer(self) -> ContextLayer | None:
-        """Load the global layer with fallback to defaults for missing components.
+    def _load_global_layer(self) -> list[ContextLayer]:
+        """Load the global layer with both system defaults and user customization.
 
-        If global dir exists and has config/mcp but no prompt, falls back to
-        defaults for the prompt while keeping global's config/mcp. This ensures
-        the defaults NEXUS.md is always loaded even when user has partial
-        global configuration.
+        System defaults (NEXUS-DEFAULT.md) always come from the package.
+        User customization (NEXUS.md) comes from ~/.nexus3/ if it exists,
+        otherwise falls back to package template.
+
+        Returns:
+            List of layers: [system-defaults layer, user/global layer]
         """
+        layers: list[ContextLayer] = []
         global_dir = self._get_global_dir()
         defaults_dir = self._get_defaults_dir()
 
-        global_layer: ContextLayer | None = None
-        defaults_layer: ContextLayer | None = None
+        # 1. Always load NEXUS-DEFAULT.md from package (system docs/tools)
+        pkg_default = defaults_dir / "NEXUS-DEFAULT.md"
+        if pkg_default.is_file():
+            layer = ContextLayer(name="system-defaults", path=defaults_dir)
+            layer.prompt = pkg_default.read_text(encoding="utf-8-sig")
+            layers.append(layer)
 
-        # Load global layer if exists
-        if global_dir.is_dir():
-            global_layer = self._load_layer(global_dir, "global")
+        # 2. Load user's global config (config.json, mcp.json always from global dir)
+        global_config = load_json_file_optional(global_dir / "config.json")
+        global_mcp = load_json_file_optional(global_dir / "mcp.json")
 
-        # Load defaults layer if exists
-        if defaults_dir.is_dir():
-            defaults_layer = self._load_layer(defaults_dir, "defaults")
+        # 3. Load user's NEXUS.md from global dir, or fall back to package template
+        user_nexus = global_dir / "NEXUS.md"
+        if user_nexus.is_file():
+            layer = ContextLayer(name="global", path=global_dir)
+            layer.prompt = user_nexus.read_text(encoding="utf-8-sig")
+            layer.config = global_config
+            layer.mcp = global_mcp
+            layers.append(layer)
+        else:
+            # Fall back to package NEXUS.md template for prompt,
+            # but still use global config/mcp if they exist
+            pkg_nexus = defaults_dir / "NEXUS.md"
+            if pkg_nexus.is_file() or global_config or global_mcp:
+                # Use global_dir as path if we have config/mcp there, otherwise defaults_dir
+                layer_path = global_dir if (global_config or global_mcp) else defaults_dir
+                layer = ContextLayer(name="global", path=layer_path)
+                if pkg_nexus.is_file():
+                    layer.prompt = pkg_nexus.read_text(encoding="utf-8-sig")
+                layer.config = global_config
+                layer.mcp = global_mcp
+                layers.append(layer)
 
-        # Merge strategy: global takes precedence, but fall back to defaults for missing
-        if global_layer is not None:
-            # If global has no prompt, use defaults prompt
-            if not global_layer.prompt and defaults_layer and defaults_layer.prompt:
-                global_layer.prompt = defaults_layer.prompt
-                # Update layer name to indicate merged source
-                global_layer.name = "global+defaults"
-
-            # Return global if it has any content
-            if global_layer.prompt or global_layer.config or global_layer.mcp:
-                return global_layer
-
-        # Fall back to defaults entirely if no global content
-        return defaults_layer
+        return layers
 
     def _format_readme_section(self, content: str, source_path: Path) -> str:
         """Format README with explicit documentation boundaries.
@@ -352,7 +364,10 @@ END DOCUMENTATION
             return None
 
         # Determine source path for labeling
-        if layer.name == "defaults":
+        if layer.name == "system-defaults":
+            source_path = self._get_defaults_dir() / "NEXUS-DEFAULT.md"
+            header = "## System Defaults"
+        elif layer.name == "defaults":
             source_path = self._get_defaults_dir() / "NEXUS.md"
             header = "## Default Configuration"
         elif layer.name == "global":
@@ -501,9 +516,9 @@ Source: {source_path}
         prompt_sections: list[str] = []
         merged_config: dict[str, Any] = {}
 
-        # 1. Load global (with fallback to defaults)
-        global_layer = self._load_global_layer()
-        if global_layer:
+        # 1. Load global layers (system-defaults from package + user's global)
+        global_layers = self._load_global_layer()
+        for global_layer in global_layers:
             layers.append(global_layer)
             if global_layer.name == "global":
                 sources.global_dir = self._get_global_dir()
