@@ -41,6 +41,29 @@ if TYPE_CHECKING:
     from nexus3.mcp.registry import MCPServerRegistry
     from nexus3.rpc.pool import Agent, AgentPool, SharedComponents
 
+# YOLO mode warning text
+YOLO_WARNING_LINE = "━" * 70
+YOLO_WARNING_CAPABILITIES = "Enabled: Shell execution, file writes anywhere, network access"
+YOLO_WARNING_ESCAPE = "To switch: /permissions trusted"
+
+
+def print_yolo_warning(console: Any, on_switch: bool = False) -> None:
+    """Print YOLO mode warning to console.
+
+    Args:
+        console: Rich console for output
+        on_switch: If True, show "Switching to" instead of current state
+    """
+    console.print(f"[bold red]{YOLO_WARNING_LINE}[/]")
+    if on_switch:
+        console.print("[bold red]⚠  Switching to YOLO MODE[/]")
+    else:
+        console.print("[bold red]⚠  YOLO MODE[/] - All actions execute without confirmation")
+    console.print()
+    console.print(f"   {YOLO_WARNING_CAPABILITIES}")
+    console.print(f"   {YOLO_WARNING_ESCAPE}")
+    console.print(f"[bold red]{YOLO_WARNING_LINE}[/]")
+
 
 async def _refresh_agent_tools(
     agent: Agent,
@@ -1160,6 +1183,11 @@ async def _change_preset(
         except ValueError as e:
             return CommandOutput.error(str(e))
 
+    # Show warning when switching to YOLO
+    if preset_name == "yolo":
+        console = get_console()
+        print_yolo_warning(console, on_switch=True)
+
     # Apply change
     try:
         new_perms = resolve_preset(preset_name, custom_presets)
@@ -1470,8 +1498,8 @@ async def cmd_model(
     agent.services.register("model", new_model)
 
     # Update context manager's max_tokens
-    if hasattr(agent.context, "_config"):
-        agent.context._config.max_tokens = new_model.context_window
+    if hasattr(agent.context, "config"):
+        agent.context.config.max_tokens = new_model.context_window
 
     # Update session's provider to use the new model
     # The provider is cached by provider_name:model_id, so this gets or creates

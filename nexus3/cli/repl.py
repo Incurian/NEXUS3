@@ -58,6 +58,7 @@ from nexus3.commands.protocol import CommandResult as CmdResult
 from nexus3.config.loader import load_config
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError, ProviderError
+from nexus3.core.paths import display_path
 from nexus3.core.permissions import ConfirmationResult, PermissionLevel
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.core.types import ToolCall
@@ -783,7 +784,7 @@ async def run_repl(
         else:
             _had_errors = True
             # Error - show error message
-            error_preview = escape_rich_markup(error[:70] + ("..." if len(error) > 70 else ""))
+            error_preview = escape_rich_markup(error[:120] + ("..." if len(error) > 120 else ""))
             spinner.print(f"      [red]→[/] [red]{error_preview}[/]{duration_str}")
 
     def on_batch_halt() -> None:
@@ -796,8 +797,8 @@ async def run_repl(
         _pending_tools.clear()
 
     def on_batch_complete() -> None:
-        """Batch finished - no action needed, tools already printed."""
-        pass
+        """Batch finished - transition spinner to waiting for next response."""
+        spinner.update(activity=Activity.WAITING)
 
     def _summarize_tool_output(name: str, output: str) -> str:
         """Create a brief summary of tool output."""
@@ -1017,19 +1018,46 @@ async def run_repl(
     def get_toolbar() -> HTML:
         """Return the bottom toolbar based on current state."""
         square = '<style fg="ansibrightblack">■</style>'
+        sections: list[str] = []
 
-        # Get token usage from current session's context
-        token_info = ""
-        if session.context:
-            usage = session.context.get_token_usage()
-            used = usage["total"]
-            budget = usage["budget"]
-            token_info = f' | <style fg="ansibrightblack">{used:,} / {budget:,}</style>'
+        # 1. Status indicator
+        status = ('<style fg="ansigreen">● ready</style>' if not toolbar_has_errors
+                  else '<style fg="ansiyellow">● ready (some tasks incomplete)</style>')
+        sections.append(status)
 
-        if toolbar_has_errors:
-            return HTML(f'{square} <style fg="ansiyellow">● ready (some tasks incomplete)</style>{token_info}')
-        else:
-            return HTML(f'{square} <style fg="ansigreen">● ready</style>{token_info}')
+        # 2. Agent ID (truncated if > 15 chars)
+        agent_display = (current_agent_id[:12] + "..." if len(current_agent_id) > 15
+                         else current_agent_id)
+        sections.append(f'<style fg="ansicyan">{agent_display}</style>')
+
+        # Get current agent for model and cwd
+        agent = pool.get(current_agent_id)
+
+        # 3. Model info with provider
+        if agent:
+            model = agent.services.get("model")
+            if model:
+                model_display = model.alias or model.model_id
+                reasoning_indicator = " [R]" if model.reasoning else ""
+                sections.append(
+                    f'<style fg="ansibrightblack">{model_display}{reasoning_indicator} '
+                    f'({model.provider_name})</style>'
+                )
+
+        # 4. Working directory (use tilde path, skip if just ".")
+        if agent:
+            cwd = agent.services.get_cwd()
+            cwd_display = display_path(cwd)
+            if cwd_display != ".":
+                sections.append(f'<style fg="ansibrightblack">{cwd_display}</style>')
+
+        # 5. Token usage (use agent.context for current model's budget)
+        if agent and agent.context:
+            usage = agent.context.get_token_usage()
+            sections.append(f'<style fg="ansibrightblack">{usage["total"]:,} / {usage["budget"]:,}</style>')
+
+        info_str = " | ".join(sections)
+        return HTML(f'{square} {info_str}')
 
     # Native reverse styling: prompt via HTML, input via lexer
     lexer = SimpleLexer('class:input-field')
@@ -1257,7 +1285,8 @@ async def run_repl(
             if agent:
                 perms = agent.services.get("permissions")
                 if perms and perms.effective_policy.level == PermissionLevel.YOLO:
-                    console.print("[bold red]⚠️  YOLO MODE - All actions execute without confirmation[/]")
+                    from nexus3.cli.repl_commands import print_yolo_warning
+                    print_yolo_warning(console)
 
             # Dynamic prompt based on whisper mode
             if whisper.is_active():

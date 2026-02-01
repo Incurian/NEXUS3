@@ -61,12 +61,14 @@ class MCPConfigError(ContextLoadError):
 # Patterns that may leak sensitive info
 
 # Unix path patterns
-_PATH_PATTERN = re.compile(r'(/[^\s:]+)+')
+# Excludes URLs (http://..., ftp://...) and social paths (/r/, /u/, /g/)
+_PATH_PATTERN = re.compile(r'(?<![:/\w])/(?!/)(?![rug]/)[^\s:]+')
 _HOME_PATTERN = re.compile(r'/home/[^/\s]+')
 
 # Windows path patterns (order matters - most specific first)
 # Handle BOTH backslashes AND forward slashes - Windows accepts either
-_UNC_PATTERN = re.compile(r'(?:\\\\|//)[^\\/]+[/\\][^\\/]+')  # \\server\share or //server/share
+# Exclude URLs by requiring UNC paths to NOT be preceded by colon (http://...)
+_UNC_PATTERN = re.compile(r'(?<!:)(?:\\\\|//)[^\\/]+[/\\][^\\/]+')  # \\server\share or //server/share (not http://)
 _APPDATA_PATTERN = re.compile(
     r'[A-Za-z]:[/\\]Users[/\\][^\\/]+[/\\]AppData[/\\][^\\/]+',
     re.IGNORECASE
@@ -106,7 +108,13 @@ def sanitize_error_for_agent(error: str | None, tool_name: str = "") -> str | No
     if "permission denied" in error_lower:
         return f"Permission denied for {tool_name or 'this operation'}"
 
-    if "no such file" in error_lower or "not found" in error_lower:
+    if (
+        "no such file" in error_lower
+        or "file not found" in error_lower
+        or "directory not found" in error_lower
+        or "path not found" in error_lower
+        or "source not found" in error_lower
+    ):
         return "File or directory not found"
 
     if "is a directory" in error_lower:
