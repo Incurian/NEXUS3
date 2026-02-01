@@ -16,7 +16,7 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 
-from nexus3.core.errors import PathSecurityError
+from nexus3.core.errors import PathSecurityError, ProviderError
 from nexus3.core.paths import validate_path
 
 logger = logging.getLogger(__name__)
@@ -123,7 +123,7 @@ class GlobalDispatcher:
             params: Optional parameters:
                 - agent_id: Optional[str] - ID for the agent (auto-generated if omitted)
                 - system_prompt: Optional[str] - System prompt override for this agent
-                - preset: Optional[str] - Permission preset (yolo, trusted, sandboxed, worker)
+                - preset: Optional[str] - Permission preset (trusted, sandboxed)
                 - disable_tools: Optional[list[str]] - Tools to disable for the agent
                 - parent_agent_id: Optional[str] - ID of parent agent for ceiling enforcement
                 - cwd: Optional[str] - Working directory / sandbox root for the agent
@@ -177,7 +177,7 @@ class GlobalDispatcher:
                     f"preset must be string, got: {type(preset).__name__}"
                 )
             # yolo is NOT allowed via RPC - only through interactive REPL
-            valid_presets = {"trusted", "sandboxed", "worker"}
+            valid_presets = {"trusted", "sandboxed"}
             if preset not in valid_presets:
                 raise InvalidParamsError(
                     f"Invalid preset: {preset}. Valid: {sorted(valid_presets)}"
@@ -255,7 +255,7 @@ class GlobalDispatcher:
             # Inherit cwd from parent if not specified
             cwd_path = parent_cwd
 
-        # SECURITY: Validate cwd is within parent's allowed paths
+        # SECURITY: Validate cwd is within parent's allowed paths AND parent's cwd
         if cwd_path is not None and parent_permissions is not None:
             parent_allowed = parent_permissions.effective_policy.allowed_paths
             if parent_allowed is not None:
@@ -266,6 +266,16 @@ class GlobalDispatcher:
                     raise InvalidParamsError(
                         f"cwd '{cwd_path}' is outside parent's allowed paths"
                     ) from e
+
+            # For TRUSTED parents (allowed_paths=None), still validate against parent's cwd
+            # This ensures subagent can only operate within parent's working directory
+            if parent_cwd is not None and isinstance(parent_cwd, Path):
+                try:
+                    cwd_path.resolve().relative_to(parent_cwd.resolve())
+                except ValueError:
+                    raise InvalidParamsError(
+                        f"cwd '{cwd_path}' is outside parent's cwd '{parent_cwd}'"
+                    )
 
         # Validate allowed_write_paths if provided
         write_paths: list[Path] | None = None
@@ -288,9 +298,9 @@ class GlobalDispatcher:
                 write_paths.append(wp_path.resolve())
 
         # SECURITY: Validate write paths are within cwd (sandbox root)
-        # Applies to ALL sandboxed/worker agents, not just subagents
+        # Applies to ALL sandboxed agents, not just subagents
         effective_preset = preset or "sandboxed"
-        if effective_preset in ("sandboxed", "worker") and write_paths:
+        if effective_preset == "sandboxed" and write_paths:
             sandbox_root = cwd_path if cwd_path is not None else Path.cwd()
             for wp in write_paths:
                 try:
@@ -299,6 +309,18 @@ class GlobalDispatcher:
                     raise InvalidParamsError(
                         f"allowed_write_path '{wp}' is outside sandbox root '{sandbox_root}'"
                     ) from e
+
+        # SECURITY: For subagents, validate write paths are within parent's cwd
+        # This prevents a parent from granting child write access outside parent's scope
+        if write_paths and parent_cwd is not None and isinstance(parent_cwd, Path):
+            parent_cwd_resolved = parent_cwd.resolve()
+            for wp in write_paths:
+                try:
+                    wp.relative_to(parent_cwd_resolved)
+                except ValueError:
+                    raise InvalidParamsError(
+                        f"allowed_write_path '{wp}' is outside parent's cwd '{parent_cwd}'"
+                    )
 
         # Build delta from parameters (disable_tools and write permissions)
         delta: PermissionDelta | None = None
@@ -319,7 +341,7 @@ class GlobalDispatcher:
         WRITE_FILE_TOOLS = ("write_file", "edit_file", "append_file", "regex_replace", "mkdir")
         MIXED_FILE_TOOLS = ("copy_file", "rename")  # Read source, write destination
 
-        if effective_preset in ("sandboxed", "worker"):
+        if effective_preset == "sandboxed":
             tool_overrides: dict[str, ToolPermission] = {}
 
             if write_paths is not None and write_paths:
@@ -370,7 +392,11 @@ class GlobalDispatcher:
             parent_agent_id=parent_agent_id,  # Pass actual parent agent ID
             model=model,  # Model name/alias for this agent
         )
-        agent = await self._pool.create(agent_id=agent_id, config=config)
+        try:
+            agent = await self._pool.create(agent_id=agent_id, config=config)
+        except ProviderError as e:
+            # Provider initialization failed (e.g., missing API key)
+            raise InvalidParamsError(f"Failed to initialize provider: {e.message}") from e
 
         logger.info(
             "Agent created: %s (preset=%s, cwd=%s, model=%s)",

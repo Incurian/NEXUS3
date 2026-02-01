@@ -14,10 +14,14 @@ Usage:
 from typing import Any
 
 from nexus3.core.identifiers import build_mcp_skill_name
+from nexus3.core.text_safety import sanitize_for_display
 from nexus3.core.types import ToolResult
 from nexus3.core.validation import validate_tool_arguments
-from nexus3.mcp.client import MCPClient
+from nexus3.mcp.client import MCPClient, MCPError
+from nexus3.mcp.error_formatter import format_timeout_error
+from nexus3.mcp.errors import MCPErrorContext
 from nexus3.mcp.protocol import MCPTool
+from nexus3.mcp.transport import MCPTransportError
 from nexus3.skill.base import BaseSkill
 
 
@@ -80,8 +84,24 @@ class MCPSkillAdapter(BaseSkill):
                 self._original_name, validated_args
             )
             text_content = mcp_result.to_text()
+            safe_content = sanitize_for_display(text_content)
             if mcp_result.is_error:
-                return ToolResult(error=text_content)
-            return ToolResult(output=text_content)
+                return ToolResult(error=safe_content)
+            return ToolResult(output=safe_content)
+        except MCPTransportError as e:
+            # Transport error (connection, crash, timeout)
+            context = MCPErrorContext(
+                server_name=self._server_name,
+                command=None,  # We don't have this info at adapter level
+            )
+            error_str = str(e).lower()
+            if "timeout" in error_str:
+                error_msg = format_timeout_error(context, timeout=30.0, phase="tool call")
+            else:
+                error_msg = f"MCP transport error calling {self._original_name}: {e}"
+            return ToolResult(error=error_msg)
+        except MCPError as e:
+            # Protocol error from server
+            return ToolResult(error=f"MCP error calling {self._original_name}: {e.message}")
         except Exception as e:
-            return ToolResult(error=f"MCP execution failed: {str(e)}")
+            return ToolResult(error=f"Unexpected error calling MCP tool {self._original_name}: {e}")

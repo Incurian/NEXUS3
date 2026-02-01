@@ -16,53 +16,53 @@ The RPC module provides:
 
 ```
 HTTP Client
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        HTTP Server (http.py)                        │
-│  ┌─────────────┐  ┌─────────────┐  ┌──────────────────────────────┐│
-│  │ Parse HTTP  │→ │   Authenticate   │→ │          Route           ││
-│  │  Request    │  │  (Bearer token)  │  │  / or /rpc → Global     ││
-│  └─────────────┘  └─────────────┘  │  /agent/{id} → Agent    ││
-│                                      └──────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────────┘
-                                  │
-          ┌───────────────────────┴───────────────────────┐
-          ▼                                               ▼
-┌─────────────────────────┐                   ┌─────────────────────────┐
-│   GlobalDispatcher      │                   │      AgentPool          │
-│  (global_dispatcher.py) │                   │       (pool.py)         │
-├─────────────────────────┤                   ├─────────────────────────┤
-│ create_agent            │                   │ get(agent_id) → Agent   │
-│ destroy_agent           │                   │ get_or_restore()        │
-│ list_agents             │◄─────────────────►│ create() / destroy()    │
-│ shutdown_server         │                   │ list() / create_temp()  │
-└─────────────────────────┘                   └───────────┬─────────────┘
-                                                          │
-                                                          ▼
-                                              ┌─────────────────────────┐
-                                              │         Agent           │
-                                              ├─────────────────────────┤
-                                              │ agent_id                │
-                                              │ context: ContextManager │
-                                              │ session: Session        │
-                                              │ services: ServiceContainer
-                                              │ dispatcher: Dispatcher  │
-                                              └───────────┬─────────────┘
-                                                          │
-                                                          ▼
-                                              ┌─────────────────────────┐
-                                              │      Dispatcher         │
-                                              │    (dispatcher.py)      │
-                                              ├─────────────────────────┤
-                                              │ send                    │
-                                              │ cancel                  │
-                                              │ get_tokens              │
-                                              │ get_context             │
-                                              │ get_messages            │
-                                              │ compact                 │
-                                              │ shutdown                │
-                                              └─────────────────────────┘
+    |
+    v
++---------------------------------------------------------------------+
+|                        HTTP Server (http.py)                        |
+|  +--------------+  +------------------+  +--------------------------+|
+|  | Parse HTTP   |->|   Authenticate   |->|          Route           ||
+|  |  Request     |  |  (Bearer token)  |  |  / or /rpc -> Global     ||
+|  +--------------+  +------------------+  |  /agent/{id} -> Agent    ||
+|                                          +--------------------------+|
++---------------------------------------------------------------------+
+                                  |
+          +-----------------------+-----------------------+
+          v                                               v
++-------------------------+                   +-------------------------+
+|   GlobalDispatcher      |                   |      AgentPool          |
+|  (global_dispatcher.py) |                   |       (pool.py)         |
++-------------------------+                   +-------------------------+
+| create_agent            |                   | get(agent_id) -> Agent  |
+| destroy_agent           |                   | get_or_restore()        |
+| list_agents             |<----------------->| create() / destroy()    |
+| shutdown_server         |                   | list() / create_temp()  |
++-------------------------+                   +-----------+-------------+
+                                                          |
+                                                          v
+                                              +-------------------------+
+                                              |         Agent           |
+                                              +-------------------------+
+                                              | agent_id                |
+                                              | context: ContextManager |
+                                              | session: Session        |
+                                              | services: ServiceContainer
+                                              | dispatcher: Dispatcher  |
+                                              +-----------+-------------+
+                                                          |
+                                                          v
+                                              +-------------------------+
+                                              |      Dispatcher         |
+                                              |    (dispatcher.py)      |
+                                              +-------------------------+
+                                              | send                    |
+                                              | cancel                  |
+                                              | get_tokens              |
+                                              | get_context             |
+                                              | get_messages            |
+                                              | compact                 |
+                                              | shutdown                |
+                                              +-------------------------+
 ```
 
 ## Module Files
@@ -185,6 +185,11 @@ async def run_http_server(
 DEFAULT_PORT = 8765
 MAX_BODY_SIZE = 1_048_576  # 1MB
 BIND_HOST = "127.0.0.1"
+MAX_HEADERS_COUNT = 128
+MAX_HEADER_NAME_LEN = 1024
+MAX_HEADER_VALUE_LEN = 8192
+MAX_TOTAL_HEADERS_SIZE = 32 * 1024  # 32KB
+MAX_REQUEST_LINE_LEN = 8192
 ```
 
 ---
@@ -268,6 +273,7 @@ class SharedComponents:
     log_streams: LogStream            # Which logs to capture
     custom_presets: dict[str, PermissionPreset]  # From config
     mcp_registry: MCPServerRegistry   # MCP server registry
+    is_repl: bool                     # Whether running in REPL mode
 ```
 
 ### AgentConfig
@@ -318,6 +324,11 @@ class AgentPool:
     def get(agent_id) -> Agent | None
     def get_children(agent_id) -> list[str]
     def list() -> list[dict]
+    def set_global_dispatcher(dispatcher: GlobalDispatcher) -> None
+    @property
+    def log_multiplexer(self) -> LogMultiplexer
+    @property
+    def system_prompt_path(self) -> str | None
     @property
     def should_shutdown(self) -> bool
 ```
@@ -410,8 +421,8 @@ Example: nxk_7Ks9XmN2pLqR4Tv8YbHcWdEfGhIjKlMnOpQrSt...
 
 ```
 ~/.nexus3/
-├── rpc.token           # Default port (8765)
-└── rpc-{port}.token    # Port-specific
++-- rpc.token           # Default port (8765)
++-- rpc-{port}.token    # Port-specific
 ```
 
 ### ServerTokenManager
@@ -448,6 +459,7 @@ Checks in order:
 - Permission checks before reading
 - Constant-time comparison (prevents timing attacks)
 - Fresh token on each server start
+- `InsecureTokenFileError` for token files with insecure permissions
 
 ---
 
@@ -480,7 +492,7 @@ class AuthStatus(Enum):
     INVALID_TOKEN = "invalid_token"  # 403 - bad token
     DISABLED = "disabled"       # No auth required
 
-@dataclass
+@dataclass(frozen=True)
 class DiscoveredServer:
     host: str
     port: int
@@ -585,12 +597,13 @@ Handles circular dependency between AgentPool and GlobalDispatcher:
 
 1. Create provider registry
 2. Load context from NEXUS.md files
-3. Load custom permission presets
-4. Create SharedComponents
-5. Create AgentPool (without dispatcher)
-6. Create GlobalDispatcher (requires pool)
-7. Wire circular dependency
-8. Validate wiring
+3. Inject model guidance into system prompt (if configured)
+4. Load custom permission presets
+5. Create SharedComponents
+6. Create AgentPool (without dispatcher)
+7. Create GlobalDispatcher (requires pool)
+8. Wire circular dependency
+9. Validate wiring
 
 ---
 
@@ -602,6 +615,21 @@ Handles circular dependency between AgentPool and GlobalDispatcher:
 - Sandboxed agents can only read within their `cwd`
 - Write tools are disabled by default
 - `yolo` preset is NOT available via RPC
+
+### YOLO Agent Safety
+
+YOLO agents have no permission confirmations, making them dangerous for unattended operation. RPC enforces two safety restrictions:
+
+1. **Cannot create via RPC**: `create_agent` with `preset=yolo` returns an error
+2. **Cannot send unless REPL connected**: RPC `send` to a YOLO agent is blocked unless the REPL is actively connected to that agent
+
+The second restriction prevents scenarios where a YOLO agent could run unattended after being created via REPL but controlled via RPC. Connection state is tracked via:
+
+- `Agent.repl_connected`: Boolean field on the Agent dataclass
+- `AgentPool.set_repl_connected(agent_id, connected)`: Set connection state
+- `AgentPool.is_repl_connected(agent_id)`: Check connection state
+
+When blocked, returns error: `"Cannot send to YOLO agent - no REPL connected"`
 
 ### Enabling Writes
 
@@ -625,7 +653,6 @@ nexus3 rpc create writer --cwd /tmp/project --write-path /tmp/project/output
 | Preset | Capabilities |
 |--------|--------------|
 | `sandboxed` | Read-only in cwd, no network, no agent management |
-| `worker` | Minimal: sandboxed minus write_file |
 | `trusted` | Full read/write, agent management allowed |
 
 ### Ceiling Enforcement
@@ -849,6 +876,7 @@ from nexus3.rpc.discovery import (
     discover_servers,
 )
 from nexus3.rpc.pool import AuthorizationError, validate_agent_id, is_temp_agent, generate_temp_id
+from nexus3.rpc.auth import InsecureTokenFileError, check_token_file_permissions
 ```
 
 ---
@@ -872,4 +900,4 @@ from nexus3.rpc.pool import AuthorizationError, validate_agent_id, is_temp_agent
 
 ---
 
-Updated: 2026-01-21 from comprehensive source analysis.
+Updated: 2026-01-28 from comprehensive source analysis.

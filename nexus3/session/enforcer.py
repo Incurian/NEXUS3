@@ -10,9 +10,10 @@ handling of copy_file/rename destination paths.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from nexus3.core.path_decision import PathDecisionEngine
+from nexus3.core.presets import ToolPermission  # noqa: F401 - needed for P2
 from nexus3.core.types import ToolResult
 from nexus3.session.path_semantics import (
     extract_display_path,
@@ -21,13 +22,17 @@ from nexus3.session.path_semantics import (
 
 if TYPE_CHECKING:
     from nexus3.core.permissions import AgentPermissions
-    from nexus3.core.policy import ToolPermission
     from nexus3.core.types import ToolCall
     from nexus3.skill.services import ServiceContainer
 
 
 # Tools that have execution cwd parameter
 EXEC_TOOLS = frozenset({"bash", "bash_safe", "shell_UNSAFE", "run_python", "git"})
+
+# Tools that take agent_id as a target (for allowed_targets enforcement)
+AGENT_TARGET_TOOLS = frozenset({
+    "nexus_send", "nexus_status", "nexus_cancel", "nexus_destroy"
+})
 
 # Tools that operate on paths
 PATH_TOOLS = frozenset({
@@ -77,6 +82,11 @@ class PermissionEnforcer:
         if error:
             return error
 
+        # Check target agent allowed (for nexus_* tools)
+        error = self._check_target_allowed(tool_call, permissions)
+        if error:
+            return error
+
         # Check path restrictions for ALL paths in tool call
         for target_path in self.extract_target_paths(tool_call):
             error = self._check_path_allowed(tool_call.name, target_path, permissions)
@@ -101,10 +111,90 @@ class PermissionEnforcer:
         tool_name: str,
         permissions: AgentPermissions,
     ) -> ToolResult | None:
-        """Check if action is allowed by policy level."""
+        """Check if action is allowed by policy level.
+
+        Tool permissions can override policy-level restrictions:
+        If a tool is explicitly enabled in tool_permissions (enabled=True),
+        it bypasses SANDBOXED_DISABLED_TOOLS. This allows the sandboxed preset
+        to enable nexus_send with restrictions (allowed_targets="parent").
+        """
+        # Check if tool is explicitly enabled in tool_permissions
+        tool_perm = permissions.tool_permissions.get(tool_name)
+        if tool_perm is not None and tool_perm.enabled:
+            # Explicit enabled=True overrides policy-level restrictions
+            return None
+
         if not permissions.effective_policy.allows_action(tool_name):
             return ToolResult(error=f"Tool '{tool_name}' is not allowed at current permission level")
         return None
+
+    def _check_target_allowed(
+        self,
+        tool_call: ToolCall,
+        permissions: AgentPermissions,
+    ) -> ToolResult | None:
+        """Check if target agent is allowed by tool permission.
+
+        For nexus_* tools, validates the agent_id argument against
+        the tool's allowed_targets restriction.
+
+        Args:
+            tool_call: The tool call to check.
+            permissions: Agent permissions.
+
+        Returns:
+            ToolResult with error if target not allowed, None if allowed.
+        """
+        if tool_call.name not in AGENT_TARGET_TOOLS:
+            return None
+
+        tool_perm = permissions.tool_permissions.get(tool_call.name)
+        if not tool_perm or tool_perm.allowed_targets is None:
+            return None  # No restriction
+
+        target_agent_id = tool_call.arguments.get("agent_id", "")
+        if not target_agent_id:
+            return None  # Will fail later with "no agent_id provided"
+
+        allowed = tool_perm.allowed_targets
+
+        # Handle special relationship-based restrictions
+        if allowed == "parent":
+            if permissions.parent_agent_id and target_agent_id == permissions.parent_agent_id:
+                return None  # Allowed
+            return ToolResult(
+                error=f"Tool '{tool_call.name}' can only target parent agent "
+                      f"('{permissions.parent_agent_id or 'none'}')"
+            )
+
+        elif allowed == "children":
+            child_ids = self._services.get_child_agent_ids() if self._services else None
+            if child_ids and target_agent_id in child_ids:
+                return None  # Allowed
+            return ToolResult(
+                error=f"Tool '{tool_call.name}' can only target child agents"
+            )
+
+        elif allowed == "family":
+            # Parent or children
+            if permissions.parent_agent_id and target_agent_id == permissions.parent_agent_id:
+                return None
+            child_ids = self._services.get_child_agent_ids() if self._services else None
+            if child_ids and target_agent_id in child_ids:
+                return None
+            return ToolResult(
+                error=f"Tool '{tool_call.name}' can only target parent or child agents"
+            )
+
+        elif isinstance(allowed, list):
+            # Explicit allowlist
+            if target_agent_id in allowed:
+                return None
+            return ToolResult(
+                error=f"Tool '{tool_call.name}' cannot target agent '{target_agent_id}'"
+            )
+
+        return None  # Unknown restriction type, allow (fail-open for forward compat)
 
     def _check_path_allowed(
         self,

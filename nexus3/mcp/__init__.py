@@ -13,7 +13,17 @@ Usage:
 """
 
 from nexus3.mcp.client import MCPClient, MCPError
-from nexus3.mcp.protocol import MCPServerInfo, MCPTool, MCPToolResult
+from nexus3.mcp.protocol import (
+    MCPPrompt,
+    MCPPromptArgument,
+    MCPPromptMessage,
+    MCPPromptResult,
+    MCPResource,
+    MCPResourceContent,
+    MCPServerInfo,
+    MCPTool,
+    MCPToolResult,
+)
 from nexus3.mcp.registry import ConnectedServer, MCPServerConfig, MCPServerRegistry
 from nexus3.mcp.skill_adapter import MCPSkillAdapter
 from nexus3.mcp.transport import HTTPTransport, MCPTransport, StdioTransport
@@ -23,6 +33,12 @@ __all__ = [
     "HTTPTransport",
     "MCPClient",
     "MCPError",
+    "MCPPrompt",
+    "MCPPromptArgument",
+    "MCPPromptMessage",
+    "MCPPromptResult",
+    "MCPResource",
+    "MCPResourceContent",
     "MCPServerConfig",
     "MCPServerInfo",
     "MCPServerRegistry",

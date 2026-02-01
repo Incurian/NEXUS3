@@ -17,6 +17,7 @@ import asyncio
 import json
 import os
 import signal
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from functools import wraps
@@ -258,7 +259,7 @@ def base_skill_factory(cls: type[_BS]) -> type[_BS]:
         The same class with a .factory attribute attached.
     """
     def factory(services: "ServiceContainer") -> _BS:
-        skill = cls()
+        skill = cls(services)
         _wrap_with_validation(skill)
         return skill
 
@@ -1013,16 +1014,8 @@ class ExecutionSkill(ABC):
                     timeout=timeout
                 )
             except TimeoutError:
-                # Kill the entire process group to avoid orphan child processes
-                # On POSIX: start_new_session=True creates new group; killpg kills all
-                # On Windows: Fallback to process.kill() (no process groups)
-                try:
-                    pgid = os.getpgid(process.pid)
-                    os.killpg(pgid, signal.SIGKILL)
-                except (ProcessLookupError, OSError, AttributeError):
-                    # Process already dead, permission error, or Windows (no getpgid)
-                    process.kill()
-                await process.wait()
+                from nexus3.core.process import terminate_process_tree
+                await terminate_process_tree(process)
                 return ToolResult(error=timeout_message.format(timeout=timeout))
 
             output = self._format_output(stdout, stderr, process.returncode)

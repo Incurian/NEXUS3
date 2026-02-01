@@ -767,11 +767,15 @@ class TestSandboxedPermissions:
 
     @pytest.mark.asyncio
     async def test_sandboxed_restricts_network_tools(self) -> None:
-        """SANDBOXED mode should have network tools disabled."""
+        """SANDBOXED mode should have network tools disabled (except nexus_send to parent)."""
         permissions = resolve_preset("sandboxed")
 
-        # Check that network-related nexus tools are disabled
-        assert permissions.tool_permissions.get("nexus_send", ToolPermission()).enabled is False
+        # nexus_send is enabled but restricted to parent-only target
+        send_perm = permissions.tool_permissions.get("nexus_send", ToolPermission())
+        assert send_perm.enabled is True
+        assert send_perm.allowed_targets == "parent"
+
+        # Other network-related nexus tools remain disabled
         assert permissions.tool_permissions.get("nexus_create", ToolPermission()).enabled is False
         assert permissions.tool_permissions.get("nexus_shutdown", ToolPermission()).enabled is False
 
@@ -786,17 +790,15 @@ class TestSandboxedPermissions:
         assert permissions.effective_policy.requires_confirmation("read") is False
 
 
-class TestWorkerPresetBackwardsCompat:
-    """Tests for the worker preset backwards compatibility."""
+class TestWorkerPresetRemoved:
+    """Tests verifying worker preset was removed."""
 
     @pytest.mark.asyncio
-    async def test_worker_maps_to_sandboxed(self) -> None:
-        """Worker preset should map to sandboxed for backwards compatibility."""
-        permissions = resolve_preset("worker")
-
-        # Worker now maps to sandboxed
-        assert permissions.base_preset == "sandboxed"
-        assert permissions.effective_policy.level.value == "sandboxed"
+    async def test_worker_preset_raises_error(self) -> None:
+        """Worker preset was removed - should raise ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            resolve_preset("worker")
+        assert "worker" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
     async def test_sandboxed_has_management_tools_disabled(self) -> None:

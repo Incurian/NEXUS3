@@ -14,27 +14,36 @@ from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
 
 
-def _needs_newline_prefix(filepath: os.PathLike[str]) -> bool:
-    """Check if file exists and doesn't end with newline.
-
-    Only reads the last byte (or few bytes for UTF-8 edge cases) to be efficient.
+def _needs_newline_prefix(filepath: os.PathLike[str]) -> tuple[bool, str]:
+    """Check if file needs newline prefix and detect its line ending.
 
     Returns:
-        True if a newline should be prepended before appending.
+        Tuple of (needs_newline: bool, detected_line_ending: str)
     """
     try:
         size = os.path.getsize(filepath)
         if size == 0:
-            return False  # Empty file - no newline needed
+            return False, "\n"
 
-        # Read just the last few bytes to check for newline
-        # (UTF-8 newline is single byte, but be safe)
+        # Read last 1KB to detect line ending style
         with open(filepath, "rb") as f:
-            f.seek(max(0, size - 4))
-            tail = f.read()
-            return not tail.endswith(b"\n")
+            read_size = min(1024, size)
+            f.seek(max(0, size - read_size))
+            tail_bytes = f.read()
+
+            # Detect line ending from tail
+            tail_str = tail_bytes.decode("utf-8", errors="replace")
+            if '\r\n' in tail_str:
+                line_ending = '\r\n'
+            elif '\r' in tail_str:
+                line_ending = '\r'
+            else:
+                line_ending = '\n'
+
+            needs_prefix = not tail_bytes.endswith(b"\n")
+            return needs_prefix, line_ending
     except (OSError, IOError):
-        return False  # Can't read - will be handled by append
+        return False, "\n"
 
 
 class AppendFileSkill(FileSkill):
@@ -113,8 +122,10 @@ class AppendFileSkill(FileSkill):
             def do_append() -> int:
                 # Smart newline handling - only read last byte, not entire file
                 to_write = content
-                if newline and p.exists() and _needs_newline_prefix(p):
-                    to_write = "\n" + content
+                if newline and p.exists():
+                    needs_nl, line_ending = _needs_newline_prefix(p)
+                    if needs_nl:
+                        to_write = line_ending + content
 
                 # P2.6 FIX: Use true append mode instead of read+rewrite
                 # This is atomic at the OS level and avoids race conditions

@@ -195,7 +195,7 @@ Create a new agent without switching to it.
 
 **Parameters:**
 - `name`: Agent ID (must not exist)
-- `permission`: One of `"sandboxed"`, `"trusted"`, `"yolo"`, `"worker"`
+- `permission`: One of `"sandboxed"`, `"trusted"`, `"yolo"`
 - `model`: Optional model alias or ID (None for default)
 
 **Returns** in `data`:
@@ -246,12 +246,13 @@ Get comprehensive agent status.
     "context_usage_pct": 35.2,
     "tokens": {
         "total": 35200,
+        "available": 64800,
+        "remaining": 29600,
+        # If show_tokens=True, also includes:
         "budget": 100000,
-        # If show_tokens=True:
         "system": 5000,
         "tools": 8000,
-        "messages": 22200,
-        "available": 64800
+        "messages": 22200
     },
     "model": {
         "model_id": "anthropic/claude-sonnet-4",
@@ -625,4 +626,4 @@ All commands are async because:
 
 ---
 
-Updated: 2026-01-21
+Updated: 2026-01-28

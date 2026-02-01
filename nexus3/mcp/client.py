@@ -28,6 +28,10 @@ from nexus3.core.errors import NexusError
 from nexus3.mcp.protocol import (
     PROTOCOL_VERSION,
     MCPClientInfo,
+    MCPPrompt,
+    MCPPromptResult,
+    MCPResource,
+    MCPResourceContent,
     MCPServerInfo,
     MCPTool,
     MCPToolResult,
@@ -81,6 +85,8 @@ class MCPClient:
         self._request_id = 0
         self._server_info: MCPServerInfo | None = None
         self._tools: list[MCPTool] = []
+        self._resources: list[MCPResource] = []
+        self._prompts: list[MCPPrompt] = []
         self._initialized = False
 
     async def connect(self, timeout: float = 30.0) -> None:
@@ -120,6 +126,36 @@ class MCPClient:
         await self._transport.close()
         self._initialized = False
 
+    async def reconnect(self, timeout: float = 30.0) -> None:
+        """Close and reconnect to the server.
+
+        Useful for recovering from stale connections without recreating
+        the client object.
+
+        Args:
+            timeout: Maximum time to wait for reconnection. Default 30s.
+
+        Raises:
+            MCPError: If reconnection fails.
+        """
+        await self.close()
+        await self.connect(timeout=timeout)
+
+    async def ping(self) -> float:
+        """Ping the server to check connectivity and measure latency.
+
+        Returns:
+            Round-trip time in milliseconds.
+
+        Raises:
+            MCPError: If server doesn't respond or returns error.
+        """
+        import time
+        start = time.perf_counter()
+        await self._call("ping")
+        elapsed = time.perf_counter() - start
+        return elapsed * 1000  # Convert to milliseconds
+
     async def __aenter__(self) -> "MCPClient":
         """Connect and initialize."""
         await self.connect()
@@ -149,11 +185,11 @@ class MCPClient:
         self._server_info = MCPServerInfo.from_dict(response)
 
         # Send initialized notification (no response expected)
-        await self._notify("notifications/initialized", {})
+        await self._notify("notifications/initialized")
 
         self._initialized = True
 
-    async def _call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+    async def _call(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Make JSON-RPC call and wait for response.
 
         P2.9 SECURITY: Verifies response ID matches request ID.
@@ -166,7 +202,7 @@ class MCPClient:
 
         Args:
             method: RPC method name.
-            params: Method parameters.
+            params: Method parameters. If None or empty, params field is omitted.
 
         Returns:
             The 'result' field from the response.
@@ -177,12 +213,13 @@ class MCPClient:
         """
         self._request_id += 1
         expected_id = self._request_id
-        request = {
+        request: dict[str, Any] = {
             "jsonrpc": "2.0",
             "id": expected_id,
             "method": method,
-            "params": params,
         }
+        if params:
+            request["params"] = params
 
         await self._transport.send(request)
 
@@ -244,24 +281,26 @@ class MCPClient:
 
         return response.get("result", {})
 
-    async def _notify(self, method: str, params: dict[str, Any]) -> None:
+    async def _notify(self, method: str, params: dict[str, Any] | None = None) -> None:
         """Send notification (no response expected).
 
         Args:
             method: Notification method name.
-            params: Notification parameters.
+            params: Notification parameters. Omitted from message if None or empty.
         """
-        notification = {
+        notification: dict[str, Any] = {
             "jsonrpc": "2.0",
             "method": method,
-            "params": params,
         }
+        if params:  # Only include if non-empty
+            notification["params"] = params
         await self._transport.send(notification)
 
     async def list_tools(self) -> list[MCPTool]:
         """Discover available tools from server.
 
         Fetches and caches the list of tools the server provides.
+        Handles pagination per MCP spec - loops until no nextCursor returned.
 
         Returns:
             List of available tools.
@@ -269,12 +308,24 @@ class MCPClient:
         Raises:
             MCPError: If the server returns an error.
         """
-        result = await self._call("tools/list", {})
+        all_tools: list[MCPTool] = []
+        cursor: str | None = None
 
-        self._tools = [
-            MCPTool.from_dict(t) for t in result.get("tools", [])
-        ]
+        while True:
+            params: dict[str, Any] | None = None
+            if cursor:
+                params = {"cursor": cursor}
 
+            result = await self._call("tools/list", params)
+
+            tools_data = result.get("tools", [])
+            all_tools.extend(MCPTool.from_dict(t) for t in tools_data)
+
+            cursor = result.get("nextCursor")
+            if not cursor:
+                break
+
+        self._tools = all_tools
         return self._tools
 
     async def call_tool(
@@ -304,6 +355,110 @@ class MCPClient:
 
         return MCPToolResult.from_dict(result)
 
+    async def list_resources(self) -> list[MCPResource]:
+        """Discover available resources from server.
+
+        Fetches and caches the list of resources the server provides.
+        Handles pagination per MCP spec - loops until no nextCursor returned.
+
+        Returns:
+            List of available resources.
+
+        Raises:
+            MCPError: If the server returns an error.
+        """
+        all_resources: list[MCPResource] = []
+        cursor: str | None = None
+
+        while True:
+            params: dict[str, Any] | None = None
+            if cursor:
+                params = {"cursor": cursor}
+
+            result = await self._call("resources/list", params)
+
+            resources_data = result.get("resources", [])
+            all_resources.extend(MCPResource.from_dict(r) for r in resources_data)
+
+            cursor = result.get("nextCursor")
+            if not cursor:
+                break
+
+        self._resources = all_resources
+        return self._resources
+
+    async def read_resource(self, uri: str) -> list[MCPResourceContent]:
+        """Read content of a resource.
+
+        Args:
+            uri: URI of the resource to read.
+
+        Returns:
+            List of resource content items (usually one).
+
+        Raises:
+            MCPError: If resource not found or read fails.
+        """
+        result = await self._call("resources/read", {"uri": uri})
+        contents_data = result.get("contents", [])
+        return [MCPResourceContent.from_dict(c) for c in contents_data]
+
+    async def list_prompts(self) -> list[MCPPrompt]:
+        """Discover available prompts from server.
+
+        Fetches and caches the list of prompts the server provides.
+        Handles pagination per MCP spec - loops until no nextCursor returned.
+
+        Returns:
+            List of available prompts.
+
+        Raises:
+            MCPError: If the server returns an error.
+        """
+        all_prompts: list[MCPPrompt] = []
+        cursor: str | None = None
+
+        while True:
+            params: dict[str, Any] | None = None
+            if cursor:
+                params = {"cursor": cursor}
+
+            result = await self._call("prompts/list", params)
+
+            prompts_data = result.get("prompts", [])
+            all_prompts.extend(MCPPrompt.from_dict(p) for p in prompts_data)
+
+            cursor = result.get("nextCursor")
+            if not cursor:
+                break
+
+        self._prompts = all_prompts
+        return self._prompts
+
+    async def get_prompt(
+        self,
+        name: str,
+        arguments: dict[str, Any] | None = None,
+    ) -> MCPPromptResult:
+        """Get a prompt with filled arguments.
+
+        Args:
+            name: Name of the prompt to get.
+            arguments: Arguments to fill into the prompt template.
+
+        Returns:
+            Prompt result with filled messages.
+
+        Raises:
+            MCPError: If prompt not found or arguments invalid.
+        """
+        params: dict[str, Any] = {"name": name}
+        if arguments:
+            params["arguments"] = arguments
+
+        result = await self._call("prompts/get", params)
+        return MCPPromptResult.from_dict(result)
+
     @property
     def server_info(self) -> MCPServerInfo | None:
         """Get server information (available after initialization)."""
@@ -313,6 +468,16 @@ class MCPClient:
     def tools(self) -> list[MCPTool]:
         """Get cached tools (call list_tools() first)."""
         return self._tools
+
+    @property
+    def resources(self) -> list[MCPResource]:
+        """Get cached resources (call list_resources() first)."""
+        return self._resources
+
+    @property
+    def prompts(self) -> list[MCPPrompt]:
+        """Get cached prompts (call list_prompts() first)."""
+        return self._prompts
 
     @property
     def is_initialized(self) -> bool:

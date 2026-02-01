@@ -93,7 +93,10 @@ def init_global(force: bool = False) -> tuple[bool, str]:
     defaults_dir = get_defaults_dir()
 
     if global_dir.exists() and not force:
-        return False, f"Directory already exists: {global_dir}\nUse --force to overwrite."
+        return False, (
+            f"Directory already exists: {global_dir}\n"
+            "Use --init-global-force (CLI) or /init --global --force (REPL) to overwrite."
+        )
 
     try:
         secure_mkdir(global_dir)
@@ -151,7 +154,10 @@ def init_local(cwd: Path | None = None, force: bool = False) -> tuple[bool, str]
     target_dir = (cwd or Path.cwd()) / ".nexus3"
 
     if target_dir.exists() and not force:
-        return False, f"Directory already exists: {target_dir}\nUse --force to overwrite."
+        return False, (
+            f"Directory already exists: {target_dir}\n"
+            "Use /init --force to overwrite."
+        )
 
     try:
         secure_mkdir(target_dir)

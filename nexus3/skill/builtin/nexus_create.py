@@ -43,20 +43,21 @@ class NexusCreateSkill(NexusSkill):
                     "description": "Permission preset. Default: 'sandboxed' (cwd-only reads, "
                     "no writes unless allowed_write_paths specified). "
                     "Use 'trusted' for full read access (writes still need explicit paths or cwd).",
-                    "enum": ["trusted", "sandboxed", "worker"],
+                    "enum": ["trusted", "sandboxed"],
                 },
                 "cwd": {
                     "type": "string",
                     "description": "Working directory / sandbox root. "
                     "CRITICAL for sandboxed agents: this is the ONLY path they can read. "
-                    "Defaults to parent's cwd if not specified.",
+                    "Defaults to parent's cwd if not specified. "
+                    "Must be within parent's cwd (cannot escape parent scope).",
                 },
                 "allowed_write_paths": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "REQUIRED for writes on sandboxed agents. "
                     "Without this, all write tools are DISABLED. "
-                    "Must be within cwd for sandboxed agents.",
+                    "Must be within BOTH agent's cwd AND parent's cwd.",
                 },
                 "disable_tools": {
                     "type": "array",
@@ -103,7 +104,7 @@ class NexusCreateSkill(NexusSkill):
 
         Args:
             agent_id: ID for the new agent
-            preset: Permission preset (trusted, sandboxed, worker)
+            preset: Permission preset (trusted, sandboxed)
             cwd: Working directory / sandbox root for the agent
             allowed_write_paths: Paths where writes are allowed (must be within cwd)
             disable_tools: List of tool names to disable

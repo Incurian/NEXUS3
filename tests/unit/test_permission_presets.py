@@ -68,6 +68,187 @@ class TestToolPermission:
         assert perm.timeout == 10.0
         assert perm.requires_confirmation is True
 
+    def test_allowed_targets_default_none(self):
+        """Default allowed_targets is None."""
+        perm = ToolPermission()
+        assert perm.allowed_targets is None
+
+    def test_allowed_targets_parent(self):
+        """Can set allowed_targets to 'parent'."""
+        perm = ToolPermission(allowed_targets="parent")
+        assert perm.allowed_targets == "parent"
+
+    def test_allowed_targets_children(self):
+        """Can set allowed_targets to 'children'."""
+        perm = ToolPermission(allowed_targets="children")
+        assert perm.allowed_targets == "children"
+
+    def test_allowed_targets_family(self):
+        """Can set allowed_targets to 'family'."""
+        perm = ToolPermission(allowed_targets="family")
+        assert perm.allowed_targets == "family"
+
+    def test_allowed_targets_explicit_list(self):
+        """Can set allowed_targets to explicit agent ID list."""
+        perm = ToolPermission(allowed_targets=["agent-1", "agent-2"])
+        assert perm.allowed_targets == ["agent-1", "agent-2"]
+
+
+class TestToolPermissionSerialization:
+    """Tests for ToolPermission to_dict() and from_dict() serialization."""
+
+    def test_to_dict_minimal(self):
+        """to_dict with defaults only includes enabled."""
+        perm = ToolPermission()
+        result = perm.to_dict()
+        assert result == {"enabled": True}
+
+    def test_to_dict_with_allowed_paths(self, tmp_path):
+        """to_dict includes allowed_paths when set."""
+        perm = ToolPermission(allowed_paths=[tmp_path])
+        result = perm.to_dict()
+        assert result["allowed_paths"] == [str(tmp_path)]
+
+    def test_to_dict_with_timeout(self):
+        """to_dict includes timeout when set."""
+        perm = ToolPermission(timeout=60.0)
+        result = perm.to_dict()
+        assert result["timeout"] == 60.0
+
+    def test_to_dict_with_requires_confirmation(self):
+        """to_dict includes requires_confirmation when set."""
+        perm = ToolPermission(requires_confirmation=True)
+        result = perm.to_dict()
+        assert result["requires_confirmation"] is True
+
+    def test_to_dict_allowed_targets_none_not_included(self):
+        """to_dict does not include allowed_targets when None."""
+        perm = ToolPermission(allowed_targets=None)
+        result = perm.to_dict()
+        assert "allowed_targets" not in result
+
+    def test_to_dict_allowed_targets_parent(self):
+        """to_dict includes allowed_targets when 'parent'."""
+        perm = ToolPermission(allowed_targets="parent")
+        result = perm.to_dict()
+        assert result["allowed_targets"] == "parent"
+
+    def test_to_dict_allowed_targets_children(self):
+        """to_dict includes allowed_targets when 'children'."""
+        perm = ToolPermission(allowed_targets="children")
+        result = perm.to_dict()
+        assert result["allowed_targets"] == "children"
+
+    def test_to_dict_allowed_targets_family(self):
+        """to_dict includes allowed_targets when 'family'."""
+        perm = ToolPermission(allowed_targets="family")
+        result = perm.to_dict()
+        assert result["allowed_targets"] == "family"
+
+    def test_to_dict_allowed_targets_explicit_list(self):
+        """to_dict includes allowed_targets when explicit list."""
+        perm = ToolPermission(allowed_targets=["agent-1", "agent-2"])
+        result = perm.to_dict()
+        assert result["allowed_targets"] == ["agent-1", "agent-2"]
+
+    def test_from_dict_minimal(self):
+        """from_dict with minimal data returns defaults."""
+        data = {"enabled": True}
+        perm = ToolPermission.from_dict(data)
+        assert perm.enabled is True
+        assert perm.allowed_paths is None
+        assert perm.timeout is None
+        assert perm.requires_confirmation is None
+        assert perm.allowed_targets is None
+
+    def test_from_dict_with_allowed_paths(self, tmp_path):
+        """from_dict deserializes allowed_paths."""
+        data = {"enabled": True, "allowed_paths": [str(tmp_path)]}
+        perm = ToolPermission.from_dict(data)
+        assert perm.allowed_paths == [tmp_path]
+
+    def test_from_dict_allowed_targets_none(self):
+        """from_dict with no allowed_targets returns None."""
+        data = {"enabled": True}
+        perm = ToolPermission.from_dict(data)
+        assert perm.allowed_targets is None
+
+    def test_from_dict_allowed_targets_parent(self):
+        """from_dict deserializes allowed_targets 'parent'."""
+        data = {"enabled": True, "allowed_targets": "parent"}
+        perm = ToolPermission.from_dict(data)
+        assert perm.allowed_targets == "parent"
+
+    def test_from_dict_allowed_targets_children(self):
+        """from_dict deserializes allowed_targets 'children'."""
+        data = {"enabled": True, "allowed_targets": "children"}
+        perm = ToolPermission.from_dict(data)
+        assert perm.allowed_targets == "children"
+
+    def test_from_dict_allowed_targets_family(self):
+        """from_dict deserializes allowed_targets 'family'."""
+        data = {"enabled": True, "allowed_targets": "family"}
+        perm = ToolPermission.from_dict(data)
+        assert perm.allowed_targets == "family"
+
+    def test_from_dict_allowed_targets_explicit_list(self):
+        """from_dict deserializes allowed_targets explicit list."""
+        data = {"enabled": True, "allowed_targets": ["agent-1", "agent-2"]}
+        perm = ToolPermission.from_dict(data)
+        assert perm.allowed_targets == ["agent-1", "agent-2"]
+
+    def test_roundtrip_none(self):
+        """Serialization roundtrip with allowed_targets=None."""
+        original = ToolPermission(allowed_targets=None)
+        data = original.to_dict()
+        restored = ToolPermission.from_dict(data)
+        assert restored.allowed_targets is None
+
+    def test_roundtrip_parent(self):
+        """Serialization roundtrip with allowed_targets='parent'."""
+        original = ToolPermission(allowed_targets="parent")
+        data = original.to_dict()
+        restored = ToolPermission.from_dict(data)
+        assert restored.allowed_targets == "parent"
+
+    def test_roundtrip_children(self):
+        """Serialization roundtrip with allowed_targets='children'."""
+        original = ToolPermission(allowed_targets="children")
+        data = original.to_dict()
+        restored = ToolPermission.from_dict(data)
+        assert restored.allowed_targets == "children"
+
+    def test_roundtrip_family(self):
+        """Serialization roundtrip with allowed_targets='family'."""
+        original = ToolPermission(allowed_targets="family")
+        data = original.to_dict()
+        restored = ToolPermission.from_dict(data)
+        assert restored.allowed_targets == "family"
+
+    def test_roundtrip_explicit_list(self):
+        """Serialization roundtrip with allowed_targets as list."""
+        original = ToolPermission(allowed_targets=["agent-1", "agent-2"])
+        data = original.to_dict()
+        restored = ToolPermission.from_dict(data)
+        assert restored.allowed_targets == ["agent-1", "agent-2"]
+
+    def test_roundtrip_full_permission(self, tmp_path):
+        """Serialization roundtrip with all fields set."""
+        original = ToolPermission(
+            enabled=False,
+            allowed_paths=[tmp_path],
+            timeout=30.0,
+            requires_confirmation=True,
+            allowed_targets="parent",
+        )
+        data = original.to_dict()
+        restored = ToolPermission.from_dict(data)
+        assert restored.enabled is False
+        assert restored.allowed_paths == [tmp_path]
+        assert restored.timeout == 30.0
+        assert restored.requires_confirmation is True
+        assert restored.allowed_targets == "parent"
+
 
 class TestPermissionPreset:
     """Tests for PermissionPreset dataclass."""
@@ -559,13 +740,11 @@ class TestResolvePreset:
         assert perms.effective_policy.allowed_paths is not None
         assert perms.base_preset == "sandboxed"
 
-    def test_resolve_worker_preset_backwards_compat(self):
-        """Resolve 'worker' maps to sandboxed for backwards compatibility."""
-        perms = resolve_preset("worker")
-        # Worker is mapped to sandboxed for backwards compatibility
-        assert perms.effective_policy.level == PermissionLevel.SANDBOXED
-        # base_preset is now "sandboxed" due to mapping
-        assert perms.base_preset == "sandboxed"
+    def test_worker_preset_no_longer_valid(self):
+        """Worker preset was removed - should raise ValueError."""
+        with pytest.raises(ValueError) as exc_info:
+            resolve_preset("worker")
+        assert "worker" in str(exc_info.value).lower()
 
     def test_unknown_preset_raises_valueerror(self):
         """Unknown preset name raises ValueError."""
@@ -599,9 +778,12 @@ class TestResolvePreset:
     def test_resolve_preset_copies_tool_permissions(self):
         """resolve_preset copies tool_permissions from preset."""
         perms = resolve_preset("sandboxed")
-        # Sandboxed preset has some tools disabled
+        # Sandboxed preset has some tools disabled, nexus_send enabled with parent-only target
         assert "nexus_send" in perms.tool_permissions
-        assert perms.tool_permissions["nexus_send"].enabled is False
+        assert perms.tool_permissions["nexus_send"].enabled is True
+        assert perms.tool_permissions["nexus_send"].allowed_targets == "parent"
+        # Other nexus tools remain disabled
+        assert perms.tool_permissions["nexus_create"].enabled is False
 
 
 class TestGetBuiltinPresets:

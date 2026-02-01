@@ -14,11 +14,20 @@ import asyncio
 import json
 import logging
 import os
+import random
+import re
+import shutil
+import subprocess
+import sys
 from abc import ABC, abstractmethod
+from collections import deque
 from typing import Any
+
+import httpx
 
 from nexus3.core.errors import NexusError
 from nexus3.core.url_validator import UrlSecurityError, validate_url
+from nexus3.mcp.protocol import PROTOCOL_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +41,30 @@ class MCPTransportError(NexusError):
 # 10MB should be generous for any legitimate MCP message.
 MAX_STDIO_LINE_LENGTH: int = 10 * 1024 * 1024  # 10 MB
 
+# P1.10: HTTP retry configuration for transient failures.
+# Retry on server errors and rate limiting, but not client errors.
+DEFAULT_MAX_RETRIES: int = 3
+DEFAULT_RETRY_BACKOFF: float = 1.0
+RETRYABLE_STATUS_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+
+# P1.7: MCP-specific HTTP headers required by the protocol spec.
+# These are added to every HTTP request to MCP servers.
+MCP_HTTP_HEADERS: dict[str, str] = {
+    "MCP-Protocol-Version": PROTOCOL_VERSION,
+    "Accept": "application/json, text/event-stream",
+}
+
+# P1.8: Session ID validation constants.
+# MCP session IDs should be alphanumeric with optional dashes/underscores.
+# Max length prevents unbounded memory growth from malicious servers.
+MAX_SESSION_ID_LENGTH: int = 256
+SESSION_ID_PATTERN: re.Pattern[str] = re.compile(r"^[a-zA-Z0-9_-]+$")
+
 
 # Environment variables always safe to pass to MCP servers.
 # These are essential for subprocess execution but don't contain secrets.
 SAFE_ENV_KEYS: frozenset[str] = frozenset({
+    # Cross-platform
     "PATH",       # Find executables
     "HOME",       # User home directory (config files)
     "USER",       # Current username
@@ -46,8 +75,15 @@ SAFE_ENV_KEYS: frozenset[str] = frozenset({
     "TERM",       # Terminal type
     "SHELL",      # Default shell
     "TMPDIR",     # Temporary directory
-    "TMP",        # Windows temp directory
-    "TEMP",       # Windows temp directory
+    "TMP",        # Temp directory (cross-platform)
+    "TEMP",       # Temp directory (cross-platform)
+    # Windows-specific (P2.0.1)
+    "USERPROFILE",  # Windows user home directory
+    "APPDATA",      # Windows roaming app data
+    "LOCALAPPDATA", # Windows local app data
+    "PATHEXT",      # Windows executable extensions (.exe, .cmd, .bat)
+    "SYSTEMROOT",   # Windows system root (C:\Windows)
+    "COMSPEC",      # Windows command interpreter (cmd.exe)
 })
 
 
@@ -89,6 +125,55 @@ def build_safe_env(
         env.update(explicit_env)
 
     return env
+
+
+# Windows command aliases: commands that should be translated on Windows
+# when the original command is not found
+_WINDOWS_COMMAND_ALIASES: dict[str, str] = {
+    "python3": "python",  # Windows typically only has 'python', not 'python3'
+    "pip3": "pip",        # Same for pip
+}
+
+
+def resolve_command(command: list[str]) -> list[str]:
+    """Resolve command for cross-platform execution.
+
+    P2.0.2-P2.0.3: On Windows, executable extensions (.cmd, .bat, .exe) are not
+    automatically resolved by create_subprocess_exec. This uses shutil.which to
+    find the actual executable path, respecting PATHEXT.
+
+    Additionally, translates Unix-style commands to Windows equivalents when the
+    original command is not found (e.g., python3 → python, pip3 → pip).
+
+    Args:
+        command: Command and arguments list.
+
+    Returns:
+        Command list with resolved executable path (on Windows) or unchanged (on Unix).
+    """
+    if sys.platform != "win32" or not command:
+        return command
+
+    executable = command[0]
+
+    # Skip if already has a known Windows executable extension
+    if any(executable.lower().endswith(ext) for ext in (".exe", ".cmd", ".bat", ".com")):
+        return command
+
+    # Try to resolve using which (respects PATHEXT on Windows)
+    resolved = shutil.which(executable)
+    if resolved:
+        return [resolved] + command[1:]
+
+    # If not found, try Windows alias (e.g., python3 → python)
+    alias = _WINDOWS_COMMAND_ALIASES.get(executable)
+    if alias:
+        resolved = shutil.which(alias)
+        if resolved:
+            logger.debug("Resolved %s → %s on Windows", executable, resolved)
+            return [resolved] + command[1:]
+
+    return command
 
 
 class MCPTransport(ABC):
@@ -189,6 +274,8 @@ class StdioTransport(MCPTransport):
         self._cwd = cwd
         self._process: asyncio.subprocess.Process | None = None
         self._stderr_task: asyncio.Task[None] | None = None
+        # P1.9.6: Buffer stderr lines for error context (last 20 lines)
+        self._stderr_buffer: deque[str] = deque(maxlen=20)
         # Lock for serializing I/O operations (clarity for concurrent callers)
         self._io_lock = asyncio.Lock()
         # Buffer for data read past newline (fixes multi-response buffering)
@@ -202,15 +289,37 @@ class StdioTransport(MCPTransport):
             passthrough=self._env_passthrough,
         )
 
+        # P2.0.2-P2.0.3: Resolve command for Windows (.cmd, .bat extension handling)
+        resolved_command = resolve_command(self._command)
+
         try:
-            self._process = await asyncio.create_subprocess_exec(
-                *self._command,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-                cwd=self._cwd,
-            )
+            # P2.0.5: Platform-specific process group handling
+            if sys.platform == "win32":
+                # Windows: CREATE_NEW_PROCESS_GROUP allows sending CTRL_BREAK_EVENT
+                # P9: CREATE_NO_WINDOW prevents cmd.exe window from flashing
+                self._process = await asyncio.create_subprocess_exec(
+                    *resolved_command,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env,
+                    cwd=self._cwd,
+                    creationflags=(
+                        subprocess.CREATE_NEW_PROCESS_GROUP |
+                        subprocess.CREATE_NO_WINDOW
+                    ),
+                )
+            else:
+                # Unix: start_new_session creates new process group for clean termination
+                self._process = await asyncio.create_subprocess_exec(
+                    *resolved_command,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env,
+                    cwd=self._cwd,
+                    start_new_session=True,
+                )
         except FileNotFoundError as e:
             raise MCPTransportError(f"MCP server command not found: {self._command[0]}") from e
         except Exception as e:
@@ -220,7 +329,10 @@ class StdioTransport(MCPTransport):
         self._stderr_task = asyncio.create_task(self._read_stderr())
 
     async def _read_stderr(self) -> None:
-        """Read and log stderr from subprocess."""
+        """Read and log stderr from subprocess.
+
+        P1.9.6: Buffers last 20 lines for error context in addition to logging.
+        """
         if self._process is None or self._process.stderr is None:
             return
 
@@ -229,13 +341,25 @@ class StdioTransport(MCPTransport):
                 line = await self._process.stderr.readline()
                 if not line:
                     break
-                # Log at DEBUG level for debugging MCP server issues
+                # Decode and strip whitespace
                 text = line.decode(errors="replace").rstrip()
                 if text:
+                    # P1.9.6: Buffer for error context
+                    self._stderr_buffer.append(text)
+                    # Log at DEBUG level for debugging MCP server issues
                     logger.debug("MCP stderr [%s]: %s", self._command[0], text)
             except Exception as e:
                 logger.debug("Stderr reader stopped: %s", e)
                 break
+
+    @property
+    def stderr_lines(self) -> list[str]:
+        """Return buffered stderr lines for error context.
+
+        P1.9.6: Returns the last 20 lines of stderr output from the MCP server.
+        Useful for providing context when errors occur.
+        """
+        return list(self._stderr_buffer)
 
     async def send(self, message: dict[str, Any]) -> None:
         """Write JSON-RPC message to stdin.
@@ -259,6 +383,8 @@ class StdioTransport(MCPTransport):
         P2.12 SECURITY: Enforces MAX_STDIO_LINE_LENGTH to prevent memory
         exhaustion from extremely long lines.
 
+        P2.0.4: Handles both LF and CRLF line endings (Windows compatibility).
+
         Uses I/O lock to serialize concurrent receives.
         """
         if self._process is None or self._process.stdout is None:
@@ -272,6 +398,8 @@ class StdioTransport(MCPTransport):
                     returncode = self._process.returncode
                     raise MCPTransportError(f"MCP server closed (exit code: {returncode})")
 
+                # P2.0.4: Strip CRLF/LF before JSON parsing (Windows compatibility)
+                line = line.rstrip(b"\r\n")
                 return json.loads(line.decode("utf-8"))
             except json.JSONDecodeError as e:
                 raise MCPTransportError(f"Invalid JSON from server: {e}") from e
@@ -355,7 +483,8 @@ class StdioTransport(MCPTransport):
             self._stderr_task = None
 
         if self._process is not None:
-            # Try graceful shutdown first
+            # Close all pipes explicitly (Windows ProactorEventLoop requires this)
+            # Close stdin first to signal EOF to subprocess
             if self._process.stdin is not None:
                 try:
                     self._process.stdin.close()
@@ -363,17 +492,25 @@ class StdioTransport(MCPTransport):
                 except Exception as e:
                     logger.debug("Stdin close error (expected during shutdown): %s", e)
 
-            # Give it a moment to exit
+            # Close stdout and stderr to prevent "unclosed transport" warnings on Windows
+            if self._process.stdout is not None:
+                try:
+                    self._process.stdout.feed_eof()
+                except Exception:
+                    pass  # May already be closed
+            if self._process.stderr is not None:
+                try:
+                    self._process.stderr.feed_eof()
+                except Exception:
+                    pass  # May already be closed
+
+            # Give it a moment to exit gracefully
             try:
                 await asyncio.wait_for(self._process.wait(), timeout=2.0)
             except TimeoutError:
-                # Force terminate
-                self._process.terminate()
-                try:
-                    await asyncio.wait_for(self._process.wait(), timeout=2.0)
-                except TimeoutError:
-                    self._process.kill()
-                    await self._process.wait()
+                # Use cross-platform process tree termination
+                from nexus3.core.process import terminate_process_tree
+                await terminate_process_tree(self._process)
 
             self._process = None
 
@@ -404,6 +541,8 @@ class HTTPTransport(MCPTransport):
         url: str,
         headers: dict[str, str] | None = None,
         timeout: float = 30.0,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        retry_backoff: float = DEFAULT_RETRY_BACKOFF,
     ):
         """Initialize HTTPTransport.
 
@@ -411,6 +550,8 @@ class HTTPTransport(MCPTransport):
             url: Base URL of the MCP server.
             headers: Additional HTTP headers (e.g., for auth).
             timeout: Request timeout in seconds.
+            max_retries: Maximum number of retries for transient failures (default 3).
+            retry_backoff: Base delay in seconds for exponential backoff (default 1.0).
 
         Raises:
             MCPTransportError: If URL is invalid or blocked (SSRF protection).
@@ -424,19 +565,25 @@ class HTTPTransport(MCPTransport):
         self._url = url.rstrip("/")
         self._headers = headers or {}
         self._timeout = timeout
+        self._max_retries = max_retries
+        self._retry_backoff = retry_backoff
         self._client: Any = None  # httpx.AsyncClient
         self._pending_response: dict[str, Any] | None = None
+        # P1.8: MCP session ID tracking (returned by server, sent in subsequent requests)
+        self._session_id: str | None = None
 
     async def connect(self) -> None:
         """Create HTTP client (connection pool)."""
-        try:
-            import httpx
-        except ImportError as e:
-            raise MCPTransportError("httpx required for HTTP transport: pip install httpx") from e
-
+        # P1.7: Include MCP protocol headers alongside Content-Type and user headers
+        combined_headers = {
+            "Content-Type": "application/json",
+            **MCP_HTTP_HEADERS,
+            **self._headers,  # User headers override defaults
+        }
         self._client = httpx.AsyncClient(
             timeout=self._timeout,
-            headers={"Content-Type": "application/json", **self._headers},
+            follow_redirects=False,  # SECURITY: Prevent redirect-based SSRF bypass
+            headers=combined_headers,
         )
 
     async def send(self, message: dict[str, Any]) -> None:
@@ -446,22 +593,77 @@ class HTTPTransport(MCPTransport):
         This maintains the send/receive pattern expected by MCPClient.
 
         For notifications (no id), the server may return 204 No Content.
+
+        P1.8: Includes session ID header if set, and captures session ID
+        from response for subsequent requests.
+
+        P1.10: Retries on transient failures (5xx, 429) with exponential backoff.
         """
         if self._client is None:
             raise MCPTransportError("Transport not connected")
 
-        try:
-            data = json.dumps(message, separators=(",", ":"))
-            response = await self._client.post(self._url, content=data)
-            response.raise_for_status()
+        data = json.dumps(message, separators=(",", ":"))
 
-            # Handle 204 No Content (for notifications)
-            if response.status_code == 204 or not response.content:
-                self._pending_response = None
-            else:
-                self._pending_response = response.json()
-        except Exception as e:
-            raise MCPTransportError(f"HTTP request failed: {e}") from e
+        # P1.8: Include session ID in request headers if we have one
+        req_headers: dict[str, str] = {}
+        if self._session_id:
+            req_headers["mcp-session-id"] = self._session_id
+
+        last_error: Exception | None = None
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = await self._client.post(
+                    self._url, content=data, headers=req_headers if req_headers else None
+                )
+
+                # P1.10: Retry on transient failures with backoff
+                if self._is_retryable_status(response.status_code) and attempt < self._max_retries:
+                    delay = self._calculate_retry_delay(attempt)
+                    logger.debug(
+                        "HTTP %d on attempt %d, retrying in %.2fs",
+                        response.status_code,
+                        attempt + 1,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+                response.raise_for_status()
+
+                # P1.8: Extract and store session ID from response (with validation)
+                self._capture_session_id(response.headers)
+
+                # Handle 204 No Content (for notifications)
+                if response.status_code == 204 or not response.content:
+                    self._pending_response = None
+                else:
+                    self._pending_response = response.json()
+                return
+
+            except httpx.TransportError as e:
+                last_error = e
+                if attempt < self._max_retries:
+                    delay = self._calculate_retry_delay(attempt)
+                    logger.debug(
+                        "Transport error on attempt %d (%s), retrying in %.2fs",
+                        attempt + 1,
+                        e,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise MCPTransportError(
+                    f"HTTP request failed after {self._max_retries + 1} attempts: {e}"
+                ) from e
+            except Exception as e:
+                raise MCPTransportError(f"HTTP request failed: {e}") from e
+
+        # Should not reach here, but handle edge case
+        if last_error:
+            raise MCPTransportError(
+                f"HTTP request failed after {self._max_retries + 1} attempts: {last_error}"
+            ) from last_error
 
     async def receive(self) -> dict[str, Any]:
         """Return the response from the last send().
@@ -483,6 +685,11 @@ class HTTPTransport(MCPTransport):
         send/receive. Unlike send(), this method does NOT use the shared
         _pending_response slot, making it safe for concurrent requests.
 
+        P1.8: Includes session ID header if set, and captures session ID
+        from response for subsequent requests.
+
+        P1.10: Retries on transient failures (5xx, 429) with exponential backoff.
+
         Args:
             message: JSON-RPC request message
 
@@ -496,20 +703,70 @@ class HTTPTransport(MCPTransport):
         if self._client is None:
             raise MCPTransportError("Transport not connected")
 
-        try:
-            data = json.dumps(message, separators=(",", ":"))
-            response = await self._client.post(self._url, content=data)
-            response.raise_for_status()
+        data = json.dumps(message, separators=(",", ":"))
 
-            # For requests (messages with 'id'), we expect a response body
-            if response.status_code == 204 or not response.content:
-                raise MCPTransportError("Server returned empty response for request")
+        # P1.8: Include session ID in request headers if we have one
+        req_headers: dict[str, str] = {}
+        if self._session_id:
+            req_headers["mcp-session-id"] = self._session_id
 
-            return response.json()
-        except MCPTransportError:
-            raise
-        except Exception as e:
-            raise MCPTransportError(f"HTTP request failed: {e}") from e
+        last_error: Exception | None = None
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = await self._client.post(
+                    self._url, content=data, headers=req_headers if req_headers else None
+                )
+
+                # P1.10: Retry on transient failures with backoff
+                if self._is_retryable_status(response.status_code) and attempt < self._max_retries:
+                    delay = self._calculate_retry_delay(attempt)
+                    logger.debug(
+                        "HTTP %d on attempt %d, retrying in %.2fs",
+                        response.status_code,
+                        attempt + 1,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+                response.raise_for_status()
+
+                # P1.8: Extract session ID from response (with validation)
+                self._capture_session_id(response.headers)
+
+                # For requests (messages with 'id'), we expect a response body
+                if response.status_code == 204 or not response.content:
+                    raise MCPTransportError("Server returned empty response for request")
+
+                return response.json()
+
+            except httpx.TransportError as e:
+                last_error = e
+                if attempt < self._max_retries:
+                    delay = self._calculate_retry_delay(attempt)
+                    logger.debug(
+                        "Transport error on attempt %d (%s), retrying in %.2fs",
+                        attempt + 1,
+                        e,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                raise MCPTransportError(
+                    f"HTTP request failed after {self._max_retries + 1} attempts: {e}"
+                ) from e
+            except MCPTransportError:
+                raise
+            except Exception as e:
+                raise MCPTransportError(f"HTTP request failed: {e}") from e
+
+        # Should not reach here, but handle edge case
+        if last_error:
+            raise MCPTransportError(
+                f"HTTP request failed after {self._max_retries + 1} attempts: {last_error}"
+            ) from last_error
+        raise MCPTransportError(f"HTTP request failed after {self._max_retries + 1} attempts")
 
     async def close(self) -> None:
         """Close HTTP client."""
@@ -520,4 +777,91 @@ class HTTPTransport(MCPTransport):
     @property
     def is_connected(self) -> bool:
         """Check if transport is connected."""
-        return self._client is not None
+        if self._client is None:
+            return False
+        return not self._client.is_closed
+
+    @property
+    def session_id(self) -> str | None:
+        """Get the current MCP session ID (if available).
+
+        P1.8: Session ID is returned by the server and must be included
+        in subsequent requests for session continuity.
+        """
+        return self._session_id
+
+    def _validate_session_id(self, session_id: str) -> bool:
+        """Validate MCP session ID format.
+
+        P1.8 SECURITY: Prevents session ID injection attacks and log pollution.
+        Session IDs should be alphanumeric with optional dashes/underscores,
+        and limited to MAX_SESSION_ID_LENGTH bytes.
+
+        Args:
+            session_id: The session ID string to validate.
+
+        Returns:
+            True if valid, False otherwise.
+        """
+        if not session_id:
+            return False
+
+        # Check length limit
+        if len(session_id) > MAX_SESSION_ID_LENGTH:
+            logger.warning(
+                "Rejecting session ID: too long (%d > %d)",
+                len(session_id),
+                MAX_SESSION_ID_LENGTH,
+            )
+            return False
+
+        # Check format (alphanumeric, dash, underscore only)
+        if not SESSION_ID_PATTERN.match(session_id):
+            logger.warning("Rejecting session ID: invalid format")
+            return False
+
+        return True
+
+    def _capture_session_id(self, headers: Any) -> None:
+        """Capture and validate session ID from response headers.
+
+        P1.8: MCP servers may return a session ID that must be included
+        in subsequent requests. This method extracts and validates it.
+
+        Args:
+            headers: Response headers (httpx.Headers or similar mapping).
+        """
+        session_id = headers.get("mcp-session-id")
+        if session_id and self._validate_session_id(session_id):
+            self._session_id = session_id
+
+    def _is_retryable_status(self, status_code: int) -> bool:
+        """Check if HTTP status code is retryable.
+
+        P1.10: Only retry on server errors (5xx) and rate limiting (429).
+        Client errors (4xx except 429) are not retried as they indicate
+        a problem with the request itself.
+
+        Args:
+            status_code: HTTP response status code.
+
+        Returns:
+            True if the request should be retried.
+        """
+        return status_code in RETRYABLE_STATUS_CODES
+
+    def _calculate_retry_delay(self, attempt: int) -> float:
+        """Calculate retry delay with exponential backoff and jitter.
+
+        P1.10: Uses exponential backoff (base * 2^attempt) with random
+        jitter (0-10% of delay) to prevent thundering herd.
+
+        Args:
+            attempt: Current attempt number (0-indexed).
+
+        Returns:
+            Delay in seconds before next retry.
+        """
+        delay: float = self._retry_backoff * (2 ** attempt)
+        jitter: float = random.uniform(0, 0.1 * delay)
+        return delay + jitter

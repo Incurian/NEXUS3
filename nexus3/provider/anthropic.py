@@ -14,10 +14,13 @@ significantly from the OpenAI format:
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from nexus3.core.types import (
     ContentDelta,
@@ -161,6 +164,9 @@ class AnthropicProvider(BaseProvider):
         Tool results must be in user messages with tool_result blocks.
         Assistant tool calls become tool_use blocks.
 
+        Ensures every tool_use block has a matching tool_result by synthesizing
+        missing results for orphaned tool calls (e.g., from cancellation or crash).
+
         Args:
             messages: List of NEXUS3 Messages.
 
@@ -170,6 +176,35 @@ class AnthropicProvider(BaseProvider):
         result: list[dict[str, Any]] = []
         pending_tool_results: list[dict[str, Any]] = []
 
+        # Phase 1: Collect all tool_call IDs and tool_result IDs
+        tool_call_ids: set[str] = set()
+        tool_result_ids: set[str] = set()
+
+        for msg in messages:
+            if msg.role == Role.ASSISTANT:
+                for tc in msg.tool_calls:
+                    tool_call_ids.add(tc.id)
+            elif msg.role == Role.TOOL and msg.tool_call_id:
+                tool_result_ids.add(msg.tool_call_id)
+
+        # Phase 2: Detect orphaned tool_use blocks and prepare synthetic results
+        orphaned_ids = tool_call_ids - tool_result_ids
+        synthetic_results: list[dict[str, Any]] = []
+        if orphaned_ids:
+            logger.warning(
+                "Synthesizing %d missing tool_result(s) for orphaned tool_use "
+                "blocks: %s",
+                len(orphaned_ids),
+                list(orphaned_ids),
+            )
+            for tid in orphaned_ids:
+                synthetic_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tid,
+                    "content": "[Tool execution was interrupted]",
+                })
+
+        # Phase 3: Convert messages
         for msg in messages:
             if msg.role == Role.TOOL:
                 # Collect tool results to add to next user message
@@ -200,9 +235,10 @@ class AnthropicProvider(BaseProvider):
                     })
                 result.append({"role": "assistant", "content": content})
 
-        # If there are remaining tool results, create a user message for them
-        if pending_tool_results:
-            result.append({"role": "user", "content": pending_tool_results})
+        # Remaining tool results + synthetic results for orphaned tool_use blocks
+        all_pending = pending_tool_results + synthetic_results
+        if all_pending:
+            result.append({"role": "user", "content": all_pending})
 
         return result
 

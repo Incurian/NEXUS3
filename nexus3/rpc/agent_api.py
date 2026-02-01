@@ -251,7 +251,7 @@ class DirectAgentAPI:
 
         Args:
             agent_id: The ID for the new agent.
-            preset: Permission preset (trusted, sandboxed, worker).
+            preset: Permission preset (trusted, sandboxed).
             disable_tools: List of tool names to disable.
             parent_agent_id: ID of parent agent for ceiling enforcement.
             cwd: Working directory / sandbox root.

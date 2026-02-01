@@ -7,7 +7,7 @@ from enum import Enum
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from nexus3.core.text_safety import strip_terminal_escapes
+from nexus3.core.text_safety import escape_rich_markup, strip_terminal_escapes
 from nexus3.display.theme import Activity, Theme
 
 
@@ -175,9 +175,9 @@ class StreamingDisplay:
         elif tool.state == ToolState.CANCELLED:
             line.append(" (cancelled)", style="bright_yellow")
 
-        # Error on next line (first 70 chars)
+        # Error on next line (first 120 chars)
         if tool.state == ToolState.ERROR and tool.error:
-            error_preview = tool.error[:70] + ("..." if len(tool.error) > 70 else "")
+            error_preview = escape_rich_markup(tool.error[:120] + ("..." if len(tool.error) > 120 else ""))
             line.append(f"\n      {error_preview}", style="red dim")
 
         return line

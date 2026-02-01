@@ -22,12 +22,17 @@ Usage:
     await registry.close_all()
 """
 
+import logging
 from dataclasses import dataclass, field
 
 from nexus3.core.errors import MCPConfigError
 from nexus3.mcp.client import MCPClient
+from nexus3.mcp.error_formatter import format_command_not_found, format_server_crash
+from nexus3.mcp.errors import MCPErrorContext
 from nexus3.mcp.skill_adapter import MCPSkillAdapter
-from nexus3.mcp.transport import HTTPTransport, StdioTransport
+from nexus3.mcp.transport import HTTPTransport, MCPTransportError, StdioTransport
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -37,23 +42,51 @@ class MCPServerConfig:
     SECURITY: MCP servers receive only safe environment variables by default.
     Use env for explicit values or env_passthrough for host vars.
 
+    Supports two command formats:
+    1. NEXUS3 format: command as list ["npx", "-y", "@anthropic/mcp-server-github"]
+    2. Official format: command as string + args array
+       {"command": "npx", "args": ["-y", "@anthropic/mcp-server-github"]}
+
     Attributes:
         name: Friendly name for the server (used in skill prefixes).
         command: Command to launch server (for stdio transport).
+            Can be a list (NEXUS3 format) or string (official format, use with args).
+        args: Arguments for command when command is a string (official format).
         url: URL for HTTP transport.
         env: Explicit environment variables for subprocess.
         env_passthrough: Names of host env vars to pass to subprocess.
         cwd: Working directory for the server subprocess.
         enabled: Whether this server is enabled.
+        fail_if_no_tools: If True, raise error when tool listing fails during connect.
+            Default False means connect succeeds with empty tools.
     """
 
     name: str
-    command: list[str] | None = None
+    command: str | list[str] | None = None
+    args: list[str] | None = None
     url: str | None = None
     env: dict[str, str] | None = None
     env_passthrough: list[str] | None = None
     cwd: str | None = None
     enabled: bool = True
+    fail_if_no_tools: bool = False
+
+    def get_command_list(self) -> list[str]:
+        """Return command as list, merging command + args if needed.
+
+        Returns:
+            Command as list of strings suitable for subprocess execution.
+            Empty list if no command configured.
+        """
+        if isinstance(self.command, list):
+            return self.command  # NEXUS3 format
+        elif isinstance(self.command, str):
+            # Official format: command string + args array
+            cmd = [self.command]
+            if self.args:
+                cmd.extend(self.args)
+            return cmd
+        return []
 
 
 @dataclass
@@ -97,6 +130,23 @@ class ConnectedServer:
         """
         return self.client.is_connected
 
+    async def reconnect(self, timeout: float = 30.0) -> None:
+        """Reconnect to the server and refresh tools.
+
+        Closes the existing connection, reconnects, and re-fetches the tool list.
+        Updates self.skills with new skill adapters.
+
+        Args:
+            timeout: Maximum time to wait for reconnection. Default 30s.
+
+        Raises:
+            MCPError: If reconnection fails.
+        """
+        await self.client.reconnect(timeout=timeout)
+        # Re-list tools after reconnection (tools may have changed)
+        tools = await self.client.list_tools()
+        self.skills = [MCPSkillAdapter(self.client, tool, self.config.name) for tool in tools]
+
 
 class MCPServerRegistry:
     """Registry for managing multiple MCP server connections.
@@ -134,18 +184,29 @@ class MCPServerRegistry:
             MCPConfigError: If config has neither command nor url, or if server is disabled.
             MCPError: If connection times out or fails.
         """
+        # P1.9.5: Create error context for this server
+        command_list = config.get_command_list()
+        error_context = MCPErrorContext(
+            server_name=config.name,
+            command=command_list if command_list else None,
+        )
+
         # Check if server is enabled (P2.17: use MCPConfigError for consistency)
         if not config.enabled:
-            raise MCPConfigError(f"MCP server '{config.name}' is disabled in configuration")
+            raise MCPConfigError(
+                f"MCP server '{config.name}' is disabled in configuration",
+                context=error_context,
+            )
 
         # Disconnect existing if present
         if config.name in self._servers:
             await self.disconnect(config.name)
 
         # Create transport based on config
-        if config.command:
+        transport: StdioTransport | HTTPTransport
+        if command_list:
             transport = StdioTransport(
-                config.command,
+                command_list,
                 env=config.env,
                 env_passthrough=config.env_passthrough,
                 cwd=config.cwd,
@@ -154,15 +215,53 @@ class MCPServerRegistry:
             transport = HTTPTransport(config.url)
         else:
             # P2.17: use MCPConfigError for consistency
-            raise MCPConfigError(f"Server '{config.name}' must have either 'command' or 'url'")
+            raise MCPConfigError(
+                f"Server '{config.name}' must have either 'command' or 'url'",
+                context=error_context,
+            )
 
-        # Create and initialize client
+        # Create and initialize client with error context
         client = MCPClient(transport)
-        await client.connect(timeout=timeout)
+        try:
+            await client.connect(timeout=timeout)
+        except MCPTransportError as e:
+            # P1.9.5: Capture stderr if available (for stdio transport)
+            if isinstance(transport, StdioTransport):
+                error_context.stderr_lines = transport.stderr_lines
+
+            # Check for specific error types and format appropriately
+            error_msg = str(e)
+            if "not found" in error_msg.lower():
+                # Command not found - use formatted message
+                cmd = command_list[0] if command_list else "unknown"
+                raise MCPTransportError(
+                    format_command_not_found(error_context, cmd)
+                ) from e
+            elif "closed" in error_msg.lower() or "exit" in error_msg.lower():
+                # Server crashed - use formatted message with stderr
+                # Try to extract exit code from message
+                import re
+                match = re.search(r"exit code[:\s]*(-?\d+)", error_msg, re.IGNORECASE)
+                exit_code = int(match.group(1)) if match else None
+                raise MCPTransportError(
+                    format_server_crash(error_context, exit_code, error_context.stderr_lines)
+                ) from e
+            else:
+                # Generic transport error - include server context
+                raise MCPTransportError(
+                    f"Failed to connect to MCP server '{config.name}': {e}"
+                ) from e
 
         # List tools and create adapters
-        tools = await client.list_tools()
-        skills = [MCPSkillAdapter(client, tool, config.name) for tool in tools]
+        # P2.1.6: Graceful failure - connect succeeds even if tool listing fails
+        try:
+            tools = await client.list_tools()
+            skills = [MCPSkillAdapter(client, tool, config.name) for tool in tools]
+        except Exception as e:
+            if config.fail_if_no_tools:
+                raise
+            logger.warning("Failed to list tools from '%s': %s", config.name, e)
+            skills = []
 
         # Store connected server
         connected = ConnectedServer(
@@ -223,8 +322,10 @@ class MCPServerRegistry:
             if server.is_visible_to(agent_id)
         ]
 
-    def get_all_skills(self, agent_id: str | None = None) -> list[MCPSkillAdapter]:
+    async def get_all_skills(self, agent_id: str | None = None) -> list[MCPSkillAdapter]:
         """Get all skill adapters from connected servers.
+
+        Performs lazy reconnection for stale connections before returning skills.
 
         Args:
             agent_id: If provided, only return skills from visible servers.
@@ -235,6 +336,13 @@ class MCPServerRegistry:
         skills: list[MCPSkillAdapter] = []
         for server in self._servers.values():
             if agent_id is None or server.is_visible_to(agent_id):
+                # Lazy reconnection: if connection is dead, try to reconnect
+                if not server.is_alive():
+                    try:
+                        await server.reconnect()
+                    except Exception:
+                        # Reconnection failed, skip this server's skills
+                        continue
                 skills.extend(server.skills)
         return skills
 
@@ -285,6 +393,34 @@ class MCPServerRegistry:
                 await self.disconnect(name)
                 dead.append(name)
         return dead
+
+    async def retry_tools(self, name: str) -> int:
+        """Retry listing tools from a server that previously failed.
+
+        Useful when a server connected but tool listing failed. This attempts
+        to list tools again and update the server's skills.
+
+        Args:
+            name: Server name to retry.
+
+        Returns:
+            Number of tools discovered (0 if still failing or server not found).
+
+        Raises:
+            MCPError: If server is not connected.
+        """
+        server = self._servers.get(name)
+        if server is None:
+            from nexus3.mcp.client import MCPError
+            raise MCPError(f"Server '{name}' is not connected")
+
+        try:
+            tools = await server.client.list_tools()
+            server.skills = [MCPSkillAdapter(server.client, tool, server.config.name) for tool in tools]
+            return len(tools)
+        except Exception as e:
+            logger.warning("Retry tools failed for '%s': %s", name, e)
+            return 0
 
     async def close_all(self) -> None:
         """Disconnect all servers.

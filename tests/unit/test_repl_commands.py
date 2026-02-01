@@ -590,13 +590,12 @@ class TestCmdPermissions:
         assert output.data["preset"] == "sandboxed"
 
     @pytest.mark.asyncio
-    async def test_change_to_worker_preset_backwards_compat(self, ctx_with_agent: CommandContext):
-        """Worker preset maps to sandboxed for backwards compatibility."""
+    async def test_worker_preset_no_longer_valid(self, ctx_with_agent: CommandContext):
+        """Worker preset was removed - should return error."""
         output = await cmd_permissions(ctx_with_agent, args="worker")
 
-        assert output.result == CommandResult.SUCCESS
-        # Worker is mapped to sandboxed for backwards compatibility
-        assert output.data["preset"] == "sandboxed"
+        assert output.result == CommandResult.ERROR
+        assert "Unknown preset" in output.message
 
     @pytest.mark.asyncio
     async def test_invalid_preset_name(self, ctx_with_agent: CommandContext):

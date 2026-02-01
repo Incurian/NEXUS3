@@ -2,15 +2,25 @@
 
 This module provides a consistent way to load JSON files with proper error
 handling that integrates with the NEXUS3 error hierarchy.
+
+Use:
+- load_json_file() for required files (raises LoadError if not found)
+- load_json_file_optional() for optional config layers (returns None if not found)
+
+Both functions use Path.resolve() for Windows/Git Bash compatibility where
+Path.home() may return Unix-style paths like /c/Users/... that fail exists() checks.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import LoadError
+
+logger = logging.getLogger(__name__)
 
 
 def load_json_file(path: Path, error_context: str = "") -> dict[str, Any]:
@@ -29,11 +39,14 @@ def load_json_file(path: Path, error_context: str = "") -> dict[str, Any]:
     """
     context_prefix = f"{error_context}: " if error_context else ""
 
-    if not path.exists():
+    # Use resolve() for Windows compatibility (Git Bash path format)
+    resolved = path.resolve()
+
+    if not resolved.exists():
         raise LoadError(f"{context_prefix}File not found: {path}")
 
     try:
-        content = path.read_text(encoding="utf-8")
+        content = resolved.read_text(encoding="utf-8-sig")
     except OSError as e:
         raise LoadError(f"{context_prefix}Failed to read file {path}: {e}") from e
 
@@ -53,3 +66,30 @@ def load_json_file(path: Path, error_context: str = "") -> dict[str, Any]:
         )
 
     return result
+
+
+def load_json_file_optional(path: Path, error_context: str = "") -> dict[str, Any] | None:
+    """Load JSON file if it exists, returning None for missing files.
+
+    Use this for optional config layers (global, ancestor, local) where the
+    file may or may not exist.
+
+    Args:
+        path: Path to the JSON file to load.
+        error_context: Optional context string for error messages.
+
+    Returns:
+        Parsed JSON as dict, empty dict for empty files, or None if file missing.
+
+    Raises:
+        LoadError: If file exists but can't be read or contains invalid JSON.
+    """
+    # Use resolve() for Windows compatibility (Git Bash path format)
+    resolved = path.resolve()
+
+    if not resolved.is_file():
+        logger.debug("Config file not found: %s (resolved: %s)", path, resolved)
+        return None
+
+    logger.debug("Loading config file: %s", resolved)
+    return load_json_file(resolved, error_context)

@@ -18,6 +18,7 @@ All commands are accessed via the `nexus3 rpc` subcommand group:
 """
 
 import json
+import secrets
 import sys
 from typing import Any
 
@@ -120,13 +121,25 @@ async def cmd_send(
 
     url = f"http://127.0.0.1:{port}/agent/{agent_id}"
     key = _get_api_key(port, api_key)
+
+    # Pre-generate request_id so we can cancel on timeout
+    request_id = secrets.token_hex(8)
+
     try:
         async with NexusClient(url, api_key=key, timeout=timeout) as client:
-            result = await client.send(content)
+            result = await client.send(content, request_id=request_id)
             _print_json(result)
             return 0
     except ClientError as e:
-        _print_error(str(e))
+        error_msg = str(e)
+        # On timeout, send cancel to clean up server-side state
+        if "timed out" in error_msg.lower():
+            try:
+                async with NexusClient(url, api_key=key, timeout=5.0) as client:
+                    await client.cancel(request_id)
+            except Exception:
+                pass  # Best effort - cancel may fail if server is unresponsive
+        _print_error(error_msg)
         return 1
 
 

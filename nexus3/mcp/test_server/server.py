@@ -1,9 +1,10 @@
-"""Simple MCP test server for development.
+"""MCP test server (stdio transport).
 
-Implements a minimal MCP server with three test tools:
-- echo: Echo back a message
-- get_time: Get current date/time
-- add: Add two numbers
+Implements a full-featured MCP server for testing:
+- Tools: echo, get_time, add, slow_operation
+- Resources: readme.txt, config.json, users.csv
+- Prompts: greeting, code_review, summarize
+- Utilities: ping
 
 Communicates via stdin/stdout using newline-delimited JSON-RPC 2.0.
 """
@@ -11,82 +12,21 @@ Communicates via stdin/stdout using newline-delimited JSON-RPC 2.0.
 import asyncio
 import json
 import sys
-from datetime import datetime
 from typing import Any
 
-# Tool definitions
-TOOLS = [
-    {
-        "name": "echo",
-        "description": "Echo back the input message",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string",
-                    "description": "Message to echo",
-                }
-            },
-            "required": ["message"],
-        },
-    },
-    {
-        "name": "get_time",
-        "description": "Get current date and time",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
-        "name": "add",
-        "description": "Add two numbers",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "a": {
-                    "type": "number",
-                    "description": "First number",
-                },
-                "b": {
-                    "type": "number",
-                    "description": "Second number",
-                },
-            },
-            "required": ["a", "b"],
-        },
-    },
-]
-
-
-def make_response(request_id: int | str | None, result: Any) -> dict[str, Any]:
-    """Create a success response."""
-    return {
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "result": result,
-    }
-
-
-def make_error(
-    request_id: int | str | None,
-    code: int,
-    message: str,
-) -> dict[str, Any]:
-    """Create an error response."""
-    return {
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "error": {"code": code, "message": message},
-    }
-
-
-def make_tool_result(text: str, is_error: bool = False) -> dict[str, Any]:
-    """Create a tool result."""
-    return {
-        "content": [{"type": "text", "text": text}],
-        "isError": is_error,
-    }
+from nexus3.mcp.test_server.definitions import (
+    PROMPTS,
+    PROTOCOL_VERSION,
+    RESOURCES,
+    TOOLS,
+    get_capabilities,
+    get_server_info,
+    handle_prompts_get,
+    handle_resources_read,
+    handle_tools_call,
+    make_error,
+    make_response,
+)
 
 
 async def handle_request(request: dict[str, Any]) -> dict[str, Any] | None:
@@ -99,60 +39,53 @@ async def handle_request(request: dict[str, Any]) -> dict[str, Any] | None:
     if request_id is None:
         return None
 
-    if method == "initialize":
-        return make_response(
-            request_id,
-            {
-                "protocolVersion": "2025-11-25",
-                "capabilities": {"tools": {}},
-                "serverInfo": {
-                    "name": "nexus3-test-server",
-                    "version": "1.0.0",
+    try:
+        if method == "initialize":
+            return make_response(
+                request_id,
+                {
+                    "protocolVersion": PROTOCOL_VERSION,
+                    "capabilities": get_capabilities(),
+                    "serverInfo": get_server_info("nexus3-test-server"),
                 },
-            },
-        )
-
-    elif method == "tools/list":
-        return make_response(request_id, {"tools": TOOLS})
-
-    elif method == "tools/call":
-        tool_name = params.get("name")
-        args = params.get("arguments", {})
-
-        if tool_name == "echo":
-            message = args.get("message", "")
-            return make_response(
-                request_id,
-                make_tool_result(message),
             )
 
-        elif tool_name == "get_time":
-            return make_response(
-                request_id,
-                make_tool_result(datetime.now().isoformat()),
-            )
+        elif method == "ping":
+            return make_response(request_id, {})
 
-        elif tool_name == "add":
-            a = args.get("a", 0)
-            b = args.get("b", 0)
-            return make_response(
-                request_id,
-                make_tool_result(str(a + b)),
+        # Tools
+        elif method == "tools/list":
+            return make_response(request_id, {"tools": TOOLS})
+
+        elif method == "tools/call":
+            result = handle_tools_call(
+                params.get("name", ""), params.get("arguments", {})
             )
+            return make_response(request_id, result)
+
+        # Resources
+        elif method == "resources/list":
+            return make_response(request_id, {"resources": RESOURCES})
+
+        elif method == "resources/read":
+            result = handle_resources_read(params.get("uri", ""))
+            return make_response(request_id, result)
+
+        # Prompts
+        elif method == "prompts/list":
+            return make_response(request_id, {"prompts": PROMPTS})
+
+        elif method == "prompts/get":
+            result = handle_prompts_get(params.get("name", ""), params.get("arguments"))
+            return make_response(request_id, result)
 
         else:
-            return make_error(
-                request_id,
-                -32601,
-                f"Unknown tool: {tool_name}",
-            )
+            return make_error(request_id, -32601, f"Unknown method: {method}")
 
-    else:
-        return make_error(
-            request_id,
-            -32601,
-            f"Unknown method: {method}",
-        )
+    except ValueError as e:
+        return make_error(request_id, -32602, str(e))
+    except Exception as e:
+        return make_error(request_id, -32603, f"Internal error: {e}")
 
 
 async def run_server() -> None:

@@ -8,35 +8,9 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 **Status:** Feature-complete. Multi-provider support, permission system, MCP integration, context compaction.
 
----
-
-## Current Development
-
-### In Progress: Command Help System
-
-**Plan:** `docs/COMMAND-HELP.md`
-
-**Status:** Implementation complete, awaiting user testing before merge.
-
-Dynamic help system for REPL commands with consistent formatting, argument documentation, and examples.
-
-### On Deck
-
-Plans are listed in recommended implementation order. Most are independent, but dependencies are noted.
-
-| Priority | Plan | Description |
-|----------|------|-------------|
-| 1 | `YOLO-SAFETY-PLAN.md` | YOLO warning banner, remove legacy "worker" preset, block RPC send to YOLO agents. Small, security-focused. |
-| 2 | `CONCAT-FILES-PLAN.md` | New `concat_files` skill to bundle source files with token estimation. Simple, isolated, low risk. |
-| 3 | `EDIT-PATCH-PLAN.md` | Split `edit_file` into separate tools, add batched edits, new `patch` skill for unified diffs. |
-| 4 | `CLIPBOARD-PLAN.md` | Scoped clipboard system (agent/project/system) for copy/paste across files and agents. |
-| 5 | `MCP-IMPLEMENTATION-GAPS.md` | MCP spec compliance fixes: config format compatibility, pagination, HTTP headers, session management. |
-| 6 | `SANDBOXED-PARENT-SEND-PLAN.md` | Allow sandboxed agents to `nexus_send` to their parent only. Extends permission system with target restrictions. |
-| 7 | `GITLAB-TOOLS-PLAN.md` | Full GitLab integration (issues, MRs, epics, CI/CD). Large feature. *Note: Uses session allowances pattern similar to #6; consider implementing #6 first to establish enforcer patterns.* |
-
-**Reference docs** (not plans):
-- `GITHUB-REFERENCE.md` - GitHub API/CLI reference for future GitHub integration
-- `GITLAB-REFERENCE.md` - GitLab API/CLI reference used by GITLAB-TOOLS-PLAN
+**Claude Code Skills:** Local skills for Claude Code are in `.claude/skills/`:
+- `.claude/skills/nexus/SKILL.md` - REPL/server startup modes
+- `.claude/skills/nexus-rpc/SKILL.md` - RPC commands documentation
 
 ---
 
@@ -93,12 +67,14 @@ Do NOT use a NEXUS coordinator agent in the middle - Claude Code is better at co
 
 ```
 nexus3/
-├── core/           # Types, interfaces, errors, encoding, paths, URL validation, permissions
+├── core/           # Types, interfaces, errors, encoding, paths, URL validation, permissions, process termination
 ├── config/         # Pydantic schema, permission config, fail-fast loader
 ├── provider/       # AsyncProvider protocol, multi-provider support, retry logic
 ├── context/        # ContextManager, ContextLoader, TokenCounter, compaction
 ├── session/        # Session coordinator, persistence, SessionManager, SQLite logging
-├── skill/          # Skill protocol, SkillRegistry, ServiceContainer, 24 builtin skills
+├── skill/          # Skill protocol, SkillRegistry, ServiceContainer, builtin skills
+├── clipboard/      # Scoped clipboard system (agent/project/system), SQLite storage
+├── patch/          # Unified diff parsing, validation, and application
 ├── display/        # DisplayManager, StreamingDisplay, InlinePrinter, SummaryBar, theme
 ├── cli/            # Unified REPL, lobby, whisper, HTTP server, client commands
 ├── rpc/            # JSON-RPC protocol, Dispatcher, GlobalDispatcher, AgentPool, auth
@@ -339,6 +315,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `/permissions --list-tools` | List tool enable/disable status |
 | `/prompt [file]` | Show or set system prompt |
 | `/compact` | Force context compaction/summarization |
+| `/gitlab` | Quick reference for GitLab skill actions and examples |
 
 ### MCP (External Tools)
 
@@ -346,8 +323,17 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 |---------|-------------|
 | `/mcp` | List configured and connected MCP servers |
 | `/mcp connect <name>` | Connect to a configured MCP server |
+| `/mcp connect <name> --allow-all --shared` | Connect skipping prompts, share with all agents |
 | `/mcp disconnect <name>` | Disconnect from an MCP server |
 | `/mcp tools [server]` | List available MCP tools |
+| `/mcp resources [server]` | List available MCP resources |
+| `/mcp prompts [server]` | List available MCP prompts |
+| `/mcp retry <name>` | Retry listing tools from a server |
+
+**Key behaviors:**
+- Servers connect even if initial tool listing fails (graceful degradation)
+- Dead connections automatically reconnect when tools are needed (lazy reconnection)
+- Use `/mcp retry <server>` to manually retry tool listing after fixing configuration issues
 
 ### Initialization
 
@@ -372,6 +358,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `ESC` | Cancel in-progress request |
 | `Ctrl+C` | Interrupt current input |
 | `Ctrl+D` | Exit REPL |
+| `p` | View full tool details (during confirmation prompt) |
 
 ---
 
@@ -383,28 +370,65 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `tail` | `path`, `lines`? | Read last N lines of a file (default: 10) |
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
 | `write_file` | `path`, `content` | Write/create files (read file first!) |
-| `edit_file` | `path`, `old_string`, `new_string` | Edit files with string replacement (read file first!) |
+| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | String replacement, single or batched (read file first!) |
+| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | Replace lines by number (work bottom-to-top for multiple edits) |
 | `append_file` | `path`, `content`, `newline`? | Append content to a file (read file first!) |
 | `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | Pattern-based find/replace (read file first!) |
+| `patch` | `target`, `diff`?, `diff_file`?, `mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy modes) |
 | `copy_file` | `source`, `destination`, `overwrite`? | Copy a file to a new location |
 | `mkdir` | `path` | Create directory (and parents) |
 | `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory |
 | `list_directory` | `path` | List directory contents |
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern (with exclusions) |
 | `grep` | `pattern`, `path`?, `include`?, `context`? | Search file contents with file filter and context lines |
+| `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate files by extension with token estimation (dry_run=True by default) |
 | `git` | `command`, `cwd`? | Execute git commands (permission-filtered by level) |
 | `bash_safe` | `command`, `timeout`? | Execute shell commands (shlex.split, no shell operators) |
 | `shell_UNSAFE` | `command`, `timeout`? | Execute shell=True (pipes work, but injection-vulnerable) |
 | `run_python` | `code`, `timeout`? | Execute Python code |
 | `sleep` | `seconds`, `label`? | Pause execution (for testing) |
+| `echo` | `message` | Echo input back (testing utility) |
 | `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `model`?, `initial_message`?, `wait_for_initial_response`? | Create agent (initial_message queued by default) |
 | `nexus_destroy` | `agent_id`, `port`? | Remove an agent (server keeps running) |
 | `nexus_send` | `agent_id`, `content`, `port`? | Send message to an agent |
 | `nexus_status` | `agent_id`, `port`? | Get agent tokens + context |
 | `nexus_cancel` | `agent_id`, `request_id`, `port`? | Cancel in-progress request |
 | `nexus_shutdown` | `port`? | Shutdown the entire server |
+| `copy` | `path`, `key`, `scope`?, `start_line`?, `end_line`?, `description`?, `tags`?, `ttl_seconds`? | Copy file content to clipboard |
+| `cut` | `path`, `key`, `scope`?, `start_line`?, `end_line`?, `description`?, `tags`?, `ttl_seconds`? | Cut file content to clipboard (removes from source) |
+| `paste` | `key`, `path`, `scope`?, `mode`?, `line`?, `start_line`?, `end_line`?, `marker`? | Paste clipboard content to file |
+| `clipboard_list` | `scope`?, `tags`?, `any_tags`?, `verbose`? | List clipboard entries with optional tag filtering |
+| `clipboard_get` | `key`, `scope`? | Get full content of a clipboard entry |
+| `clipboard_update` | `key`, `scope`?, `new_key`?, `description`?, `content`?, `ttl_seconds`? | Update clipboard entry metadata or content |
+| `clipboard_delete` | `key`, `scope`? | Delete a clipboard entry |
+| `clipboard_clear` | `scope`?, `confirm`? | Clear all entries in a scope |
+| `clipboard_search` | `query`, `scope`?, `search_content`?, `search_keys`?, `search_descriptions`?, `tags`? | Search clipboard entries |
+| `clipboard_tag` | `action`, `key`?, `scope`?, `tag`?, `tags`?, `description`? | Manage clipboard tags (list/add/remove/create/delete) |
+| `clipboard_export` | `output_path`, `scope`?, `keys`?, `tags`? | Export clipboard entries to JSON file |
+| `clipboard_import` | `input_path`, `scope`?, `conflict`?, `dry_run`? | Import clipboard entries from JSON file |
+| `gitlab_repo` | `action`, `project`?, `instance`? | Repository operations (get, list, fork, search) |
+| `gitlab_issue` | `action`, `project`?, `iid`?, `title`?, ... | Issue CRUD (list, get, create, update, close, reopen, comment) |
+| `gitlab_mr` | `action`, `project`?, `iid`?, `source_branch`?, ... | Merge request operations (list, get, create, update, merge, close, diff, commits, pipelines) |
+| `gitlab_label` | `action`, `project`?, `name`?, `color`? | Label management (list, get, create, update, delete) |
+| `gitlab_branch` | `action`, `project`?, `name`?, `ref`?, `push_level`?, `merge_level`?, `allow_force_push`? | Branch operations (list, get, create, delete, protect, unprotect, list-protected) |
+| `gitlab_tag` | `action`, `project`?, `name`?, `ref`?, `create_level`? | Tag operations (list, get, create, delete, protect, unprotect, list-protected) |
+| `gitlab_epic` | `action`, `group`, `iid`?, `title`?, ... | Epic management (list, get, create, update, close, add/remove issues) [Premium] |
+| `gitlab_iteration` | `action`, `group`, `iteration_id`?, `title`?, ... | Iteration/sprint management (list, get, create, cadences) [Premium] |
+| `gitlab_milestone` | `action`, `project` OR `group`, `milestone_id`?, `title`?, ... | Milestone operations (list, get, create, update, close, issues, MRs) |
+| `gitlab_board` | `action`, `project` OR `group`, `board_id`?, `name`?, ... | Issue board management (list, get, create, lists) |
+| `gitlab_time` | `action`, `project`, `iid`, `target_type`, `duration`?, ... | Time tracking (estimate, spend, reset, stats) on issues/MRs |
+| `gitlab_approval` | `action`, `project`, `iid`?, `rule_id`?, `name`?, ... | MR approval management (status, approve, unapprove, rules) [Premium for rules] |
+| `gitlab_draft` | `action`, `project`, `iid`, `draft_id`?, `body`?, ... | Draft notes for batch MR reviews (list, add, update, delete, publish) |
+| `gitlab_discussion` | `action`, `project`, `iid`, `target_type`, `discussion_id`?, ... | Threaded discussions on MRs/issues (list, create, reply, resolve) |
+| `gitlab_pipeline` | `action`, `project`, `pipeline_id`?, `ref`?, `status`?, ... | Pipeline operations (list, get, create, retry, cancel, delete, jobs, variables) |
+| `gitlab_job` | `action`, `project`, `job_id`?, `scope`?, `tail`?, ... | Job operations (list, get, log, retry, cancel, play, erase) |
+| `gitlab_artifact` | `action`, `project`, `job_id`?, `output_path`?, ... | Artifact management (download, download-file, browse, delete, keep, download-ref) |
+| `gitlab_variable` | `action`, `project` OR `group`, `key`?, `value`?, ... | CI/CD variables (list, get, create, update, delete) for project or group |
+| `gitlab_deploy_key` | `action`, `project`, `key_id`?, `title`?, `key`?, `can_push`? | Deploy key management (list, get, create, update, delete, enable) |
+| `gitlab_deploy_token` | `action`, `project` OR `group`, `token_id`?, `name`?, `scopes`?, ... | Deploy token management (list, get, create, delete) - token only shown on create |
+| `gitlab_feature_flag` | `action`, `project`, `name`?, `active`?, `strategies`?, ... | Feature flag management (list, get, create, update, delete, user-lists) [Premium] |
 
-*Note: `port` defaults to 8765. `preset` can be trusted/sandboxed/worker (yolo is REPL-only). Skills mirror `nexus3 rpc` CLI commands. Destructive file tools remind agents to read files before modifying.*
+*Notes: `port` defaults to 8765. `preset` can be trusted/sandboxed (yolo is REPL-only). Clipboard `scope` can be agent/project/system (agent is session-only, project/system are persistent SQLite). GitLab skills require TRUSTED+ and configured GitLab instance. [Premium] skills require GitLab Premium subscription.*
 
 ---
 
@@ -435,6 +459,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | **Plan First** | **Non-trivial features require a plan in `docs/`. See Feature Planning SOP below.** |
 | **Commit Often** | **Commit after each phase/logical unit. Don't wait for "everything done."** |
 | **Branch per Plan** | **One feature branch per plan. Merge only after checklist complete + user sign-off.** |
+| **Don't Revert Unrelated Changes** | **When committing, only stage files YOU modified. NEVER use `git checkout` or `git restore` on files you didn't change - they may contain the user's work from other tasks.** |
 
 ### Live Testing Requirement (MANDATORY)
 
@@ -491,8 +516,8 @@ feat(clipboard): implement ClipboardManager (CLIPBOARD-PLAN P1.4)
 All non-trivial features should follow this planning process. Plans live in `docs/` as markdown files.
 
 **Reference examples:**
-- `docs/EXAMPLE-PLAN-SIMPLE.md` - Template for focused single-feature plans
-- `docs/EXAMPLE-PLAN-COMPLEX.md` - Comprehensive example for large multi-phase features
+- `docs/plans/examples/EXAMPLE-PLAN-SIMPLE.md` - Template for focused single-feature plans
+- `docs/plans/examples/EXAMPLE-PLAN-COMPLEX.md` - Comprehensive example for large multi-phase features
 
 #### Planning Process
 
@@ -739,18 +764,23 @@ nexus3 rpc send worker "message"    # Send message
 ~/.nexus3/
 ├── config.json      # Global config
 ├── NEXUS.md         # Personal system prompt
-├── rpc.token        # Auto-generated RPC token (port-specific: rpc-{port}.token)
+├── mcp.json         # Personal MCP servers
+├── rpc.token        # Auto-generated RPC token (default port)
+├── rpc-{port}.token # Port-specific RPC tokens
 ├── sessions/        # Saved session files (JSON)
-├── logs/
-│   └── server.log   # Server lifecycle events (rotating, 5MB x 3 files)
-└── last-session.json  # Auto-saved for --resume
+├── last-session.json  # Auto-saved for --resume
+├── last-session-name  # Name of last session
+└── logs/
+    └── server.log   # Server lifecycle events (rotating, 5MB x 3 files)
 
 ./NEXUS.md           # Project system prompt (overrides personal)
 .nexus3/logs/        # Session logs (gitignored)
 ├── server.log       # Server lifecycle events when started from this directory
 └── <session-id>/    # Per-session conversation logs
     ├── session.db   # SQLite database of messages
-    └── session.md   # Markdown transcript
+    ├── context.md   # Markdown transcript
+    ├── verbose.md   # Debug output (if -V enabled)
+    └── raw.jsonl    # Raw API JSON (if --raw-log enabled)
 ```
 
 ### Server Logging
@@ -811,6 +841,59 @@ NEXUS3 supports multiple LLM providers via the `provider` config:
 ```
 
 See `nexus3/provider/README.md` for full documentation and adding new providers.
+
+### GitLab Configuration
+
+GitLab tools require pre-configured instances in `~/.nexus3/config.json` or `.nexus3/config.json`:
+
+```json
+{
+  "gitlab": {
+    "instances": {
+      "default": {
+        "url": "https://gitlab.com",
+        "token_env": "GITLAB_TOKEN"
+      },
+      "work": {
+        "url": "https://gitlab.mycompany.com",
+        "token_env": "GITLAB_WORK_TOKEN"
+      }
+    },
+    "default_instance": "default"
+  }
+}
+```
+
+**Token setup:**
+- Create a GitLab Personal Access Token with `api` scope
+- Store in environment variable (e.g., `GITLAB_TOKEN`)
+- Reference via `token_env` in config (recommended) or `token` field directly
+
+**Permission requirements:**
+- TRUSTED or YOLO level required (SANDBOXED blocked)
+- Read-only actions: No confirmation needed
+- Destructive actions: Confirmation in TRUSTED mode (stored per skill@instance)
+
+### Clipboard Configuration
+
+```json
+{
+  "clipboard": {
+    "enabled": true,
+    "inject_into_context": true,
+    "max_injected_entries": 10,
+    "show_source_in_injection": true,
+    "max_entry_bytes": 1048576,
+    "warn_entry_bytes": 102400,
+    "default_ttl_seconds": null
+  }
+}
+```
+
+**Scope permissions by preset:**
+- `yolo`: Full access to agent/project/system scopes
+- `trusted`: Read/write agent+project, read-only system
+- `sandboxed`: Agent scope only (in-memory, session-only)
 
 ### Server Config Example
 
@@ -962,20 +1045,24 @@ Context is loaded from multiple directory layers and merged together. Each layer
 ### Layer Hierarchy
 
 ```
-LAYER 1: Install Defaults (shipped with package)
+LAYER 1a: System Defaults (NEXUS-DEFAULT.md in package - auto-updates)
     ↓
-LAYER 2: Global (~/.nexus3/)
+LAYER 1b: Global (~/.nexus3/NEXUS.md - user customizations)
     ↓
-LAYER 3: Ancestors (up to N levels above CWD, default 2)
+LAYER 2: Ancestors (up to N levels above CWD, default 2)
     ↓
-LAYER 4: Local (CWD/.nexus3/)
+LAYER 3: Local (CWD/.nexus3/)
 ```
 
 ### Directory Structure
 
 ```
-~/.nexus3/                    # Global (user defaults)
-├── NEXUS.md                  # Personal system prompt
+nexus3/defaults/              # Package (auto-updates with upgrades)
+├── NEXUS-DEFAULT.md          # System docs, tools, permissions (ALWAYS loaded)
+└── NEXUS.md                  # Template (copied to ~/.nexus3/ on init)
+
+~/.nexus3/                    # Global (user customizations)
+├── NEXUS.md                  # User's custom instructions
 ├── config.json               # Personal configuration
 └── mcp.json                  # Personal MCP servers
 
@@ -988,6 +1075,13 @@ LAYER 4: Local (CWD/.nexus3/)
 ├── config.json               # Project config overrides
 └── mcp.json                  # Project MCP servers
 ```
+
+### Split Context Design
+
+- **NEXUS-DEFAULT.md** (package only): Contains tool docs, permissions, limits - auto-updates with package upgrades
+- **NEXUS.md** (user's): Contains custom instructions - preserved across upgrades
+
+This split ensures users get new tool documentation automatically while keeping their customizations safe.
 
 ### Configuration Merging
 
@@ -1036,8 +1130,21 @@ nexus3 --init-global-force     # Overwrite existing
 |--------|-------|-------------|
 | `yolo` | YOLO | Full access, no confirmations (REPL-only) |
 | `trusted` | TRUSTED | Confirmations for destructive actions |
-| `sandboxed` | SANDBOXED | Limited to CWD, no network, nexus tools disabled (default for RPC) |
-| `worker` | SANDBOXED | Minimal: no write_file, no agent management |
+| `sandboxed` | SANDBOXED | CWD only, no network, limited nexus tools (default for RPC) |
+
+### Target Restrictions
+
+Some tools support `allowed_targets` restrictions that limit which agents they can communicate with:
+
+| Restriction | Meaning |
+|-------------|---------|
+| `None` | No restriction - can target any agent |
+| `"parent"` | Can only target the agent's parent (who created it) |
+| `"children"` | Can only target agents this one created |
+| `"family"` | Can target parent OR children |
+| `["id1", "id2"]` | Explicit allowlist of agent IDs |
+
+This is used by `nexus_send`, `nexus_status`, `nexus_cancel`, and `nexus_destroy` to control inter-agent communication.
 
 ### RPC Agent Permission Quirks (IMPORTANT)
 
@@ -1056,11 +1163,17 @@ nexus3 --init-global-force     # Overwrite existing
 
 5. **Trusted agents in RPC mode**: Can read anywhere, but destructive operations follow the same confirmation logic (which auto-allows within CWD in non-interactive mode).
 
-6. **YOLO is REPL-only**: You CANNOT create a yolo agent via RPC. The yolo preset is only available in interactive REPL mode.
+6. **YOLO is REPL-only**: You CANNOT create a yolo agent via RPC (blocked in global_dispatcher). YOLO agents can only be created in the interactive REPL. Additionally, RPC `send` to YOLO agents is blocked unless the REPL is actively connected to that agent. If a user creates a YOLO agent in REPL, switches to another agent, then tries `nexus3 rpc send` to the YOLO agent, it fails with "Cannot send to YOLO agent - no REPL connected". This ensures YOLO operations always have active user supervision.
 
 7. **Trusted agents can only create sandboxed subagents**: A trusted agent cannot spawn another trusted agent - all subagents are sandboxed (ceiling enforcement).
 
-8. **Sandboxed agents cannot create agents at all**: The `nexus_create`, `nexus_destroy`, `nexus_send`, and other nexus tools are completely disabled for sandboxed agents.
+8. **Sandboxed agents have limited nexus tools**: Most nexus tools (`nexus_create`, `nexus_destroy`, `nexus_status`, `nexus_cancel`, `nexus_shutdown`) are disabled for sandboxed agents. However, **`nexus_send` IS enabled with `allowed_targets="parent"`** - sandboxed agents can send messages back to their parent agent to report results. They cannot message any other agent.
+
+9. **Subagent cwd must be within parent's cwd**: When creating a subagent, the child's `cwd` must be within the parent's `cwd`. This prevents privilege escalation where a child could operate in a directory the parent shouldn't access.
+
+10. **Subagent write paths must be within parent's cwd**: Similarly, `allowed_write_paths` for a subagent must be within the parent's `cwd`. A parent cannot grant write access to paths outside its own working directory.
+
+11. **Subagent cwd defaults to parent's cwd**: If no `cwd` is specified when creating a subagent, it inherits the parent's `cwd` (not the server process's cwd).
 
 **Example secure agent creation:**
 ```bash
@@ -1102,7 +1215,6 @@ nexus3 rpc create coordinator --preset trusted
 | Session.py split (~1000 lines) | Large refactor | M |
 | Pool.py split (~1100 lines) | Large refactor | M |
 | Display config | Polish, no current need | S |
-| Windows ESC key | No Windows users yet | S |
 | HTTP keep-alive | Advanced feature | M |
 
 ### DRY Cleanups
@@ -1113,6 +1225,30 @@ nexus3 rpc create coordinator --preset trusted
 | HTTP error send | `http.py` has 9 similar `make_error_response()` + `send_http_response()` calls |
 | ToolResult file errors | 22 skill files with repeated error handlers |
 | Git double timeout | `subprocess.run(timeout)` + `asyncio.wait_for()` is redundant |
+| Confirmation menu duplication | `confirmation_ui.py` has 4 separate menu sections per tool type; refactor to table-driven |
+
+### Planned Improvements
+
+Implementation plans for UI/UX improvements, bug fixes, and features are in `docs/plans/`:
+
+| Plan | Description | Effort |
+|------|-------------|--------|
+| `PROMPT-CACHING-PLAN.md` | Multi-provider prompt caching support | 2-3 hrs |
+| `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | 2 weeks |
+
+Each plan includes validated implementation details with exact line numbers and copy-paste ready code.
+
+**Before implementing any plan, review the OPEN QUESTIONS section at the top of each plan with the user.** These contain design decisions that need user input before proceeding.
+
+### Known Bugs
+
+No known bugs at this time.
+
+<!-- Previously fixed:
+- Client timeout cancel race condition: Fixed via provider-level synthesis in anthropic.py.
+  The provider now detects orphaned tool_use blocks and synthesizes missing tool_results
+  before sending to API. See ANTHROPIC-TOOL-RESULT-FIX-PLAN.md in .archive/ for details.
+-->
 
 ---
 
@@ -1210,5 +1346,57 @@ Comprehensive security hardening completed January 2026:
 - **Process isolation**: Process group kills on timeout, env sanitization
 - **Input validation**: URL validation, agent ID validation, MCP protocol hardening
 - **Output sanitization**: Terminal escape stripping, Rich markup escaping, secrets redaction
+- **MCP hardening** (added 2026-01-27):
+  - SSRF redirect bypass prevention (`follow_redirects=False`)
+  - MCP output sanitization via `sanitize_for_display()`
+  - Response size limits (10MB max via `MAX_MCP_OUTPUT_SIZE`)
+  - Config error sanitization (no secret leakage in validation errors)
+  - Session ID validation (alphanumeric only, 256 char max)
+- **Windows compatibility** (added 2026-01-28):
+  - Error path sanitization for Windows paths (C:\Users\..., UNC, domain\user)
+  - Cross-platform process tree termination (taskkill /T /F fallback)
+  - Environment variable sanitization includes Windows-specific vars
+  - CREATE_NO_WINDOW subprocess flag prevents window flashing
 
-**Test coverage**: 2300+ tests including 500+ security-specific tests.
+### Known Windows Security Limitations
+
+These are documented limitations, not bugs:
+
+| Issue | Impact | Mitigation |
+|-------|--------|------------|
+| `os.chmod()` no-op | Session files, tokens may be readable by other users | Restrict home directory access |
+| Symlink detection | `is_symlink()` misses junctions/reparse points | Symlink attack assumptions weaker |
+| Permission bits | `S_IRWXG\|S_IRWXO` checks meaningless | ACL-based validation not implemented |
+
+**Test coverage**: 3400+ tests including 770+ security-specific tests.
+
+---
+
+## Windows Shell Compatibility
+
+NEXUS3 detects the Windows shell environment at startup and adapts its output accordingly.
+
+### Detected Shells
+
+| Shell | Detection | ANSI Support | Unicode | Notes |
+|-------|-----------|--------------|---------|-------|
+| Windows Terminal | `WT_SESSION` env var | Full | Full | Best experience |
+| PowerShell 7+ | Via Windows Terminal | Full | Full | |
+| Git Bash | `MSYSTEM` env var | Full | Full | MSYS2 environment |
+| PowerShell 5.1 | `PSModulePath` set | Limited | Limited | Legacy mode |
+| CMD.exe | `COMSPEC` check | None | None | Plain text only |
+
+### Startup Warnings
+
+When running in CMD.exe or PowerShell 5.1, NEXUS3 displays a warning suggesting better alternatives. Users can suppress these by running in Windows Terminal.
+
+### Console Code Page
+
+For proper UTF-8 display, the console should use code page 65001. NEXUS3 warns if a different code page is detected. Run `chcp 65001` before starting NEXUS3 to fix character display issues.
+
+### Key Functions
+
+- `detect_windows_shell()` - Returns WindowsShell enum
+- `supports_ansi()` - Check ANSI escape support
+- `supports_unicode()` - Check Unicode box drawing support
+- `check_console_codepage()` - Get current code page

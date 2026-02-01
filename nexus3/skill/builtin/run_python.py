@@ -5,7 +5,7 @@ level and refuses to execute in SANDBOXED mode, even if mistakenly registered.
 """
 
 import asyncio
-import os
+import subprocess
 import sys
 from typing import TYPE_CHECKING, Any
 
@@ -72,14 +72,28 @@ class RunPythonSkill(ExecutionSkill):
         work_dir: str | None
     ) -> asyncio.subprocess.Process:
         """Create a Python subprocess."""
-        return await asyncio.create_subprocess_exec(
-            sys.executable, "-c", self._code,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=work_dir,
-            env=get_safe_env(work_dir),
-            start_new_session=True,  # Create new process group for clean kill
-        )
+        # Platform-specific process group handling for clean timeout kills
+        if sys.platform == "win32":
+            return await asyncio.create_subprocess_exec(
+                sys.executable, "-c", self._code,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=work_dir,
+                env=get_safe_env(work_dir),
+                creationflags=(
+                    subprocess.CREATE_NEW_PROCESS_GROUP |
+                    subprocess.CREATE_NO_WINDOW
+                ),
+            )
+        else:
+            return await asyncio.create_subprocess_exec(
+                sys.executable, "-c", self._code,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=work_dir,
+                env=get_safe_env(work_dir),
+                start_new_session=True,
+            )
 
     async def execute(
         self,

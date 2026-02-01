@@ -1,6 +1,7 @@
 """Integration tests for MCP client with test server."""
 
 import asyncio
+import sys
 
 import pytest
 
@@ -18,7 +19,7 @@ from nexus3.mcp.transport import HTTPTransport, StdioTransport
 @pytest.fixture
 async def mcp_client():
     """Create MCP client connected to test server."""
-    transport = StdioTransport(["python3", "-m", "nexus3.mcp.test_server"])
+    transport = StdioTransport([sys.executable, "-m", "nexus3.mcp.test_server"])
     async with MCPClient(transport) as client:
         yield client
 
@@ -39,10 +40,10 @@ class TestMCPClientIntegration:
         """Test discovering tools from server."""
         tools = await mcp_client.list_tools()
 
-        assert len(tools) == 3
+        assert len(tools) == 4
 
         tool_names = {t.name for t in tools}
-        assert tool_names == {"echo", "get_time", "add"}
+        assert tool_names == {"echo", "get_time", "add", "slow_operation"}
 
         # Check echo tool schema
         echo_tool = next(t for t in tools if t.name == "echo")
@@ -84,8 +85,22 @@ class TestMCPClientIntegration:
         with pytest.raises(MCPError) as exc_info:
             await mcp_client.call_tool("nonexistent", {})
 
-        assert exc_info.value.code == -32601
+        # -32602 = Invalid params (tool name is a parameter to tools/call)
+        assert exc_info.value.code == -32602
         assert "Unknown tool" in exc_info.value.message
+
+
+class TestMCPUtilities:
+    """Test MCP utility operations."""
+
+    @pytest.mark.asyncio
+    async def test_ping(self, mcp_client: MCPClient) -> None:
+        """Test pinging server."""
+        latency = await mcp_client.ping()
+
+        # Should be a positive number (milliseconds)
+        assert latency > 0
+        assert latency < 5000  # Should be fast for local server
 
 
 class TestStdioTransport:
@@ -94,7 +109,7 @@ class TestStdioTransport:
     @pytest.mark.asyncio
     async def test_transport_connect_disconnect(self) -> None:
         """Test transport connection lifecycle."""
-        transport = StdioTransport(["python3", "-m", "nexus3.mcp.test_server"])
+        transport = StdioTransport([sys.executable, "-m", "nexus3.mcp.test_server"])
 
         await transport.connect()
         assert transport.is_connected
@@ -125,14 +140,14 @@ class TestMCPServerRegistry:
 
         config = MCPServerConfig(
             name="test",
-            command=["python3", "-m", "nexus3.mcp.test_server"],
+            command=[sys.executable, "-m", "nexus3.mcp.test_server"],
         )
 
         # Connect
         server = await registry.connect(config)
         assert server.config.name == "test"
         assert server.client.is_initialized
-        assert len(server.skills) == 3
+        assert len(server.skills) == 4
         assert len(registry) == 1
 
         # Disconnect
@@ -151,15 +166,15 @@ class TestMCPServerRegistry:
 
         config = MCPServerConfig(
             name="test",
-            command=["python3", "-m", "nexus3.mcp.test_server"],
+            command=[sys.executable, "-m", "nexus3.mcp.test_server"],
         )
 
         await registry.connect(config)
-        skills = registry.get_all_skills()
+        skills = await registry.get_all_skills()
 
-        assert len(skills) == 3
+        assert len(skills) == 4
         skill_names = {s.name for s in skills}
-        assert skill_names == {"mcp_test_echo", "mcp_test_get_time", "mcp_test_add"}
+        assert skill_names == {"mcp_test_echo", "mcp_test_get_time", "mcp_test_add", "mcp_test_slow_operation"}
 
         await registry.close_all()
 
@@ -170,7 +185,7 @@ class TestMCPServerRegistry:
 
         config = MCPServerConfig(
             name="private",
-            command=["python3", "-m", "nexus3.mcp.test_server"],
+            command=[sys.executable, "-m", "nexus3.mcp.test_server"],
         )
 
         # Connect as agent "main" with private visibility
@@ -179,12 +194,12 @@ class TestMCPServerRegistry:
         # Owner can see it
         assert registry.get("private", agent_id="main") is not None
         assert len(registry.list_servers(agent_id="main")) == 1
-        assert len(registry.get_all_skills(agent_id="main")) == 3
+        assert len(await registry.get_all_skills(agent_id="main")) == 4
 
         # Other agent cannot see it
         assert registry.get("private", agent_id="worker") is None
         assert len(registry.list_servers(agent_id="worker")) == 0
-        assert len(registry.get_all_skills(agent_id="worker")) == 0
+        assert len(await registry.get_all_skills(agent_id="worker")) == 0
 
         await registry.close_all()
 
@@ -195,7 +210,7 @@ class TestMCPServerRegistry:
 
         config = MCPServerConfig(
             name="shared",
-            command=["python3", "-m", "nexus3.mcp.test_server"],
+            command=[sys.executable, "-m", "nexus3.mcp.test_server"],
         )
 
         # Connect as agent "main" with shared visibility
@@ -207,7 +222,7 @@ class TestMCPServerRegistry:
         # Other agent can also see it (shared)
         assert registry.get("shared", agent_id="worker") is not None
         assert len(registry.list_servers(agent_id="worker")) == 1
-        assert len(registry.get_all_skills(agent_id="worker")) == 3
+        assert len(await registry.get_all_skills(agent_id="worker")) == 4
 
         await registry.close_all()
 
@@ -218,7 +233,7 @@ class TestMCPServerRegistry:
 
         config = MCPServerConfig(
             name="test",
-            command=["python3", "-m", "nexus3.mcp.test_server"],
+            command=[sys.executable, "-m", "nexus3.mcp.test_server"],
         )
 
         await registry.connect(config)
@@ -238,7 +253,7 @@ class TestMCPSkillAdapter:
 
         config = MCPServerConfig(
             name="test",
-            command=["python3", "-m", "nexus3.mcp.test_server"],
+            command=[sys.executable, "-m", "nexus3.mcp.test_server"],
         )
 
         server = await registry.connect(config)
@@ -259,7 +274,7 @@ class TestMCPSkillAdapter:
 
         config = MCPServerConfig(
             name="test",
-            command=["python3", "-m", "nexus3.mcp.test_server"],
+            command=[sys.executable, "-m", "nexus3.mcp.test_server"],
         )
 
         server = await registry.connect(config)
@@ -324,9 +339,9 @@ class TestHTTPTransport:
         """Test HTTP client discovers tools."""
         tools = await http_mcp_client.list_tools()
 
-        assert len(tools) == 3
+        assert len(tools) == 4
         tool_names = {t.name for t in tools}
-        assert tool_names == {"echo", "get_time", "add"}
+        assert tool_names == {"echo", "get_time", "add", "slow_operation"}
 
     @pytest.mark.asyncio
     async def test_http_call_echo(self, http_mcp_client: MCPClient) -> None:
@@ -371,7 +386,7 @@ class TestRegistryWithHTTP:
 
         server = await registry.connect(config)
         assert server.config.name == "http-test"
-        assert len(server.skills) == 3
+        assert len(server.skills) == 4
 
         await registry.close_all()
 
@@ -394,3 +409,163 @@ class TestRegistryWithHTTP:
         assert result.output == "via http"
 
         await registry.close_all()
+
+
+class TestMCPPrompts:
+    """Test MCP prompt operations with test server."""
+
+    @pytest.mark.asyncio
+    async def test_list_prompts(self, mcp_client: MCPClient) -> None:
+        """Test listing prompts from server."""
+        prompts = await mcp_client.list_prompts()
+
+        assert len(prompts) == 3
+        names = {p.name for p in prompts}
+        assert "greeting" in names
+        assert "code_review" in names
+        assert "summarize" in names
+
+    @pytest.mark.asyncio
+    async def test_prompts_property_caches_results(self, mcp_client: MCPClient) -> None:
+        """Test that prompts property returns cached results."""
+        # Initially empty
+        assert mcp_client.prompts == []
+
+        # After list_prompts, property returns cached results
+        prompts = await mcp_client.list_prompts()
+        assert mcp_client.prompts == prompts
+        assert len(mcp_client.prompts) == 3
+
+    @pytest.mark.asyncio
+    async def test_get_prompt_greeting(self, mcp_client: MCPClient) -> None:
+        """Test getting greeting prompt with arguments."""
+        result = await mcp_client.get_prompt("greeting", {"name": "Alice"})
+
+        assert result.description == "Generate a greeting message"
+        assert len(result.messages) == 1
+        assert "Alice" in result.messages[0].get_text()
+
+    @pytest.mark.asyncio
+    async def test_get_prompt_code_review(self, mcp_client: MCPClient) -> None:
+        """Test getting code review prompt."""
+        result = await mcp_client.get_prompt(
+            "code_review",
+            {"language": "Python", "focus": "security"}
+        )
+
+        text = result.messages[0].get_text()
+        assert "Python" in text
+        assert "security" in text
+
+    @pytest.mark.asyncio
+    async def test_get_prompt_not_found(self, mcp_client: MCPClient) -> None:
+        """Test getting non-existent prompt."""
+        from nexus3.mcp import MCPError
+
+        with pytest.raises(MCPError) as exc_info:
+            await mcp_client.get_prompt("nonexistent")
+
+        assert exc_info.value.code == -32602
+        assert "not found" in exc_info.value.message.lower()
+
+    @pytest.mark.asyncio
+    async def test_prompt_arguments_structure(self, mcp_client: MCPClient) -> None:
+        """Test prompt argument metadata."""
+        prompts = await mcp_client.list_prompts()
+        greeting = next(p for p in prompts if p.name == "greeting")
+
+        assert len(greeting.arguments) == 2
+        name_arg = next(a for a in greeting.arguments if a.name == "name")
+        assert name_arg.required is True
+
+        formal_arg = next(a for a in greeting.arguments if a.name == "formal")
+        assert formal_arg.required is False
+
+    @pytest.mark.asyncio
+    async def test_get_prompt_without_arguments(self, mcp_client: MCPClient) -> None:
+        """Test getting prompt without providing optional arguments."""
+        result = await mcp_client.get_prompt("summarize")
+
+        assert result.description == "Summarize text content"
+        assert len(result.messages) == 1
+
+
+class TestMCPResources:
+    """Test MCP resource operations with test server."""
+
+    @pytest.mark.asyncio
+    async def test_list_resources(self, mcp_client: MCPClient) -> None:
+        """Test listing resources from server."""
+        resources = await mcp_client.list_resources()
+
+        assert len(resources) == 3
+        uris = {r.uri for r in resources}
+        assert "file:///readme.txt" in uris
+        assert "file:///config.json" in uris
+        assert "file:///data/users.csv" in uris
+
+    @pytest.mark.asyncio
+    async def test_resources_property_caches_results(self, mcp_client: MCPClient) -> None:
+        """Test that resources property returns cached results."""
+        # Initially empty
+        assert mcp_client.resources == []
+
+        # After list_resources, property returns cached results
+        resources = await mcp_client.list_resources()
+        assert mcp_client.resources == resources
+        assert len(mcp_client.resources) == 3
+
+    @pytest.mark.asyncio
+    async def test_resource_metadata(self, mcp_client: MCPClient) -> None:
+        """Test resource metadata parsing."""
+        resources = await mcp_client.list_resources()
+
+        readme = next(r for r in resources if r.uri == "file:///readme.txt")
+        assert readme.name == "README"
+        assert readme.description == "Project readme file"
+        assert readme.mime_type == "text/plain"
+
+        config = next(r for r in resources if r.uri == "file:///config.json")
+        assert config.name == "Configuration"
+        assert config.mime_type == "application/json"
+
+    @pytest.mark.asyncio
+    async def test_read_resource_text(self, mcp_client: MCPClient) -> None:
+        """Test reading a text resource."""
+        contents = await mcp_client.read_resource("file:///readme.txt")
+
+        assert len(contents) == 1
+        assert contents[0].uri == "file:///readme.txt"
+        assert contents[0].mime_type == "text/plain"
+        assert "Test Project" in contents[0].text
+
+    @pytest.mark.asyncio
+    async def test_read_resource_json(self, mcp_client: MCPClient) -> None:
+        """Test reading a JSON resource."""
+        contents = await mcp_client.read_resource("file:///config.json")
+
+        assert len(contents) == 1
+        assert contents[0].mime_type == "application/json"
+        assert "test-server" in contents[0].text
+        assert contents[0].blob is None
+
+    @pytest.mark.asyncio
+    async def test_read_resource_csv(self, mcp_client: MCPClient) -> None:
+        """Test reading a CSV resource."""
+        contents = await mcp_client.read_resource("file:///data/users.csv")
+
+        assert len(contents) == 1
+        assert contents[0].mime_type == "text/csv"
+        assert "Alice" in contents[0].text
+        assert "Bob" in contents[0].text
+
+    @pytest.mark.asyncio
+    async def test_read_resource_not_found(self, mcp_client: MCPClient) -> None:
+        """Test reading non-existent resource."""
+        from nexus3.mcp import MCPError
+
+        with pytest.raises(MCPError) as exc_info:
+            await mcp_client.read_resource("file:///nonexistent.txt")
+
+        assert exc_info.value.code == -32602
+        assert "not found" in exc_info.value.message.lower()

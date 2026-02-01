@@ -309,10 +309,6 @@ def resolve_preset(
     Raises:
         ValueError: If preset not found.
     """
-    # Handle legacy "worker" preset by mapping to sandboxed
-    if preset_name == "worker":
-        preset_name = "sandboxed"
-
     # Check custom presets first
     if custom_presets and preset_name in custom_presets:
         preset = custom_presets[preset_name]

@@ -270,6 +270,46 @@ class CompactionConfig(BaseModel):
     """Whether to redact secrets before summarization."""
 
 
+class ClipboardConfig(BaseModel):
+    """Configuration for clipboard system."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable clipboard tools",
+    )
+    inject_into_context: bool = Field(
+        default=True,
+        description="Auto-inject clipboard index into system prompt",
+    )
+    max_injected_entries: int = Field(
+        default=10,
+        ge=0,
+        le=50,
+        description="Maximum entries to show in context injection",
+    )
+    show_source_in_injection: bool = Field(
+        default=True,
+        description="Show source path/lines in context injection",
+    )
+    max_entry_bytes: int = Field(
+        default=1 * 1024 * 1024,  # 1 MB
+        ge=1024,
+        le=10 * 1024 * 1024,
+        description="Maximum size of a single clipboard entry",
+    )
+    warn_entry_bytes: int = Field(
+        default=100 * 1024,  # 100 KB
+        ge=1024,
+        description="Size threshold for warning on large entries",
+    )
+    default_ttl_seconds: int | None = Field(
+        default=None,
+        description="Default TTL for new entries (seconds). None = permanent.",
+    )
+
+
 class ContextConfig(BaseModel):
     """Configuration for context loading.
 
@@ -329,6 +369,90 @@ class ServerConfig(BaseModel):
     """Logging level for server operations."""
 
 
+class GitLabInstanceConfig(BaseModel):
+    """Configuration for a single GitLab instance.
+
+    Each instance represents a GitLab server (gitlab.com or self-hosted)
+    with its authentication credentials.
+
+    SECURITY: GitLab tokens should be stored in environment variables,
+    not directly in config files. Use `token_env` to specify the
+    environment variable name.
+
+    Example in config.json:
+        "gitlab": {
+            "instances": {
+                "default": {
+                    "url": "https://gitlab.com",
+                    "token_env": "GITLAB_TOKEN"
+                },
+                "work": {
+                    "url": "https://gitlab.company.com",
+                    "token_env": "WORK_GITLAB_TOKEN"
+                }
+            }
+        }
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = "https://gitlab.com"
+    """Base URL for the GitLab instance (e.g., 'https://gitlab.com')."""
+
+    token_env: str | None = None
+    """Environment variable containing the GitLab API token."""
+
+    token: str | None = None
+    """Direct token value (NOT RECOMMENDED - use token_env instead).
+    If both token and token_env are set, token takes precedence."""
+
+    @model_validator(mode="after")
+    def validate_token_config(self) -> "GitLabInstanceConfig":
+        """Ensure at least one authentication method is configured."""
+        if not self.token and not self.token_env:
+            raise ValueError(
+                "GitLabInstanceConfig: Must specify either 'token' or 'token_env'"
+            )
+        return self
+
+
+class GitLabConfig(BaseModel):
+    """Top-level GitLab configuration.
+
+    Supports multiple GitLab instances (e.g., gitlab.com and self-hosted)
+    with a default instance for convenience.
+
+    Example in config.json:
+        "gitlab": {
+            "instances": {
+                "default": {
+                    "url": "https://gitlab.com",
+                    "token_env": "GITLAB_TOKEN"
+                }
+            },
+            "default_instance": "default"
+        }
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    instances: dict[str, GitLabInstanceConfig] = {}
+    """Named GitLab instance configurations."""
+
+    default_instance: str | None = None
+    """Name of the default instance to use when not specified."""
+
+    @model_validator(mode="after")
+    def validate_default_instance(self) -> "GitLabConfig":
+        """Ensure default_instance references a valid instance."""
+        if self.default_instance and self.default_instance not in self.instances:
+            raise ValueError(
+                f"GitLabConfig: default_instance '{self.default_instance}' "
+                f"not found in instances"
+            )
+        return self
+
+
 class MCPServerConfig(BaseModel):
     """Configuration for an MCP server.
 
@@ -341,6 +465,11 @@ class MCPServerConfig(BaseModel):
     - Use `env` for explicit key-value pairs (e.g., secrets from config)
     - Use `env_passthrough` to copy vars from host environment
 
+    Supports two command formats:
+    1. NEXUS3 format: command as list ["npx", "-y", "@anthropic/mcp-server-github"]
+    2. Official format: command as string + args array
+       {"command": "npx", "args": ["-y", "@anthropic/mcp-server-github"]}
+
     Example in config.json:
         "mcp_servers": [
             {
@@ -349,7 +478,8 @@ class MCPServerConfig(BaseModel):
             },
             {
                 "name": "github",
-                "command": ["npx", "-y", "@anthropic/mcp-server-github"],
+                "command": "npx",
+                "args": ["-y", "@anthropic/mcp-server-github"],
                 "env_passthrough": ["GITHUB_TOKEN"]
             },
             {
@@ -365,8 +495,12 @@ class MCPServerConfig(BaseModel):
     name: str
     """Friendly name for the server (used in skill prefixes)."""
 
-    command: list[str] | None = None
-    """Command to launch server (for stdio transport)."""
+    command: str | list[str] | None = None
+    """Command to launch server (for stdio transport).
+    Can be a list (NEXUS3 format) or string (official format, use with args)."""
+
+    args: list[str] | None = None
+    """Arguments for command when command is a string (official format)."""
 
     url: str | None = None
     """URL for HTTP transport (not yet implemented)."""
@@ -382,6 +516,23 @@ class MCPServerConfig(BaseModel):
 
     enabled: bool = True
     """Whether this server is enabled."""
+
+    def get_command_list(self) -> list[str]:
+        """Return command as list, merging command + args if needed.
+
+        Returns:
+            Command as list of strings suitable for subprocess execution.
+            Empty list if no command configured.
+        """
+        if isinstance(self.command, list):
+            return self.command  # NEXUS3 format
+        elif isinstance(self.command, str):
+            # Official format: command string + args array
+            cmd = [self.command]
+            if self.args:
+                cmd.extend(self.args)
+            return cmd
+        return []
 
     @model_validator(mode="after")
     def validate_transport(self) -> "MCPServerConfig":
@@ -457,9 +608,11 @@ class Config(BaseModel):
     max_concurrent_tools: int = 10
     permissions: PermissionsConfig = PermissionsConfig()
     compaction: CompactionConfig = CompactionConfig()
+    clipboard: ClipboardConfig = ClipboardConfig()
     context: ContextConfig = ContextConfig()
     mcp_servers: list[MCPServerConfig] = []
     server: ServerConfig = ServerConfig()
+    gitlab: GitLabConfig = GitLabConfig()
 
     @model_validator(mode="after")
     def validate_unique_aliases(self) -> "Config":

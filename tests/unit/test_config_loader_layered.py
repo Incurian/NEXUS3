@@ -5,10 +5,62 @@ from pathlib import Path
 
 import pytest
 
+from nexus3.config.load_utils import load_json_file, load_json_file_optional
 from nexus3.config.loader import load_config
 from nexus3.config.schema import Config
-from nexus3.core.errors import ConfigError
+from nexus3.core.errors import ConfigError, LoadError
 from nexus3.core.utils import deep_merge, find_ancestor_config_dirs
+
+
+class TestLoadJsonFileOptional:
+    """Tests for load_json_file_optional function."""
+
+    def test_returns_none_for_missing_file(self, tmp_path: Path) -> None:
+        """Returns None when file doesn't exist."""
+        result = load_json_file_optional(tmp_path / "missing.json")
+        assert result is None
+
+    def test_loads_existing_file(self, tmp_path: Path) -> None:
+        """Loads and parses existing JSON file."""
+        config = tmp_path / "config.json"
+        config.write_text('{"key": "value"}')
+        result = load_json_file_optional(config)
+        assert result == {"key": "value"}
+
+    def test_returns_empty_dict_for_empty_file(self, tmp_path: Path) -> None:
+        """Returns empty dict for empty file."""
+        config = tmp_path / "config.json"
+        config.write_text("")
+        result = load_json_file_optional(config)
+        assert result == {}
+
+    def test_raises_for_invalid_json(self, tmp_path: Path) -> None:
+        """Raises LoadError for invalid JSON."""
+        config = tmp_path / "config.json"
+        config.write_text("not json")
+        with pytest.raises(LoadError):
+            load_json_file_optional(config)
+
+    def test_uses_path_resolve(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Path.resolve() is called for Windows compatibility.
+
+        On Windows/Git Bash, Path.home() may return Unix-style paths like
+        /c/Users/... that fail exists() checks. Using resolve() fixes this.
+        """
+        config = tmp_path / "config.json"
+        config.write_text("{}")
+
+        # Track resolve() calls
+        original_resolve = Path.resolve
+        resolve_called = []
+
+        def tracking_resolve(self: Path) -> Path:
+            resolve_called.append(self)
+            return original_resolve(self)
+
+        monkeypatch.setattr(Path, "resolve", tracking_resolve)
+        load_json_file_optional(config)
+        assert len(resolve_called) > 0
 
 
 class TestDeepMerge:
@@ -80,6 +132,46 @@ class TestAncestorDiscovery:
         # Shouldn't crash, just return whatever it finds
         assert isinstance(ancestors, list)
 
+    def test_excludes_specified_paths(self, tmp_path: Path) -> None:
+        """Test exclude_paths prevents matching directories from being included.
+
+        This fixes a bug where global ~/.nexus3 was loaded twice when CWD
+        was inside the home directory (once as global, once as ancestor).
+        """
+        # Create structure: home/.nexus3 and home/projects/app
+        home = tmp_path / "home"
+        global_dir = home / ".nexus3"
+        global_dir.mkdir(parents=True)
+        project = home / "projects" / "app"
+        project.mkdir(parents=True)
+
+        # Without exclusion - global_dir is found as ancestor
+        ancestors = find_ancestor_config_dirs(project, max_depth=3)
+        assert global_dir in ancestors
+
+        # With exclusion - global_dir is excluded
+        ancestors = find_ancestor_config_dirs(
+            project, max_depth=3, exclude_paths=[global_dir]
+        )
+        assert global_dir not in ancestors
+
+    def test_exclusion_uses_resolved_paths(self, tmp_path: Path) -> None:
+        """Test exclusion comparison works with different path representations.
+
+        On Windows/Git Bash, paths may have different formats. Using resolve()
+        ensures consistent comparison.
+        """
+        global_dir = tmp_path / ".nexus3"
+        global_dir.mkdir()
+        project = tmp_path / "projects" / "app"
+        project.mkdir(parents=True)
+
+        # Exclude using non-resolved path representation
+        ancestors = find_ancestor_config_dirs(
+            project, max_depth=3, exclude_paths=[tmp_path / ".nexus3"]
+        )
+        assert global_dir not in ancestors
+
 
 class TestLayeredConfigLoading:
     """Tests for layered config loading."""
@@ -91,10 +183,20 @@ class TestLayeredConfigLoading:
         home.mkdir()
         monkeypatch.setenv("HOME", str(home))
 
-        # Create global config
+        # Create global config with minimal valid structure
+        # (needs default_model and matching provider since defaults aren't merged)
         global_nexus = home / ".nexus3"
         global_nexus.mkdir()
         (global_nexus / "config.json").write_text(json.dumps({
+            "default_model": "test",
+            "providers": {
+                "test": {
+                    "type": "openrouter",
+                    "models": {
+                        "test": {"id": "test/model", "context_window": 4096}
+                    }
+                }
+            },
             "stream_output": True,
             "max_tool_iterations": 5,
         }))

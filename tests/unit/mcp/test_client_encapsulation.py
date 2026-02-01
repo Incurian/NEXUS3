@@ -211,3 +211,380 @@ class TestIsConnectedIntegration:
         await client.close()
         assert client.is_connected is False
         assert client.is_initialized is False
+
+    @pytest.mark.asyncio
+    async def test_reconnect_lifecycle(self) -> None:
+        """Test reconnect() closes and reconnects the client."""
+        # Track connection state
+        connected = False
+        request_id = 0
+
+        def get_connected() -> bool:
+            return connected
+
+        async def do_connect() -> None:
+            nonlocal connected
+            connected = True
+
+        async def do_close() -> None:
+            nonlocal connected
+            connected = False
+
+        # Mock responses for two initialization sequences
+        async def mock_receive() -> dict:
+            nonlocal request_id
+            request_id += 1
+            return {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "serverInfo": {"name": "test", "version": "1.0"},
+                },
+            }
+
+        mock_transport = MagicMock()
+        mock_transport.connect = AsyncMock(side_effect=do_connect)
+        mock_transport.close = AsyncMock(side_effect=do_close)
+        mock_transport.send = AsyncMock()
+        mock_transport.receive = mock_receive
+        type(mock_transport).is_connected = PropertyMock(side_effect=get_connected)
+
+        client = MCPClient(mock_transport)
+
+        # Initial connection
+        await client.connect()
+        assert client.is_connected is True
+        assert client.is_initialized is True
+
+        # Reconnect should close and connect again
+        await client.reconnect()
+        assert client.is_connected is True
+        assert client.is_initialized is True
+
+        # Verify connect was called twice (initial + reconnect)
+        assert mock_transport.connect.call_count == 2
+
+
+class TestMCPClientNotificationFormat:
+    """Tests for _notify() method MCP spec compliance.
+
+    MCP spec requires notifications to omit the 'params' field entirely
+    when there are no parameters, not send an empty object.
+    """
+
+    @pytest.mark.asyncio
+    async def test_notify_omits_params_when_none(self) -> None:
+        """_notify() should not include params field when None."""
+        sent_messages: list[dict] = []
+
+        mock_transport = MagicMock()
+        mock_transport.send = AsyncMock(side_effect=lambda msg: sent_messages.append(msg))
+
+        client = MCPClient(mock_transport)
+
+        # Call _notify with no params (default None)
+        await client._notify("test/notification")
+
+        assert len(sent_messages) == 1
+        notification = sent_messages[0]
+
+        # Should have jsonrpc and method, but NOT params
+        assert notification == {
+            "jsonrpc": "2.0",
+            "method": "test/notification",
+        }
+        assert "params" not in notification
+
+    @pytest.mark.asyncio
+    async def test_notify_omits_params_when_empty_dict(self) -> None:
+        """_notify() should not include params field when empty dict."""
+        sent_messages: list[dict] = []
+
+        mock_transport = MagicMock()
+        mock_transport.send = AsyncMock(side_effect=lambda msg: sent_messages.append(msg))
+
+        client = MCPClient(mock_transport)
+
+        # Call _notify with empty dict (should be treated same as None)
+        await client._notify("test/notification", {})
+
+        assert len(sent_messages) == 1
+        notification = sent_messages[0]
+
+        # Should have jsonrpc and method, but NOT params
+        assert notification == {
+            "jsonrpc": "2.0",
+            "method": "test/notification",
+        }
+        assert "params" not in notification
+
+    @pytest.mark.asyncio
+    async def test_notify_includes_params_when_non_empty(self) -> None:
+        """_notify() should include params field when non-empty."""
+        sent_messages: list[dict] = []
+
+        mock_transport = MagicMock()
+        mock_transport.send = AsyncMock(side_effect=lambda msg: sent_messages.append(msg))
+
+        client = MCPClient(mock_transport)
+
+        # Call _notify with actual params
+        await client._notify("test/notification", {"key": "value"})
+
+        assert len(sent_messages) == 1
+        notification = sent_messages[0]
+
+        # Should have jsonrpc, method, AND params
+        assert notification == {
+            "jsonrpc": "2.0",
+            "method": "test/notification",
+            "params": {"key": "value"},
+        }
+
+    @pytest.mark.asyncio
+    async def test_initialized_notification_has_no_params(self) -> None:
+        """The 'notifications/initialized' notification should have no params.
+
+        Per MCP spec: {"jsonrpc": "2.0", "method": "notifications/initialized"}
+        NOT: {"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}
+        """
+        sent_messages: list[dict] = []
+
+        mock_transport = MagicMock()
+        mock_transport.connect = AsyncMock()
+        mock_transport.send = AsyncMock(side_effect=lambda msg: sent_messages.append(msg))
+        mock_transport.receive = AsyncMock(return_value={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "serverInfo": {"name": "test", "version": "1.0"},
+            },
+        })
+        type(mock_transport).is_connected = PropertyMock(return_value=True)
+
+        client = MCPClient(mock_transport)
+        await client.connect()
+
+        # Find the initialized notification in sent messages
+        initialized_notifications = [
+            msg for msg in sent_messages
+            if msg.get("method") == "notifications/initialized"
+        ]
+
+        assert len(initialized_notifications) == 1
+        notification = initialized_notifications[0]
+
+        # Should NOT have params field
+        assert "params" not in notification
+        assert notification == {
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+        }
+
+
+class TestMCPClientPagination:
+    """Tests for P1.4: tools/list pagination support."""
+
+    @pytest.mark.asyncio
+    async def test_list_tools_single_page_no_cursor(self) -> None:
+        """list_tools() handles single-page response (no nextCursor)."""
+        sent_messages: list[dict] = []
+
+        mock_transport = MagicMock()
+        mock_transport.send = AsyncMock(side_effect=lambda msg: sent_messages.append(msg))
+        mock_transport.receive = AsyncMock(return_value={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "tools": [
+                    {"name": "tool1", "description": "Tool 1", "inputSchema": {}},
+                    {"name": "tool2", "description": "Tool 2", "inputSchema": {}},
+                ],
+            },
+        })
+
+        client = MCPClient(mock_transport)
+        client._initialized = True  # Skip initialization
+
+        tools = await client.list_tools()
+
+        # Should have both tools
+        assert len(tools) == 2
+        assert tools[0].name == "tool1"
+        assert tools[1].name == "tool2"
+
+        # Should have made one request
+        assert len(sent_messages) == 1
+        request = sent_messages[0]
+        assert request["method"] == "tools/list"
+        # No cursor param on first request
+        assert "params" not in request
+
+    @pytest.mark.asyncio
+    async def test_list_tools_multi_page_pagination(self) -> None:
+        """list_tools() handles multi-page response with nextCursor."""
+        sent_messages: list[dict] = []
+        request_id = 0
+
+        # First page: 2 tools with nextCursor
+        # Second page: 1 tool, no nextCursor
+        responses = [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "tools": [
+                        {"name": "tool1", "description": "Tool 1", "inputSchema": {}},
+                        {"name": "tool2", "description": "Tool 2", "inputSchema": {}},
+                    ],
+                    "nextCursor": "page2",
+                },
+            },
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {
+                    "tools": [
+                        {"name": "tool3", "description": "Tool 3", "inputSchema": {}},
+                    ],
+                },
+            },
+        ]
+
+        async def mock_receive() -> dict:
+            nonlocal request_id
+            response = responses[request_id]
+            request_id += 1
+            return response
+
+        mock_transport = MagicMock()
+        mock_transport.send = AsyncMock(side_effect=lambda msg: sent_messages.append(msg))
+        mock_transport.receive = mock_receive
+
+        client = MCPClient(mock_transport)
+        client._initialized = True
+
+        tools = await client.list_tools()
+
+        # Should have all 3 tools from both pages
+        assert len(tools) == 3
+        assert tools[0].name == "tool1"
+        assert tools[1].name == "tool2"
+        assert tools[2].name == "tool3"
+
+        # Should have made 2 requests
+        assert len(sent_messages) == 2
+
+        # First request: no cursor param
+        assert sent_messages[0]["method"] == "tools/list"
+        assert "params" not in sent_messages[0]
+
+        # Second request: includes cursor param
+        assert sent_messages[1]["method"] == "tools/list"
+        assert sent_messages[1]["params"] == {"cursor": "page2"}
+
+    @pytest.mark.asyncio
+    async def test_list_tools_three_pages(self) -> None:
+        """list_tools() handles more than 2 pages of pagination."""
+        sent_messages: list[dict] = []
+        request_id = 0
+
+        responses = [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "tools": [{"name": "a", "description": "", "inputSchema": {}}],
+                    "nextCursor": "cursor1",
+                },
+            },
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": {
+                    "tools": [{"name": "b", "description": "", "inputSchema": {}}],
+                    "nextCursor": "cursor2",
+                },
+            },
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "result": {
+                    "tools": [{"name": "c", "description": "", "inputSchema": {}}],
+                    # No nextCursor - end of pagination
+                },
+            },
+        ]
+
+        async def mock_receive() -> dict:
+            nonlocal request_id
+            response = responses[request_id]
+            request_id += 1
+            return response
+
+        mock_transport = MagicMock()
+        mock_transport.send = AsyncMock(side_effect=lambda msg: sent_messages.append(msg))
+        mock_transport.receive = mock_receive
+
+        client = MCPClient(mock_transport)
+        client._initialized = True
+
+        tools = await client.list_tools()
+
+        assert len(tools) == 3
+        assert [t.name for t in tools] == ["a", "b", "c"]
+
+        # Should have made 3 requests with correct cursors
+        assert len(sent_messages) == 3
+        assert "params" not in sent_messages[0]
+        assert sent_messages[1]["params"] == {"cursor": "cursor1"}
+        assert sent_messages[2]["params"] == {"cursor": "cursor2"}
+
+    @pytest.mark.asyncio
+    async def test_list_tools_empty_response(self) -> None:
+        """list_tools() handles empty tools list."""
+        mock_transport = MagicMock()
+        mock_transport.send = AsyncMock()
+        mock_transport.receive = AsyncMock(return_value={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "tools": [],
+            },
+        })
+
+        client = MCPClient(mock_transport)
+        client._initialized = True
+
+        tools = await client.list_tools()
+
+        assert len(tools) == 0
+
+    @pytest.mark.asyncio
+    async def test_list_tools_caches_result(self) -> None:
+        """list_tools() caches result in _tools attribute."""
+        mock_transport = MagicMock()
+        mock_transport.send = AsyncMock()
+        mock_transport.receive = AsyncMock(return_value={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "tools": [
+                    {"name": "cached_tool", "description": "Test", "inputSchema": {}},
+                ],
+            },
+        })
+
+        client = MCPClient(mock_transport)
+        client._initialized = True
+
+        tools = await client.list_tools()
+
+        # Both return value and cached property should have the tools
+        assert len(tools) == 1
+        assert len(client.tools) == 1
+        assert client.tools[0].name == "cached_tool"

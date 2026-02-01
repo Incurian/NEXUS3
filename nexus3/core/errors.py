@@ -1,6 +1,12 @@
 """Typed exception hierarchy for NEXUS3."""
 
+from __future__ import annotations
+
 import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nexus3.mcp.errors import MCPErrorContext
 
 
 class NexusError(Exception):
@@ -43,14 +49,39 @@ class ContextLoadError(LoadError):
 class MCPConfigError(ContextLoadError):
     """MCP server configuration errors."""
 
-    pass
+    def __init__(
+        self, message: str, context: MCPErrorContext | None = None
+    ) -> None:
+        super().__init__(message)
+        self.context = context
 
 
 # === Error Sanitization for Agent-Facing Messages ===
 
 # Patterns that may leak sensitive info
-_PATH_PATTERN = re.compile(r'(/[^\s:]+)+')
+
+# Unix path patterns
+# Excludes URLs (http://..., ftp://...) and social paths (/r/, /u/, /g/)
+_PATH_PATTERN = re.compile(r'(?<![:/\w])/(?!/)(?![rug]/)[^\s:]+')
 _HOME_PATTERN = re.compile(r'/home/[^/\s]+')
+
+# Windows path patterns (order matters - most specific first)
+# Handle BOTH backslashes AND forward slashes - Windows accepts either
+# Exclude URLs by requiring UNC paths to NOT be preceded by colon (http://...)
+_UNC_PATTERN = re.compile(r'(?<!:)(?:\\\\|//)[^\\/]+[/\\][^\\/]+')  # \\server\share or //server/share (not http://)
+_APPDATA_PATTERN = re.compile(
+    r'[A-Za-z]:[/\\]Users[/\\][^\\/]+[/\\]AppData[/\\][^\\/]+',
+    re.IGNORECASE
+)
+_WINDOWS_USER_PATTERN = re.compile(
+    r'[A-Za-z]:[/\\]Users[/\\][^\\/]+',
+    re.IGNORECASE
+)
+# Relative paths without drive letter (e.g., ..\Users\alice\secrets.txt)
+_RELATIVE_USER_PATTERN = re.compile(r'(^|\s|\\|/)Users[/\\][^\\/\"]+', re.IGNORECASE)
+# Domain\username format (e.g., DOMAIN\alice, BUILTIN\Administrators)
+# Must not match drive letters (C: pattern) - requires at least 2 chars before backslash
+_DOMAIN_USER_PATTERN = re.compile(r'(?<![:/\\\]])\b([A-Z][A-Z0-9_-]{1,})(\\)[^\\/\"\s]+', re.IGNORECASE)
 
 
 def sanitize_error_for_agent(error: str | None, tool_name: str = "") -> str | None:
@@ -77,7 +108,13 @@ def sanitize_error_for_agent(error: str | None, tool_name: str = "") -> str | No
     if "permission denied" in error_lower:
         return f"Permission denied for {tool_name or 'this operation'}"
 
-    if "no such file" in error_lower or "not found" in error_lower:
+    if (
+        "no such file" in error_lower
+        or "file not found" in error_lower
+        or "directory not found" in error_lower
+        or "path not found" in error_lower
+        or "source not found" in error_lower
+    ):
         return "File or directory not found"
 
     if "is a directory" in error_lower:
@@ -97,6 +134,17 @@ def sanitize_error_for_agent(error: str | None, tool_name: str = "") -> str | No
 
     # For other errors, sanitize paths but keep the message
     result = error
+
+    # Windows paths (apply in order: most specific first)
+    # Handle both backslash and forward slash variants
+    result = _UNC_PATTERN.sub('[server]\\\\[share]', result)
+    result = _APPDATA_PATTERN.sub('C:\\\\Users\\\\[user]\\\\AppData\\\\[...]', result)
+    result = _WINDOWS_USER_PATTERN.sub('C:\\\\Users\\\\[user]', result)
+    # Relative paths and domain\user patterns
+    result = _RELATIVE_USER_PATTERN.sub(r'\1Users\\[user]', result)
+    result = _DOMAIN_USER_PATTERN.sub('[domain]\\\\[user]', result)
+
+    # Unix paths
     result = _HOME_PATTERN.sub('/home/[user]', result)
     result = _PATH_PATTERN.sub('[path]', result)
 

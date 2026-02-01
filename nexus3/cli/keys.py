@@ -78,10 +78,34 @@ async def monitor_for_escape(
 
     except (ImportError, OSError, AttributeError):
         # Fallback for Windows or when terminal isn't available
-        # On Windows, we'd need msvcrt or similar
-        # For now, just sleep and let the operation complete normally
+        if sys.platform == "win32":
+            try:
+                import msvcrt
+
+                while True:
+                    if not pause_event.is_set():
+                        pause_ack_event.set()
+                        await pause_event.wait()
+                        pause_ack_event.clear()
+                        continue
+
+                    if msvcrt.kbhit():
+                        char = msvcrt.getwch()
+                        if char == ESC:
+                            on_escape()
+                        elif char in ('\x00', '\xe0'):
+                            if msvcrt.kbhit():
+                                msvcrt.getwch()
+
+                    await asyncio.sleep(check_interval)
+
+            except (ImportError, OSError, AttributeError):
+                pass
+            else:
+                return
+
+        # Final fallback: No keyboard input available
         while True:
-            # Still handle pause protocol for consistency
             if not pause_event.is_set():
                 pause_ack_event.set()
                 await pause_event.wait()

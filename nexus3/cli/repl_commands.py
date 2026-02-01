@@ -21,7 +21,7 @@ Commands:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands.protocol import CommandContext, CommandOutput, CommandResult
@@ -32,15 +32,40 @@ from nexus3.core.permissions import (
     get_builtin_presets,
     resolve_preset,
 )
+from nexus3.core.errors import ProviderError
 from nexus3.core.validation import ValidationError, validate_agent_id
+from nexus3.display import get_console
 from nexus3.rpc.pool import is_temp_agent
 
 if TYPE_CHECKING:
     from nexus3.mcp.registry import MCPServerRegistry
     from nexus3.rpc.pool import Agent, AgentPool, SharedComponents
 
+# YOLO mode warning text
+YOLO_WARNING_LINE = "━" * 70
+YOLO_WARNING_CAPABILITIES = "Enabled: Shell execution, file writes anywhere, network access"
+YOLO_WARNING_ESCAPE = "To switch: /permissions trusted"
 
-def _refresh_agent_tools(
+
+def print_yolo_warning(console: Any, on_switch: bool = False) -> None:
+    """Print YOLO mode warning to console.
+
+    Args:
+        console: Rich console for output
+        on_switch: If True, show "Switching to" instead of current state
+    """
+    console.print(f"[bold red]{YOLO_WARNING_LINE}[/]")
+    if on_switch:
+        console.print("[bold red]⚠  Switching to YOLO MODE[/]")
+    else:
+        console.print("[bold red]⚠  YOLO MODE[/] - All actions execute without confirmation")
+    console.print()
+    console.print(f"   {YOLO_WARNING_CAPABILITIES}")
+    console.print(f"   {YOLO_WARNING_ESCAPE}")
+    console.print(f"[bold red]{YOLO_WARNING_LINE}[/]")
+
+
+async def _refresh_agent_tools(
     agent: Agent,
     mcp_registry: MCPServerRegistry,
     shared: SharedComponents,
@@ -62,7 +87,7 @@ def _refresh_agent_tools(
 
     # Add MCP tools if agent has permission (only from visible servers)
     if can_use_mcp(permissions):
-        for mcp_skill in mcp_registry.get_all_skills(agent_id=agent.agent_id):
+        for mcp_skill in await mcp_registry.get_all_skills(agent_id=agent.agent_id):
             # Check if MCP tool is disabled in permissions
             tool_perm = permissions.tool_permissions.get(mcp_skill.name)
             if tool_perm is not None and not tool_perm.enabled:
@@ -80,7 +105,7 @@ def _refresh_agent_tools(
     agent.context.set_tool_definitions(tool_defs)
 
 
-def _refresh_all_other_agents_tools(
+async def _refresh_all_other_agents_tools(
     current_agent_id: str,
     pool: AgentPool,
     mcp_registry: MCPServerRegistry,
@@ -93,7 +118,7 @@ def _refresh_all_other_agents_tools(
     """
     for agent in pool._agents.values():
         if agent.agent_id != current_agent_id:
-            _refresh_agent_tools(agent, mcp_registry, shared)
+            await _refresh_agent_tools(agent, mcp_registry, shared)
 
 
 # Help text for REPL commands
@@ -144,6 +169,13 @@ MCP (External Tools):
                       Connect to a configured MCP server
   /mcp disconnect <name>  Disconnect from an MCP server
   /mcp tools [server] List available MCP tools
+  /mcp resources [server]  List available resources
+  /mcp prompts [server]    List available prompts
+  /mcp retry <name>   Retry listing tools from a server
+
+GitLab:
+  /gitlab             List configured GitLab instances and auth status
+  /gitlab test [name] Test connection to a GitLab instance
 
 Initialization:
   /init               Create .nexus3/ in current directory with templates
@@ -462,14 +494,20 @@ Notes:
 /mcp connect <name> [--allow-all|--per-tool] [--shared|--private]
 /mcp disconnect <name>
 /mcp tools [server]
+/mcp resources [server]
+/mcp prompts [server]
+/mcp retry <name>
 
 Manage Model Context Protocol (MCP) server connections for external tools.
 
 Subcommands:
-  /mcp                  List configured and connected servers
-  /mcp connect <name>   Connect to a configured MCP server
-  /mcp disconnect <name> Disconnect from server
-  /mcp tools [server]   List available MCP tools
+  /mcp                    List configured and connected servers
+  /mcp connect <name>     Connect to a configured MCP server
+  /mcp disconnect <name>  Disconnect from server
+  /mcp tools [server]     List available MCP tools
+  /mcp resources [server] List available resources
+  /mcp prompts [server]   List available prompts
+  /mcp retry <name>       Retry listing tools from a server
 
 Connect flags:
   --allow-all   Skip consent prompt, allow all tools
@@ -482,7 +520,43 @@ Examples:
   /mcp connect filesystem                 # Interactive prompts
   /mcp connect github --allow-all --shared
   /mcp disconnect filesystem
-  /mcp tools                              # List all MCP tools""",
+  /mcp tools                              # List all MCP tools
+  /mcp resources                          # List all resources
+  /mcp prompts filesystem                 # List prompts from filesystem server
+  /mcp retry filesystem                   # Retry failed server""",
+
+    "gitlab": """/gitlab [test <name>] [skills]
+
+Manage GitLab instances and view skill reference.
+
+Subcommands:
+  /gitlab             List configured instances and authentication status
+  /gitlab test [name] Test connection to instance (default instance if no name)
+  /gitlab skills      Show all GitLab skills with actions and examples
+  /gitlab help        Same as /gitlab skills
+
+Examples:
+  /gitlab                           # List all configured instances
+  /gitlab test                      # Test connection to default instance
+  /gitlab test work                 # Test connection to "work" instance
+  /gitlab skills                    # Show GitLab skill reference
+
+Configuration:
+  Add GitLab instances to config.json:
+    "gitlab": {
+      "instances": {
+        "default": {
+          "url": "https://gitlab.com",
+          "token_env": "GITLAB_TOKEN"
+        }
+      },
+      "default_instance": "default"
+    }
+
+Notes:
+  - Tokens should be stored in environment variables (token_env), not directly
+  - Test verifies authentication and shows the authenticated user
+  - GitLab skills require TRUSTED or YOLO permission level""",
 
     "init": """/init [--force|-f] [--global|-g]
 
@@ -1086,11 +1160,6 @@ async def _change_preset(
 ) -> CommandOutput:
     """Change agent to a new preset."""
 
-    # Handle legacy "worker" preset by mapping to sandboxed
-    original_preset_name = preset_name
-    if preset_name == "worker":
-        preset_name = "sandboxed"
-
     builtin = get_builtin_presets()
     all_presets = dict(builtin)
     if custom_presets:
@@ -1099,7 +1168,7 @@ async def _change_preset(
     if preset_name not in all_presets:
         valid = ", ".join(all_presets.keys())
         return CommandOutput.error(
-            f"Unknown preset: {original_preset_name}. Valid: {valid}"
+            f"Unknown preset: {preset_name}. Valid: {valid}"
         )
 
     # Check ceiling
@@ -1113,6 +1182,11 @@ async def _change_preset(
                 )
         except ValueError as e:
             return CommandOutput.error(str(e))
+
+    # Show warning when switching to YOLO
+    if preset_name == "yolo":
+        console = get_console()
+        print_yolo_warning(console, on_switch=True)
 
     # Apply change
     try:
@@ -1424,8 +1498,8 @@ async def cmd_model(
     agent.services.register("model", new_model)
 
     # Update context manager's max_tokens
-    if hasattr(agent.context, "_config"):
-        agent.context._config.max_tokens = new_model.context_window
+    if hasattr(agent.context, "config"):
+        agent.context.config.max_tokens = new_model.context_window
 
     # Update session's provider to use the new model
     # The provider is cached by provider_name:model_id, so this gets or creates
@@ -1434,10 +1508,13 @@ async def cmd_model(
     if provider_registry is not None:
         provider_registry = getattr(provider_registry, "provider_registry", None)
     if provider_registry is not None:
-        new_provider = provider_registry.get(
-            new_model.provider_name, new_model.model_id, new_model.reasoning
-        )
-        agent.session.provider = new_provider
+        try:
+            new_provider = provider_registry.get(
+                new_model.provider_name, new_model.model_id, new_model.reasoning
+            )
+            agent.session.provider = new_provider
+        except ProviderError as e:
+            return CommandOutput.error(f"Failed to switch model: {e.message}")
 
     alias_info = f" (alias: {new_model.alias})" if new_model.alias else ""
     return CommandOutput.success(
@@ -1470,13 +1547,11 @@ async def _mcp_connection_consent(
     """
     import asyncio
 
-    from rich.console import Console
-
     # YOLO mode skips prompts
     if is_yolo:
         return (True, True)
 
-    console = Console()
+    console = get_console()
 
     console.print(f"\n[yellow]Connect to MCP server '{server_name}'?[/]")
     console.print(f"  [dim]Tools:[/] {', '.join(tool_names)}")
@@ -1516,13 +1591,11 @@ async def _mcp_sharing_prompt(
     """
     import asyncio
 
-    from rich.console import Console
-
     # YOLO mode defaults to private (no sharing)
     if is_yolo:
         return False
 
-    console = Console()
+    console = get_console()
 
     console.print("\n[yellow]Share this connection with other agents?[/]")
     console.print("  [dim](Other agents will still need to approve their own permissions)[/]")
@@ -1585,6 +1658,7 @@ async def cmd_mcp(
         /mcp connect <name> [flags]  Connect to a configured MCP server
         /mcp disconnect <name>  Disconnect from server
         /mcp tools [server] List available MCP tools
+        /mcp retry <server> Retry listing tools from a server
 
     Connect flags:
         --allow-all   Skip consent prompt, allow all tools
@@ -1632,8 +1706,8 @@ async def cmd_mcp(
         if dead:
             # Refresh tools for all agents since we don't track which were shared
             if agent:
-                _refresh_agent_tools(agent, registry, shared)
-            _refresh_all_other_agents_tools(current_agent_id, ctx.pool, registry, shared)
+                await _refresh_agent_tools(agent, registry, shared)
+            await _refresh_all_other_agents_tools(current_agent_id, ctx.pool, registry, shared)
 
         lines = ["MCP Servers:"]
         lines.append("")
@@ -1770,11 +1844,11 @@ async def cmd_mcp(
 
             # Refresh tool definitions for current agent
             if agent:
-                _refresh_agent_tools(agent, registry, shared)
+                await _refresh_agent_tools(agent, registry, shared)
 
             # If shared, also refresh all other agents so they see the new tools
             if share:
-                _refresh_all_other_agents_tools(current_agent_id, ctx.pool, registry, shared)
+                await _refresh_all_other_agents_tools(current_agent_id, ctx.pool, registry, shared)
 
             sharing_str = "shared" if share else "private"
             mode_str = "allow-all" if allow_all else "per-tool"
@@ -1826,11 +1900,11 @@ async def cmd_mcp(
 
         # Refresh tool definitions to remove disconnected MCP tools
         if agent:
-            _refresh_agent_tools(agent, registry, shared)
+            await _refresh_agent_tools(agent, registry, shared)
 
         # If it was shared, also refresh all other agents
         if was_shared:
-            _refresh_all_other_agents_tools(current_agent_id, ctx.pool, registry, shared)
+            await _refresh_all_other_agents_tools(current_agent_id, ctx.pool, registry, shared)
 
         return CommandOutput.success(message=f"Disconnected from '{name}'")
 
@@ -1850,7 +1924,7 @@ async def cmd_mcp(
             skills = server.skills
         else:
             # Get all skills visible to this agent
-            skills = registry.get_all_skills(agent_id=current_agent_id)
+            skills = await registry.get_all_skills(agent_id=current_agent_id)
 
         if not skills:
             return CommandOutput.success(message="No MCP tools available (for this agent)")
@@ -1868,10 +1942,209 @@ async def cmd_mcp(
             data={"tools": [s.name for s in skills]},
         )
 
+    elif subcmd == "retry":
+        # /mcp retry <server> - Retry listing tools from a server
+        if len(parts) < 2:
+            return CommandOutput.error("Usage: /mcp retry <server>")
+
+        server_name = parts[1]
+
+        # Check if server exists and is visible
+        server = registry.get(server_name, agent_id=current_agent_id)
+        if server is None:
+            if registry.get(server_name) is not None:
+                return CommandOutput.error(
+                    f"Server '{server_name}' is not visible to this agent"
+                )
+            return CommandOutput.error(f"Not connected to '{server_name}'")
+
+        try:
+            tool_count = await registry.retry_tools(server_name)
+            if tool_count > 0:
+                # Refresh tool definitions for this agent
+                if agent:
+                    await _refresh_agent_tools(agent, registry, shared)
+                # If shared, refresh other agents too
+                if server.shared:
+                    await _refresh_all_other_agents_tools(current_agent_id, ctx.pool, registry, shared)
+                return CommandOutput.success(
+                    message=f"Successfully listed {tool_count} tools from '{server_name}'"
+                )
+            else:
+                return CommandOutput.error(
+                    f"Tool listing still failing for '{server_name}'. Check server logs."
+                )
+        except Exception as e:
+            return CommandOutput.error(f"Retry failed: {e}")
+
+    elif subcmd == "resources":
+        # /mcp resources [server] - list resources
+        server_name = parts[1] if len(parts) > 1 else None
+
+        if server_name:
+            # List resources from specific server
+            server = registry.get(server_name, agent_id=current_agent_id)
+            if server is None:
+                if registry.get(server_name) is not None:
+                    return CommandOutput.error(
+                        f"Server '{server_name}' is not visible to this agent"
+                    )
+                return CommandOutput.error(f"Not connected to '{server_name}'")
+
+            try:
+                resources = await server.client.list_resources()
+                if not resources:
+                    return CommandOutput.success(
+                        message=f"No resources from {server_name}",
+                        data={"server": server_name, "resources": []},
+                    )
+
+                lines = [f"Resources from {server_name}:"]
+                for r in resources:
+                    lines.append(f"  {r.uri}")
+                    lines.append(f"    Name: {r.name}")
+                    if r.description:
+                        lines.append(f"    Description: {r.description}")
+                    lines.append(f"    Type: {r.mime_type}")
+
+                return CommandOutput.success(
+                    message="\n".join(lines),
+                    data={
+                        "server": server_name,
+                        "resources": [{"uri": r.uri, "name": r.name} for r in resources],
+                    },
+                )
+            except Exception as e:
+                return CommandOutput.error(f"Failed to list resources: {e}")
+        else:
+            # List resources from all visible servers
+            visible_servers = registry.list_servers(agent_id=current_agent_id)
+            if not visible_servers:
+                return CommandOutput.success(
+                    message="No MCP servers connected",
+                    data={"resources": []},
+                )
+
+            lines: list[str] = []
+            all_resources: list[dict[str, Any]] = []
+            for name in visible_servers:
+                server = registry.get(name, agent_id=current_agent_id)
+                if server:
+                    try:
+                        resources = await server.client.list_resources()
+                        if resources:
+                            lines.append(f"\n{name}:")
+                            for r in resources:
+                                lines.append(f"  {r.uri} - {r.name}")
+                                all_resources.append({
+                                    "server": name,
+                                    "uri": r.uri,
+                                    "name": r.name,
+                                })
+                    except Exception as e:
+                        lines.append(f"\n{name}: Error - {e}")
+
+            if not lines:
+                return CommandOutput.success(
+                    message="No resources available",
+                    data={"resources": []},
+                )
+
+            return CommandOutput.success(
+                message="MCP Resources:" + "".join(lines),
+                data={"resources": all_resources},
+            )
+
+    elif subcmd == "prompts":
+        # /mcp prompts [server] - list prompts
+        server_name = parts[1] if len(parts) > 1 else None
+
+        if server_name:
+            # List prompts from specific server
+            server = registry.get(server_name, agent_id=current_agent_id)
+            if server is None:
+                if registry.get(server_name) is not None:
+                    return CommandOutput.error(
+                        f"Server '{server_name}' is not visible to this agent"
+                    )
+                return CommandOutput.error(f"Not connected to '{server_name}'")
+
+            try:
+                prompts = await server.client.list_prompts()
+                if not prompts:
+                    return CommandOutput.success(
+                        message=f"No prompts from {server_name}",
+                        data={"server": server_name, "prompts": []},
+                    )
+
+                lines = [f"Prompts from {server_name}:"]
+                for p in prompts:
+                    lines.append(f"  {p.name}")
+                    if p.description:
+                        lines.append(f"    {p.description}")
+                    if p.arguments:
+                        args_str = ", ".join(
+                            f"{a.name}{'*' if a.required else ''}"
+                            for a in p.arguments
+                        )
+                        lines.append(f"    Args: {args_str}")
+
+                return CommandOutput.success(
+                    message="\n".join(lines),
+                    data={
+                        "server": server_name,
+                        "prompts": [{"name": p.name, "description": p.description} for p in prompts],
+                    },
+                )
+            except Exception as e:
+                return CommandOutput.error(f"Failed to list prompts: {e}")
+        else:
+            # List prompts from all visible servers
+            visible_servers = registry.list_servers(agent_id=current_agent_id)
+            if not visible_servers:
+                return CommandOutput.success(
+                    message="No MCP servers connected",
+                    data={"prompts": []},
+                )
+
+            lines: list[str] = []
+            all_prompts: list[dict[str, Any]] = []
+            for name in visible_servers:
+                server = registry.get(name, agent_id=current_agent_id)
+                if server:
+                    try:
+                        prompts = await server.client.list_prompts()
+                        if prompts:
+                            lines.append(f"\n{name}:")
+                            for p in prompts:
+                                args_str = ""
+                                if p.arguments:
+                                    args_str = f" ({len(p.arguments)} args)"
+                                desc = f" - {p.description}" if p.description else ""
+                                lines.append(f"  {p.name}{args_str}{desc}")
+                                all_prompts.append({
+                                    "server": name,
+                                    "name": p.name,
+                                    "description": p.description,
+                                })
+                    except Exception as e:
+                        lines.append(f"\n{name}: Error - {e}")
+
+            if not lines:
+                return CommandOutput.success(
+                    message="No prompts available",
+                    data={"prompts": []},
+                )
+
+            return CommandOutput.success(
+                message="MCP Prompts:" + "".join(lines),
+                data={"prompts": all_prompts},
+            )
+
     else:
         return CommandOutput.error(
             f"Unknown MCP subcommand: {subcmd}\n"
-            f"Usage: /mcp [connect|disconnect|tools] [args]"
+            f"Usage: /mcp [connect|disconnect|tools|resources|prompts|retry] [args]"
         )
 
 
@@ -1898,3 +2171,353 @@ async def cmd_init(ctx: CommandContext, args: str | None) -> CommandOutput:
         return CommandOutput.success(message=message)
     else:
         return CommandOutput.error(message)
+
+
+async def cmd_gitlab(ctx: CommandContext, args: str | None = None) -> CommandOutput:
+    """Handle /gitlab commands for GitLab instance management.
+
+    Subcommands:
+        /gitlab             List configured instances and auth status
+        /gitlab test [name] Test connection to an instance
+
+    Args:
+        ctx: Command context with pool access.
+        args: Subcommand and arguments.
+
+    Returns:
+        CommandOutput with result.
+    """
+    # Get shared components for config access
+    shared = getattr(ctx.pool, "_shared", None)
+    if shared is None:
+        return CommandOutput.error("Pool shared components not available")
+
+    config = shared.config
+
+    # Parse subcommand
+    parts = (args or "").strip().split()
+
+    if len(parts) == 0:
+        # List instances
+        return await _gitlab_list_instances(config)
+
+    subcmd = parts[0].lower()
+
+    if subcmd == "test":
+        instance_name = parts[1] if len(parts) > 1 else None
+        return await _gitlab_test_instance(config, instance_name)
+    elif subcmd in ("skills", "help"):
+        return _gitlab_skill_reference()
+    else:
+        return CommandOutput.error(
+            f"Unknown GitLab subcommand: {subcmd}\n"
+            f"Usage: /gitlab [test <name>] [skills]"
+        )
+
+
+async def _gitlab_list_instances(config: Any) -> CommandOutput:
+    """List configured GitLab instances."""
+    import os
+
+    gitlab_config = config.gitlab
+
+    if not gitlab_config.instances:
+        return CommandOutput.success(
+            message=(
+                "No GitLab instances configured.\n\n"
+                "To configure GitLab, add to ~/.nexus3/config.json:\n"
+                '{\n'
+                '  "gitlab": {\n'
+                '    "instances": {\n'
+                '      "default": {\n'
+                '        "url": "https://gitlab.com",\n'
+                '        "token_env": "GITLAB_TOKEN"\n'
+                '      }\n'
+                '    }\n'
+                '  }\n'
+                '}'
+            ),
+            data={"instances": [], "configured": False},
+        )
+
+    lines = ["GitLab Instances:", ""]
+
+    instance_data = []
+    for name, instance in gitlab_config.instances.items():
+        # Check if token is available
+        token = None
+        if instance.token:
+            token = instance.token
+        elif instance.token_env:
+            token = os.environ.get(instance.token_env)
+
+        token_status = "token configured" if token else "no token"
+        default_marker = " (default)" if name == gitlab_config.default_instance else ""
+
+        lines.append(f"  {name}: {instance.url}")
+        lines.append(f"    Status: {token_status}{default_marker}")
+        if instance.token_env:
+            env_set = "set" if token else "not set"
+            lines.append(f"    Token env: {instance.token_env} ({env_set})")
+
+        instance_data.append({
+            "name": name,
+            "url": instance.url,
+            "has_token": token is not None,
+            "token_env": instance.token_env,
+            "is_default": name == gitlab_config.default_instance,
+        })
+
+    return CommandOutput.success(
+        message="\n".join(lines),
+        data={"instances": instance_data, "configured": True},
+    )
+
+
+async def _gitlab_test_instance(config: Any, instance_name: str | None) -> CommandOutput:
+    """Test connection to a GitLab instance."""
+    import os
+    from nexus3.skill.vcs.config import GitLabInstance
+    from nexus3.skill.vcs.gitlab.client import GitLabAPIError, GitLabClient
+
+    gitlab_config = config.gitlab
+
+    if not gitlab_config.instances:
+        return CommandOutput.error("No GitLab instances configured")
+
+    # Resolve instance name
+    effective_name = instance_name or gitlab_config.default_instance
+    if not effective_name:
+        return CommandOutput.error(
+            "No instance specified and no default instance configured"
+        )
+
+    schema_instance = gitlab_config.instances.get(effective_name)
+    if not schema_instance:
+        available = ", ".join(gitlab_config.instances.keys())
+        return CommandOutput.error(
+            f"Instance '{effective_name}' not found.\n"
+            f"Available instances: {available}"
+        )
+
+    # Resolve token
+    token = None
+    if schema_instance.token:
+        token = schema_instance.token
+    elif schema_instance.token_env:
+        token = os.environ.get(schema_instance.token_env)
+
+    if not token:
+        env_hint = f" (set {schema_instance.token_env})" if schema_instance.token_env else ""
+        return CommandOutput.error(
+            f"No token configured for instance '{effective_name}'{env_hint}"
+        )
+
+    # Convert to VCS GitLabInstance for client
+    vcs_instance = GitLabInstance(
+        url=schema_instance.url,
+        token=token,
+    )
+
+    # Test connection
+    client = GitLabClient(vcs_instance)
+    try:
+        user = await client.get_current_user()
+        await client.close()
+        return CommandOutput.success(
+            message=(
+                f"Connected to {schema_instance.url}\n"
+                f"Authenticated as: @{user['username']} ({user['name']})"
+            ),
+            data={
+                "instance": effective_name,
+                "url": schema_instance.url,
+                "username": user["username"],
+                "name": user["name"],
+                "user_id": user.get("id"),
+            },
+        )
+    except GitLabAPIError as e:
+        await client.close()
+        return CommandOutput.error(
+            f"Connection to '{effective_name}' failed: {e.message}"
+        )
+    except Exception as e:
+        await client.close()
+        return CommandOutput.error(
+            f"Connection to '{effective_name}' failed: {e}"
+        )
+
+
+def _gitlab_skill_reference() -> CommandOutput:
+    """Return GitLab skills reference with actions and examples."""
+    reference = """GitLab Skills Reference
+=======================
+
+All GitLab skills require TRUSTED or YOLO permission level.
+Project can often be auto-detected from git remote.
+
+PHASE 1: FOUNDATION
+--------------------
+
+gitlab_repo - Repository operations
+  Actions: get, list, fork, search
+  Examples:
+    gitlab_repo(action="get", project="my-org/my-repo")
+    gitlab_repo(action="list", owned=True, limit=10)
+    gitlab_repo(action="search", search="keyword")
+    gitlab_repo(action="fork", project="other/repo", namespace="my-org")
+
+gitlab_issue - Issue management
+  Actions: list, get, create, update, close, reopen, comment
+  Examples:
+    gitlab_issue(action="list", project="my-org/repo", state="opened")
+    gitlab_issue(action="get", project="my-org/repo", iid=42)
+    gitlab_issue(action="create", project="my-org/repo", title="Bug report", labels=["bug"])
+    gitlab_issue(action="comment", project="my-org/repo", iid=42, body="Fixed in MR !5")
+
+gitlab_mr - Merge request operations
+  Actions: list, get, create, update, merge, close, reopen, comment, diff, commits, pipelines
+  Examples:
+    gitlab_mr(action="list", project="my-org/repo", state="opened")
+    gitlab_mr(action="create", project="my-org/repo", source_branch="feature", target_branch="main", title="Add feature")
+    gitlab_mr(action="diff", project="my-org/repo", iid=10)
+    gitlab_mr(action="merge", project="my-org/repo", iid=10, squash=True)
+
+gitlab_label - Label management
+  Actions: list, get, create, update, delete
+  Examples:
+    gitlab_label(action="list", project="my-org/repo")
+    gitlab_label(action="create", project="my-org/repo", name="priority:high", color="#FF0000")
+
+gitlab_branch - Branch operations
+  Actions: list, get, create, delete, protect, unprotect, list-protected
+  Examples:
+    gitlab_branch(action="list", project="my-org/repo")
+    gitlab_branch(action="create", project="my-org/repo", name="feature-x", ref="main")
+    gitlab_branch(action="protect", project="my-org/repo", name="main", push_level="maintainer")
+
+gitlab_tag - Tag operations
+  Actions: list, get, create, delete, protect, unprotect, list-protected
+  Examples:
+    gitlab_tag(action="list", project="my-org/repo")
+    gitlab_tag(action="create", project="my-org/repo", name="v1.0.0", ref="main", message="Release 1.0")
+
+PHASE 2: PROJECT MANAGEMENT
+---------------------------
+
+gitlab_epic - Epic management (group-level, Premium)
+  Actions: list, get, create, update, close, reopen, add-issue, remove-issue, list-issues
+  Examples:
+    gitlab_epic(action="list", group="my-group")
+    gitlab_epic(action="create", group="my-group", title="Q1 Goals", start_date="2026-01-01")
+
+gitlab_iteration - Iteration/sprint management (group-level, Premium)
+  Actions: list, get, create, update, delete, list-cadences, create-cadence
+  Examples:
+    gitlab_iteration(action="list", group="my-group", state="current")
+    gitlab_iteration(action="create", group="my-group", title="Sprint 1", start_date="2026-01-01", due_date="2026-01-14")
+
+gitlab_milestone - Milestone operations (project or group)
+  Actions: list, get, create, update, close, issues, merge-requests
+  Examples:
+    gitlab_milestone(action="list", project="my-org/repo", state="active")
+    gitlab_milestone(action="create", project="my-org/repo", title="v2.0", due_date="2026-03-01")
+    gitlab_milestone(action="issues", project="my-org/repo", milestone_id=5)
+
+gitlab_board - Issue board management
+  Actions: list, get, create, update, delete, list-lists, create-list, update-list, delete-list
+  Examples:
+    gitlab_board(action="list", project="my-org/repo")
+    gitlab_board(action="list-lists", project="my-org/repo", board_id=1)
+
+gitlab_time - Time tracking on issues/MRs
+  Actions: estimate, reset-estimate, spend, reset-spent, stats
+  Examples:
+    gitlab_time(action="estimate", project="my-org/repo", iid=42, target_type="issue", duration="2d")
+    gitlab_time(action="spend", project="my-org/repo", iid=42, target_type="issue", duration="4h")
+    gitlab_time(action="stats", project="my-org/repo", iid=42, target_type="issue")
+
+PHASE 3: CODE REVIEW
+--------------------
+
+gitlab_approval - MR approval management
+  Actions: status, approve, unapprove, rules, create-rule, delete-rule
+  Examples:
+    gitlab_approval(action="status", project="my-org/repo", iid=10)
+    gitlab_approval(action="approve", project="my-org/repo", iid=10)
+    gitlab_approval(action="rules", project="my-org/repo")
+
+gitlab_draft - Draft notes for batch MR reviews
+  Actions: list, add, update, delete, publish
+  Examples:
+    gitlab_draft(action="list", project="my-org/repo", iid=10)
+    gitlab_draft(action="add", project="my-org/repo", iid=10, body="LGTM!")
+    gitlab_draft(action="add", project="my-org/repo", iid=10, body="Fix this", path="src/main.py", line=42)
+    gitlab_draft(action="publish", project="my-org/repo", iid=10)
+
+gitlab_discussion - Threaded discussions on MRs/issues
+  Actions: list, get, create, reply, resolve, unresolve
+  Examples:
+    gitlab_discussion(action="list", project="my-org/repo", iid=10, target_type="mr")
+    gitlab_discussion(action="create", project="my-org/repo", iid=10, target_type="mr", body="Question about this change")
+    gitlab_discussion(action="resolve", project="my-org/repo", iid=10, target_type="mr", discussion_id="abc123")
+
+PHASE 4: CI/CD
+--------------
+
+gitlab_pipeline - Pipeline operations
+  Actions: list, get, create, retry, cancel, delete, jobs, variables
+  Examples:
+    gitlab_pipeline(action="list", project="my-org/repo", status="failed")
+    gitlab_pipeline(action="create", project="my-org/repo", ref="main")
+    gitlab_pipeline(action="retry", project="my-org/repo", pipeline_id=12345)
+    gitlab_pipeline(action="jobs", project="my-org/repo", pipeline_id=12345)
+
+gitlab_job - Job operations
+  Actions: list, get, log, retry, cancel, play, erase
+  Examples:
+    gitlab_job(action="list", project="my-org/repo", scope="failed")
+    gitlab_job(action="log", project="my-org/repo", job_id=67890, tail=100)
+    gitlab_job(action="play", project="my-org/repo", job_id=67890)
+
+gitlab_artifact - Artifact management
+  Actions: download, download-file, browse, delete, keep, download-ref
+  Examples:
+    gitlab_artifact(action="browse", project="my-org/repo", job_id=67890)
+    gitlab_artifact(action="download", project="my-org/repo", job_id=67890, output_path="./artifacts.zip")
+    gitlab_artifact(action="download-ref", project="my-org/repo", ref="main", job_name="build", output_path="./build.zip")
+
+gitlab_variable - CI/CD variable management (project or group)
+  Actions: list, get, create, update, delete
+  Examples:
+    gitlab_variable(action="list", project="my-org/repo")
+    gitlab_variable(action="create", project="my-org/repo", key="API_KEY", value="secret", masked=True, protected=True)
+
+PHASE 5: CONFIGURATION
+----------------------
+
+gitlab_deploy_key - Deploy key management
+  Actions: list, get, create, update, delete, enable
+  Examples:
+    gitlab_deploy_key(action="list", project="my-org/repo")
+    gitlab_deploy_key(action="create", project="my-org/repo", title="CI Key", key="ssh-rsa AAA...", can_push=False)
+
+gitlab_deploy_token - Deploy token management (project or group)
+  Actions: list, get, create, delete
+  Examples:
+    gitlab_deploy_token(action="list", project="my-org/repo")
+    gitlab_deploy_token(action="create", project="my-org/repo", name="registry-token", scopes=["read_registry"])
+
+gitlab_feature_flag - Feature flag management (Premium)
+  Actions: list, get, create, update, delete, list-user-lists, create-user-list, update-user-list, delete-user-list
+  Examples:
+    gitlab_feature_flag(action="list", project="my-org/repo")
+    gitlab_feature_flag(action="create", project="my-org/repo", name="new_feature", active=False)
+    gitlab_feature_flag(action="update", project="my-org/repo", name="new_feature", active=True)
+
+---
+Note: Skills marked (Premium) require GitLab Premium subscription.
+Use /gitlab test to verify your GitLab connection."""
+
+    return CommandOutput.success(message=reference)

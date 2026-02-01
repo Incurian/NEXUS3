@@ -13,9 +13,17 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from nexus3.core.policy import PermissionLevel
+
+# Type alias for target restrictions on tools like nexus_send
+# - None: No restriction - can send to any agent
+# - "parent": Can only send to parent_agent_id
+# - "children": Can only send to agents in child_agent_ids
+# - "family": Can send to parent OR children
+# - list[str]: Explicit allowlist of agent IDs
+TargetRestriction = list[str] | Literal["parent"] | Literal["children"] | Literal["family"] | None
 
 
 @dataclass
@@ -37,6 +45,9 @@ class ToolPermission:
     allowed_paths: list[Path] | None = None
     timeout: float | None = None  # None = use default
     requires_confirmation: bool | None = None  # None = use policy default
+    # Target restrictions for communication tools (e.g., nexus_send)
+    # None = no restriction, "parent"/"children"/"family" or list of agent IDs
+    allowed_targets: TargetRestriction = None
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize to dict for RPC transport."""
@@ -47,6 +58,8 @@ class ToolPermission:
             result["timeout"] = self.timeout
         if self.requires_confirmation is not None:
             result["requires_confirmation"] = self.requires_confirmation
+        if self.allowed_targets is not None:
+            result["allowed_targets"] = self.allowed_targets
         return result
 
     @classmethod
@@ -58,6 +71,7 @@ class ToolPermission:
             allowed_paths=[Path(p) for p in allowed] if allowed is not None else None,
             timeout=data.get("timeout"),
             requires_confirmation=data.get("requires_confirmation"),
+            allowed_targets=data.get("allowed_targets"),
         )
 
 
@@ -137,7 +151,7 @@ def _create_builtin_presets() -> dict[str, PermissionPreset]:
                 "shell_UNSAFE": ToolPermission(enabled=False),
                 "run_python": ToolPermission(enabled=False),
                 # Agent management disabled
-                "nexus_send": ToolPermission(enabled=False),
+                "nexus_send": ToolPermission(enabled=True, allowed_targets="parent"),
                 "nexus_create": ToolPermission(enabled=False),
                 "nexus_destroy": ToolPermission(enabled=False),
                 "nexus_shutdown": ToolPermission(enabled=False),
@@ -173,10 +187,6 @@ def load_custom_presets_from_config(
     for preset_name, preset_config in config_presets.items():
         extends = preset_config.get("extends")
         if extends:
-            # Handle legacy "worker" reference
-            if extends == "worker":
-                extends = "sandboxed"
-
             if extends in builtin:
                 base = builtin[extends]
             elif extends in custom:

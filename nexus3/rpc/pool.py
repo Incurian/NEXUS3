@@ -42,10 +42,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from nexus3.clipboard import CLIPBOARD_PRESETS, ClipboardManager
 from nexus3.context import ContextConfig, ContextLoader, ContextManager, LoadedContext
 from nexus3.core.permissions import (
     AgentPermissions,
     PermissionDelta,
+    PermissionLevel,
     PermissionPreset,
     resolve_preset,
 )
@@ -53,8 +55,15 @@ from nexus3.mcp.registry import MCPServerRegistry
 from nexus3.rpc.dispatcher import Dispatcher
 from nexus3.rpc.log_multiplexer import LogMultiplexer
 from nexus3.session import LogConfig, LogStream, Session, SessionLogger
-from nexus3.session.persistence import SavedSession, deserialize_messages
+from nexus3.session.persistence import (
+    SavedSession,
+    deserialize_clipboard_entries,
+    deserialize_messages,
+)
 from nexus3.skill import ServiceContainer, SkillRegistry
+from nexus3.skill.vcs import register_vcs_skills
+from nexus3.skill.vcs.config import GitLabConfig as VCSGitLabConfig
+from nexus3.skill.vcs.config import GitLabInstance
 
 if TYPE_CHECKING:
     from nexus3.config.schema import Config
@@ -66,6 +75,38 @@ if TYPE_CHECKING:
 # Maximum nesting depth for agent creation
 # 0 = root, 1 = child, 2 = grandchild, etc.
 MAX_AGENT_DEPTH = 5
+
+
+def _convert_gitlab_config(config: Config) -> VCSGitLabConfig | None:
+    """Convert schema GitLabConfig to VCS GitLabConfig.
+
+    Returns None if no GitLab instances are configured or if gitlab
+    is not properly configured (e.g., mock in tests).
+    """
+    try:
+        schema_config = config.gitlab
+        # Guard against mocks or missing instances attribute
+        if not hasattr(schema_config, "instances") or not isinstance(schema_config.instances, dict):
+            return None
+        if not schema_config.instances:
+            return None
+
+        # Convert each instance
+        instances: dict[str, GitLabInstance] = {}
+        for name, inst in schema_config.instances.items():
+            instances[name] = GitLabInstance(
+                url=inst.url,
+                token=inst.token,
+                token_env=inst.token_env,
+            )
+
+        return VCSGitLabConfig(
+            instances=instances,
+            default_instance=schema_config.default_instance,
+        )
+    except (AttributeError, TypeError, ValueError):
+        # Handle any conversion errors gracefully (e.g., mocked config in tests)
+        return None
 
 
 class AuthorizationError(Exception):
@@ -197,7 +238,7 @@ class SharedComponents:
     """
 
     config: Config
-    provider_registry: "ProviderRegistry"
+    provider_registry: ProviderRegistry
     base_log_dir: Path
     base_context: LoadedContext
     context_loader: ContextLoader
@@ -275,6 +316,7 @@ class Agent:
     session: Session
     dispatcher: Dispatcher
     created_at: datetime = field(default_factory=datetime.now)
+    repl_connected: bool = False
 
 
 class AgentPool:
@@ -335,7 +377,7 @@ class AgentPool:
         # Set via set_global_dispatcher() after GlobalDispatcher is created
         self._global_dispatcher: GlobalDispatcher | None = None
 
-    def set_global_dispatcher(self, dispatcher: "GlobalDispatcher") -> None:
+    def set_global_dispatcher(self, dispatcher: GlobalDispatcher) -> None:
         """Set the global dispatcher for in-process AgentAPI.
 
         This enables skills to use DirectAgentAPI instead of HTTP for
@@ -452,19 +494,6 @@ class AgentPool:
         # Resolve model name/alias to full settings
         resolved_model = self._shared.config.resolve_model(effective_config.model)
 
-        # Create context manager with model's context window
-        context_config = ContextConfig(
-            max_tokens=resolved_model.context_window,
-        )
-        context = ContextManager(
-            config=context_config,
-            logger=logger,
-        )
-        context.set_system_prompt(system_prompt)
-
-        # Add session start timestamp as first message in history
-        context.add_session_start_message()
-
         # Create skill registry with services
         # Import here to avoid circular import (skills -> client -> rpc -> pool)
         from nexus3.skill.builtin import register_builtin_skills
@@ -530,6 +559,43 @@ class AgentPool:
         agent_cwd = effective_config.cwd or Path.cwd()
         services.register("cwd", agent_cwd)
 
+        # Create ClipboardManager based on permission level
+        permission_level = permissions.effective_policy.level
+        if permission_level == PermissionLevel.YOLO:
+            clipboard_perms = CLIPBOARD_PRESETS["yolo"]
+        elif permission_level == PermissionLevel.TRUSTED:
+            clipboard_perms = CLIPBOARD_PRESETS["trusted"]
+        else:  # SANDBOXED or unknown - fail safe
+            clipboard_perms = CLIPBOARD_PRESETS["sandboxed"]
+
+        clipboard_manager = ClipboardManager(
+            agent_id=effective_id,
+            cwd=agent_cwd,
+            permissions=clipboard_perms,
+        )
+        services.register("clipboard_manager", clipboard_manager)
+
+        # Create context manager with model's context window
+        context_config = ContextConfig(
+            max_tokens=resolved_model.context_window,
+        )
+        context = ContextManager(
+            config=context_config,
+            logger=logger,
+            agent_id=effective_id,
+            clipboard_manager=clipboard_manager,
+            clipboard_config=self._shared.config.clipboard,
+        )
+        context.set_system_prompt(system_prompt)
+
+        # Add session start timestamp as first message in history
+        context.add_session_start_message()
+
+        # Register GitLab config for VCS skills
+        gitlab_config = _convert_gitlab_config(self._shared.config)
+        if gitlab_config:
+            services.register("gitlab_config", gitlab_config)
+
         # Register AgentAPI for in-process communication (bypasses HTTP)
         # Pass effective_id as requester_id for authorization checks (H5 fix)
         if self._global_dispatcher is not None:
@@ -540,6 +606,9 @@ class AgentPool:
         registry = SkillRegistry(services)
         register_builtin_skills(registry)
 
+        # Register VCS skills (GitLab, GitHub) if configured
+        register_vcs_skills(registry, services, permissions)
+
         # SECURITY FIX: Inject only enabled tool definitions into context
         # Disabled tools should not be visible to the LLM at all
         tool_defs = registry.get_definitions_for_permissions(permissions)
@@ -548,7 +617,7 @@ class AgentPool:
         # Only include tools from MCP servers visible to this agent
         from nexus3.mcp.permissions import can_use_mcp
         if can_use_mcp(permissions):
-            for mcp_skill in self._shared.mcp_registry.get_all_skills(agent_id=effective_id):
+            for mcp_skill in await self._shared.mcp_registry.get_all_skills(agent_id=effective_id):
                 # Check if MCP tool is disabled in permissions
                 tool_perm = permissions.tool_permissions.get(mcp_skill.name)
                 if tool_perm is not None and not tool_perm.enabled:
@@ -592,6 +661,7 @@ class AgentPool:
             context=context,
             agent_id=effective_id,
             log_multiplexer=self._log_multiplexer,
+            pool=self,
         )
 
         # Create agent instance
@@ -683,7 +753,7 @@ class AgentPool:
     async def get_or_restore(
         self,
         agent_id: str,
-        session_manager: "SessionManager | None" = None,
+        session_manager: SessionManager | None = None,
     ) -> Agent | None:
         """Get agent, restoring from saved session if needed.
 
@@ -763,21 +833,8 @@ class AgentPool:
         # Use system prompt from saved session
         system_prompt = saved.system_prompt
 
-        # Create context manager with saved model's context window (or default if not saved)
+        # Resolve model for context window
         resolved_model = self._shared.config.resolve_model(saved.model_alias)
-        context_config = ContextConfig(
-            max_tokens=resolved_model.context_window,
-        )
-        context = ContextManager(
-            config=context_config,
-            logger=logger,
-        )
-        context.set_system_prompt(system_prompt)
-
-        # Restore conversation history from saved session
-        messages = deserialize_messages(saved.messages)
-        for msg in messages:
-            context._messages.append(msg)
 
         # Create skill registry with services
         from nexus3.skill.builtin import register_builtin_skills
@@ -811,6 +868,50 @@ class AgentPool:
         agent_cwd = Path(saved.working_directory) if saved.working_directory else Path.cwd()
         services.register("cwd", agent_cwd)
 
+        # Create ClipboardManager based on permission level
+        permission_level = permissions.effective_policy.level
+        if permission_level == PermissionLevel.YOLO:
+            clipboard_perms = CLIPBOARD_PRESETS["yolo"]
+        elif permission_level == PermissionLevel.TRUSTED:
+            clipboard_perms = CLIPBOARD_PRESETS["trusted"]
+        else:  # SANDBOXED or unknown - fail safe
+            clipboard_perms = CLIPBOARD_PRESETS["sandboxed"]
+
+        clipboard_manager = ClipboardManager(
+            agent_id=agent_id,
+            cwd=agent_cwd,
+            permissions=clipboard_perms,
+        )
+        services.register("clipboard_manager", clipboard_manager)
+
+        # Restore agent-scope clipboard entries if present
+        if saved.clipboard_agent_entries:
+            entries = deserialize_clipboard_entries(saved.clipboard_agent_entries)
+            clipboard_manager.restore_agent_entries(entries)
+
+        # Create context manager with saved model's context window
+        context_config = ContextConfig(
+            max_tokens=resolved_model.context_window,
+        )
+        context = ContextManager(
+            config=context_config,
+            logger=logger,
+            agent_id=agent_id,
+            clipboard_manager=clipboard_manager,
+            clipboard_config=self._shared.config.clipboard,
+        )
+        context.set_system_prompt(system_prompt)
+
+        # Restore conversation history from saved session
+        messages = deserialize_messages(saved.messages)
+        for msg in messages:
+            context._messages.append(msg)
+
+        # Register GitLab config for VCS skills
+        gitlab_config = _convert_gitlab_config(self._shared.config)
+        if gitlab_config:
+            services.register("gitlab_config", gitlab_config)
+
         # Register AgentAPI for in-process communication (bypasses HTTP)
         # Pass agent_id as requester_id for authorization checks (H5 fix)
         if self._global_dispatcher is not None:
@@ -821,6 +922,9 @@ class AgentPool:
         registry = SkillRegistry(services)
         register_builtin_skills(registry)
 
+        # Register VCS skills (GitLab, GitHub) if configured
+        register_vcs_skills(registry, services, permissions)
+
         # SECURITY FIX: Inject only enabled tool definitions into context
         # Disabled tools should not be visible to the LLM at all
         tool_defs = registry.get_definitions_for_permissions(permissions)
@@ -829,7 +933,7 @@ class AgentPool:
         # Only include tools from MCP servers visible to this agent
         from nexus3.mcp.permissions import can_use_mcp
         if can_use_mcp(permissions):
-            for mcp_skill in self._shared.mcp_registry.get_all_skills(agent_id=agent_id):
+            for mcp_skill in await self._shared.mcp_registry.get_all_skills(agent_id=agent_id):
                 # Check if MCP tool is disabled in permissions
                 tool_perm = permissions.tool_permissions.get(mcp_skill.name)
                 if tool_perm is not None and not tool_perm.enabled:
@@ -873,6 +977,7 @@ class AgentPool:
             context=context,
             agent_id=agent_id,
             log_multiplexer=self._log_multiplexer,
+            pool=self,
         )
 
         # Create agent instance with saved creation time if available
@@ -995,6 +1100,11 @@ class AgentPool:
             # Unregister from log multiplexer
             self._log_multiplexer.unregister(agent_id)
 
+            # Clean up clipboard manager (closes DB connections)
+            clipboard_manager: ClipboardManager | None = agent.services.get("clipboard_manager")
+            if clipboard_manager:
+                clipboard_manager.close()
+
             # Clean up logger (closes DB connection, flushes files)
             agent.logger.close()
 
@@ -1085,6 +1195,29 @@ class AgentPool:
                 "write_paths": write_paths,
             })
         return result
+
+    def set_repl_connected(self, agent_id: str, connected: bool) -> None:
+        """Set REPL connection state for an agent.
+
+        Args:
+            agent_id: The agent to update.
+            connected: True if REPL is connected, False otherwise.
+        """
+        agent = self._agents.get(agent_id)
+        if agent:
+            agent.repl_connected = connected
+
+    def is_repl_connected(self, agent_id: str) -> bool:
+        """Check if REPL is connected to an agent.
+
+        Args:
+            agent_id: The agent to check.
+
+        Returns:
+            True if REPL is connected, False otherwise.
+        """
+        agent = self._agents.get(agent_id)
+        return agent.repl_connected if agent else False
 
     @property
     def should_shutdown(self) -> bool:

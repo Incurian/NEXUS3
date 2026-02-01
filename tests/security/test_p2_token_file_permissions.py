@@ -261,3 +261,45 @@ class TestInsecureTokenFileError:
         error = InsecureTokenFileError(token_file, 0o755)
         assert error.path == token_file
         assert error.mode == 0o755
+
+
+class TestWindowsPermissionSkip:
+    """Tests for Windows permission check bypass.
+
+    On Windows, POSIX permission bits (st_mode) are meaningless since Windows
+    uses ACLs. The permission check is skipped on Windows and always returns True.
+    """
+
+    @pytest.mark.windows_mock
+    def test_permission_check_skipped_on_windows(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """On Windows, permission check always returns True."""
+        # Mock sys.platform to simulate Windows
+        import sys
+        monkeypatch.setattr(sys, "platform", "win32")
+
+        # Create token file - permissions don't matter on Windows
+        token_file = tmp_path / "token"
+        token_file.write_text("test_token")
+
+        # Even without setting any specific permissions, should return True
+        result = check_token_file_permissions(token_file, strict=True)
+        assert result is True
+
+    @pytest.mark.windows_mock
+    def test_permission_check_skipped_even_if_insecure_on_windows(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """On Windows, 'insecure' permissions don't trigger warnings."""
+        import sys
+        monkeypatch.setattr(sys, "platform", "win32")
+
+        token_file = tmp_path / "token"
+        token_file.write_text("test_token")
+        # Set permissions that would be insecure on Unix
+        os.chmod(token_file, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)  # 0644
+
+        # On Windows, this should still return True (permissions ignored)
+        result = check_token_file_permissions(token_file, strict=True)
+        assert result is True

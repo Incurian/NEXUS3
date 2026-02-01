@@ -5,9 +5,11 @@ These tests verify that:
 2. Clients are reused across requests
 3. aclose() properly closes clients
 4. ProviderRegistry closes all providers on aclose()
+5. Windows certifi fallback works (SSL cert bundle missing)
 """
 
 import os
+import ssl
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -237,3 +239,70 @@ class TestProviderRegistryLifecycle:
 
         # Cache should be cleared
         assert len(registry.cached_providers) == 0
+
+
+class TestCertifiFallback:
+    """Tests for Windows certifi fallback (SSL cert bundle missing)."""
+
+    @pytest.fixture
+    def provider(self) -> OpenRouterProvider:
+        """Create a provider for testing."""
+        config = ProviderConfig(api_key_env="TEST_CERTIFI_KEY")
+        os.environ["TEST_CERTIFI_KEY"] = "test-key"
+        try:
+            provider = OpenRouterProvider(config, "test-model")
+        finally:
+            os.environ.pop("TEST_CERTIFI_KEY", None)
+        return provider
+
+    @pytest.mark.asyncio
+    @pytest.mark.windows_mock
+    async def test_certifi_fallback_on_file_not_found(
+        self, provider: OpenRouterProvider
+    ) -> None:
+        """Provider falls back to system certs when certifi bundle is missing."""
+        # Mock httpx.AsyncClient to raise FileNotFoundError on first call (simulating
+        # missing certifi bundle), then succeed on second call with ssl.SSLContext
+        call_count = 0
+        original_init = httpx.AsyncClient.__init__
+
+        def patched_init(self: httpx.AsyncClient, **kwargs: object) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1 and not isinstance(kwargs.get("verify"), ssl.SSLContext):
+                raise FileNotFoundError("certifi bundle not found")
+            return original_init(self, **kwargs)
+
+        with patch.object(httpx.AsyncClient, "__init__", patched_init):
+            # Should not raise - should fall back to SSLContext
+            client = await provider._ensure_client()
+
+            assert client is not None
+            assert isinstance(client, httpx.AsyncClient)
+            # Two calls: first fails, second succeeds with SSLContext
+            assert call_count == 2
+
+        # Clean up
+        await provider.aclose()
+
+    @pytest.mark.asyncio
+    @pytest.mark.windows_mock
+    async def test_certifi_fallback_uses_ssl_context(
+        self, provider: OpenRouterProvider
+    ) -> None:
+        """Fallback creates client with ssl.SSLContext for system certs."""
+        created_with_ssl_context = False
+
+        def patched_init(self: httpx.AsyncClient, **kwargs: object) -> None:
+            nonlocal created_with_ssl_context
+            if isinstance(kwargs.get("verify"), ssl.SSLContext):
+                created_with_ssl_context = True
+                raise FileNotFoundError("Stop here to verify SSLContext was used")
+            raise FileNotFoundError("certifi bundle not found")
+
+        with patch.object(httpx.AsyncClient, "__init__", patched_init):
+            with pytest.raises(FileNotFoundError, match="Stop here"):
+                await provider._ensure_client()
+
+            # Verify that on fallback, SSLContext was passed
+            assert created_with_ssl_context

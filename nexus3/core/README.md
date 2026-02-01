@@ -164,13 +164,30 @@ Typed exception classes with optional error sanitization.
 
 **Error Sanitization:**
 
+`sanitize_error_for_agent()` strips sensitive information from errors before showing to agents. It handles both Unix and Windows path patterns:
+
+| Pattern | Example | Sanitized To |
+|---------|---------|--------------|
+| Unix home | `/home/alice/secrets.txt` | `/home/[user]` |
+| Unix paths | `/var/log/app.log` | `[path]` |
+| Windows user | `C:\Users\alice\Documents` | `C:\Users\[user]` |
+| AppData | `C:\Users\alice\AppData\Local\...` | `C:\Users\[user]\AppData\[...]` |
+| UNC paths | `\\server\share\file.txt` | `[server]\\[share]` |
+| Domain\user | `DOMAIN\alice` | `[domain]\\[user]` |
+| Relative user paths | `..\Users\alice\secrets.txt` | `Users\[user]` |
+
 ```python
 from nexus3.core.errors import sanitize_error_for_agent
 
-# Sanitize errors before showing to agents (removes paths, usernames)
+# Unix paths
 error = "/home/alice/secret/file.txt: permission denied"
 safe = sanitize_error_for_agent(error, "write_file")
 # Returns: "Permission denied for write_file"
+
+# Windows paths (both backslash and forward slash)
+error = "C:\\Users\\alice\\secrets.txt: access denied"
+safe = sanitize_error_for_agent(error, "read_file")
+# Returns: "C:\\Users\\[user]: access denied"
 ```
 
 ---
@@ -256,11 +273,28 @@ Named permission configurations and tool permissions.
 
 | Export | Description |
 |--------|-------------|
-| `ToolPermission` | Per-tool config: `enabled`, `allowed_paths`, `timeout`, `requires_confirmation` |
+| `ToolPermission` | Per-tool config: `enabled`, `allowed_paths`, `timeout`, `requires_confirmation`, `allowed_targets` |
 | `PermissionPreset` | Named preset: `name`, `level`, `description`, paths, `tool_permissions` |
 | `PermissionDelta` | Changes to apply: `disable_tools`, `enable_tools`, `allowed_paths`, etc. |
+| `TargetRestriction` | Type alias for `allowed_targets` values |
 | `get_builtin_presets()` | Returns dict of yolo/trusted/sandboxed presets |
 | `load_custom_presets_from_config()` | Load custom presets from config dict |
+
+**TargetRestriction Type:**
+
+The `TargetRestriction` type alias defines valid values for `ToolPermission.allowed_targets`:
+
+```python
+TargetRestriction = list[str] | Literal["parent"] | Literal["children"] | Literal["family"] | None
+```
+
+| Value | Meaning |
+|-------|---------|
+| `None` | No restriction - can target any agent |
+| `"parent"` | Can only target the agent's parent_agent_id |
+| `"children"` | Can only target agents in child_agent_ids |
+| `"family"` | Can target parent OR children |
+| `["id1", "id2"]` | Explicit allowlist of agent IDs |
 
 **Built-in Presets:**
 
@@ -268,7 +302,7 @@ Named permission configurations and tool permissions.
 |--------|-------|-------------|
 | `yolo` | YOLO | Full access, no confirmations |
 | `trusted` | TRUSTED | CWD auto-allowed, prompts for other paths |
-| `sandboxed` | SANDBOXED | No execution, no agent management, sandbox only |
+| `sandboxed` | SANDBOXED | No execution, limited agent management, sandbox only |
 
 ```python
 from nexus3.core.presets import get_builtin_presets, ToolPermission
@@ -279,6 +313,11 @@ sandboxed = presets["sandboxed"]
 # Sandboxed disables these tools
 assert sandboxed.tool_permissions["bash_safe"].enabled is False
 assert sandboxed.tool_permissions["nexus_create"].enabled is False
+
+# But nexus_send is enabled with parent-only restriction
+send_perm = sandboxed.tool_permissions["nexus_send"]
+assert send_perm.enabled is True
+assert send_perm.allowed_targets == "parent"
 ```
 
 ---
@@ -328,7 +367,7 @@ allowances.is_mcp_server_allowed("github")  # True (all tools)
 
 ### paths.py - Path Validation
 
-Universal path validation with sandboxing.
+Universal path validation with sandboxing, plus cross-platform utilities.
 
 | Export | Description |
 |--------|-------------|
@@ -339,6 +378,8 @@ Universal path validation with sandboxing.
 | `display_path()` | Format path for display (relative to cwd or ~) |
 | `get_default_sandbox()` | Returns `[Path.cwd()]` |
 | `atomic_write_text()` | Write file atomically via temp + rename |
+| `atomic_write_bytes()` | Write binary data atomically (preserves exact bytes) |
+| `detect_line_ending()` | Detect CRLF/LF/CR line ending style |
 
 **Path Semantics:**
 
@@ -348,8 +389,14 @@ Universal path validation with sandboxing.
 | `[]` | Deny all paths (nothing allowed) |
 | `[Path(...)]` | Only paths within listed directories |
 
+**Cross-Platform Support:**
+
+- Path normalization handles both Windows backslashes (`\`) and forward slashes (`/`)
+- `detect_line_ending()` returns `"\r\n"` (CRLF), `"\n"` (LF), or `"\r"` (CR)
+- `atomic_write_bytes()` preserves exact byte content for binary files
+
 ```python
-from nexus3.core.paths import validate_path, PathSecurityError
+from nexus3.core.paths import validate_path, detect_line_ending, atomic_write_bytes
 from pathlib import Path
 
 # Unrestricted mode
@@ -364,6 +411,13 @@ try:
     )
 except PathSecurityError as e:
     print(f"Blocked: {e.reason}")
+
+# Detect and preserve line endings
+content = Path("file.txt").read_text()
+line_ending = detect_line_ending(content)  # "\r\n" on Windows files
+
+# Write binary data atomically
+atomic_write_bytes(Path("output.bin"), data)
 ```
 
 ---
@@ -541,6 +595,47 @@ normalize_tool_name("uber-tool")  # "uber_tool"
 build_mcp_skill_name("github", "list-repos")  # "mcp_github_list_repos"
 build_mcp_skill_name("evil/../path", "../../etc")  # "mcp_evil_path_etc"
 ```
+
+---
+
+### process.py - Cross-Platform Process Termination
+
+Provides robust process tree termination that works on both Unix and Windows.
+
+| Export | Description |
+|--------|-------------|
+| `terminate_process_tree()` | Terminate process and all children gracefully, then forcefully |
+| `GRACEFUL_TIMEOUT` | Default timeout (2.0 seconds) |
+| `WINDOWS_CREATIONFLAGS` | Subprocess flags for Windows (0 on Unix) |
+
+**Termination Behavior:**
+
+| Platform | Graceful Step | Forceful Step |
+|----------|---------------|---------------|
+| Unix | SIGTERM to process group | SIGKILL to process group |
+| Windows | CTRL_BREAK_EVENT | `taskkill /T /F`, then `process.kill()` |
+
+```python
+from nexus3.core.process import terminate_process_tree, WINDOWS_CREATIONFLAGS
+import asyncio
+
+# Terminate process tree with grace period
+await terminate_process_tree(process, graceful_timeout=2.0)
+
+# Create subprocess without visible window on Windows
+process = await asyncio.create_subprocess_exec(
+    "git", "status",
+    creationflags=WINDOWS_CREATIONFLAGS,  # 0 on Unix, flags on Windows
+)
+```
+
+**WINDOWS_CREATIONFLAGS:**
+
+On Windows, this combines `CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`:
+- `CREATE_NEW_PROCESS_GROUP`: Enables CTRL_BREAK_EVENT for graceful termination
+- `CREATE_NO_WINDOW`: Prevents console window from appearing
+
+On Unix, this is `0` (no-op), making it safe to use unconditionally.
 
 ---
 
@@ -775,7 +870,7 @@ StreamComplete(Message)
 
 ## Dependencies
 
-- **Stdlib**: asyncio, dataclasses, enum, ipaddress, pathlib, re, socket, stat, tempfile, unicodedata
+- **Stdlib**: asyncio, dataclasses, enum, ipaddress, logging, os, pathlib, re, signal, socket, stat, subprocess, sys, tempfile, unicodedata
 - **PyPI**: jsonschema (validation), rich (markup escaping)
 
 ---

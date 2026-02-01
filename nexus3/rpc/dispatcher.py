@@ -9,6 +9,7 @@ from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 
 from nexus3.core.cancel import CancellationToken
+from nexus3.core.permissions import PermissionLevel
 from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
 from nexus3.rpc.types import Request, Response
 from nexus3.session import Session
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from nexus3.context.manager import ContextManager
     from nexus3.rpc.log_multiplexer import LogMultiplexer
+    from nexus3.rpc.pool import AgentPool
 
 # Type alias for handler functions
 Handler = Callable[[dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
@@ -39,6 +41,7 @@ class Dispatcher:
         context: ContextManager | None = None,
         agent_id: str | None = None,
         log_multiplexer: LogMultiplexer | None = None,
+        pool: "AgentPool | None" = None,
     ) -> None:
         """Initialize the dispatcher.
 
@@ -47,11 +50,13 @@ class Dispatcher:
             context: Optional ContextManager for token/context info.
             agent_id: The agent's ID for log routing (required if log_multiplexer provided).
             log_multiplexer: Optional multiplexer for routing raw logs to correct agent.
+            pool: Optional AgentPool for REPL connection state checks.
         """
         self._session = session
         self._context = context
         self._agent_id = agent_id
         self._log_multiplexer = log_multiplexer
+        self._pool = pool
         self._should_shutdown = False
         self._active_requests: dict[str, CancellationToken] = {}
         self._turn_lock = asyncio.Lock()
@@ -138,6 +143,15 @@ class Dispatcher:
             raise InvalidParamsError(
                 f"content must be string, got: {type(content).__name__}"
             )
+
+        # Block RPC sends to YOLO agents when no REPL connected
+        if self._pool and self._agent_id:
+            permissions = self._session._services.get("permissions") if self._session._services else None
+            if permissions and permissions.effective_policy.level == PermissionLevel.YOLO:
+                if not self._pool.is_repl_connected(self._agent_id):
+                    raise InvalidParamsError(
+                        "Cannot send to YOLO agent - no REPL connected"
+                    )
 
         # Source attribution (stored in Message.meta)
         # Default missing source to "rpc" to ensure external sends have attribution

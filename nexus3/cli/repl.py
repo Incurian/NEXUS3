@@ -57,8 +57,9 @@ from nexus3.commands.protocol import CommandContext, CommandOutput
 from nexus3.commands.protocol import CommandResult as CmdResult
 from nexus3.config.loader import load_config
 from nexus3.core.encoding import configure_stdio
-from nexus3.core.errors import NexusError
-from nexus3.core.permissions import ConfirmationResult
+from nexus3.core.errors import NexusError, ProviderError
+from nexus3.core.paths import display_path
+from nexus3.core.permissions import ConfirmationResult, PermissionLevel
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.core.types import ToolCall
 from nexus3.display import Activity, Spinner, get_console
@@ -75,6 +76,7 @@ from nexus3.session import LogStream, SessionManager
 from nexus3.session.persistence import (
     SavedSession,
     deserialize_messages,
+    serialize_clipboard_entries,
     serialize_session,
 )
 
@@ -380,24 +382,29 @@ async def run_repl(
     # =========================================================================
     # Create agent based on startup mode
     # =========================================================================
-    if startup_mode in ("resume", "session") and saved_session is not None:
-        main_agent = await pool.restore_from_saved(saved_session)
-        # Note: restored sessions keep their original model, --model flag is ignored
-    else:
-        # Create with trusted preset for REPL (user is interactive)
-        # RPC-created agents default to sandboxed via config.permissions.default_preset
-        agent_config = AgentConfig(model=model, preset="trusted")
-        main_agent = await pool.create(agent_id=agent_name, config=agent_config)
-        if template:
-            # Load custom prompt from template
-            try:
-                content = template.read_text(encoding="utf-8")
-                main_agent.context.set_system_prompt(content)
-            except OSError as e:
-                console.print(f"[red]Error loading template: {e}[/]")
-                token_manager.delete()
-                await pool.destroy(agent_name)
-                return
+    try:
+        if startup_mode in ("resume", "session") and saved_session is not None:
+            main_agent = await pool.restore_from_saved(saved_session)
+            # Note: restored sessions keep their original model, --model flag is ignored
+        else:
+            # Create with trusted preset for REPL (user is interactive)
+            # RPC-created agents default to sandboxed via config.permissions.default_preset
+            agent_config = AgentConfig(model=model, preset="trusted")
+            main_agent = await pool.create(agent_id=agent_name, config=agent_config)
+            if template:
+                # Load custom prompt from template
+                try:
+                    content = template.read_text(encoding="utf-8")
+                    main_agent.context.set_system_prompt(content)
+                except OSError as e:
+                    console.print(f"[red]Error loading template: {e}[/]")
+                    token_manager.delete()
+                    await pool.destroy(agent_name)
+                    return
+    except ProviderError as e:
+        console.print(f"[red]Provider initialization failed:[/]\n{e.message}")
+        token_manager.delete()
+        return
 
     # Wire up confirmation callback for main agent
     main_agent.session.on_confirm = confirm_with_pause
@@ -439,6 +446,16 @@ async def run_repl(
         except Exception:
             return None
 
+    def get_clipboard_entries(agent: Agent) -> list[dict[str, Any]]:
+        """Get serialized clipboard entries from an agent for persistence."""
+        try:
+            clipboard_manager = agent.services.get("clipboard_manager")
+            if clipboard_manager:
+                return serialize_clipboard_entries(clipboard_manager.get_agent_entries())
+        except Exception:
+            pass
+        return []
+
     # Update last-session immediately after startup (so resume works after quit)
     try:
         perm_level, perm_preset, disabled_tools = get_permission_data(main_agent)
@@ -455,6 +472,7 @@ async def run_repl(
             permission_preset=perm_preset,
             disabled_tools=disabled_tools,
             model_alias=get_model_alias(main_agent),
+            clipboard_agent_entries=get_clipboard_entries(main_agent),
         )
         session_manager.save_last_session(startup_saved, agent_name)
     except Exception as e:
@@ -462,6 +480,7 @@ async def run_repl(
 
     # Phase 6: Agent management state
     current_agent_id = agent_name
+    pool.set_repl_connected(agent_name, True)
     whisper = WhisperMode()
 
     # Helper to create command context (captures current state)
@@ -493,6 +512,7 @@ async def run_repl(
                     permission_preset=perm_preset,
                     disabled_tools=disabled_tools,
                     model_alias=get_model_alias(agent),
+                    clipboard_agent_entries=get_clipboard_entries(agent),
                 )
                 session_manager.save_last_session(saved, agent_id)
         except Exception as e:
@@ -764,7 +784,7 @@ async def run_repl(
         else:
             _had_errors = True
             # Error - show error message
-            error_preview = escape_rich_markup(error[:70] + ("..." if len(error) > 70 else ""))
+            error_preview = escape_rich_markup(error[:120] + ("..." if len(error) > 120 else ""))
             spinner.print(f"      [red]→[/] [red]{error_preview}[/]{duration_str}")
 
     def on_batch_halt() -> None:
@@ -777,8 +797,8 @@ async def run_repl(
         _pending_tools.clear()
 
     def on_batch_complete() -> None:
-        """Batch finished - no action needed, tools already printed."""
-        pass
+        """Batch finished - transition spinner to waiting for next response."""
+        spinner.update(activity=Activity.WAITING)
 
     def _summarize_tool_output(name: str, output: str) -> str:
         """Create a brief summary of tool output."""
@@ -955,25 +975,89 @@ async def run_repl(
     console.print("Commands: /help | ESC to cancel", style="dim")
     console.print("")
 
+    # Shell environment detection and warnings (Windows only)
+    if sys.platform == "win32":
+        from nexus3.core.shell_detection import (
+            detect_windows_shell,
+            WindowsShell,
+            check_console_codepage,
+        )
+
+        shell = detect_windows_shell()
+        if shell == WindowsShell.CMD:
+            console.print(
+                "[yellow]Detected CMD.exe[/] - using simplified output mode.",
+                style="dim",
+            )
+            console.print(
+                "[dim]For best experience, use Windows Terminal or PowerShell 7+[/]"
+            )
+        elif shell == WindowsShell.POWERSHELL_5:
+            console.print(
+                "[yellow]Detected PowerShell 5.1[/] - ANSI colors may not work.",
+                style="dim",
+            )
+            console.print(
+                "[dim]For best experience, upgrade to PowerShell 7+[/]"
+            )
+
+        # Code page warning
+        codepage, is_utf8 = check_console_codepage()
+        if not is_utf8 and codepage != 0:
+            console.print(
+                f"[yellow]Console code page is {codepage}[/], not UTF-8 (65001).",
+                style="dim",
+            )
+            console.print(
+                "[dim]Run 'chcp 65001' before NEXUS3 for proper character display.[/]"
+            )
+
     # Toolbar state - tracks ready/active and whether there were errors
     toolbar_has_errors = False
 
     def get_toolbar() -> HTML:
         """Return the bottom toolbar based on current state."""
         square = '<style fg="ansibrightblack">■</style>'
+        sections: list[str] = []
 
-        # Get token usage from current session's context
-        token_info = ""
-        if session.context:
-            usage = session.context.get_token_usage()
-            used = usage["total"]
-            budget = usage["budget"]
-            token_info = f' | <style fg="ansibrightblack">{used:,} / {budget:,}</style>'
+        # 1. Status indicator
+        status = ('<style fg="ansigreen">● ready</style>' if not toolbar_has_errors
+                  else '<style fg="ansiyellow">● ready (some tasks incomplete)</style>')
+        sections.append(status)
 
-        if toolbar_has_errors:
-            return HTML(f'{square} <style fg="ansiyellow">● ready (some tasks incomplete)</style>{token_info}')
-        else:
-            return HTML(f'{square} <style fg="ansigreen">● ready</style>{token_info}')
+        # 2. Agent ID (truncated if > 15 chars)
+        agent_display = (current_agent_id[:12] + "..." if len(current_agent_id) > 15
+                         else current_agent_id)
+        sections.append(f'<style fg="ansicyan">{agent_display}</style>')
+
+        # Get current agent for model and cwd
+        agent = pool.get(current_agent_id)
+
+        # 3. Model info with provider
+        if agent:
+            model = agent.services.get("model")
+            if model:
+                model_display = model.alias or model.model_id
+                reasoning_indicator = " [R]" if model.reasoning else ""
+                sections.append(
+                    f'<style fg="ansibrightblack">{model_display}{reasoning_indicator} '
+                    f'({model.provider_name})</style>'
+                )
+
+        # 4. Working directory (use tilde path, skip if just ".")
+        if agent:
+            cwd = agent.services.get_cwd()
+            cwd_display = display_path(cwd)
+            if cwd_display != ".":
+                sections.append(f'<style fg="ansibrightblack">{cwd_display}</style>')
+
+        # 5. Token usage (use agent.context for current model's budget)
+        if agent and agent.context:
+            usage = agent.context.get_token_usage()
+            sections.append(f'<style fg="ansibrightblack">{usage["total"]:,} / {usage["budget"]:,}</style>')
+
+        info_str = " | ".join(sections)
+        return HTML(f'{square} {info_str}')
 
     # Native reverse styling: prompt via HTML, input via lexer
     lexer = SimpleLexer('class:input-field')
@@ -1041,6 +1125,8 @@ async def run_repl(
             return await repl_commands.cmd_model(ctx, cmd_args or None)
         elif cmd_name == "mcp":
             return await repl_commands.cmd_mcp(ctx, cmd_args or None)
+        elif cmd_name == "gitlab":
+            return await repl_commands.cmd_gitlab(ctx, cmd_args or None)
         elif cmd_name == "init":
             return await repl_commands.cmd_init(ctx, cmd_args or None)
 
@@ -1069,8 +1155,6 @@ async def run_repl(
                     perm = "trusted"
                 elif p_lower in ("--sandboxed", "-s"):
                     perm = "sandboxed"
-                elif p_lower in ("--worker", "-w"):
-                    perm = "worker"
                 elif p_lower in ("--model", "-m"):
                     if i + 1 >= len(create_parts):
                         return CommandOutput.error(
@@ -1196,6 +1280,14 @@ async def run_repl(
     # Main REPL loop
     while True:
         try:
+            # YOLO mode warning - show before prompt so user sees it before typing
+            agent = pool.get(current_agent_id)
+            if agent:
+                perms = agent.services.get("permissions")
+                if perms and perms.effective_policy.level == PermissionLevel.YOLO:
+                    from nexus3.cli.repl_commands import print_yolo_warning
+                    print_yolo_warning(console)
+
             # Dynamic prompt based on whisper mode
             if whisper.is_active():
                 prompt_text = f"{whisper.target_agent_id}> "
@@ -1241,7 +1333,9 @@ async def run_repl(
                         new_id = output.new_agent_id
                         new_agent = pool.get(new_id)
                         if new_agent:
+                            pool.set_repl_connected(current_agent_id, False)
                             current_agent_id = new_id
+                            pool.set_repl_connected(new_id, True)
                             session = new_agent.session
                             logger = new_agent.logger
                             # Detach callbacks from old session, attach to new
@@ -1301,7 +1395,9 @@ async def run_repl(
                                             style="dim green",
                                         )
                                         # Switch to restored agent
+                                        pool.set_repl_connected(current_agent_id, False)
                                         current_agent_id = agent_name_to_restore
+                                        pool.set_repl_connected(agent_name_to_restore, True)
                                         session = new_agent.session
                                         logger = new_agent.logger
                                         # Detach callbacks from old session, attach to new
@@ -1349,7 +1445,9 @@ async def run_repl(
 
                                     if action == "prompt_create":
                                         # Switch to the new agent
+                                        pool.set_repl_connected(current_agent_id, False)
                                         current_agent_id = agent_name_to_create
+                                        pool.set_repl_connected(agent_name_to_create, True)
                                         session = new_agent.session
                                         logger = new_agent.logger
                                         # Detach callbacks from old session, attach to new
@@ -1521,6 +1619,7 @@ async def run_repl(
                         permission_preset=perm_preset,
                         disabled_tools=disabled_tools,
                         model_alias=get_model_alias(save_agent),
+                        clipboard_agent_entries=get_clipboard_entries(save_agent),
                     )
                     session_manager.save_last_session(saved, current_agent_id)
             except Exception as e:
@@ -1553,13 +1652,20 @@ async def run_repl(
     # 3. Delete the API key file
     token_manager.delete()
 
-    # 4. Destroy all agents (cleans up loggers)
+    # 4. Clear REPL connection state before destroying agents
+    pool.set_repl_connected(current_agent_id, False)
+
+    # 5. Destroy all agents (cleans up loggers)
     for agent_info in pool.list():
         await pool.destroy(agent_info["agent_id"])
 
-    # 5. G1: Close provider HTTP clients
+    # 6. Close provider HTTP clients
     if shared and shared.provider_registry:
         await shared.provider_registry.aclose()
+
+    # 7. Close MCP connections (prevents unclosed transport warnings on Windows)
+    if shared and shared.mcp_registry:
+        await shared.mcp_registry.close_all()
 
 
 async def run_repl_client(url: str, agent_id: str, api_key: str | None = None) -> None:

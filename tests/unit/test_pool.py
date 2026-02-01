@@ -813,9 +813,12 @@ class TestGlobalDispatcherParentAgentId:
 
         # First create a parent agent
         await pool.create(agent_id="parent-1")
-        # Mock the services.get("permissions") return
+        # Mock the services.get to return appropriate values for each key
+        parent_cwd = Path.cwd()
         pool._agents["parent-1"].services = MagicMock()
-        pool._agents["parent-1"].services.get = MagicMock(return_value=resolve_preset("trusted"))
+        pool._agents["parent-1"].services.get = MagicMock(
+            side_effect=lambda key: resolve_preset("trusted", cwd=parent_cwd) if key == "permissions" else parent_cwd if key == "cwd" else None
+        )
 
         request = Request(
             jsonrpc="2.0",

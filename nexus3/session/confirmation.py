@@ -112,3 +112,31 @@ class ConfirmationController:
         # ALLOW_EXEC_GLOBAL = allow all tools from this server
         elif result == ConfirmationResult.ALLOW_EXEC_GLOBAL:
             permissions.session_allowances.add_mcp_server(server_name)
+
+    @staticmethod
+    def apply_gitlab_result(
+        permissions: AgentPermissions,
+        result: ConfirmationResult,
+        skill_name: str,
+        instance_host: str,
+    ) -> None:
+        """Apply GitLab-specific confirmation result.
+
+        Args:
+            permissions: Agent permissions to update.
+            result: The user's confirmation choice.
+            skill_name: GitLab skill name (e.g., 'gitlab_issue').
+            instance_host: GitLab instance hostname (e.g., 'gitlab.com').
+        """
+        if result == ConfirmationResult.DENY:
+            return
+
+        if result == ConfirmationResult.ALLOW_ONCE:
+            return
+
+        # ALLOW_FILE = allow this specific skill@instance
+        if result == ConfirmationResult.ALLOW_FILE:
+            permissions.session_allowances.add_gitlab_skill(skill_name, instance_host)
+
+        # ALLOW_EXEC_GLOBAL = allow this skill for ALL GitLab instances
+        # (This could be added later if needed)

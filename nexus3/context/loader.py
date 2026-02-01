@@ -12,11 +12,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from nexus3.config.load_utils import load_json_file
+from pydantic import ValidationError
+
+from nexus3.config.load_utils import load_json_file_optional
 from nexus3.config.schema import ContextConfig, MCPServerConfig
 from nexus3.core.constants import get_defaults_dir, get_nexus_dir
-from nexus3.core.errors import ContextLoadError, LoadError
+from nexus3.core.errors import ContextLoadError, LoadError, MCPConfigError
 from nexus3.core.utils import deep_merge, find_ancestor_config_dirs
+from nexus3.mcp.errors import MCPErrorContext
 
 
 def get_system_info(is_repl: bool = True, cwd: Path | None = None) -> str:
@@ -51,7 +54,7 @@ def get_system_info(is_repl: bool = True, cwd: Path | None = None) -> str:
         try:
             # Try to get distro info
             if Path("/etc/os-release").exists():
-                os_release = Path("/etc/os-release").read_text(encoding="utf-8")
+                os_release = Path("/etc/os-release").read_text(encoding="utf-8-sig")
                 for line in os_release.splitlines():
                     if line.startswith("PRETTY_NAME="):
                         distro = line.split("=", 1)[1].strip('"')
@@ -199,28 +202,8 @@ class ContextLoader:
             File contents or None if file doesn't exist.
         """
         if path.is_file():
-            return path.read_text(encoding="utf-8")
+            return path.read_text(encoding="utf-8-sig")
         return None
-
-    def _load_json(self, path: Path) -> dict[str, Any] | None:
-        """Load a JSON file if it exists.
-
-        Args:
-            path: Path to the JSON file.
-
-        Returns:
-            Parsed JSON as dict, empty dict for empty files, or None if missing.
-
-        Raises:
-            ContextLoadError: If file contains invalid JSON or non-dict content.
-        """
-        if not path.is_file():
-            return None
-
-        try:
-            return load_json_file(path)
-        except LoadError as e:
-            raise ContextLoadError(e.message) from e
 
     def _load_layer(self, directory: Path, layer_name: str) -> ContextLayer:
         """Load all context files from a directory.
@@ -256,50 +239,68 @@ class ContextLoader:
 
         # Load config.json - ContextLoadError propagates for fail-fast behavior
         config_path = directory / "config.json"
-        layer.config = self._load_json(config_path)
+        try:
+            layer.config = load_json_file_optional(config_path)
+        except LoadError as e:
+            raise ContextLoadError(e.message) from e
 
         # Load mcp.json - ContextLoadError propagates for fail-fast behavior
         mcp_path = directory / "mcp.json"
-        layer.mcp = self._load_json(mcp_path)
+        try:
+            layer.mcp = load_json_file_optional(mcp_path)
+        except LoadError as e:
+            raise ContextLoadError(e.message) from e
 
         return layer
 
-    def _load_global_layer(self) -> ContextLayer | None:
-        """Load the global layer with fallback to defaults for missing components.
+    def _load_global_layer(self) -> list[ContextLayer]:
+        """Load the global layer with both system defaults and user customization.
 
-        If global dir exists and has config/mcp but no prompt, falls back to
-        defaults for the prompt while keeping global's config/mcp. This ensures
-        the defaults NEXUS.md is always loaded even when user has partial
-        global configuration.
+        System defaults (NEXUS-DEFAULT.md) always come from the package.
+        User customization (NEXUS.md) comes from ~/.nexus3/ if it exists,
+        otherwise falls back to package template.
+
+        Returns:
+            List of layers: [system-defaults layer, user/global layer]
         """
+        layers: list[ContextLayer] = []
         global_dir = self._get_global_dir()
         defaults_dir = self._get_defaults_dir()
 
-        global_layer: ContextLayer | None = None
-        defaults_layer: ContextLayer | None = None
+        # 1. Always load NEXUS-DEFAULT.md from package (system docs/tools)
+        pkg_default = defaults_dir / "NEXUS-DEFAULT.md"
+        if pkg_default.is_file():
+            layer = ContextLayer(name="system-defaults", path=defaults_dir)
+            layer.prompt = pkg_default.read_text(encoding="utf-8-sig")
+            layers.append(layer)
 
-        # Load global layer if exists
-        if global_dir.is_dir():
-            global_layer = self._load_layer(global_dir, "global")
+        # 2. Load user's global config (config.json, mcp.json always from global dir)
+        global_config = load_json_file_optional(global_dir / "config.json")
+        global_mcp = load_json_file_optional(global_dir / "mcp.json")
 
-        # Load defaults layer if exists
-        if defaults_dir.is_dir():
-            defaults_layer = self._load_layer(defaults_dir, "defaults")
+        # 3. Load user's NEXUS.md from global dir, or fall back to package template
+        user_nexus = global_dir / "NEXUS.md"
+        if user_nexus.is_file():
+            layer = ContextLayer(name="global", path=global_dir)
+            layer.prompt = user_nexus.read_text(encoding="utf-8-sig")
+            layer.config = global_config
+            layer.mcp = global_mcp
+            layers.append(layer)
+        else:
+            # Fall back to package NEXUS.md template for prompt,
+            # but still use global config/mcp if they exist
+            pkg_nexus = defaults_dir / "NEXUS.md"
+            if pkg_nexus.is_file() or global_config or global_mcp:
+                # Use global_dir as path if we have config/mcp there, otherwise defaults_dir
+                layer_path = global_dir if (global_config or global_mcp) else defaults_dir
+                layer = ContextLayer(name="global", path=layer_path)
+                if pkg_nexus.is_file():
+                    layer.prompt = pkg_nexus.read_text(encoding="utf-8-sig")
+                layer.config = global_config
+                layer.mcp = global_mcp
+                layers.append(layer)
 
-        # Merge strategy: global takes precedence, but fall back to defaults for missing
-        if global_layer is not None:
-            # If global has no prompt, use defaults prompt
-            if not global_layer.prompt and defaults_layer and defaults_layer.prompt:
-                global_layer.prompt = defaults_layer.prompt
-                # Update layer name to indicate merged source
-                global_layer.name = "global+defaults"
-
-            # Return global if it has any content
-            if global_layer.prompt or global_layer.config or global_layer.mcp:
-                return global_layer
-
-        # Fall back to defaults entirely if no global content
-        return defaults_layer
+        return layers
 
     def _format_readme_section(self, content: str, source_path: Path) -> str:
         """Format README with explicit documentation boundaries.
@@ -363,7 +364,10 @@ END DOCUMENTATION
             return None
 
         # Determine source path for labeling
-        if layer.name == "defaults":
+        if layer.name == "system-defaults":
+            source_path = self._get_defaults_dir() / "NEXUS-DEFAULT.md"
+            header = "## System Defaults"
+        elif layer.name == "defaults":
             source_path = self._get_defaults_dir() / "NEXUS.md"
             header = "## Default Configuration"
         elif layer.name == "global":
@@ -411,6 +415,10 @@ Source: {source_path}
 
         Later layers override earlier layers with same name.
 
+        Supports two MCP config formats:
+        - Official (Claude Desktop): {"mcpServers": {"name": {...config...}}}
+        - NEXUS3: {"servers": [{"name": "...", ...config...}]}
+
         Args:
             layers: All context layers in order.
             sources: ContextSources to record what was loaded.
@@ -427,8 +435,28 @@ Source: {source_path}
             mcp_path = layer.path / "mcp.json"
             sources.mcp_sources.append(mcp_path)
 
-            servers_list = layer.mcp.get("servers", [])
-            for server_data in servers_list:
+            # Support both official ("mcpServers" with dict) and NEXUS3 ("servers" with array) keys
+            servers_data = layer.mcp.get("mcpServers") or layer.mcp.get("servers")
+            if not servers_data:
+                continue
+
+            # Normalize to list of (name, server_dict) tuples
+            if isinstance(servers_data, dict):
+                # Official format: {"mcpServers": {"test": {...}}}
+                server_items = list(servers_data.items())
+            elif isinstance(servers_data, list):
+                # NEXUS3 format: {"servers": [{"name": "test", ...}]}
+                server_items = [
+                    (s.get("name", f"unnamed-{i}"), s) for i, s in enumerate(servers_data)
+                ]
+            else:
+                continue
+
+            for server_name, server_data in server_items:
+                # Ensure name is in the dict for MCPServerConfig validation
+                if isinstance(server_data, dict):
+                    server_data = {**server_data, "name": server_name}
+
                 try:
                     server_config = MCPServerConfig.model_validate(server_data)
                     servers_by_name[server_config.name] = MCPServerWithOrigin(
@@ -436,11 +464,40 @@ Source: {source_path}
                         origin=layer.name,
                         source_path=mcp_path,
                     )
-                except Exception as e:
-                    from nexus3.core.errors import MCPConfigError
+                except ValidationError as e:
+                    # Sanitize: Don't include full config dict which may contain secrets
+                    # Extract field locations from errors (loc can be empty for root validators)
+                    error_fields = []
+                    for err in e.errors():
+                        loc = err.get("loc", ())
+                        if loc:
+                            error_fields.append(str(loc[-1]))
+                        else:
+                            # Root-level validation error (e.g., model_validator)
+                            error_fields.append(err.get("type", "validation_error"))
 
+                    # Create error context for detailed error reporting
+                    context = MCPErrorContext(
+                        server_name=server_name,
+                        source_path=mcp_path,
+                        source_layer=layer.name,
+                    )
                     raise MCPConfigError(
-                        f"Invalid MCP server config in {mcp_path}: {e}"
+                        f"Invalid MCP server config '{server_name}' in {mcp_path}: "
+                        f"validation failed for fields: {error_fields}",
+                        context=context,
+                    ) from e
+                except Exception as e:
+                    # Create error context for detailed error reporting
+                    context = MCPErrorContext(
+                        server_name=server_name,
+                        source_path=mcp_path,
+                        source_layer=layer.name,
+                    )
+                    raise MCPConfigError(
+                        f"Invalid MCP server config '{server_name}' in {mcp_path}: "
+                        f"{type(e).__name__}",
+                        context=context,
                     ) from e
 
         return list(servers_by_name.values())
@@ -459,9 +516,9 @@ Source: {source_path}
         prompt_sections: list[str] = []
         merged_config: dict[str, Any] = {}
 
-        # 1. Load global (with fallback to defaults)
-        global_layer = self._load_global_layer()
-        if global_layer:
+        # 1. Load global layers (system-defaults from package + user's global)
+        global_layers = self._load_global_layer()
+        for global_layer in global_layers:
             layers.append(global_layer)
             if global_layer.name == "global":
                 sources.global_dir = self._get_global_dir()
@@ -474,8 +531,11 @@ Source: {source_path}
                 merged_config = deep_merge(merged_config, global_layer.config)
                 sources.config_sources.append(global_layer.path / "config.json")
 
-        # 2. Load ancestors
-        ancestor_dirs = find_ancestor_config_dirs(self._cwd, self._config.ancestor_depth)
+        # 2. Load ancestors (exclude global dir to avoid loading it twice)
+        global_dir = self._get_global_dir()
+        ancestor_dirs = find_ancestor_config_dirs(
+            self._cwd, self._config.ancestor_depth, exclude_paths=[global_dir]
+        )
         sources.ancestor_dirs = [d.parent for d in ancestor_dirs]
 
         for ancestor_dir in ancestor_dirs:
@@ -571,7 +631,7 @@ Source: {source_path}
 
         # Load agent's local NEXUS.md and prepend
         if local_nexus.is_file():
-            agent_prompt = local_nexus.read_text(encoding="utf-8")
+            agent_prompt = local_nexus.read_text(encoding="utf-8-sig")
             return f"""## Subagent Configuration
 Source: {local_nexus}
 

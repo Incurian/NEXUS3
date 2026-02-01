@@ -199,11 +199,13 @@ The abstract base class providing shared functionality for all providers.
 |---------|-------------|
 | **API Key Resolution** | Gets key from environment variable per `api_key_env` config |
 | **Authentication** | Builds auth headers based on `auth_method` (Bearer, api-key, x-api-key, none) |
+| **Extra Headers** | Supports custom headers via `extra_headers` config |
 | **SSRF Protection** | Validates `base_url` - HTTPS required for non-localhost hosts |
 | **Retry Logic** | Exponential backoff with jitter for 429/5xx errors |
 | **Timeout Handling** | Configurable request timeout (default 120s) |
 | **Error Body Limits** | Caps error response bodies at 10KB to prevent memory exhaustion |
 | **Connection Reuse** | Lazy httpx client with persistent connections |
+| **SSL Configuration** | Custom CA certs and SSL verification control for on-prem deployments |
 | **Raw Logging** | Callbacks for request/response/chunk logging |
 
 ### Abstract Methods (Subclasses Implement)
@@ -304,8 +306,8 @@ config = ProviderConfig(
     type="azure",
     base_url="https://my-resource.openai.azure.com",
     api_key_env="AZURE_OPENAI_KEY",
-    deployment="gpt-4",          # Deployment name
-    api_version="2024-02-01",    # API version
+    deployment="gpt-4",          # Deployment name (falls back to model if not set)
+    api_version="2024-02-01",    # API version (default)
     auth_method=AuthMethod.API_KEY,
 )
 ```
@@ -321,6 +323,7 @@ Native Anthropic Messages API (different from OpenAI format).
 - Content is array of blocks (`text`, `tool_use`, `tool_result`)
 - Tool results go in user message content, not separate tool role
 - Different streaming event types
+- Requires `max_tokens` parameter (default: 4096)
 
 **Message Conversion:**
 ```python
@@ -351,6 +354,7 @@ Message(role=Role.ASSISTANT, content="Let me check...", tool_calls=[...])
 - `content_block_start` - New text or tool_use block
 - `content_block_delta` - Incremental content (`text_delta` or `input_json_delta`)
 - `content_block_stop` - Block finished
+- `message_delta` - Message-level updates (stop_reason)
 - `message_stop` - Message complete
 
 **Headers:**
@@ -426,6 +430,34 @@ Message(role=Role.ASSISTANT, content="Let me check...", tool_calls=[...])
 }
 ```
 
+### On-Premise / Corporate SSL Configuration
+
+For deployments with custom CA certificates or self-signed certs:
+
+```json
+{
+    "provider": {
+        "type": "openai",
+        "base_url": "https://internal-llm.corp.example.com/v1",
+        "api_key_env": "CORP_LLM_API_KEY",
+        "ssl_ca_cert": "/etc/ssl/certs/corp-ca.pem",
+        "verify_ssl": true
+    }
+}
+```
+
+To disable SSL verification (not recommended for production):
+
+```json
+{
+    "provider": {
+        "type": "openai",
+        "base_url": "https://dev-server.local/v1",
+        "verify_ssl": false
+    }
+}
+```
+
 ---
 
 ## Usage Examples
@@ -452,7 +484,7 @@ await provider.aclose()
 ### Streaming
 
 ```python
-from nexus3.core.types import ContentDelta, ToolCallStarted, StreamComplete
+from nexus3.core.types import ContentDelta, ReasoningDelta, ToolCallStarted, StreamComplete
 
 messages = [Message(role=Role.USER, content="Write a haiku about Python")]
 
@@ -460,6 +492,8 @@ async for event in provider.stream(messages):
     match event:
         case ContentDelta(text=t):
             print(t, end="", flush=True)
+        case ReasoningDelta(text=t):
+            print(f"[thinking: {t}]", end="", flush=True)
         case ToolCallStarted(name=name):
             print(f"\n[Tool: {name}]")
         case StreamComplete(message=msg):
@@ -678,4 +712,4 @@ PROVIDER_DEFAULTS["myprovider"] = {
 
 ---
 
-Last updated: 2026-01-21
+Last updated: 2026-01-28

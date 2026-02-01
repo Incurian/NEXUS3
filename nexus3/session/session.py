@@ -30,7 +30,6 @@ from nexus3.core.validation import ValidationError, validate_tool_arguments
 from nexus3.session.confirmation import ConfirmationController
 from nexus3.session.dispatcher import ToolDispatcher
 from nexus3.session.enforcer import PermissionEnforcer
-from nexus3.session.http_logging import clear_current_logger, set_current_logger
 from nexus3.session.events import (
     ContentChunk,
     IterationCompleted,
@@ -46,6 +45,7 @@ from nexus3.session.events import (
     ToolDetected,
     ToolStarted,
 )
+from nexus3.session.http_logging import clear_current_logger, set_current_logger
 
 if TYPE_CHECKING:
     from nexus3.config.schema import CompactionConfig, Config
@@ -457,6 +457,12 @@ class Session:
                 yield SessionCompleted(halted_at_limit=False)
                 return
 
+            # Check cancellation before adding assistant message with tool_calls
+            # This prevents orphaned tool_use blocks if cancelled during streaming
+            if cancel_token and cancel_token.is_cancelled:
+                yield SessionCancelled()
+                return
+
             if final_message.tool_calls:
                 # Add assistant message with tool calls
                 self.context.add_assistant_message(
@@ -486,8 +492,13 @@ class Session:
                         self._log_event(tool_start)
                         yield tool_start
                     tool_results = await self._execute_tools_parallel(final_message.tool_calls)
-                    for tc, tool_result in zip(final_message.tool_calls, tool_results, strict=True):
-                        self.context.add_tool_result(tc.id, tc.name, tool_result)
+                    for i, (tc, tool_result) in enumerate(
+                        zip(final_message.tool_calls, tool_results, strict=True), start=1
+                    ):
+                        self.context.add_tool_result(
+                            tc.id, tc.name, tool_result,
+                            call_index=i, arguments=tc.arguments,
+                        )
                         tool_complete = ToolCompleted(
                             name=tc.name,
                             tool_id=tc.id,
@@ -498,17 +509,29 @@ class Session:
                         self._log_event(tool_complete)
                         yield tool_complete
                 else:
-                    # Sequential execution - halts on first error
+                    # Sequential execution - halts on first error or cancellation
                     error_index = -1
+                    cancel_index = -1
                     for i, tc in enumerate(final_message.tool_calls):
+                        # Check cancellation before starting each tool
                         if cancel_token and cancel_token.is_cancelled:
-                            yield SessionCancelled()
-                            return
+                            cancel_index = i
+                            break
                         tool_start = ToolStarted(name=tc.name, tool_id=tc.id)
                         self._log_event(tool_start)
                         yield tool_start
-                        tool_result = await self._execute_single_tool(tc)
-                        self.context.add_tool_result(tc.id, tc.name, tool_result)
+                        # Handle mid-execution cancellation
+                        try:
+                            tool_result = await self._execute_single_tool(tc)
+                        except asyncio.CancelledError:
+                            # Tool was interrupted mid-execution
+                            tool_result = ToolResult(
+                                error="Cancelled by user: tool execution was interrupted"
+                            )
+                        self.context.add_tool_result(
+                            tc.id, tc.name, tool_result,
+                            call_index=i + 1, arguments=tc.arguments,
+                        )
                         tool_complete = ToolCompleted(
                             name=tc.name,
                             tool_id=tc.id,
@@ -518,12 +541,33 @@ class Session:
                         )
                         self._log_event(tool_complete)
                         yield tool_complete
+                        # Check cancellation after tool completes (for next iteration)
+                        if cancel_token and cancel_token.is_cancelled:
+                            cancel_index = i + 1  # This tool finished, cancel starts after
+                            break
                         if not tool_result.success:
                             error_index = i
                             batch_halted = ToolBatchHalted()
                             self._log_event(batch_halted)
                             yield batch_halted
                             break
+
+                    # Add cancelled results for remaining tools (ensures Anthropic
+                    # API gets matching tool_result for every tool_use block)
+                    if cancel_index >= 0:
+                        for j, tc in enumerate(
+                            final_message.tool_calls[cancel_index:],
+                            start=cancel_index,
+                        ):
+                            cancelled_result = ToolResult(
+                                error="Cancelled by user: tool execution was interrupted"
+                            )
+                            self.context.add_tool_result(
+                                tc.id, tc.name, cancelled_result,
+                                call_index=j + 1, arguments=tc.arguments,
+                            )
+                        yield SessionCancelled()
+                        return
 
                     # Add halted results for remaining tools
                     if error_index >= 0:
@@ -686,6 +730,14 @@ class Session:
             if error:
                 return error
 
+        # 4b. GitLab permission check and confirmation (if GitLab skill)
+        if tool_call.name.startswith("gitlab_") and permissions:
+            error = await self._handle_gitlab_permissions(
+                tool_call, skill, permissions
+            )
+            if error:
+                return error
+
         # 5. Unknown skill check
         if not skill:
             logger.debug("Unknown skill requested: %s", tool_call.name)
@@ -755,6 +807,66 @@ class Session:
                 self._confirmation.apply_mcp_result(
                     permissions, result, tool_call.name, server_name
                 )
+
+        return None
+
+    async def _handle_gitlab_permissions(
+        self,
+        tool_call: "ToolCall",
+        skill: "Skill | None",
+        permissions: AgentPermissions,
+    ) -> ToolResult | None:
+        """Handle GitLab-specific permission checks and confirmation.
+
+        Args:
+            tool_call: The GitLab tool call.
+            skill: The resolved GitLab skill (may be None).
+            permissions: Agent permissions.
+
+        Returns:
+            ToolResult with error if permission denied, None if allowed.
+        """
+        from nexus3.skill.vcs.gitlab.permissions import (
+            can_use_gitlab,
+            requires_gitlab_confirmation,
+        )
+
+        # Check GitLab permission level
+        if not can_use_gitlab(permissions):
+            return ToolResult(error="GitLab tools require TRUSTED or YOLO permission level")
+
+        if not skill:
+            return None  # Let caller handle unknown skill
+
+        # Extract action and instance from arguments
+        action = tool_call.arguments.get("action", "")
+        instance_name = tool_call.arguments.get("instance")
+
+        # Resolve instance to get host
+        gitlab_config = self._services.get_gitlab_config() if self._services else None
+        if not gitlab_config:
+            return None  # Should not happen if skill exists
+
+        instance = gitlab_config.get_instance(instance_name)
+        if not instance:
+            # Let skill handle the error (will produce better error message)
+            return None
+
+        instance_host = instance.host
+
+        # Check if confirmation needed
+        if requires_gitlab_confirmation(permissions, tool_call.name, instance_host, action):
+            agent_cwd = self._services.get_cwd() if self._services else Path.cwd()
+            result = await self._confirmation.request(
+                tool_call, None, agent_cwd, self.on_confirm
+            )
+
+            if result == ConfirmationResult.DENY:
+                return ToolResult(error="GitLab action denied by user")
+
+            self._confirmation.apply_gitlab_result(
+                permissions, result, tool_call.name, instance_host
+            )
 
         return None
 
