@@ -1,13 +1,32 @@
 # Plan: Prompt Caching (Multi-Provider)
 
-## OPEN QUESTIONS
+## OPEN QUESTIONS - RESOLVED
 
-| # | Question | Options | Recommendation |
-|---|----------|---------|----------------|
-| **Q1** | Track cumulative cache savings? | A) No, per-request only B) Yes, session total | **A) Per-request** - simpler |
-| **Q2** | Enable by default? | A) Off, opt-in B) On by default | **B) On by default** - OpenAI/Azure are automatic anyway |
-| **Q3** | Show cache metrics? | A) Verbose logs only B) Add to /status | **A) Logs only** - avoid clutter |
-| **Q4** | Cache tool definitions? | A) System prompt only B) System + tools | **A) System only** - simpler |
+| # | Question | Decision | Rationale |
+|---|----------|----------|-----------|
+| **Q1** | Track cumulative cache savings? | **A) Per-request** | Simpler, no session state needed |
+| **Q2** | Enable by default? | **B) On by default** | OpenAI/Azure automatic anyway, Anthropic benefits immediately |
+| **Q3** | Show cache metrics? | **A) Logs only** | Avoid console clutter, use `-v` to see |
+| **Q4** | Cache tool definitions? | **A) System only** | Simpler, tools change more often |
+
+---
+
+## Validation Notes (2026-02-01)
+
+All code locations verified by explorer agents:
+
+| Component | Plan Line | Actual Line | Status |
+|-----------|-----------|-------------|--------|
+| Anthropic `_build_request_body()` | ~136-153 | 119-158 | ✅ Verified |
+| Anthropic `_parse_response()` | (not specified) | 271-312 | ✅ Verified |
+| Anthropic streaming | (not specified) | 314-448 | ✅ `message_start` needs adding |
+| OpenAI-compat `_parse_response()` | ~158-169 | 191-222 | ✅ Verified |
+| OpenAI-compat `_build_request_body()` | ~96 | 96-125 | ✅ Verified |
+| ProviderConfig | ~140 | 95-154 | ✅ Add after line 137 |
+
+**Backwards Compatibility**: Confirmed safe - all response parsing uses `.get()` with defaults.
+
+**User Impact**: Zero action required - Pydantic defaults handle missing config field.
 
 ---
 
@@ -87,7 +106,7 @@ self._config.type == "openrouter"
 
 ### Phase 1: Config Schema
 
-**File:** `nexus3/config/schema.py` (add to ProviderConfig class ~line 140)
+**File:** `nexus3/config/schema.py` (add to ProviderConfig class after line 137, before SSL settings)
 
 ```python
 class ProviderConfig(BaseModel):
@@ -102,7 +121,7 @@ class ProviderConfig(BaseModel):
 
 **File:** `nexus3/provider/anthropic.py`
 
-**Update `_build_request_body()` (~line 136-153):**
+**Update `_build_request_body()` (lines 119-158, system assignment at 152-153):**
 
 ```python
 def _build_request_body(self, messages, tools, stream) -> dict:
@@ -119,7 +138,7 @@ def _build_request_body(self, messages, tools, stream) -> dict:
             body["system"] = system
 ```
 
-**Update `_parse_response()` to log cache metrics:**
+**Update `_parse_response()` (lines 271-312) to log cache metrics:**
 
 ```python
 def _parse_response(self, data: dict[str, Any]) -> Message:
@@ -135,7 +154,7 @@ def _parse_response(self, data: dict[str, Any]) -> Message:
     return Message(...)
 ```
 
-**Update streaming handler for `message_start` event:**
+**Update streaming handler `_parse_stream()` (lines 314-448) - add `message_start` event handler:**
 
 ```python
 elif event_type == "message_start":
@@ -152,7 +171,9 @@ elif event_type == "message_start":
 
 **File:** `nexus3/provider/openai_compat.py`
 
-OpenAI caching is automatic - just parse the response metrics:
+OpenAI caching is automatic - just parse the response metrics.
+
+**Update `_parse_response()` (lines 191-222) - insert before return:**
 
 ```python
 def _parse_response(self, data: dict[str, Any]) -> Message:
@@ -172,7 +193,9 @@ def _parse_response(self, data: dict[str, Any]) -> Message:
 
 **File:** `nexus3/provider/openai_compat.py`
 
-For OpenRouter routing to Anthropic models, add cache_control:
+For OpenRouter routing to Anthropic models, add cache_control.
+
+**Add `_is_openrouter_anthropic()` method (after `_message_to_dict()` ~line 159):**
 
 ```python
 def _is_openrouter_anthropic(self) -> bool:
@@ -244,22 +267,22 @@ def _build_request_body(self, messages, tools, stream) -> dict:
 ## Implementation Checklist
 
 ### Phase 1: Config
-- [ ] **P1.1** Add `prompt_caching: bool = True` to ProviderConfig
+- [x] **P1.1** Add `prompt_caching: bool = True` to ProviderConfig
 
 ### Phase 2: Anthropic
-- [ ] **P2.1** Add cache_control to system prompt in `_build_request_body()`
-- [ ] **P2.2** Parse `cache_creation_input_tokens` and `cache_read_input_tokens`
-- [ ] **P2.3** Log cache metrics at DEBUG level when non-zero
-- [ ] **P2.4** Handle streaming (`message_start` event has usage)
+- [x] **P2.1** Add cache_control to system prompt in `_build_request_body()`
+- [x] **P2.2** Parse `cache_creation_input_tokens` and `cache_read_input_tokens`
+- [x] **P2.3** Log cache metrics at DEBUG level when non-zero
+- [x] **P2.4** Handle streaming (`message_start` event has usage)
 
 ### Phase 3: OpenAI/Azure
-- [ ] **P3.1** Parse `prompt_tokens_details.cached_tokens` from response
-- [ ] **P3.2** Log cache metrics at DEBUG level when non-zero
+- [x] **P3.1** Parse `prompt_tokens_details.cached_tokens` from response
+- [x] **P3.2** Log cache metrics at DEBUG level when non-zero
 
 ### Phase 4: OpenRouter
-- [ ] **P4.1** Add `_is_openrouter_anthropic()` using `config.type` (NOT URL)
-- [ ] **P4.2** Add cache_control for Anthropic models via OpenRouter
-- [ ] **P4.3** Let OpenAI models use automatic caching
+- [x] **P4.1** Add `_is_openrouter_anthropic()` using `config.type` (NOT URL)
+- [x] **P4.2** Add cache_control for Anthropic models via OpenRouter
+- [x] **P4.3** Let OpenAI models use automatic caching
 
 ### Phase 5: Testing
 - [ ] **P5.1** Unit test: Anthropic cache_control injection when enabled
@@ -272,8 +295,8 @@ def _build_request_body(self, messages, tools, stream) -> dict:
 - [ ] **P5.8** Live test: OpenRouter to Anthropic
 
 ### Phase 6: Documentation
-- [ ] **P6.1** Update CLAUDE.md Provider Configuration section
-- [ ] **P6.2** Document provider-specific caching behavior
+- [x] **P6.1** Update CLAUDE.md Provider Configuration section
+- [x] **P6.2** Document provider-specific caching behavior
 
 ---
 

@@ -150,7 +150,17 @@ class AnthropicProvider(BaseProvider):
         }
 
         if system:
-            body["system"] = system
+            if self._config.prompt_caching:
+                # Add cache_control for 5-min ephemeral caching
+                body["system"] = [
+                    {
+                        "type": "text",
+                        "text": system,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ]
+            else:
+                body["system"] = system
 
         if tools:
             body["tools"] = self._convert_tools(tools)
@@ -302,6 +312,13 @@ class AnthropicProvider(BaseProvider):
                         )
                     )
 
+            # Log cache metrics if present (backwards compatible)
+            usage = data.get("usage", {})
+            cache_creation = usage.get("cache_creation_input_tokens", 0)
+            cache_read = usage.get("cache_read_input_tokens", 0)
+            if cache_creation or cache_read:
+                logger.debug("Cache: created=%d, read=%d tokens", cache_creation, cache_read)
+
             return Message(
                 role=Role.ASSISTANT,
                 content="".join(text_parts),
@@ -367,7 +384,20 @@ class AnthropicProvider(BaseProvider):
 
                         event_type = data.get("type", "")
 
-                        if event_type == "content_block_start":
+                        if event_type == "message_start":
+                            # Log cache metrics from message_start event
+                            message_data = data.get("message", {})
+                            usage = message_data.get("usage", {})
+                            cache_creation = usage.get("cache_creation_input_tokens", 0)
+                            cache_read = usage.get("cache_read_input_tokens", 0)
+                            if cache_creation or cache_read:
+                                logger.debug(
+                                    "Cache: created=%d, read=%d tokens",
+                                    cache_creation,
+                                    cache_read,
+                                )
+
+                        elif event_type == "content_block_start":
                             # New content block starting
                             block = data.get("content_block", {})
                             if block.get("type") == "tool_use":

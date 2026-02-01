@@ -842,6 +842,33 @@ NEXUS3 supports multiple LLM providers via the `provider` config:
 
 See `nexus3/provider/README.md` for full documentation and adding new providers.
 
+### Prompt Caching
+
+NEXUS3 supports prompt caching to reduce costs (~90% savings on cached tokens):
+
+| Provider | Status | Config Required |
+|----------|--------|-----------------|
+| Anthropic | Full support | Automatic (enabled by default) |
+| OpenAI | Full support | None (automatic) |
+| Azure | Full support | None (automatic) |
+| OpenRouter | Pass-through | Automatic for Anthropic models |
+| Ollama/vLLM | No support | N/A (local) |
+
+Caching is enabled by default. To disable for a specific provider:
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "type": "anthropic",
+      "prompt_caching": false
+    }
+  }
+}
+```
+
+Cache metrics are logged at DEBUG level (visible with `-v` flag).
+
 ### GitLab Configuration
 
 GitLab tools require pre-configured instances in `~/.nexus3/config.json` or `.nexus3/config.json`:

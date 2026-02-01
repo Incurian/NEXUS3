@@ -122,6 +122,21 @@ class OpenAICompatProvider(BaseProvider):
         if self._reasoning:
             body["reasoning"] = {"effort": "high"}
 
+        # OpenRouter + Anthropic model = need cache_control on system message
+        if self._is_openrouter_anthropic() and self._config.prompt_caching:
+            for msg in body.get("messages", []):
+                if msg.get("role") == "system":
+                    content = msg.get("content", "")
+                    if isinstance(content, str):
+                        msg["content"] = [
+                            {
+                                "type": "text",
+                                "text": content,
+                                "cache_control": {"type": "ephemeral"},
+                            }
+                        ]
+                    break
+
         return body
 
     def _message_to_dict(self, message: Message) -> dict[str, Any]:
@@ -157,6 +172,20 @@ class OpenAICompatProvider(BaseProvider):
             ]
 
         return result
+
+    def _is_openrouter_anthropic(self) -> bool:
+        """Check if we're on OpenRouter routing to an Anthropic model.
+
+        Uses config.type instead of URL parsing for robustness against
+        URL changes, staging environments, and corporate proxies.
+
+        Returns:
+            True if provider is openrouter and model is from Anthropic.
+        """
+        return (
+            self._config.type == "openrouter"
+            and "anthropic" in self._model.lower()
+        )
 
     def _parse_tool_calls(
         self, tool_calls_data: list[dict[str, Any]]
@@ -211,6 +240,13 @@ class OpenAICompatProvider(BaseProvider):
             tool_calls: tuple[ToolCall, ...] = ()
             if "tool_calls" in msg and msg["tool_calls"]:
                 tool_calls = self._parse_tool_calls(msg["tool_calls"])
+
+            # Log cache metrics if present (backwards compatible)
+            usage = data.get("usage", {})
+            prompt_details = usage.get("prompt_tokens_details", {})
+            cached_tokens = prompt_details.get("cached_tokens", 0)
+            if cached_tokens:
+                logger.debug("Cache: read=%d tokens", cached_tokens)
 
             return Message(
                 role=Role.ASSISTANT,
