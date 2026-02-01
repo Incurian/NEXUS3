@@ -285,14 +285,14 @@ def _build_request_body(self, messages, tools, stream) -> dict:
 - [x] **P4.3** Let OpenAI models use automatic caching
 
 ### Phase 5: Testing
-- [ ] **P5.1** Unit test: Anthropic cache_control injection when enabled
-- [ ] **P5.2** Unit test: Anthropic cache_control NOT injected when disabled
-- [ ] **P5.3** Unit test: OpenAI cached_tokens parsing (present)
-- [ ] **P5.4** Unit test: OpenAI cached_tokens parsing (missing - backwards compat)
-- [ ] **P5.5** Unit test: OpenRouter Anthropic detection (positive)
-- [ ] **P5.6** Unit test: OpenRouter Anthropic detection (negative - OpenAI model)
-- [ ] **P5.7** Live test: Anthropic native with caching
-- [ ] **P5.8** Live test: OpenRouter to Anthropic
+- [x] **P5.1** Unit test: Anthropic cache_control injection when enabled
+- [x] **P5.2** Unit test: Anthropic cache_control NOT injected when disabled
+- [x] **P5.3** Unit test: OpenAI cached_tokens parsing (present)
+- [x] **P5.4** Unit test: OpenAI cached_tokens parsing (missing - backwards compat)
+- [x] **P5.5** Unit test: OpenRouter Anthropic detection (positive)
+- [x] **P5.6** Unit test: OpenRouter Anthropic detection (negative - OpenAI model)
+- [x] **P5.7** Live test: Anthropic native with caching
+- [x] **P5.8** Live test: OpenRouter to Anthropic
 
 ### Phase 6: Documentation
 - [x] **P6.1** Update CLAUDE.md Provider Configuration section
