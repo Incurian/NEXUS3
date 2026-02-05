@@ -195,7 +195,22 @@ python -c "import nexus3; print('NEXUS3 installed successfully')"
 python -m nexus3 --help
 ```
 
-Without the virtualenv activated, use `.venv/bin/python` (Linux, macOS, WSL) or `.venv/Scripts/python` (Git Bash) or `.venv\Scripts\python` (Windows cmd/PowerShell) instead of `python`.
+Without the virtualenv activated, use the full path to `python` instead:
+
+Linux, macOS, WSL:
+```bash
+.venv/bin/python
+```
+
+Git Bash:
+```bash
+.venv/Scripts/python
+```
+
+Windows (cmd/PowerShell):
+```cmd
+.venv\Scripts\python
+```
 
 ### Step 6: Initialize Configuration (Recommended)
 
