@@ -1,5 +1,5 @@
 # GitLab CI/CD Configuration for NEXUS3
-# Copy this file to .gitlab-ci.yml to enable CI/CD
+# Requires Python 3.11+. Uses the [ci] optional dependency group.
 #
 # Required CI/CD Variables (Settings > CI/CD > Variables):
 #   - None required for tests
@@ -16,6 +16,7 @@ variables:
 
 # Cache pip downloads between jobs
 cache:
+  key: "${CI_COMMIT_REF_SLUG}"
   paths:
     - .cache/pip
     - .venv/
