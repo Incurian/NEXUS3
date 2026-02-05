@@ -496,7 +496,7 @@ openssl pkcs12 -in corporate-ca.p12 -cacerts -nokeys -out corporate-ca.pem
 |----|------------------|
 | Linux | `/etc/ssl/certs/`, `/usr/local/share/ca-certificates/` |
 | macOS | `/etc/ssl/`, Keychain Access app |
-| Windows | `C:\Windows\System32\certsrv\CertEnroll\`, Certificate Manager (`certmgr.msc`) |
+| Windows | `C:\Users\<user>\certs\`, `C:\Windows\System32\certsrv\CertEnroll\`, Certificate Manager (`certmgr.msc`) |
 
 Your IT department can provide the corporate CA certificate if you don't have it.
 
