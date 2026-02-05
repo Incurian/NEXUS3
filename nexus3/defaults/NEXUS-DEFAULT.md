@@ -132,7 +132,7 @@ Key behaviors:
 - Default scope is `agent`
 - Entries have keys (unique names), optional tags, and optional TTL
 - Use `clipboard_list` to see available entries before pasting
-- Content is injected into context automatically when configured (see `clipboard.inject_into_context` config)
+- A summary table of recent entries is injected into your context automatically (up to 10 per scope by default). This table shows key, scope, line count, and description — **not** the content itself. If there are more entries than shown in any scope, the table will say so. Use `clipboard_list()` to see all entries, or `clipboard_get(key="...")` to retrieve full content.
 
 ### When to Use the Clipboard
 

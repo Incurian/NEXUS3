@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from nexus3.clipboard.types import ClipboardEntry
+from nexus3.clipboard.types import ClipboardEntry, ClipboardScope
 
 if TYPE_CHECKING:
     from nexus3.clipboard.manager import ClipboardManager
@@ -16,19 +16,25 @@ def format_clipboard_context(
 ) -> str | None:
     """Format clipboard entries for system prompt injection.
 
+    Entries are shown per scope, with up to max_entries per scope.
+    This ensures entries from less-used scopes aren't crowded out.
+
     Args:
         manager: ClipboardManager to list entries from
-        max_entries: Maximum entries to show
+        max_entries: Maximum entries to show per scope
         show_source: Include source path/lines info
 
     Returns:
         Formatted markdown string, or None if no entries
     """
-    entries = manager.list_entries()
-    if not entries:
+    all_entries = manager.list_entries()
+    if not all_entries:
         return None
 
-    entries = entries[:max_entries]
+    # Group entries by scope
+    by_scope: dict[ClipboardScope, list[ClipboardEntry]] = {}
+    for entry in all_entries:
+        by_scope.setdefault(entry.scope, []).append(entry)
 
     lines = [
         "## Available Clipboard Entries",
@@ -37,21 +43,36 @@ def format_clipboard_context(
         "|-----|-------|-------|-------------|",
     ]
 
-    for entry in entries:
-        desc = entry.short_description or ""
-        if not desc and show_source and entry.source_path:
-            desc = f"from {entry.source_path}"
-            if entry.source_lines:
-                desc += f":{entry.source_lines}"
+    truncated_scopes: list[str] = []
 
-        lines.append(
-            f"| {entry.key} | {entry.scope.value} | {entry.line_count} | {desc} |"
-        )
+    # Show entries per scope in defined order (agent, project, system)
+    for scope in ClipboardScope:
+        scope_entries = by_scope.get(scope, [])
+        if not scope_entries:
+            continue
 
-    lines.extend([
-        "",
-        'Use `paste(key="...")` to insert content. Use `clipboard_list(verbose=True)` to preview.',
-    ])
+        shown = scope_entries[:max_entries]
+        for entry in shown:
+            desc = entry.short_description or ""
+            if not desc and show_source and entry.source_path:
+                desc = f"from {entry.source_path}"
+                if entry.source_lines:
+                    desc += f":{entry.source_lines}"
+
+            lines.append(
+                f"| {entry.key} | {scope.value} | {entry.line_count} | {desc} |"
+            )
+
+        if len(scope_entries) > max_entries:
+            truncated_scopes.append(
+                f"{scope.value}: showing {max_entries} of {len(scope_entries)}"
+            )
+
+    footer = 'Use `paste(key="...")` to insert content. Use `clipboard_list(verbose=True)` to preview.'
+    if truncated_scopes:
+        footer += f" Truncated — {', '.join(truncated_scopes)}. Use `clipboard_list()` to see all."
+
+    lines.extend(["", footer])
 
     # Add note about expired entries if any
     expired_count = manager.count_expired()

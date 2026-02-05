@@ -291,7 +291,7 @@ class ClipboardConfig(BaseModel):
         default=10,
         ge=0,
         le=50,
-        description="Maximum entries to show in context injection",
+        description="Maximum entries to show per scope in context injection",
     )
     show_source_in_injection: bool = Field(
         default=True,

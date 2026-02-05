@@ -909,7 +909,7 @@ GitLab tools require pre-configured instances in `~/.nexus3/config.json` or `.ne
   "clipboard": {
     "enabled": true,
     "inject_into_context": true,
-    "max_injected_entries": 10,
+    "max_injected_entries": 10,  // per scope
     "show_source_in_injection": true,
     "max_entry_bytes": 1048576,
     "warn_entry_bytes": 102400,
