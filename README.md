@@ -946,18 +946,28 @@ These are stored in `SessionAllowances`, checked before prompting, and saved/res
 
 ## Configuration Reference
 
-This section covers all configuration options. For provider setup, see [Provider Configuration](#provider-configuration).
+### File Locations and Merging
 
-### File Locations
-
-Configuration is loaded from multiple layers (later overrides earlier):
+NEXUS3 loads configuration from multiple layers. Each layer can override or extend the previous one:
 
 ```
-1. Shipped defaults     nexus3/defaults/config.json
-2. Global user          ~/.nexus3/config.json
-3. Ancestor dirs        ../.nexus3/config.json (up to 2 levels)
-4. Project local        ./.nexus3/config.json
+1. Shipped defaults     nexus3/defaults/config.json    (auto-updates with package)
+2. Global user          ~/.nexus3/config.json           (your personal defaults)
+3. Ancestor dirs        ../.nexus3/config.json          (up to 2 levels above cwd)
+4. Project local        ./.nexus3/config.json           (project-specific overrides)
 ```
+
+**How merging works:**
+
+- **Scalar values** (strings, numbers, bools): later layer overwrites earlier
+- **Objects** (`providers`, `permissions`, `gitlab`): deep merged — keys from both layers are combined, with later layer winning on conflicts
+- **Arrays** (`mcp_servers`): later layer **replaces** entirely (not appended)
+
+If `~/.nexus3/config.json` exists, it's used as the base. If not, the shipped defaults are used instead. They are never merged together.
+
+**System prompt (NEXUS.md)** merging works differently — all layers are **concatenated** with labeled sections, not overridden. See [Context Configuration](#context-configuration).
+
+**MCP servers (mcp.json)** are loaded separately from `config.json` and merged by server name — a project-local server with the same name as a global one replaces it. See [MCP Configuration](#mcp-configuration).
 
 ### Directory Structure
 
@@ -975,9 +985,9 @@ Configuration is loaded from multiple layers (later overrides earlier):
     └── server.log                  # Server lifecycle events
 
 ./.nexus3/                          # Project-local
-├── config.json                     # Project overrides
-├── NEXUS.md                        # Project system prompt
-├── mcp.json                        # Project MCP servers
+├── config.json                     # Project overrides (deep merged with global)
+├── NEXUS.md                        # Project system prompt (concatenated with global)
+├── mcp.json                        # Project MCP servers (same name = override)
 └── logs/                           # Session logs
     └── {session-id}/
         ├── session.db              # SQLite message history
@@ -996,7 +1006,6 @@ Configuration is loaded from multiple layers (later overrides earlier):
   "max_tool_iterations": 10,
   "skill_timeout": 30.0,
   "max_concurrent_tools": 10,
-  "default_permission_level": "trusted",
   "compaction": { },
   "context": { },
   "clipboard": { },
@@ -1010,23 +1019,24 @@ Configuration is loaded from multiple layers (later overrides earlier):
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `default_model` | string | `"haiku"` | Model alias to use by default |
-| `providers` | object | `{}` | Provider configurations (see [Provider Configuration](#provider-configuration)) |
-| `stream_output` | bool | `true` | Stream LLM responses |
-| `max_tool_iterations` | int | `10` | Max tool calls per turn (shipped defaults use 100) |
-| `skill_timeout` | float | `30.0` | Default tool timeout in seconds (shipped defaults use 120) |
+| `providers` | object | `{}` | Provider configurations — see [Provider Configuration](#provider-configuration) |
+| `stream_output` | bool | `true` | Stream LLM responses token-by-token |
+| `max_tool_iterations` | int | `10` | Max tool calls per turn |
+| `skill_timeout` | float | `30.0` | Default tool timeout in seconds |
 | `max_concurrent_tools` | int | `10` | Parallel tool execution limit |
-| `default_permission_level` | string | `"trusted"` | Default permission preset |
-| `compaction` | object | see below | Context compaction settings |
-| `context` | object | see below | Context loading settings |
-| `clipboard` | object | see below | Clipboard system settings |
-| `mcp_servers` | array | `[]` | MCP server configurations (see [MCP Integration](#mcp-integration)) |
-| `server` | object | see below | HTTP server settings |
-| `permissions` | object | see below | Permission presets and tool configs |
-| `gitlab` | object | see below | GitLab instance configurations (see [GitLab Integration](#gitlab-integration)) |
+| `compaction` | object | see below | Context compaction — see [Compaction Configuration](#compaction-configuration) |
+| `context` | object | see below | Context loading — see [Context Configuration](#context-configuration) |
+| `clipboard` | object | see below | Clipboard system — see [Clipboard Configuration](#clipboard-configuration) |
+| `mcp_servers` | array | `[]` | MCP servers (in config.json) — see [MCP Configuration](#mcp-configuration) |
+| `server` | object | see below | HTTP server — see [Server Configuration](#server-configuration) |
+| `permissions` | object | see below | Permission presets — see [Permissions Configuration](#permissions-configuration) |
+| `gitlab` | object | see below | GitLab instances — see [GitLab Configuration](#gitlab-configuration) |
 
-**Note:** The shipped `defaults/config.json` uses `max_tool_iterations: 100` and `skill_timeout: 120.0` for a more permissive default experience.
+**Note:** The shipped `defaults/config.json` uses more permissive values: `max_tool_iterations: 100`, `skill_timeout: 120.0`, and `default_model: "fast"`. If you create a global config with `nexus3 --init-global`, it copies these shipped defaults.
 
 ### Compaction Configuration
+
+See [Context Compaction](#context-compaction) in Session Management for behavior details.
 
 ```json
 {
@@ -1044,15 +1054,15 @@ Configuration is loaded from multiple layers (later overrides earlier):
 | Option | Default | Description |
 |--------|---------|-------------|
 | `enabled` | `true` | Enable automatic compaction |
-| `model` | `null` | Model for summarization (`null` = use default_model, shipped defaults use "fast") |
+| `model` | `null` | Model alias for summarization (`null` = use default_model) |
 | `trigger_threshold` | `0.9` | Trigger when 90% of context used |
 | `summary_budget_ratio` | `0.25` | Max 25% of tokens for summary |
 | `recent_preserve_ratio` | `0.25` | Keep 25% of recent messages verbatim |
-| `redact_secrets` | `true` | Redact secrets from content before summarization |
+| `redact_secrets` | `true` | Redact secrets before sending to summarization model |
 
-#### Prompt Caching
+### Prompt Caching
 
-Prompt caching reduces costs by reusing cached system prompt tokens across requests. Enabled by default for supported providers.
+A per-provider setting. Enabled by default — reduces costs by reusing cached system prompt tokens across requests.
 
 | Provider | Support | Notes |
 |----------|---------|-------|
@@ -1075,9 +1085,11 @@ To disable for a specific provider, set `prompt_caching: false` in the provider 
 }
 ```
 
-Cache metrics are logged at DEBUG level (visible with `-v` flag).
+Cache metrics are logged at DEBUG level (visible with `-v` flag). See [Provider Options Reference](#provider-options-reference) for the full list of per-provider settings.
 
-#### Context Configuration
+### Context Configuration
+
+Controls how NEXUS.md system prompts and README files are loaded across directory layers. Unlike config.json (which deep-merges), all NEXUS.md files are concatenated with labeled section headers showing their source path.
 
 ```json
 {
@@ -1091,11 +1103,13 @@ Cache metrics are logged at DEBUG level (visible with `-v` flag).
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `ancestor_depth` | `2` | Parent directories to search (0-10) |
-| `include_readme` | `false` | Always include README.md |
-| `readme_as_fallback` | `false` | Use README.md when no NEXUS.md |
+| `ancestor_depth` | `2` | Parent directories to search for `.nexus3/` (0-10) |
+| `include_readme` | `false` | Always include README.md alongside NEXUS.md |
+| `readme_as_fallback` | `false` | Use README.md when no NEXUS.md exists |
 
-#### Server Configuration
+### Server Configuration
+
+See [Server Modes](#server-modes) in CLI Reference for usage.
 
 ```json
 {
@@ -1115,7 +1129,9 @@ Cache metrics are logged at DEBUG level (visible with `-v` flag).
 
 **Security note:** Default `127.0.0.1` binding restricts access to localhost only. Using `0.0.0.0` exposes the server to the network.
 
-#### Clipboard Configuration
+### Clipboard Configuration
+
+See [Clipboard](#clipboard) in Built-in Skills for usage and scope details.
 
 ```json
 {
@@ -1141,12 +1157,77 @@ Cache metrics are logged at DEBUG level (visible with `-v` flag).
 | `warn_entry_bytes` | `102400` | Warning threshold for large entries (100KB) |
 | `default_ttl_seconds` | `null` | Default TTL for new entries (`null` = permanent) |
 
-**Scope permissions by preset:**
-- `yolo`: Full access to agent/project/system scopes
-- `trusted`: Read/write agent+project, read-only system
-- `sandboxed`: Agent scope only (in-memory, session-only)
+### MCP Configuration
 
-#### GitLab Configuration
+MCP servers can be configured in two places:
+
+- **`mcp.json`** (standalone file in `~/.nexus3/` or `.nexus3/`) — recommended
+- **`mcp_servers`** array in `config.json` — alternative
+
+When using `mcp.json`, two key formats are supported:
+
+```json
+{"servers": {"name": {...}}}
+{"mcpServers": {"name": {...}}}
+```
+
+The `mcpServers` format is compatible with Claude Desktop configs.
+
+Per-server options:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `command` | string or array | - | Command to launch stdio server |
+| `args` | array | `[]` | Arguments (when command is a string) |
+| `url` | string | - | URL for HTTP server (mutually exclusive with `command`) |
+| `env` | object | `{}` | Explicit environment variables for the server |
+| `env_passthrough` | array | `[]` | Host env var names to forward to the server |
+| `cwd` | string | - | Working directory for subprocess |
+| `enabled` | bool | `true` | Whether server is enabled |
+
+**Merging:** MCP servers loaded from project-local `mcp.json` override global servers with the same name. See [MCP Integration](#mcp-integration) for full usage details.
+
+### Permissions Configuration
+
+See [Security & Permissions](#security--permissions) for behavior details.
+
+```json
+{
+  "permissions": {
+    "default_preset": "sandboxed",
+    "destructive_tools": ["write_file", "edit_file", "bash_safe", "shell_UNSAFE", "run_python", "nexus_destroy", "nexus_shutdown"],
+    "presets": {
+      "researcher": {
+        "extends": "sandboxed",
+        "description": "Read-only research agent",
+        "tool_permissions": {
+          "bash_safe": {"timeout": 10}
+        }
+      }
+    }
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `default_preset` | `"sandboxed"` | Default preset for new RPC agents |
+| `destructive_tools` | (see above) | Tools that require confirmation in TRUSTED mode |
+| `presets` | `{}` | Custom permission presets (extend built-in ones) |
+
+**Custom preset options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `extends` | string | - | Built-in preset to inherit from (`trusted`, `sandboxed`) |
+| `description` | string | `""` | Human-readable description |
+| `allowed_paths` | array | `null` | Path whitelist (`null` = unrestricted) |
+| `blocked_paths` | array | `[]` | Paths always blocked |
+| `tool_permissions` | object | `{}` | Per-tool overrides (`enabled`, `timeout`, `allowed_paths`) |
+
+### GitLab Configuration
+
+See [GitLab Integration](#gitlab-integration) for setup and available skills.
 
 ```json
 {
@@ -1169,7 +1250,7 @@ Cache metrics are logged at DEBUG level (visible with `-v` flag).
 | Option | Default | Description |
 |--------|---------|-------------|
 | `instances` | `{}` | Named GitLab instance configurations |
-| `default_instance` | `"default"` | Instance to use when not specified |
+| `default_instance` | `null` | Instance to use when not specified |
 
 **Instance options:**
 
@@ -1177,9 +1258,7 @@ Cache metrics are logged at DEBUG level (visible with `-v` flag).
 |--------|-------------|
 | `url` | GitLab instance URL |
 | `token_env` | Environment variable containing API token (recommended) |
-| `token` | Direct token value (not recommended - use `token_env`) |
-
-**Permission requirements:** GitLab tools require TRUSTED or YOLO level. SANDBOXED agents cannot use GitLab tools.
+| `token` | Direct token value (not recommended — use `token_env`) |
 
 ### Environment Variables
 
