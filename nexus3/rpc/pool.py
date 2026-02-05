@@ -588,8 +588,17 @@ class AgentPool:
         )
         context.set_system_prompt(system_prompt)
 
-        # Add session start timestamp as first message in history
-        context.add_session_start_message()
+        # Add session start message with agent metadata
+        write_paths: list[str] | None = None
+        write_file_perm = permissions.tool_permissions.get("write_file")
+        if write_file_perm and write_file_perm.allowed_paths is not None:
+            write_paths = [str(p) for p in write_file_perm.allowed_paths]
+        context.add_session_start_message(
+            agent_id=effective_id,
+            preset=preset_name,
+            cwd=str(agent_cwd),
+            write_paths=write_paths,
+        )
 
         # Register GitLab config for VCS skills
         gitlab_config = _convert_gitlab_config(self._shared.config)

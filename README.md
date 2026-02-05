@@ -237,6 +237,8 @@ nexus3 --init-global
 
 This creates `~/.nexus3/` with default `config.json`, `NEXUS.md`, and `mcp.json`. `~` resolves to your home directory on all platforms (e.g., `/home/user` on Linux, `C:\Users\YourName` on Windows).
 
+After initialization, edit `~/.nexus3/NEXUS.md` to add personal instructions that apply to all your agents — coding style preferences, common project conventions, or any context you want every agent to have. See [Context Configuration](#context-configuration) for how NEXUS.md files work across layers.
+
 ### Path Setup (If `nexus3` Command Not Found)
 
 With the virtualenv activated, `python -m nexus3` works on all platforms. For a permanent fix:
@@ -509,6 +511,8 @@ Your IT department can provide the corporate CA certificate if you don't have it
 | `reasoning` | bool | `false` | Enable extended thinking mode |
 | `guidance` | string | - | Brief usage guidance (e.g., "Fast, cheap. Good for research.") |
 
+For provider internals, retry logic, and adding new providers, see `nexus3/provider/README.md`.
+
 ---
 
 ## Quick Start
@@ -557,6 +561,21 @@ What would you like to work on?
 
 you> /help
 ```
+
+### Project Setup
+
+To give agents project-specific context, run `/init` from within the REPL (or `nexus3 --init-global` for global config). This creates a `.nexus3/` directory with a `NEXUS.md` you can edit with any text editor:
+
+```markdown
+# Project Instructions
+
+This is a Python web app using FastAPI and SQLAlchemy.
+- Use pytest for tests
+- Follow PEP 8
+- Always run tests before committing
+```
+
+When NEXUS3 runs from this directory, agents automatically pick up these instructions alongside the global `~/.nexus3/NEXUS.md`. Project instructions are concatenated with (not replaced by) global ones. See [Context Configuration](#context-configuration) for the full layering system.
 
 ### Multi-Agent Workflows
 
@@ -751,6 +770,8 @@ For scripting, automation, or integrating NEXUS3 with external tools, use the `n
 - `-t, --timeout SEC` - Timeout for initial message (default: 300)
 
 **Security note:** RPC-created agents default to `sandboxed` (read-only). Use `--preset trusted` for write access or `--write-path PATH` for specific directories.
+
+For REPL internals and UI components, see `nexus3/cli/README.md`. For RPC protocol details and authentication, see `nexus3/rpc/README.md`.
 
 ---
 
@@ -959,6 +980,8 @@ The `[p]` option opens full tool call details in a pager for review before decid
 
 These are stored in `SessionAllowances`, checked before prompting, and saved/restored with sessions.
 
+For permission internals, path validation, and the policy engine, see `nexus3/core/README.md`.
+
 ---
 
 ## Configuration Reference
@@ -1106,7 +1129,47 @@ Cache metrics are logged at DEBUG level (visible with `-v` flag). See [Provider 
 
 ### Context Configuration
 
-Controls how NEXUS.md system prompts and README files are loaded across directory layers. Unlike config.json (which deep-merges), all NEXUS.md files are concatenated with labeled section headers showing their source path.
+NEXUS3 uses a split system prompt design:
+
+- **`NEXUS-DEFAULT.md`** — Baked into the package (`nexus3/defaults/`). Contains tool documentation, permission system reference, troubleshooting, and system knowledge. Auto-updates with package upgrades. Users never need to edit this.
+- **`NEXUS.md`** — User-customizable. Contains custom instructions, project context, and preferences. Preserved across upgrades.
+
+This split means users get new tool documentation automatically while their custom instructions remain untouched.
+
+#### NEXUS.md Layer Hierarchy
+
+NEXUS.md files are loaded from multiple directories and **concatenated** (not overridden) with labeled section headers showing their source. Every layer's instructions are included, so project-specific instructions add to global ones:
+
+```
+0. nexus3/defaults/NEXUS-DEFAULT.md      # Package — tool docs, permissions (auto-updates)
+1. ~/.nexus3/NEXUS.md                    # Global — your personal defaults
+2. ../../.nexus3/NEXUS.md                # Ancestor — org or workspace level
+3. ../.nexus3/NEXUS.md                   # Ancestor — parent project
+4. ./.nexus3/NEXUS.md                    # Local — this project's instructions
+```
+
+**What to put where:**
+
+| File | Purpose | Example Content |
+|------|---------|-----------------|
+| `~/.nexus3/NEXUS.md` | Personal defaults for all projects | Coding style, preferred languages, common tools |
+| `.nexus3/NEXUS.md` (project) | Project-specific context | Architecture overview, testing conventions, key file locations |
+| `../../.nexus3/NEXUS.md` (ancestor) | Shared across related projects | Org-wide conventions, monorepo standards |
+
+**Creating project instructions:**
+
+```bash
+# From within the REPL
+/init                    # Creates .nexus3/ in current directory
+
+# Or manually
+mkdir -p .nexus3
+# Then create .nexus3/NEXUS.md with your project instructions
+```
+
+Subagents created with a `cwd` parameter automatically pick up the NEXUS.md from their working directory.
+
+#### Context Config Options
 
 ```json
 {
@@ -1288,6 +1351,8 @@ See [GitLab Integration](#gitlab-integration) for setup and available skills.
 | `NEXUS_DEV=1` | Enable `--serve` headless mode |
 | `NEXUS3_API_KEY` | RPC token fallback (checked after token files) |
 
+For configuration loading internals and validation, see `nexus3/config/README.md`.
+
 ---
 
 ## Built-in Skills
@@ -1405,6 +1470,8 @@ Scoped clipboard system for sharing content between agents and sessions.
 | Agent management | All | Sandboxed children only | `nexus_send` to parent only |
 | GitLab | All | Confirmations for destructive | Disabled |
 
+For the skill system architecture, base classes, and creating custom skills, see `nexus3/skill/README.md`.
+
 ---
 
 ## GitLab Integration
@@ -1453,7 +1520,7 @@ nexus3 rpc create worker --preset trusted  # RPC
 
 Use `/gitlab` in the REPL for quick reference on GitLab operations and examples.
 
-For full configuration options, see [GitLab Configuration](#gitlab-configuration) in the Configuration Reference.
+For full configuration options, see [GitLab Configuration](#gitlab-configuration) in the Configuration Reference. For GitLab skill internals, see `nexus3/skill/vcs/README.md`.
 
 ---
 
@@ -1674,7 +1741,7 @@ Manual compaction:
 nexus3 rpc compact AGENT_ID # RPC
 ```
 
-For detailed session internals, see `nexus3/session/README.md`.
+For detailed session internals, see `nexus3/session/README.md`. For context management and compaction, see `nexus3/context/README.md`.
 
 ---
 

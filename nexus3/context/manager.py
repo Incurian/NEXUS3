@@ -18,14 +18,44 @@ def get_current_datetime_str() -> str:
     return f"Current date: {now.strftime('%Y-%m-%d')}, Current time: {now.strftime('%H:%M')} (local)"
 
 
-def get_session_start_str() -> str:
-    """Get session start timestamp for history.
+def get_session_start_str(
+    agent_id: str | None = None,
+    preset: str | None = None,
+    cwd: str | None = None,
+    write_paths: list[str] | None = None,
+    has_confirmation_ui: bool = False,
+) -> str:
+    """Get session start message with agent metadata for history.
+
+    Args:
+        agent_id: Agent identifier.
+        preset: Permission preset name (e.g., "trusted", "sandboxed").
+        cwd: Working directory path.
+        write_paths: Allowed write paths (for sandboxed agents).
+        has_confirmation_ui: Whether a confirmation UI is available (REPL mode).
+            When False, trusted agents can only write within CWD.
 
     Returns:
         Formatted string for session start message.
     """
     now = datetime.now()
-    return f"[Session started: {now.strftime('%Y-%m-%d %H:%M')} (local)]"
+    parts = [f"[Session started: {now.strftime('%Y-%m-%d %H:%M')} (local)"]
+
+    if agent_id:
+        parts.append(f" | Agent: {agent_id}")
+    if preset:
+        parts.append(f" | Preset: {preset}")
+    if cwd:
+        parts.append(f" | CWD: {cwd}")
+    if write_paths:
+        parts.append(f" | Write paths: {', '.join(write_paths)}")
+    elif preset == "trusted" and not has_confirmation_ui:
+        parts.append(f" | Writes: CWD only (no confirmation UI)")
+    elif preset == "trusted" and has_confirmation_ui:
+        parts.append(f" | Writes: CWD unrestricted, elsewhere with user confirmation")
+
+    parts.append("]")
+    return "".join(parts)
 
 
 # Maximum length for tool result prefix (tool name + args)
@@ -216,13 +246,37 @@ class ContextManager:
         if self._logger:
             self._logger.log_system(prompt)
 
-    def add_session_start_message(self) -> None:
-        """Add a session start timestamp message to history.
+    def add_session_start_message(
+        self,
+        agent_id: str | None = None,
+        preset: str | None = None,
+        cwd: str | None = None,
+        write_paths: list[str] | None = None,
+        has_confirmation_ui: bool = False,
+    ) -> None:
+        """Add a session start message with agent metadata to history.
 
-        This should be called once when a new session begins. The timestamp
-        is fixed and marks when the session started.
+        This should be called once when a new session begins. Includes
+        agent identity, permissions, and working directory so the agent
+        has self-knowledge from the start.
+
+        Args:
+            agent_id: Agent identifier.
+            preset: Permission preset name.
+            cwd: Working directory path.
+            write_paths: Allowed write paths (for sandboxed agents).
+            has_confirmation_ui: Whether a confirmation UI is available.
         """
-        start_msg = Message(role=Role.USER, content=get_session_start_str())
+        start_msg = Message(
+            role=Role.USER,
+            content=get_session_start_str(
+                agent_id=agent_id,
+                preset=preset,
+                cwd=cwd,
+                write_paths=write_paths,
+                has_confirmation_ui=has_confirmation_ui,
+            ),
+        )
         self._messages.append(start_msg)
         if self._logger:
             self._logger.log_user(start_msg.content)
