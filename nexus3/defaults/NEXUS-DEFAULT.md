@@ -134,6 +134,28 @@ Key behaviors:
 - Use `clipboard_list` to see available entries before pasting
 - Content is injected into context automatically when configured (see `clipboard.inject_into_context` config)
 
+### When to Use the Clipboard
+
+**Move content between files without cluttering context.** Instead of reading a large block into your context just to paste it elsewhere, use `copy` and `paste` to transfer it directly:
+```
+copy(source="src/old_module.py", key="auth-logic", start_line=50, end_line=120)
+paste(key="auth-logic", target="src/new_module.py", mode="append")
+```
+
+**Share findings between agents.** Use `project` scope to leave notes that other agents (or future sessions) can pick up:
+```
+copy(source="report.md", key="api-summary", scope="project", description="Summary of API endpoints discovered during research")
+```
+Another agent can later retrieve it with `clipboard_get(key="api-summary", scope="project")`.
+
+**Save working notes across sessions.** Use `project` scope to persist small notes, checklists, or intermediate results that survive session restarts. Useful for long-running tasks split across multiple sessions.
+
+**Tag entries for organization.** Tags help when you have many clipboard entries:
+```
+clipboard_tag(action="add", entry_key="api-summary", scope="project", name="research")
+clipboard_list(scope="project", tags=["research"])
+```
+
 For clipboard internals, see `nexus3/clipboard/README.md`.
 
 ---
