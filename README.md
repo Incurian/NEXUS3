@@ -222,10 +222,7 @@ This creates `~/.nexus3/` with default `config.json`, `NEXUS.md`, and `mcp.json`
 
 ### Path Setup (If `nexus3` Command Not Found)
 
-**All platforms** — use the module directly:
-```bash
-python -m nexus3
-```
+With the virtualenv activated, `python -m nexus3` works on all platforms. For a permanent fix:
 
 **Linux, macOS, WSL, Git Bash** — add pip's script directory to PATH:
 ```bash
