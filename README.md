@@ -232,6 +232,50 @@ source ~/.bashrc
 
 **Windows (cmd/PowerShell)** — pip scripts are usually already on PATH if Python was installed with "Add to PATH" checked. If not, add `%APPDATA%\Python\Python3XX\Scripts` to your PATH via System Settings.
 
+### Shell Alias (Recommended)
+
+Create an alias that activates the virtualenv and launches NEXUS3 in your current directory, passing through any arguments. Replace `/path/to/NEXUS3` with your actual clone location.
+
+**Linux, macOS, WSL** — add to `~/.bashrc` or `~/.zshrc`:
+```bash
+nexus3() {
+  (cd /path/to/NEXUS3 && source .venv/bin/activate && python -m nexus3 "$@")
+}
+```
+
+**Git Bash** — add to `~/.bashrc`:
+```bash
+nexus3() {
+  (cd /path/to/NEXUS3 && source .venv/Scripts/activate && python -m nexus3 "$@")
+}
+```
+
+**Windows (PowerShell)** — add to your `$PROFILE` (run `notepad $PROFILE` to edit):
+```powershell
+function nexus3 {
+  Push-Location C:\path\to\NEXUS3
+  & .venv\Scripts\Activate.ps1
+  python -m nexus3 @args
+  Pop-Location
+}
+```
+
+**Windows (cmd)** — save as `nexus3.bat` somewhere on your PATH:
+```batch
+@echo off
+pushd C:\path\to\NEXUS3
+call .venv\Scripts\activate
+python -m nexus3 %*
+popd
+```
+
+After adding the alias, restart your shell or source your profile. Then `nexus3` works from any directory:
+
+```bash
+cd ~/my-project
+nexus3 --fresh
+```
+
 ---
 
 ## Provider Configuration
