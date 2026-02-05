@@ -234,39 +234,27 @@ source ~/.bashrc
 
 ### Shell Alias (Recommended)
 
-Create an alias that activates the virtualenv and launches NEXUS3 in your current directory, passing through any arguments. Replace `/path/to/NEXUS3` with your actual clone location.
+Create an alias that launches NEXUS3 in your current directory, passing through any arguments. This calls the virtualenv's Python directly by absolute path, so no activation or `cd` is needed. Replace `/path/to/NEXUS3` with your actual clone location.
 
 **Linux, macOS, WSL** — add to `~/.bashrc` or `~/.zshrc`:
 ```bash
-nexus3() {
-  (cd /path/to/NEXUS3 && source .venv/bin/activate && python -m nexus3 "$@")
-}
+alias nexus3='/path/to/NEXUS3/.venv/bin/python -m nexus3'
 ```
 
 **Git Bash** — add to `~/.bashrc`:
 ```bash
-nexus3() {
-  (cd /path/to/NEXUS3 && source .venv/Scripts/activate && python -m nexus3 "$@")
-}
+alias nexus3='/path/to/NEXUS3/.venv/Scripts/python -m nexus3'
 ```
 
 **Windows (PowerShell)** — add to your `$PROFILE` (run `notepad $PROFILE` to edit):
 ```powershell
-function nexus3 {
-  Push-Location C:\path\to\NEXUS3
-  & .venv\Scripts\Activate.ps1
-  python -m nexus3 @args
-  Pop-Location
-}
+function nexus3 { & C:\path\to\NEXUS3\.venv\Scripts\python.exe -m nexus3 @args }
 ```
 
 **Windows (cmd)** — save as `nexus3.bat` somewhere on your PATH:
 ```batch
 @echo off
-pushd C:\path\to\NEXUS3
-call .venv\Scripts\activate
-python -m nexus3 %*
-popd
+C:\path\to\NEXUS3\.venv\Scripts\python.exe -m nexus3 %*
 ```
 
 After adding the alias, restart your shell or source your profile. Then `nexus3` works from any directory:
