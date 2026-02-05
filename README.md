@@ -106,11 +106,15 @@ cd NEXUS3
 
 ### Step 2: Create a Virtual Environment
 
+Linux/macOS:
 ```bash
 python3.11 -m venv .venv
 ```
 
-On Windows, use `python` instead of `python3.11`.
+Windows:
+```cmd
+python -m venv .venv
+```
 
 **Activate the virtualenv:**
 
