@@ -882,30 +882,65 @@ nexus3 rpc create worker --cwd /project --write-path /project/output
 
 ### REPL Confirmation Behavior
 
-In TRUSTED mode, destructive operations prompt for confirmation:
+In TRUSTED mode, destructive operations prompt for confirmation. The available options depend on the tool type:
 
+**File writes** (`write_file`, `edit_file`, `append_file`, etc.):
 ```
-Tool: write_file
-Path: /etc/hosts
-This path is outside your working directory.
+Allow write_file?
+  Path: /etc/hosts
+  Content: ...
 
-Allow? [y]es / [n]o / [a]llow directory / [s]kip:
+  [1] Allow once
+  [2] Allow always for this file
+  [3] Allow always in this directory
+  [4] Deny
+  [p] View full details
 ```
 
-Options:
-- **y**: Allow this once
-- **n**: Deny
-- **a**: Allow all operations in this directory for the session
-- **s**: Skip this tool call
+**Execution** (`bash_safe`, `run_python`):
+```
+Execute bash_safe?
+  Command: make build
+
+  [1] Allow once
+  [2] Allow always in this directory
+  [3] Deny
+  [p] View full details
+```
+
+**Shell unsafe** (`shell_UNSAFE`) — no "allow always" options, always requires explicit approval:
+```
+Execute shell_UNSAFE?
+  Command: curl ... | sh
+
+  [1] Allow once
+  [2] Deny
+  [p] View full details
+```
+
+**MCP tools**:
+```
+Allow MCP tool 'mcp_github_create_issue'?
+
+  [1] Allow once
+  [2] Allow this tool always (this session)
+  [3] Allow all tools from this server (this session)
+  [4] Deny
+  [p] View full details
+```
+
+The `[p]` option opens full tool call details in a pager for review before deciding.
 
 ### Session Allowances
 
-TRUSTED mode supports dynamic "allow always" allowances that persist for the session:
-- **File allowances**: Allow writes to specific files
-- **Directory allowances**: Allow writes anywhere in a directory
-- **Execution allowances**: Allow execution tools in specific directories (not global)
+"Allow always" choices persist for the session as allowances:
 
-These are stored in `SessionAllowances` and checked before prompting for confirmation.
+- **File allowances**: Allow writes to a specific file
+- **Directory allowances**: Allow writes anywhere in a directory
+- **Execution allowances**: Allow a tool in a specific working directory
+- **MCP allowances**: Allow a specific tool or all tools from a server
+
+These are stored in `SessionAllowances`, checked before prompting, and saved/restored with sessions.
 
 ---
 
