@@ -1,8 +1,8 @@
 # NEXUS3
 
-**A secure, multi-agent CLI framework for AI-powered software engineering.**
+**A multi-agent CLI framework for AI-powered development.**
 
-NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrating multiple AI agents. Each agent runs in isolation with configurable permissions, enabling safe automation of development tasks through 39 built-in skills (file operations, git, shell execution, clipboard, inter-agent communication) plus 21 GitLab integration skills.
+Run multiple AI agents from a single terminal session. Each agent has its own conversation context, permissions, and toolset — they can read and write files, execute commands, coordinate with each other, and connect to external services. A layered permission system gives you control over what each agent can access. Sessions can be saved, resumed, cloned to fork a conversation, and managed across restarts, and automatic context compaction keeps long-running conversations from hitting token limits.
 
 ---
 
@@ -29,16 +29,33 @@ NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrat
 
 ## Key Features
 
-- **One Server, Many Agents**: Run a single NEXUS3 server per project. Create multiple agents within it for parallel research, code review, implementation—all coordinated through `nexus_send`. More efficient than multiple servers and enables direct inter-agent communication.
-- **Async-First**: Built on asyncio throughout—no threading, predictable concurrency.
-- **Fail-Fast**: Errors surface immediately with clear messages—no silent failures.
-- **Security by Default**: Sandboxed by default for RPC agents, permission ceilings prevent escalation.
-- **Multi-Provider Support**: OpenRouter, Anthropic, OpenAI, Azure, Ollama, vLLM with prompt caching support.
-- **Session Persistence**: Save, resume, and manage conversation sessions with full state restoration.
-- **Context Compaction**: LLM-powered summarization when context gets full, with automatic system prompt reload.
-- **Scoped Clipboard**: Agent, project, and system-level clipboard with tagging, search, and export/import.
-- **MCP Integration**: Connect external tools via Model Context Protocol.
-- **GitLab Integration**: 21 skills for issues, MRs, CI/CD, epics, and more (requires TRUSTED+).
+### Multi-Agent Coordination
+
+Run a single NEXUS3 server and create multiple agents within it — researchers, reviewers, implementers — each with isolated permissions and their own conversation context. Agents communicate directly via `nexus_send`, and permission ceilings prevent escalation (a trusted agent can only spawn sandboxed subagents).
+
+### Interactive REPL
+
+A streaming terminal interface with session lobby, whisper mode for directing specific agents, and REPL commands for managing agents, permissions, models, and configuration on the fly.
+
+### 60+ Built-in Skills
+
+39 core skills covering file operations, execution, git, clipboard, and inter-agent communication, plus 21 GitLab integration skills for issues, merge requests, CI/CD pipelines, epics, and more. Skills are permission-aware — what's available depends on the agent's security preset.
+
+### Multi-Provider LLM Support
+
+Connect to OpenRouter, Anthropic, OpenAI, Azure, Ollama, or vLLM. Switch models mid-session, route different agents to different providers, and benefit from automatic prompt caching (~90% cost savings on cached tokens).
+
+### Session Persistence
+
+Save and resume conversations with full state restoration — messages, model choice, permissions, working directory. When context fills up, LLM-powered compaction summarizes older history to reclaim space while preserving essential information.
+
+### Security by Default
+
+Agents created via RPC are sandboxed by default: restricted to their working directory, no network access, limited inter-agent communication. Three presets (yolo, trusted, sandboxed) with per-tool enable/disable, path restrictions, and timeout controls. Token-based authentication for all RPC access.
+
+### Extensible
+
+Layered configuration merges project-local settings over global defaults. Connect external tools via MCP. Customize system prompts per project with `NEXUS.md` files that load automatically based on working directory.
 
 ---
 
