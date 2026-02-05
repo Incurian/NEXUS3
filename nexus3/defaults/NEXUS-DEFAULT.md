@@ -375,6 +375,71 @@ For session internals, see `nexus3/session/README.md`.
 
 ---
 
+## Configuration
+
+NEXUS3 has three types of configuration files, each serving a different purpose. All live in `.nexus3/` directories and are loaded from multiple layers (project-local overrides global).
+
+### config.json — Settings and Behavior
+
+Controls providers, models, permissions, compaction, clipboard, and other runtime settings. Later layers deep-merge with earlier ones (scalars overwrite, objects merge, arrays replace).
+
+```
+~/.nexus3/config.json          # Global — personal defaults
+.nexus3/config.json            # Project-local — overrides global
+```
+
+Common things to configure:
+- **Provider and model**: Which LLM to use (`provider.type`, `provider.model`, `models` aliases)
+- **Permissions**: Default preset, custom presets, per-tool settings
+- **Compaction**: Trigger threshold, summary model, preserve ratio
+- **Clipboard**: Scoping, injection, size limits
+
+Initialize with `nexus3 --init-global` or `/init` in the REPL. For the full schema and all options, see the main `README.md` Configuration Reference section or `nexus3/config/README.md`.
+
+### NEXUS.md — Agent Instructions
+
+Custom instructions that agents receive as part of their system prompt. Tells agents about your project, coding conventions, and preferences. All layers are **concatenated** (not overridden):
+
+```
+~/.nexus3/NEXUS.md             # Global — personal style, common conventions
+../../.nexus3/NEXUS.md         # Ancestor — org or workspace level
+../.nexus3/NEXUS.md            # Ancestor — parent project
+./.nexus3/NEXUS.md             # Project-local — this project's context
+```
+
+Write these in plain markdown. Anything you put here becomes part of every agent's system prompt when running from that directory.
+
+### mcp.json — External Tool Servers
+
+Configures MCP (Model Context Protocol) servers that provide additional tools to agents. Project-local servers with the same name override global ones.
+
+```
+~/.nexus3/mcp.json             # Global — personal MCP servers
+.nexus3/mcp.json               # Project-local — project-specific servers
+```
+
+For MCP configuration details, see `nexus3/mcp/README.md`.
+
+### Where Files Live
+
+```
+~/.nexus3/                     # Global (all projects)
+├── config.json                # Settings
+├── NEXUS.md                   # Personal agent instructions
+├── mcp.json                   # MCP servers
+├── rpc.token                  # Auto-generated RPC auth token
+├── sessions/                  # Saved sessions
+└── last-session.json          # For --resume
+
+.nexus3/                       # Project-local (this project)
+├── config.json                # Project settings (overrides global)
+├── NEXUS.md                   # Project agent instructions
+├── mcp.json                   # Project MCP servers
+└── logs/                      # Session logs (gitignore this)
+```
+
+---
+
 ## Tool Limits
 
 ### File Operations
