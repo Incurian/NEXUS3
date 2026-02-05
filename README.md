@@ -9,7 +9,6 @@ NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrat
 ## Table of Contents
 
 - [Key Features](#key-features)
-- [GitLab Integration](#gitlab-integration)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Provider Configuration](#provider-configuration)
@@ -19,6 +18,7 @@ NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrat
 - [Security & Permissions](#security--permissions)
 - [Configuration Reference](#configuration-reference)
 - [Built-in Skills](#built-in-skills)
+- [GitLab Integration](#gitlab-integration)
 - [MCP Integration](#mcp-integration)
 - [Session Management](#session-management)
 - [Troubleshooting](#troubleshooting)
@@ -39,53 +39,6 @@ NEXUS3 provides a streaming REPL with an embedded JSON-RPC server for orchestrat
 - **Scoped Clipboard**: Agent, project, and system-level clipboard with tagging, search, and export/import.
 - **MCP Integration**: Connect external tools via Model Context Protocol.
 - **GitLab Integration**: 21 skills for issues, MRs, CI/CD, epics, and more (requires TRUSTED+).
-
----
-
-## GitLab Integration
-
-Full GitLab integration with 21 skills covering issues, merge requests, CI/CD, and more.
-
-### Configuration
-
-Add GitLab configuration to your `config.json`:
-
-```json
-{
-  "gitlab": {
-    "instances": {
-      "default": {
-        "url": "https://gitlab.com",
-        "token_env": "GITLAB_TOKEN"
-      }
-    },
-    "default_instance": "default"
-  }
-}
-```
-
-Set your GitLab personal access token (requires `api` scope):
-```bash
-export GITLAB_TOKEN="glpat-..."
-```
-
-### Permission Requirements
-
-GitLab tools require **TRUSTED** or **YOLO** permission level. SANDBOXED agents cannot use GitLab tools (security restriction for external API access).
-
-### Available Skills
-
-| Category | Skills | Description |
-|----------|--------|-------------|
-| **Foundation** | `gitlab_repo`, `gitlab_issue`, `gitlab_mr`, `gitlab_label`, `gitlab_branch`, `gitlab_tag` | Core repository operations |
-| **Project Management** | `gitlab_epic`, `gitlab_iteration`, `gitlab_milestone`, `gitlab_board`, `gitlab_time` | Planning and tracking (some require GitLab Premium) |
-| **Code Review** | `gitlab_approval`, `gitlab_draft`, `gitlab_discussion` | MR reviews and discussions |
-| **CI/CD** | `gitlab_pipeline`, `gitlab_job`, `gitlab_artifact`, `gitlab_variable` | Pipeline and job management |
-| **Config** | `gitlab_deploy_key`, `gitlab_deploy_token`, `gitlab_feature_flag` | Deployment configuration |
-
-### REPL Command
-
-Use `/gitlab` for quick access to GitLab operations from the REPL.
 
 ---
 
@@ -153,104 +106,108 @@ cd NEXUS3
 
 ### Step 2: Create a Virtual Environment
 
-**Option A: Using `uv` (faster, recommended)**
 ```bash
-# Install uv if you don't have it
-curl -LsSf https://astral.sh/uv/install.sh | sh
+python3.11 -m venv .venv    # Use "python" instead of "python3.11" on Windows
+```
 
-# Create virtualenv with Python 3.11+
-uv venv --python 3.11
+**Activate the virtualenv:**
+
+Linux/macOS:
+```bash
 source .venv/bin/activate
 ```
 
-**Option B: Using standard `venv`**
-```bash
-# Ensure you have Python 3.11+
-python3.11 --version  # Should print 3.11.x or higher
+Windows (cmd):
+```cmd
+.venv\Scripts\activate
+```
 
-# Create virtualenv
-python3.11 -m venv .venv
-source .venv/bin/activate
+Windows (PowerShell):
+```powershell
+.venv\Scripts\Activate.ps1
 ```
 
 ### Step 3: Install Dependencies
 
-**Development installation (recommended):**
-```bash
-# Using uv
-uv pip install -e ".[dev]"
+With the virtualenv activated:
 
-# Or using pip
+```bash
 pip install -e ".[dev]"
-```
-
-**User installation:**
-```bash
-pip install .
 ```
 
 ### Step 4: Set Up API Key
 
-**Option A: Environment variable (temporary)**
+**Option A: `.env` file (recommended, all platforms)**
+```bash
+echo 'OPENROUTER_API_KEY=sk-or-v1-...' > .env
+```
+
+This file is gitignored — never commit API keys.
+
+**Option B: Environment variable (temporary, current session only)**
+
+Linux/macOS:
 ```bash
 export OPENROUTER_API_KEY="sk-or-v1-..."
 ```
 
-**Option B: `.env` file (persistent, recommended)**
-```bash
-# Create .env file in repo root
-echo 'OPENROUTER_API_KEY=sk-or-v1-...' > .env
-
-# This file is gitignored - never commit API keys!
+Windows (cmd):
+```cmd
+set OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-**Option C: Shell profile (always available)**
+Windows (PowerShell):
+```powershell
+$env:OPENROUTER_API_KEY="sk-or-v1-..."
+```
+
+**Option C: Persistent environment variable**
+
+Linux/macOS — add to `~/.bashrc` or `~/.zshrc`:
 ```bash
-# Add to ~/.bashrc or ~/.zshrc
 echo 'export OPENROUTER_API_KEY="sk-or-v1-..."' >> ~/.bashrc
 source ~/.bashrc
 ```
 
+Windows:
+```cmd
+setx OPENROUTER_API_KEY "sk-or-v1-..."
+```
+
 ### Step 5: Verify Installation
 
+With the virtualenv activated:
+
 ```bash
-# Check Python version (use virtualenv Python)
-.venv/bin/python --version  # Should show 3.11+
-
-# Check module is importable
-.venv/bin/python -c "import nexus3; print('NEXUS3 installed successfully')"
-
-# Check CLI works
-.venv/bin/python -m nexus3 --help
+python --version    # Should show 3.11+
+python -c "import nexus3; print('NEXUS3 installed successfully')"
+python -m nexus3 --help
 ```
+
+Without the virtualenv activated, use `.venv/bin/python` (Linux/macOS) or `.venv\Scripts\python` (Windows) instead of `python`.
 
 ### Step 6: Initialize Configuration (Recommended)
 
 ```bash
-# Create global config directory (~/.nexus3/)
 nexus3 --init-global
-
-# This creates:
-# - ~/.nexus3/config.json (settings)
-# - ~/.nexus3/NEXUS.md (system prompt template)
-# - ~/.nexus3/mcp.json (MCP servers)
 ```
+
+This creates `~/.nexus3/` with default `config.json`, `NEXUS.md`, and `mcp.json`. On Windows, `~` resolves to your user profile directory (e.g., `C:\Users\YourName`).
 
 ### Path Setup (If `nexus3` Command Not Found)
 
-If `nexus3` command is not found after installation:
-
+**All platforms** — use the module directly:
 ```bash
-# Option 1: Add ~/.local/bin to PATH
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-
-# Option 2: Use full path
-~/.local/bin/nexus3
-
-# Option 3: Use module directly
 python -m nexus3
 ```
+
+**Linux/macOS** — add pip's script directory to PATH:
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**Windows** — pip scripts are usually already on PATH if Python was installed with "Add to PATH" checked. If not, add `%APPDATA%\Python\Python3XX\Scripts` to your PATH via System Settings.
 
 ---
 
@@ -1003,6 +960,33 @@ Configuration is loaded from multiple layers (later overrides earlier):
 | `recent_preserve_ratio` | `0.25` | Keep 25% of recent messages verbatim |
 | `redact_secrets` | `true` | Redact secrets from content before summarization |
 
+#### Prompt Caching
+
+Prompt caching reduces costs by reusing cached system prompt tokens across requests. Enabled by default for supported providers.
+
+| Provider | Support | Notes |
+|----------|---------|-------|
+| Anthropic | Full | Automatic cache breakpoints on system prompt |
+| OpenAI | Full | Automatic (OpenAI manages caching server-side) |
+| Azure | Full | Same as OpenAI |
+| OpenRouter | Pass-through | Automatic for Anthropic models via OpenRouter |
+| Ollama / vLLM | N/A | Local inference, no caching needed |
+
+To disable for a specific provider, set `prompt_caching: false` in the provider config:
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "type": "anthropic",
+      "prompt_caching": false
+    }
+  }
+}
+```
+
+Cache metrics are logged at DEBUG level (visible with `-v` flag).
+
 #### Context Configuration
 
 ```json
@@ -1158,11 +1142,10 @@ NEXUS3 includes 39 built-in skills organized by category, plus 21 GitLab integra
 | `shell_UNSAFE` | Execute with full shell (pipes, redirects) | `command`, `timeout`, `cwd` |
 | `run_python` | Execute Python code | `code`, `timeout`, `cwd` |
 
-**Important:** `bash_safe` uses `shlex.split()` so shell operators (`|`, `&&`, `>`) do NOT work. Use `shell_UNSAFE` only when you need shell features AND trust the input.
-
 **Safety notes:**
-- `bash_safe` uses `shlex.split()` so shell operators (`|`, `&&`, `>`) do NOT work
+- `bash_safe` uses `shlex.split()` — shell operators (`|`, `&&`, `>`) do NOT work
 - Use `shell_UNSAFE` only when you need shell features AND trust the input
+- `shell_UNSAFE` always requires confirmation (no "allow always" option)
 - Default timeout: 30 seconds, max: 300 seconds
 
 ### Version Control
@@ -1238,6 +1221,56 @@ Scoped clipboard system for sharing content between agents and sessions.
 
 ---
 
+## GitLab Integration
+
+Full GitLab integration with 21 skills covering issues, merge requests, CI/CD, and more.
+
+### Setup
+
+1. Add GitLab configuration to `~/.nexus3/config.json` or `.nexus3/config.json`:
+
+```json
+{
+  "gitlab": {
+    "instances": {
+      "default": {
+        "url": "https://gitlab.com",
+        "token_env": "GITLAB_TOKEN"
+      }
+    },
+    "default_instance": "default"
+  }
+}
+```
+
+2. Set your GitLab personal access token (requires `api` scope). Easiest: add to your `.env` file:
+```
+GITLAB_TOKEN=glpat-...
+```
+Or set as an environment variable (`export` on Linux/macOS, `set`/`setx` on Windows).
+
+3. Use TRUSTED or YOLO permission level (SANDBOXED agents cannot use GitLab tools):
+```bash
+/permissions trusted              # In REPL
+nexus3 rpc create worker --preset trusted  # RPC
+```
+
+### Available Skills
+
+| Category | Skills | Description |
+|----------|--------|-------------|
+| **Foundation** | `gitlab_repo`, `gitlab_issue`, `gitlab_mr`, `gitlab_label`, `gitlab_branch`, `gitlab_tag` | Core repository operations |
+| **Project Management** | `gitlab_epic`, `gitlab_iteration`, `gitlab_milestone`, `gitlab_board`, `gitlab_time` | Planning and tracking (some require GitLab Premium) |
+| **Code Review** | `gitlab_approval`, `gitlab_draft`, `gitlab_discussion` | MR reviews and discussions |
+| **CI/CD** | `gitlab_pipeline`, `gitlab_job`, `gitlab_artifact`, `gitlab_variable` | Pipeline and job management |
+| **Config** | `gitlab_deploy_key`, `gitlab_deploy_token`, `gitlab_feature_flag` | Deployment configuration |
+
+Use `/gitlab` in the REPL for quick reference on GitLab operations and examples.
+
+For full configuration options, see [GitLab Configuration](#gitlab-configuration) in the Configuration Reference.
+
+---
+
 ## MCP Integration
 
 NEXUS3 supports the Model Context Protocol (MCP) for connecting external tools. MCP enables agents to discover and invoke tools, resources, and prompts from external servers.
@@ -1252,7 +1285,7 @@ NEXUS3 supports the Model Context Protocol (MCP) for connecting external tools. 
 
 ### Configuration
 
-Create `mcp.json` in `~/.nexus3/` (global) or `.nexus3/` (project):
+Create `mcp.json` in `~/.nexus3/` (global) or `.nexus3/` (project).
 
 ### Server Configuration Options
 
@@ -1464,56 +1497,55 @@ For detailed session internals, see `nexus3/session/README.md`.
 ### Installation Issues
 
 **Problem: `python: command not found`**
-```bash
-# Use explicit Python 3.11
-python3.11 -m nexus3
 
-# Or activate virtualenv
-source .venv/bin/activate
-```
+Activate your virtualenv first (see [Installation Step 2](#step-2-create-a-virtual-environment)), or use the full path: `.venv/bin/python -m nexus3` (Linux/macOS) or `.venv\Scripts\python -m nexus3` (Windows). On Linux/macOS you can also try `python3.11` directly.
 
 **Problem: `nexus3: command not found`**
-```bash
-# Add to PATH
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
 
-# Or use module
-python -m nexus3
-```
+Use `python -m nexus3` (all platforms). See [Path Setup](#path-setup-if-nexus3-command-not-found) for permanent fixes.
 
 **Problem: `ModuleNotFoundError: No module named 'nexus3'`**
+
+Activate the virtualenv and install:
 ```bash
-# Install the package
-source .venv/bin/activate
 pip install -e .
 ```
 
 ### API Key Issues
 
 **Problem: `AuthenticationError: API key not found`**
+
+Check that your API key is set. The easiest cross-platform approach is a `.env` file (see [Installation Step 4](#step-4-set-up-api-key)):
 ```bash
-# Check env var
-echo $OPENROUTER_API_KEY
-
-# Set it
-export OPENROUTER_API_KEY="sk-or-v1-..."
-
-# Or use .env file
 echo 'OPENROUTER_API_KEY=sk-or-v1-...' > .env
+```
+
+To check if it's set in your current environment:
+```bash
+echo $OPENROUTER_API_KEY            # Linux/macOS
+echo %OPENROUTER_API_KEY%           # Windows (cmd)
+echo $env:OPENROUTER_API_KEY        # Windows (PowerShell)
 ```
 
 ### Server Issues
 
 **Problem: `Address already in use: 8765`**
+
+Find and kill the existing server process:
+
+Linux/macOS:
 ```bash
-# Find and kill existing server
 lsof -i :8765
 kill <PID>
-
-# Or use different port
-nexus3 --serve 9000
 ```
+
+Windows:
+```cmd
+netstat -ano | findstr :8765
+taskkill /PID <PID> /F
+```
+
+Or use a different port: `nexus3 --serve 9000`
 
 **Problem: `Cannot use --serve without NEXUS_DEV=1`**
 ```bash
@@ -1709,10 +1741,12 @@ nexus3 --raw-log          # Log raw API JSON to raw.jsonl
 
 ## Development
 
+> **Windows note:** Commands below use `.venv/bin/` paths (Linux/macOS). On Windows, substitute `.venv\Scripts\` (e.g., `.venv\Scripts\pytest`). Alternatively, activate the virtualenv first and use bare commands (`pytest`, `ruff`, `mypy`).
+
 ### Running Tests
 
 ```bash
-# All tests (2600+)
+# All tests (3400+)
 .venv/bin/pytest tests/ -v
 
 # Specific categories
@@ -1836,4 +1870,4 @@ MIT
 
 ---
 
-**Updated**: 2026-02-01
+**Updated**: 2026-02-05
