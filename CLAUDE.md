@@ -124,12 +124,14 @@ nexus3 --serve
 
 ### Component Sharing
 
-| Shared | Per-Agent |
-|--------|-----------|
+| Shared (SharedComponents) | Per-Agent |
+|---------------------------|-----------|
 | Config | SessionLogger |
-| Provider | ContextManager |
-| PromptLoader | ServiceContainer |
+| ProviderRegistry | ContextManager |
+| ContextLoader + base context | ServiceContainer |
 | Base log directory | SkillRegistry, Session, Dispatcher |
+| MCPServerRegistry | |
+| Custom permission presets | |
 
 ---
 
@@ -387,7 +389,6 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `shell_UNSAFE` | `command`, `timeout`? | Execute shell=True (pipes work, but injection-vulnerable) |
 | `run_python` | `code`, `timeout`? | Execute Python code |
 | `sleep` | `seconds`, `label`? | Pause execution (for testing) |
-| `echo` | `message` | Echo input back (testing utility) |
 | `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `model`?, `initial_message`?, `wait_for_initial_response`? | Create agent (initial_message queued by default) |
 | `nexus_destroy` | `agent_id`, `port`? | Remove an agent (server keeps running) |
 | `nexus_send` | `agent_id`, `content`, `port`? | Send message to an agent |
@@ -968,7 +969,7 @@ NEXUS3 supports multiple simultaneous providers with named references:
       "base_url": "http://localhost:11434/v1"
     }
   },
-  "default_provider": "openrouter",
+  "default_model": "haiku",
 
   "models": {
     "oss": { "id": "openai/gpt-oss-120b", "context_window": 131072 },
@@ -981,8 +982,8 @@ NEXUS3 supports multiple simultaneous providers with named references:
 
 **Key concepts:**
 - `providers`: Named provider configs, define once and reference by name
-- `default_provider`: Which provider to use when model doesn't specify one
-- `models[].provider`: Optional - reference a named provider (falls back to default)
+- `default_model`: Which model alias to use by default (e.g., `"haiku"`)
+- `models[].provider`: Optional - reference a named provider (first matching provider used if omitted)
 - Backwards compatible: `provider` field still works for single-provider setups
 
 **Implementation (ProviderRegistry):**
@@ -1053,9 +1054,11 @@ Agents always have accurate temporal awareness through three timestamp mechanism
 | **Session start** | Agent creation | First message in history | Marks when session began |
 | **Compaction** | On summary | Summary prefix | Indicates when history was summarized |
 
-Example session start message:
+Example session start messages:
 ```
 [Session started: 2026-01-13 14:30 (local)]
+[Session started: 2026-01-13 14:30 (local) | Agent: worker-1 | Preset: sandboxed | CWD: /home/user/project]
+[Session started: 2026-01-13 14:30 (local) | Agent: main | Preset: trusted | CWD: /home/user/project | Writes: CWD unrestricted, elsewhere with user confirmation]
 ```
 
 Example compaction summary header:
@@ -1142,7 +1145,7 @@ nexus3 --init-global-force     # Overwrite existing
   "context": {
     "ancestor_depth": 2,       // How many parent dirs to check (0-10)
     "include_readme": false,   // Always include README.md
-    "readme_as_fallback": true // Use README when no NEXUS.md
+    "readme_as_fallback": false // Use README when no NEXUS.md (opt-in for security)
   }
 }
 ```
@@ -1238,9 +1241,9 @@ nexus3 rpc create coordinator --preset trusted
 
 | Issue | Reason | Effort |
 |-------|--------|--------|
-| Repl.py split (~1900 lines) | Large refactor | L |
-| Session.py split (~1000 lines) | Large refactor | M |
-| Pool.py split (~1100 lines) | Large refactor | M |
+| Repl.py split (~2050 lines) | Large refactor | L |
+| Session.py split (~1100 lines) | Large refactor | M |
+| Pool.py split (~1250 lines) | Large refactor | M |
 | Display config | Polish, no current need | S |
 | HTTP keep-alive | Advanced feature | M |
 
@@ -1260,7 +1263,6 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 
 | Plan | Description | Effort |
 |------|-------------|--------|
-| `PROMPT-CACHING-PLAN.md` | Multi-provider prompt caching support | 2-3 hrs |
 | `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | 2 weeks |
 
 Each plan includes validated implementation details with exact line numbers and copy-paste ready code.
@@ -1395,7 +1397,7 @@ These are documented limitations, not bugs:
 | Symlink detection | `is_symlink()` misses junctions/reparse points | Symlink attack assumptions weaker |
 | Permission bits | `S_IRWXG\|S_IRWXO` checks meaningless | ACL-based validation not implemented |
 
-**Test coverage**: 3400+ tests including 770+ security-specific tests.
+**Test coverage**: 3300+ tests including 700+ security-specific tests.
 
 ---
 
