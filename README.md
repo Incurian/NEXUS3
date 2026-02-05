@@ -106,21 +106,26 @@ cd NEXUS3
 
 ### Step 2: Create a Virtual Environment
 
-Linux/macOS:
+Linux, macOS, WSL:
 ```bash
 python3.11 -m venv .venv
 ```
 
-Windows:
+Windows, Git Bash:
 ```cmd
 python -m venv .venv
 ```
 
 **Activate the virtualenv:**
 
-Linux/macOS:
+Linux, macOS, WSL:
 ```bash
 source .venv/bin/activate
+```
+
+Git Bash:
+```bash
+source .venv/Scripts/activate
 ```
 
 Windows (cmd):
@@ -152,7 +157,7 @@ This file is gitignored — never commit API keys.
 
 **Option B: Environment variable (temporary, current session only)**
 
-Linux/macOS:
+Linux, macOS, WSL, Git Bash:
 ```bash
 export OPENROUTER_API_KEY="sk-or-v1-..."
 ```
@@ -169,13 +174,13 @@ $env:OPENROUTER_API_KEY="sk-or-v1-..."
 
 **Option C: Persistent environment variable**
 
-Linux/macOS — add to `~/.bashrc` or `~/.zshrc`:
+Linux, macOS, WSL, Git Bash — add to `~/.bashrc` or `~/.zshrc`:
 ```bash
 echo 'export OPENROUTER_API_KEY="sk-or-v1-..."' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-Windows:
+Windows (cmd or PowerShell):
 ```cmd
 setx OPENROUTER_API_KEY "sk-or-v1-..."
 ```
@@ -190,7 +195,7 @@ python -c "import nexus3; print('NEXUS3 installed successfully')"
 python -m nexus3 --help
 ```
 
-Without the virtualenv activated, use `.venv/bin/python` (Linux/macOS) or `.venv\Scripts\python` (Windows) instead of `python`.
+Without the virtualenv activated, use `.venv/bin/python` (Linux, macOS, WSL) or `.venv/Scripts/python` (Git Bash) or `.venv\Scripts\python` (Windows cmd/PowerShell) instead of `python`.
 
 ### Step 6: Initialize Configuration (Recommended)
 
@@ -198,7 +203,7 @@ Without the virtualenv activated, use `.venv/bin/python` (Linux/macOS) or `.venv
 nexus3 --init-global
 ```
 
-This creates `~/.nexus3/` with default `config.json`, `NEXUS.md`, and `mcp.json`. On Windows, `~` resolves to your user profile directory (e.g., `C:\Users\YourName`).
+This creates `~/.nexus3/` with default `config.json`, `NEXUS.md`, and `mcp.json`. `~` resolves to your home directory on all platforms (e.g., `/home/user` on Linux, `C:\Users\YourName` on Windows).
 
 ### Path Setup (If `nexus3` Command Not Found)
 
@@ -207,13 +212,13 @@ This creates `~/.nexus3/` with default `config.json`, `NEXUS.md`, and `mcp.json`
 python -m nexus3
 ```
 
-**Linux/macOS** — add pip's script directory to PATH:
+**Linux, macOS, WSL, Git Bash** — add pip's script directory to PATH:
 ```bash
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-**Windows** — pip scripts are usually already on PATH if Python was installed with "Add to PATH" checked. If not, add `%APPDATA%\Python\Python3XX\Scripts` to your PATH via System Settings.
+**Windows (cmd/PowerShell)** — pip scripts are usually already on PATH if Python was installed with "Add to PATH" checked. If not, add `%APPDATA%\Python\Python3XX\Scripts` to your PATH via System Settings.
 
 ---
 
@@ -1504,7 +1509,7 @@ For detailed session internals, see `nexus3/session/README.md`.
 
 **Problem: `python: command not found`**
 
-Activate your virtualenv first (see [Installation Step 2](#step-2-create-a-virtual-environment)), or use the full path: `.venv/bin/python -m nexus3` (Linux/macOS) or `.venv\Scripts\python -m nexus3` (Windows). On Linux/macOS you can also try `python3.11` directly.
+Activate your virtualenv first (see [Installation Step 2](#step-2-create-a-virtual-environment)), or use the full path: `.venv/bin/python` (Linux, macOS, WSL), `.venv/Scripts/python` (Git Bash), or `.venv\Scripts\python` (Windows cmd/PowerShell). On Linux/macOS/WSL you can also try `python3.11` directly.
 
 **Problem: `nexus3: command not found`**
 
@@ -1527,10 +1532,20 @@ echo 'OPENROUTER_API_KEY=sk-or-v1-...' > .env
 ```
 
 To check if it's set in your current environment:
+
+Linux, macOS, WSL, Git Bash:
 ```bash
-echo $OPENROUTER_API_KEY            # Linux/macOS
-echo %OPENROUTER_API_KEY%           # Windows (cmd)
-echo $env:OPENROUTER_API_KEY        # Windows (PowerShell)
+echo $OPENROUTER_API_KEY
+```
+
+Windows (cmd):
+```cmd
+echo %OPENROUTER_API_KEY%
+```
+
+Windows (PowerShell):
+```powershell
+echo $env:OPENROUTER_API_KEY
 ```
 
 ### Server Issues
@@ -1539,13 +1554,13 @@ echo $env:OPENROUTER_API_KEY        # Windows (PowerShell)
 
 Find and kill the existing server process:
 
-Linux/macOS:
+Linux, macOS, WSL:
 ```bash
 lsof -i :8765
 kill <PID>
 ```
 
-Windows:
+Windows, Git Bash:
 ```cmd
 netstat -ano | findstr :8765
 taskkill /PID <PID> /F
@@ -1747,7 +1762,7 @@ nexus3 --raw-log          # Log raw API JSON to raw.jsonl
 
 ## Development
 
-> **Windows note:** Commands below use `.venv/bin/` paths (Linux/macOS). On Windows, substitute `.venv\Scripts\` (e.g., `.venv\Scripts\pytest`). Alternatively, activate the virtualenv first and use bare commands (`pytest`, `ruff`, `mypy`).
+> **Note:** Commands below use `.venv/bin/` paths. On Git Bash use `.venv/Scripts/`, on Windows cmd/PowerShell use `.venv\Scripts\`. Or just activate the virtualenv and use bare commands (`pytest`, `ruff`, `mypy`).
 
 ### Running Tests
 
