@@ -260,7 +260,7 @@ manager = ContextManager(config, get_token_counter())
 # Set up
 manager.set_system_prompt("You are a helpful assistant.")
 manager.set_tool_definitions([{"name": "read_file", ...}])
-manager.add_session_start_message()  # Adds timestamped session marker
+manager.add_session_start_message()  # Adds timestamped session marker (with optional agent metadata)
 
 # Conversation loop
 manager.add_user_message("Hello!")
@@ -330,10 +330,49 @@ from nexus3.context.manager import get_current_datetime_str, get_session_start_s
 datetime_str = get_current_datetime_str()
 # "Current date: 2026-01-21, Current time: 14:30 (local)"
 
-# Get session start marker
+# Get session start marker (basic)
 start_str = get_session_start_str()
 # "[Session started: 2026-01-21 14:30 (local)]"
+
+# Get session start marker with agent metadata
+start_str = get_session_start_str(
+    agent_id="worker-1",
+    preset="sandboxed",
+    cwd="/home/user/project",
+    write_paths=["/home/user/project/output"],
+)
+# "[Session started: 2026-01-21 14:30 (local) | Agent: worker-1 | Preset: sandboxed | CWD: /home/user/project | Write paths: /home/user/project/output]"
+
+# Trusted agents show write behavior based on confirmation UI availability
+start_str = get_session_start_str(
+    agent_id="main",
+    preset="trusted",
+    cwd="/home/user/project",
+    has_confirmation_ui=True,   # REPL mode
+)
+# "... | Writes: CWD unrestricted, elsewhere with user confirmation]"
+
+start_str = get_session_start_str(
+    agent_id="main",
+    preset="trusted",
+    cwd="/home/user/project",
+    has_confirmation_ui=False,  # RPC mode (default)
+)
+# "... | Writes: CWD only (no confirmation UI)]"
 ```
+
+The `add_session_start_message()` method accepts the same parameters and passes them through to `get_session_start_str()`:
+
+```python
+manager.add_session_start_message(
+    agent_id="worker-1",
+    preset="sandboxed",
+    cwd="/home/user/project",
+    write_paths=["/home/user/project/output"],
+)
+```
+
+This metadata gives agents self-knowledge about their identity, permissions, and working directory.
 
 ---
 
@@ -767,4 +806,4 @@ while True:
 
 ## Status
 
-Production-ready. Last updated: 2026-02-01
+Production-ready. Last updated: 2026-02-05

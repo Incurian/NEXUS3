@@ -1263,11 +1263,19 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 
 | Plan | Description | Effort |
 |------|-------------|--------|
+| `DRY-CLEANUP-PLAN.md` | DRY violations, dead code removal, naming fixes from Opus 4.6 review | 1-2 days |
 | `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | 2 weeks |
 
-Each plan includes validated implementation details with exact line numbers and copy-paste ready code.
+#### Current Task: DRY-CLEANUP-PLAN
 
-**Before implementing any plan, review the OPEN QUESTIONS section at the top of each plan with the user.** These contain design decisions that need user input before proceeding.
+Opus 4.6 codebase review identified 10 cleanup items in 4 phases. **All decisions resolved. Ready for implementation.**
+
+Decisions made:
+- **P1:** Extract both `create_subprocess_exec()` AND `create_subprocess_shell()` (fully DRY, zero platform branching in skill code)
+- **P5:** Delete PromptBuilder (dead code since Jan 16 — production code grew past it). Relocate `inject_datetime_into_prompt` tests to new file.
+- **P7:** Change `GitLabAPIError(Exception)` to `GitLabAPIError(NexusError)` — constructors compatible, `.message` never read.
+
+Plan has detailed per-item implementation guidance with before/after code for each file, suitable for lesser models to execute without full context.
 
 ### Known Bugs
 
