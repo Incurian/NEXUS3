@@ -6,10 +6,13 @@ like agent IDs, session names, and tool arguments.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
 from nexus3.core.errors import NexusError
+
+logger = logging.getLogger(__name__)
 
 # Agent ID pattern: alphanumeric + dot/underscore/hyphen, 1-63 chars total
 # Must start with alphanumeric OR dot (for temp agents like .1, .2)
@@ -84,7 +87,6 @@ def is_valid_agent_id(agent_id: str) -> bool:
 def validate_tool_arguments(
     arguments: dict[str, Any],
     schema: dict[str, Any],
-    logger: Any = None,
 ) -> dict[str, Any]:
     """Validate tool arguments against JSON schema.
 
@@ -94,7 +96,6 @@ def validate_tool_arguments(
     Args:
         arguments: The arguments provided by the LLM.
         schema: The JSON schema for the tool's parameters.
-        logger: Optional logger for warnings about unknown params.
 
     Returns:
         Dict containing only valid, known parameters.
@@ -117,8 +118,8 @@ def validate_tool_arguments(
     provided = set(arguments.keys())
     # Only allow explicitly whitelisted internal params, not all underscore-prefixed
     extras = {k for k in provided if k not in ALLOWED_INTERNAL_PARAMS} - schema_props
-    if extras and logger:
-        logger.warning(f"Unknown tool arguments (ignored): {extras}")
+    if extras:
+        logger.warning("Unknown tool arguments (ignored): %s", extras)
 
     # Return only known properties plus explicitly allowed internal params
     return {

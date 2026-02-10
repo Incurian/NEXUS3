@@ -748,7 +748,6 @@ class Session:
             args = validate_tool_arguments(
                 tool_call.arguments,
                 skill.parameters,
-                logger=self.logger,
             )
         except ValidationError as e:
             return ToolResult(error=f"Invalid arguments for {tool_call.name}: {e.message}")

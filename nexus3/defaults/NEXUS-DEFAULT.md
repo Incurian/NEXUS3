@@ -515,14 +515,37 @@ sqlite3 session.db "SELECT * FROM messages WHERE content LIKE '%error%'"
 
 ---
 
-## Path Formats (WSL)
+## Path Formats
 
-When running in WSL, convert paths to Linux-native format before using tools:
+**CRITICAL: Always use forward slashes (`/`) in all tool path arguments**, regardless of platform. Backslashes break JSON parsing (e.g., `\U` in `D:\UEProjects` is an invalid JSON escape sequence, causing tool call failures).
+
+### Windows (Git Bash, PowerShell, CMD)
+
+Windows accepts forward slashes in paths. Always use them:
+
+```
+✗ BAD:  read_file(path="D:\UEProjects\MyPlugin\Source\main.cpp")   ← breaks JSON
+✗ BAD:  read_file(path="D:\\UEProjects\\MyPlugin\\Source\\main.cpp") ← works but fragile
+✓ GOOD: read_file(path="D:/UEProjects/MyPlugin/Source/main.cpp")    ← always works
+```
+
+### WSL
+
+Convert Windows paths to Linux-native format:
 
 | Source | Example | Convert To |
 |--------|---------|------------|
 | WSL UNC | `\\wsl.localhost\Ubuntu\home\user\file` | `/home/user/file` |
-| Windows | `C:\Users\foo\file` | `/mnt/c/Users/foo/file` |
+| Windows drive | `C:\Users\foo\file` | `/mnt/c/Users/foo/file` |
+
+### Git Bash Path Mapping
+
+Git Bash maps drives to POSIX-style paths. Either format works:
+
+| Windows Path | Git Bash Path |
+|-------------|---------------|
+| `C:\Users\foo` | `/c/Users/foo` |
+| `D:\Projects` | `/d/Projects` |
 
 ---
 
@@ -540,6 +563,7 @@ When running in WSL, convert paths to Linux-native format before using tools:
 | Tool timeout | Operation exceeding default 120s timeout | Pass `timeout` parameter to execution tools |
 | GitLab tools not available | Missing config or insufficient permissions | Configure GitLab in config.json, use trusted+ preset |
 | MCP tools not showing | Server not connected or tool listing failed | Use `/mcp connect <name>` or `/mcp retry <name>` |
+| Tool arguments JSON parse failure | Backslashes in Windows paths break JSON | Use forward slashes in all paths: `D:/path` not `D:\path` |
 
 ### Debug Flags
 - `-v` / `--verbose`: Show debug output in terminal (HTTP headers, timing, cache metrics)
