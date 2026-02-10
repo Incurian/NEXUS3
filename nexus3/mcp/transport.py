@@ -483,7 +483,6 @@ class StdioTransport(MCPTransport):
             self._stderr_task = None
 
         if self._process is not None:
-            # Close all pipes explicitly (Windows ProactorEventLoop requires this)
             # Close stdin first to signal EOF to subprocess
             if self._process.stdin is not None:
                 try:
@@ -492,25 +491,24 @@ class StdioTransport(MCPTransport):
                 except Exception as e:
                     logger.debug("Stdin close error (expected during shutdown): %s", e)
 
-            # Close stdout and stderr to prevent "unclosed transport" warnings on Windows
-            if self._process.stdout is not None:
-                try:
-                    self._process.stdout.feed_eof()
-                except Exception:
-                    pass  # May already be closed
-            if self._process.stderr is not None:
-                try:
-                    self._process.stderr.feed_eof()
-                except Exception:
-                    pass  # May already be closed
-
-            # Give it a moment to exit gracefully
+            # Wait for process to exit, then force kill if needed.
+            # IMPORTANT: The process must be dead before any stream cleanup.
+            # On Windows, calling feed_eof() while the subprocess is still
+            # alive causes "feed_data after feed_eof" assertions when the
+            # subprocess writes to stderr/stdout between feed_eof() and exit.
             try:
                 await asyncio.wait_for(self._process.wait(), timeout=2.0)
             except TimeoutError:
-                # Use cross-platform process tree termination
                 from nexus3.core.process import terminate_process_tree
                 await terminate_process_tree(self._process)
+
+            # Process is dead. Close the subprocess transport to release
+            # pipe handles and prevent "unclosed transport" ResourceWarnings
+            # on Windows ProactorEventLoop.
+            try:
+                self._process._transport.close()  # type: ignore[union-attr]
+            except Exception:
+                pass
 
             self._process = None
 
