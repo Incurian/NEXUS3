@@ -130,10 +130,13 @@ class GitLabIssueSkill(GitLabSkill):
         # List supports cross-project queries (project optional)
         if action == "list":
             project_raw = kwargs.get("project")
-            try:
-                project = self._resolve_project(project_raw)
-                project_encoded = client._encode_path(project)
-            except ValueError:
+            if project_raw:
+                project_encoded = client._encode_path(
+                    self._resolve_project(project_raw)
+                )
+            else:
+                # No project explicitly provided — use global endpoint
+                # Don't auto-detect from git remote for list actions
                 project_encoded = None
             return await self._list_issues(client, project_encoded, **filtered)
 

@@ -1168,8 +1168,7 @@ class TestGitLabIssueCrossProject(GitLabSkillTestBase):
         mock_client.paginate = mock_paginate
 
         with patch.object(skill, "_get_client", return_value=mock_client):
-            with patch.object(skill, "_resolve_project", return_value="group/project"):
-                result = await skill.execute(action="list")
+            result = await skill.execute(action="list", project="group/project")
 
         assert result.success
         assert called_path == "/projects/group%2Fproject/issues"
