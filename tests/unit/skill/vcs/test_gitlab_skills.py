@@ -1119,6 +1119,146 @@ class TestGitLabMRListFilters(GitLabSkillTestBase):
         assert resolved_author == "myuser"
 
 
+class TestGitLabIssueCrossProject(GitLabSkillTestBase):
+    """Tests for cross-project issue listing (no project specified)."""
+
+    @pytest.fixture
+    def skill(
+        self, services: ServiceContainer, gitlab_config: GitLabConfig
+    ) -> GitLabIssueSkill:
+        return GitLabIssueSkill(services, gitlab_config)
+
+    @pytest.mark.asyncio
+    async def test_list_without_project_uses_global_endpoint(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """list without project uses /issues global endpoint."""
+        called_path: str | None = None
+
+        async def mock_paginate(path: str, limit: int = 20, **kwargs: Any):
+            nonlocal called_path
+            called_path = path
+            for issue in [SAMPLE_ISSUE]:
+                yield issue
+
+        mock_client.paginate = mock_paginate
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(
+                skill, "_resolve_project", side_effect=ValueError("no project")
+            ):
+                result = await skill.execute(action="list", assignee_username="me")
+
+        assert result.success
+        assert called_path == "/issues"
+
+    @pytest.mark.asyncio
+    async def test_list_with_project_uses_project_endpoint(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """list with project uses /projects/:id/issues endpoint."""
+        called_path: str | None = None
+
+        async def mock_paginate(path: str, limit: int = 20, **kwargs: Any):
+            nonlocal called_path
+            called_path = path
+            for issue in [SAMPLE_ISSUE]:
+                yield issue
+
+        mock_client.paginate = mock_paginate
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(skill, "_resolve_project", return_value="group/project"):
+                result = await skill.execute(action="list")
+
+        assert result.success
+        assert called_path == "/projects/group%2Fproject/issues"
+
+    @pytest.mark.asyncio
+    async def test_list_cross_project_shows_full_reference(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """Cross-project list shows full reference when available."""
+        issue_with_ref = {
+            **SAMPLE_ISSUE,
+            "references": {"full": "group/project#1"},
+        }
+
+        async def mock_paginate(path: str, limit: int = 20, **kwargs: Any):
+            for issue in [issue_with_ref]:
+                yield issue
+
+        mock_client.paginate = mock_paginate
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(
+                skill, "_resolve_project", side_effect=ValueError("no project")
+            ):
+                result = await skill.execute(action="list")
+
+        assert result.success
+        assert "group/project#1" in result.output
+
+
+class TestGitLabMRCrossProject(GitLabSkillTestBase):
+    """Tests for cross-project MR listing (no project specified)."""
+
+    @pytest.fixture
+    def skill(
+        self, services: ServiceContainer, gitlab_config: GitLabConfig
+    ) -> GitLabMRSkill:
+        return GitLabMRSkill(services, gitlab_config)
+
+    @pytest.mark.asyncio
+    async def test_list_without_project_uses_global_endpoint(
+        self, skill: GitLabMRSkill, mock_client: AsyncMock
+    ) -> None:
+        """list without project uses /merge_requests global endpoint."""
+        called_path: str | None = None
+
+        async def mock_paginate(path: str, limit: int = 20, **kwargs: Any):
+            nonlocal called_path
+            called_path = path
+            for mr in [SAMPLE_MR]:
+                yield mr
+
+        mock_client.paginate = mock_paginate
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(
+                skill, "_resolve_project", side_effect=ValueError("no project")
+            ):
+                result = await skill.execute(action="list", author_username="me")
+
+        assert result.success
+        assert called_path == "/merge_requests"
+
+    @pytest.mark.asyncio
+    async def test_list_cross_project_shows_full_reference(
+        self, skill: GitLabMRSkill, mock_client: AsyncMock
+    ) -> None:
+        """Cross-project list shows full reference when available."""
+        mr_with_ref = {
+            **SAMPLE_MR,
+            "references": {"full": "group/project!10"},
+        }
+
+        async def mock_paginate(path: str, limit: int = 20, **kwargs: Any):
+            for mr in [mr_with_ref]:
+                yield mr
+
+        mock_client.paginate = mock_paginate
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(
+                skill, "_resolve_project", side_effect=ValueError("no project")
+            ):
+                result = await skill.execute(action="list")
+
+        assert result.success
+        assert "group/project!10" in result.output
+
+
 class TestGitLabRepoWhoami(GitLabSkillTestBase):
     """Tests for GitLabRepoSkill whoami action."""
 

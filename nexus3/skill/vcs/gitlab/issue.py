@@ -28,8 +28,9 @@ class GitLabIssueSkill(GitLabSkill):
         return (
             "Create, view, update, and manage GitLab issues. "
             "Actions: list, get, create, update, close, reopen, comment. "
-            "Project is auto-detected from git remote if omitted. "
-            "Use list with state/labels/search to filter."
+            "List works cross-project when project is omitted (e.g., "
+            "'list all issues assigned to me'). Other actions auto-detect "
+            "project from git remote if omitted."
         )
 
     @property
@@ -50,7 +51,8 @@ class GitLabIssueSkill(GitLabSkill):
                     "type": "string",
                     "description": (
                         "Project path (e.g., 'group/repo'). "
-                        "Auto-detected from git remote if omitted."
+                        "Auto-detected from git remote if omitted. "
+                        "For list action: omit to search across all visible projects."
                     ),
                 },
                 "iid": {
@@ -119,17 +121,27 @@ class GitLabIssueSkill(GitLabSkill):
         **kwargs: Any,
     ) -> ToolResult:
         action = kwargs.get("action", "")
-        project = self._resolve_project(kwargs.get("project"))
-        project_encoded = client._encode_path(project)
 
         # Filter out consumed kwargs to avoid passing them twice
         # Note: iid is filtered here because some methods receive it positionally
         consumed = ("action", "project", "instance", "iid")
         filtered = {k: v for k, v in kwargs.items() if k not in consumed}
 
+        # List supports cross-project queries (project optional)
+        if action == "list":
+            project_raw = kwargs.get("project")
+            try:
+                project = self._resolve_project(project_raw)
+                project_encoded = client._encode_path(project)
+            except ValueError:
+                project_encoded = None
+            return await self._list_issues(client, project_encoded, **filtered)
+
+        # All other actions require a project
+        project = self._resolve_project(kwargs.get("project"))
+        project_encoded = client._encode_path(project)
+
         match action:
-            case "list":
-                return await self._list_issues(client, project_encoded, **filtered)
             case "get":
                 iid = kwargs.get("iid")
                 if not iid:
@@ -169,7 +181,7 @@ class GitLabIssueSkill(GitLabSkill):
     async def _list_issues(
         self,
         client: GitLabClient,
-        project: str,
+        project: str | None,
         **kwargs: Any,
     ) -> ToolResult:
         params: dict[str, Any] = {}
@@ -193,9 +205,11 @@ class GitLabIssueSkill(GitLabSkill):
 
         limit = kwargs.get("limit", 20)
 
+        # Use global endpoint when no project specified
+        endpoint = f"/projects/{project}/issues" if project else "/issues"
         issues = [
             issue async for issue in
-            client.paginate(f"/projects/{project}/issues", limit=limit, **params)
+            client.paginate(endpoint, limit=limit, **params)
         ]
 
         if not issues:
@@ -205,7 +219,12 @@ class GitLabIssueSkill(GitLabSkill):
         for issue in issues:
             state_icon = "🟢" if issue["state"] == "opened" else "🔴"
             labels_str = f" [{', '.join(issue.get('labels', []))}]" if issue.get("labels") else ""
-            lines.append(f"  {state_icon} #{issue['iid']}: {issue['title']}{labels_str}")
+            # Include project path for cross-project listings
+            if not project and issue.get("references"):
+                ref = issue["references"]["full"]
+            else:
+                ref = f"#{issue['iid']}"
+            lines.append(f"  {state_icon} {ref}: {issue['title']}{labels_str}")
 
         return ToolResult(output="\n".join(lines))
 
