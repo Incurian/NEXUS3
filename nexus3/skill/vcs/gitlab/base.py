@@ -118,10 +118,10 @@ class GitLabSkill(BaseSkill):
         Resolve project path.
 
         Priority:
-        1. Explicit project parameter
+        1. Explicit project parameter (pass "this" to force git remote detection)
         2. Detect from git remote
         """
-        if project:
+        if project and project.lower() != "this":
             return project
 
         # Try to detect from git remote

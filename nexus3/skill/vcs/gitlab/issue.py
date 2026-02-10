@@ -52,7 +52,8 @@ class GitLabIssueSkill(GitLabSkill):
                     "description": (
                         "Project path (e.g., 'group/repo'). "
                         "Auto-detected from git remote if omitted. "
-                        "For list action: omit to search across all visible projects."
+                        "For list: omit for cross-project search, "
+                        "or pass 'this' to infer from git remote."
                     ),
                 },
                 "iid": {
@@ -131,12 +132,12 @@ class GitLabIssueSkill(GitLabSkill):
         if action == "list":
             project_raw = kwargs.get("project")
             if project_raw:
+                # Explicit project or "this" (resolve from git remote)
                 project_encoded = client._encode_path(
                     self._resolve_project(project_raw)
                 )
             else:
-                # No project explicitly provided — use global endpoint
-                # Don't auto-detect from git remote for list actions
+                # No project — use global endpoint (cross-project)
                 project_encoded = None
             return await self._list_issues(client, project_encoded, **filtered)
 
