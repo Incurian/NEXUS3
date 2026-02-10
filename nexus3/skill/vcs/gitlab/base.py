@@ -156,17 +156,7 @@ class GitLabSkill(BaseSkill):
         return path
 
     def _format_error(self, error: GitLabAPIError) -> ToolResult:
-        """Format API error as ToolResult."""
-        if error.status_code == 401:
-            return ToolResult(error="Authentication failed. Check your GitLab token.")
-        if error.status_code == 403:
-            return ToolResult(
-                error="Permission denied. You may not have access to this resource."
-            )
-        if error.status_code == 404:
-            return ToolResult(
-                error="Resource not found. Check the project/issue/MR exists."
-            )
+        """Format API error as ToolResult with full message passthrough."""
         return ToolResult(error=str(error))
 
     async def execute(self, **kwargs: Any) -> ToolResult:

@@ -598,7 +598,7 @@ class TestGitLabSkillBaseErrorHandling(GitLabSkillTestBase):
     async def test_api_error_401_handling(
         self, skill: GitLabIssueSkill
     ) -> None:
-        """401 error is formatted appropriately."""
+        """401 error passes through full API message."""
         with patch.object(
             skill, "_resolve_instance",
             side_effect=GitLabAPIError(401, "Unauthorized"),
@@ -606,13 +606,14 @@ class TestGitLabSkillBaseErrorHandling(GitLabSkillTestBase):
             result = await skill.execute(action="list")
 
         assert not result.success
-        assert "Authentication failed" in result.error
+        assert "401" in result.error
+        assert "Unauthorized" in result.error
 
     @pytest.mark.asyncio
     async def test_api_error_403_handling(
         self, skill: GitLabIssueSkill
     ) -> None:
-        """403 error is formatted appropriately."""
+        """403 error passes through full API message."""
         with patch.object(
             skill, "_resolve_instance",
             side_effect=GitLabAPIError(403, "Forbidden"),
@@ -620,13 +621,14 @@ class TestGitLabSkillBaseErrorHandling(GitLabSkillTestBase):
             result = await skill.execute(action="list")
 
         assert not result.success
-        assert "Permission denied" in result.error
+        assert "403" in result.error
+        assert "Forbidden" in result.error
 
     @pytest.mark.asyncio
     async def test_api_error_404_handling(
         self, skill: GitLabIssueSkill
     ) -> None:
-        """404 error is formatted appropriately."""
+        """404 error passes through full API message."""
         with patch.object(
             skill, "_resolve_instance",
             side_effect=GitLabAPIError(404, "Not found"),
@@ -634,7 +636,8 @@ class TestGitLabSkillBaseErrorHandling(GitLabSkillTestBase):
             result = await skill.execute(action="list")
 
         assert not result.success
-        assert "not found" in result.error.lower()
+        assert "404" in result.error
+        assert "Not found" in result.error
 
     @pytest.mark.asyncio
     async def test_value_error_handling(
