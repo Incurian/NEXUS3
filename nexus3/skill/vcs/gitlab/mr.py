@@ -281,7 +281,13 @@ class GitLabMRSkill(GitLabSkill):
         limit = kwargs.get("limit", 20)
 
         # Use global endpoint when no project specified
-        endpoint = f"/projects/{project}/merge_requests" if project else "/merge_requests"
+        if project:
+            endpoint = f"/projects/{project}/merge_requests"
+        else:
+            endpoint = "/merge_requests"
+            # Global endpoint defaults to scope=created_by_me which is
+            # too restrictive — use scope=all so filters work correctly
+            params.setdefault("scope", "all")
         mrs = [
             mr async for mr in
             client.paginate(endpoint, limit=limit, **params)

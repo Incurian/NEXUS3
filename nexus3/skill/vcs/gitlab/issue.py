@@ -210,7 +210,13 @@ class GitLabIssueSkill(GitLabSkill):
         limit = kwargs.get("limit", 20)
 
         # Use global endpoint when no project specified
-        endpoint = f"/projects/{project}/issues" if project else "/issues"
+        if project:
+            endpoint = f"/projects/{project}/issues"
+        else:
+            endpoint = "/issues"
+            # Global endpoint defaults to scope=created_by_me which is
+            # too restrictive — use scope=all so filters work correctly
+            params.setdefault("scope", "all")
         issues = [
             issue async for issue in
             client.paginate(endpoint, limit=limit, **params)
