@@ -1266,16 +1266,9 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 | `DRY-CLEANUP-PLAN.md` | DRY violations, dead code removal, naming fixes from Opus 4.6 review | 1-2 days |
 | `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | 2 weeks |
 
-#### Current Task: DRY-CLEANUP-PLAN
+#### Next Up: DRY-CLEANUP-PLAN
 
-Opus 4.6 codebase review identified 10 cleanup items in 4 phases. **All decisions resolved. Ready for implementation.**
-
-Decisions made:
-- **P1:** Extract both `create_subprocess_exec()` AND `create_subprocess_shell()` (fully DRY, zero platform branching in skill code)
-- **P5:** Delete PromptBuilder (dead code since Jan 16 — production code grew past it). Relocate `inject_datetime_into_prompt` tests to new file.
-- **P7:** Change `GitLabAPIError(Exception)` to `GitLabAPIError(NexusError)` — constructors compatible, `.message` never read.
-
-Plan has detailed per-item implementation guidance with before/after code for each file, suitable for lesser models to execute without full context.
+Opus 4.6 codebase review identified 10 cleanup items in 4 phases. All decisions resolved. See `docs/plans/DRY-CLEANUP-PLAN.md` for full details.
 
 ### Known Bugs
 
@@ -1405,7 +1398,7 @@ These are documented limitations, not bugs:
 | Symlink detection | `is_symlink()` misses junctions/reparse points | Symlink attack assumptions weaker |
 | Permission bits | `S_IRWXG\|S_IRWXO` checks meaningless | ACL-based validation not implemented |
 
-**Test coverage**: 3300+ tests including 700+ security-specific tests.
+**Test coverage**: 3400+ tests including 770+ security-specific tests.
 
 ---
 
