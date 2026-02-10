@@ -133,8 +133,9 @@ def _get_nexus_servers(servers: list[DiscoveredServer]) -> list[DiscoveredServer
 
 async def _show_auth_recovery_menu(
     console: Console,
-    server: "DiscoveredServer",
+    server: DiscoveredServer,
     default_port: int,
+    occupied_ports: set[int] | None = None,
 ) -> ConnectResult | None:
     """Show recovery options when server auth fails.
 
@@ -145,6 +146,7 @@ async def _show_auth_recovery_menu(
         console: Rich Console for input/output.
         server: The server with auth issues.
         default_port: Default port for suggesting alternatives.
+        occupied_ports: Ports already in use by NEXUS servers.
 
     Returns:
         ConnectResult with chosen action, or None to go back.
@@ -185,7 +187,9 @@ async def _show_auth_recovery_menu(
             return None
 
         if choice == "p":
-            chosen_port = prompt_for_port(console, default=server.port + 1)
+            occupied = occupied_ports or set()
+            suggested = _next_free_port(server.port + 1, occupied)
+            chosen_port = prompt_for_port(console, default=suggested)
             if chosen_port is not None:
                 return ConnectResult(
                     action=ConnectAction.START_DIFFERENT_PORT,
@@ -306,8 +310,9 @@ async def show_connect_lobby(
 
         # Handle new server on different port
         if choice == "p":
-            suggested_port = default_port + 1 if default_port_in_use else default_port
-            chosen_port = prompt_for_port(console, default=suggested_port)
+            occupied = {s.port for s in servers}
+            start = default_port + 1 if default_port_in_use else default_port
+            chosen_port = prompt_for_port(console, default=_next_free_port(start, occupied))
             if chosen_port is not None:
                 return ConnectResult(
                     action=ConnectAction.START_DIFFERENT_PORT,
@@ -348,7 +353,8 @@ async def show_connect_lobby(
                 # Check auth status
                 if server.auth in (AuthStatus.OK, AuthStatus.DISABLED):
                     # Can proceed to agent selection
-                    agent_result = await show_agent_picker(console, server)
+                    occupied = {s.port for s in servers}
+                    agent_result = await show_agent_picker(console, server, occupied)
                     if agent_result is None:
                         # User went back, re-display menu
                         continue
@@ -356,8 +362,9 @@ async def show_connect_lobby(
 
                 elif server.auth in (AuthStatus.REQUIRED, AuthStatus.INVALID_TOKEN):
                     # Auth failed - show recovery options instead of prompting for key
+                    occupied = {s.port for s in servers}
                     auth_result = await _show_auth_recovery_menu(
-                        console, server, default_port
+                        console, server, default_port, occupied
                     )
                     if auth_result is None:
                         # User went back
@@ -365,7 +372,8 @@ async def show_connect_lobby(
                     return auth_result
                 else:
                     # Unknown auth state, try anyway
-                    agent_result = await show_agent_picker(console, server)
+                    occupied = {s.port for s in servers}
+                    agent_result = await show_agent_picker(console, server, occupied)
                     if agent_result is None:
                         continue
                     return agent_result
@@ -388,6 +396,7 @@ async def show_connect_lobby(
 async def show_agent_picker(
     console: Console,
     server: DiscoveredServer,
+    occupied_ports: set[int] | None = None,
 ) -> ConnectResult | None:
     """Show agent selection menu for a server.
 
@@ -397,6 +406,7 @@ async def show_agent_picker(
     Args:
         console: Rich Console for input/output.
         server: The server to select an agent from.
+        occupied_ports: Ports already in use by NEXUS servers.
 
     Returns:
         ConnectResult if user selected/created an agent, or None to go back.
@@ -479,7 +489,9 @@ async def show_agent_picker(
 
         # Handle start another server on different port
         if choice == "p":
-            chosen_port = prompt_for_port(console, default=server.port + 1)
+            occupied = occupied_ports or set()
+            suggested = _next_free_port(server.port + 1, occupied)
+            chosen_port = prompt_for_port(console, default=suggested)
             if chosen_port is not None:
                 return ConnectResult(
                     action=ConnectAction.START_DIFFERENT_PORT,
@@ -537,6 +549,14 @@ def prompt_for_port_spec(console: Console) -> str | None:
         return None
 
     return spec
+
+
+def _next_free_port(start: int, occupied: set[int]) -> int:
+    """Find the next port starting from `start` that isn't in `occupied`."""
+    port = start
+    while port in occupied and port <= 65535:
+        port += 1
+    return port
 
 
 def prompt_for_port(console: Console, default: int | None = None) -> int | None:
