@@ -13,7 +13,12 @@ if TYPE_CHECKING:
 
 
 class GitLabFeatureFlagSkill(GitLabSkill):
-    """Manage GitLab feature flags for controlled rollouts (Premium)."""
+    """Manage GitLab feature flags for controlled rollouts.
+
+    Actions: list, get, create, update, delete, list-user-lists, create-user-list,
+    update-user-list, delete-user-list. Create/update accept strategies array for
+    targeting rules. Premium feature.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +26,12 @@ class GitLabFeatureFlagSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Manage GitLab feature flags for controlled rollouts (Premium)"
+        return (
+            "Manage GitLab feature flags for controlled rollouts. "
+            "Actions: list, get, create, update, delete, list-user-lists, "
+            "create-user-list, update-user-list, delete-user-list. "
+            "Create/update accept strategies array for targeting rules. Premium feature."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

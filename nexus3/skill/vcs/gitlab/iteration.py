@@ -13,7 +13,11 @@ if TYPE_CHECKING:
 
 
 class GitLabIterationSkill(GitLabSkill):
-    """Create, view, update, and delete GitLab iterations."""
+    """Create, view, update, and manage GitLab iterations and cadences.
+
+    Requires 'group' parameter (not project). Actions: list, get, create,
+    update, delete, list-cadences, create-cadence. Premium feature.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +25,12 @@ class GitLabIterationSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Create, view, update, and delete GitLab iterations (group-level)"
+        return (
+            "Create, view, update, and manage GitLab iterations and cadences. "
+            "Requires 'group' parameter (not project). "
+            "Actions: list, get, create, update, delete, list-cadences, create-cadence. "
+            "Premium feature."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

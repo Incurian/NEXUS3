@@ -13,7 +13,12 @@ if TYPE_CHECKING:
 
 
 class GitLabDiscussionSkill(GitLabSkill):
-    """Manage threaded discussions on MRs and issues."""
+    """Manage threaded discussions on merge requests and issues.
+
+    Actions: list, get, create, reply, resolve, unresolve. Requires target_type
+    ('mr' or 'issue'). Create on MRs supports file-level comments (path, line).
+    Resolve/unresolve is MR-only.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +26,12 @@ class GitLabDiscussionSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Manage threaded discussions on MRs and issues"
+        return (
+            "Manage threaded discussions on merge requests and issues. "
+            "Actions: list, get, create, reply, resolve, unresolve. "
+            "Requires target_type ('mr' or 'issue'). "
+            "Create on MRs supports file-level comments (path, line). Resolve/unresolve is MR-only."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

@@ -13,7 +13,11 @@ if TYPE_CHECKING:
 
 
 class GitLabDeployTokenSkill(GitLabSkill):
-    """Manage GitLab deploy tokens for CI/CD and registry access."""
+    """Manage GitLab deploy tokens for CI/CD and registry access.
+
+    Works at project or group level. Actions: list, get, create, delete. Create
+    requires name and scopes array. Token value is only shown on create.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +25,12 @@ class GitLabDeployTokenSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Manage GitLab deploy tokens for CI/CD and registry access"
+        return (
+            "Manage GitLab deploy tokens for CI/CD and registry access. "
+            "Works at project or group level. "
+            "Actions: list, get, create, delete. "
+            "Create requires name and scopes array. Token value is only shown on create."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

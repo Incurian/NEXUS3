@@ -13,7 +13,12 @@ if TYPE_CHECKING:
 
 
 class GitLabMRSkill(GitLabSkill):
-    """Create, view, update, and manage GitLab merge requests."""
+    """Create, view, update, and manage GitLab merge requests.
+
+    Actions: list, get, create, update, merge, close, reopen, comment, diff,
+    commits, pipelines. Project is auto-detected from git remote. Use diff to
+    review changes, pipelines to check CI status.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +26,13 @@ class GitLabMRSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Create, view, update, and manage GitLab merge requests"
+        return (
+            "Create, view, update, and manage GitLab merge requests. "
+            "Actions: list, get, create, update, merge, close, reopen, "
+            "comment, diff, commits, pipelines. "
+            "Project is auto-detected from git remote. "
+            "Use diff to review changes, pipelines to check CI status."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -129,7 +140,8 @@ class GitLabMRSkill(GitLabSkill):
 
         # Filter out consumed kwargs to avoid passing them twice
         # Note: iid is filtered here because some methods receive it positionally
-        filtered = {k: v for k, v in kwargs.items() if k not in ("action", "project", "instance", "iid")}
+        consumed = ("action", "project", "instance", "iid")
+        filtered = {k: v for k, v in kwargs.items() if k not in consumed}
 
         match action:
             case "list":

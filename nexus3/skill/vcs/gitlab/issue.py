@@ -13,7 +13,11 @@ if TYPE_CHECKING:
 
 
 class GitLabIssueSkill(GitLabSkill):
-    """Create, view, update, and manage GitLab issues."""
+    """Create, view, update, and manage GitLab issues.
+
+    Actions: list, get, create, update, close, reopen, comment. Project is
+    auto-detected from git remote if omitted. Use list with state/labels/search to filter.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +25,12 @@ class GitLabIssueSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Create, view, update, and manage GitLab issues"
+        return (
+            "Create, view, update, and manage GitLab issues. "
+            "Actions: list, get, create, update, close, reopen, comment. "
+            "Project is auto-detected from git remote if omitted. "
+            "Use list with state/labels/search to filter."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -98,7 +107,8 @@ class GitLabIssueSkill(GitLabSkill):
 
         # Filter out consumed kwargs to avoid passing them twice
         # Note: iid is filtered here because some methods receive it positionally
-        filtered = {k: v for k, v in kwargs.items() if k not in ("action", "project", "instance", "iid")}
+        consumed = ("action", "project", "instance", "iid")
+        filtered = {k: v for k, v in kwargs.items() if k not in consumed}
 
         match action:
             case "list":

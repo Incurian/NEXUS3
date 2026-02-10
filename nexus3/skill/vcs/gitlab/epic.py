@@ -13,7 +13,11 @@ if TYPE_CHECKING:
 
 
 class GitLabEpicSkill(GitLabSkill):
-    """Create, view, update, and manage GitLab epics (group-level)."""
+    """Create, view, update, and manage GitLab epics.
+
+    Requires 'group' parameter (not project). Actions: list, get, create,
+    update, close, reopen, add-issue, remove-issue, list-issues. Premium feature.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +25,13 @@ class GitLabEpicSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Create, view, update, and manage GitLab epics (group-level feature)"
+        return (
+            "Create, view, update, and manage GitLab epics. "
+            "Requires 'group' parameter (not project). "
+            "Actions: list, get, create, update, close, reopen, "
+            "add-issue, remove-issue, list-issues. "
+            "Premium feature."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

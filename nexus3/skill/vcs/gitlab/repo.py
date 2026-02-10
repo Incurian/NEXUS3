@@ -13,7 +13,11 @@ if TYPE_CHECKING:
 
 
 class GitLabRepoSkill(GitLabSkill):
-    """View, list, and fork GitLab repositories."""
+    """View, list, fork, and search GitLab repositories.
+
+    Actions: get, list, fork, search. Project path format: 'group/repo'.
+    Use list with owned=true to see your repos, or search to find by name.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +25,11 @@ class GitLabRepoSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "View, list, and fork GitLab repositories"
+        return (
+            "View, list, fork, and search GitLab repositories. "
+            "Actions: get, list, fork, search. Project path format: 'group/repo'. "
+            "Use list with owned=true to see your repos, or search to find by name."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

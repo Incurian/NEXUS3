@@ -13,7 +13,11 @@ if TYPE_CHECKING:
 
 
 class GitLabDraftSkill(GitLabSkill):
-    """Manage draft notes for batch MR reviews."""
+    """Manage draft notes for batch merge request reviews.
+
+    Actions: list, add, update, delete, publish. Add notes with optional file
+    position (path, line), then publish all at once for a complete review.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +25,12 @@ class GitLabDraftSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Manage draft notes for batch MR reviews"
+        return (
+            "Manage draft notes for batch merge request reviews. "
+            "Actions: list, add, update, delete, publish. "
+            "Add notes with optional file position (path, line), "
+            "then publish all at once for a complete review."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

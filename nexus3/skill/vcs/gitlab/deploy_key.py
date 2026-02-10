@@ -13,7 +13,11 @@ if TYPE_CHECKING:
 
 
 class GitLabDeployKeySkill(GitLabSkill):
-    """Manage GitLab deploy keys for repository access."""
+    """Manage GitLab deploy keys for repository access.
+
+    Actions: list, get, create, update, delete, enable. Create requires title
+    and key (SSH public key). Enable adds an existing deploy key from another project.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +25,12 @@ class GitLabDeployKeySkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Manage GitLab deploy keys for repository access"
+        return (
+            "Manage GitLab deploy keys for repository access. "
+            "Actions: list, get, create, update, delete, enable. "
+            "Create requires title and key (SSH public key). "
+            "Enable adds an existing deploy key from another project."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

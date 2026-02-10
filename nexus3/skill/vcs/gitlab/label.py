@@ -13,7 +13,11 @@ if TYPE_CHECKING:
 
 
 class GitLabLabelSkill(GitLabSkill):
-    """Create, view, update, and delete GitLab labels."""
+    """Create, view, update, and delete GitLab labels.
+
+    Actions: list, get, create, update, delete. Create requires name and color
+    (hex like '#FF0000').
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +25,11 @@ class GitLabLabelSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Create, view, update, and delete GitLab labels"
+        return (
+            "Create, view, update, and delete GitLab labels. "
+            "Actions: list, get, create, update, delete. "
+            "Create requires name and color (hex like '#FF0000')."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

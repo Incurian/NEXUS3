@@ -13,7 +13,12 @@ if TYPE_CHECKING:
 
 
 class GitLabVariableSkill(GitLabSkill):
-    """Create, view, update, and delete GitLab CI/CD variables (project or group level)."""
+    """Create, view, update, and delete GitLab CI/CD variables.
+
+    Works at project or group level (provide one). Actions: list, get, create,
+    update, delete. Create requires key and value. Supports protected, masked,
+    and environment_scope options.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +26,13 @@ class GitLabVariableSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Create, view, update, and delete GitLab CI/CD variables (project or group level)"
+        return (
+            "Create, view, update, and delete GitLab CI/CD variables. "
+            "Works at project or group level (provide one). "
+            "Actions: list, get, create, update, delete. "
+            "Create requires key and value. "
+            "Supports protected, masked, and environment_scope options."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

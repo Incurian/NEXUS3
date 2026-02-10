@@ -13,7 +13,12 @@ if TYPE_CHECKING:
 
 
 class GitLabMilestoneSkill(GitLabSkill):
-    """Create, view, update, and manage GitLab milestones (project or group level)."""
+    """Create, view, update, and manage GitLab milestones.
+
+    Works at project or group level (provide one). Actions: list, get, create,
+    update, close, issues, merge-requests. Use issues/merge-requests to list
+    items in a milestone.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +26,12 @@ class GitLabMilestoneSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Create, view, update, and manage GitLab milestones (project or group level)"
+        return (
+            "Create, view, update, and manage GitLab milestones. "
+            "Works at project or group level (provide one). "
+            "Actions: list, get, create, update, close, issues, merge-requests. "
+            "Use issues/merge-requests to list items in a milestone."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

@@ -16,7 +16,12 @@ if TYPE_CHECKING:
 
 
 class GitLabArtifactSkill(GitLabSkill):
-    """Download, browse, and manage GitLab job artifacts."""
+    """Download, browse, and manage GitLab job artifacts.
+
+    Actions: download, download-file, browse, delete, keep, download-ref. Use
+    browse to list contents before downloading. download-ref gets artifacts by
+    branch+job name without a job ID.
+    """
 
     @property
     def name(self) -> str:
@@ -24,7 +29,12 @@ class GitLabArtifactSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Download, browse, and manage GitLab job artifacts"
+        return (
+            "Download, browse, and manage GitLab job artifacts. "
+            "Actions: download, download-file, browse, delete, keep, download-ref. "
+            "Use browse to list contents before downloading. "
+            "download-ref gets artifacts by branch+job name without a job ID."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

@@ -13,7 +13,11 @@ if TYPE_CHECKING:
 
 
 class GitLabJobSkill(GitLabSkill):
-    """View, manage, and control GitLab CI/CD jobs."""
+    """View, manage, and control GitLab CI/CD jobs.
+
+    Actions: list, get, log, retry, cancel, play, erase. Use log with tail=N to
+    get last N lines. Play triggers manual jobs (optionally with variables).
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +25,12 @@ class GitLabJobSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "View, manage, and control GitLab CI/CD jobs"
+        return (
+            "View, manage, and control GitLab CI/CD jobs. "
+            "Actions: list, get, log, retry, cancel, play, erase. "
+            "Use log with tail=N to get last N lines. "
+            "Play triggers manual jobs (optionally with variables)."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

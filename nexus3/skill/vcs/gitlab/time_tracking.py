@@ -13,7 +13,11 @@ if TYPE_CHECKING:
 
 
 class GitLabTimeSkill(GitLabSkill):
-    """Manage time tracking on GitLab issues and merge requests."""
+    """Manage time tracking on GitLab issues and merge requests.
+
+    Actions: estimate, reset-estimate, spend, reset-spent, stats. Requires iid
+    and target_type ('issue' or 'mr'). Duration uses GitLab format: '1h', '2d', '1w'.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +25,12 @@ class GitLabTimeSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Manage time tracking on GitLab issues and merge requests"
+        return (
+            "Manage time tracking on GitLab issues and merge requests. "
+            "Actions: estimate, reset-estimate, spend, reset-spent, stats. "
+            "Requires iid and target_type ('issue' or 'mr'). "
+            "Duration uses GitLab format: '1h', '2d', '1w'."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

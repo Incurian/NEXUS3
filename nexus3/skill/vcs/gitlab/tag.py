@@ -13,7 +13,11 @@ if TYPE_CHECKING:
 
 
 class GitLabTagSkill(GitLabSkill):
-    """List, create, and delete GitLab tags."""
+    """List, create, delete, and protect GitLab tags.
+
+    Actions: list, get, create, delete, protect, unprotect, list-protected.
+    Create requires name and ref (commit SHA or branch).
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +25,11 @@ class GitLabTagSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "List, create, delete, and protect GitLab tags"
+        return (
+            "List, create, delete, and protect GitLab tags. "
+            "Actions: list, get, create, delete, protect, unprotect, list-protected. "
+            "Create requires name and ref (commit SHA or branch)."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

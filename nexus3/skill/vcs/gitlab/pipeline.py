@@ -13,7 +13,12 @@ if TYPE_CHECKING:
 
 
 class GitLabPipelineSkill(GitLabSkill):
-    """Manage GitLab CI/CD pipelines - list, create, retry, cancel, and inspect jobs."""
+    """Manage GitLab CI/CD pipelines.
+
+    Actions: list, get, create, retry, cancel, delete, jobs, variables. Use list
+    with status/ref to filter. Create triggers a new pipeline on a ref. Use jobs
+    to list pipeline jobs, variables to see pipeline variables.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +26,12 @@ class GitLabPipelineSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Manage GitLab CI/CD pipelines - list, create, retry, cancel, and inspect jobs"
+        return (
+            "Manage GitLab CI/CD pipelines. "
+            "Actions: list, get, create, retry, cancel, delete, jobs, variables. "
+            "Use list with status/ref to filter. Create triggers a new pipeline on a ref. "
+            "Use jobs to list pipeline jobs, variables to see pipeline variables."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

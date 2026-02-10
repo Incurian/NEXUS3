@@ -13,7 +13,11 @@ if TYPE_CHECKING:
 
 
 class GitLabBoardSkill(GitLabSkill):
-    """Create, view, update, and delete GitLab issue boards."""
+    """Create, view, update, and manage GitLab issue boards and board lists.
+
+    Works at project or group level. Actions: list, get, create, update, delete,
+    list-lists, create-list, update-list, delete-list.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +25,12 @@ class GitLabBoardSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Create, view, update, and delete GitLab issue boards"
+        return (
+            "Create, view, update, and manage GitLab issue boards and board lists. "
+            "Works at project or group level. "
+            "Actions: list, get, create, update, delete, "
+            "list-lists, create-list, update-list, delete-list."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

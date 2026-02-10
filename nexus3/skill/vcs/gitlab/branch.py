@@ -13,7 +13,11 @@ if TYPE_CHECKING:
 
 
 class GitLabBranchSkill(GitLabSkill):
-    """List, create, delete, and protect GitLab branches."""
+    """List, create, delete, and protect GitLab branches.
+
+    Actions: list, get, create, delete, protect, unprotect, list-protected.
+    Create requires name and ref (source branch/tag/commit).
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +25,11 @@ class GitLabBranchSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "List, create, delete, and protect GitLab branches"
+        return (
+            "List, create, delete, and protect GitLab branches. "
+            "Actions: list, get, create, delete, protect, unprotect, list-protected. "
+            "Create requires name and ref (source branch/tag/commit)."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

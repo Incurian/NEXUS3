@@ -13,7 +13,12 @@ if TYPE_CHECKING:
 
 
 class GitLabApprovalSkill(GitLabSkill):
-    """Manage MR approvals and approval rules."""
+    """Manage merge request approvals and approval rules.
+
+    Actions: status, approve, unapprove, rules, create-rule, delete-rule. Use
+    status to check current approval state, rules to list approval rules.
+    create-rule/delete-rule are Premium features.
+    """
 
     @property
     def name(self) -> str:
@@ -21,7 +26,12 @@ class GitLabApprovalSkill(GitLabSkill):
 
     @property
     def description(self) -> str:
-        return "Manage MR approvals and approval rules"
+        return (
+            "Manage merge request approvals and approval rules. "
+            "Actions: status, approve, unapprove, rules, create-rule, delete-rule. "
+            "Use status to check current approval state, rules to list approval rules. "
+            "create-rule/delete-rule are Premium features."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
