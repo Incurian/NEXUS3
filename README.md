@@ -1,8 +1,8 @@
 # NEXUS3
 
-**A multi-agent CLI framework for AI-powered development.**
+**Run structured teams of AI agents from your terminal.**
 
-Run multiple AI agents from a single terminal session. Each agent has its own conversation context, permissions, and toolset — they can read and write files, execute commands, coordinate with each other, and connect to external services. A layered permission system gives you control over what each agent can access. Sessions can be saved, resumed, cloned to fork a conversation, and managed across restarts, and automatic context compaction keeps long-running conversations from hitting token limits.
+Most AI coding tools give you one agent in one conversation. NEXUS3 gives you a pool of agents — each with its own model, permissions, conversation context, and working directory — managed through a single terminal session or programmatic API. A layered permission system controls what each agent can access, with security defaults that prevent privilege escalation between agents. Sessions persist across restarts, and automatic context compaction keeps long-running conversations from hitting token limits.
 
 ---
 
@@ -29,33 +29,45 @@ Run multiple AI agents from a single terminal session. Each agent has its own co
 
 ## Key Features
 
-### Multi-Agent Coordination
+### Agent Hierarchy with Permission Ceilings
 
-Run a single NEXUS3 server and create multiple agents within it — researchers, reviewers, implementers — each with isolated permissions and their own conversation context. Agents communicate directly via `nexus_send`, and permission ceilings prevent escalation (a trusted agent can only spawn sandboxed subagents).
-
-### Interactive REPL
-
-A streaming terminal interface with session lobby, whisper mode for directing specific agents, and REPL commands for managing agents, permissions, models, and configuration on the fly.
-
-### 60+ Built-in Skills
-
-39 core skills covering file operations, execution, git, clipboard, and inter-agent communication, plus 21 GitLab integration skills for issues, merge requests, CI/CD pipelines, epics, and more. Skills are permission-aware — what's available depends on the agent's security preset.
-
-### Multi-Provider LLM Support
-
-Connect to OpenRouter, Anthropic, OpenAI, Azure, Ollama, or vLLM. Switch models mid-session, route different agents to different providers, and benefit from automatic prompt caching (~90% cost savings on cached tokens).
-
-### Session Persistence
-
-Save and resume conversations with full state restoration — messages, model choice, permissions, working directory. When context fills up, LLM-powered compaction summarizes older history to reclaim space while preserving essential information.
+Create teams of agents with structured parent-child relationships. A trusted coordinator can spawn sandboxed workers that can only read within their working directory and report results back to their parent — but can't message other agents, create their own subagents, or escalate their own permissions. This isn't configuration you bolt on; it's the default behavior.
 
 ### Security by Default
 
-Agents created via RPC are sandboxed by default: restricted to their working directory, no network access, limited inter-agent communication. Three presets (yolo, trusted, sandboxed) with per-tool enable/disable, path restrictions, and timeout controls. Token-based authentication for all RPC access.
+RPC-created agents are sandboxed automatically: restricted to their working directory, no shell execution, no network access. Three built-in presets (yolo, trusted, sandboxed) with per-tool enable/disable, per-tool path restrictions, and timeout controls. YOLO access is only available in the interactive REPL — it cannot be granted programmatically. Token-authenticated RPC, localhost-only binding, symlink-aware path validation, and process isolation round out the security model.
 
-### Extensible
+### Managed Agent Lifecycles
 
-Layered configuration merges project-local settings over global defaults. Connect external tools via MCP. Customize system prompts per project with `NEXUS.md` files that load automatically based on working directory.
+Agents are created, messaged, monitored, and destroyed through a consistent interface — whether from the interactive REPL, CLI commands, or the JSON-RPC API. This means you can incorporate agents into shell scripts, CI pipelines, or custom tooling with the same semantics as interactive use. Agents created this way inherit the same permission model, context management, and session persistence as REPL agents.
+
+### Per-Agent Model Routing
+
+Connect multiple LLM providers simultaneously — OpenRouter, Anthropic, OpenAI, Azure, Ollama, vLLM — and route different agents to different models. Use a fast local model for research agents and a frontier model for the coordinator. Switch models mid-session with `/model`. Automatic prompt caching reduces costs ~90% on cached tokens where providers support it.
+
+### Interactive REPL
+
+A streaming terminal interface with a session lobby, whisper mode for directing input to specific agents, and commands for managing agents, permissions, models, and configuration on the fly. Save, resume, and clone sessions with full state restoration — messages, model choice, permissions, working directory, and session-scoped allowances.
+
+### Context Compaction
+
+When an agent's context fills up, NEXUS3 summarizes older conversation history using a configurable model, preserves recent messages verbatim, reloads the system prompt (picking up any changes to NEXUS.md), and continues the session. This is automatic by default but can be triggered manually or tuned via config.
+
+### Scoped Clipboard
+
+A three-tier clipboard system (agent, project, system) lets agents store, retrieve, search, tag, and share structured content. Agent-scope entries live in memory for the session. Project and system scopes persist to SQLite across sessions. Clipboard entries are automatically injected into agent context so agents know what's available without explicit queries.
+
+### 60+ Built-in Skills
+
+39 core skills covering file operations, shell execution, git, unified diff patching, and inter-agent communication. 21 GitLab integration skills for issues, merge requests, pipelines, epics, approvals, time tracking, draft reviews, and more. Skills are permission-aware — what's available depends on the agent's preset, and file skills enforce per-tool path restrictions.
+
+### Layered Configuration
+
+System prompts (`NEXUS.md`) and config files load from multiple directory layers — package defaults, global user config, ancestor directories, and the project's working directory — and merge together. Project-specific instructions add to global ones rather than replacing them. Subagents automatically inherit context from their working directory.
+
+### MCP Integration
+
+Connect external tools via the Model Context Protocol. Supports stdio and HTTP transports, with environment variable sanitization, graceful degradation on connection failure, and lazy reconnection. MCP tools integrate into the same permission system as built-in skills.
 
 ---
 
