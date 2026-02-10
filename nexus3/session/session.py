@@ -743,7 +743,17 @@ class Session:
             logger.debug("Unknown skill requested: %s", tool_call.name)
             return ToolResult(error=f"Unknown skill: {tool_call.name}")
 
-        # 6. Validate arguments
+        # 6. Check for malformed/truncated tool call JSON
+        if "_raw_arguments" in tool_call.arguments:
+            raw = tool_call.arguments["_raw_arguments"]
+            preview = raw[:200] + "..." if len(raw) > 200 else raw
+            return ToolResult(
+                error=f"Tool call for {tool_call.name} had malformed JSON arguments "
+                f"(likely truncated response). Raw text: {preview}\n"
+                f"Please retry the tool call with valid, complete JSON."
+            )
+
+        # 7. Validate arguments
         try:
             args = validate_tool_arguments(
                 tool_call.arguments,
