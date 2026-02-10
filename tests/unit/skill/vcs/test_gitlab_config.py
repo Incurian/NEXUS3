@@ -107,6 +107,26 @@ class TestGitLabInstance:
         with pytest.raises(ValidationError):
             GitLabInstance(url="", token="x")
 
+    def test_identity_fields_default_to_none(self) -> None:
+        """Identity fields default to None."""
+        instance = GitLabInstance(url="https://gitlab.com", token="x")
+        assert instance.username is None
+        assert instance.email is None
+        assert instance.user_id is None
+
+    def test_identity_fields_stored(self) -> None:
+        """Identity fields are stored when provided."""
+        instance = GitLabInstance(
+            url="https://gitlab.com",
+            token="x",
+            username="myuser",
+            email="me@example.com",
+            user_id=42,
+        )
+        assert instance.username == "myuser"
+        assert instance.email == "me@example.com"
+        assert instance.user_id == 42
+
     def test_extra_fields_rejected(self) -> None:
         """Extra fields are rejected (model_config extra='forbid')."""
         with pytest.raises(ValidationError) as exc_info:

@@ -410,6 +410,15 @@ class GitLabInstanceConfig(BaseModel):
     """Direct token value (NOT RECOMMENDED - use token_env instead).
     If both token and token_env are set, token takes precedence."""
 
+    username: str | None = None
+    """GitLab username (for identity resolution, not authentication)."""
+
+    email: str | None = None
+    """Email associated with this GitLab account."""
+
+    user_id: int | None = None
+    """GitLab numeric user ID. Auto-resolved from API if not set."""
+
     @model_validator(mode="after")
     def validate_token_config(self) -> "GitLabInstanceConfig":
         """Ensure at least one authentication method is configured."""

@@ -35,6 +35,7 @@ class GitLabSkill(BaseSkill):
         self._services = services
         self._config = gitlab_config
         self._clients: dict[str, GitLabClient] = {}
+        self._current_instance: GitLabInstance | None = None
 
     def _resolve_instance(self, instance_name: str | None = None) -> GitLabInstance:
         """
@@ -168,6 +169,7 @@ class GitLabSkill(BaseSkill):
         try:
             # Resolve instance
             instance = self._resolve_instance(kwargs.get("instance"))
+            self._current_instance = instance
 
             # Get client and execute
             client = self._get_client(instance)
@@ -196,3 +198,47 @@ class GitLabSkill(BaseSkill):
             ToolResult with output or error
         """
         raise NotImplementedError("Subclasses must implement _execute_impl")
+
+    async def _resolve_user_ids(
+        self,
+        client: GitLabClient,
+        usernames: list[str],
+    ) -> list[int]:
+        """Resolve usernames to numeric user IDs.
+
+        Supports 'me' shorthand which resolves from config or API.
+        """
+        result: list[int] = []
+        for username in usernames:
+            if username.lower() == "me":
+                user_id = await self._resolve_me_user_id(client)
+                result.append(user_id)
+            else:
+                result.append(await client.lookup_user(username))
+        return result
+
+    async def _resolve_me_user_id(self, client: GitLabClient) -> int:
+        """Resolve 'me' to a numeric user ID.
+
+        Uses config user_id if set, else looks up config username, else falls
+        back to GET /user.
+        """
+        inst = self._current_instance
+        if inst and inst.user_id:
+            return inst.user_id
+        if inst and inst.username:
+            return await client.lookup_user(inst.username)
+        # API fallback
+        user = await client.get_current_user()
+        return user["id"]
+
+    async def _resolve_me_username(self, client: GitLabClient) -> str:
+        """Resolve 'me' to a username string (for list filters).
+
+        Uses config username if set, else falls back to GET /user.
+        """
+        inst = self._current_instance
+        if inst and inst.username:
+            return inst.username
+        user = await client.get_current_user()
+        return user["username"]

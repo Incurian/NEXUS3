@@ -1330,11 +1330,15 @@ See [GitLab Integration](#gitlab-integration) for setup and available skills.
     "instances": {
       "default": {
         "url": "https://gitlab.com",
-        "token_env": "GITLAB_TOKEN"
+        "token_env": "GITLAB_TOKEN",
+        "username": "your-gitlab-username",
+        "email": "you@example.com",
+        "user_id": 12345
       },
       "work": {
         "url": "https://gitlab.mycompany.com",
-        "token_env": "GITLAB_WORK_TOKEN"
+        "token_env": "GITLAB_WORK_TOKEN",
+        "username": "your-work-username"
       }
     },
     "default_instance": "default"
@@ -1354,6 +1358,9 @@ See [GitLab Integration](#gitlab-integration) for setup and available skills.
 | `url` | GitLab instance URL |
 | `token_env` | Environment variable containing API token (recommended) |
 | `token` | Direct token value (not recommended — use `token_env`) |
+| `username` | GitLab username — enables `"me"` shorthand in assignees, reviewers, and list filters |
+| `email` | Email associated with this GitLab account |
+| `user_id` | Numeric user ID — skips API lookup when resolving `"me"` (auto-resolved if omitted) |
 
 ### Environment Variables
 
@@ -1503,7 +1510,8 @@ Full GitLab integration with 21 skills covering issues, merge requests, CI/CD, a
     "instances": {
       "default": {
         "url": "https://gitlab.com",
-        "token_env": "GITLAB_TOKEN"
+        "token_env": "GITLAB_TOKEN",
+        "username": "your-gitlab-username"
       }
     },
     "default_instance": "default"

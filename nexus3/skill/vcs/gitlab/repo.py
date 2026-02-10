@@ -26,9 +26,10 @@ class GitLabRepoSkill(GitLabSkill):
     @property
     def description(self) -> str:
         return (
-            "View, list, fork, and search GitLab repositories. "
-            "Actions: get, list, fork, search. Project path format: 'group/repo'. "
-            "Use list with owned=true to see your repos, or search to find by name."
+            "View, list, fork, and search GitLab repositories, or check identity with whoami. "
+            "Actions: get, list, fork, search, whoami. Project path format: 'group/repo'. "
+            "Use list with owned=true to see your repos, search to find by name, "
+            "or whoami to see your configured/authenticated identity."
         )
 
     @property
@@ -38,7 +39,7 @@ class GitLabRepoSkill(GitLabSkill):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["get", "list", "fork", "search"],
+                    "enum": ["get", "list", "fork", "search", "whoami"],
                     "description": "Action to perform",
                 },
                 "instance": {
@@ -97,6 +98,8 @@ class GitLabRepoSkill(GitLabSkill):
             case "fork":
                 project = self._resolve_project(kwargs.get("project"))
                 return await self._fork_project(client, project, kwargs.get("namespace"))
+            case "whoami":
+                return await self._whoami(client)
             case _:
                 return ToolResult(error=f"Unknown action: {action}")
 
@@ -198,3 +201,35 @@ class GitLabRepoSkill(GitLabSkill):
         return ToolResult(
             output=f"Forked to {fork['path_with_namespace']}\n{fork['web_url']}"
         )
+
+    async def _whoami(self, client: GitLabClient) -> ToolResult:
+        """Show configured and API identity for the current GitLab instance."""
+        lines: list[str] = ["# GitLab Identity"]
+        inst = self._current_instance
+
+        # Configured identity
+        lines.append("")
+        lines.append("## Configured")
+        if inst and (inst.username or inst.email or inst.user_id):
+            if inst.username:
+                lines.append(f"Username: @{inst.username}")
+            if inst.email:
+                lines.append(f"Email: {inst.email}")
+            if inst.user_id:
+                lines.append(f"User ID: {inst.user_id}")
+        else:
+            lines.append("(no identity configured — add username/email to GitLab config)")
+
+        # API identity
+        lines.append("")
+        lines.append("## Authenticated (from API)")
+        user = await client.get_current_user()
+        lines.append(f"Username: @{user['username']}")
+        lines.append(f"Name: {user.get('name', 'N/A')}")
+        lines.append(f"ID: {user['id']}")
+        if user.get("email"):
+            lines.append(f"Email: {user['email']}")
+        if user.get("web_url"):
+            lines.append(f"Profile: {user['web_url']}")
+
+        return ToolResult(output="\n".join(lines))

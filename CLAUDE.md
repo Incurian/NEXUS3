@@ -407,9 +407,9 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `clipboard_tag` | `action`, `entry_key`?, `name`?, `scope`?, `description`? | Manage clipboard tags (list/add/remove/create/delete) |
 | `clipboard_export` | `path`, `scope`?, `tags`? | Export clipboard entries to JSON file |
 | `clipboard_import` | `path`, `scope`?, `conflict`?, `dry_run`? | Import clipboard entries from JSON file |
-| `gitlab_repo` | `action`, `project`?, `instance`? | Repository operations (get, list, fork, search) |
-| `gitlab_issue` | `action`, `project`?, `iid`?, `title`?, ... | Issue CRUD (list, get, create, update, close, reopen, comment) |
-| `gitlab_mr` | `action`, `project`?, `iid`?, `source_branch`?, ... | Merge request operations (list, get, create, update, merge, close, diff, commits, pipelines) |
+| `gitlab_repo` | `action`, `project`?, `instance`? | Repository operations (get, list, fork, search, whoami) |
+| `gitlab_issue` | `action`, `project`?, `iid`?, `title`?, `assignees`?, `assignee_username`?, `author_username`?, ... | Issue CRUD (list, get, create, update, close, reopen, comment). Assignees/filters support 'me' shorthand. |
+| `gitlab_mr` | `action`, `project`?, `iid`?, `source_branch`?, `assignees`?, `reviewers`?, `assignee_username`?, `author_username`?, `reviewer_username`?, ... | MR operations (list, get, create, update, merge, close, diff, commits, pipelines). Assignees/reviewers/filters support 'me' shorthand. |
 | `gitlab_label` | `action`, `project`?, `name`?, `color`? | Label management (list, get, create, update, delete) |
 | `gitlab_branch` | `action`, `project`?, `name`?, `ref`?, `push_level`?, `merge_level`?, `allow_force_push`? | Branch operations (list, get, create, delete, protect, unprotect, list-protected) |
 | `gitlab_tag` | `action`, `project`?, `name`?, `ref`?, `create_level`? | Tag operations (list, get, create, delete, protect, unprotect, list-protected) |
@@ -880,11 +880,15 @@ GitLab tools require pre-configured instances in `~/.nexus3/config.json` or `.ne
     "instances": {
       "default": {
         "url": "https://gitlab.com",
-        "token_env": "GITLAB_TOKEN"
+        "token_env": "GITLAB_TOKEN",
+        "username": "your-gitlab-username",
+        "email": "you@example.com",
+        "user_id": 12345
       },
       "work": {
         "url": "https://gitlab.mycompany.com",
-        "token_env": "GITLAB_WORK_TOKEN"
+        "token_env": "GITLAB_WORK_TOKEN",
+        "username": "your-work-username"
       }
     },
     "default_instance": "default"
@@ -896,6 +900,12 @@ GitLab tools require pre-configured instances in `~/.nexus3/config.json` or `.ne
 - Create a GitLab Personal Access Token with `api` scope
 - Store in environment variable (e.g., `GITLAB_TOKEN`)
 - Reference via `token_env` in config (recommended) or `token` field directly
+
+**Identity setup (optional but recommended):**
+- Add `username` and optionally `email`/`user_id` to each instance
+- Enables `"me"` shorthand in assignees, reviewers, and list filters
+- If not configured, `"me"` falls back to `GET /user` API call
+- Use `gitlab_repo` action `whoami` to verify your configured identity
 
 **Permission requirements:**
 - TRUSTED or YOLO level required (SANDBOXED blocked)

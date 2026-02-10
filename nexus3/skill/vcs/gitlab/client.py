@@ -51,6 +51,7 @@ class GitLabClient:
         self._timeout = timeout
         self._http: httpx.AsyncClient | None = None
         self._token: str | None = None
+        self._user_cache: dict[str, int] = {}
 
     async def _ensure_client(self) -> httpx.AsyncClient:
         """Lazily create HTTP client."""
@@ -72,10 +73,11 @@ class GitLabClient:
         return self._http
 
     async def close(self) -> None:
-        """Close HTTP client."""
+        """Close HTTP client and clear caches."""
         if self._http and not self._http.is_closed:
             await self._http.aclose()
             self._http = None
+        self._user_cache.clear()
 
     async def __aenter__(self) -> GitLabClient:
         await self._ensure_client()
@@ -244,6 +246,30 @@ class GitLabClient:
     async def get_current_user(self) -> dict[str, Any]:
         """Get authenticated user info."""
         return await self.get("/user")
+
+    async def lookup_user(self, username: str) -> int:
+        """Resolve a GitLab username to a numeric user ID (cached).
+
+        Raises GitLabAPIError if the user is not found.
+        """
+        # Strip leading @ if present
+        username = username.lstrip("@")
+
+        if username in self._user_cache:
+            return self._user_cache[username]
+
+        users = await self.get("/users", username=username)
+        # GET /users?username=X returns partial matches; find exact match
+        for user in users:
+            if user["username"] == username:
+                self._user_cache[username] = user["id"]
+                return user["id"]
+
+        raise GitLabAPIError(404, f"User '{username}' not found")
+
+    async def lookup_users(self, usernames: list[str]) -> list[int]:
+        """Resolve multiple GitLab usernames to numeric user IDs."""
+        return [await self.lookup_user(u) for u in usernames]
 
     async def get_project(self, project: str) -> dict[str, Any]:
         """Get project by path or ID."""

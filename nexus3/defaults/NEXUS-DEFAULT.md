@@ -166,16 +166,16 @@ For clipboard internals, see `nexus3/clipboard/README.md`.
 
 | Category | Skills |
 |----------|--------|
-| Repository | `gitlab_repo` (get, list, fork, search) |
-| Issues | `gitlab_issue` (list, get, create, update, close, comment) |
-| Merge Requests | `gitlab_mr` (list, get, create, merge, diff, pipelines) |
+| Repository | `gitlab_repo` (get, list, fork, search, whoami) |
+| Issues | `gitlab_issue` (list, get, create, update, close, comment) — assignees + list filters support `"me"` |
+| Merge Requests | `gitlab_mr` (list, get, create, merge, diff, pipelines) — assignees, reviewers + list filters support `"me"` |
 | CI/CD | `gitlab_pipeline`, `gitlab_job`, `gitlab_artifact`, `gitlab_variable` |
 | Code Review | `gitlab_approval`, `gitlab_draft`, `gitlab_discussion` |
 | Planning | `gitlab_milestone`, `gitlab_board`, `gitlab_epic`, `gitlab_iteration` |
 | Config | `gitlab_label`, `gitlab_branch`, `gitlab_tag`, `gitlab_deploy_key`, `gitlab_deploy_token`, `gitlab_feature_flag` |
 | Time Tracking | `gitlab_time` |
 
-GitLab skills require instances configured in `config.json` with API tokens. Use `/gitlab` in the REPL for quick reference.
+GitLab skills require instances configured in `config.json` with API tokens. Add `username` to instance config to enable `"me"` shorthand in assignees, reviewers, and list filters (e.g., `assignee_username="me"`). Use `gitlab_repo` action `whoami` to verify identity. Use `/gitlab` in the REPL for quick reference.
 
 For GitLab skill internals, see `nexus3/skill/vcs/README.md`.
 

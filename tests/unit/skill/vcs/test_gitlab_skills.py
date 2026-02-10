@@ -11,17 +11,17 @@ import pytest
 
 from nexus3.skill.services import ServiceContainer
 from nexus3.skill.vcs.config import GitLabConfig, GitLabInstance
+from nexus3.skill.vcs.gitlab.branch import GitLabBranchSkill
 from nexus3.skill.vcs.gitlab.client import GitLabAPIError, GitLabClient
 from nexus3.skill.vcs.gitlab.issue import GitLabIssueSkill
 from nexus3.skill.vcs.gitlab.mr import GitLabMRSkill
-from nexus3.skill.vcs.gitlab.branch import GitLabBranchSkill
-from nexus3.skill.vcs.gitlab.base import GitLabSkill
+from nexus3.skill.vcs.gitlab.repo import GitLabRepoSkill
 
 from .conftest import (
+    SAMPLE_BRANCH,
     SAMPLE_ISSUE,
     SAMPLE_MR,
-    SAMPLE_BRANCH,
-    SAMPLE_PROJECT,
+    SAMPLE_USER,
 )
 
 
@@ -818,3 +818,452 @@ class TestGitLabSkillProperties:
         assert "branch" in skill.description.lower()
         assert "protect" in skill.parameters["properties"]["action"]["enum"]
         assert "list-protected" in skill.parameters["properties"]["action"]["enum"]
+
+
+class TestGitLabIssueAssignees(GitLabSkillTestBase):
+    """Tests for issue assignee handling."""
+
+    @pytest.fixture
+    def skill(
+        self, services: ServiceContainer, gitlab_config: GitLabConfig
+    ) -> GitLabIssueSkill:
+        return GitLabIssueSkill(services, gitlab_config)
+
+    @pytest.mark.asyncio
+    async def test_create_issue_with_assignees(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """create action resolves assignees to IDs and sends assignee_ids."""
+        mock_client.post.return_value = {**SAMPLE_ISSUE, "title": "New Issue"}
+        mock_client.lookup_user = AsyncMock(return_value=42)
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(skill, "_resolve_project", return_value="group/project"):
+                result = await skill.execute(
+                    action="create",
+                    title="New Issue",
+                    assignees=["alice"],
+                )
+
+        assert result.success
+        call_kwargs = mock_client.post.call_args.kwargs
+        assert call_kwargs["assignee_ids"] == [42]
+
+    @pytest.mark.asyncio
+    async def test_update_issue_with_assignees(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """update action resolves assignees to IDs."""
+        mock_client.put.return_value = {**SAMPLE_ISSUE, "title": "Updated"}
+        mock_client.lookup_user = AsyncMock(return_value=10)
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(skill, "_resolve_project", return_value="group/project"):
+                result = await skill.execute(
+                    action="update",
+                    iid=1,
+                    assignees=["bob"],
+                )
+
+        assert result.success
+        call_kwargs = mock_client.put.call_args.kwargs
+        assert call_kwargs["assignee_ids"] == [10]
+
+    @pytest.mark.asyncio
+    async def test_update_issue_clear_assignees(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """update with empty assignees list clears assignees."""
+        mock_client.put.return_value = {**SAMPLE_ISSUE}
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(skill, "_resolve_project", return_value="group/project"):
+                result = await skill.execute(
+                    action="update",
+                    iid=1,
+                    assignees=[],
+                )
+
+        assert result.success
+        call_kwargs = mock_client.put.call_args.kwargs
+        assert call_kwargs["assignee_ids"] == []
+
+    @pytest.mark.asyncio
+    async def test_create_issue_with_me_assignee(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """create with assignees=['me'] resolves via API fallback."""
+        mock_client.post.return_value = {**SAMPLE_ISSUE, "title": "My Issue"}
+        mock_client.get_current_user = AsyncMock(return_value=SAMPLE_USER)
+        bare_instance = GitLabInstance(url="https://gitlab.com", token="test")
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(skill, "_resolve_project", return_value="group/project"):
+                with patch.object(skill, "_resolve_instance", return_value=bare_instance):
+                    result = await skill.execute(
+                        action="create",
+                        title="My Issue",
+                        assignees=["me"],
+                    )
+
+        assert result.success
+        call_kwargs = mock_client.post.call_args.kwargs
+        assert call_kwargs["assignee_ids"] == [SAMPLE_USER["id"]]
+
+
+class TestGitLabIssueListFilters(GitLabSkillTestBase):
+    """Tests for issue list filter parameters."""
+
+    @pytest.fixture
+    def skill(
+        self, services: ServiceContainer, gitlab_config: GitLabConfig
+    ) -> GitLabIssueSkill:
+        return GitLabIssueSkill(services, gitlab_config)
+
+    @pytest.mark.asyncio
+    async def test_list_with_assignee_username(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """list action passes assignee_username filter."""
+        async def mock_paginate(path: str, limit: int = 20, **kwargs: Any):
+            assert kwargs.get("assignee_username") == "alice"
+            for issue in [SAMPLE_ISSUE]:
+                yield issue
+
+        mock_client.paginate = mock_paginate
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(skill, "_resolve_project", return_value="group/project"):
+                result = await skill.execute(
+                    action="list", assignee_username="alice"
+                )
+
+        assert result.success
+
+    @pytest.mark.asyncio
+    async def test_list_with_author_username(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """list action passes author_username filter."""
+        async def mock_paginate(path: str, limit: int = 20, **kwargs: Any):
+            assert kwargs.get("author_username") == "bob"
+            for issue in [SAMPLE_ISSUE]:
+                yield issue
+
+        mock_client.paginate = mock_paginate
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(skill, "_resolve_project", return_value="group/project"):
+                result = await skill.execute(
+                    action="list", author_username="bob"
+                )
+
+        assert result.success
+
+    @pytest.mark.asyncio
+    async def test_list_with_me_assignee(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """list with assignee_username='me' resolves to configured username."""
+        resolved_username: str | None = None
+
+        async def mock_paginate(path: str, limit: int = 20, **kwargs: Any):
+            nonlocal resolved_username
+            resolved_username = kwargs.get("assignee_username")
+            for issue in [SAMPLE_ISSUE]:
+                yield issue
+
+        mock_client.paginate = mock_paginate
+        instance_with_username = GitLabInstance(
+            url="https://gitlab.com", token="test", username="myuser"
+        )
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(skill, "_resolve_project", return_value="group/project"):
+                with patch.object(skill, "_resolve_instance", return_value=instance_with_username):
+                    result = await skill.execute(
+                        action="list", assignee_username="me"
+                    )
+
+        assert result.success
+        assert resolved_username == "myuser"
+
+
+class TestGitLabMRAssigneesReviewers(GitLabSkillTestBase):
+    """Tests for MR assignee and reviewer handling."""
+
+    @pytest.fixture
+    def skill(
+        self, services: ServiceContainer, gitlab_config: GitLabConfig
+    ) -> GitLabMRSkill:
+        return GitLabMRSkill(services, gitlab_config)
+
+    @pytest.mark.asyncio
+    async def test_create_mr_with_assignees_and_reviewers(
+        self, skill: GitLabMRSkill, mock_client: AsyncMock
+    ) -> None:
+        """create action resolves assignees and reviewers to IDs."""
+        mock_client.post.return_value = SAMPLE_MR
+        mock_client.lookup_user = AsyncMock(side_effect=[10, 20])
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(skill, "_resolve_project", return_value="group/project"):
+                result = await skill.execute(
+                    action="create",
+                    source_branch="feature",
+                    title="Test MR",
+                    assignees=["alice"],
+                    reviewers=["bob"],
+                )
+
+        assert result.success
+        call_kwargs = mock_client.post.call_args.kwargs
+        assert call_kwargs["assignee_ids"] == [10]
+        assert call_kwargs["reviewer_ids"] == [20]
+
+    @pytest.mark.asyncio
+    async def test_update_mr_with_assignees(
+        self, skill: GitLabMRSkill, mock_client: AsyncMock
+    ) -> None:
+        """update action resolves assignees to IDs."""
+        mock_client.put.return_value = {**SAMPLE_MR, "title": "Updated"}
+        mock_client.lookup_user = AsyncMock(return_value=10)
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(skill, "_resolve_project", return_value="group/project"):
+                result = await skill.execute(
+                    action="update",
+                    iid=10,
+                    assignees=["alice"],
+                )
+
+        assert result.success
+        call_kwargs = mock_client.put.call_args.kwargs
+        assert call_kwargs["assignee_ids"] == [10]
+
+    @pytest.mark.asyncio
+    async def test_update_mr_clear_reviewers(
+        self, skill: GitLabMRSkill, mock_client: AsyncMock
+    ) -> None:
+        """update with empty reviewers clears them."""
+        mock_client.put.return_value = {**SAMPLE_MR}
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(skill, "_resolve_project", return_value="group/project"):
+                result = await skill.execute(
+                    action="update",
+                    iid=10,
+                    reviewers=[],
+                )
+
+        assert result.success
+        call_kwargs = mock_client.put.call_args.kwargs
+        assert call_kwargs["reviewer_ids"] == []
+
+
+class TestGitLabMRListFilters(GitLabSkillTestBase):
+    """Tests for MR list filter parameters."""
+
+    @pytest.fixture
+    def skill(
+        self, services: ServiceContainer, gitlab_config: GitLabConfig
+    ) -> GitLabMRSkill:
+        return GitLabMRSkill(services, gitlab_config)
+
+    @pytest.mark.asyncio
+    async def test_list_with_reviewer_username(
+        self, skill: GitLabMRSkill, mock_client: AsyncMock
+    ) -> None:
+        """list action passes reviewer_username filter."""
+        async def mock_paginate(path: str, limit: int = 20, **kwargs: Any):
+            assert kwargs.get("reviewer_username") == "reviewer1"
+            for mr in [SAMPLE_MR]:
+                yield mr
+
+        mock_client.paginate = mock_paginate
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(skill, "_resolve_project", return_value="group/project"):
+                result = await skill.execute(
+                    action="list", reviewer_username="reviewer1"
+                )
+
+        assert result.success
+
+    @pytest.mark.asyncio
+    async def test_list_with_me_author(
+        self, skill: GitLabMRSkill, mock_client: AsyncMock
+    ) -> None:
+        """list with author_username='me' resolves via config."""
+        resolved_author: str | None = None
+
+        async def mock_paginate(path: str, limit: int = 20, **kwargs: Any):
+            nonlocal resolved_author
+            resolved_author = kwargs.get("author_username")
+            for mr in [SAMPLE_MR]:
+                yield mr
+
+        mock_client.paginate = mock_paginate
+        instance_with_username = GitLabInstance(
+            url="https://gitlab.com", token="test", username="myuser"
+        )
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(skill, "_resolve_project", return_value="group/project"):
+                with patch.object(skill, "_resolve_instance", return_value=instance_with_username):
+                    result = await skill.execute(
+                        action="list", author_username="me"
+                    )
+
+        assert result.success
+        assert resolved_author == "myuser"
+
+
+class TestGitLabRepoWhoami(GitLabSkillTestBase):
+    """Tests for GitLabRepoSkill whoami action."""
+
+    @pytest.fixture
+    def skill(
+        self, services: ServiceContainer, gitlab_config: GitLabConfig
+    ) -> GitLabRepoSkill:
+        return GitLabRepoSkill(services, gitlab_config)
+
+    @pytest.mark.asyncio
+    async def test_whoami_with_configured_identity(
+        self, skill: GitLabRepoSkill, mock_client: AsyncMock
+    ) -> None:
+        """whoami shows configured and API identity."""
+        mock_client.get_current_user = AsyncMock(return_value={
+            **SAMPLE_USER,
+            "web_url": "https://gitlab.com/testuser",
+        })
+        configured_instance = GitLabInstance(
+            url="https://gitlab.com",
+            token="test",
+            username="myuser",
+            email="me@example.com",
+            user_id=42,
+        )
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(skill, "_resolve_instance", return_value=configured_instance):
+                result = await skill.execute(action="whoami")
+
+        assert result.success
+        assert "Configured" in result.output
+        assert "@myuser" in result.output
+        assert "me@example.com" in result.output
+        assert "42" in result.output
+        assert "Authenticated" in result.output
+        assert "@testuser" in result.output
+
+    @pytest.mark.asyncio
+    async def test_whoami_without_configured_identity(
+        self, skill: GitLabRepoSkill, mock_client: AsyncMock
+    ) -> None:
+        """whoami shows fallback message when no config identity."""
+        mock_client.get_current_user = AsyncMock(return_value={
+            **SAMPLE_USER,
+            "web_url": "https://gitlab.com/testuser",
+        })
+        bare_instance = GitLabInstance(
+            url="https://gitlab.com",
+            token="test",
+        )
+
+        with patch.object(skill, "_get_client", return_value=mock_client):
+            with patch.object(skill, "_resolve_instance", return_value=bare_instance):
+                result = await skill.execute(action="whoami")
+
+        assert result.success
+        assert "no identity configured" in result.output
+        assert "@testuser" in result.output
+
+    def test_whoami_in_action_enum(self, skill: GitLabRepoSkill) -> None:
+        """whoami is listed in the action enum."""
+        actions = skill.parameters["properties"]["action"]["enum"]
+        assert "whoami" in actions
+
+
+class TestGitLabBaseUserResolution(GitLabSkillTestBase):
+    """Tests for base class user resolution helpers."""
+
+    @pytest.fixture
+    def skill(
+        self, services: ServiceContainer, gitlab_config: GitLabConfig
+    ) -> GitLabIssueSkill:
+        return GitLabIssueSkill(services, gitlab_config)
+
+    @pytest.mark.asyncio
+    async def test_resolve_user_ids_with_usernames(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """_resolve_user_ids resolves regular usernames."""
+        mock_client.lookup_user = AsyncMock(side_effect=[1, 2])
+
+        result = await skill._resolve_user_ids(mock_client, ["alice", "bob"])
+        assert result == [1, 2]
+
+    @pytest.mark.asyncio
+    async def test_resolve_user_ids_with_me_configured(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """_resolve_user_ids resolves 'me' from config user_id."""
+        skill._current_instance = GitLabInstance(
+            url="https://gitlab.com", token="test", user_id=99
+        )
+
+        result = await skill._resolve_user_ids(mock_client, ["me"])
+        assert result == [99]
+
+    @pytest.mark.asyncio
+    async def test_resolve_user_ids_with_me_username_lookup(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """_resolve_user_ids resolves 'me' via config username lookup."""
+        skill._current_instance = GitLabInstance(
+            url="https://gitlab.com", token="test", username="myuser"
+        )
+        mock_client.lookup_user = AsyncMock(return_value=55)
+
+        result = await skill._resolve_user_ids(mock_client, ["me"])
+        assert result == [55]
+        mock_client.lookup_user.assert_called_once_with("myuser")
+
+    @pytest.mark.asyncio
+    async def test_resolve_user_ids_with_me_api_fallback(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """_resolve_user_ids resolves 'me' via API when no config."""
+        skill._current_instance = GitLabInstance(
+            url="https://gitlab.com", token="test"
+        )
+        mock_client.get_current_user = AsyncMock(return_value=SAMPLE_USER)
+
+        result = await skill._resolve_user_ids(mock_client, ["me"])
+        assert result == [SAMPLE_USER["id"]]
+
+    @pytest.mark.asyncio
+    async def test_resolve_me_username_from_config(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """_resolve_me_username returns config username."""
+        skill._current_instance = GitLabInstance(
+            url="https://gitlab.com", token="test", username="myuser"
+        )
+
+        result = await skill._resolve_me_username(mock_client)
+        assert result == "myuser"
+
+    @pytest.mark.asyncio
+    async def test_resolve_me_username_api_fallback(
+        self, skill: GitLabIssueSkill, mock_client: AsyncMock
+    ) -> None:
+        """_resolve_me_username falls back to API."""
+        skill._current_instance = GitLabInstance(
+            url="https://gitlab.com", token="test"
+        )
+        mock_client.get_current_user = AsyncMock(return_value=SAMPLE_USER)
+
+        result = await skill._resolve_me_username(mock_client)
+        assert result == "testuser"

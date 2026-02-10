@@ -98,6 +98,9 @@ def _convert_gitlab_config(config: Config) -> VCSGitLabConfig | None:
                 url=inst.url,
                 token=inst.token,
                 token_env=inst.token_env,
+                username=inst.username,
+                email=inst.email,
+                user_id=inst.user_id,
             )
 
         return VCSGitLabConfig(
@@ -1084,7 +1087,10 @@ class AgentPool:
                 if requester_id == agent_id:
                     pass  # Allowed
                 # Parent can destroy children
-                elif target_permissions is not None and target_permissions.parent_agent_id == requester_id:
+                elif (
+                    target_permissions is not None
+                    and target_permissions.parent_agent_id == requester_id
+                ):
                     pass  # Allowed
                 else:
                     raise AuthorizationError(
@@ -1199,7 +1205,9 @@ class AgentPool:
                     if agent.session.last_action_at
                     else None
                 ),
-                "permission_level": permissions.effective_policy.level.name if permissions else None,
+                "permission_level": (
+                    permissions.effective_policy.level.name if permissions else None
+                ),
                 "cwd": str(cwd) if cwd else None,
                 "write_paths": write_paths,
             })

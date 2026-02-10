@@ -19,6 +19,9 @@ class GitLabInstance(BaseModel):
     url: str
     token: str | None = None
     token_env: str | None = None
+    username: str | None = None
+    email: str | None = None
+    user_id: int | None = None
 
     @field_validator("url")
     @classmethod

@@ -50,6 +50,20 @@ GITLAB_READ_ONLY_ACTIONS = frozenset({
     "list-user-lists",
     # Cadence listing (iterations)
     "cadences",
+    "list-cadences",
+    # Milestone inspection
+    "issues",
+    "merge-requests",
+    # Epic inspection
+    "list-issues",
+    # Board inspection
+    "list-lists",
+    # Time tracking inspection
+    "stats",
+    # Approval rules inspection
+    "rules",
+    # Identity
+    "whoami",
 })
 
 
@@ -101,6 +115,21 @@ GITLAB_DESTRUCTIVE_ACTIONS = frozenset({
     "delete-user-list",
     # Forking
     "fork",
+    # Approval rule management
+    "create-rule",
+    "delete-rule",
+    # Cadence management
+    "create-cadence",
+    # Time tracking resets
+    "reset-estimate",
+    "reset-spent",
+    # Epic issue management
+    "add-issue",
+    "remove-issue",
+    # Board list management
+    "create-list",
+    "update-list",
+    "delete-list",
 })
 
 

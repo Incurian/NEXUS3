@@ -404,10 +404,15 @@ Configuration for a single GitLab instance.
 | `url` | `str` | `"https://gitlab.com"` | Base URL for the GitLab instance |
 | `token_env` | `str \| None` | `None` | Environment variable containing the GitLab API token |
 | `token` | `str \| None` | `None` | Direct token value (NOT RECOMMENDED - use `token_env`) |
+| `username` | `str \| None` | `None` | GitLab username (for identity resolution, not authentication) |
+| `email` | `str \| None` | `None` | Email associated with this GitLab account |
+| `user_id` | `int \| None` | `None` | GitLab numeric user ID (auto-resolved from API if not set) |
 
 **Validation:** At least one of `token` or `token_env` must be specified. If both are set, `token` takes precedence.
 
 **Security:** Store GitLab tokens in environment variables (via `token_env`), not directly in config files.
+
+**Identity:** The `username`, `email`, and `user_id` fields enable the `"me"` shorthand in assignees, reviewers, and list filters. If not configured, `"me"` falls back to `GET /user` API call. Use `gitlab_repo` action `whoami` to verify identity.
 
 ---
 

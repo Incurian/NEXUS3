@@ -129,7 +129,9 @@ class TestReadOnlyDestructiveConsistency:
         expected = {
             "list", "get", "search", "diff", "commits", "pipelines",
             "jobs", "variables", "log", "status", "browse",
-            "list-protected", "list-user-lists", "cadences",
+            "list-protected", "list-user-lists", "cadences", "list-cadences",
+            "issues", "merge-requests", "list-issues", "list-lists",
+            "stats", "rules", "whoami",
         }
         assert GITLAB_READ_ONLY_ACTIONS == expected
 
@@ -142,7 +144,9 @@ class TestReadOnlyDestructiveConsistency:
             "reset", "retry", "cancel", "play", "erase", "download",
             "download-file", "download-ref", "keep", "protect", "unprotect",
             "enable", "create-user-list", "update-user-list", "delete-user-list",
-            "fork",
+            "fork", "create-rule", "delete-rule", "create-cadence",
+            "reset-estimate", "reset-spent", "add-issue", "remove-issue",
+            "create-list", "update-list", "delete-list",
         }
         assert GITLAB_DESTRUCTIVE_ACTIONS == expected
 

@@ -89,12 +89,18 @@ class GitLabMRSkill(GitLabSkill):
                 "assignees": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Usernames to assign",
+                    "description": (
+                        "GitLab usernames to assign (not emails). "
+                        "Use 'me' for yourself."
+                    ),
                 },
                 "reviewers": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Usernames to add as reviewers",
+                    "description": (
+                        "GitLab usernames to add as reviewers (not emails). "
+                        "Use 'me' for yourself."
+                    ),
                 },
                 "draft": {
                     "type": "boolean",
@@ -107,6 +113,27 @@ class GitLabMRSkill(GitLabSkill):
                 "remove_source_branch": {
                     "type": "boolean",
                     "description": "Remove source branch after merge",
+                },
+                "assignee_username": {
+                    "type": "string",
+                    "description": (
+                        "Filter MRs by assignee username (list action). "
+                        "Use 'me' for yourself, or 'None' for unassigned."
+                    ),
+                },
+                "author_username": {
+                    "type": "string",
+                    "description": (
+                        "Filter MRs by author username (list action). "
+                        "Use 'me' for yourself."
+                    ),
+                },
+                "reviewer_username": {
+                    "type": "string",
+                    "description": (
+                        "Filter MRs by reviewer username (list action). "
+                        "Use 'me' for yourself."
+                    ),
                 },
                 "state": {
                     "type": "string",
@@ -219,6 +246,21 @@ class GitLabMRSkill(GitLabSkill):
             params["search"] = search
         if labels := kwargs.get("labels"):
             params["labels"] = ",".join(labels)
+        if assignee := kwargs.get("assignee_username"):
+            if assignee.lower() == "me":
+                params["assignee_username"] = await self._resolve_me_username(client)
+            else:
+                params["assignee_username"] = assignee
+        if author := kwargs.get("author_username"):
+            if author.lower() == "me":
+                params["author_username"] = await self._resolve_me_username(client)
+            else:
+                params["author_username"] = author
+        if reviewer := kwargs.get("reviewer_username"):
+            if reviewer.lower() == "me":
+                params["reviewer_username"] = await self._resolve_me_username(client)
+            else:
+                params["reviewer_username"] = reviewer
 
         limit = kwargs.get("limit", 20)
 
@@ -309,6 +351,10 @@ class GitLabMRSkill(GitLabSkill):
             data["squash"] = True
         if kwargs.get("remove_source_branch"):
             data["remove_source_branch"] = True
+        if assignees := kwargs.get("assignees"):
+            data["assignee_ids"] = await self._resolve_user_ids(client, assignees)
+        if reviewers := kwargs.get("reviewers"):
+            data["reviewer_ids"] = await self._resolve_user_ids(client, reviewers)
 
         mr = await client.post(f"/projects/{project}/merge_requests", **data)
 
@@ -333,6 +379,18 @@ class GitLabMRSkill(GitLabSkill):
             data["labels"] = ",".join(labels)
         if target := kwargs.get("target_branch"):
             data["target_branch"] = target
+        if "assignees" in kwargs:
+            assignees = kwargs["assignees"]
+            if assignees:
+                data["assignee_ids"] = await self._resolve_user_ids(client, assignees)
+            else:
+                data["assignee_ids"] = []  # Clear assignees
+        if "reviewers" in kwargs:
+            reviewers = kwargs["reviewers"]
+            if reviewers:
+                data["reviewer_ids"] = await self._resolve_user_ids(client, reviewers)
+            else:
+                data["reviewer_ids"] = []  # Clear reviewers
 
         if not data:
             return ToolResult(error="No fields to update")

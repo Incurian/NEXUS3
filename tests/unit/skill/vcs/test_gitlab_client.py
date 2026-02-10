@@ -1,6 +1,5 @@
 """Tests for GitLab HTTP client."""
 
-import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,6 +8,9 @@ import pytest
 
 from nexus3.skill.vcs.config import GitLabInstance
 from nexus3.skill.vcs.gitlab.client import GitLabAPIError, GitLabClient
+
+# Type alias to keep method signatures under line length limit
+ClientFixture = tuple[GitLabClient, AsyncMock]
 
 
 class TestGitLabClientInit:
@@ -150,7 +152,7 @@ class TestGitLabClientRequests:
     """Tests for HTTP request methods."""
 
     @pytest.fixture
-    def client_with_mock_http(self) -> tuple[GitLabClient, AsyncMock]:
+    def client_with_mock_http(self) -> ClientFixture:
         """Create client with mocked HTTP."""
         instance = GitLabInstance(url="https://gitlab.com", token="test-token")
         client = GitLabClient(instance)
@@ -163,7 +165,7 @@ class TestGitLabClientRequests:
         return client, mock_http
 
     @pytest.mark.asyncio
-    async def test_get_request(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_get_request(self, client_with_mock_http: ClientFixture) -> None:
         """get() makes GET request and returns JSON."""
         client, mock_http = client_with_mock_http
 
@@ -181,7 +183,7 @@ class TestGitLabClientRequests:
         assert call_kwargs["url"] == "https://gitlab.com/api/v4/user"
 
     @pytest.mark.asyncio
-    async def test_get_with_params(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_get_with_params(self, client_with_mock_http: ClientFixture) -> None:
         """get() passes query parameters."""
         client, mock_http = client_with_mock_http
 
@@ -196,7 +198,7 @@ class TestGitLabClientRequests:
         assert call_kwargs["params"] == {"search": "test", "per_page": 10}
 
     @pytest.mark.asyncio
-    async def test_post_request(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_post_request(self, client_with_mock_http: ClientFixture) -> None:
         """post() makes POST request with JSON body."""
         client, mock_http = client_with_mock_http
 
@@ -213,7 +215,7 @@ class TestGitLabClientRequests:
         assert call_kwargs["json"] == {"title": "Test", "description": "Body"}
 
     @pytest.mark.asyncio
-    async def test_put_request(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_put_request(self, client_with_mock_http: ClientFixture) -> None:
         """put() makes PUT request with JSON body."""
         client, mock_http = client_with_mock_http
 
@@ -230,7 +232,7 @@ class TestGitLabClientRequests:
         assert call_kwargs["json"] == {"state_event": "close"}
 
     @pytest.mark.asyncio
-    async def test_delete_request(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_delete_request(self, client_with_mock_http: ClientFixture) -> None:
         """delete() makes DELETE request."""
         client, mock_http = client_with_mock_http
 
@@ -249,7 +251,7 @@ class TestGitLabClientErrorHandling:
     """Tests for error handling."""
 
     @pytest.fixture
-    def client_with_mock_http(self) -> tuple[GitLabClient, AsyncMock]:
+    def client_with_mock_http(self) -> ClientFixture:
         """Create client with mocked HTTP."""
         instance = GitLabInstance(url="https://gitlab.com", token="test-token")
         client = GitLabClient(instance)
@@ -262,7 +264,7 @@ class TestGitLabClientErrorHandling:
         return client, mock_http
 
     @pytest.mark.asyncio
-    async def test_401_unauthorized(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_401_unauthorized(self, client_with_mock_http: ClientFixture) -> None:
         """401 error raises GitLabAPIError."""
         client, mock_http = client_with_mock_http
 
@@ -278,7 +280,7 @@ class TestGitLabClientErrorHandling:
         assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_403_forbidden(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_403_forbidden(self, client_with_mock_http: ClientFixture) -> None:
         """403 error raises GitLabAPIError."""
         client, mock_http = client_with_mock_http
 
@@ -294,7 +296,7 @@ class TestGitLabClientErrorHandling:
         assert exc_info.value.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_404_not_found(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_404_not_found(self, client_with_mock_http: ClientFixture) -> None:
         """404 error raises GitLabAPIError."""
         client, mock_http = client_with_mock_http
 
@@ -311,7 +313,7 @@ class TestGitLabClientErrorHandling:
         assert "Not Found" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    async def test_429_rate_limit_with_retry(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_429_rate_limit_with_retry(self, client_with_mock_http: ClientFixture) -> None:
         """429 rate limit triggers retry."""
         client, mock_http = client_with_mock_http
 
@@ -334,7 +336,7 @@ class TestGitLabClientErrorHandling:
         assert mock_http.request.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_429_rate_limit_max_retries(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_429_rate_limit_max_retries(self, client_with_mock_http: ClientFixture) -> None:
         """429 raises after max retries."""
         client, mock_http = client_with_mock_http
 
@@ -353,7 +355,7 @@ class TestGitLabClientErrorHandling:
         assert "Rate limit" in exc_info.value.message
 
     @pytest.mark.asyncio
-    async def test_500_server_error_retry(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_500_server_error_retry(self, client_with_mock_http: ClientFixture) -> None:
         """500 server error triggers retry."""
         client, mock_http = client_with_mock_http
 
@@ -375,7 +377,7 @@ class TestGitLabClientErrorHandling:
         assert mock_http.request.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_timeout_error_retry(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_timeout_error_retry(self, client_with_mock_http: ClientFixture) -> None:
         """Timeout triggers retry."""
         client, mock_http = client_with_mock_http
 
@@ -392,7 +394,7 @@ class TestGitLabClientErrorHandling:
         assert mock_http.request.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_timeout_error_max_retries(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_timeout_error_max_retries(self, client_with_mock_http: ClientFixture) -> None:
         """Timeout raises after max retries."""
         client, mock_http = client_with_mock_http
 
@@ -406,7 +408,7 @@ class TestGitLabClientErrorHandling:
         assert "timeout" in exc_info.value.message.lower()
 
     @pytest.mark.asyncio
-    async def test_request_error(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_request_error(self, client_with_mock_http: ClientFixture) -> None:
         """Request error raises GitLabAPIError."""
         client, mock_http = client_with_mock_http
 
@@ -423,7 +425,7 @@ class TestGitLabClientPagination:
     """Tests for pagination."""
 
     @pytest.fixture
-    def client_with_mock_http(self) -> tuple[GitLabClient, AsyncMock]:
+    def client_with_mock_http(self) -> ClientFixture:
         """Create client with mocked HTTP."""
         instance = GitLabInstance(url="https://gitlab.com", token="test-token")
         client = GitLabClient(instance)
@@ -436,7 +438,7 @@ class TestGitLabClientPagination:
         return client, mock_http
 
     @pytest.mark.asyncio
-    async def test_paginate_single_page(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_paginate_single_page(self, client_with_mock_http: ClientFixture) -> None:
         """paginate() yields items from single page."""
         client, mock_http = client_with_mock_http
 
@@ -455,7 +457,7 @@ class TestGitLabClientPagination:
         assert items[0]["id"] == 1
 
     @pytest.mark.asyncio
-    async def test_paginate_multiple_pages(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_paginate_multiple_pages(self, client_with_mock_http: ClientFixture) -> None:
         """paginate() fetches multiple pages.
 
         Pagination continues when page returns exactly per_page items.
@@ -484,7 +486,7 @@ class TestGitLabClientPagination:
         assert mock_http.request.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_paginate_respects_limit(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_paginate_respects_limit(self, client_with_mock_http: ClientFixture) -> None:
         """paginate() stops at limit."""
         client, mock_http = client_with_mock_http
 
@@ -501,7 +503,7 @@ class TestGitLabClientPagination:
         assert mock_http.request.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_paginate_empty_response(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_paginate_empty_response(self, client_with_mock_http: ClientFixture) -> None:
         """paginate() handles empty response."""
         client, mock_http = client_with_mock_http
 
@@ -515,7 +517,7 @@ class TestGitLabClientPagination:
         assert len(items) == 0
 
     @pytest.mark.asyncio
-    async def test_paginate_partial_page_stops(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_paginate_partial_page_stops(self, client_with_mock_http: ClientFixture) -> None:
         """paginate() stops when page has fewer items than per_page."""
         client, mock_http = client_with_mock_http
 
@@ -563,7 +565,7 @@ class TestGitLabClientGetRaw:
     """Tests for get_raw() method (returns text, not JSON)."""
 
     @pytest.fixture
-    def client_with_mock_http(self) -> tuple[GitLabClient, AsyncMock]:
+    def client_with_mock_http(self) -> ClientFixture:
         """Create client with mocked HTTP."""
         instance = GitLabInstance(url="https://gitlab.com", token="test-token")
         client = GitLabClient(instance)
@@ -576,7 +578,7 @@ class TestGitLabClientGetRaw:
         return client, mock_http
 
     @pytest.mark.asyncio
-    async def test_get_raw_returns_text(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_get_raw_returns_text(self, client_with_mock_http: ClientFixture) -> None:
         """get_raw() returns response text (for job logs etc)."""
         client, mock_http = client_with_mock_http
 
@@ -590,7 +592,7 @@ class TestGitLabClientGetRaw:
         assert result == "Build started...\nRunning tests...\nBuild complete!"
 
     @pytest.mark.asyncio
-    async def test_get_raw_error_handling(self, client_with_mock_http: tuple[GitLabClient, AsyncMock]) -> None:
+    async def test_get_raw_error_handling(self, client_with_mock_http: ClientFixture) -> None:
         """get_raw() handles errors."""
         client, mock_http = client_with_mock_http
 
@@ -604,3 +606,135 @@ class TestGitLabClientGetRaw:
             await client.get_raw("/projects/1/jobs/999/trace")
 
         assert exc_info.value.status_code == 404
+
+
+class TestGitLabClientUserLookup:
+    """Tests for user lookup and caching."""
+
+    @pytest.fixture
+    def client_with_mock_http(self) -> ClientFixture:
+        """Create client with mocked HTTP."""
+        instance = GitLabInstance(url="https://gitlab.com", token="test-token")
+        client = GitLabClient(instance)
+
+        mock_http = AsyncMock()
+        mock_http.is_closed = False
+        client._http = mock_http
+        client._token = "test-token"
+
+        return client, mock_http
+
+    @pytest.mark.asyncio
+    async def test_lookup_user_success(self, client_with_mock_http: ClientFixture) -> None:
+        """lookup_user resolves username to ID."""
+        client, mock_http = client_with_mock_http
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {"id": 42, "username": "alice"},
+        ]
+        mock_http.request.return_value = mock_response
+
+        result = await client.lookup_user("alice")
+        assert result == 42
+
+    @pytest.mark.asyncio
+    async def test_lookup_user_strips_at(self, client_with_mock_http: ClientFixture) -> None:
+        """lookup_user strips leading @ from username."""
+        client, mock_http = client_with_mock_http
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {"id": 42, "username": "alice"},
+        ]
+        mock_http.request.return_value = mock_response
+
+        result = await client.lookup_user("@alice")
+        assert result == 42
+
+    @pytest.mark.asyncio
+    async def test_lookup_user_exact_match(self, client_with_mock_http: ClientFixture) -> None:
+        """lookup_user requires exact username match (API returns partial matches)."""
+        client, mock_http = client_with_mock_http
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {"id": 99, "username": "alice_admin"},  # Partial match
+        ]
+        mock_http.request.return_value = mock_response
+
+        with pytest.raises(GitLabAPIError) as exc_info:
+            await client.lookup_user("alice")
+        assert exc_info.value.status_code == 404
+        assert "alice" in exc_info.value.message
+
+    @pytest.mark.asyncio
+    async def test_lookup_user_not_found(self, client_with_mock_http: ClientFixture) -> None:
+        """lookup_user raises 404 when user not found."""
+        client, mock_http = client_with_mock_http
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+        mock_http.request.return_value = mock_response
+
+        with pytest.raises(GitLabAPIError) as exc_info:
+            await client.lookup_user("nobody")
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_lookup_user_cached(self, client_with_mock_http: ClientFixture) -> None:
+        """lookup_user caches results."""
+        client, mock_http = client_with_mock_http
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [{"id": 42, "username": "alice"}]
+        mock_http.request.return_value = mock_response
+
+        result1 = await client.lookup_user("alice")
+        result2 = await client.lookup_user("alice")
+        assert result1 == result2 == 42
+        # Only one HTTP request made (second was cached)
+        assert mock_http.request.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_lookup_users_multiple(self, client_with_mock_http: ClientFixture) -> None:
+        """lookup_users resolves multiple usernames."""
+        client, mock_http = client_with_mock_http
+
+        def make_response(users: list[dict[str, Any]]) -> MagicMock:
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = users
+            return resp
+
+        mock_http.request.side_effect = [
+            make_response([{"id": 1, "username": "alice"}]),
+            make_response([{"id": 2, "username": "bob"}]),
+        ]
+
+        result = await client.lookup_users(["alice", "bob"])
+        assert result == [1, 2]
+
+    @pytest.mark.asyncio
+    async def test_close_clears_user_cache(self, client_with_mock_http: ClientFixture) -> None:
+        """close() clears the user cache."""
+        client, mock_http = client_with_mock_http
+
+        # Populate cache
+        client._user_cache["alice"] = 42
+
+        mock_http.aclose = AsyncMock()
+        await client.close()
+
+        assert client._user_cache == {}
+
+    def test_user_cache_initialized_empty(self) -> None:
+        """User cache starts empty."""
+        instance = GitLabInstance(url="https://gitlab.com", token="test-token")
+        client = GitLabClient(instance)
+        assert client._user_cache == {}

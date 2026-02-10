@@ -101,6 +101,8 @@ Key methods:
 - `_get_client()` - Get or create cached HTTP client for instance
 - `_resolve_project()` - Resolve project path from parameter or git remote
 - `_execute_impl()` - Override in subclasses to implement skill logic
+- `_resolve_user_ids()` - Resolve usernames (including `"me"`) to numeric user IDs
+- `_resolve_me_username()` - Resolve `"me"` to a username string for list filters
 
 ### HTTP Client
 
@@ -112,6 +114,7 @@ Key methods:
 - Rate limit handling (429 responses)
 - Pagination support for list endpoints
 - Connection pooling and lazy initialization
+- User ID lookup with caching (`lookup_user()`, `lookup_users()`)
 
 ### Action Pattern
 
@@ -142,11 +145,14 @@ GitLab configuration in `config.json`:
     "instances": {
       "gitlab": {
         "url": "https://gitlab.com",
-        "token_env": "GITLAB_TOKEN"
+        "token_env": "GITLAB_TOKEN",
+        "username": "your-username",
+        "email": "you@example.com"
       },
       "internal": {
         "url": "https://gitlab.internal.company.com",
-        "token": "glpat-xxxxxxxxxxxx"
+        "token": "glpat-xxxxxxxxxxxx",
+        "username": "your-internal-username"
       }
     },
     "default_instance": "gitlab"
@@ -158,7 +164,7 @@ GitLab configuration in `config.json`:
 
 | Class | Description |
 |-------|-------------|
-| `GitLabInstance` | Single instance config (url, token/token_env) |
+| `GitLabInstance` | Single instance config (url, token/token_env, username, email, user_id) |
 | `GitLabConfig` | Collection of instances with default selection |
 
 Token resolution order:

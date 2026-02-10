@@ -73,7 +73,24 @@ class GitLabIssueSkill(GitLabSkill):
                 "assignees": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Usernames to assign",
+                    "description": (
+                        "GitLab usernames to assign (not emails). "
+                        "Use 'me' for yourself."
+                    ),
+                },
+                "assignee_username": {
+                    "type": "string",
+                    "description": (
+                        "Filter issues by assignee username (list action). "
+                        "Use 'me' for yourself, or 'None' for unassigned."
+                    ),
+                },
+                "author_username": {
+                    "type": "string",
+                    "description": (
+                        "Filter issues by author username (list action). "
+                        "Use 'me' for yourself."
+                    ),
                 },
                 "state": {
                     "type": "string",
@@ -163,6 +180,16 @@ class GitLabIssueSkill(GitLabSkill):
             params["search"] = search
         if labels := kwargs.get("labels"):
             params["labels"] = ",".join(labels)
+        if assignee := kwargs.get("assignee_username"):
+            if assignee.lower() == "me":
+                params["assignee_username"] = await self._resolve_me_username(client)
+            else:
+                params["assignee_username"] = assignee
+        if author := kwargs.get("author_username"):
+            if author.lower() == "me":
+                params["author_username"] = await self._resolve_me_username(client)
+            else:
+                params["author_username"] = author
 
         limit = kwargs.get("limit", 20)
 
@@ -227,6 +254,8 @@ class GitLabIssueSkill(GitLabSkill):
             data["description"] = description
         if labels := kwargs.get("labels"):
             data["labels"] = ",".join(labels)
+        if assignees := kwargs.get("assignees"):
+            data["assignee_ids"] = await self._resolve_user_ids(client, assignees)
 
         issue = await client.post(f"/projects/{project}/issues", **data)
 
@@ -249,6 +278,12 @@ class GitLabIssueSkill(GitLabSkill):
             data["description"] = description
         if labels := kwargs.get("labels"):
             data["labels"] = ",".join(labels)
+        if "assignees" in kwargs:
+            assignees = kwargs["assignees"]
+            if assignees:
+                data["assignee_ids"] = await self._resolve_user_ids(client, assignees)
+            else:
+                data["assignee_ids"] = []  # Clear assignees
 
         if not data:
             return ToolResult(error="No fields to update")
