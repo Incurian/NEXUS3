@@ -121,14 +121,14 @@ class Response:
 
 ```python
 # Server-side
-parse_request(json_line: str) -> Request
+parse_request(line: str) -> Request
 serialize_response(response: Response) -> str
-make_error_response(id, code, message, data=None) -> Response
-make_success_response(id, result) -> Response
+make_error_response(request_id, code, message, data=None) -> Response
+make_success_response(request_id, result) -> Response
 
 # Client-side
 serialize_request(request: Request) -> str
-parse_response(json_line: str) -> Response
+parse_response(line: str) -> Response
 ```
 
 ---
@@ -204,10 +204,16 @@ Handles agent lifecycle management at the pool level.
 
 | Method | Parameters | Result |
 |--------|------------|--------|
-| `create_agent` | `agent_id?`, `preset?`, `cwd?`, `allowed_write_paths?`, `model?`, `disable_tools?`, `parent_agent_id?`, `initial_message?`, `wait_for_initial_response?` | `{agent_id, url, initial_request_id?, response?}` |
+| `create_agent` | `agent_id?`, `system_prompt?`, `preset?`, `cwd?`, `allowed_write_paths?`, `model?`, `disable_tools?`, `parent_agent_id?`, `initial_message?`, `wait_for_initial_response?` | `{agent_id, url, initial_request_id?, initial_status?, response?}` |
 | `destroy_agent` | `agent_id` | `{success, agent_id}` |
 | `list_agents` | (none) | `{agents: [...]}` |
 | `shutdown_server` | (none) | `{success, message}` |
+
+#### Features
+
+- `shutdown_requested` property: checked by HTTP server loop for graceful shutdown
+- `handles(method)`: check if a method is handled by this dispatcher
+- `dispatch(request, requester_id=None)`: sets requester context for authorization
 
 #### Authorization
 
@@ -220,17 +226,40 @@ Handles agent lifecycle management at the pool level.
 
 Handles per-agent operations.
 
+#### Constructor
+
+```python
+Dispatcher(
+    session: Session,
+    context: ContextManager | None = None,
+    agent_id: str | None = None,
+    log_multiplexer: LogMultiplexer | None = None,
+    pool: AgentPool | None = None,
+)
+```
+
+The `pool` parameter enables YOLO safety checks (blocking RPC sends when no REPL is connected).
+
 #### Methods
 
 | Method | Parameters | Result |
 |--------|------------|--------|
-| `send` | `content`, `request_id?`, `source?`, `source_agent_id?` | `{content, request_id, halted_at_iteration_limit}` |
+| `send` | `content`, `request_id?`, `source?`, `source_agent_id?` | `{content, request_id, halted_at_iteration_limit}` or `{cancelled, request_id}` |
 | `cancel` | `request_id` | `{cancelled, request_id, reason?}` |
 | `get_tokens` | (none) | Token usage breakdown |
-| `get_context` | (none) | `{message_count, system_prompt, halted_at_iteration_limit, ...}` |
+| `get_context` | (none) | `{message_count, system_prompt, halted_at_iteration_limit, last_iteration_count, max_tool_iterations}` |
 | `get_messages` | `offset?`, `limit?` | `{agent_id, total, offset, limit, messages}` |
-| `compact` | `force?` | `{compacted, tokens_before?, tokens_after?, tokens_saved?}` |
+| `compact` | `force?` | `{compacted, tokens_before?, tokens_after?, tokens_saved?}` or `{compacted: false, reason}` |
 | `shutdown` | (none) | `{success}` |
+
+Note: `get_tokens`, `get_context`, and `get_messages` are only registered if `context` is provided.
+
+#### Additional Methods (not RPC-exposed)
+
+| Method | Description |
+|--------|-------------|
+| `request_shutdown()` | Set `should_shutdown` flag externally |
+| `cancel_all_requests()` | Cancel all in-progress requests (used during agent destruction) |
 
 #### Features
 
@@ -238,10 +267,17 @@ Handles per-agent operations.
 - Cancellation tokens for cooperative cancellation
 - Source attribution for message provenance
 - REPL notifications via `on_incoming_turn` hook
+- YOLO safety: blocks RPC sends to YOLO agents when no REPL is connected
 
 ### Shared Infrastructure (`dispatch_core.py`)
 
 ```python
+# Type alias used by both dispatchers
+Handler = Callable[[dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
+
+# Exception raised by handlers for invalid parameters
+class InvalidParamsError(NexusError): ...
+
 async def dispatch_request(
     request: Request,
     handlers: dict[str, Handler],
@@ -251,7 +287,7 @@ async def dispatch_request(
 
 Handles:
 - Handler lookup
-- Exception handling with proper error codes
+- Exception handling with proper error codes (`InvalidParamsError` -> `-32602`, `NexusError` -> `-32603`)
 - Notification handling (no response for `id=None`)
 
 ---
@@ -307,7 +343,8 @@ class Agent:
     registry: SkillRegistry
     session: Session
     dispatcher: Dispatcher
-    created_at: datetime
+    created_at: datetime = field(default_factory=datetime.now)
+    repl_connected: bool = False  # Tracks REPL connection for YOLO safety
 ```
 
 ### AgentPool
@@ -318,20 +355,45 @@ Manager for multiple agents:
 class AgentPool:
     async def create(agent_id=None, config=None) -> Agent
     async def create_temp(config=None) -> Agent
-    async def destroy(agent_id, requester_id=None, admin_override=False) -> bool
+    async def destroy(agent_id, requester_id=None, *, admin_override=False) -> bool
     async def get_or_restore(agent_id, session_manager=None) -> Agent | None
     async def restore_from_saved(saved: SavedSession) -> Agent
     def get(agent_id) -> Agent | None
     def get_children(agent_id) -> list[str]
+    def is_temp(agent_id) -> bool  # Delegates to is_temp_agent()
     def list() -> list[dict]
     def set_global_dispatcher(dispatcher: GlobalDispatcher) -> None
+    def set_repl_connected(agent_id, connected: bool) -> None
+    def is_repl_connected(agent_id) -> bool
     @property
     def log_multiplexer(self) -> LogMultiplexer
     @property
     def system_prompt_path(self) -> str | None
     @property
     def should_shutdown(self) -> bool
+    def __len__(self) -> int
+    def __contains__(self, agent_id: str) -> bool
 ```
+
+#### `list()` Return Fields
+
+Each dict in the list contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `agent_id` | `str` | Unique identifier |
+| `is_temp` | `bool` | Whether agent starts with `.` |
+| `created_at` | `str` | ISO 8601 timestamp |
+| `message_count` | `int` | Messages in context |
+| `should_shutdown` | `bool` | Dispatcher shutdown flag |
+| `parent_agent_id` | `str?` | Parent agent (None if root) |
+| `child_count` | `int` | Active child agents |
+| `halted_at_iteration_limit` | `bool` | Hit max tool iterations |
+| `model` | `str?` | Model alias |
+| `last_action_at` | `str?` | ISO timestamp of last action |
+| `permission_level` | `str?` | YOLO, TRUSTED, or SANDBOXED |
+| `cwd` | `str?` | Working directory |
+| `write_paths` | `list[str]?` | Allowed write paths (None = unrestricted) |
 
 ### Agent Naming
 
@@ -340,16 +402,22 @@ class AgentPool:
 is_temp_agent(agent_id) -> bool  # ".1" -> True, "worker-1" -> False
 generate_temp_id(existing_ids) -> str  # Returns ".1", ".2", etc.
 
-# Validation (security)
+# Validation (security) - prevents path traversal in agent IDs
 validate_agent_id(agent_id)  # Raises ValueError on path traversal
+
+# Constants
+MAX_AGENT_DEPTH = 5           # Max nesting depth for agent creation
+_MAX_AGENT_ID_LENGTH = 128    # Max agent ID length
 ```
 
 ### Security
 
-- Agent ID validation prevents path traversal (`..`, `/`, `\`)
+- Agent ID validation prevents path traversal (`..`, `/`, `\`, URL-encoded variants)
+- Max agent ID length: 128 characters
 - Max agent depth: 5 (prevents infinite recursion)
 - Lock-protected operations (thread-safe)
 - Permission ceiling enforcement
+- Deep-copied parent permissions (prevents shared reference mutation)
 
 ---
 
@@ -365,9 +433,13 @@ Global operations (create, destroy, list):
 class DirectAgentAPI:
     def __init__(pool, global_dispatcher, requester_id=None)
     def for_agent(agent_id) -> AgentScopedAPI
-    async def create_agent(agent_id, preset=None, ...) -> dict
+    async def create_agent(
+        agent_id, preset=None, disable_tools=None, parent_agent_id=None,
+        cwd=None, allowed_write_paths=None, model=None,
+        initial_message=None, wait_for_initial_response=False,
+    ) -> dict
     async def destroy_agent(agent_id) -> dict
-    async def list_agents() -> list[str]
+    async def list_agents() -> list[str]  # Returns agents list from GlobalDispatcher
     async def shutdown_server() -> dict
 ```
 
@@ -433,6 +505,10 @@ Server-side token lifecycle:
 class ServerTokenManager:
     def __init__(port=8765, nexus_dir=None, strict_permissions=True)
     @property
+    def port(self) -> int
+    @property
+    def nexus_dir(self) -> Path
+    @property
     def token_path(self) -> Path
     def generate_fresh(self) -> str  # Delete stale + generate new
     def save(token, overwrite=True) -> None
@@ -475,8 +551,8 @@ class DetectionResult(Enum):
     TIMEOUT = "timeout"           # Connection timed out
     ERROR = "error"               # Unexpected error
 
-async def detect_server(port=8765, host="127.0.0.1", timeout=2.0) -> DetectionResult
-async def wait_for_server(port=8765, host="127.0.0.1", timeout=30.0, poll_interval=0.1) -> bool
+async def detect_server(port, host="127.0.0.1", timeout=2.0) -> DetectionResult
+async def wait_for_server(port, host="127.0.0.1", timeout=30.0, poll_interval=0.1) -> bool
 ```
 
 ---
@@ -580,6 +656,12 @@ Non-destructive file logging (for REPL mode):
 def configure_server_file_logging(log_dir, level=INFO) -> Path
 ```
 
+### Constants
+
+```python
+SERVER_LOGGER_NAME = "nexus3.server"  # Dedicated logger for server lifecycle events
+```
+
 ### bootstrap_server_components
 
 Main entry point for server initialization:
@@ -595,15 +677,15 @@ async def bootstrap_server_components(
 
 Handles circular dependency between AgentPool and GlobalDispatcher:
 
-1. Create provider registry
+1. Create provider registry (lazy provider instantiation)
 2. Load context from NEXUS.md files
-3. Inject model guidance into system prompt (if configured)
-4. Load custom permission presets
-5. Create SharedComponents
+3. Inject model guidance table into system prompt (if any models have guidance configured)
+4. Load custom permission presets from config
+5. Create SharedComponents (immutable config bundle)
 6. Create AgentPool (without dispatcher)
 7. Create GlobalDispatcher (requires pool)
-8. Wire circular dependency
-9. Validate wiring
+8. Wire circular dependency (pool -> dispatcher)
+9. Validate wiring succeeded
 
 ---
 
@@ -866,7 +948,7 @@ from nexus3.rpc import (
 
 # Additional imports (NOT re-exported from nexus3.rpc - import from submodules directly)
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
-from nexus3.rpc.bootstrap import bootstrap_server_components, configure_server_file_logging
+from nexus3.rpc.bootstrap import bootstrap_server_components, configure_server_file_logging, SERVER_LOGGER_NAME
 from nexus3.rpc.discovery import (
     AuthStatus,
     DiscoveredServer,
@@ -875,7 +957,7 @@ from nexus3.rpc.discovery import (
     probe_server,
     discover_servers,
 )
-from nexus3.rpc.pool import AuthorizationError, validate_agent_id, is_temp_agent, generate_temp_id
+from nexus3.rpc.pool import AuthorizationError, validate_agent_id, is_temp_agent, generate_temp_id, MAX_AGENT_DEPTH
 from nexus3.rpc.auth import InsecureTokenFileError, check_token_file_permissions
 ```
 
@@ -885,19 +967,22 @@ from nexus3.rpc.auth import InsecureTokenFileError, check_token_file_permissions
 
 ### Internal
 
-- `nexus3.core`: Types, errors, paths, validation, permissions
-- `nexus3.config`: Configuration schema
+- `nexus3.core`: Types, errors, paths, validation, permissions, cancel tokens, constants
+- `nexus3.config`: Configuration schema, model resolution
 - `nexus3.provider`: LLM provider registry
-- `nexus3.context`: Context management, loading
-- `nexus3.session`: Session coordination, logging
-- `nexus3.skill`: Skill registry, service container
-- `nexus3.mcp`: MCP server registry
+- `nexus3.context`: Context management, loading, token counting
+- `nexus3.session`: Session coordination, logging, persistence
+- `nexus3.skill`: Skill registry, service container, builtin skills
+- `nexus3.skill.vcs`: GitLab/VCS skill registration
+- `nexus3.mcp`: MCP server registry, permissions
+- `nexus3.clipboard`: Clipboard manager, permission presets
+- `nexus3.client`: ClientError (imported lazily in agent_api.py)
 
 ### External
 
 - `httpx`: HTTP client for detection/discovery
-- Python stdlib: `asyncio`, `json`, `secrets`, `hmac`, `logging`
+- Python stdlib: `asyncio`, `json`, `secrets`, `hmac`, `logging`, `contextvars`
 
 ---
 
-Updated: 2026-02-01
+Updated: 2026-02-10

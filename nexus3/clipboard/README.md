@@ -1,6 +1,6 @@
 # nexus3.clipboard - Scoped Clipboard System
 
-**Updated: 2026-02-01**
+**Updated: 2026-02-10**
 
 The clipboard module provides a multi-scope clipboard system for NEXUS3 agents. It enables agents to copy, cut, and paste content between files with persistent storage, tagging, search, and context injection.
 
@@ -21,9 +21,10 @@ The clipboard module provides a multi-scope clipboard system for NEXUS3 agents. 
 11. [Configuration](#configuration)
 12. [Permission Model](#permission-model)
 13. [Module Exports](#module-exports)
-14. [ClipboardManager API](#clipboardmanager-api)
-15. [ClipboardStorage API](#clipboardstorage-api)
-16. [Dependencies](#dependencies)
+14. [ClipboardEntry](#clipboardentry)
+15. [ClipboardManager API](#clipboardmanager-api)
+16. [ClipboardStorage API](#clipboardstorage-api)
+17. [Dependencies](#dependencies)
 
 ---
 
@@ -57,7 +58,7 @@ nexus3/clipboard/
 ├── types.py          # Core types: ClipboardEntry, ClipboardScope, ClipboardPermissions
 ├── storage.py        # ClipboardStorage: SQLite backend for PROJECT/SYSTEM scopes
 ├── manager.py        # ClipboardManager: coordinates storage, permissions, scope resolution
-└── injection.py      # Context injection: format_clipboard_context(), format_entry_detail()
+└── injection.py      # Context injection: format_clipboard_context(), format_entry_detail(), format_time_ago()
 
 nexus3/skill/builtin/
 ├── clipboard_copy.py    # copy, cut skills
@@ -91,8 +92,8 @@ When copying/pasting, specify scope explicitly:
 
 ```python
 # Skills use scope parameter
-copy(path="/src/utils.py", key="helper", scope="project")
-paste(key="helper", path="/new/file.py", scope="project")
+copy(source="/src/utils.py", key="helper", scope="project")
+paste(key="helper", target="/new/file.py", scope="project")
 ```
 
 Default scope is `agent` (safest, no persistence).
@@ -106,7 +107,7 @@ Default scope is `agent` (safest, no persistence).
 Copy file content to clipboard:
 
 ```
-copy(path, key, scope?, start_line?, end_line?, description?, tags?, ttl_seconds?)
+copy(source, key, scope?, start_line?, end_line?, short_description?, tags?, ttl_seconds?)
 ```
 
 - Reads file content (optionally specific line range)
@@ -118,16 +119,23 @@ copy(path, key, scope?, start_line?, end_line?, description?, tags?, ttl_seconds
 Like copy, but also removes content from source file:
 
 ```
-cut(path, key, scope?, start_line?, end_line?, description?, tags?, ttl_seconds?)
+cut(source, key, scope?, start_line?, end_line?, short_description?, tags?, ttl_seconds?)
 ```
+
+- For whole-file cuts, the file content is cleared but the file is not deleted
+- If the file write fails after clipboard copy, the clipboard entry is rolled back
 
 ### Paste
 
 Paste clipboard content into a file:
 
 ```
-paste(key, path, scope?, mode?, line?, start_line?, end_line?, marker?)
+paste(key, target, scope?, mode?, line_number?, start_line?, end_line?, marker?, create_if_missing?)
 ```
+
+- If `scope` is omitted, searches agent->project->system automatically
+- Expired entries cannot be pasted (returns error)
+- `create_if_missing=True` creates the file if it does not exist (only valid with append/prepend modes)
 
 **Insertion modes:**
 
@@ -151,27 +159,28 @@ Tags help organize clipboard entries by category or purpose.
 ### Tag Management
 
 ```
-clipboard_tag(action, key?, scope?, tag?, tags?, description?)
+clipboard_tag(action, name?, entry_key?, scope?, description?)
 ```
 
 | Action | Description |
 |--------|-------------|
-| `list` | List all tags (no key required) |
-| `add` | Add tag(s) to an entry |
-| `remove` | Remove tag from an entry |
-| `create` | Create a named tag with optional description |
-| `delete` | Delete a tag (removes from all entries) |
+| `list` | List all tags (optionally filtered by scope) |
+| `add` | Add a tag to an entry (requires `name`, `entry_key`, `scope`) |
+| `remove` | Remove a tag from an entry (requires `name`, `entry_key`, `scope`) |
+| `create` | Pre-create a named tag (tags are auto-created on add, so this is informational) |
+| `delete` | Not yet implemented - remove tags from entries individually |
 
 ### Tag Filtering
 
 List and search operations support tag filtering:
 
 ```
-clipboard_list(scope?, tags?, any_tags?)
+clipboard_list(scope?, verbose?, tags?, any_tags?)
 ```
 
-- `tags=["a", "b"]` - entries with ALL specified tags
-- `any_tags=True` - entries with ANY of specified tags
+- `tags=["a", "b"]` - entries with ALL specified tags (AND logic)
+- `any_tags=["a", "b"]` - entries with ANY of specified tags (OR logic)
+- `verbose=True` - include content preview (first/last 3 lines)
 
 ---
 
@@ -180,16 +189,16 @@ clipboard_list(scope?, tags?, any_tags?)
 Search clipboard entries across keys, descriptions, and content:
 
 ```
-clipboard_search(query, scope?, search_content?, search_keys?, search_descriptions?, tags?)
+clipboard_search(query, scope?, max_results?)
 ```
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `query` | required | Search string |
-| `search_content` | True | Search in entry content |
-| `search_keys` | True | Search in entry keys |
-| `search_descriptions` | True | Search in descriptions |
-| `tags` | None | Filter by tags |
+| `query` | required | Search substring (case-insensitive) |
+| `scope` | None | Scope to search (omit for all accessible scopes) |
+| `max_results` | 50 | Maximum results to return (1-100) |
+
+The skill searches keys, descriptions, and content (all enabled by default). The underlying `ClipboardManager.search()` method accepts additional parameters (`search_content`, `search_keys`, `search_descriptions`, `tags`) for fine-grained control.
 
 ---
 
@@ -200,30 +209,33 @@ clipboard_search(query, scope?, search_content?, search_keys?, search_descriptio
 Export clipboard entries to JSON file:
 
 ```
-clipboard_export(output_path, scope?, keys?, tags?)
+clipboard_export(path, scope?, tags?)
 ```
 
-- Exports to JSON with full metadata
-- Can filter by specific keys or tags
-- Useful for backup or sharing snippets
+- `path`: Output file path for the JSON export (required)
+- `scope`: Scope to export - `agent`, `project`, `system`, or `all` (default: `all`)
+- `tags`: Only export entries with ALL of these tags
+- Exports to JSON with full metadata (version 1.0 format)
 
 ### Import
 
 Import clipboard entries from JSON file:
 
 ```
-clipboard_import(input_path, scope?, conflict?, dry_run?)
+clipboard_import(path, scope?, conflict?, dry_run?)
 ```
+
+- `path`: Path to the JSON export file (required)
+- `scope`: Target scope for imported entries (default: `agent`)
 
 **Conflict resolution:**
 
 | Value | Behavior |
 |-------|----------|
-| `skip` | Keep existing, skip duplicates |
+| `skip` | Keep existing, skip duplicates (default) |
 | `overwrite` | Replace existing with imported |
-| `rename` | Import as `key_1`, `key_2`, etc. |
 
-Use `dry_run=True` to preview without applying changes.
+`dry_run` defaults to `True` - preview what would be imported without applying changes. Set `dry_run=false` to perform the import.
 
 ---
 
@@ -232,7 +244,7 @@ Use `dry_run=True` to preview without applying changes.
 Entries can have optional expiration times:
 
 ```python
-copy(path="file.py", key="temp", ttl_seconds=3600)  # Expires in 1 hour
+copy(source="file.py", key="temp", ttl_seconds=3600)  # Expires in 1 hour
 ```
 
 - `expires_at` computed as `created_at + ttl_seconds`
@@ -253,11 +265,13 @@ from nexus3.clipboard import format_clipboard_context
 
 # Generate clipboard section for system prompt
 section = format_clipboard_context(
-    clipboard_manager,
-    max_entries=10,      # Limit entries shown
+    manager,
+    max_entries=10,      # Limit entries per scope (not total)
     show_source=True,    # Include source file info
 )
 ```
+
+Entries are grouped by scope (agent, project, system) and truncated per scope. This ensures entries from less-used scopes are not crowded out by a single scope with many entries.
 
 ### Configuration
 
@@ -312,7 +326,7 @@ Full configuration options in `config.json`:
 |--------|---------|-------------|
 | `enabled` | `true` | Enable clipboard system |
 | `inject_into_context` | `true` | Add clipboard to system prompt |
-| `max_injected_entries` | `10` | Max entries in system prompt |
+| `max_injected_entries` | `10` | Max entries per scope in system prompt |
 | `show_source_in_injection` | `true` | Show source file in injection |
 | `max_entry_bytes` | 1MB | Hard limit per entry |
 | `warn_entry_bytes` | 100KB | Warning threshold |
@@ -381,6 +395,50 @@ __all__ = [
 
 ---
 
+## ClipboardEntry
+
+A `ClipboardEntry` dataclass represents a single clipboard item.
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | `str` | Unique key name |
+| `scope` | `ClipboardScope` | Which scope this entry belongs to |
+| `content` | `str` | The stored content |
+| `line_count` | `int` | Number of lines |
+| `byte_count` | `int` | Size in bytes (UTF-8) |
+| `short_description` | `str \| None` | Optional description |
+| `source_path` | `str \| None` | Original file path |
+| `source_lines` | `str \| None` | Line range (e.g., "50-150") |
+| `created_at` | `float` | Unix timestamp |
+| `modified_at` | `float` | Unix timestamp |
+| `created_by_agent` | `str \| None` | Agent ID that created the entry |
+| `modified_by_agent` | `str \| None` | Agent ID that last modified |
+| `expires_at` | `float \| None` | TTL expiry timestamp (None = permanent) |
+| `ttl_seconds` | `int \| None` | TTL in seconds (informational) |
+| `tags` | `list[str]` | Tag names |
+
+### Factory Method
+
+```python
+ClipboardEntry.from_content(
+    key, scope, content, *,
+    short_description?, source_path?, source_lines?,
+    agent_id?, ttl_seconds?, tags?
+) -> ClipboardEntry
+```
+
+Creates an entry from content, automatically computing `line_count`, `byte_count`, timestamps, and `expires_at` from `ttl_seconds`.
+
+### Properties
+
+| Property | Returns | Description |
+|----------|---------|-------------|
+| `is_expired` | `bool` | True if `expires_at` is set and past current time |
+
+---
+
 ## ClipboardManager API
 
 The `ClipboardManager` class coordinates storage, permissions, and scope resolution.
@@ -405,7 +463,7 @@ ClipboardManager(
 | `update` | `key, scope, content?, short_description?, source_path?, source_lines?, new_key?, ttl_seconds?` | `tuple[ClipboardEntry, str\|None]` | Update existing entry. Returns (entry, warning). |
 | `delete` | `key, scope` | `bool` | Delete entry. Returns True if deleted. |
 | `clear` | `scope` | `int` | Clear all entries in scope. Returns count deleted. |
-| `list_entries` | `scope?, tags?, any_tags?, include_expired?` | `list[ClipboardEntry]` | List entries, filtered by scope/tags. |
+| `list_entries` | `scope?, tags?, any_tags?, include_expired?` | `list[ClipboardEntry]` | List entries, filtered by scope/tags. `tags` uses AND logic, `any_tags` uses OR logic (both are `list[str]`). |
 | `close` | - | `None` | Close database connections. |
 
 ### Search Methods
@@ -473,8 +531,8 @@ ClipboardStorage(
 ```sql
 -- Schema version: 1
 CREATE TABLE clipboard (
-    id INTEGER PRIMARY KEY,
-    key TEXT NOT NULL UNIQUE,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL,
     content TEXT NOT NULL,
     short_description TEXT,
     source_path TEXT,
@@ -486,15 +544,21 @@ CREATE TABLE clipboard (
     created_by_agent TEXT,
     modified_by_agent TEXT,
     expires_at REAL,
-    ttl_seconds INTEGER
+    ttl_seconds INTEGER,
+    UNIQUE(key)
 );
 
+CREATE INDEX idx_clipboard_key ON clipboard(key);
+CREATE INDEX idx_clipboard_expires ON clipboard(expires_at) WHERE expires_at IS NOT NULL;
+
 CREATE TABLE tags (
-    id INTEGER PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     description TEXT,
     created_at REAL NOT NULL
 );
+
+CREATE INDEX idx_tags_name ON tags(name);
 
 CREATE TABLE clipboard_tags (
     clipboard_id INTEGER NOT NULL,
@@ -503,6 +567,8 @@ CREATE TABLE clipboard_tags (
     FOREIGN KEY (clipboard_id) REFERENCES clipboard(id) ON DELETE CASCADE,
     FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
 );
+
+CREATE INDEX idx_clipboard_tags_tag ON clipboard_tags(tag_id);
 
 CREATE TABLE metadata (
     key TEXT PRIMARY KEY,
@@ -518,9 +584,9 @@ CREATE TABLE metadata (
 
 | Module | Used For |
 |--------|----------|
-| `nexus3.core.secure_io` | Secure directory creation, TOCTOU-safe file operations |
-| `nexus3.config.schema` | ClipboardConfig |
-| `nexus3.session.persistence` | SavedSession clipboard field |
+| `nexus3.core.secure_io` | `SECURE_FILE_MODE`, `secure_mkdir` for TOCTOU-safe DB file creation |
+
+**Note:** `nexus3.config.schema.ClipboardConfig` and `nexus3.session.persistence.SavedSession` reference the clipboard module, but the clipboard module itself does not import them. The dependency direction is inward: session/config depend on clipboard, not the reverse.
 
 ### External Dependencies
 

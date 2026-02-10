@@ -38,30 +38,44 @@ nexus3/session/
 
 The `Session` class is the main coordinator between the CLI/REPL and the LLM provider. It manages multi-turn conversations, tool execution loops, and context compaction.
 
+### Callback Type Aliases (from `session.py`)
+
+```python
+ConfirmationCallback = Callable[[ToolCall, Path | None, Path], Awaitable[ConfirmationResult]]
+ToolCallCallback = Callable[[str, str], None]           # (tool_name, tool_id)
+ToolCompleteCallback = Callable[[str, str, bool], None] # (tool_name, tool_id, success)
+ReasoningCallback = Callable[[bool], None]              # True=start, False=end
+BatchStartCallback = Callable[[tuple[ToolCall, ...]], None]
+ToolActiveCallback = Callable[[str, str], None]         # (name, id)
+BatchProgressCallback = Callable[[str, str, bool, str, str], None]  # (name, id, success, error, output)
+BatchHaltCallback = Callable[[], None]
+BatchCompleteCallback = Callable[[], None]
+```
+
 ### Constructor
 
 ```python
 Session(
-    provider: AsyncProvider,           # LLM provider for completions
-    context: ContextManager | None,    # Conversation history (None = single-turn)
-    logger: SessionLogger | None,      # Session logging
-    registry: SkillRegistry | None,    # Tool registry
-    on_tool_call: ToolCallCallback,    # Tool detection callback
-    on_tool_complete: ToolCompleteCallback,
-    on_reasoning: ReasoningCallback,   # Extended thinking notifications
-    on_batch_start: BatchStartCallback,
-    on_tool_active: ToolActiveCallback,
-    on_batch_progress: BatchProgressCallback,
-    on_batch_halt: BatchHaltCallback,
-    on_batch_complete: BatchCompleteCallback,
-    max_tool_iterations: int = 10,     # Prevent infinite loops
-    skill_timeout: float = 30.0,       # Per-tool timeout
-    max_concurrent_tools: int = 10,    # Parallel execution limit
-    services: ServiceContainer | None, # Shared services (permissions, etc.)
-    on_confirm: ConfirmationCallback,  # User confirmation for destructive actions
-    config: Config | None,             # Compaction settings
-    context_loader: ContextLoader,     # System prompt reloading
-    is_repl: bool = False,             # REPL mode affects context loading
+    provider: AsyncProvider,                          # LLM provider for completions
+    context: ContextManager | None = None,            # Conversation history (None = single-turn)
+    logger: SessionLogger | None = None,              # Session logging
+    registry: SkillRegistry | None = None,            # Tool registry
+    on_tool_call: ToolCallCallback | None = None,     # Tool detection callback
+    on_tool_complete: ToolCompleteCallback | None = None,
+    on_reasoning: ReasoningCallback | None = None,    # Extended thinking notifications
+    on_batch_start: BatchStartCallback | None = None,
+    on_tool_active: ToolActiveCallback | None = None,
+    on_batch_progress: BatchProgressCallback | None = None,
+    on_batch_halt: BatchHaltCallback | None = None,
+    on_batch_complete: BatchCompleteCallback | None = None,
+    max_tool_iterations: int = 10,                    # Prevent infinite loops
+    skill_timeout: float = 30.0,                      # Per-tool timeout
+    max_concurrent_tools: int = 10,                   # Parallel execution limit
+    services: ServiceContainer | None = None,         # Shared services (permissions, etc.)
+    on_confirm: ConfirmationCallback | None = None,   # User confirmation for destructive actions
+    config: Config | None = None,                     # Compaction settings
+    context_loader: ContextLoader | None = None,      # System prompt reloading
+    is_repl: bool = False,                            # REPL mode affects context loading
 )
 ```
 
@@ -79,7 +93,7 @@ async def send(
     """Stream response text, invoking callbacks for tool events."""
 ```
 
-This is the traditional callback-based API. Tool events are dispatched via callback functions.
+This is the traditional callback-based API. Tool events are dispatched via callback functions. Internally wraps `_execute_tool_loop_events()` and converts events back to callbacks for backward compatibility.
 
 #### `run_turn()` - Event-based streaming
 
@@ -93,7 +107,7 @@ async def run_turn(
     """Stream typed events for all session activity."""
 ```
 
-The newer event-based API yields `SessionEvent` objects, enabling cleaner UI decoupling. Internally, `send()` wraps `run_turn()` and converts events back to callbacks for backward compatibility.
+The newer event-based API yields `SessionEvent` objects, enabling cleaner UI decoupling. Requires a context manager (raises `RuntimeError` if `self.context` is None).
 
 #### `compact()` - Context compaction
 
@@ -110,6 +124,8 @@ Compaction uses a separate LLM call to summarize conversation history when token
 def add_cancelled_tools(tools: list[tuple[str, str]]) -> None:
     """Store cancelled tool calls to report on next send()."""
 ```
+
+Takes a list of `(tool_id, tool_name)` tuples. These are flushed as cancelled `ToolResult` messages into the context on the next `send()` or `run_turn()` call.
 
 ### Session Lifecycle
 
@@ -186,19 +202,19 @@ Handles disk persistence of sessions in `~/.nexus3/sessions/`.
 
 ### Methods
 
-| Method | Description |
-|--------|-------------|
-| `list_sessions()` | List all saved sessions as `SessionSummary` |
-| `save_session(saved)` | Save `SavedSession` to disk |
-| `load_session(name)` | Load session by name |
-| `delete_session(name)` | Delete a saved session |
-| `session_exists(name)` | Check if session exists |
-| `rename_session(old, new)` | Rename session file |
-| `clone_session(src, dest)` | Duplicate a session |
-| `save_last_session(saved, name)` | Save for `--resume` |
-| `load_last_session()` | Load last session |
-| `get_last_session_name()` | Get name without loading |
-| `clear_last_session()` | Remove last session data |
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `list_sessions()` | `list[SessionSummary]` | List all saved sessions (sorted newest first) |
+| `save_session(saved)` | `Path` | Save `SavedSession` to disk, returns file path |
+| `load_session(name)` | `SavedSession` | Load session by name |
+| `delete_session(name)` | `bool` | Delete a saved session (True if deleted, False if not found) |
+| `session_exists(name)` | `bool` | Check if session exists |
+| `rename_session(old, new)` | `Path` | Rename session file, returns new path |
+| `clone_session(src, dest)` | `Path` | Duplicate a session, returns new path |
+| `save_last_session(saved, name)` | `None` | Save for `--resume` (both data and name) |
+| `load_last_session()` | `tuple[SavedSession, str] \| None` | Load last session and name |
+| `get_last_session_name()` | `str \| None` | Get name without loading |
+| `clear_last_session()` | `None` | Remove last session data |
 
 ### File Locations
 
@@ -230,6 +246,16 @@ Handles disk persistence of sessions in `~/.nexus3/sessions/`.
 
 The `persistence.py` module handles serialization of session state.
 
+### Constants
+
+- `SESSION_SCHEMA_VERSION = 1`
+
+### Exceptions
+
+| Exception | Description |
+|-----------|-------------|
+| `SessionPersistenceError` | Raised when session serialization/deserialization fails (e.g., malformed JSON) |
+
 ### SavedSession
 
 ```python
@@ -252,6 +278,15 @@ class SavedSession:
     clipboard_agent_entries: list[dict[str, Any]]  # Agent-scope clipboard entries
     schema_version: int
 ```
+
+Methods:
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `to_json()` | `str` | Serialize to JSON string |
+| `to_dict()` | `dict[str, Any]` | Convert to dictionary for JSON serialization |
+| `from_json(json_str)` | `SavedSession` | Class method: deserialize from JSON string |
+| `from_dict(data)` | `SavedSession` | Class method: create from dictionary |
 
 ### SessionSummary
 
@@ -323,6 +358,10 @@ class SessionInfo:
     session_dir: Path
     parent_id: str | None
     created_at: datetime
+
+    @classmethod
+    def create(cls, base_dir: Path, parent_id: str | None = None, mode: str = "repl") -> SessionInfo:
+        """Create new session with generated ID. Subagent dirs nest under parent."""
 ```
 
 ### Output Files
@@ -335,27 +374,42 @@ class SessionInfo:
 └── raw.jsonl       # Raw API JSON (if RAW)
 ```
 
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `session_dir` | `Path` | Session directory path |
+| `session_id` | `str` | Session ID string |
+
 ### Key Methods
 
 | Method | Stream | Description |
 |--------|--------|-------------|
-| `log_system(content)` | CONTEXT | Log system prompt |
-| `log_user(content, meta)` | CONTEXT | Log user message with metadata |
-| `log_assistant(content, tool_calls, thinking)` | CONTEXT | Log assistant response |
-| `log_tool_result(tool_call_id, name, result)` | CONTEXT | Log tool execution result |
-| `log_session_event(event)` | CONTEXT+VERBOSE | Log SessionEvent |
-| `log_thinking(content)` | VERBOSE | Log thinking trace |
-| `log_timing(operation, duration_ms)` | VERBOSE | Log timing info |
+| `log_system(content)` | CONTEXT | Log system prompt. Returns message ID. |
+| `log_user(content, meta)` | CONTEXT | Log user message with optional metadata. Returns message ID. |
+| `log_assistant(content, tool_calls, thinking, tokens)` | CONTEXT | Log assistant response (thinking logged to VERBOSE if provided). Returns message ID. |
+| `log_tool_result(tool_call_id, name, result)` | CONTEXT | Log tool execution result. Returns message ID. |
+| `log_session_event(event)` | SQLite always, VERBOSE conditionally | Log SessionEvent to DB and optionally verbose.md |
+| `log_thinking(content, message_id)` | VERBOSE | Log thinking trace |
+| `log_timing(operation, duration_ms, metadata)` | VERBOSE | Log timing info |
 | `log_token_count(prompt, completion, total)` | VERBOSE | Log token usage |
 | `log_http_debug(logger_name, message)` | VERBOSE | Log HTTP debug info |
 | `log_raw_request(endpoint, payload)` | RAW | Log API request |
 | `log_raw_response(status, body)` | RAW | Log API response |
 | `log_raw_chunk(chunk)` | RAW | Log streaming chunk |
 
+### Context Management
+
+```python
+logger.get_context_messages() -> list[Message]   # Get messages in context window
+logger.get_token_count() -> int                  # Total tokens in current context
+logger.mark_compacted(message_ids, summary_id)   # Mark messages as replaced by summary
+```
+
 ### Subagent Support
 
 ```python
-child_logger = logger.create_child_logger()
+child_logger = logger.create_child_logger(name=None)
 # Creates nested session in parent's directory
 ```
 
@@ -363,7 +417,7 @@ child_logger = logger.create_child_logger()
 
 ```python
 raw_callback = logger.get_raw_log_callback()
-# Returns RawLogCallbackAdapter implementing RawLogCallback protocol
+# Returns RawLogCallbackAdapter implementing RawLogCallback protocol, or None if RAW stream disabled
 ```
 
 ### Session Markers
@@ -371,7 +425,13 @@ raw_callback = logger.get_raw_log_callback()
 ```python
 logger.update_session_status(status)  # 'active' | 'destroyed' | 'orphaned'
 logger.mark_session_destroyed()
-logger.mark_session_saved()
+logger.mark_session_saved()           # Sets session_type to 'saved'
+```
+
+### Lifecycle
+
+```python
+logger.close()  # Close logger and release resources (closes SQLite connection)
 ```
 
 ---
@@ -442,6 +502,52 @@ class SessionMarkers:
     updated_at: float
 ```
 
+All three data classes have a `from_row(row: sqlite3.Row)` class method for construction from database rows.
+
+### Public Methods
+
+#### Message Operations
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `insert_message(role, content, *, meta, name, tool_call_id, tool_calls, tokens, timestamp)` | `int` | Insert message, returns ID |
+| `get_messages(in_context_only=True)` | `list[MessageRow]` | Get messages, optionally filtered to context window |
+| `get_message(message_id)` | `MessageRow \| None` | Get single message by ID |
+| `update_context_status(message_ids, in_context)` | `None` | Batch update in_context flag |
+| `mark_as_summary(summary_id, replaced_ids)` | `None` | Mark message as summary of others, marks replaced as out-of-context |
+| `get_token_count()` | `int` | Total tokens in current context |
+
+#### Metadata Operations
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `get_metadata(key)` | `str \| None` | Get a metadata value |
+| `set_metadata(key, value)` | `None` | Set a metadata value (upsert) |
+| `get_all_metadata()` | `dict[str, str]` | Get all metadata as dictionary |
+
+#### Event Operations
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `insert_event(event_type, data, message_id, timestamp)` | `int` | Insert event, returns ID |
+| `get_events(event_type, message_id)` | `list[EventRow]` | Get events with optional filters |
+
+#### Session Marker Operations
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `init_session_markers(session_type, parent_agent_id)` | `None` | Initialize markers for new session |
+| `get_session_markers()` | `SessionMarkers \| None` | Get current session markers |
+| `update_session_metadata(session_type, session_status, parent_agent_id)` | `None` | Update marker fields (only provided fields) |
+| `mark_session_destroyed()` | `None` | Mark session as destroyed |
+| `get_orphaned_sessions(older_than_days=7)` | `list[SessionMarkers]` | Get orphaned sessions older than N days |
+
+#### Lifecycle
+
+| Method | Description |
+|--------|-------------|
+| `close()` | Close database connection |
+
 ### Constants
 
 - `SCHEMA_VERSION = 3`
@@ -463,13 +569,16 @@ Resolves tool calls to skill implementations.
 
 ```python
 class ToolDispatcher:
+    def __init__(self, registry: SkillRegistry | None = None, services: ServiceContainer | None = None):
+        ...
+
     def find_skill(tool_call: ToolCall) -> tuple[Skill | None, str | None]:
         """Returns (skill, mcp_server_name) or (None, None)."""
 ```
 
 Resolution order:
 1. Built-in skills via SkillRegistry
-2. MCP tools (for `mcp_*` prefixed names) via MCPServerRegistry
+2. MCP tools (for `mcp_*` prefixed names) via `MCPServerRegistry.find_skill()`
 
 ### PermissionEnforcer
 
@@ -481,7 +590,7 @@ class PermissionEnforcer:
         """Run all permission checks. Returns error or None."""
 
     def requires_confirmation(tool_call, permissions) -> bool:
-        """Check if user confirmation needed."""
+        """Check if user confirmation needed (checks ALL write paths)."""
 
     def get_confirmation_context(tool_call) -> tuple[Path | None, list[Path]]:
         """Get display path and write paths for confirmation UI."""
@@ -490,17 +599,32 @@ class PermissionEnforcer:
         """Get per-tool timeout override."""
 
     def extract_target_paths(tool_call) -> list[Path]:
-        """Extract ALL target paths from tool call."""
+        """Extract ALL target paths from tool call (source + destination)."""
+
+    def extract_target_path(tool_call) -> Path | None:
+        """Extract first target path (legacy, prefer extract_target_paths)."""
 
     def extract_exec_cwd(tool_call) -> Path | None:
         """Extract execution cwd if applicable."""
 ```
 
-Permission checks:
+#### Module Constants
+
+```python
+EXEC_TOOLS = frozenset({"bash", "bash_safe", "shell_UNSAFE", "run_python", "git"})
+AGENT_TARGET_TOOLS = frozenset({"nexus_send", "nexus_status", "nexus_cancel", "nexus_destroy"})
+PATH_TOOLS = frozenset({
+    "read_file", "write_file", "edit_file", "append_file", "tail",
+    "file_info", "list_directory", "mkdir", "copy_file", "rename",
+    "regex_replace", "glob", "grep",
+})
+```
+
+Permission checks (in order):
 1. Tool enabled (not disabled by policy)
-2. Action allowed (by permission level)
+2. Action allowed (by permission level; explicit `enabled=True` in tool_permissions bypasses policy-level restrictions)
 3. **Target allowed** (for nexus_* tools with `allowed_targets` restriction)
-4. Path allowed (sandbox, per-tool, blocked paths)
+4. Path allowed (sandbox, per-tool, blocked paths) -- checks ALL paths in tool call
 
 Uses `PathDecisionEngine` for consistent path validation across all checks.
 
@@ -525,19 +649,22 @@ This enables sandboxed agents to report results back to their parent while being
 
 ### ConfirmationController
 
-Handles user confirmation flow for destructive actions.
+Handles user confirmation flow for destructive actions. Returns `DENY` if no callback is provided.
 
 ```python
 class ConfirmationController:
     async def request(tool_call, target_path, agent_cwd, callback) -> ConfirmationResult:
-        """Request user confirmation."""
+        """Request user confirmation. Returns DENY if callback is None."""
 
+    @staticmethod
     def apply_result(permissions, result, tool_call, target_path, exec_cwd):
         """Apply confirmation result to session allowances."""
 
+    @staticmethod
     def apply_mcp_result(permissions, result, tool_name, server_name):
         """Apply MCP-specific allowances."""
 
+    @staticmethod
     def apply_gitlab_result(permissions, result, skill_name, instance_host):
         """Apply GitLab-specific allowances."""
 ```
@@ -545,10 +672,10 @@ class ConfirmationController:
 Confirmation results:
 - `DENY` - Cancel action
 - `ALLOW_ONCE` - Allow this once, no persistent allowance
-- `ALLOW_FILE` - Allow writes to this file
+- `ALLOW_FILE` - Allow writes to this file (for MCP: allow specific tool; for GitLab: allow skill@instance)
 - `ALLOW_WRITE_DIRECTORY` - Allow writes to parent directory
 - `ALLOW_EXEC_CWD` - Allow exec tool in this directory
-- `ALLOW_EXEC_GLOBAL` - Allow exec tool everywhere
+- `ALLOW_EXEC_GLOBAL` - Allow exec tool everywhere (for MCP: allow all tools from server)
 
 ### Path Semantics
 
@@ -557,10 +684,12 @@ The `path_semantics.py` module defines read vs write path semantics for each too
 ```python
 @dataclass(frozen=True)
 class ToolPathSemantics:
-    read_keys: tuple[str, ...]   # Arguments that are read paths
-    write_keys: tuple[str, ...]  # Arguments that are write paths
-    display_key: str | None      # Path to show in confirmation UI
+    read_keys: tuple[str, ...] = ()    # Arguments that are read paths
+    write_keys: tuple[str, ...] = ()   # Arguments that are write paths
+    display_key: str | None = None     # Path to show in confirmation UI
 ```
+
+The `TOOL_PATH_SEMANTICS` dict maps tool names to their semantics. Tools not in the registry get a default of `read_keys=("path",), write_keys=("path",), display_key="path"`.
 
 Functions:
 ```python
@@ -569,10 +698,23 @@ extract_write_paths(tool_name: str, args: dict) -> list[Path]
 extract_display_path(tool_name: str, args: dict) -> Path | None
 ```
 
-Example semantics:
-- `copy_file`: read=`source`, write=`destination`, display=`destination`
-- `edit_file`: read=`path`, write=`path`, display=`path`
-- `read_file`: read=`path`, write=none
+Registered semantics:
+
+| Tool | Read Keys | Write Keys | Display Key |
+|------|-----------|------------|-------------|
+| `write_file` | - | `path` | `path` |
+| `mkdir` | - | `path` | `path` |
+| `edit_file` | `path` | `path` | `path` |
+| `append_file` | `path` | `path` | `path` |
+| `regex_replace` | `path` | `path` | `path` |
+| `copy_file` | `source` | `destination` | `destination` |
+| `rename` | `source` | `destination` | `destination` |
+| `read_file` | `path` | - | - |
+| `tail` | `path` | - | - |
+| `file_info` | `path` | - | - |
+| `list_directory` | `path` | - | - |
+| `glob` | `path` | - | - |
+| `grep` | `path` | - | - |
 
 ---
 
@@ -653,12 +795,14 @@ Methods:
    - Path allowed (sandbox, blocked)?
 4. **Confirmation**: If TRUSTED level, prompt for destructive actions
 5. **Skill resolution**: ToolDispatcher finds implementing skill
-6. **Argument validation**: Validate against skill schema
-7. **Execution**: Run skill with timeout
+6. **MCP/GitLab permissions**: Additional permission checks for MCP and GitLab tools
+7. **Malformed JSON check**: Reject truncated/malformed tool call arguments
+8. **Argument validation**: Validate against skill parameter schema
+9. **Execution**: Run skill with timeout
    - Parallel: All tools run concurrently (semaphore limited)
-   - Sequential: One at a time, halt on error
-8. **Result handling**: Add tool results to context
-9. **Loop**: Continue until no tool calls or max iterations
+   - Sequential: One at a time, halt on error or cancellation
+10. **Result handling**: Add tool results to context (including error sanitization)
+11. **Loop**: Continue until no tool calls or max iterations
 
 ### Parallel vs Sequential
 
@@ -727,13 +871,19 @@ If `compaction.model` is configured, a separate provider is used for summarizati
 
 | Module | Dependency |
 |--------|------------|
-| `session.py` | `core.types`, `core.errors`, `core.permissions`, `context.compaction` |
-| `logging.py` | `core.secure_io`, `session.storage`, `session.markdown` |
+| `session.py` | `core.types`, `core.errors`, `core.interfaces`, `core.permissions`, `core.validation`, `context.compaction`, `session.events`, `session.dispatcher`, `session.enforcer`, `session.confirmation`, `session.http_logging` |
+| `logging.py` | `core.types`, `core.secure_io`, `session.storage`, `session.markdown`, `session.events`, `session.types` |
 | `storage.py` | `core.secure_io` (sqlite3 stdlib) |
-| `persistence.py` | `core.types`, `clipboard.types` |
-| `enforcer.py` | `core.path_decision`, `session.path_semantics` |
-| `dispatcher.py` | `skill.registry`, `mcp.registry` |
+| `persistence.py` | `core.types`, `core.errors`, `clipboard.types` |
+| `session_manager.py` | `core.constants`, `core.errors`, `core.secure_io`, `core.validation`, `session.persistence` |
+| `enforcer.py` | `core.path_decision`, `core.presets`, `core.types`, `session.path_semantics` |
+| `confirmation.py` | `core.permissions` |
+| `dispatcher.py` | `skill.registry`, `mcp.registry` (TYPE_CHECKING only) |
 | `http_logging.py` | `session.logging` (TYPE_CHECKING only) |
+| `markdown.py` | `core.secure_io` |
+| `path_semantics.py` | (no external dependencies) |
+| `events.py` | `core.types` (TYPE_CHECKING only) |
+| `types.py` | (no external dependencies) |
 
 ---
 
@@ -748,4 +898,4 @@ If `compaction.model` is configured, a separate provider is used for summarizati
 
 ---
 
-Updated: 2026-02-01
+Updated: 2026-02-10

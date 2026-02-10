@@ -36,11 +36,11 @@ The unified REPL calls `Session` directly (not through HTTP) to preserve streami
 ```
 nexus3/cli/
 ├── __init__.py          # Package entry point, exports main()
-├── repl.py              # Main REPL implementation (~1900 lines)
+├── repl.py              # Main REPL implementation (~2050 lines)
 ├── serve.py             # Headless HTTP server mode
 ├── arg_parser.py        # CLI argument parsing with subparsers
 ├── client_commands.py   # RPC CLI command handlers
-├── repl_commands.py     # REPL slash command handlers (~2800 lines)
+├── repl_commands.py     # REPL slash command handlers (~2500 lines)
 ├── lobby.py             # Session selection lobby UI
 ├── connect_lobby.py     # Server/agent connection UI
 ├── confirmation_ui.py   # Tool action confirmation dialogs
@@ -74,7 +74,9 @@ The heart of the CLI, implementing the unified REPL architecture.
 |----------|-------------|
 | `run_repl()` | Main REPL loop with embedded server |
 | `run_repl_client()` | Client mode connecting to existing server |
+| `_run_connect_with_discovery()` | Connect mode with server discovery lobby |
 | `main()` | Entry point parsing args and dispatching to modes |
+| `_run_with_reload()` | Serve mode with watchfiles auto-reload |
 
 #### `run_repl()` Parameters
 
@@ -201,7 +203,7 @@ Thin wrappers around `NexusClient` for CLI access. All commands print JSON to st
 |----------|-------------|
 | `cmd_detect(port)` | Check if server is running |
 | `cmd_list(port, api_key)` | List all agents |
-| `cmd_create(agent_id, port, api_key, preset, cwd, ...)` | Create agent |
+| `cmd_create(agent_id, port, api_key, preset, cwd, allowed_write_paths, model, message, timeout)` | Create agent |
 | `cmd_destroy(agent_id, port, api_key)` | Remove agent |
 | `cmd_send(agent_id, content, port, api_key, timeout)` | Send message |
 | `cmd_cancel(agent_id, request_id, port, api_key)` | Cancel request |
@@ -261,7 +263,7 @@ Slash command implementations for the interactive REPL.
 | Command | Description |
 |---------|-------------|
 | `/mcp` | List servers |
-| `/mcp connect <name> [--allow-all] [--shared]` | Connect to server |
+| `/mcp connect <name> [--allow-all\|--per-tool] [--shared\|--private]` | Connect to server |
 | `/mcp disconnect <name>` | Disconnect from server |
 | `/mcp tools [server]` | List available tools |
 | `/mcp resources [server]` | List available resources |
@@ -272,8 +274,9 @@ Slash command implementations for the interactive REPL.
 
 | Command | Description |
 |---------|-------------|
-| `/gitlab` | List configured instances |
-| `/gitlab test [name]` | Test connection |
+| `/gitlab` | List configured instances and auth status |
+| `/gitlab test [name]` | Test connection to instance |
+| `/gitlab skills` | Show all GitLab skills with actions and examples |
 
 #### Initialization
 
@@ -297,7 +300,8 @@ Slash command implementations for the interactive REPL.
 |--------|-------------|
 | `HELP_TEXT` | Full help text string |
 | `COMMAND_HELP` | Dict of per-command detailed help |
-| `get_command_help(cmd)` | Get help for specific command |
+| `COMMAND_ALIASES` | Dict mapping aliases to canonical names (e.g., `"exit"` -> `"quit"`) |
+| `get_command_help(cmd)` | Get help for specific command (resolves aliases) |
 | `print_yolo_warning(console)` | Display YOLO mode warning |
 
 ---
@@ -387,8 +391,9 @@ class ConnectResult:
 
 | Function | Description |
 |----------|-------------|
-| `show_connect_lobby(console, servers, default_port, ...)` | Main connect UI |
-| `show_agent_picker(console, server)` | Agent selection menu |
+| `show_connect_lobby(console, servers, default_port, default_port_in_use)` | Main connect UI |
+| `show_agent_picker(console, server, occupied_ports)` | Agent selection menu (with replace/new port options) |
+| `_show_auth_recovery_menu(console, server, default_port, occupied_ports)` | Recovery options when server auth fails |
 | `prompt_for_port(console, default)` | Port number prompt |
 | `prompt_for_port_spec(console)` | Port range specification |
 | `prompt_for_api_key(console)` | API key prompt (uses getpass) |
@@ -447,6 +452,18 @@ Execute shell_UNSAFE?
   [p] View full details
 ```
 
+**Nexus tools** (nexus_create, nexus_send, etc.):
+```
+Allow nexus_create?
+  Agent: worker-1
+
+  [1] Allow once
+  [2] Allow always for this file
+  [3] Allow always in this directory
+  [4] Deny
+  [p] View full details
+```
+
 **MCP tools**:
 ```
 Allow MCP tool 'mcp_github_create_issue'?
@@ -466,6 +483,8 @@ Allow MCP tool 'mcp_github_create_issue'?
 |----------|-------------|
 | `format_tool_params(arguments, max_length)` | Format args as truncated string |
 | `smart_truncate(value, max_length, preserve_ends)` | Smart string truncation |
+| `_open_in_editor(content, title)` | Open content in external editor for `[p]` popup |
+| `_get_system_editor()` | Detect editor (VISUAL/EDITOR env, notepad on WSL/Windows, less/cat fallback) |
 
 #### Security Features
 
@@ -751,4 +770,4 @@ nexus3 --init-global-force  # Overwrite existing
 
 ---
 
-*Updated: 2026-02-01*
+*Updated: 2026-02-10*

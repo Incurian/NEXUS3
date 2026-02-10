@@ -1,6 +1,6 @@
 # nexus3.skill - NEXUS3 Skill (Tool) System
 
-**Updated: 2026-02-01**
+**Updated: 2026-02-10**
 
 The skill module provides the complete infrastructure for defining, registering, and executing skills (tools) that extend NEXUS3 agent capabilities. Skills are the fundamental unit of capability in NEXUS3 - they provide actions like file reading, command execution, agent management, and other operations the agent can perform.
 
@@ -177,7 +177,9 @@ The module provides specialized base classes that handle common patterns:
 
 ### BaseSkill
 
-Minimal abstract base for simple skills. Stores name/description/parameters as instance attributes:
+`BaseSkill` is an abstract base class with `__init__(name, description, parameters)` for skills that store metadata as instance attributes. Used by `GitLabSkill` and similar skills that need dynamic metadata.
+
+For simple utility skills with static metadata, use the `@base_skill_factory` decorator on a plain class instead. The decorator attaches a `.factory` class attribute for registration:
 
 ```python
 from nexus3.skill.base import base_skill_factory
@@ -185,6 +187,9 @@ from nexus3.core.types import ToolResult
 
 @base_skill_factory
 class MySimpleSkill:
+    def __init__(self, services: ServiceContainer | None = None) -> None:
+        pass  # Store services if needed
+
     @property
     def name(self) -> str:
         return "my_skill"
@@ -520,6 +525,7 @@ services.set_session_allowance(key, allowed)  # Set per-skill confirmations
 | `child_agent_ids` | `set[str]` | IDs of child agents |
 | `mcp_registry` | `MCPServerRegistry` | MCP server registry |
 | `gitlab_config` | `GitLabConfig` | GitLab instance configuration |
+| `clipboard_manager` | `ClipboardManager` | Clipboard system for copy/paste operations |
 | `session_allowances` | `dict[str, bool]` | Per-skill confirmation state |
 
 ### Per-Tool Path Resolution
@@ -597,9 +603,9 @@ NEXUS3 includes 39 core built-in skills plus 21 GitLab skills (when configured),
 | `read_file` | Read file contents with streaming/size limits | `path`, `offset?`, `limit?` |
 | `tail` | Read last N lines efficiently | `path`, `lines?` (default: 10) |
 | `file_info` | Get file/directory metadata (Unix perms or Windows RHSA) | `path` |
-| `list_directory` | List directory contents | `path`, `all?`, `long?` |
+| `list_directory` | List directory contents | `path?`, `all?`, `long?` |
 | `glob` | Find files by glob pattern | `pattern`, `path?`, `max_results?`, `exclude?` |
-| `grep` | Search file contents (regex), uses ripgrep when available | `pattern`, `path`, `recursive?`, `include?`, `context?` |
+| `grep` | Search file contents (regex), uses ripgrep when available | `pattern`, `path`, `recursive?`, `ignore_case?`, `max_matches?`, `include?`, `context?` |
 | `concat_files` | Find and concatenate files by extension with token estimation | `extensions`, `path?`, `exclude?`, `lines?`, `max_total?`, `format?`, `sort?`, `gitignore?`, `dry_run?` |
 
 ### File Operations (Destructive)
@@ -610,8 +616,8 @@ NEXUS3 includes 39 core built-in skills plus 21 GitLab skills (when configured),
 | `edit_file` | String replacement, single or batched (preserves line endings) | `path`, `old_string`, `new_string`, `edits?`, `replace_all?` |
 | `edit_lines` | Line-based replacement (preserves line endings) | `path`, `start_line`, `end_line?`, `new_content` |
 | `append_file` | Append to file with true append mode (preserves line endings) | `path`, `content`, `newline?` |
-| `regex_replace` | Pattern-based replace (preserves line endings) | `path`, `pattern`, `replacement`, `count?` |
-| `patch` | Apply unified diffs with validation | `target`, `diff?`, `diff_file?`, `mode?`, `dry_run?` |
+| `regex_replace` | Pattern-based replace (preserves line endings) | `path`, `pattern`, `replacement`, `count?`, `ignore_case?`, `multiline?`, `dotall?` |
+| `patch` | Apply unified diffs with validation | `target`, `diff?`, `diff_file?`, `mode?`, `fuzzy_threshold?`, `dry_run?` |
 | `copy_file` | Copy file with metadata | `source`, `destination`, `overwrite?` |
 | `mkdir` | Create directory (and parents) | `path` |
 | `rename` | Rename/move file or directory | `source`, `destination`, `overwrite?` |
@@ -634,7 +640,7 @@ NEXUS3 includes 39 core built-in skills plus 21 GitLab skills (when configured),
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `nexus_create` | Create new agent | `agent_id`, `preset?`, `cwd?`, `model?`, `initial_message?`, `allowed_write_paths?` |
+| `nexus_create` | Create new agent | `agent_id`, `preset?`, `cwd?`, `allowed_write_paths?`, `disable_tools?`, `model?`, `initial_message?`, `wait_for_initial_response?`, `port?` |
 | `nexus_destroy` | Destroy agent | `agent_id`, `port?` |
 | `nexus_send` | Send message to agent | `agent_id`, `content`, `port?` |
 | `nexus_status` | Get agent status (tokens + context) | `agent_id`, `port?` |
@@ -666,24 +672,30 @@ Note: `echo` skill exists in the codebase but is not registered by default (used
 - TRUSTED+ permission level (SANDBOXED agents cannot use GitLab)
 - Pre-configured instances only (no arbitrary server connections)
 
+**Key patterns:**
+- Base class: `GitLabSkill` in `vcs/gitlab/base.py` (inherits from `BaseSkill`)
+- Native async HTTP client via httpx (no python-gitlab dependency)
+- Action-based dispatch: `action` parameter with match/case
+- Project auto-detection from git remote
+
 ### Clipboard
 
-12 skills for clipboard operations. See `clipboard/README.md` for details.
+12 skills for clipboard operations.
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `copy` | Copy file content to clipboard | `path`, `key`, `scope?`, `start_line?`, `end_line?`, `tags?`, `ttl_seconds?` |
-| `cut` | Cut file content to clipboard (copy + delete) | `path`, `key`, `scope?`, `start_line?`, `end_line?`, `tags?` |
-| `paste` | Paste clipboard content to file | `key`, `path`, `scope?`, `mode?`, `line?`, `marker?` |
-| `clipboard_list` | List clipboard entries | `scope?`, `tags?`, `any_tags?`, `verbose?` |
-| `clipboard_get` | Get full content of entry | `key`, `scope?` |
-| `clipboard_update` | Update entry metadata/content | `key`, `scope?`, `new_key?`, `description?`, `content?` |
-| `clipboard_delete` | Delete clipboard entry | `key`, `scope?` |
-| `clipboard_clear` | Clear all entries in scope | `scope?`, `confirm?` |
-| `clipboard_search` | Search entries by content/key/description | `query`, `scope?`, `search_content?`, `tags?` |
-| `clipboard_tag` | Manage tags (list/add/remove/create/delete) | `action`, `key?`, `scope?`, `tag?`, `tags?` |
-| `clipboard_export` | Export entries to JSON file | `output_path`, `scope?`, `keys?`, `tags?` |
-| `clipboard_import` | Import entries from JSON file | `input_path`, `scope?`, `conflict?`, `dry_run?` |
+| `copy` | Copy file content to clipboard | `source`, `key`, `scope?`, `start_line?`, `end_line?`, `short_description?`, `tags?`, `ttl_seconds?` |
+| `cut` | Cut file content to clipboard (copy + delete) | `source`, `key`, `scope?`, `start_line?`, `end_line?`, `short_description?`, `tags?`, `ttl_seconds?` |
+| `paste` | Paste clipboard content to file | `key`, `target`, `scope?`, `mode?`, `line_number?`, `start_line?`, `end_line?`, `marker?`, `create_if_missing?` |
+| `clipboard_list` | List clipboard entries | `scope?`, `verbose?`, `tags?`, `any_tags?` |
+| `clipboard_get` | Get full content of entry | `key`, `scope?`, `start_line?`, `end_line?` |
+| `clipboard_update` | Update entry metadata/content | `key`, `scope`, `source?`, `content?`, `start_line?`, `end_line?`, `short_description?`, `new_key?`, `ttl_seconds?` |
+| `clipboard_delete` | Delete clipboard entry | `key`, `scope` |
+| `clipboard_clear` | Clear all entries in scope | `scope`, `confirm` |
+| `clipboard_search` | Search entries by content/description | `query`, `scope?`, `max_results?` |
+| `clipboard_tag` | Manage tags (list/add/remove/create/delete) | `action`, `name?`, `entry_key?`, `scope?`, `description?` |
+| `clipboard_export` | Export entries to JSON file | `path`, `scope?`, `tags?` |
+| `clipboard_import` | Import entries from JSON file | `path`, `scope?`, `conflict?`, `dry_run?` |
 
 **Scopes:**
 - `agent`: In-memory, session-only (default, safest)
@@ -694,12 +706,6 @@ Note: `echo` skill exists in the codebase but is not registered by default (used
 - `yolo`: Full access to all scopes
 - `trusted`: Read/write agent+project, read-only system
 - `sandboxed`: Agent scope only
-
-**Key patterns:**
-- Base class: `GitLabSkill` in `vcs/gitlab/base.py`
-- Native async HTTP client via httpx (no python-gitlab dependency)
-- Action-based dispatch: `action` parameter with match/case
-- Project auto-detection from git remote
 
 ### Registration
 
@@ -809,11 +815,17 @@ if self._services.get_permission_level() == PermissionLevel.SANDBOXED:
 Subprocess execution uses sanitized environments:
 
 ```python
-from nexus3.skill.builtin.env import get_safe_env
+from nexus3.skill.builtin.env import get_safe_env, get_full_env, filter_env
 
 # Only passes safe variables (PATH, HOME, LANG, etc.)
 # Blocks API keys, tokens, credentials
 env = get_safe_env(cwd="/some/path")
+
+# Full env pass-through (for trusted/opt-in scenarios)
+env = get_full_env(cwd="/some/path")
+
+# Custom filtering with additional allowed/blocked vars
+env = filter_env(os.environ, additional_vars=frozenset({"MY_VAR"}), block_vars=frozenset({"SECRET"}))
 ```
 
 **Windows-specific safe variables:**
@@ -870,6 +882,7 @@ Skills with CREATE_NO_WINDOW support:
 - `run_python`
 - `git`
 - `grep` (for ripgrep subprocess)
+- `concat_files` (for git and wc subprocesses)
 
 ### File Attributes
 
@@ -966,10 +979,12 @@ __all__ = [
 | `nexus3.core.identifiers` | `validate_tool_name()` |
 | `nexus3.core.constants` | File size limits (`MAX_FILE_SIZE_BYTES`, `MAX_OUTPUT_BYTES`, etc.) |
 | `nexus3.core.url_validator` | URL validation for NexusSkill |
-| `nexus3.core.process` | `terminate_process_tree()` for clean subprocess kills |
+| `nexus3.core.process` | `terminate_process_tree()` for clean subprocess kills, `WINDOWS_CREATIONFLAGS` |
 | `nexus3.client` | `NexusClient` for HTTP communication |
 | `nexus3.rpc.auth` | `discover_rpc_token()` |
 | `nexus3.rpc.agent_api` | `DirectAgentAPI`, `ClientAdapter` |
+| `nexus3.clipboard` | `ClipboardManager`, `ClipboardScope`, `InsertionMode` |
+| `nexus3.patch` | `parse_unified_diff()`, `apply_patch()`, `validate_patch()`, `ApplyMode` |
 
 ### External Dependencies
 
@@ -981,6 +996,8 @@ __all__ = [
 | `shlex` | Safe command parsing |
 | `subprocess` | Process creation flags (Windows) |
 | `shutil` | File operations, ripgrep detection |
+| `httpx` | Async HTTP client for GitLab API |
+| `pydantic` | GitLab config validation (`GitLabConfig`, `GitLabInstance`) |
 
 ---
 

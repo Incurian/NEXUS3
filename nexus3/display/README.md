@@ -121,6 +121,7 @@ spinner.hide()
 - Shows elapsed time after 1 second
 - Shows "ESC cancel" hint by default (configurable via `show_cancel_hint`)
 - Streaming output is sanitized via `strip_terminal_escapes()`
+- Activity-specific text in `__rich__` render: "Waiting..." / "Thinking..." / "Responding..." / custom text or "Running tools..." for TOOL_CALLING
 
 ---
 
@@ -339,17 +340,25 @@ class StreamingDisplay:
 | `set_activity(activity)` | Update current activity state |
 | `start_activity_timer()` | Start timing current activity |
 | `get_activity_duration()` | Get elapsed time for current activity |
-| `add_chunk(chunk)` | Add text chunk to response buffer (sanitized) |
+| `add_chunk(chunk)` | Add text chunk to response buffer (sanitized); transitions THINKING to RESPONDING |
 | `cancel()` | Mark display as cancelled |
 | `cancel_all_tools()` | Mark all pending/active tools as cancelled |
-| `reset()` | Reset for new response |
+| `reset()` | Reset for new response (note: `_had_errors` persists across resets) |
+| `set_final_render(final)` | Set final render mode (skips spinner/status bar in `__rich__`) |
+
+**Error State Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `mark_error()` | Mark that an error occurred |
+| `clear_error_state()` | Clear the error state (call when user sends new input) |
 
 **Thinking State Methods:**
 
 | Method | Description |
 |--------|-------------|
 | `start_thinking()` | Mark thinking/reasoning started |
-| `end_thinking()` | Mark thinking ended, returns (was_thinking, duration) |
+| `end_thinking()` | Mark thinking ended, returns (was_thinking, duration); accumulates across phases |
 | `get_total_thinking_duration()` | Get accumulated thinking time |
 | `clear_thinking_duration()` | Clear accumulated thinking time |
 
@@ -357,21 +366,23 @@ class StreamingDisplay:
 
 | Method | Description |
 |--------|-------------|
-| `start_batch(tools)` | Initialize batch with list of (name, tool_id, params) |
+| `start_batch(tools)` | Initialize batch with list of (name, tool_id, params); captures text_before_tools |
 | `set_tool_active(tool_id)` | Mark tool as currently executing |
 | `set_tool_complete(tool_id, success, error)` | Mark tool as complete |
 | `halt_remaining_tools()` | Mark pending tools as halted (due to earlier error) |
 | `get_batch_results()` | Get all tools for printing to scrollback |
 | `clear_tools()` | Clear tool tracking for next iteration |
+| `add_tool_call(name, tool_id)` | Track a tool call detected in stream (legacy) |
+| `complete_tool_call(tool_id)` | Mark tool call as complete (legacy, delegates to `set_tool_complete`) |
 
 **Properties:**
 
 | Property | Type | Description |
 |----------|------|-------------|
 | `is_cancelled` | `bool` | Check if cancelled |
-| `had_errors` | `bool` | Check if any errors occurred |
+| `had_errors` | `bool` | Check if any errors occurred since last `clear_error_state()` |
 | `text_before_tools` | `str` | Text that came before first tool batch |
-| `text_after_tools` | `str` | Text that came after tools started |
+| `text_after_tools` | `str` | Text that came after tools started (empty if no tools) |
 | `thinking_duration` | `float` | Accumulated thinking duration |
 
 **Usage:**
@@ -403,6 +414,17 @@ with Live(display, refresh_per_second=10) as live:
     display.set_tool_complete("tc1", success=True)
 
     display.set_activity(Activity.IDLE)
+
+    # Error state persists across resets
+    display.mark_error()
+    print(display.had_errors)  # True
+    display.reset()
+    print(display.had_errors)  # Still True
+    display.clear_error_state()
+    print(display.had_errors)  # False
+
+    # Final render (skip spinner/status bar for scrollback print)
+    display.set_final_render(True)
 ```
 
 ---
@@ -639,7 +661,15 @@ StreamingDisplay tracks tool batches with:
 - `text_before_tools` - Text received before first tool batch
 - Tool status (pending/active/success/error/halted/cancelled)
 - Duration tracking for long-running tools (shows timer after 3 seconds)
-- Error preview (first 120 chars) for failed tools
+- Error preview (first 120 chars, Rich markup escaped) for failed tools
+
+### Error State Persistence
+
+`StreamingDisplay.had_errors` intentionally persists across `reset()` calls. This allows the REPL to detect if errors occurred across multiple turns. Call `clear_error_state()` explicitly when the user sends new input.
+
+### Final Render Mode
+
+`set_final_render(True)` causes `__rich__` to skip the spinner animation and status bar. This is used when printing the final state to scrollback after Live stops, so only the content (text and tool results) appears without transient UI elements.
 
 ### Cancellation Flow
 

@@ -59,8 +59,8 @@ if apply_result.success:
 | Mode | Description |
 |------|-------------|
 | `STRICT` | Exact context match required. Fails on any whitespace difference. |
-| `TOLERANT` | Ignores trailing whitespace differences. Good for minor formatting issues. |
-| `FUZZY` | Uses similarity matching to find context. Configurable threshold (default 0.8). |
+| `TOLERANT` | Ignores trailing whitespace when matching context/removal lines. Also strips trailing whitespace from added lines. |
+| `FUZZY` | Uses SequenceMatcher similarity to find context within a +/-50 line search window. Configurable threshold (default 0.8). Also strips trailing whitespace from added lines. |
 
 ```python
 # Tolerant mode for whitespace-insensitive matching
@@ -78,9 +78,9 @@ The validator detects and can auto-fix:
 
 | Issue | Detection | Auto-Fix |
 |-------|-----------|----------|
-| Line count mismatch | Header says 3 lines, hunk has 4 | Recomputes header from actual lines |
-| Trailing whitespace | Diff has `line ` but file has `line` | Normalizes to match file |
-| Context mismatch | Context line doesn't match file | Reports error (not fixable) |
+| Line count mismatch | Header says 3 lines, hunk has 4 | Recomputes header from actual lines (reported as warning, not error) |
+| Trailing whitespace | Diff has `line ` but file has `line` | Normalizes context/removal lines to match file |
+| Context mismatch | Context line doesn't match file | Reports error (not auto-fixable) |
 
 ```python
 result = validate_patch(patch, target_content)
@@ -91,7 +91,7 @@ if result.fixed_patch:
 
 ### Multi-File Validation
 
-Use `validate_patch_set()` to validate multiple patches at once:
+Use `validate_patch_set()` to validate multiple patches at once. New files (`is_new_file=True`) are automatically passed without content validation. Missing target files result in a file-not-found error (catches `FileNotFoundError` from the callback).
 
 ```python
 from nexus3.patch import validate_patch_set
@@ -163,7 +163,7 @@ class PatchSet:
     files: list[PatchFile]
 
     def get_file(self, path: str) -> PatchFile | None:
-        """Get patch for a specific file path."""
+        """Get patch for a specific file path (matches path, old_path, or new_path)."""
 
     def file_paths(self) -> list[str]:
         """Get list of all affected file paths."""
@@ -190,7 +190,7 @@ Result of applying a patch.
 @dataclass
 class ApplyResult:
     success: bool
-    new_content: str
+    new_content: str             # Patched content if success, original content if failed
     applied_hunks: list[int]     # Indices of applied hunks
     failed_hunks: list[tuple[int, str]]  # (index, reason)
     warnings: list[str]          # Fuzzy match warnings, etc.
@@ -243,8 +243,10 @@ The module is designed to fail gracefully:
 
 - Malformed diffs return empty `PatchFile` lists (parser)
 - Invalid patches return `ValidationResult` with errors (validator)
-- Failed hunks result in `ApplyResult` with `success=False` (applier)
+- Failed hunks result in `ApplyResult` with `success=False` and original content unchanged (applier)
 - Missing target files return `ValidationResult` with file-not-found error
+
+**Atomic rollback:** `apply_patch` processes hunks sequentially. If any hunk fails, the original content is returned unchanged -- partial application never occurs.
 
 No exceptions are raised for invalid input - check return values instead.
 
@@ -285,7 +287,8 @@ None - this module is self-contained.
 
 | Package | Usage | Required |
 |---------|-------|----------|
-| `difflib` | Fuzzy matching (SequenceMatcher) | Yes (stdlib) |
+| `difflib` | Fuzzy matching (SequenceMatcher) in applier | Yes (stdlib) |
+| `re` | Hunk/file header parsing in parser | Yes (stdlib) |
 
 ---
 

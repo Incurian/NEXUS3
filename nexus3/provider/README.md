@@ -164,8 +164,11 @@ provider = registry.get("openrouter", "anthropic/claude-haiku-4.5")
 provider = registry.get_for_model("haiku")  # Resolves via config models dict
 provider = registry.get_for_model()         # Uses default_model from config
 
-# Enable reasoning for a provider
+# Enable reasoning for a provider (explicit)
 provider = registry.get("openrouter", "x-ai/grok-2", reasoning=True)
+
+# get_for_model() auto-resolves reasoning from ModelConfig.reasoning
+provider = registry.get_for_model("grok")  # reasoning comes from model config
 
 # Set raw logging on all providers
 registry.set_raw_log_callback(my_logger)
@@ -206,6 +209,7 @@ The abstract base class providing shared functionality for all providers.
 | **Error Body Limits** | Caps error response bodies at 10KB to prevent memory exhaustion |
 | **Connection Reuse** | Lazy httpx client with persistent connections |
 | **SSL Configuration** | Custom CA certs and SSL verification control for on-prem deployments |
+| **Windows SSL Fallback** | Falls back to system certificate store if certifi bundle is missing/corrupted |
 | **Raw Logging** | Callbacks for request/response/chunk logging |
 
 ### Abstract Methods (Subclasses Implement)
@@ -400,52 +404,74 @@ Message(role=Role.ASSISTANT, content="Let me check...", tool_calls=[...])
 
 ```json
 {
-    "provider": {
-        "type": "anthropic",
-        "api_key_env": "ANTHROPIC_API_KEY"
+    "providers": {
+        "anthropic": {
+            "type": "anthropic",
+            "api_key_env": "ANTHROPIC_API_KEY",
+            "models": {
+                "sonnet": {
+                    "id": "claude-sonnet-4-20250514",
+                    "context_window": 200000
+                }
+            }
+        }
     },
-    "default_model": "claude-sonnet-4-20250514"
+    "default_model": "sonnet"
 }
 ```
 
 ### config.json - Multi-Provider
+
+Models are nested inside their provider configuration. The `default_model` references a model alias, which must be globally unique across all providers.
 
 ```json
 {
     "providers": {
         "openrouter": {
             "type": "openrouter",
-            "api_key_env": "OPENROUTER_API_KEY"
+            "api_key_env": "OPENROUTER_API_KEY",
+            "models": {
+                "haiku": {
+                    "id": "anthropic/claude-haiku-4.5",
+                    "context_window": 200000
+                }
+            }
         },
         "anthropic": {
             "type": "anthropic",
-            "api_key_env": "ANTHROPIC_API_KEY"
+            "api_key_env": "ANTHROPIC_API_KEY",
+            "models": {
+                "haiku-native": {
+                    "id": "claude-haiku-4-5",
+                    "context_window": 200000
+                }
+            }
         },
         "local": {
             "type": "ollama",
-            "base_url": "http://localhost:11434/v1"
-        }
-    },
-    "default_provider": "openrouter",
-    "models": {
-        "haiku": {
-            "id": "anthropic/claude-haiku-4.5",
-            "context_window": 200000
-        },
-        "haiku-native": {
-            "id": "claude-haiku-4.5-20250514",
-            "provider": "anthropic",
-            "context_window": 200000
-        },
-        "llama": {
-            "id": "llama3.2",
-            "provider": "local",
-            "context_window": 128000
+            "base_url": "http://localhost:11434/v1",
+            "models": {
+                "llama": {
+                    "id": "llama3.2",
+                    "context_window": 128000
+                }
+            }
         }
     },
     "default_model": "haiku"
 }
 ```
+
+### ModelConfig Fields
+
+Each model entry within a provider's `models` dict supports:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | `str` | (required) | Full model identifier sent to the API |
+| `context_window` | `int` | `131072` | Context window size in tokens |
+| `reasoning` | `bool` | `false` | Enable extended thinking/reasoning |
+| `guidance` | `str \| null` | `null` | Brief usage guidance (shown in model selection UI) |
 
 ### Disabling Prompt Caching
 
@@ -457,7 +483,10 @@ Prompt caching is enabled by default. To disable for a specific provider:
         "anthropic": {
             "type": "anthropic",
             "api_key_env": "ANTHROPIC_API_KEY",
-            "prompt_caching": false
+            "prompt_caching": false,
+            "models": {
+                "sonnet": { "id": "claude-sonnet-4-20250514", "context_window": 200000 }
+            }
         }
     }
 }
@@ -467,13 +496,22 @@ Prompt caching is enabled by default. To disable for a specific provider:
 
 ```json
 {
-    "provider": {
-        "type": "azure",
-        "base_url": "https://my-resource.openai.azure.com",
-        "api_key_env": "AZURE_OPENAI_KEY",
-        "deployment": "gpt-4",
-        "api_version": "2024-02-01"
-    }
+    "providers": {
+        "azure": {
+            "type": "azure",
+            "base_url": "https://my-resource.openai.azure.com",
+            "api_key_env": "AZURE_OPENAI_KEY",
+            "deployment": "gpt-4",
+            "api_version": "2024-02-01",
+            "models": {
+                "gpt4": {
+                    "id": "gpt-4",
+                    "context_window": 128000
+                }
+            }
+        }
+    },
+    "default_model": "gpt4"
 }
 ```
 
@@ -483,12 +521,17 @@ For deployments with custom CA certificates or self-signed certs:
 
 ```json
 {
-    "provider": {
-        "type": "openai",
-        "base_url": "https://internal-llm.corp.example.com/v1",
-        "api_key_env": "CORP_LLM_API_KEY",
-        "ssl_ca_cert": "/etc/ssl/certs/corp-ca.pem",
-        "verify_ssl": true
+    "providers": {
+        "corp": {
+            "type": "openai",
+            "base_url": "https://internal-llm.corp.example.com/v1",
+            "api_key_env": "CORP_LLM_API_KEY",
+            "ssl_ca_cert": "/etc/ssl/certs/corp-ca.pem",
+            "verify_ssl": true,
+            "models": {
+                "corp-llm": { "id": "llama-3-70b", "context_window": 8192 }
+            }
+        }
     }
 }
 ```
@@ -497,10 +540,15 @@ To disable SSL verification (not recommended for production):
 
 ```json
 {
-    "provider": {
-        "type": "openai",
-        "base_url": "https://dev-server.local/v1",
-        "verify_ssl": false
+    "providers": {
+        "dev": {
+            "type": "openai",
+            "base_url": "https://dev-server.local/v1",
+            "verify_ssl": false,
+            "models": {
+                "dev-llm": { "id": "llama-3-70b", "context_window": 8192 }
+            }
+        }
     }
 }
 ```
@@ -692,11 +740,11 @@ DEBUG:nexus3.provider.openai_compat:Cache: read=2500 tokens
 
 ### OpenRouter + Anthropic
 
-When using OpenRouter with Anthropic models (detected via `anthropic` in model name), NEXUS3 automatically adds `cache_control` to the system prompt. This is passed through to Anthropic's API for caching.
+When using OpenRouter with Anthropic models (detected via `anthropic` in model name) and `prompt_caching` is enabled (default), NEXUS3 automatically adds `cache_control` to the system prompt. This is passed through to Anthropic's API for caching.
 
 ```python
 # Automatic detection
-if config.type == "openrouter" and "anthropic" in model.lower():
+if config.type == "openrouter" and "anthropic" in model.lower() and config.prompt_caching:
     # Add cache_control to system message
 ```
 
@@ -751,7 +799,8 @@ MAX_ERROR_BODY_SIZE = 10 * 1024  # 10 KB
 | `nexus3.core.types` | `Message`, `Role`, `ToolCall`, `StreamEvent` types |
 | `nexus3.core.interfaces` | `AsyncProvider`, `RawLogCallback` protocols |
 | `nexus3.core.errors` | `ProviderError`, `ConfigError` |
-| `nexus3.config.schema` | `ProviderConfig`, `AuthMethod` |
+| `nexus3.core.constants` | `get_nexus_dir()` for API key error messages |
+| `nexus3.config.schema` | `ProviderConfig`, `AuthMethod`, `Config` |
 | `httpx` | Async HTTP client |
 
 ---
@@ -818,4 +867,4 @@ PROVIDER_DEFAULTS["myprovider"] = {
 
 ---
 
-Last updated: 2026-02-01
+Last updated: 2026-02-10

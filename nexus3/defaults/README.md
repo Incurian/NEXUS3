@@ -34,34 +34,51 @@ This ensures:
 
 ## Configuration Loading Hierarchy
 
-Defaults are the **lowest priority** layer in the config loading hierarchy:
+Prompts and config use different loading strategies:
 
+**Prompts** (`NEXUS-DEFAULT.md` and `NEXUS.md`):
 ```
 LAYER 1a: System Defaults (NEXUS-DEFAULT.md in package) <- ALWAYS LOADED
     |
-LAYER 1b: Global (~/.nexus3/NEXUS.md + config.json + mcp.json)
+LAYER 1b: Global (~/.nexus3/NEXUS.md) OR package NEXUS.md template (fallback)
     |
 LAYER 2: Ancestors (up to N levels above CWD)
     |
 LAYER 3: Local (CWD/.nexus3/) <- HIGHEST PRIORITY
 ```
 
-Later layers **deep-merge** into earlier layers, meaning:
+All prompt layers are **concatenated** with labeled section headers.
+
+**Config** (`config.json`):
+```
+LAYER 1: Global (~/.nexus3/config.json) OR shipped defaults (MUTUALLY EXCLUSIVE)
+    |
+LAYER 2: Ancestors (up to N levels above CWD)
+    |
+LAYER 3: Local (CWD/.nexus3/config.json) <- HIGHEST PRIORITY
+```
+
+Config layers **deep-merge** into earlier layers:
 - Scalar values (strings, numbers, booleans) are replaced
 - Objects are recursively merged
 - Unspecified keys inherit from earlier layers
 
+**Important:** For config, defaults are a **fallback**, not a base layer. If `~/.nexus3/config.json` exists, `nexus3/defaults/config.json` is NOT loaded or merged. This means a user's global config must include any settings they want to keep from the defaults.
+
 ### Loading Logic
 
-The `ContextLoader` in `nexus3/context/loader.py` handles defaults with a two-stage approach:
+The `ContextLoader` in `nexus3/context/loader.py` handles prompts with a two-stage approach:
 
 ```python
-def _load_global_and_defaults(self) -> list[ContextLayer]:
-    """Load system defaults and global user configuration.
+def _load_global_layer(self) -> list[ContextLayer]:
+    """Load the global layer with both system defaults and user customization.
 
-    NEXUS-DEFAULT.md from the package is always loaded first (system docs/tools).
+    System defaults (NEXUS-DEFAULT.md) always come from the package.
     User customization (NEXUS.md) comes from ~/.nexus3/ if it exists,
     otherwise falls back to package template.
+
+    Returns:
+        List of layers: [system-defaults layer, user/global layer]
     """
     layers: list[ContextLayer] = []
     global_dir = self._get_global_dir()  # ~/.nexus3/
@@ -87,10 +104,13 @@ def _load_global_and_defaults(self) -> list[ContextLayer]:
         layer.mcp = global_mcp
         layers.append(layer)
     else:
-        # Fall back to package NEXUS.md template for prompt
+        # Fall back to package NEXUS.md template for prompt,
+        # but still use global config/mcp if they exist
         pkg_nexus = defaults_dir / "NEXUS.md"
         if pkg_nexus.is_file() or global_config or global_mcp:
-            layer = ContextLayer(name="global", path=global_dir or defaults_dir)
+            # Use global_dir as path if we have config/mcp there, otherwise defaults_dir
+            layer_path = global_dir if (global_config or global_mcp) else defaults_dir
+            layer = ContextLayer(name="global", path=layer_path)
             if pkg_nexus.is_file():
                 layer.prompt = pkg_nexus.read_text(encoding="utf-8-sig")
             layer.config = global_config
@@ -100,13 +120,23 @@ def _load_global_and_defaults(self) -> list[ContextLayer]:
     return layers
 ```
 
-The config loader in `nexus3/config/loader.py` similarly starts from defaults:
+The config loader in `nexus3/config/loader.py` uses defaults as a fallback only:
 
 ```python
-# Layer 1: Shipped defaults
-default_data = load_json_file_optional(DEFAULT_CONFIG)  # nexus3/defaults/config.json
-if default_data:
-    merged = deep_merge(merged, default_data)
+# Layer 1: Global user config OR defaults (mutually exclusive)
+# If global config exists, use it. Otherwise fall back to defaults.
+global_dir = get_nexus_dir()
+global_config = global_dir / "config.json"
+global_data = load_json_file_optional(global_config)
+
+if global_data:
+    # Global config exists - use it as base (NO defaults)
+    merged = deep_merge(merged, global_data)
+else:
+    # No global config - fall back to shipped defaults
+    default_data = load_json_file_optional(DEFAULT_CONFIG)  # nexus3/defaults/config.json
+    if default_data:
+        merged = deep_merge(merged, default_data)
 ```
 
 ---
@@ -162,6 +192,7 @@ The `providers` object maps provider names to their configurations:
 | `request_timeout` | `float` | `120.0` | Request timeout in seconds |
 | `max_retries` | `int` | `3` | Max retry attempts (0-10) |
 | `retry_backoff` | `float` | `1.5` | Exponential backoff multiplier (1.0-5.0) |
+| `prompt_caching` | `bool` | `true` | Enable prompt caching (reduces cost ~90% on cached tokens) |
 | `allow_insecure_http` | `bool` | `false` | Allow non-HTTPS for non-localhost URLs |
 | `verify_ssl` | `bool` | `true` | Verify SSL certificates (set `false` for self-signed certs) |
 | `ssl_ca_cert` | `string?` | `null` | Path to custom CA certificate file |
@@ -298,10 +329,12 @@ Example MCP server definitions (for testing):
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `name` | `string` | required | Server name (used in skill prefixes) |
-| `command` | `list[string]?` | `null` | Command for stdio transport |
+| `command` | `string \| list[string]?` | `null` | Command for stdio transport (list or string with `args`) |
+| `args` | `list[string]?` | `null` | Arguments when `command` is a string (official MCP format) |
 | `url` | `string?` | `null` | URL for HTTP transport |
-| `env` | `object?` | `null` | Explicit environment variables |
-| `env_passthrough` | `list[string]?` | `null` | Host env vars to pass through |
+| `env` | `object?` | `null` | Explicit environment variables for subprocess |
+| `env_passthrough` | `list[string]?` | `null` | Host env vars to pass through (e.g., `["GITHUB_TOKEN"]`) |
+| `cwd` | `string?` | `null` | Working directory for the server subprocess |
 | `enabled` | `bool` | `true` | Whether server is enabled |
 
 ---
@@ -316,14 +349,23 @@ The `NEXUS-DEFAULT.md` file is **always loaded** and provides system-level docum
 |---------|---------|
 | Introduction | Agent identity and capabilities |
 | Principles | Behavioral guidelines (be direct, use tools, respect boundaries) |
-| Permission System | YOLO/TRUSTED/SANDBOXED levels, ceiling enforcement |
-| Logs | Server logging, session logs, SQLite schema, finding things |
-| Tool Limits | File size limits (10MB), output limits (1MB), timeouts |
-| Available Tools | Complete tool reference with parameters |
-| Agent Communication | Permission defaults for RPC agents |
+| Permission System | YOLO/TRUSTED/SANDBOXED levels, ceiling enforcement, RPC defaults |
+| Available Tools | Complete tool reference with parameters (file, exec, agent, clipboard, utility) |
+| Clipboard System | Scopes, permissions, usage patterns |
+| GitLab Integration | Skill categories and configuration reference |
+| MCP Integration | External tool protocol, connection commands |
 | Execution Modes | Sequential vs parallel (`_parallel: true`) tool execution |
-| Response Format | Output formatting guidelines |
+| Working with Subagents | When/how to create, manage lifecycle, communication patterns |
+| If You Are a Subagent | Guidelines for agents operating as subagents |
+| REPL Commands | Agent management, session, configuration commands |
+| Session Management | Persistence, startup modes, CLI flags |
+| Configuration | config.json, NEXUS.md, mcp.json structure and layering |
+| Tool Limits | File size limits (10MB), output limits (1MB), timeouts |
+| Context & Compaction | Automatic summarization, manual compaction |
+| System Prompt Architecture | Split design (NEXUS-DEFAULT.md + NEXUS.md) |
+| Logs | Server logging, session logs, SQLite schema, searching logs |
 | Path Formats | WSL path conversion (Windows/Linux interop) |
+| Troubleshooting | Common issues table, debug flags |
 | Self-Knowledge | Tips for NEXUS3 agents working on NEXUS3 codebase |
 
 This file auto-updates when NEXUS3 is upgraded, ensuring agents always have current tool documentation.
@@ -360,15 +402,21 @@ When running `nexus3 --init-global`:
 # nexus3/cli/init_commands.py
 defaults_dir = get_defaults_dir()  # nexus3/defaults/
 
-# Copy NEXUS.md
+# Copy NEXUS.md (using _safe_write_text to prevent symlink attacks)
 default_nexus = defaults_dir / "NEXUS.md"
 if default_nexus.exists():
-    shutil.copy(default_nexus, global_dir / "NEXUS.md")
+    _safe_write_text(
+        global_dir / "NEXUS.md",
+        default_nexus.read_text(encoding="utf-8"),
+    )
 
 # Copy config.json
 default_config = defaults_dir / "config.json"
 if default_config.exists():
-    shutil.copy(default_config, global_dir / "config.json")
+    _safe_write_text(
+        global_dir / "config.json",
+        default_config.read_text(encoding="utf-8"),
+    )
 ```
 
 ### Runtime Loading
@@ -390,9 +438,9 @@ The defaults directory is located relative to the installed package, making it w
 | Module | Usage |
 |--------|-------|
 | `nexus3.core.constants` | `get_defaults_dir()` function |
-| `nexus3.config.loader` | Loads `config.json` as first merge layer |
-| `nexus3.context.loader` | Loads `NEXUS.md` as fallback when no global config |
-| `nexus3.cli.init_commands` | Copies defaults to `~/.nexus3/` |
+| `nexus3.config.loader` | Loads `config.json` as fallback when no global config exists |
+| `nexus3.context.loader` | Always loads `NEXUS-DEFAULT.md`; loads `NEXUS.md` as fallback when no global prompt exists |
+| `nexus3.cli.init_commands` | Copies defaults to `~/.nexus3/` via `_safe_write_text()` |
 | `nexus3.config.schema` | Pydantic models that validate `config.json` |
 
 ---
@@ -445,4 +493,4 @@ All other settings inherit from earlier layers (global, then defaults).
 
 ---
 
-Updated: 2026-02-01
+Updated: 2026-02-10

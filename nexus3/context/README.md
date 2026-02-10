@@ -64,7 +64,7 @@ Each layer can provide:
 @dataclass
 class ContextLayer:
     """A single layer of context (global, ancestor, or local)."""
-    name: str           # "global", "ancestor:dirname", "local"
+    name: str           # "system-defaults", "global", "ancestor:dirname", "local"
     path: Path          # Directory path
     prompt: str | None  # NEXUS.md content
     readme: str | None  # README.md content
@@ -89,6 +89,17 @@ class ContextSources:
     config_sources: list[Path]
     mcp_sources: list[Path]
 ```
+
+#### Constructor Parameters
+
+```python
+ContextLoader(
+    cwd: Path | None = None,             # Working directory (defaults to Path.cwd())
+    context_config: ContextConfig | None = None,  # Context loading config (from config.schema)
+)
+```
+
+Note: The `context_config` here is `nexus3.config.schema.ContextConfig` (Pydantic model with `ancestor_depth`, `include_readme`, `readme_as_fallback`), NOT the `ContextConfig` dataclass from `manager.py` (which controls token budgets).
 
 #### Usage
 
@@ -179,6 +190,15 @@ ContextManager(
 )
 ```
 
+#### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `system_prompt` | `str` | Current system prompt (read-only) |
+| `token_counter` | `TokenCounter` | Token counter instance |
+| `messages` | `list[Message]` | All messages (returns a copy) |
+| `config` | `ContextConfig` | Context configuration |
+
 #### Message Types
 
 The manager handles three message roles:
@@ -213,6 +233,17 @@ The `format_tool_result_prefix()` function handles:
 - Truncating long argument values (>50 chars)
 - Skipping internal arguments (`_parallel`, `content`, `new_content`, `code`)
 - Limiting overall prefix length to 120 characters
+
+#### Setup and Teardown Methods
+
+| Method | Description |
+|--------|-------------|
+| `set_system_prompt(prompt)` | Set the system prompt (logged if logger present) |
+| `set_tool_definitions(tools)` | Set available tool definitions (OpenAI function format) |
+| `get_tool_definitions()` | Get tool definitions for API call (returns `None` if empty) |
+| `add_session_start_message(...)` | Add timestamped session start marker with agent metadata |
+| `clear_messages()` | Clear all messages (keeps system prompt and tool definitions) |
+| `apply_compaction(summary_message, preserved_messages, new_system_prompt?)` | Replace messages with compaction result |
 
 #### Truncation Strategies
 
@@ -806,4 +837,4 @@ while True:
 
 ## Status
 
-Production-ready. Last updated: 2026-02-05
+Production-ready. Last updated: 2026-02-10

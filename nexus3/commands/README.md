@@ -6,7 +6,7 @@ This module provides a centralized, structured command system that works identic
 
 **Key files:**
 - `protocol.py` - Core types: `CommandResult`, `CommandOutput`, `CommandContext`
-- `core.py` - Command implementations (11 commands)
+- `core.py` - Command implementations (11 commands) and helpers
 
 ---
 
@@ -339,15 +339,15 @@ Save the current agent's session to disk.
 - `name`: Save name (defaults to current agent ID)
 
 **Behavior:**
-- Cannot save with temp agent names (e.g., `.1`, `.2`)
-- Saves messages, system prompt, permissions, token usage, model alias, and clipboard entries
+- Cannot save with temp agent names (e.g., `.1`, `.2`) -- applies to the resolved save name (either the provided `name` or the current agent ID)
+- Serializes the current agent's full state via `serialize_session()`
 
 **Saved data includes:**
-- Conversation messages and system prompt
-- Permission preset and disabled tools
+- Conversation messages and system prompt (+ system prompt path)
+- Permission level, preset, and disabled tools
 - Model alias (for restoration on resume)
 - Agent-scope clipboard entries
-- Working directory and token usage
+- Working directory, token usage, creation timestamp, and provenance (`"user"`)
 
 **Returns** in `data`:
 ```python
@@ -367,8 +367,8 @@ Clone an agent or saved session.
 - `dest`: Destination name
 
 **Behavior:**
-1. If `src` is an active agent: Creates new agent with copied context
-2. If `src` is a saved session: Copies session file
+1. If `src` is an active agent: Creates new agent with default config and copies messages + system prompt (permissions and model are **not** copied from source)
+2. If `src` is a saved session: Copies session file via `SessionManager.clone_session()`
 
 **Returns** in `data`:
 ```python
@@ -390,9 +390,9 @@ Rename an agent or saved session.
 - `new`: New name
 
 **Behavior:**
-- For active agents: Creates new agent, copies state, destroys old
-- For saved sessions: Renames file on disk
-- Updates `current_agent_id` if renaming current agent
+- For active agents: Creates new agent with default config, copies messages + system prompt, destroys old (permissions and model are **not** copied from source)
+- For saved sessions: Renames file on disk via `SessionManager.rename_session()`
+- Returns `new_current_agent` in data if renaming the current agent (caller is responsible for updating its own state)
 
 **Returns** in `data`:
 ```python
@@ -412,7 +412,9 @@ Delete a saved session from disk.
 **Parameters:**
 - `name`: Session name to delete
 
-**Note:** Only deletes saved sessions, not active agents. Use `cmd_destroy` for active agents.
+**Behavior:**
+- Rejects temp agent names (e.g., `.1`, `.2`) with an error directing to `/destroy`
+- Only deletes saved sessions, not active agents. Use `cmd_destroy` for active agents.
 
 **Returns** in `data`:
 ```python
@@ -433,6 +435,14 @@ Request graceful server shutdown.
 ```python
 {"shutdown": True}
 ```
+
+### Helpers
+
+#### `get_permission_data(agent) -> tuple[str, str | None, list[str]]`
+
+Internal helper used by `cmd_save`. Extracts permission level, preset name, and disabled tool list from an agent's `services.get("permissions")`. Falls back to `("trusted", None, [])` if no permissions are found.
+
+Not exported from `__init__.py`.
 
 ---
 
@@ -645,4 +655,4 @@ All commands are async because:
 
 ---
 
-Updated: 2026-02-01
+Updated: 2026-02-10

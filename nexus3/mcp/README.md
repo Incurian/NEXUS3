@@ -2,7 +2,7 @@
 
 MCP (Model Context Protocol) client implementation for NEXUS3 agents.
 
-**Updated: 2026-02-01**
+**Updated: 2026-02-10**
 
 ## Overview
 
@@ -125,6 +125,8 @@ Important constants defined in the module:
 | `DEFAULT_MAX_RETRIES` | 3 | `transport.py` | HTTP retry attempts |
 | `DEFAULT_RETRY_BACKOFF` | 1.0 | `transport.py` | HTTP retry base delay (seconds) |
 | `RETRYABLE_STATUS_CODES` | 429, 5xx | `transport.py` | HTTP status codes to retry |
+| `MCP_HTTP_HEADERS` | `{MCP-Protocol-Version, Accept}` | `transport.py` | Protocol headers for HTTP requests |
+| `SESSION_ID_PATTERN` | `^[a-zA-Z0-9_-]+$` | `transport.py` | Regex for session ID validation |
 | `SAFE_ENV_KEYS` | see below | `transport.py` | Env vars safe to pass to subprocesses |
 
 ---
@@ -187,19 +189,28 @@ async with MCPClient(transport) as client:
 **Security Features:**
 - **Response ID matching:** Verifies response IDs match request IDs
 - **Notification discarding:** Discards interleaved notifications (max 100) while waiting for responses
+- **Null-id error discarding:** Discards error responses with null IDs (from non-compliant servers that respond to notifications)
 
 ### MCPTransport (`transport.py`)
 
-Abstract base class for transport implementations:
+Abstract base class for transport implementations. Supports async context manager (`async with`):
 
 ```python
 class MCPTransport(ABC):
     async def connect(self) -> None: ...
     async def send(self, message: dict) -> None: ...
     async def receive(self) -> dict: ...
-    async def request(self, message: dict) -> dict: ...  # send + receive
+    async def request(self, message: dict) -> dict: ...  # send + receive (default: send + receive)
     async def close(self) -> None: ...
+    # Also supports: async with transport: ...
 ```
+
+**Module-level helpers** (used internally but importable):
+
+| Function | Description |
+|----------|-------------|
+| `build_safe_env(explicit_env, passthrough)` | Build sanitized env dict for subprocess (safe defaults + explicit + passthrough) |
+| `resolve_command(command)` | Resolve command for cross-platform execution (Windows `.cmd`/`.bat` resolution, command aliases) |
 
 #### StdioTransport
 
@@ -220,6 +231,9 @@ transport = StdioTransport(
 - **Safe environment (default):** Only safe system variables passed by default
 - **Explicit opt-in:** Use `env` for explicit values or `env_passthrough` for host variables
 - **Line length limit:** 10MB max to prevent memory exhaustion
+
+**Concurrency:**
+- **I/O lock:** Send and receive operations are serialized via `asyncio.Lock` for safe concurrent callers
 
 **Cross-Platform Features:**
 - **Windows command resolution:** Uses `shutil.which()` to resolve `.cmd`, `.bat`, `.exe` extensions via PATHEXT
@@ -368,6 +382,8 @@ class MCPPromptResult:
     messages: list[MCPPromptMessage]    # Messages to send
 ```
 
+All protocol types have a `from_dict(data)` classmethod for parsing MCP server JSON responses.
+
 **Internal types (not exported):**
 - `MCPClientInfo`: Client identification sent during initialization (defaults to `nexus3/1.0.0`)
 
@@ -415,6 +431,7 @@ await registry.close_all()
 | `check_connections()` | Remove dead connections |
 | `retry_tools(name)` | Retry tool listing |
 | `close_all()` | Disconnect all servers |
+| `__len__()` | Number of connected servers |
 
 **Visibility Model:**
 - `shared=True`: Connection visible to all agents
@@ -508,6 +525,10 @@ class MCPErrorContext:
     source_layer: str | None            # Layer name (global, project)
     command: list[str] | None           # Launch command
     stderr_lines: list[str] | None      # Last N lines of stderr
+
+    @classmethod
+    def from_server_with_origin(cls, server_with_origin) -> MCPErrorContext: ...
+    # Creates context from MCPServerWithOrigin (from nexus3.context.loader)
 ```
 
 ### Error Formatter (`error_formatter.py`)
@@ -576,13 +597,16 @@ MCP servers are configured in `mcp.json` files, loaded from the context layer hi
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `command` | `str \| list[str]` | - | Command to launch stdio server |
-| `args` | `list[str]` | `[]` | Arguments (when command is string) |
+| `args` | `list[str]` | `None` | Arguments (when command is string) |
 | `url` | `str` | - | URL for HTTP server |
-| `env` | `dict[str, str]` | `{}` | Explicit environment variables |
-| `env_passthrough` | `list[str]` | `[]` | Host env vars to pass through |
+| `env` | `dict[str, str]` | `None` | Explicit environment variables |
+| `env_passthrough` | `list[str]` | `None` | Host env vars to pass through |
 | `cwd` | `str` | `None` | Working directory for subprocess |
 | `enabled` | `bool` | `true` | Whether server is enabled |
 | `fail_if_no_tools` | `bool` | `false` | Fail if tool listing fails |
+
+**Methods:**
+- `get_command_list() -> list[str]`: Returns command as list, merging `command` + `args` if needed. Returns empty list if no command configured.
 
 ### Command Format Options
 
@@ -637,7 +661,7 @@ MCP servers receive a sanitized environment by default. Only safe system variabl
 | Protection | Description |
 |------------|-------------|
 | Response ID matching | Verifies response IDs match request IDs |
-| Notification discarding | Discards up to 100 notifications while waiting |
+| Notification discarding | Discards up to 100 notifications/null-id errors while waiting |
 | Deny by default | MCP access denied if no permissions configured |
 | Line length limit | 10MB max for stdio transport |
 | SSRF protection | URL validation for HTTP transport |
@@ -712,6 +736,7 @@ MCP_TOOL_COUNT=10 MCP_PAGE_SIZE=3 python -m nexus3.mcp.test_server.paginating_se
 | `nexus3.core.text_safety` | `sanitize_for_display()` |
 | `nexus3.core.process` | `terminate_process_tree()` |
 | `nexus3.skill.base` | `BaseSkill` |
+| `nexus3.context.loader` | `MCPServerWithOrigin` (TYPE_CHECKING only, in `errors.py`) |
 
 ### External Dependencies
 
@@ -720,7 +745,7 @@ MCP_TOOL_COUNT=10 MCP_PAGE_SIZE=3 python -m nexus3.mcp.test_server.paginating_se
 | `httpx` | HTTPTransport | `pip install httpx` |
 | `aiohttp` | HTTP test server | `pip install aiohttp` |
 
-**Note:** `httpx` is only required if using HTTPTransport. StdioTransport has no external dependencies.
+**Note:** `httpx` is imported unconditionally in `transport.py`, so it is required whenever the `nexus3.mcp` module is imported. `aiohttp` is only required for running the HTTP test server.
 
 ---
 
@@ -747,4 +772,4 @@ except MCPConfigError as e:
 
 ---
 
-*Updated: 2026-02-01*
+*Updated: 2026-02-10*

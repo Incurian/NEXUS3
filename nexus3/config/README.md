@@ -55,7 +55,7 @@ from nexus3.config import (
 )
 ```
 
-**Note:** `ModelConfig`, `ResolvedModel`, `ClipboardConfig`, `ContextConfig`, `CompactionConfig`, `ServerConfig`, `GitLabConfig`, and `GitLabInstanceConfig` are defined in `schema.py` but not exported from the package. Import them directly from `nexus3.config.schema` if needed.
+**Note:** `ModelConfig`, `ResolvedModel`, `ProviderType`, `ClipboardConfig`, `ContextConfig`, `CompactionConfig`, `ServerConfig`, `GitLabConfig`, and `GitLabInstanceConfig` are defined in `schema.py` but not exported from the package. Import them directly from `nexus3.config.schema` if needed.
 
 ---
 
@@ -325,7 +325,7 @@ Configuration for the clipboard system.
 |-------|------|---------|-------------|
 | `enabled` | `bool` | `True` | Enable clipboard tools |
 | `inject_into_context` | `bool` | `True` | Auto-inject clipboard index into system prompt |
-| `max_injected_entries` | `int` | `10` | Maximum entries to show in context injection (0-50) |
+| `max_injected_entries` | `int` | `10` | Maximum entries to show per scope in context injection (0-50) |
 | `show_source_in_injection` | `bool` | `True` | Show source path/lines in context injection |
 | `max_entry_bytes` | `int` | `1048576` | Maximum size of a single clipboard entry (1KB-10MB) |
 | `warn_entry_bytes` | `int` | `102400` | Size threshold for warning on large entries |
@@ -349,7 +349,7 @@ Configuration for the HTTP server.
 |-------|------|---------|-------------|
 | `host` | `str` | `"127.0.0.1"` | Host address to bind to |
 | `port` | `int` | `8765` | Port number (1-65535) |
-| `log_level` | `str` | `"INFO"` | Logging level (DEBUG/INFO/WARNING/ERROR) |
+| `log_level` | `Literal` | `"INFO"` | Logging level (DEBUG/INFO/WARNING/ERROR) |
 
 ### `MCPServerConfig`
 
@@ -620,4 +620,4 @@ Invalid JSON: Unexpected UTF-8 BOM (decode using utf-8-sig)
 
 ---
 
-Last updated: 2026-02-01
+Last updated: 2026-02-10

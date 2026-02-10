@@ -168,7 +168,7 @@ Typed exception classes with optional error sanitization.
 | `PathSecurityError` | Path sandbox violations (includes `path` and `reason`) |
 | `LoadError` | Base for loading errors |
 | `ContextLoadError` | Context loading issues (JSON, validation, merging) |
-| `MCPConfigError` | MCP server configuration errors |
+| `MCPConfigError` | MCP server configuration errors (optional `context: MCPErrorContext`) |
 
 **Error Sanitization:**
 
@@ -207,7 +207,28 @@ Main entry point for the permission system. Re-exports from `policy.py`, `preset
 | Export | Description |
 |--------|-------------|
 | `AgentPermissions` | Runtime permission state combining policy, tool perms, and allowances |
-| `resolve_preset()` | Resolve preset name to `AgentPermissions` |
+| `resolve_preset()` | Resolve preset name to `AgentPermissions` (accepts `custom_presets` and `cwd`) |
+
+**AgentPermissions Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `base_preset` | `str` | Name of the base preset |
+| `effective_policy` | `PermissionPolicy` | Path and action restrictions |
+| `tool_permissions` | `dict[str, ToolPermission]` | Per-tool overrides |
+| `session_allowances` | `SessionAllowances` | User's "allow always" decisions |
+| `ceiling` | `AgentPermissions \| None` | Parent's permissions (ceiling enforcement) |
+| `parent_agent_id` | `str \| None` | ID of parent agent (for subagent chains) |
+| `depth` | `int` | Agent depth (0 = root, 1 = child, etc.) |
+
+**AgentPermissions Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `is_path_allowed_for_write(path)` | Check write access (combines policy + session allowances) |
+| `apply_delta(delta)` | Apply `PermissionDelta`, return new `AgentPermissions` |
+| `can_grant(requested)` | Check if this agent can grant permissions to a subagent |
+| `to_dict()` / `from_dict()` | Serialize/deserialize for RPC transport |
 
 ```python
 from nexus3.core import resolve_preset, PermissionDelta
@@ -238,7 +259,7 @@ Core permission primitives and policy class.
 | Export | Description |
 |--------|-------------|
 | `PermissionLevel` | Enum: `YOLO`, `TRUSTED`, `SANDBOXED` |
-| `ConfirmationResult` | User response: `DENY`, `ALLOW_ONCE`, `ALLOW_FILE`, etc. |
+| `ConfirmationResult` | User response: `DENY`, `ALLOW_ONCE`, `ALLOW_FILE`, `ALLOW_WRITE_DIRECTORY`, `ALLOW_EXEC_CWD`, `ALLOW_EXEC_GLOBAL` |
 | `PermissionPolicy` | Policy with level, paths, and confirmation logic |
 | `DESTRUCTIVE_ACTIONS` | Actions requiring confirmation in TRUSTED mode |
 | `SAFE_ACTIONS` | Actions always allowed without confirmation |
@@ -264,11 +285,23 @@ policy.can_read_path(Path("/project/file.txt"))  # True if in sandbox
 policy.can_write_path(Path("/etc/passwd"))  # False
 policy.can_network()  # False for SANDBOXED
 policy.allows_action("bash_safe")  # False for SANDBOXED
+policy.is_within_cwd(Path("/project/src/file.py"))  # True if within cwd
 
-# Check confirmation requirement
+# Serialization
+data = policy.to_dict()
+policy2 = PermissionPolicy.from_dict(data)
+
+# Check confirmation requirement (write tools use path=)
 policy.requires_confirmation(
     "write_file",
     path=Path("/outside/cwd/file.txt"),
+    session_allowances=allowances
+)
+
+# Execution tools use exec_cwd= (shell_UNSAFE always requires confirmation)
+policy.requires_confirmation(
+    "bash_safe",
+    exec_cwd=Path("/project/scripts"),
     session_allowances=allowances
 )
 ```
@@ -282,8 +315,8 @@ Named permission configurations and tool permissions.
 | Export | Description |
 |--------|-------------|
 | `ToolPermission` | Per-tool config: `enabled`, `allowed_paths`, `timeout`, `requires_confirmation`, `allowed_targets` |
-| `PermissionPreset` | Named preset: `name`, `level`, `description`, paths, `tool_permissions` |
-| `PermissionDelta` | Changes to apply: `disable_tools`, `enable_tools`, `allowed_paths`, etc. |
+| `PermissionPreset` | Named preset: `name`, `level`, `description`, paths, `tool_permissions`, `network_access`, `default_tool_timeout` |
+| `PermissionDelta` | Changes to apply: `disable_tools`, `enable_tools`, `allowed_paths`, `add_blocked_paths`, `tool_overrides` |
 | `TargetRestriction` | Type alias for `allowed_targets` values |
 | `get_builtin_presets()` | Returns dict of yolo/trusted/sandboxed presets |
 | `load_custom_presets_from_config()` | Load custom presets from config dict |
@@ -344,6 +377,7 @@ Dynamic allowances for TRUSTED mode user decisions.
 - **Write allowances** - Per-file or per-directory for write operations
 - **Execution allowances** - Per-directory or global for bash/run_python
 - **MCP allowances** - Per-server or per-tool MCP confirmations
+- **GitLab allowances** - Per-skill@instance for GitLab operations
 
 ```python
 from nexus3.core.allowances import SessionAllowances
@@ -366,9 +400,20 @@ allowances.add_exec_global("bash_safe")  # Any directory
 allowances.is_exec_allowed("run_python", cwd=Path("/project/scripts"))  # True
 allowances.is_exec_allowed("bash_safe", cwd=Path("/anywhere"))  # True (global)
 
+# Directory-only check (ignores global allowances)
+allowances.is_exec_directory_allowed("run_python", cwd=Path("/project/scripts"))  # True
+
 # MCP allowances
 allowances.add_mcp_server("github")
 allowances.is_mcp_server_allowed("github")  # True (all tools)
+
+# Per-tool MCP allowances
+allowances.add_mcp_tool("mcp_github_list_repos")
+allowances.is_mcp_tool_allowed("mcp_github_list_repos")  # True
+
+# GitLab allowances (skill@instance)
+allowances.add_gitlab_skill("gitlab_mr", "gitlab.com")
+allowances.is_gitlab_skill_allowed("gitlab_mr", "gitlab.com")  # True
 ```
 
 ---
@@ -479,6 +524,15 @@ cwd_decision = engine.check_cwd("/project/scripts", tool_name="bash")
 
 # From ServiceContainer (per-agent paths)
 engine = PathDecisionEngine.from_services(services, tool_name="read_file")
+
+# Inspect engine configuration
+engine.is_unrestricted()  # True if allowed_paths is None
+engine.explain_config()   # Human-readable config summary (multi-line string)
+
+# Properties
+engine.allowed_paths  # list[Path] | None
+engine.blocked_paths  # list[Path]
+engine.cwd            # Path
 ```
 
 ---
@@ -521,12 +575,12 @@ URL validation with IP range blocking.
 
 **Blocked Ranges:**
 
-- Cloud metadata endpoints (169.254.169.254)
+- Cloud metadata endpoints (169.254.169.254 -- always blocked, even with `allow_localhost`)
 - Link-local addresses (169.254.0.0/16)
-- Private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
-- Loopback (127.0.0.0/8, unless allow_localhost=True)
+- Private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 -- unless `allow_private=True`)
+- Loopback (127.0.0.0/8, ::1/128 -- unless `allow_localhost=True`)
 - IPv6 private/link-local (fc00::/7, fe80::/10)
-- Multicast addresses
+- Multicast addresses (224.0.0.0/4, ff00::/8)
 
 ```python
 from nexus3.core import validate_url, UrlSecurityError
@@ -587,17 +641,20 @@ Canonical tool/skill name validation and normalization.
 | `is_valid_tool_name()` | Check validity without raising |
 | `normalize_tool_name()` | Normalize external name to valid format |
 | `build_mcp_skill_name()` | Build MCP skill name from server + tool |
-| `parse_mcp_skill_name()` | Parse MCP skill name to (server, tool) |
+| `parse_mcp_skill_name()` | Parse MCP skill name to (server, tool) or `None` |
 | `ToolNameError` | Raised when name is invalid |
-| `RESERVED_TOOL_NAMES` | Names that cannot be used |
+| `RESERVED_TOOL_NAMES` | Names that cannot be used (e.g., `"system"`, `"mcp"`, `"nexus"`) |
+| `MAX_TOOL_NAME_LENGTH` | Maximum name length: 64 |
+| `MIN_TOOL_NAME_LENGTH` | Minimum name length: 1 |
+| `VALID_TOOL_NAME_PATTERN` | Regex for valid names: `^[a-zA-Z_][a-zA-Z0-9_-]{0,63}$` |
 
 ```python
 from nexus3.core.identifiers import normalize_tool_name, build_mcp_skill_name
 
 # Normalize external names
 normalize_tool_name("My Tool!")  # "my_tool"
-normalize_tool_name("123-start")  # "_123_start"
-normalize_tool_name("uber-tool")  # "uber_tool"
+normalize_tool_name("123-start")  # "_123-start"
+normalize_tool_name("--dangerous--")  # "dangerous"
 
 # Build MCP skill names
 build_mcp_skill_name("github", "list-repos")  # "mcp_github_list_repos"
@@ -769,7 +826,7 @@ Atomic, race-condition-free file operations.
 
 | Export | Description |
 |--------|-------------|
-| `secure_mkdir()` | Create directory with 0o700 permissions |
+| `secure_mkdir()` | Create directory with 0o700 permissions (`parents=True` by default) |
 | `secure_write_new()` | Atomically create new file with 0o600 |
 | `secure_write_atomic()` | Atomically write new or existing file |
 | `ensure_secure_file()` | Fix permissions on existing file |
@@ -888,16 +945,24 @@ Common operations used across modules.
 | Export | Description |
 |--------|-------------|
 | `deep_merge()` | Recursively merge dicts (lists REPLACED, not extended) |
-| `find_ancestor_config_dirs()` | Find `.nexus3` dirs in parent paths |
+| `find_ancestor_config_dirs()` | Find `.nexus3` dirs in parent paths (with optional `exclude_paths`) |
 
 ```python
-from nexus3.core.utils import deep_merge
+from nexus3.core.utils import deep_merge, find_ancestor_config_dirs
+from pathlib import Path
 
 base = {"a": 1, "b": {"x": 1}, "blocked": ["/etc"]}
 override = {"b": {"y": 2}, "blocked": []}  # Empty list replaces
 
 result = deep_merge(base, override)
 # {"a": 1, "b": {"x": 1, "y": 2}, "blocked": []}
+
+# Find ancestor .nexus3 directories (up to 2 levels by default)
+ancestors = find_ancestor_config_dirs(
+    cwd=Path("/home/user/project"),
+    max_depth=2,
+    exclude_paths=[Path("~/.nexus3")],  # Skip global dir
+)
 ```
 
 ---
@@ -941,7 +1006,7 @@ StreamComplete(Message)
 
 ## Dependencies
 
-- **Stdlib**: asyncio, dataclasses, enum, ipaddress, logging, os, pathlib, re, signal, socket, stat, subprocess, sys, tempfile, unicodedata
+- **Stdlib**: asyncio, collections.abc, ctypes (Windows only), dataclasses, enum, errno, functools, ipaddress, logging, os, pathlib, re, signal, socket, stat, subprocess, sys, tempfile, unicodedata
 - **PyPI**: jsonschema (validation), rich (markup escaping)
 
 ---
