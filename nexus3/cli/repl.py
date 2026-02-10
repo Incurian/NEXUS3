@@ -167,10 +167,11 @@ async def run_repl(
                     try:
                         from nexus3.client import NexusClient
                         server_url = result.server_url or f"http://127.0.0.1:{effective_port}"
-                        client = NexusClient.with_auto_auth(
-                            f"{server_url}/",
-                            api_key=result.api_key,
-                        )
+                        url = f"{server_url}/"
+                        if result.api_key:
+                            client = NexusClient(url, api_key=result.api_key)
+                        else:
+                            client = NexusClient.with_auto_auth(url)
                         await client.create_agent(result.agent_id)
                         console.print(f"[dim]Created agent: {result.agent_id}[/]")
                     except Exception as e:
@@ -1818,10 +1819,12 @@ async def _run_connect_with_discovery(args: argparse.Namespace) -> None:
                 try:
                     from nexus3.client import NexusClient
                     server_url = result.server_url or f"http://127.0.0.1:{effective_port}"
-                    client = NexusClient.with_auto_auth(
-                        f"{server_url}/",
-                        api_key=result.api_key or args.api_key,
-                    )
+                    url = f"{server_url}/"
+                    explicit_key = result.api_key or args.api_key
+                    if explicit_key:
+                        client = NexusClient(url, api_key=explicit_key)
+                    else:
+                        client = NexusClient.with_auto_auth(url)
                     await client.create_agent(result.agent_id)
                     console.print(f"[dim]Created agent: {result.agent_id}[/]")
                 except Exception as e:
