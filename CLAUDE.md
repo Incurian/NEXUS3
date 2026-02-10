@@ -317,7 +317,8 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `/permissions --list-tools` | List tool enable/disable status |
 | `/prompt [file]` | Show or set system prompt |
 | `/compact` | Force context compaction/summarization |
-| `/gitlab` | Quick reference for GitLab skill actions and examples |
+| `/gitlab` | Show GitLab status and configured instances |
+| `/gitlab on\|off` | Enable/disable GitLab tools for this session |
 
 ### MCP (External Tools)
 

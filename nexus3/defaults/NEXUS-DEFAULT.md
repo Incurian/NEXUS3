@@ -162,6 +162,8 @@ For clipboard internals, see `nexus3/clipboard/README.md`.
 
 ## GitLab Integration
 
+**GitLab tools are disabled by default** to save ~8k tokens per request. The user must run `/gitlab on` in the REPL to enable them. If a user asks about GitLab features and you don't have gitlab tools available, tell them to run `/gitlab on` first.
+
 21 GitLab skills are available when configured (requires TRUSTED+ permission):
 
 | Category | Skills |
@@ -347,7 +349,7 @@ When a user is interacting with you through the REPL, these commands are availab
 | `/prompt [file]` | Show or set system prompt |
 | `/compact` | Force context compaction |
 | `/mcp` | List MCP servers |
-| `/gitlab` | GitLab quick reference |
+| `/gitlab` | GitLab status and toggle (on/off) |
 
 For CLI and REPL internals, see `nexus3/cli/README.md`.
 
@@ -561,7 +563,7 @@ Git Bash maps drives to POSIX-style paths. Either format works:
 | Agent can't read files outside CWD | Sandboxed agents restricted to CWD | Use `trusted` preset for broader read access |
 | Context getting full | Long conversation filling token limit | Use `/compact` or `nexus3 rpc compact` |
 | Tool timeout | Operation exceeding default 120s timeout | Pass `timeout` parameter to execution tools |
-| GitLab tools not available | Missing config or insufficient permissions | Configure GitLab in config.json, use trusted+ preset |
+| GitLab tools not available | Disabled by default, or missing config | Run `/gitlab on` to enable; configure GitLab in config.json |
 | MCP tools not showing | Server not connected or tool listing failed | Use `/mcp connect <name>` or `/mcp retry <name>` |
 | Tool arguments JSON parse failure | Backslashes in Windows paths break JSON | Use forward slashes in all paths: `D:/path` not `D:\path` |
 

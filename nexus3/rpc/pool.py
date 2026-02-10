@@ -49,6 +49,7 @@ from nexus3.core.permissions import (
     PermissionDelta,
     PermissionLevel,
     PermissionPreset,
+    ToolPermission,
     resolve_preset,
 )
 from nexus3.mcp.registry import MCPServerRegistry
@@ -621,6 +622,12 @@ class AgentPool:
         # Register VCS skills (GitLab, GitHub) if configured
         register_vcs_skills(registry, services, permissions)
 
+        # Default gitlab skills to disabled (user enables via /gitlab on)
+        # Guard: skip tools already in tool_permissions (e.g. restored sessions)
+        for skill_name in list(registry._specs):
+            if skill_name.startswith("gitlab_") and skill_name not in permissions.tool_permissions:
+                permissions.tool_permissions[skill_name] = ToolPermission(enabled=False)
+
         # SECURITY FIX: Inject only enabled tool definitions into context
         # Disabled tools should not be visible to the LLM at all
         tool_defs = registry.get_definitions_for_permissions(permissions)
@@ -936,6 +943,12 @@ class AgentPool:
 
         # Register VCS skills (GitLab, GitHub) if configured
         register_vcs_skills(registry, services, permissions)
+
+        # Default gitlab skills to disabled (user enables via /gitlab on)
+        # Guard: skip tools already in tool_permissions (e.g. restored sessions)
+        for skill_name in list(registry._specs):
+            if skill_name.startswith("gitlab_") and skill_name not in permissions.tool_permissions:
+                permissions.tool_permissions[skill_name] = ToolPermission(enabled=False)
 
         # SECURITY FIX: Inject only enabled tool definitions into context
         # Disabled tools should not be visible to the LLM at all

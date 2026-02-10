@@ -25,14 +25,14 @@ from typing import TYPE_CHECKING, Any
 
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands.protocol import CommandContext, CommandOutput, CommandResult
-from nexus3.core.secure_io import SymlinkError, check_no_symlink
+from nexus3.core.errors import ProviderError
 from nexus3.core.permissions import (
     AgentPermissions,
     ToolPermission,
     get_builtin_presets,
     resolve_preset,
 )
-from nexus3.core.errors import ProviderError
+from nexus3.core.secure_io import SymlinkError, check_no_symlink
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.display import get_console
 from nexus3.rpc.pool import is_temp_agent
@@ -174,7 +174,8 @@ MCP (External Tools):
   /mcp retry <name>   Retry listing tools from a server
 
 GitLab:
-  /gitlab             List configured GitLab instances and auth status
+  /gitlab             Show GitLab status and configured instances
+  /gitlab on|off      Enable/disable GitLab tools for this session
   /gitlab test [name] Test connection to a GitLab instance
 
 Initialization:
@@ -525,37 +526,30 @@ Examples:
   /mcp prompts filesystem                 # List prompts from filesystem server
   /mcp retry filesystem                   # Retry failed server""",
 
-    "gitlab": """/gitlab [test <name>] [skills]
+    "gitlab": """/gitlab [on|off] [test <name>] [skills]
 
-Manage GitLab instances and view skill reference.
+Manage GitLab tools and instances.
 
 Subcommands:
-  /gitlab             List configured instances and authentication status
+  /gitlab             Show status (on/off) and configured instances
+  /gitlab on          Enable all GitLab tools for this session
+  /gitlab off         Disable all GitLab tools for this session
   /gitlab test [name] Test connection to instance (default instance if no name)
   /gitlab skills      Show all GitLab skills with actions and examples
   /gitlab help        Same as /gitlab skills
 
 Examples:
-  /gitlab                           # List all configured instances
-  /gitlab test                      # Test connection to default instance
-  /gitlab test work                 # Test connection to "work" instance
+  /gitlab                           # Show status and instances
+  /gitlab on                        # Enable 21 GitLab tools
+  /gitlab off                       # Disable and save tokens
+  /gitlab test                      # Test default instance connection
+  /gitlab test work                 # Test "work" instance connection
   /gitlab skills                    # Show GitLab skill reference
 
-Configuration:
-  Add GitLab instances to config.json:
-    "gitlab": {
-      "instances": {
-        "default": {
-          "url": "https://gitlab.com",
-          "token_env": "GITLAB_TOKEN"
-        }
-      },
-      "default_instance": "default"
-    }
-
 Notes:
-  - Tokens should be stored in environment variables (token_env), not directly
-  - Test verifies authentication and shows the authenticated user
+  - GitLab tools are disabled by default to save ~8k tokens per request
+  - Use /gitlab on to enable when you need them
+  - State persists when you save/resume sessions
   - GitLab skills require TRUSTED or YOLO permission level""",
 
     "init": """/init [--force|-f] [--global|-g]
@@ -670,10 +664,6 @@ async def cmd_agent(
     # Parse flags - strict validation (reject unknown flags)
     permission: str | None = None
     model: str | None = None
-    valid_flags = {
-        "--yolo", "-y", "--trusted", "-t", "--sandboxed", "-s",
-        "--model", "-m",
-    }
     i = 1
     while i < len(parts):
         part = parts[i]
@@ -954,8 +944,8 @@ async def cmd_cwd(
         # Validate against agent's allowed_paths if sandboxed
         permissions: AgentPermissions | None = agent.services.get("permissions")
         if permissions and permissions.effective_policy.allowed_paths:
-            from nexus3.core.paths import validate_path
             from nexus3.core.errors import PathSecurityError
+            from nexus3.core.paths import validate_path
             try:
                 validate_path(new_path, allowed_paths=permissions.effective_policy.allowed_paths)
             except PathSecurityError as e:
@@ -1377,9 +1367,12 @@ async def cmd_compact(ctx: CommandContext) -> CommandOutput:
                 preserve_ratio = config.compaction.recent_preserve_ratio
                 preserve_budget = int(available * preserve_ratio)
                 return CommandOutput.success(
-                    message=f"Nothing to compact - all {len(messages)} messages "
-                            f"({msg_tokens:,} tokens) fit within preserve budget "
-                            f"({preserve_budget:,} tokens, {int(preserve_ratio*100)}% of available)",
+                    message=(
+                        f"Nothing to compact - all {len(messages)} messages "
+                        f"({msg_tokens:,} tokens) fit within preserve budget "
+                        f"({preserve_budget:,} tokens, "
+                        f"{int(preserve_ratio*100)}% of available)"
+                    ),
                     data={
                         "compacted": False,
                         "reason": "within_preserve_budget",
@@ -1394,7 +1387,10 @@ async def cmd_compact(ctx: CommandContext) -> CommandOutput:
                 )
         else:
             return CommandOutput.success(
-                message=f"Compacted: {result.original_token_count:,} -> {result.new_token_count:,} tokens",
+                message=(
+                    f"Compacted: {result.original_token_count:,} "
+                    f"-> {result.new_token_count:,} tokens"
+                ),
                 data={
                     "compacted": True,
                     "original_tokens": result.original_token_count,
@@ -1779,7 +1775,8 @@ async def cmd_mcp(
                 return CommandOutput.error(f"Already connected to '{name}'")
             else:
                 return CommandOutput.error(
-                    f"Server '{name}' is connected by another agent (owner: {existing.owner_agent_id})"
+                    f"Server '{name}' is connected by another agent "
+                    f"(owner: {existing.owner_agent_id})"
                 )
 
         # Convert config schema to registry config
@@ -1934,7 +1931,11 @@ async def cmd_mcp(
             lines.append(f"  {skill.name}")
             if skill.description:
                 # Truncate long descriptions
-                desc = skill.description[:60] + "..." if len(skill.description) > 60 else skill.description
+                desc = (
+                    skill.description[:60] + "..."
+                    if len(skill.description) > 60
+                    else skill.description
+                )
                 lines.append(f"    {desc}")
 
         return CommandOutput.success(
@@ -1966,7 +1967,9 @@ async def cmd_mcp(
                     await _refresh_agent_tools(agent, registry, shared)
                 # If shared, refresh other agents too
                 if server.shared:
-                    await _refresh_all_other_agents_tools(current_agent_id, ctx.pool, registry, shared)
+                    await _refresh_all_other_agents_tools(
+                        current_agent_id, ctx.pool, registry, shared,
+                    )
                 return CommandOutput.success(
                     message=f"Successfully listed {tool_count} tools from '{server_name}'"
                 )
@@ -2093,7 +2096,10 @@ async def cmd_mcp(
                     message="\n".join(lines),
                     data={
                         "server": server_name,
-                        "prompts": [{"name": p.name, "description": p.description} for p in prompts],
+                        "prompts": [
+                            {"name": p.name, "description": p.description}
+                            for p in prompts
+                        ],
                     },
                 )
             except Exception as e:
@@ -2174,11 +2180,14 @@ async def cmd_init(ctx: CommandContext, args: str | None) -> CommandOutput:
 
 
 async def cmd_gitlab(ctx: CommandContext, args: str | None = None) -> CommandOutput:
-    """Handle /gitlab commands for GitLab instance management.
+    """Handle /gitlab commands for GitLab tool management.
 
     Subcommands:
-        /gitlab             List configured instances and auth status
+        /gitlab             Show status and configured instances
+        /gitlab on          Enable GitLab tools for this session
+        /gitlab off         Disable GitLab tools for this session
         /gitlab test [name] Test connection to an instance
+        /gitlab skills      Show skill reference
 
     Args:
         ctx: Command context with pool access.
@@ -2198,12 +2207,15 @@ async def cmd_gitlab(ctx: CommandContext, args: str | None = None) -> CommandOut
     parts = (args or "").strip().split()
 
     if len(parts) == 0:
-        # List instances
-        return await _gitlab_list_instances(config)
+        return _gitlab_status(ctx, config)
 
     subcmd = parts[0].lower()
 
-    if subcmd == "test":
+    if subcmd == "on":
+        return _gitlab_toggle(ctx, enable=True)
+    elif subcmd == "off":
+        return _gitlab_toggle(ctx, enable=False)
+    elif subcmd == "test":
         instance_name = parts[1] if len(parts) > 1 else None
         return await _gitlab_test_instance(config, instance_name)
     elif subcmd in ("skills", "help"):
@@ -2211,8 +2223,112 @@ async def cmd_gitlab(ctx: CommandContext, args: str | None = None) -> CommandOut
     else:
         return CommandOutput.error(
             f"Unknown GitLab subcommand: {subcmd}\n"
-            f"Usage: /gitlab [test <name>] [skills]"
+            f"Usage: /gitlab [on|off] [test <name>] [skills]"
         )
+
+
+def _gitlab_status(ctx: CommandContext, config: Any) -> CommandOutput:
+    """Show GitLab on/off status and configured instances."""
+    import os
+
+    # Count gitlab tools in current agent's registry
+    agent = ctx.pool.get(ctx.current_agent_id) if ctx.current_agent_id else None
+    perms: AgentPermissions | None = agent.services.get("permissions") if agent else None
+
+    enabled_count = 0
+    disabled_count = 0
+    if agent:
+        for name in agent.registry._specs:
+            if name.startswith("gitlab_"):
+                perm = perms.tool_permissions.get(name) if perms else None
+                if perm is not None and not perm.enabled:
+                    disabled_count += 1
+                else:
+                    enabled_count += 1
+
+    total = enabled_count + disabled_count
+    is_on = enabled_count > 0 and disabled_count == 0
+
+    lines: list[str] = []
+    if total == 0:
+        lines.append("GitLab: not configured (no gitlab tools registered)")
+    elif is_on:
+        lines.append(f"GitLab: ON ({total} tools enabled)")
+    else:
+        lines.append(f"GitLab: OFF ({total} tools disabled, ~8k tokens saved)")
+        lines.append("Use /gitlab on to enable for this session.")
+
+    # Show instances
+    gitlab_config = config.gitlab
+    if gitlab_config.instances:
+        lines.append("")
+        lines.append("Instances:")
+        for name, instance in gitlab_config.instances.items():
+            token = None
+            if instance.token:
+                token = instance.token
+            elif instance.token_env:
+                token = os.environ.get(instance.token_env)
+
+            default_marker = " (default)" if name == gitlab_config.default_instance else ""
+            status = "token configured" if token else "no token"
+            identity = ""
+            if instance.username:
+                identity = f" @{instance.username}"
+            lines.append(f"  {name}: {instance.url}{default_marker} ({status}{identity})")
+
+    if is_on:
+        lines.append("")
+        lines.append("Use /gitlab off to disable. /gitlab skills for reference.")
+
+    return CommandOutput.success(
+        message="\n".join(lines),
+        data={"enabled": is_on, "enabled_count": enabled_count, "disabled_count": disabled_count},
+    )
+
+
+def _gitlab_toggle(ctx: CommandContext, enable: bool) -> CommandOutput:
+    """Enable or disable all GitLab tools for the current agent."""
+    if ctx.current_agent_id is None:
+        return CommandOutput.error("No current agent")
+
+    agent = ctx.pool.get(ctx.current_agent_id)
+    if agent is None:
+        return CommandOutput.error(f"Agent not found: {ctx.current_agent_id}")
+
+    perms: AgentPermissions | None = agent.services.get("permissions")
+    if perms is None:
+        return CommandOutput.error("Cannot modify permissions: no policy set")
+
+    # Find all gitlab tools in registry
+    gitlab_tools = [name for name in agent.registry._specs if name.startswith("gitlab_")]
+
+    if not gitlab_tools:
+        return CommandOutput.error("No GitLab tools registered (check GitLab configuration)")
+
+    # Toggle each tool
+    count = 0
+    for tool_name in gitlab_tools:
+        if tool_name in perms.tool_permissions:
+            perms.tool_permissions[tool_name].enabled = enable
+        else:
+            perms.tool_permissions[tool_name] = ToolPermission(enabled=enable)
+        count += 1
+
+    # Resync tool definitions
+    agent.context.set_tool_definitions(
+        agent.registry.get_definitions_for_permissions(perms)
+    )
+
+    if enable:
+        msg = f"GitLab: ON ({count} tools enabled)"
+    else:
+        msg = f"GitLab: OFF ({count} tools disabled, ~8k tokens saved)"
+
+    return CommandOutput.success(
+        message=msg,
+        data={"enabled": enable, "count": count},
+    )
 
 
 async def _gitlab_list_instances(config: Any) -> CommandOutput:
@@ -2277,6 +2393,7 @@ async def _gitlab_list_instances(config: Any) -> CommandOutput:
 async def _gitlab_test_instance(config: Any, instance_name: str | None) -> CommandOutput:
     """Test connection to a GitLab instance."""
     import os
+
     from nexus3.skill.vcs.config import GitLabInstance
     from nexus3.skill.vcs.gitlab.client import GitLabAPIError, GitLabClient
 
@@ -2380,7 +2497,8 @@ gitlab_mr - Merge request operations
   Actions: list, get, create, update, merge, close, reopen, comment, diff, commits, pipelines
   Examples:
     gitlab_mr(action="list", project="my-org/repo", state="opened")
-    gitlab_mr(action="create", project="my-org/repo", source_branch="feature", target_branch="main", title="Add feature")
+    gitlab_mr(action="create", project="my-org/repo", source_branch="feature",
+      target_branch="main", title="Add feature")
     gitlab_mr(action="diff", project="my-org/repo", iid=10)
     gitlab_mr(action="merge", project="my-org/repo", iid=10, squash=True)
 
@@ -2401,7 +2519,8 @@ gitlab_tag - Tag operations
   Actions: list, get, create, delete, protect, unprotect, list-protected
   Examples:
     gitlab_tag(action="list", project="my-org/repo")
-    gitlab_tag(action="create", project="my-org/repo", name="v1.0.0", ref="main", message="Release 1.0")
+    gitlab_tag(action="create", project="my-org/repo",
+      name="v1.0.0", ref="main", message="Release 1.0")
 
 PHASE 2: PROJECT MANAGEMENT
 ---------------------------
@@ -2416,7 +2535,8 @@ gitlab_iteration - Iteration/sprint management (group-level, Premium)
   Actions: list, get, create, update, delete, list-cadences, create-cadence
   Examples:
     gitlab_iteration(action="list", group="my-group", state="current")
-    gitlab_iteration(action="create", group="my-group", title="Sprint 1", start_date="2026-01-01", due_date="2026-01-14")
+    gitlab_iteration(action="create", group="my-group",
+      title="Sprint 1", start_date="2026-01-01", due_date="2026-01-14")
 
 gitlab_milestone - Milestone operations (project or group)
   Actions: list, get, create, update, close, issues, merge-requests
@@ -2434,7 +2554,8 @@ gitlab_board - Issue board management
 gitlab_time - Time tracking on issues/MRs
   Actions: estimate, reset-estimate, spend, reset-spent, stats
   Examples:
-    gitlab_time(action="estimate", project="my-org/repo", iid=42, target_type="issue", duration="2d")
+    gitlab_time(action="estimate", project="my-org/repo",
+      iid=42, target_type="issue", duration="2d")
     gitlab_time(action="spend", project="my-org/repo", iid=42, target_type="issue", duration="4h")
     gitlab_time(action="stats", project="my-org/repo", iid=42, target_type="issue")
 
@@ -2453,15 +2574,18 @@ gitlab_draft - Draft notes for batch MR reviews
   Examples:
     gitlab_draft(action="list", project="my-org/repo", iid=10)
     gitlab_draft(action="add", project="my-org/repo", iid=10, body="LGTM!")
-    gitlab_draft(action="add", project="my-org/repo", iid=10, body="Fix this", path="src/main.py", line=42)
+    gitlab_draft(action="add", project="my-org/repo", iid=10,
+      body="Fix this", path="src/main.py", line=42)
     gitlab_draft(action="publish", project="my-org/repo", iid=10)
 
 gitlab_discussion - Threaded discussions on MRs/issues
   Actions: list, get, create, reply, resolve, unresolve
   Examples:
     gitlab_discussion(action="list", project="my-org/repo", iid=10, target_type="mr")
-    gitlab_discussion(action="create", project="my-org/repo", iid=10, target_type="mr", body="Question about this change")
-    gitlab_discussion(action="resolve", project="my-org/repo", iid=10, target_type="mr", discussion_id="abc123")
+    gitlab_discussion(action="create", project="my-org/repo",
+      iid=10, target_type="mr", body="Question about this change")
+    gitlab_discussion(action="resolve", project="my-org/repo",
+      iid=10, target_type="mr", discussion_id="abc123")
 
 PHASE 4: CI/CD
 --------------
@@ -2485,14 +2609,17 @@ gitlab_artifact - Artifact management
   Actions: download, download-file, browse, delete, keep, download-ref
   Examples:
     gitlab_artifact(action="browse", project="my-org/repo", job_id=67890)
-    gitlab_artifact(action="download", project="my-org/repo", job_id=67890, output_path="./artifacts.zip")
-    gitlab_artifact(action="download-ref", project="my-org/repo", ref="main", job_name="build", output_path="./build.zip")
+    gitlab_artifact(action="download", project="my-org/repo",
+      job_id=67890, output_path="./artifacts.zip")
+    gitlab_artifact(action="download-ref", project="my-org/repo",
+      ref="main", job_name="build", output_path="./build.zip")
 
 gitlab_variable - CI/CD variable management (project or group)
   Actions: list, get, create, update, delete
   Examples:
     gitlab_variable(action="list", project="my-org/repo")
-    gitlab_variable(action="create", project="my-org/repo", key="API_KEY", value="secret", masked=True, protected=True)
+    gitlab_variable(action="create", project="my-org/repo",
+      key="API_KEY", value="secret", masked=True, protected=True)
 
 PHASE 5: CONFIGURATION
 ----------------------
@@ -2501,16 +2628,19 @@ gitlab_deploy_key - Deploy key management
   Actions: list, get, create, update, delete, enable
   Examples:
     gitlab_deploy_key(action="list", project="my-org/repo")
-    gitlab_deploy_key(action="create", project="my-org/repo", title="CI Key", key="ssh-rsa AAA...", can_push=False)
+    gitlab_deploy_key(action="create", project="my-org/repo",
+      title="CI Key", key="ssh-rsa AAA...", can_push=False)
 
 gitlab_deploy_token - Deploy token management (project or group)
   Actions: list, get, create, delete
   Examples:
     gitlab_deploy_token(action="list", project="my-org/repo")
-    gitlab_deploy_token(action="create", project="my-org/repo", name="registry-token", scopes=["read_registry"])
+    gitlab_deploy_token(action="create", project="my-org/repo",
+      name="registry-token", scopes=["read_registry"])
 
 gitlab_feature_flag - Feature flag management (Premium)
-  Actions: list, get, create, update, delete, list-user-lists, create-user-list, update-user-list, delete-user-list
+  Actions: list, get, create, update, delete,
+    list-user-lists, create-user-list, update-user-list, delete-user-list
   Examples:
     gitlab_feature_flag(action="list", project="my-org/repo")
     gitlab_feature_flag(action="create", project="my-org/repo", name="new_feature", active=False)

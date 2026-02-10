@@ -719,7 +719,8 @@ Available when running interactively.
 | `/prompt [FILE]` | Show or set system prompt |
 | `/compact` | Force context compaction |
 | `/init [--force] [--global]` | Initialize project config |
-| `/gitlab` | Show GitLab configuration and skill reference |
+| `/gitlab` | Show GitLab status and configured instances |
+| `/gitlab on\|off` | Enable/disable GitLab tools for this session |
 
 #### MCP (External Tools)
 
