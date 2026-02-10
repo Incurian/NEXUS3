@@ -172,7 +172,8 @@ async def run_repl(
                             client = NexusClient(url, api_key=result.api_key)
                         else:
                             client = NexusClient.with_auto_auth(url)
-                        await client.create_agent(result.agent_id)
+                        async with client:
+                            await client.create_agent(result.agent_id)
                         console.print(f"[dim]Created agent: {result.agent_id}[/]")
                     except Exception as e:
                         console.print(f"[red]Failed to create agent: {e}[/]")
@@ -1825,7 +1826,8 @@ async def _run_connect_with_discovery(args: argparse.Namespace) -> None:
                         client = NexusClient(url, api_key=explicit_key)
                     else:
                         client = NexusClient.with_auto_auth(url)
-                    await client.create_agent(result.agent_id)
+                    async with client:
+                        await client.create_agent(result.agent_id)
                     console.print(f"[dim]Created agent: {result.agent_id}[/]")
                 except Exception as e:
                     console.print(f"[red]Failed to create agent: {e}[/]")
