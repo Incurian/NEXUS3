@@ -502,13 +502,25 @@ class StdioTransport(MCPTransport):
                 from nexus3.core.process import terminate_process_tree
                 await terminate_process_tree(self._process)
 
-            # Process is dead. Close the subprocess transport to release
-            # pipe handles and prevent "unclosed transport" ResourceWarnings
-            # on Windows ProactorEventLoop.
-            try:
-                self._process._transport.close()  # type: ignore[union-attr]
-            except Exception:
-                pass
+            # Process is dead. Explicitly close each pipe transport to
+            # prevent "unclosed transport" ResourceWarnings on Windows.
+            # ProactorEventLoop's transport.close() schedules cleanup via
+            # call_soon; the sleep(0) yields so those callbacks fire before
+            # the event loop shuts down.
+            transport = getattr(self._process, "_transport", None)
+            if transport is not None:
+                for fd in (0, 1, 2):
+                    try:
+                        pipe = transport.get_pipe_transport(fd)
+                        if pipe is not None:
+                            pipe.close()
+                    except Exception:
+                        pass
+                try:
+                    transport.close()
+                except Exception:
+                    pass
+                await asyncio.sleep(0)
 
             self._process = None
 
