@@ -425,6 +425,8 @@ nexus3 --model smart      # Use cloud model
 | `verify_ssl` | bool | `true` | Verify SSL certificates (set `false` for self-signed certs) |
 | `ssl_ca_cert` | string | - | Path to CA certificate file (for corporate CAs) |
 | `allow_insecure_http` | bool | `false` | Allow HTTP (non-HTTPS) for non-localhost URLs (security risk) |
+| `prompt_caching` | bool | `true` | Enable prompt caching (reduces cost ~90% on cached tokens) |
+| `models` | object | `{}` | Model aliases available through this provider |
 
 ### On-Prem / Self-Signed Certificates
 
@@ -659,7 +661,6 @@ nexus3 [OPTIONS]
 | `-V, --log-verbose` | false | Write debug output to verbose.md log file |
 | `--raw-log` | false | Log raw API JSON |
 | `--log-dir PATH` | `.nexus3/logs` | Log directory |
-| `-p, --port PORT` | 8765 | Server port |
 | `--api-key KEY` | Auto | Explicit API key |
 | `--scan PORTS` | - | Additional ports to scan (e.g., `9000,9001-9010`) |
 
@@ -1063,6 +1064,7 @@ If `~/.nexus3/config.json` exists, it's used as the base. If not, the shipped de
   "clipboard": { },
   "mcp_servers": [ ],
   "server": { },
+  "default_permission_level": "trusted",
   "permissions": { },
   "gitlab": { }
 }
@@ -1071,6 +1073,7 @@ If `~/.nexus3/config.json` exists, it's used as the base. If not, the shipped de
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `default_model` | string | `"haiku"` | Model alias to use by default |
+| `default_permission_level` | string | `"trusted"` | Default permission level for REPL agents |
 | `providers` | object | `{}` | Provider configurations — see [Provider Configuration](#provider-configuration) |
 | `stream_output` | bool | `true` | Stream LLM responses token-by-token |
 | `max_tool_iterations` | int | `10` | Max tool calls per turn |
@@ -1106,7 +1109,7 @@ See [Context Compaction](#context-compaction) in Session Management for behavior
 | Option | Default | Description |
 |--------|---------|-------------|
 | `enabled` | `true` | Enable automatic compaction |
-| `model` | `null` | Model alias for summarization (`null` = use default_model) |
+| `model` | `null` | Model alias for summarization (`null` = use default_model). Shipped defaults use `"fast"`. |
 | `trigger_threshold` | `0.9` | Trigger when 90% of context used |
 | `summary_budget_ratio` | `0.25` | Max 25% of tokens for summary |
 | `recent_preserve_ratio` | `0.25` | Keep 25% of recent messages verbatim |
@@ -1449,16 +1452,16 @@ Scoped clipboard system for sharing content between agents and sessions.
 |-------|-------------|----------------|
 | `copy` | Copy file content to clipboard | `source`, `key`, `scope`, `start_line`, `end_line`, `short_description`, `tags`, `ttl_seconds` |
 | `cut` | Cut file content to clipboard (removes from source) | `source`, `key`, `scope`, `start_line`, `end_line`, `short_description`, `tags`, `ttl_seconds` |
-| `paste` | Paste clipboard content to file | `key`, `path`, `scope`, `mode`, `line`, `start_line`, `end_line`, `marker` |
+| `paste` | Paste clipboard content to file | `key`, `target`, `scope`, `mode`, `line_number`, `start_line`, `end_line`, `marker`, `create_if_missing` |
 | `clipboard_list` | List clipboard entries | `scope`, `tags`, `any_tags`, `verbose` |
 | `clipboard_get` | Get full content of an entry | `key`, `scope` |
-| `clipboard_update` | Update entry metadata or content | `key`, `scope`, `new_key`, `description`, `content`, `ttl_seconds` |
+| `clipboard_update` | Update entry metadata or content | `key`, `scope`, `new_key`, `short_description`, `content`, `source`, `start_line`, `end_line`, `ttl_seconds` |
 | `clipboard_delete` | Delete an entry | `key`, `scope` |
 | `clipboard_clear` | Clear all entries in a scope | `scope`, `confirm` |
-| `clipboard_search` | Search entries by query | `query`, `scope`, `search_content`, `search_keys`, `search_descriptions`, `tags` |
-| `clipboard_tag` | Manage tags | `action`, `key`, `scope`, `tag`, `tags`, `description` |
-| `clipboard_export` | Export entries to JSON | `output_path`, `scope`, `keys`, `tags` |
-| `clipboard_import` | Import entries from JSON | `input_path`, `scope`, `conflict`, `dry_run` |
+| `clipboard_search` | Search entries by query | `query`, `scope`, `max_results` |
+| `clipboard_tag` | Manage tags | `action`, `entry_key`, `name`, `scope`, `description` |
+| `clipboard_export` | Export entries to JSON | `path`, `scope`, `tags` |
+| `clipboard_import` | Import entries from JSON | `path`, `scope`, `conflict`, `dry_run` |
 
 **Scopes:**
 - `agent`: Session-only (in-memory), isolated per agent
@@ -1563,7 +1566,6 @@ Create `mcp.json` in `~/.nexus3/` (global) or `.nexus3/` (project).
 | `env_passthrough` | `list[str]` | `[]` | Host env var names to pass through |
 | `cwd` | `str` | - | Working directory for subprocess |
 | `enabled` | `bool` | `true` | Whether server is enabled |
-| `fail_if_no_tools` | `bool` | `false` | Fail connection if tool listing fails |
 
 ### Example Configuration
 
@@ -2049,9 +2051,10 @@ nexus3 --raw-log          # Log raw API JSON to raw.jsonl
 ### Creating Custom Skills
 
 ```python
-from nexus3.skill import BaseSkill
+from nexus3.skill.base import BaseSkill, base_skill_factory
 from nexus3.core.types import ToolResult
 
+@base_skill_factory
 class MySkill(BaseSkill):
     @property
     def name(self) -> str:
@@ -2075,9 +2078,8 @@ class MySkill(BaseSkill):
         result = do_something(input)
         return ToolResult(output=result)
 
-# Factory for dependency injection
-def my_skill_factory(container):
-    return MySkill()
+# Factory for dependency injection (auto-attached by decorator)
+my_skill_factory = MySkill.factory
 ```
 
 ### Skill Base Classes
@@ -2110,13 +2112,7 @@ nexus3 rpc destroy test-agent
 
 ### CI/CD
 
-A GitLab CI example is provided in `.gitlab-ci.yml.example`. To use:
-
-```bash
-cp .gitlab-ci.yml.example .gitlab-ci.yml
-```
-
-The example includes:
+A GitLab CI pipeline is provided in `.gitlab-ci.yml`. It includes:
 - **Lint stage**: ruff check/format, mypy type checking
 - **Test stage**: Separate jobs for unit, integration, security tests
 - **Build stage**: Package building with artifacts
@@ -2145,4 +2141,4 @@ MIT
 
 ---
 
-**Updated**: 2026-02-05
+**Updated**: 2026-02-10

@@ -281,7 +281,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `/agent <name> --yolo\|--trusted\|--sandboxed` | Create agent with preset and switch |
 | `/agent <name> --model <alias>` | Create agent with specific model |
 | `/list` | List all active agents |
-| `/create <name> [--preset] [--model]` | Create agent without switching |
+| `/create <name> [--yolo\|--trusted\|--sandboxed] [--model]` | Create agent without switching |
 | `/destroy <name>` | Remove active agent from pool |
 | `/send <agent> <msg>` | One-shot message to another agent |
 | `/status [agent] [--tools] [--tokens] [-a]` | Get agent status (-a: all details) |
@@ -395,18 +395,18 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `nexus_status` | `agent_id`, `port`? | Get agent tokens + context |
 | `nexus_cancel` | `agent_id`, `request_id`, `port`? | Cancel in-progress request |
 | `nexus_shutdown` | `port`? | Shutdown the entire server |
-| `copy` | `path`, `key`, `scope`?, `start_line`?, `end_line`?, `description`?, `tags`?, `ttl_seconds`? | Copy file content to clipboard |
-| `cut` | `path`, `key`, `scope`?, `start_line`?, `end_line`?, `description`?, `tags`?, `ttl_seconds`? | Cut file content to clipboard (removes from source) |
-| `paste` | `key`, `path`, `scope`?, `mode`?, `line`?, `start_line`?, `end_line`?, `marker`? | Paste clipboard content to file |
+| `copy` | `source`, `key`, `scope`?, `start_line`?, `end_line`?, `short_description`?, `tags`?, `ttl_seconds`? | Copy file content to clipboard |
+| `cut` | `source`, `key`, `scope`?, `start_line`?, `end_line`?, `short_description`?, `tags`?, `ttl_seconds`? | Cut file content to clipboard (removes from source) |
+| `paste` | `key`, `target`, `scope`?, `mode`?, `line_number`?, `start_line`?, `end_line`?, `marker`?, `create_if_missing`? | Paste clipboard content to file |
 | `clipboard_list` | `scope`?, `tags`?, `any_tags`?, `verbose`? | List clipboard entries with optional tag filtering |
 | `clipboard_get` | `key`, `scope`? | Get full content of a clipboard entry |
-| `clipboard_update` | `key`, `scope`?, `new_key`?, `description`?, `content`?, `ttl_seconds`? | Update clipboard entry metadata or content |
+| `clipboard_update` | `key`, `scope`?, `new_key`?, `short_description`?, `content`?, `source`?, `start_line`?, `end_line`?, `ttl_seconds`? | Update clipboard entry metadata or content |
 | `clipboard_delete` | `key`, `scope`? | Delete a clipboard entry |
 | `clipboard_clear` | `scope`?, `confirm`? | Clear all entries in a scope |
-| `clipboard_search` | `query`, `scope`?, `search_content`?, `search_keys`?, `search_descriptions`?, `tags`? | Search clipboard entries |
-| `clipboard_tag` | `action`, `key`?, `scope`?, `tag`?, `tags`?, `description`? | Manage clipboard tags (list/add/remove/create/delete) |
-| `clipboard_export` | `output_path`, `scope`?, `keys`?, `tags`? | Export clipboard entries to JSON file |
-| `clipboard_import` | `input_path`, `scope`?, `conflict`?, `dry_run`? | Import clipboard entries from JSON file |
+| `clipboard_search` | `query`, `scope`?, `max_results`? | Search clipboard entries |
+| `clipboard_tag` | `action`, `entry_key`?, `name`?, `scope`?, `description`? | Manage clipboard tags (list/add/remove/create/delete) |
+| `clipboard_export` | `path`, `scope`?, `tags`? | Export clipboard entries to JSON file |
+| `clipboard_import` | `path`, `scope`?, `conflict`?, `dry_run`? | Import clipboard entries from JSON file |
 | `gitlab_repo` | `action`, `project`?, `instance`? | Repository operations (get, list, fork, search) |
 | `gitlab_issue` | `action`, `project`?, `iid`?, `title`?, ... | Issue CRUD (list, get, create, update, close, reopen, comment) |
 | `gitlab_mr` | `action`, `project`?, `iid`?, `source_branch`?, ... | Merge request operations (list, get, create, update, merge, close, diff, commits, pipelines) |
