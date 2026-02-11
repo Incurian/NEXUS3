@@ -593,7 +593,18 @@ When NEXUS3 runs from this directory, agents automatically pick up these instruc
 
 ### Multi-Agent Workflows
 
-NEXUS3 shines when you need multiple agents working together. Manage everything from within the REPL:
+NEXUS3 agents have built-in tools (`nexus_create`, `nexus_send`, `nexus_status`, `nexus_destroy`) that let them spawn and coordinate subagents on their own. When you ask an agent to do something complex, it can break the work across multiple specialized subagents without you having to manage them manually.
+
+For example, asking your main agent to "review the auth module for security issues and update the docs" might cause it to:
+1. Create a `reviewer` subagent scoped to `src/auth/`
+2. Create a `docs-writer` subagent
+3. Send the review task to `reviewer`, wait for findings
+4. Forward the findings to `docs-writer` to update documentation
+5. Destroy both subagents when done
+
+You don't need to orchestrate any of this — the agent handles it.
+
+**Manual control is also available** when you want to interact with subagents directly:
 
 ```
 you> /create researcher --trusted
@@ -620,6 +631,7 @@ Destroyed agent 'researcher'
 - `/create NAME --trusted` - Create a new agent
 - `/whisper NAME` - Redirect your input to that agent
 - `/over` - Return to your original agent
+- `/send NAME <msg>` - One-shot message without entering whisper mode
 - `/status NAME` - Check agent's token usage and state
 - `/list` - See all active agents
 
