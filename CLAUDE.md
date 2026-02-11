@@ -336,6 +336,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `/send <agent> <msg>` | One-shot message to another agent |
 | `/status [agent] [--tools] [--tokens] [-a]` | Get agent status (-a: all details) |
 | `/cancel [agent]` | Cancel in-progress request |
+| `/shutdown` | Shutdown the server (stops all agents) |
 
 ### Session Management
 

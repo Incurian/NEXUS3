@@ -20,7 +20,7 @@ class TestMainHelpCompleteness:
     IMPLEMENTED_COMMANDS: Set[str] = {
         # Agent management
         "agent", "whisper", "over", "list", "create", "destroy",
-        "send", "status", "cancel",
+        "send", "status", "cancel", "shutdown",
         # Session management
         "save", "clone", "rename", "delete",
         # Configuration

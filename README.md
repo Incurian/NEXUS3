@@ -689,6 +689,7 @@ Available when running interactively.
 | `/send AGENT MESSAGE` | One-shot message to agent |
 | `/status [AGENT] [--tools] [--tokens] [-a]` | Get agent status (`-a` for all details) |
 | `/cancel [AGENT]` | Cancel in-progress request |
+| `/shutdown` | Shutdown server (stops all agents) |
 
 #### Inter-Agent Communication
 

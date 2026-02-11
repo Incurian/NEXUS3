@@ -144,6 +144,7 @@ Agent Management:
   /send <agent> <msg> One-shot message to another agent
   /status [agent] [--tools] [--tokens] [-a]  Get agent status (-a: all details)
   /cancel [agent]     Cancel in-progress request
+  /shutdown           Shutdown the server (stops all agents)
 
 Session Management:
   /save [name]        Save current session (prompts for name if temp)
@@ -340,6 +341,20 @@ Arguments:
 Examples:
   /cancel                         # Cancel current agent's request
   /cancel worker-1                # Cancel another agent's request""",
+
+    "shutdown": """/shutdown
+
+Shutdown the server and stop all agents.
+
+Arguments: None
+
+Examples:
+  /shutdown                       # Gracefully stop the server
+
+Notes:
+  - All active agents are stopped
+  - Saved sessions are NOT affected
+  - The REPL exits after shutdown""",
 
     "save": """/save [name]
 

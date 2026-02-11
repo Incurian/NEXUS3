@@ -1101,8 +1101,13 @@ async def run_repl(
         cmd_name = parts[0].lower() if parts else ""
         cmd_args = parts[1] if len(parts) > 1 else ""
 
-        # Check for --help or -h flag - show command help instead of executing
-        if cmd_args and ("--help" in cmd_args.split() or "-h" in cmd_args.split()):
+        # Check for help flags - show command help instead of executing
+        # Supports: /<cmd> --help, /<cmd> -h, /<cmd> help
+        if cmd_args and (
+            cmd_args.strip().lower() == "help"
+            or "--help" in cmd_args.split()
+            or "-h" in cmd_args.split()
+        ):
             help_text = repl_commands.get_command_help(cmd_name)
             if help_text:
                 return CommandOutput.success(message=help_text)

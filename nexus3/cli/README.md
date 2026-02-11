@@ -235,6 +235,7 @@ Slash command implementations for the interactive REPL.
 | `/send <agent> <msg>` | One-shot message to another agent |
 | `/status [agent] [--tools] [--tokens] [-a]` | Get status |
 | `/cancel [agent]` | Cancel in-progress request |
+| `/shutdown` | Shutdown server (stops all agents) |
 
 #### Session Management
 
@@ -275,6 +276,7 @@ Slash command implementations for the interactive REPL.
 | Command | Description |
 |---------|-------------|
 | `/gitlab` | List configured instances and auth status |
+| `/gitlab on\|off` | Enable/disable GitLab tools for this session |
 | `/gitlab test [name]` | Test connection to instance |
 | `/gitlab skills` | Show all GitLab skills with actions and examples |
 
@@ -700,6 +702,7 @@ worker-1> /over            # Return to original agent
 > /help                     # Overview of all commands
 > /help save                # Detailed help for /save
 > /save --help              # Same as /help save
+> /save help                # Also works
 ```
 
 ### Headless Server
