@@ -62,6 +62,7 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern |
 | `grep` | `pattern`, `path`, `include`?, `context`?, `ignore_case`? | Search file contents with regex |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `dry_run`? | Concatenate files by extension (dry_run=true by default) |
+| `outline` | `path`, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`? | Structural outline of file/directory. Use line numbers to target read_file. `symbol` reads a specific class/function body. `tokens` adds estimates. `diff` marks changed sections |
 
 ### File Operations (Write)
 | Tool | Key Parameters | Description |
@@ -115,6 +116,50 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 | `sleep` | `seconds`, `label`? | Pause execution |
 
 For the skill system architecture and creating custom skills, see `nexus3/skill/README.md`.
+
+### File Reading Workflow
+
+**Use `outline` before `read_file` for unfamiliar files.** An outline costs 100-500 tokens vs 5,000-50,000 for the full file. Get the structure first, then read only what you need:
+```
+outline(path="src/auth.py")                          # ~200 tokens: see classes, functions, line numbers
+read_file(path="src/auth.py", offset=120, limit=40)  # ~400 tokens: read just the function you need
+```
+
+**Use `outline` with `symbol` to jump directly to a definition:**
+```
+outline(path="src/auth.py", symbol="AuthManager")    # Returns full body of AuthManager class with line numbers
+```
+
+**Use `outline` with `depth=1` for quick orientation:**
+```
+outline(path="src/auth.py", depth=1)                 # Top-level only: classes and module functions, no methods
+```
+
+**Use `outline` on a directory to map a module:**
+```
+outline(path="src/auth/")                            # Per-file top-level symbols for all supported files
+```
+
+**Use `outline` with `tokens=true` to plan your reading budget:**
+```
+outline(path="src/auth.py", tokens=true)             # Each entry shows (~N tokens) for its body
+```
+
+**Use `outline` with `diff=true` to focus on recent changes:**
+```
+outline(path="src/auth.py", diff=true)               # Entries with uncommitted changes marked [CHANGED]
+```
+
+**Choosing the right read tool:**
+
+| Goal | Tool | Why |
+|------|------|-----|
+| Understand file structure | `outline` | Cheapest — structure only, ~100-500 tokens |
+| Read a specific symbol | `outline` with `symbol` | Targeted — no need to know line numbers |
+| Read specific lines | `read_file` with `offset`/`limit` | Precise — use line numbers from outline |
+| Read full file | `read_file` | Expensive — use only when you need everything |
+| Search for a pattern | `grep` | When you know what to look for but not where |
+| Find files by name | `glob` | When you know the filename pattern |
 
 ---
 

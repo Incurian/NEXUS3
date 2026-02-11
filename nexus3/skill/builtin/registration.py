@@ -31,6 +31,7 @@ from nexus3.skill.builtin.nexus_destroy import nexus_destroy_factory
 from nexus3.skill.builtin.nexus_send import nexus_send_factory
 from nexus3.skill.builtin.nexus_shutdown import nexus_shutdown_factory
 from nexus3.skill.builtin.nexus_status import nexus_status_factory
+from nexus3.skill.builtin.outline import outline_factory
 from nexus3.skill.builtin.patch import patch_factory
 from nexus3.skill.builtin.read_file import read_file_factory
 from nexus3.skill.builtin.regex_replace import regex_replace_factory
@@ -61,6 +62,7 @@ def register_builtin_skills(registry: SkillRegistry) -> None:
     registry.register("glob", glob_factory)
     registry.register("grep", grep_factory)
     registry.register("concat_files", concat_files_factory)
+    registry.register("outline", outline_factory)
 
     # File operations (destructive)
     registry.register("write_file", write_file_factory)
