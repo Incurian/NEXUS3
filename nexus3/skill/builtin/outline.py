@@ -1351,6 +1351,8 @@ class OutlineSkill(FileSkill):
     def description(self) -> str:
         return (
             "Get the structural outline of a file (headings, classes, functions, keys). "
+            "Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, "
+            "Markdown, HTML, CSS, SQL, Makefile, Dockerfile. "
             "Use line numbers in output to target read_file for details. "
             "Pass a directory to get per-file top-level symbols. "
             "Use symbol='ClassName' to read a specific symbol's body. "

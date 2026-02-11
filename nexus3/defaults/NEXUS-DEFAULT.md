@@ -62,7 +62,7 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern |
 | `grep` | `pattern`, `path`, `include`?, `context`?, `ignore_case`? | Search file contents with regex |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `dry_run`? | Concatenate files by extension (dry_run=true by default) |
-| `outline` | `path`, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`? | Structural outline of file/directory. Use line numbers to target read_file. `symbol` reads a specific class/function body. `tokens` adds estimates. `diff` marks changed sections |
+| `outline` | `path`, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`? | Structural outline of file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Use `symbol` for filtered read, `tokens` for estimates, `diff` for changes |
 
 ### File Operations (Write)
 | Tool | Key Parameters | Description |
