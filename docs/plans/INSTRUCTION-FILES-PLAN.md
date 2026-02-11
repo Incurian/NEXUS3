@@ -993,41 +993,41 @@ None. All design decisions have been resolved in the spec.
 ## Implementation Checklist
 
 ### Phase 1: Config Schema (Required First)
-- [ ] **P1.1** Add `instruction_files` field to `ContextConfig` in `nexus3/config/schema.py`
-- [ ] **P1.2** Add `validate_instruction_files` field validator (security: no paths, must be .md)
-- [ ] **P1.3** Remove `include_readme` and `readme_as_fallback` fields from `ContextConfig`
-- [ ] **P1.4** Add `migrate_deprecated_context_fields` pre-validator on `Config` root model
-- [ ] **P1.5** Update `nexus3/defaults/config.json` context section
-- [ ] **P1.6** Unit tests for new `ContextConfig` validation and migration
+- [x] **P1.1** Add `instruction_files` field to `ContextConfig` in `nexus3/config/schema.py`
+- [x] **P1.2** Add `validate_instruction_files` field validator (security: no paths, must be .md)
+- [x] **P1.3** Remove `include_readme` and `readme_as_fallback` fields from `ContextConfig`
+- [x] **P1.4** Add `migrate_deprecated_context_fields` pre-validator on `Config` root model
+- [x] **P1.5** Update `nexus3/defaults/config.json` context section
+- [x] **P1.6** Unit tests for new `ContextConfig` validation and migration
 
 ### Phase 2: Loader Search Logic (After Phase 1)
-- [ ] **P2.1** Add `INSTRUCTION_FILE_SEARCH_DIRS` constant and `InstructionFileResult` dataclass to `loader.py`
-- [ ] **P2.2** Add `_get_search_locations()` method to `ContextLoader`
-- [ ] **P2.3** Add `_find_instruction_file()` method to `ContextLoader`
-- [ ] **P2.4** Add `prompt_source_path` and `prompt_filename` fields to `ContextLayer`
-- [ ] **P2.5** Unit tests for `_find_instruction_file()` (all priority scenarios)
+- [x] **P2.1** Add `INSTRUCTION_FILE_SEARCH_DIRS` constant and `InstructionFileResult` dataclass to `loader.py`
+- [x] **P2.2** Add `_get_search_locations()` method to `ContextLoader`
+- [x] **P2.3** Add `_find_instruction_file()` method to `ContextLoader`
+- [x] **P2.4** Add `prompt_source_path` and `prompt_filename` fields to `ContextLayer`
+- [x] **P2.5** Unit tests for `_find_instruction_file()` (all priority scenarios)
 
 ### Phase 3: Update `_load_layer()` (After Phase 2)
-- [ ] **P3.1** Replace hardcoded NEXUS.md loading with `_find_instruction_file()` call
-- [ ] **P3.2** Remove separate README.md loading block (lines 229-238)
-- [ ] **P3.3** Update `_format_prompt_section()` to use `layer.prompt_source_path` and check `layer.prompt_filename` for README wrapping
-- [ ] **P3.4** Update existing tests in `test_context_loader.py` for new behavior
-- [ ] **P3.5** Update security tests in `test_p2_18_readme_injection.py`
+- [x] **P3.1** Replace hardcoded NEXUS.md loading with `_find_instruction_file()` call
+- [x] **P3.2** Remove separate README.md loading block (lines 229-238)
+- [x] **P3.3** Update `_format_prompt_section()` to use `layer.prompt_source_path` and check `layer.prompt_filename` for README wrapping
+- [x] **P3.4** Update existing tests in `test_context_loader.py` for new behavior
+- [x] **P3.5** Update security tests in `test_p2_18_readme_injection.py`
 
 ### Phase 4: Update `load_for_subagent()` (After Phase 2, can parallel with Phase 3)
-- [ ] **P4.1** Replace hardcoded NEXUS.md path resolution with `_find_instruction_file()` call
-- [ ] **P4.2** Update subagent context tests
+- [x] **P4.1** Replace hardcoded NEXUS.md path resolution with `_find_instruction_file()` call
+- [x] **P4.2** Update subagent context tests
 
 ### Phase 5: Update `/init` Command (After Phase 1, can parallel with Phases 2-4)
-- [ ] **P5.1** Add `filename` parameter to `init_local()` in `init_commands.py`, default to `AGENTS.md`
-- [ ] **P5.2** Update `cmd_init()` in `repl_commands.py` to parse filename argument
-- [ ] **P5.3** Update `/init` help text in `cmd_init` docstring
-- [ ] **P5.4** Update init command tests in `test_init_commands.py`
+- [x] **P5.1** Add `filename` parameter to `init_local()` in `init_commands.py`, default to `AGENTS.md`
+- [x] **P5.2** Update `cmd_init()` in `repl_commands.py` to parse filename argument
+- [x] **P5.3** Update `/init` help text in `cmd_init` docstring
+- [x] **P5.4** Update init command tests in `test_init_commands.py`
 
 ### Phase 6: Integration Tests (After Phases 3-5)
-- [ ] **P6.1** Create `tests/integration/test_instruction_file_priority.py` with E2E scenarios
-- [ ] **P6.2** Verify all existing tests pass with updated code (`pytest tests/ -v`)
-- [ ] **P6.3** Verify ruff and mypy pass (`ruff check nexus3/` and `mypy nexus3/`)
+- [x] **P6.1** Tests added to `test_context_loader.py` (12 new tests in TestInstructionFilePriority)
+- [x] **P6.2** All 3546 tests pass
+- [x] **P6.3** `ruff check nexus3/` — 0 errors
 
 ### Phase 7: Live Testing (After Phase 6)
 - [ ] **P7.1** Live test: agent in dir with only `.agents/AGENTS.md` discovers it
@@ -1038,13 +1038,13 @@ None. All design decisions have been resolved in the spec.
 - [ ] **P7.6** Live test: compaction reloads instruction file via priority search
 
 ### Phase 8: Documentation (After Live Testing)
-- [ ] **P8.1** Update `CLAUDE.md` Context Loading section: replace NEXUS.md references with instruction_files description
-- [ ] **P8.2** Update `CLAUDE.md` Configuration Reference: update context config options
-- [ ] **P8.3** Update `CLAUDE.md` `/init` command docs with filename argument
-- [ ] **P8.4** Update `nexus3/context/README.md`: loading rules, ContextLayer fields, search logic
-- [ ] **P8.5** Update `nexus3/config/README.md`: context config fields
-- [ ] **P8.6** Update `nexus3/cli/README.md`: /init command documentation
-- [ ] **P8.7** Update `nexus3/defaults/README.md`: context config options
+- [x] **P8.1** Update `CLAUDE.md` Context Loading section: instruction_files priority, search locations table
+- [x] **P8.2** Update `CLAUDE.md` Configuration Reference: update context config options
+- [x] **P8.3** Update `CLAUDE.md` `/init` command docs with filename argument
+- [x] **P8.4** Update `nexus3/context/README.md`: loading rules, ContextConfig note
+- [x] **P8.5** Update `nexus3/config/README.md`: context config fields
+- [x] **P8.6** Update `nexus3/cli/README.md`: /init command documentation
+- [x] **P8.7** Update `nexus3/defaults/README.md`: context config options
 
 ---
 
