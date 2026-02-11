@@ -33,6 +33,7 @@ nexus3/
 ├── display/        # DisplayManager, StreamingDisplay, InlinePrinter, SummaryBar, theme
 ├── cli/            # Unified REPL, lobby, whisper, HTTP server, client commands
 ├── rpc/            # JSON-RPC protocol, Dispatcher, GlobalDispatcher, AgentPool, auth
+├── ide/            # IDE bridge, WebSocket MCP transport, lock file discovery, context injection
 ├── mcp/            # Model Context Protocol client, external tool integration
 ├── commands/       # Unified command infrastructure for CLI and REPL
 ├── defaults/       # Default configuration and system prompts
@@ -1475,14 +1476,15 @@ Do NOT use a NEXUS coordinator agent in the middle - Claude Code is better at co
 
 Implementation plans for UI/UX improvements, bug fixes, and features are in `docs/plans/`:
 
-| Plan | Description | Effort |
+| Plan | Description | Status |
 |------|-------------|--------|
-| `DRY-CLEANUP-PLAN.md` | DRY violations, dead code removal, naming fixes from Opus 4.6 review | 1-2 days |
-| `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | 2 weeks |
+| `IDE-INTEGRATION-PLAN.md` | VS Code IDE integration (diffs, diagnostics, context) | **In progress** — P1+P2 done, P3 next |
+| `DRY-CLEANUP-PLAN.md` | DRY violations, dead code removal, naming fixes from Opus 4.6 review | Planned |
+| `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | Planned |
 
-#### Next Up: DRY-CLEANUP-PLAN
+#### In Progress: IDE-INTEGRATION-PLAN
 
-Opus 4.6 codebase review identified 10 cleanup items in 4 phases. All decisions resolved. See `docs/plans/DRY-CLEANUP-PLAN.md` for full details.
+Phase 1 (Python `nexus3/ide/` module) and Phase 2 (VS Code extension `editors/vscode/`) complete. Phase 3 (wiring into config, pool, bootstrap, context, repl, session) is next. See `docs/plans/IDE-INTEGRATION-PLAN.md` for full details and checklist.
 
 ### Known Bugs
 
