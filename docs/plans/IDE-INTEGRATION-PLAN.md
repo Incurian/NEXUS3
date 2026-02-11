@@ -1051,21 +1051,21 @@ Validated by subagent against actual codebase. 7/8 claims verified with zero dis
 - [x] **P3.10** Tests updated: help_completeness.py (ide in IMPLEMENTED_COMMANDS), test_pool.py (ide_bridge in fields)
 - [x] **P3.11** Verified: `ruff check nexus3/` 0 errors (also fixed pre-existing StrEnum lint), `pytest tests/` 3731 passed
 
-### Phase 4: Polish & Error Recovery (After Phase 2+3)
-- [ ] **P4.1** Fix `is_connected` in transport to detect dead listener + add `reconnect_if_dead()` to bridge
-- [ ] **P4.2** Wire reconnection into confirmation callback and session context refresh
-- [ ] **P4.3** Add unit tests for reconnection logic
-- [ ] **P4.4** Verify: `ruff check nexus3/` and `pytest tests/` pass
+### Phase 4: Polish & Error Recovery — DONE (commit 3b4a326)
+- [x] **P4.1** Fix `is_connected` in transport to detect dead listener + add `reconnect_if_dead()` to bridge
+- [x] **P4.2** Wire reconnection into confirmation callback and session context refresh
+- [x] **P4.3** Add unit tests for reconnection logic (12 new tests)
+- [x] **P4.4** Verified: `ruff check nexus3/` 0 errors, `pytest tests/` 3743 passed
 
-### Phase 5: Documentation (After Implementation Complete)
-- [ ] **P5.1** Write `nexus3/ide/README.md` (module architecture, classes, usage, security)
-- [ ] **P5.2** Write `editors/vscode/README.md` (install, develop, tools reference, troubleshooting)
-- [ ] **P5.3** Update `CLAUDE.md` Architecture section — ALREADY DONE (ide/ added in P3 commit)
-- [ ] **P5.4** Update `CLAUDE.md` REPL Commands Reference: add `/ide` command table after MCP section
-- [ ] **P5.5** Update `CLAUDE.md` Configuration Reference: add IDEConfig section with example JSON
-- [ ] **P5.6** Update `CLAUDE.md` Context System: add "IDE Context" subsection (parallel to "Git Repository Context")
-- [ ] **P5.7** Add IDE section to `NEXUS-DEFAULT.md` (setup, commands, troubleshooting)
-- [ ] **P5.8** Update root `README.md` feature list + add IDE Integration section
+### Phase 5: Documentation — DONE (commit TBD)
+- [x] **P5.1** Write `nexus3/ide/README.md` (module architecture, classes, usage, security)
+- [x] **P5.2** Write `editors/vscode/README.md` (install, develop, tools reference, troubleshooting)
+- [x] **P5.3** Update `CLAUDE.md` Architecture section — ALREADY DONE (ide/ added in P3 commit)
+- [x] **P5.4** Update `CLAUDE.md` REPL Commands Reference: add `/ide` command table after MCP section
+- [x] **P5.5** Update `CLAUDE.md` Configuration Reference: add IDEConfig section with example JSON
+- [x] **P5.6** Update `CLAUDE.md` Context System: add "IDE Context" subsection (parallel to "Git Repository Context")
+- [x] **P5.7** Add IDE section to `NEXUS-DEFAULT.md` (setup, commands, troubleshooting)
+- [x] **P5.8** Update root `README.md` feature list + add IDE Integration section
 
 ---
 

@@ -20,6 +20,7 @@ Most AI coding tools give you one agent in one conversation. NEXUS3 gives you a 
 - [Built-in Skills](#built-in-skills)
 - [GitLab Integration](#gitlab-integration)
 - [MCP Integration](#mcp-integration)
+- [IDE Integration](#ide-integration)
 - [Session Management](#session-management)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
@@ -68,6 +69,10 @@ System prompts (`NEXUS.md`) and config files load from multiple directory layers
 ### MCP Integration
 
 Connect external tools via the Model Context Protocol. Supports stdio and HTTP transports, with environment variable sanitization, graceful degradation on connection failure, and lazy reconnection. MCP tools integrate into the same permission system as built-in skills.
+
+### IDE Integration
+
+Connect NEXUS3 to VS Code for enhanced agent-editor interaction. File-write confirmations appear as diffs in the editor with Accept/Reject buttons. Agents automatically see open editor tabs and LSP diagnostics in their context. Auto-discovers running IDEs via lock files, with transparent reconnection on connection loss.
 
 ---
 
@@ -1688,6 +1693,59 @@ MCP servers only receive safe environment variables by default (PATH, HOME, USER
 - Use `/mcp retry <server>` to manually retry tool listing after fixing configuration issues
 
 For detailed MCP configuration and protocol coverage, see `nexus3/mcp/README.md`.
+
+---
+
+## IDE Integration
+
+NEXUS3 integrates with VS Code to provide editor-aware agent capabilities.
+
+### Setup
+
+1. Build and install the VS Code extension:
+   ```bash
+   cd editors/vscode && npm install && npm run build
+   ```
+   Then install in VS Code via Extensions → "Install from VSIX" or symlink.
+
+2. Open your project in VS Code (extension activates automatically).
+
+3. Start NEXUS3 — it auto-discovers and connects to VS Code on startup.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| Diff confirmations | File writes shown as diffs in editor with Accept/Reject buttons |
+| Diagnostic awareness | LSP errors/warnings injected into agent context |
+| Open tab awareness | Agent sees which files you have open |
+| Auto-discovery | Finds running IDEs via lock files in `~/.nexus3/ide/` |
+| Auto-reconnection | Transparently reconnects on dead connections |
+| Terminal fallback | Falls back to terminal confirmation when IDE unavailable |
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/ide` | Show IDE connection status |
+| `/ide connect` | Manually discover and connect |
+| `/ide disconnect` | Disconnect from IDE |
+
+### Configuration
+
+```json
+{
+  "ide": {
+    "enabled": true,
+    "auto_connect": true,
+    "inject_diagnostics": true,
+    "inject_open_editors": true,
+    "use_ide_diffs": true
+  }
+}
+```
+
+For detailed documentation, see `nexus3/ide/README.md` and `editors/vscode/README.md`.
 
 ---
 

@@ -256,6 +256,38 @@ For MCP configuration and protocol details, see `nexus3/mcp/README.md`.
 
 ---
 
+## IDE Integration
+
+NEXUS3 can connect to your IDE (VS Code) to enhance agent capabilities:
+
+- **Diff confirmations**: File-write changes shown as diffs in the editor with Accept/Reject buttons
+- **Diagnostics**: LSP errors and warnings injected into agent context
+- **Open tabs**: Agent sees which files you have open
+
+### Setup
+
+1. Install the NEXUS3 VS Code extension from `editors/vscode/`
+2. Open your project in VS Code (extension activates automatically)
+3. Start NEXUS3 — it auto-connects to VS Code on startup
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/ide` | Show IDE connection status |
+| `/ide connect` | Manually discover and connect to IDE |
+| `/ide disconnect` | Disconnect from IDE |
+
+### How It Works
+
+When connected, agents see IDE context in their system prompt (open tabs, diagnostics). File-write confirmations (for `write_file`, `edit_file`, etc.) are routed through the VS Code diff viewer instead of the terminal. If the IDE disconnects, NEXUS3 falls back to terminal confirmations automatically.
+
+### Disabling
+
+Set `"ide": {"enabled": false}` in your config, or use `/ide disconnect` to disconnect for the current session.
+
+---
+
 ## Execution Modes
 
 **Sequential (Default)**: Tools execute one at a time, in order. Use for dependent operations where one step needs the result of another.

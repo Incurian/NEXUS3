@@ -390,6 +390,20 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 - Dead connections automatically reconnect when tools are needed (lazy reconnection)
 - Use `/mcp retry <server>` to manually retry tool listing after fixing configuration issues
 
+### IDE Integration
+
+| Command | Description |
+|---------|-------------|
+| `/ide` | Show IDE connection status |
+| `/ide connect` | Discover and connect to a running IDE |
+| `/ide disconnect` | Disconnect from the current IDE |
+
+**Key behaviors:**
+- Auto-connects on REPL startup when `config.ide.enabled` and `config.ide.auto_connect` are true
+- File-write confirmations routed through IDE diff viewer when connected (Accept/Reject in editor)
+- Falls back to terminal confirmation when IDE is disconnected or diff extraction fails
+- Reconnects automatically on dead connections during confirmation or context refresh
+
 ### Initialization
 
 | Command | Description |
@@ -689,6 +703,32 @@ Git repository detected in CWD.
 - Credentials stripped from remote URLs
 - Returns nothing (no injection) if not a git repo
 - Stash count and worktrees only shown when non-zero
+
+### IDE Context
+
+When connected to an IDE (VS Code), IDE state is automatically injected into the system prompt. This gives agents awareness of what the user is working on.
+
+Example injection:
+```
+IDE connected: VS Code
+  Open tabs: main.py, utils.py, test_main.py
+  Diagnostics: 2 errors, 1 warnings
+    main.py:42: Name 'foo' is not defined
+    utils.py:10: Missing return type annotation
+```
+
+**Refresh triggers:**
+
+| Event | Description |
+|-------|-------------|
+| Tool batch completion | Refreshed after any tool execution completes |
+
+**Properties:**
+- Hard-capped at 800 characters
+- Shows up to 10 open editor tabs (filenames only)
+- Shows error/warning counts + error details (up to 50)
+- Returns nothing if IDE is disconnected or no data available
+- Controlled by `inject_diagnostics` and `inject_open_editors` config flags
 
 ---
 
@@ -1076,6 +1116,30 @@ GitLab tools require pre-configured instances in `~/.nexus3/config.json` or `.ne
 - `yolo`: Full access to agent/project/system scopes
 - `trusted`: Read/write agent+project, read-only system
 - `sandboxed`: Agent scope only (in-memory, session-only)
+
+### IDE Configuration
+
+```json
+{
+  "ide": {
+    "enabled": true,
+    "auto_connect": true,
+    "inject_diagnostics": true,
+    "inject_open_editors": true,
+    "use_ide_diffs": true
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `true` | Enable IDE bridge creation at startup |
+| `auto_connect` | `true` | Automatically discover and connect to running IDEs |
+| `inject_diagnostics` | `true` | Inject LSP diagnostics into agent context |
+| `inject_open_editors` | `true` | Inject list of open editor tabs into agent context |
+| `use_ide_diffs` | `true` | Route file-write confirmations through IDE diff viewer |
+
+**Prerequisites:** Install the NEXUS3 VS Code extension (`editors/vscode/`). The extension creates lock files in `~/.nexus3/ide/` that NEXUS3 discovers at startup.
 
 <!-- PART III: DEVELOPMENT GUIDE -->
 
