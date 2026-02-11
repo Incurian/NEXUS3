@@ -42,6 +42,7 @@ dev = [
     "ruff>=0.3.0",
     "mypy>=1.8",
     "watchfiles>=0.21.0",
+    "aiohttp>=3.9.0",
 ]
 # Minimal CI dependencies (no watchfiles needed)
 ci = [
