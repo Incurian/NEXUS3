@@ -1478,8 +1478,6 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 | Plan | Description | Effort |
 |------|-------------|--------|
 | `DRY-CLEANUP-PLAN.md` | DRY violations, dead code removal, naming fixes from Opus 4.6 review | 1-2 days |
-| `OUTLINE-TOOL-PLAN.md` | `outline` skill — structural file overview (headings, classes, keys) with extensions | 2-3 days |
-| `INSTRUCTION-FILES-PLAN.md` | Configurable instruction file priority (AGENTS.md/CLAUDE.md/README.md support) | 1-2 days |
 | `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | 2 weeks |
 
 #### Next Up: DRY-CLEANUP-PLAN

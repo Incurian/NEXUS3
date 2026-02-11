@@ -1393,7 +1393,7 @@ For configuration loading internals and validation, see `nexus3/config/README.md
 
 ## Built-in Skills
 
-NEXUS3 includes 39 built-in skills organized by category, plus 21 GitLab integration skills (see [GitLab Integration](#gitlab-integration)).
+NEXUS3 includes 40 built-in skills organized by category, plus 21 GitLab integration skills (see [GitLab Integration](#gitlab-integration)).
 
 ### File Operations (Read)
 
@@ -1406,6 +1406,7 @@ NEXUS3 includes 39 built-in skills organized by category, plus 21 GitLab integra
 | `glob` | Find files by pattern | `pattern`, `path`, `exclude` |
 | `grep` | Search file contents | `pattern`, `path`, `include`, `context`, `recursive`, `ignore_case`, `max_matches` |
 | `concat_files` | Concatenate files by extension | `extensions`, `path`, `exclude`, `lines`, `max_total`, `format`, `sort`, `gitignore`, `dry_run` |
+| `outline` | Structural outline of file/directory | `path`, `depth`, `preview`, `signatures`, `line_numbers`, `tokens`, `symbol`, `diff` |
 
 ### File Operations (Write)
 

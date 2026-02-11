@@ -65,6 +65,7 @@ nexus3/skill/
 │   ├── glob_search.py    # Glob pattern file search
 │   ├── grep.py           # Regex content search (CREATE_NO_WINDOW on Windows)
 │   ├── concat_files.py   # Find and concatenate files by extension
+│   ├── outline.py        # Structural file/directory outline (16 language parsers)
 │   ├── regex_replace.py  # Regex find/replace (line ending preservation)
 │   ├── bash.py           # Shell execution (safe + unsafe, CREATE_NO_WINDOW on Windows)
 │   ├── run_python.py     # Python code execution (CREATE_NO_WINDOW on Windows)
@@ -594,7 +595,7 @@ definitions = registry.get_definitions_for_permissions(agent_permissions)
 
 ## Built-in Skills
 
-NEXUS3 includes 39 core built-in skills plus 21 GitLab skills (when configured), organized by category:
+NEXUS3 includes 40 core built-in skills plus 21 GitLab skills (when configured), organized by category:
 
 ### File Operations (Read-Only)
 
@@ -607,6 +608,7 @@ NEXUS3 includes 39 core built-in skills plus 21 GitLab skills (when configured),
 | `glob` | Find files by glob pattern | `pattern`, `path?`, `max_results?`, `exclude?` |
 | `grep` | Search file contents (regex), uses ripgrep when available | `pattern`, `path`, `recursive?`, `ignore_case?`, `max_matches?`, `include?`, `context?` |
 | `concat_files` | Find and concatenate files by extension with token estimation | `extensions`, `path?`, `exclude?`, `lines?`, `max_total?`, `format?`, `sort?`, `gitignore?`, `dry_run?` |
+| `outline` | Structural outline of file/directory (headings, classes, functions, keys) | `path`, `depth?`, `preview?`, `signatures?`, `line_numbers?`, `tokens?`, `symbol?`, `diff?` |
 
 ### File Operations (Destructive)
 
@@ -714,7 +716,7 @@ from nexus3.skill.builtin.registration import register_builtin_skills
 from nexus3.skill.vcs import register_vcs_skills
 
 registry = SkillRegistry(services)
-register_builtin_skills(registry)  # Registers 39 core skills
+register_builtin_skills(registry)  # Registers 40 core skills
 
 # VCS skills are registered separately (requires config + TRUSTED+ permissions)
 count = register_vcs_skills(registry, services, permissions)  # Up to 21 GitLab skills
@@ -1024,7 +1026,7 @@ async def main():
 
     # Create registry and register skills
     registry = SkillRegistry(services)
-    register_builtin_skills(registry)  # 39 core skills
+    register_builtin_skills(registry)  # 40 core skills
 
     # Register VCS skills if configured (requires gitlab_config in services)
     # vcs_count = register_vcs_skills(registry, services, permissions)
