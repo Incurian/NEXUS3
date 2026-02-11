@@ -1038,33 +1038,218 @@ Validated by subagent against actual codebase. 7/8 claims verified with zero dis
 - [x] **P2.7** Tool dispatch in `src/tools/index.ts` (11 tools)
 - [x] **P2.8** Extension builds clean (`npm run build` + `tsc --noEmit` zero errors)
 
-### Phase 3: NEXUS3 Integration (IN PROGRESS — next up)
-- [ ] **P3.1** Add `IDEConfig` to `nexus3/config/schema.py` (can parallel P3.2–P3.5)
-- [ ] **P3.2** Add `ide_bridge` to `SharedComponents` + register in ServiceContainer in `_create_unlocked()` (in `nexus3/rpc/pool.py`)
-- [ ] **P3.3** Initialize IDE bridge in `nexus3/rpc/bootstrap.py` (requires P3.1, P3.2)
-- [ ] **P3.4** Add `_ide_context` + `refresh_ide_context(ide_context: str | None)` to `ContextManager` (can parallel P3.1–P3.3)
-- [ ] **P3.5** Inject IDE context in `_build_system_prompt_for_api_call()` (requires P3.4)
-- [ ] **P3.6** Implement IDE-aware confirmation callback + content extraction in `nexus3/cli/repl.py` (requires P3.3)
-- [ ] **P3.7** Wire `confirm_with_ide_or_terminal` at all 6 `on_confirm` sites (lines 414, 1365, 1409, 1427, 1461, 1477) + auto-connect on startup (requires P3.6)
-- [ ] **P3.8** Add `cmd_ide()` to `nexus3/cli/repl_commands.py` + dispatch in `repl.py` (can parallel P3.6)
-- [ ] **P3.9** Add IDE context refresh on tool batch completion in `nexus3/session/session.py` (requires P3.2, P3.4)
-- [ ] **P3.10** Write integration tests for confirmation flow and context injection
-- [ ] **P3.11** Verify: `ruff check nexus3/` and `pytest tests/` pass
+### Phase 3: NEXUS3 Integration — DONE (commit 838244d)
+- [x] **P3.1** Add `IDEConfig` to `nexus3/config/schema.py` (5 fields: enabled, auto_connect, inject_diagnostics, inject_open_editors, use_ide_diffs)
+- [x] **P3.2** Add `ide_bridge` to `SharedComponents` + register in ServiceContainer in `_create_unlocked()` (in `nexus3/rpc/pool.py`)
+- [x] **P3.3** Initialize IDE bridge in `nexus3/rpc/bootstrap.py` (REPL-only, when enabled)
+- [x] **P3.4** Add `_ide_context` + `refresh_ide_context(ide_context: str | None)` to `ContextManager`
+- [x] **P3.5** Inject IDE context in `_build_system_prompt_for_api_call()` (between git and clipboard)
+- [x] **P3.6** Implement IDE-aware confirmation callback + content extraction in `nexus3/cli/repl.py`
+- [x] **P3.7** Wire `confirm_with_ide_or_terminal` at all 6 `on_confirm` sites + auto-connect on startup
+- [x] **P3.8** Add `cmd_ide()` to `nexus3/cli/repl_commands.py` + dispatch + help text + COMMAND_HELP
+- [x] **P3.9** Add IDE context refresh on tool batch completion in `nexus3/session/session.py`
+- [x] **P3.10** Tests updated: help_completeness.py (ide in IMPLEMENTED_COMMANDS), test_pool.py (ide_bridge in fields)
+- [x] **P3.11** Verified: `ruff check nexus3/` 0 errors (also fixed pre-existing StrEnum lint), `pytest tests/` 3731 passed
 
 ### Phase 4: Polish & Error Recovery (After Phase 2+3)
-- [ ] **P4.1** WebSocket reconnection on connection loss
-- [ ] **P4.2** Handle IDE restart (extension deactivate/reactivate)
-- [ ] **P4.3** Edge cases: new file diff (empty old side), multiple simultaneous diffs, large files
+- [ ] **P4.1** Fix `is_connected` in transport to detect dead listener + add `reconnect_if_dead()` to bridge
+- [ ] **P4.2** Wire reconnection into confirmation callback and session context refresh
+- [ ] **P4.3** Add unit tests for reconnection logic
+- [ ] **P4.4** Verify: `ruff check nexus3/` and `pytest tests/` pass
 
 ### Phase 5: Documentation (After Implementation Complete)
-- [ ] **P5.1** Write `nexus3/ide/README.md` (module architecture, classes, usage)
-- [ ] **P5.2** Write `editors/vscode/README.md` (install, configure, develop)
-- [ ] **P5.3** Update `CLAUDE.md` Architecture section: add `ide/` module to module structure table
-- [ ] **P5.4** Update `CLAUDE.md` REPL Commands Reference: add `/ide` command rows
+- [ ] **P5.1** Write `nexus3/ide/README.md` (module architecture, classes, usage, security)
+- [ ] **P5.2** Write `editors/vscode/README.md` (install, develop, tools reference, troubleshooting)
+- [ ] **P5.3** Update `CLAUDE.md` Architecture section — ALREADY DONE (ide/ added in P3 commit)
+- [ ] **P5.4** Update `CLAUDE.md` REPL Commands Reference: add `/ide` command table after MCP section
 - [ ] **P5.5** Update `CLAUDE.md` Configuration Reference: add IDEConfig section with example JSON
 - [ ] **P5.6** Update `CLAUDE.md` Context System: add "IDE Context" subsection (parallel to "Git Repository Context")
-- [ ] **P5.7** Add IDE-aware guidance to `NEXUS-DEFAULT.md` (when IDE connected, how agent should use it)
-- [ ] **P5.8** Update root `README.md` feature list with IDE integration
+- [ ] **P5.7** Add IDE section to `NEXUS-DEFAULT.md` (setup, commands, troubleshooting)
+- [ ] **P5.8** Update root `README.md` feature list + add IDE Integration section
+
+---
+
+## Implementation Details: Phase 4 (Polish & Error Recovery)
+
+### P4.1 — Fix `is_connected` + Add `reconnect_if_dead()` to Bridge
+
+**Problem**: When WebSocket closes, the listener task in `transport.py` exits but `_ws` stays non-None, so `is_connected` returns True on a dead connection. Subsequent calls then fail with `ConnectionClosed`.
+
+**Fix 1 — Transport** (`nexus3/ide/transport.py`):
+
+Update `is_connected` to also check if the listener task is still alive:
+
+```python
+@property
+def is_connected(self) -> bool:
+    return (
+        self._ws is not None
+        and self._ws.protocol is not None
+        and self._listener_task is not None
+        and not self._listener_task.done()
+    )
+```
+
+**Fix 2 — Bridge** (`nexus3/ide/bridge.py`):
+
+Add `reconnect_if_dead()` method and store `_last_cwd` for re-discovery:
+
+```python
+class IDEBridge:
+    def __init__(self, config: IDEConfig) -> None:
+        self._config = config
+        self._connection: IDEConnection | None = None
+        self._diff_lock = asyncio.Lock()
+        self._last_cwd: Path | None = None  # For reconnection
+
+    async def auto_connect(self, cwd: Path) -> IDEConnection | None:
+        # ... existing code ...
+        self._last_cwd = cwd  # Remember for reconnection
+        return await self.connect(ides[0])
+
+    async def reconnect_if_dead(self, cwd: Path | None = None) -> bool:
+        """Attempt reconnection if currently disconnected.
+
+        Returns True if connected (already or after reconnection).
+        """
+        if self.is_connected:
+            return True
+        effective_cwd = cwd or self._last_cwd
+        if not effective_cwd:
+            return False
+        # Clean up old connection
+        if self._connection:
+            try:
+                await self.disconnect()
+            except Exception:
+                self._connection = None
+        # Re-discover
+        ides = discover_ides(effective_cwd)
+        if not ides:
+            return False
+        try:
+            await self.connect(ides[0])
+            logger.info("IDE reconnected after connection loss")
+            return True
+        except Exception:
+            logger.debug("IDE reconnect failed", exc_info=True)
+            return False
+```
+
+### P4.2 — Wire Reconnection into Callers
+
+**Confirmation callback** (`nexus3/cli/repl.py`):
+
+In `confirm_with_ide_or_terminal`, attempt reconnect before checking `is_connected`:
+
+```python
+async def confirm_with_ide_or_terminal(...):
+    ide_bridge = shared.ide_bridge if shared else None
+    if (
+        ide_bridge
+        and shared.config.ide.use_ide_diffs
+        and tool_call.name in _IDE_DIFF_TOOLS
+        and target_path
+    ):
+        # Attempt reconnect if dead
+        if not ide_bridge.is_connected:
+            await ide_bridge.reconnect_if_dead()
+
+        if ide_bridge.is_connected:
+            proposed = await _extract_proposed_content(tool_call, target_path)
+            # ... rest of existing diff logic
+```
+
+**Session context refresh** (`nexus3/session/session.py`):
+
+No change needed — context refresh already catches all exceptions and is non-fatal. A dead connection will simply skip IDE context (acceptable).
+
+### P4.3 — Unit Tests
+
+Add to `tests/unit/ide/test_transport.py`:
+- `test_is_connected_false_when_listener_done` — Mock listener task with `.done()=True`
+
+Add to `tests/unit/ide/test_bridge.py`:
+- `test_reconnect_if_dead_already_connected` — Returns True, no re-discovery
+- `test_reconnect_if_dead_finds_new_ide` — Mocks discover_ides returning new IDE
+- `test_reconnect_if_dead_no_ides_found` — Returns False
+- `test_reconnect_if_dead_connect_fails` — Exception during connect, returns False
+- `test_auto_connect_stores_last_cwd` — Verify `_last_cwd` set after auto_connect
+
+---
+
+## Implementation Details: Phase 5 (Documentation)
+
+### P5.1 — `nexus3/ide/README.md`
+
+Create comprehensive module README following `nexus3/mcp/README.md` format. Include:
+- Overview (what it does, key capabilities)
+- Architecture diagram (module structure, data flow)
+- Result types table (DiffOutcome, Diagnostic, Selection, EditorInfo)
+- IDEConnection API table (11 methods with params/returns/description)
+- IDEBridge lifecycle table (auto_connect, connect, disconnect, reconnect_if_dead)
+- Discovery mechanism (lock files, PID validation, workspace matching)
+- WebSocketTransport (MCPTransport subclass, auth, ping/timeout)
+- Context injection (format_ide_context, 800 char limit, refresh triggers)
+- Integration points (SharedComponents, ContextManager, Session, REPL)
+- Configuration (IDEConfig 5 fields with defaults)
+- Security (localhost-only, auth token, lock file perms, PID validation)
+- Module exports list
+
+### P5.2 — `editors/vscode/README.md`
+
+Create extension README. Include:
+- Overview (what, why, how)
+- Architecture (extension.ts → server.ts → tools/)
+- Installation (marketplace + from source)
+- Lock file format (JSON schema)
+- Tools reference table (11 tools with params/returns/behavior)
+- Diff workflow detail (the blocking confirmation pattern)
+- Extension commands (diffAccept/diffReject)
+- Development (build, watch, lint commands)
+- Dependencies (ws, typescript, esbuild)
+- Troubleshooting table
+- Security notes
+
+### P5.3 — CLAUDE.md Architecture (ALREADY DONE)
+
+The `ide/` module was added to the module structure table in the P3 commit (838244d). No further changes needed.
+
+### P5.4 — CLAUDE.md REPL Commands Reference
+
+Add after the "MCP (External Tools)" table and before "Initialization". Add an "### IDE Integration" subsection with a 3-row table for `/ide`, `/ide connect`, `/ide disconnect`.
+
+### P5.5 — CLAUDE.md Configuration Reference
+
+Add after "### Clipboard Configuration" section. Include:
+- IDEConfig example JSON (5 fields)
+- Options table (option, default, description)
+- How-it-works summary (discovery → connection → context → confirmations)
+- Prerequisites (VS Code extension)
+
+### P5.6 — CLAUDE.md Context System
+
+Add after "### Git Repository Context" section. Include:
+- What's injected (IDE name, open tabs, diagnostics)
+- Refresh triggers table (agent startup, tool batch, CWD change, etc.)
+- Example injection text
+- Configuration (inject_diagnostics, inject_open_editors flags)
+
+### P5.7 — NEXUS-DEFAULT.md
+
+Add "## IDE Integration" section with user-friendly guidance:
+- Setup (install extension)
+- Commands (/ide, /ide connect, /ide disconnect)
+- What agents see (open tabs, diagnostics)
+- Diff confirmations (Accept/Reject in editor)
+- Troubleshooting table
+- How to disable
+
+### P5.8 — Root README.md
+
+Add IDE Integration to feature list subsection and add a new "## IDE Integration" section:
+- Brief description, installation, commands table, config example
+- Link to detailed docs (CLAUDE.md, module READMEs)
 
 ---
 
