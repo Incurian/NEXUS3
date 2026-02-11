@@ -290,13 +290,12 @@ Context compaction summarizes old messages when context exceeds threshold:
 
 ### Context Configuration
 
-Controls NEXUS.md prompt loading:
+Controls instruction file loading:
 
 ```json
 {
   "context": {
-    "include_readme": false,
-    "readme_as_fallback": false
+    "instruction_files": ["NEXUS.md", "AGENTS.md", "CLAUDE.md", "README.md"]
   }
 }
 ```
@@ -304,8 +303,7 @@ Controls NEXUS.md prompt loading:
 | Field | Type | Default | Description |
 |------|------|---------|-------------|
 | `ancestor_depth` | `int` | `2` | Directory levels above CWD to search (0-10) |
-| `include_readme` | `bool` | `false` | Always include README.md alongside NEXUS.md |
-| `readme_as_fallback` | `bool` | `false` | Use README.md when no NEXUS.md exists |
+| `instruction_files` | `list[str]` | `["NEXUS.md", "AGENTS.md", "CLAUDE.md", "README.md"]` | Ordered priority list of instruction filenames to search |
 
 ### MCP Servers Configuration
 
@@ -487,7 +485,7 @@ All other settings inherit from earlier layers (global, then defaults).
 1. **No secrets in defaults** - API keys come from environment variables via `api_key_env`
 2. **Sandboxed RPC default** - `default_permission_level` is `trusted` for REPL only; RPC agents default to `sandboxed`
 3. **Safe MCP defaults** - Test MCP servers only, real servers configured per-user
-4. **README opt-in** - `readme_as_fallback: false` prevents untrusted READMEs from injecting prompts
+4. **README safety** - README.md is last in instruction_files priority list and wrapped with documentation boundaries
 5. **SSL verification enabled by default** - On-prem examples show how to configure custom CAs securely
 6. **Split prompt design** - System docs auto-update, user customizations preserved
 

@@ -338,8 +338,7 @@ Configuration for context loading.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `ancestor_depth` | `int` | `2` | Directory levels above CWD to search (0-10) |
-| `include_readme` | `bool` | `False` | Always include README.md |
-| `readme_as_fallback` | `bool` | `False` | Use README when no NEXUS.md exists (opt-in for security) |
+| `instruction_files` | `list[str]` | `["NEXUS.md", "AGENTS.md", "CLAUDE.md", "README.md"]` | Ordered priority list of instruction filenames to search per layer |
 
 ### `ServerConfig`
 

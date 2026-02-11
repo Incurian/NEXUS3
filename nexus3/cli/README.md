@@ -284,7 +284,7 @@ Slash command implementations for the interactive REPL.
 
 | Command | Description |
 |---------|-------------|
-| `/init` | Create `.nexus3/` in current directory |
+| `/init [FILENAME]` | Create `.nexus3/` with AGENTS.md (default) or specified .md file |
 | `/init --force` | Overwrite existing config |
 | `/init --global` | Initialize `~/.nexus3/` instead |
 
@@ -748,7 +748,9 @@ nexus3 --init-global
 nexus3 --init-global-force  # Overwrite existing
 
 # Initialize project config (from REPL)
-> /init
+> /init                  # Creates AGENTS.md (default)
+> /init NEXUS.md         # Creates NEXUS.md
+> /init CLAUDE.md        # Creates CLAUDE.md
 > /init --force
 > /init --global
 ```

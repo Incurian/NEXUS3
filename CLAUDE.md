@@ -393,7 +393,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 
 | Command | Description |
 |---------|-------------|
-| `/init` | Create .nexus3/ in current directory |
+| `/init [FILENAME]` | Create .nexus3/ with AGENTS.md (default) or specified .md file |
 | `/init --force` | Overwrite existing config |
 | `/init --global` | Initialize ~/.nexus3/ instead |
 
@@ -503,6 +503,25 @@ LAYER 2: Ancestors (up to N levels above CWD, default 2)
 LAYER 3: Local (CWD/.nexus3/)
 ```
 
+#### Instruction File Priority
+
+Each non-global layer searches for instruction files using a configurable priority list. First file found wins per layer:
+
+```json
+"instruction_files": ["NEXUS.md", "AGENTS.md", "CLAUDE.md", "README.md"]
+```
+
+Each filename checks tool-convention directories before project root:
+
+| Filename | Locations checked (in order) |
+|----------|------------------------------|
+| `NEXUS.md` | `.nexus3/` → `./` |
+| `AGENTS.md` | `.nexus3/` → `.agents/` → `./` |
+| `CLAUDE.md` | `.nexus3/` → `.claude/` → `.agents/` → `./` |
+| `README.md` | `./` only (wrapped with documentation boundaries) |
+
+**Global layer (~/.nexus3/) is exempt** — always loads `NEXUS.md`.
+
 #### Directory Structure
 
 ```
@@ -511,16 +530,16 @@ nexus3/defaults/              # Package (auto-updates with upgrades)
 └── NEXUS.md                  # Template (copied to ~/.nexus3/ on init)
 
 ~/.nexus3/                    # Global (user customizations)
-├── NEXUS.md                  # User's custom instructions
+├── NEXUS.md                  # User's custom instructions (always NEXUS.md)
 ├── config.json               # Personal configuration
 └── mcp.json                  # Personal MCP servers
 
 ./parent/.nexus3/             # Ancestor (1 level up)
-├── NEXUS.md
+├── AGENTS.md                 # Or NEXUS.md, CLAUDE.md — per priority list
 └── config.json
 
 ./.nexus3/                    # Local (CWD)
-├── NEXUS.md                  # Project-specific prompt
+├── AGENTS.md                 # Or NEXUS.md, CLAUDE.md — per priority list
 ├── config.json               # Project config overrides
 └── mcp.json                  # Project MCP servers
 ```
@@ -528,20 +547,20 @@ nexus3/defaults/              # Package (auto-updates with upgrades)
 #### Split Context Design
 
 - **NEXUS-DEFAULT.md** (package only): Contains tool docs, permissions, limits - auto-updates with package upgrades
-- **NEXUS.md** (user's): Contains custom instructions - preserved across upgrades
+- **Instruction files** (user's): Custom instructions in NEXUS.md, AGENTS.md, or CLAUDE.md - preserved across upgrades
 
 This split ensures users get new tool documentation automatically while keeping their customizations safe.
 
 #### Configuration Merging
 
 - **Configs**: Deep merged (local keys override global, unspecified keys preserved)
-- **NEXUS.md**: All layers included with labeled sections
+- **Instruction files**: All layers included with labeled sections (first-found per layer)
 - **MCP servers**: Same name = local wins
 
 #### Subagent Context Inheritance
 
 Subagents created with `cwd` parameter get:
-1. Their cwd's NEXUS.md (if exists)
+1. Their cwd's instruction file (found via priority search)
 2. Parent's context (non-redundantly)
 
 #### Init Commands
@@ -552,7 +571,9 @@ nexus3 --init-global           # Create ~/.nexus3/ with defaults
 nexus3 --init-global-force     # Overwrite existing
 
 # Initialize local config (REPL)
-/init                         # Create ./.nexus3/ with templates
+/init                         # Create ./.nexus3/ with AGENTS.md (default)
+/init NEXUS.md                # Create ./.nexus3/ with NEXUS.md
+/init CLAUDE.md               # Create ./.nexus3/ with CLAUDE.md
 /init --force                 # Overwrite existing
 /init --global                # Initialize ~/.nexus3/ instead
 ```
@@ -563,8 +584,7 @@ nexus3 --init-global-force     # Overwrite existing
 {
   "context": {
     "ancestor_depth": 2,       // How many parent dirs to check (0-10)
-    "include_readme": false,   // Always include README.md
-    "readme_as_fallback": false // Use README when no NEXUS.md (opt-in for security)
+    "instruction_files": ["NEXUS.md", "AGENTS.md", "CLAUDE.md", "README.md"]
   }
 }
 ```

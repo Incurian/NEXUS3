@@ -731,7 +731,7 @@ Available when running interactively.
 | `/permissions --list-tools` | List all tools and their status |
 | `/prompt [FILE]` | Show or set system prompt |
 | `/compact` | Force context compaction |
-| `/init [--force] [--global]` | Initialize project config |
+| `/init [FILENAME] [--force] [--global]` | Initialize project config (default: AGENTS.md) |
 | `/gitlab` | Show GitLab status and configured instances |
 | `/gitlab on\|off` | Enable/disable GitLab tools for this session |
 
@@ -1189,11 +1189,13 @@ NEXUS.md files are loaded from multiple directories and **concatenated** (not ov
 
 ```bash
 # From within the REPL
-/init                    # Creates .nexus3/ in current directory
+/init                    # Creates .nexus3/ with AGENTS.md (default)
+/init NEXUS.md           # Creates .nexus3/ with NEXUS.md
+/init CLAUDE.md          # Creates .nexus3/ with CLAUDE.md
 
 # Or manually
 mkdir -p .nexus3
-# Then create .nexus3/NEXUS.md with your project instructions
+# Then create .nexus3/AGENTS.md with your project instructions
 ```
 
 Subagents created with a `cwd` parameter automatically pick up the NEXUS.md from their working directory.
@@ -1204,8 +1206,7 @@ Subagents created with a `cwd` parameter automatically pick up the NEXUS.md from
 {
   "context": {
     "ancestor_depth": 2,
-    "include_readme": false,
-    "readme_as_fallback": false
+    "instruction_files": ["NEXUS.md", "AGENTS.md", "CLAUDE.md", "README.md"]
   }
 }
 ```
@@ -1213,8 +1214,7 @@ Subagents created with a `cwd` parameter automatically pick up the NEXUS.md from
 | Option | Default | Description |
 |--------|---------|-------------|
 | `ancestor_depth` | `2` | Parent directories to search for `.nexus3/` (0-10) |
-| `include_readme` | `false` | Always include README.md alongside NEXUS.md |
-| `readme_as_fallback` | `false` | Use README.md when no NEXUS.md exists |
+| `instruction_files` | `["NEXUS.md", "AGENTS.md", "CLAUDE.md", "README.md"]` | Ordered priority list of instruction filenames |
 
 ### Server Configuration
 

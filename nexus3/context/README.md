@@ -100,7 +100,7 @@ ContextLoader(
 )
 ```
 
-Note: The `context_config` here is `nexus3.config.schema.ContextConfig` (Pydantic model with `ancestor_depth`, `include_readme`, `readme_as_fallback`), NOT the `ContextConfig` dataclass from `manager.py` (which controls token budgets).
+Note: The `context_config` here is `nexus3.config.schema.ContextConfig` (Pydantic model with `ancestor_depth`, `instruction_files`), NOT the `ContextConfig` dataclass from `manager.py` (which controls token budgets).
 
 #### Usage
 
@@ -783,8 +783,7 @@ Context behavior is configured via `config.json`:
 {
   "context": {
     "ancestor_depth": 2,        // Parent dirs to check (0-10)
-    "include_readme": false,    // Always include README.md
-    "readme_as_fallback": true  // Use README when no NEXUS.md
+    "instruction_files": ["NEXUS.md", "AGENTS.md", "CLAUDE.md", "README.md"]
   },
   "compaction": {
     "enabled": true,
