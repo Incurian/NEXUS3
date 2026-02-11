@@ -6,7 +6,6 @@ import sys
 
 from rich.console import Console
 
-
 _console: Console | None = None
 
 

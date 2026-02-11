@@ -5,16 +5,15 @@ import asyncio
 import json
 from dataclasses import asdict
 from datetime import datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from nexus3.clipboard import ClipboardManager, ClipboardScope
+from nexus3.clipboard import ClipboardScope
 from nexus3.core.errors import PathSecurityError
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
 
 if TYPE_CHECKING:
-    from nexus3.skill.services import ServiceContainer
+    pass
 
 
 class ClipboardExportSkill(FileSkill):

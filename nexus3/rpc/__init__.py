@@ -18,6 +18,7 @@ from nexus3.rpc.auth import (
     generate_api_key,
     validate_api_key,
 )
+from nexus3.rpc.bootstrap import configure_server_logging
 from nexus3.rpc.detection import DetectionResult, detect_server, wait_for_server
 from nexus3.rpc.dispatch_core import InvalidParamsError
 from nexus3.rpc.dispatcher import Dispatcher
@@ -33,7 +34,6 @@ from nexus3.rpc.http import (
     send_http_response,
 )
 from nexus3.rpc.log_multiplexer import LogMultiplexer
-from nexus3.rpc.bootstrap import configure_server_logging
 from nexus3.rpc.pool import Agent, AgentConfig, AgentPool, SharedComponents
 from nexus3.rpc.protocol import (
     INTERNAL_ERROR,

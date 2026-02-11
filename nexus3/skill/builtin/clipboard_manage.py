@@ -1,9 +1,10 @@
 """Management skills for clipboard: list, get, update, delete, clear."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, TypeVar
 
-from nexus3.clipboard import ClipboardManager, ClipboardScope, format_entry_detail
+from nexus3.clipboard import ClipboardScope, format_entry_detail
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import _wrap_with_validation
 
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
 _S = TypeVar("_S", bound="ClipboardSkillBase")
 
 
-def clipboard_skill_factory(cls: type[_S]) -> Callable[["ServiceContainer"], _S]:
+def clipboard_skill_factory(cls: type[_S]) -> Callable[[ServiceContainer], _S]:
     """Factory for clipboard skills that need ServiceContainer.
 
     Similar to file_skill_factory but for skills that only need clipboard access.
@@ -26,7 +27,7 @@ def clipboard_skill_factory(cls: type[_S]) -> Callable[["ServiceContainer"], _S]
     Returns:
         A factory function that creates skill instances with services injected.
     """
-    def factory(services: "ServiceContainer") -> _S:
+    def factory(services: ServiceContainer) -> _S:
         skill = cls(services)
         _wrap_with_validation(skill)
         return skill
@@ -42,7 +43,7 @@ class ClipboardSkillBase:
     Provides services injection without file path validation.
     """
 
-    def __init__(self, services: "ServiceContainer") -> None:
+    def __init__(self, services: ServiceContainer) -> None:
         """Initialize with ServiceContainer for clipboard access.
 
         Args:
@@ -281,7 +282,10 @@ class ClipboardUpdateSkill(ClipboardSkillBase):
                 "ttl_seconds": {
                     "type": "integer",
                     "minimum": 1,
-                    "description": "Set new TTL in seconds. Entry expires after this time. Omit to keep current TTL.",
+                    "description": (
+                        "Set new TTL in seconds. Entry expires"
+                        " after this time. Omit to keep current TTL."
+                    ),
                 },
             },
             "required": ["key", "scope"],
@@ -328,7 +332,10 @@ class ClipboardUpdateSkill(ClipboardSkillBase):
             if start_line is not None:
                 lines = file_content.splitlines(keepends=True)
                 if start_line < 1 or start_line > len(lines):
-                    return ToolResult(error=f"start_line out of range (file has {len(lines)} lines)")
+                    return ToolResult(
+                        error=f"start_line out of range"
+                        f" (file has {len(lines)} lines)"
+                    )
                 end = end_line if end_line is not None else start_line
                 if end > len(lines):
                     return ToolResult(error=f"end_line out of range (file has {len(lines)} lines)")

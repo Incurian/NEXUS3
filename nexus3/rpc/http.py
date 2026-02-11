@@ -27,13 +27,10 @@ Example usage:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-
-logger = logging.getLogger(__name__)
 
 from nexus3.core.errors import NexusError
 from nexus3.core.validation import is_valid_agent_id
@@ -94,6 +91,8 @@ if TYPE_CHECKING:
         def load_session(self, name: str) -> SavedSession: ...
 
     from nexus3.rpc.protocol import Request, Response
+
+logger = logging.getLogger(__name__)
 
 # Constants
 DEFAULT_PORT = 8765

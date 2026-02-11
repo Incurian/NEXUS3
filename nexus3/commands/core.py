@@ -70,7 +70,11 @@ async def cmd_list(ctx: CommandContext) -> CommandOutput:
             # Format last action time (just HH:MM:SS if today, else date+time)
             if last_action:
                 # Just show time portion for readability
-                last_action_str = last_action.split("T")[1][:8] if "T" in last_action else last_action
+                last_action_str = (
+                    last_action.split("T")[1][:8]
+                    if "T" in last_action
+                    else last_action
+                )
             else:
                 last_action_str = "never"
 
@@ -367,7 +371,10 @@ async def cmd_status(
         "created_at": agent.created_at.isoformat(),
         "message_count": message_count,
         "context_usage_pct": context_usage_pct,
-        "tokens": tokens if show_tokens else {"total": total, "available": available, "remaining": remaining},
+        "tokens": (
+            tokens if show_tokens
+            else {"total": total, "available": available, "remaining": remaining}
+        ),
         "model": model_info,
         "permission_level": perm_level,
         "preset": preset_name,
@@ -403,7 +410,10 @@ async def cmd_status(
         lines.append(f"  Permissions: {perm_level}{preset_str}")
 
     # Context usage (shows available, not full budget, to match is_over_budget threshold)
-    lines.append(f"  Context: {total:,} / {available:,} tokens ({context_usage_pct}%) - {remaining:,} remaining")
+    lines.append(
+        f"  Context: {total:,} / {available:,} tokens"
+        f" ({context_usage_pct}%) - {remaining:,} remaining"
+    )
     lines.append(f"  Messages: {message_count}")
 
     # Paths

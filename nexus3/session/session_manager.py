@@ -11,12 +11,14 @@ import stat
 from datetime import datetime
 from pathlib import Path
 
-# Secure file permissions: owner read/write only (0o600)
-_SECURE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
-
 from nexus3.core.constants import get_nexus_dir
 from nexus3.core.errors import NexusError
 from nexus3.core.secure_io import SymlinkError, check_no_symlink, secure_mkdir
+from nexus3.core.validation import ValidationError, validate_agent_id
+from nexus3.session.persistence import SavedSession, SessionSummary
+
+# Secure file permissions: owner read/write only (0o600)
+_SECURE_FILE_MODE = stat.S_IRUSR | stat.S_IWUSR
 
 # O_NOFOLLOW doesn't exist on Windows - use 0 and fall back to explicit check
 _O_NOFOLLOW: int = getattr(os, "O_NOFOLLOW", 0)
@@ -67,8 +69,6 @@ def _secure_write_file(path: Path, content: str) -> None:
     except Exception:
         # fd is closed by fdopen, even on error
         raise
-from nexus3.core.validation import ValidationError, validate_agent_id
-from nexus3.session.persistence import SavedSession, SessionSummary
 
 
 class SessionManagerError(NexusError):

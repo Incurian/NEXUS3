@@ -40,7 +40,7 @@ def _stream_read_lines(
     truncated = False
     start_idx = offset - 1  # Convert to 0-indexed
 
-    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+    with open(filepath, encoding="utf-8", errors="replace") as f:
         for line in f:
             line_num += 1
 
@@ -149,7 +149,10 @@ class ReadFileSkill(FileSkill):
             )
 
             if not lines:
-                return ToolResult(output=f"(File is empty or offset {offset} is beyond end of file)")
+                return ToolResult(
+                    output=f"(File is empty or offset {offset}"
+                    " is beyond end of file)"
+                )
 
             content = "".join(lines)
             if truncated:

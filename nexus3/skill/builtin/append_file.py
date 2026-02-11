@@ -42,7 +42,7 @@ def _needs_newline_prefix(filepath: os.PathLike[str]) -> tuple[bool, str]:
 
             needs_prefix = not tail_bytes.endswith(b"\n")
             return needs_prefix, line_ending
-    except (OSError, IOError):
+    except OSError:
         return False, "\n"
 
 
@@ -81,7 +81,10 @@ class AppendFileSkill(FileSkill):
                 },
                 "newline": {
                     "type": "boolean",
-                    "description": "Add newline before content if file doesn't end with one (default: true)",
+                    "description": (
+                        "Add newline before content if file"
+                        " doesn't end with one (default: true)"
+                    ),
                     "default": True
                 }
             },

@@ -86,7 +86,8 @@ class CopyFileSkill(FileSkill):
             # Check destination
             if dst_path.exists() and not overwrite:
                 return ToolResult(
-                    error=f"Destination already exists: {destination}. Use overwrite=true to replace."
+                    error=f"Destination already exists: {destination}."
+                    " Use overwrite=true to replace."
                 )
 
             # Create parent directories

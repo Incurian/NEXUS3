@@ -416,7 +416,10 @@ class MCPServerRegistry:
 
         try:
             tools = await server.client.list_tools()
-            server.skills = [MCPSkillAdapter(server.client, tool, server.config.name) for tool in tools]
+            server.skills = [
+                MCPSkillAdapter(server.client, tool, server.config.name)
+                for tool in tools
+            ]
             return len(tools)
         except Exception as e:
             logger.warning("Retry tools failed for '%s': %s", name, e)

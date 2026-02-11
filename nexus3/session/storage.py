@@ -354,10 +354,14 @@ class SessionStorage:
 
         cursor = conn.execute(
             """
-            INSERT INTO messages (role, content, meta, name, tool_call_id, tool_calls, tokens, timestamp)
+            INSERT INTO messages
+                (role, content, meta, name, tool_call_id, tool_calls, tokens, timestamp)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (role, content, meta_json, name, tool_call_id, tool_calls_json, tokens, ts),
+            (
+                role, content, meta_json, name,
+                tool_call_id, tool_calls_json, tokens, ts,
+            ),
         )
         conn.commit()
 

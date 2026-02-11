@@ -4,13 +4,13 @@ from nexus3.clipboard.manager import ClipboardManager
 from nexus3.clipboard.storage import ClipboardStorage
 from nexus3.clipboard.types import (
     CLIPBOARD_PRESETS,
+    MAX_ENTRY_SIZE_BYTES,
+    WARN_ENTRY_SIZE_BYTES,
     ClipboardEntry,
     ClipboardPermissions,
     ClipboardScope,
     ClipboardTag,
     InsertionMode,
-    MAX_ENTRY_SIZE_BYTES,
-    WARN_ENTRY_SIZE_BYTES,
 )
 
 __all__ = [

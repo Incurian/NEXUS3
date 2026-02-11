@@ -108,13 +108,16 @@ class MCPClient:
         if timeout > 0:
             try:
                 await asyncio.wait_for(_do_connect(), timeout=timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Try to clean up transport
                 try:
                     await self._transport.close()
                 except Exception as cleanup_err:
-                    logger.warning("Failed to close transport during timeout cleanup: %s", cleanup_err)
-                raise MCPError(f"MCP connection timed out after {timeout}s")
+                    logger.warning(
+                        "Failed to close transport during timeout cleanup: %s",
+                        cleanup_err,
+                    )
+                raise MCPError(f"MCP connection timed out after {timeout}s") from None
         else:
             await _do_connect()
 

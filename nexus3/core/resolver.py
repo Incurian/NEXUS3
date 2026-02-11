@@ -12,7 +12,6 @@ ensuring a single source of truth for all path access decisions.
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from nexus3.core.errors import PathSecurityError
 from nexus3.core.path_decision import PathDecisionEngine
 
 if TYPE_CHECKING:

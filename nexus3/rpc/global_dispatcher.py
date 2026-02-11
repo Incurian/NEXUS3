@@ -12,27 +12,25 @@ These methods are typically called before routing to agent-specific
 dispatchers, or when the request doesn't target a specific agent.
 """
 
+import asyncio
 import logging
+import uuid
 from collections.abc import Callable, Coroutine
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nexus3.core.errors import PathSecurityError, ProviderError
 from nexus3.core.paths import validate_path
-
-logger = logging.getLogger(__name__)
+from nexus3.core.permissions import AgentPermissions, PermissionDelta, ToolPermission
+from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
+from nexus3.rpc.pool import Agent, AgentConfig, AuthorizationError
 from nexus3.rpc.types import Request, Response
 
 if TYPE_CHECKING:
     from nexus3.rpc.pool import AgentPool
 
-from pathlib import Path
-
-from nexus3.core.permissions import AgentPermissions, PermissionDelta, ToolPermission
-from nexus3.core.validation import ValidationError, validate_agent_id
-from nexus3.rpc.pool import Agent, AgentConfig, AuthorizationError
-import asyncio
-import uuid
+logger = logging.getLogger(__name__)
 
 # Type alias for handler functions
 Handler = Callable[[dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
@@ -272,10 +270,10 @@ class GlobalDispatcher:
             if parent_cwd is not None and isinstance(parent_cwd, Path):
                 try:
                     cwd_path.resolve().relative_to(parent_cwd.resolve())
-                except ValueError:
+                except ValueError as e:
                     raise InvalidParamsError(
                         f"cwd '{cwd_path}' is outside parent's cwd '{parent_cwd}'"
-                    )
+                    ) from e
 
         # Validate allowed_write_paths if provided
         write_paths: list[Path] | None = None
@@ -317,10 +315,10 @@ class GlobalDispatcher:
             for wp in write_paths:
                 try:
                     wp.relative_to(parent_cwd_resolved)
-                except ValueError:
+                except ValueError as e:
                     raise InvalidParamsError(
                         f"allowed_write_path '{wp}' is outside parent's cwd '{parent_cwd}'"
-                    )
+                    ) from e
 
         # Build delta from parameters (disable_tools and write permissions)
         delta: PermissionDelta | None = None
@@ -502,7 +500,11 @@ class GlobalDispatcher:
             raise InvalidParamsError(str(e)) from e
 
         if success:
-            logger.info("Agent destroyed: %s (by %s)", agent_id, self._current_requester_id or "external")
+            logger.info(
+                "Agent destroyed: %s (by %s)",
+                agent_id,
+                self._current_requester_id or "external",
+            )
         else:
             logger.warning("Agent destroy failed: %s not found", agent_id)
 
@@ -562,10 +564,18 @@ class GlobalDispatcher:
         return self._shutdown_requested
 
 
-    async def _send_initial_background(self, agent: "Agent", send_request: "Request", request_id: str) -> None:
+    async def _send_initial_background(
+        self, agent: "Agent", send_request: "Request", request_id: str,
+    ) -> None:
         """Fire-and-forget initial message dispatch."""
         try:
             await agent.dispatcher.dispatch(send_request)
-            logger.info(f"Background initial_message completed for {agent.agent_id}")
+            logger.info(
+                "Background initial_message completed for %s",
+                agent.agent_id,
+            )
         except Exception as e:
-            logger.error(f"Background initial_message FAILED for {agent.agent_id}/{request_id}: {e}")
+            logger.error(
+                "Background initial_message FAILED for %s/%s: %s",
+                agent.agent_id, request_id, e,
+            )

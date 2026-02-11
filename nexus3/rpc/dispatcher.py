@@ -41,7 +41,7 @@ class Dispatcher:
         context: ContextManager | None = None,
         agent_id: str | None = None,
         log_multiplexer: LogMultiplexer | None = None,
-        pool: "AgentPool | None" = None,
+        pool: AgentPool | None = None,
     ) -> None:
         """Initialize the dispatcher.
 
@@ -146,7 +146,10 @@ class Dispatcher:
 
         # Block RPC sends to YOLO agents when no REPL connected
         if self._pool and self._agent_id:
-            permissions = self._session._services.get("permissions") if self._session._services else None
+            permissions = (
+                self._session._services.get("permissions")
+                if self._session._services else None
+            )
             if permissions and permissions.effective_policy.level == PermissionLevel.YOLO:
                 if not self._pool.is_repl_connected(self._agent_id):
                     raise InvalidParamsError(

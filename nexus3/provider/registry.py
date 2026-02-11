@@ -57,8 +57,8 @@ class ProviderRegistry:
 
     def __init__(
         self,
-        config: "Config",
-        raw_log: "RawLogCallback | None" = None,
+        config: Config,
+        raw_log: RawLogCallback | None = None,
     ) -> None:
         """Initialize the provider registry.
 
@@ -75,7 +75,7 @@ class ProviderRegistry:
         provider_name: str,
         model_id: str,
         reasoning: bool = False,
-    ) -> "AsyncProvider":
+    ) -> AsyncProvider:
         """Get or create a provider for a specific model.
 
         Providers are lazily created on first access and cached by
@@ -104,7 +104,7 @@ class ProviderRegistry:
             )
         return self._providers[cache_key]
 
-    def get_for_model(self, alias: str | None = None) -> "AsyncProvider":
+    def get_for_model(self, alias: str | None = None) -> AsyncProvider:
         """Get the appropriate provider for a model alias.
 
         Resolves the model alias to determine which provider and model_id
@@ -126,7 +126,7 @@ class ProviderRegistry:
         resolved = self._config.resolve_model(alias)
         return self.get(resolved.provider_name, resolved.model_id, resolved.reasoning)
 
-    def set_raw_log_callback(self, callback: "RawLogCallback | None") -> None:
+    def set_raw_log_callback(self, callback: RawLogCallback | None) -> None:
         """Set or clear the raw logging callback on all providers.
 
         Updates the callback on all existing provider instances. New providers

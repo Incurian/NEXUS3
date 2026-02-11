@@ -148,19 +148,19 @@ class ClipboardManager:
         elif scope == ClipboardScope.PROJECT:
             try:
                 self._get_project_storage().create(entry)
-            except ValueError:
+            except ValueError as e:
                 raise ValueError(
                     f"Key '{key}' already exists in project scope. "
                     "Use clipboard_update to modify or choose a different key."
-                )
+                ) from e
         elif scope == ClipboardScope.SYSTEM:
             try:
                 self._get_system_storage().create(entry)
-            except ValueError:
+            except ValueError as e:
                 raise ValueError(
                     f"Key '{key}' already exists in system scope. "
                     "Use clipboard_update to modify or choose a different key."
-                )
+                ) from e
 
         return entry, warning
 

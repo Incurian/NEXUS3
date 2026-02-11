@@ -106,7 +106,10 @@ class ListDirectorySkill(FileSkill):
                         # Size formatting
                         size_str = _format_size(size)
 
-                        lines.append(f"{type_char}{perms}  {size_str:>8}  {mtime_str}  {entry.name}")
+                        lines.append(
+                            f"{type_char}{perms}  {size_str:>8}"
+                            f"  {mtime_str}  {entry.name}"
+                        )
                     except (OSError, PermissionError) as e:
                         lines.append(f"?  ?  ?  {entry.name}  (error: {e})")
 

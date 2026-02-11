@@ -154,7 +154,12 @@ class GitSkill(FilteredCommandSkill):
         # Check permission level
         if self._permission_level == PermissionLevel.SANDBOXED:
             if base_cmd not in READ_ONLY_COMMANDS:
-                return False, None, f"Only read-only git commands allowed in sandboxed mode. Allowed: {', '.join(sorted(READ_ONLY_COMMANDS))}"
+                allowed = ', '.join(sorted(READ_ONLY_COMMANDS))
+                return (
+                    False, None,
+                    "Only read-only git commands allowed in"
+                    f" sandboxed mode. Allowed: {allowed}",
+                )
 
         return True, args, None
 
@@ -216,7 +221,10 @@ class GitSkill(FilteredCommandSkill):
             # Staged files
             elif line.startswith("\tnew file:"):
                 result["staged"].append(line.split(":", 1)[1].strip())
-            elif line.startswith("\tmodified:") and "Changes to be committed" in stdout[:stdout.find(line)]:
+            elif (
+                line.startswith("\tmodified:")
+                and "Changes to be committed" in stdout[:stdout.find(line)]
+            ):
                 result["staged"].append(line.split(":", 1)[1].strip())
             # Unstaged files
             elif line.startswith("\tmodified:"):

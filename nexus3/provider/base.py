@@ -21,8 +21,6 @@ from urllib.parse import urlparse
 
 import httpx
 
-logger = logging.getLogger(__name__)
-
 from nexus3.config.schema import AuthMethod, ProviderConfig
 from nexus3.core.errors import ProviderError
 from nexus3.core.types import Message, StreamEvent
@@ -36,6 +34,8 @@ MAX_ERROR_BODY_SIZE: int = 10 * 1024  # 10 KB
 
 if TYPE_CHECKING:
     from nexus3.core.interfaces import RawLogCallback
+
+logger = logging.getLogger(__name__)
 
 # Default timeout for API requests (seconds) - can be overridden via config
 DEFAULT_TIMEOUT = 120.0

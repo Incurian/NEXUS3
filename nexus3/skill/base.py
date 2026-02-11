@@ -15,19 +15,15 @@ file reading, command execution, and other actions the agent can perform.
 
 import asyncio
 import json
-import os
-import signal
-import sys
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from functools import wraps
 from pathlib import Path
 
 # Import ServiceContainer type for factory decorator
 # Using TYPE_CHECKING to avoid circular imports
-from typing import TYPE_CHECKING, Any, Coroutine, Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
-from nexus3.core.paths import validate_path
 from nexus3.core.types import ToolResult
 from nexus3.core.validation import ALLOWED_INTERNAL_PARAMS, ValidationError
 
@@ -724,7 +720,7 @@ class NexusSkill(ABC):
         Returns:
             None if valid, ToolResult(error=...) if invalid.
         """
-        from nexus3.core.validation import ValidationError, validate_agent_id
+        from nexus3.core.validation import validate_agent_id
 
         if not agent_id:
             return ToolResult(error="No agent_id provided")
@@ -1050,7 +1046,9 @@ class ExecutionSkill(ABC):
         ...
 
 
-def execution_skill_factory(cls: type["ExecutionSkill"]) -> Callable[["ServiceContainer"], "ExecutionSkill"]:
+def execution_skill_factory(
+    cls: type["ExecutionSkill"],
+) -> Callable[["ServiceContainer"], "ExecutionSkill"]:
     """Factory decorator for ExecutionSkill subclasses.
 
     Args:
@@ -1190,7 +1188,11 @@ class FilteredCommandSkill(ABC):
         if self._permission_level == PermissionLevel.SANDBOXED:
             read_only = self.get_read_only_commands()
             if subcommand not in read_only:
-                return False, f"Command '{subcommand}' not allowed in sandboxed mode. Allowed: {sorted(read_only)}"
+                return (
+                    False,
+                    f"Command '{subcommand}' not allowed in"
+                    f" sandboxed mode. Allowed: {sorted(read_only)}",
+                )
             return True, None
 
         # TRUSTED = block dangerous patterns

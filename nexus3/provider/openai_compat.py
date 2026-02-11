@@ -20,8 +20,6 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-logger = logging.getLogger(__name__)
-
 from nexus3.core.types import (
     ContentDelta,
     Message,
@@ -37,6 +35,8 @@ from nexus3.provider.base import BaseProvider
 if TYPE_CHECKING:
     from nexus3.config.schema import ProviderConfig
     from nexus3.core.interfaces import RawLogCallback
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAICompatProvider(BaseProvider):

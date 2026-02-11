@@ -64,7 +64,7 @@ class AgentScopedAPI:
     HTTP for in-process communication.
     """
 
-    def __init__(self, pool: "AgentPool", agent_id: str) -> None:
+    def __init__(self, pool: AgentPool, agent_id: str) -> None:
         """Initialize agent-scoped API.
 
         Args:
@@ -74,7 +74,7 @@ class AgentScopedAPI:
         self._pool = pool
         self._agent_id = agent_id
 
-    def _get_dispatcher(self) -> "Dispatcher":
+    def _get_dispatcher(self) -> Dispatcher:
         """Get the dispatcher for this agent.
 
         Returns:
@@ -208,8 +208,8 @@ class DirectAgentAPI:
 
     def __init__(
         self,
-        pool: "AgentPool",
-        global_dispatcher: "GlobalDispatcher",
+        pool: AgentPool,
+        global_dispatcher: GlobalDispatcher,
         requester_id: str | None = None,
     ) -> None:
         """Initialize direct agent API.

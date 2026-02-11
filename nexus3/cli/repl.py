@@ -35,21 +35,18 @@ import sys
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
-
 from dotenv import load_dotenv
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
-from prompt_toolkit.styles import Style
 from prompt_toolkit.lexers import SimpleLexer
-from rich.live import Live
-
-from nexus3.cli.arg_parser import parse_args
-from nexus3.cli.live_state import _current_live
+from prompt_toolkit.styles import Style
 
 from nexus3.cli import repl_commands
+from nexus3.cli.arg_parser import parse_args
 from nexus3.cli.confirmation_ui import confirm_tool_action, format_tool_params
+from nexus3.cli.connect_lobby import ConnectAction, show_connect_lobby
 from nexus3.cli.keys import KeyMonitor
+from nexus3.cli.live_state import _current_live
 from nexus3.cli.lobby import LobbyChoice, show_lobby
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands import core as unified_cmd
@@ -60,17 +57,20 @@ from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError, ProviderError
 from nexus3.core.paths import display_path
 from nexus3.core.permissions import ConfirmationResult, PermissionLevel
-from nexus3.core.validation import ValidationError, validate_agent_id
-from nexus3.core.types import ToolCall
-from nexus3.display import Activity, Spinner, get_console
-from nexus3.display.theme import Status, load_theme
 from nexus3.core.text_safety import escape_rich_markup
+from nexus3.core.types import ToolCall
+from nexus3.core.validation import ValidationError, validate_agent_id
+from nexus3.display import Activity, Spinner, get_console
+from nexus3.display.theme import load_theme
 from nexus3.rpc.auth import ServerTokenManager, generate_api_key
-from nexus3.rpc.bootstrap import bootstrap_server_components, configure_server_file_logging, SERVER_LOGGER_NAME
+from nexus3.rpc.bootstrap import (
+    SERVER_LOGGER_NAME,
+    bootstrap_server_components,
+    configure_server_file_logging,
+)
 from nexus3.rpc.detection import DetectionResult
 from nexus3.rpc.discovery import discover_servers, discover_token_ports, parse_port_spec
 from nexus3.rpc.http import run_http_server
-from nexus3.cli.connect_lobby import show_connect_lobby, ConnectAction
 from nexus3.rpc.pool import Agent, AgentConfig, generate_temp_id
 from nexus3.session import LogStream, SessionManager
 from nexus3.session.persistence import (
@@ -79,6 +79,8 @@ from nexus3.session.persistence import (
     serialize_clipboard_entries,
     serialize_session,
 )
+
+logger = logging.getLogger(__name__)
 
 # Configure UTF-8 at module load
 configure_stdio()
@@ -588,13 +590,20 @@ async def run_repl(
             # Server bound successfully - now safe to write token
             http_server_started = True
             token_manager.save(api_key)
-            server_logger.info("Embedded RPC server listening: http://127.0.0.1:%s/", effective_port)
+            server_logger.info(
+                "Embedded RPC server listening: http://127.0.0.1:%s/",
+                effective_port,
+            )
             console.print(f"[dim]Embedded RPC listening: http://127.0.0.1:{effective_port}/[/]")
             console.print(f"[dim]Server log: {server_log_file}[/]")
         elif http_task in done:
             # Server task exited before setting started_event - get the real exception
             exc = http_task.exception() if not http_task.cancelled() else None
-            error_msg = f"Embedded server exited during startup: {exc!r}" if exc else "Embedded server exited during startup (no exception)"
+            error_msg = (
+                f"Embedded server exited during startup: {exc!r}"
+                if exc
+                else "Embedded server exited during startup (no exception)"
+            )
             server_logger.error(error_msg)
             console.print(f"[red]Error:[/] {error_msg}")
             console.print("[dim]Check server.log for details.[/]")
@@ -791,7 +800,7 @@ async def run_repl(
 
     def on_batch_halt() -> None:
         """Sequential batch halted - print halted for remaining pending tools."""
-        for tool_id, (name, params) in list(_pending_tools.items()):
+        for _tool_id, (name, params) in list(_pending_tools.items()):
             if params:
                 spinner.print(f"  [dark_orange]●[/] {name}: {params} [dark_orange](halted)[/]")
             else:
@@ -835,23 +844,23 @@ async def run_repl(
 
     def _detach_repl_callbacks(sess: object) -> None:
         """Clear streaming callbacks from a session (NOT on_confirm)."""
-        setattr(sess, "on_tool_call", None)
-        setattr(sess, "on_reasoning", None)
-        setattr(sess, "on_batch_start", None)
-        setattr(sess, "on_tool_active", None)
-        setattr(sess, "on_batch_progress", None)
-        setattr(sess, "on_batch_halt", None)
-        setattr(sess, "on_batch_complete", None)
+        sess.on_tool_call = None
+        sess.on_reasoning = None
+        sess.on_batch_start = None
+        sess.on_tool_active = None
+        sess.on_batch_progress = None
+        sess.on_batch_halt = None
+        sess.on_batch_complete = None
 
     def _attach_repl_callbacks(sess: object) -> None:
         """Attach streaming callbacks to a session."""
-        setattr(sess, "on_tool_call", on_tool_call)
-        setattr(sess, "on_reasoning", on_reasoning)
-        setattr(sess, "on_batch_start", on_batch_start)
-        setattr(sess, "on_tool_active", on_tool_active)
-        setattr(sess, "on_batch_progress", on_batch_progress)
-        setattr(sess, "on_batch_halt", on_batch_halt)
-        setattr(sess, "on_batch_complete", on_batch_complete)
+        sess.on_tool_call = on_tool_call
+        sess.on_reasoning = on_reasoning
+        sess.on_batch_start = on_batch_start
+        sess.on_tool_active = on_tool_active
+        sess.on_batch_progress = on_batch_progress
+        sess.on_batch_halt = on_batch_halt
+        sess.on_batch_complete = on_batch_complete
 
     def _set_display_session(new_sess: object) -> None:
         """Detach callbacks from prior displayed session; attach to new_sess."""
@@ -909,7 +918,8 @@ async def run_repl(
 
     async def _on_incoming_turn(payload: dict[str, Any]) -> None:
         """Handle incoming turn notifications from dispatcher."""
-        nonlocal _incoming_turn_active, _incoming_turn_done, _incoming_spinner_task, _incoming_end_payload
+        nonlocal _incoming_turn_active, _incoming_turn_done
+        nonlocal _incoming_spinner_task, _incoming_end_payload
         phase = payload.get("phase")
         source = payload.get("source", "rpc")
         source_agent = payload.get("source_agent_id")
@@ -958,9 +968,9 @@ async def run_repl(
         nonlocal _current_dispatcher
         # Clear hook on old dispatcher
         if _current_dispatcher is not None and _current_dispatcher is not dispatcher:
-            setattr(_current_dispatcher, "on_incoming_turn", None)
+            _current_dispatcher.on_incoming_turn = None
         # Set hook on new dispatcher
-        setattr(dispatcher, "on_incoming_turn", _on_incoming_turn)
+        dispatcher.on_incoming_turn = _on_incoming_turn
         _current_dispatcher = dispatcher
 
     # Wire up incoming turn notifications for main agent
@@ -980,9 +990,9 @@ async def run_repl(
     # Shell environment detection and warnings (Windows only)
     if sys.platform == "win32":
         from nexus3.core.shell_detection import (
-            detect_windows_shell,
             WindowsShell,
             check_console_codepage,
+            detect_windows_shell,
         )
 
         shell = detect_windows_shell()
@@ -1056,7 +1066,11 @@ async def run_repl(
         # 5. Token usage (use agent.context for current model's budget)
         if agent and agent.context:
             usage = agent.context.get_token_usage()
-            sections.append(f'<style fg="ansibrightblack">{usage["total"]:,} / {usage["budget"]:,}</style>')
+            sections.append(
+                f'<style fg="ansibrightblack">'
+                f'{usage["total"]:,} / {usage["budget"]:,}'
+                f'</style>'
+            )
 
         info_str = " | ".join(sections)
         return HTML(f'{square} {info_str}')
@@ -1713,7 +1727,9 @@ async def run_repl_client(url: str, agent_id: str, api_key: str | None = None) -
         # Test connection
         try:
             status = await client.get_tokens()
-            console.print(f"Connected. Tokens: {status.get('total', 0)}/{status.get('available', status.get('budget', 0))}")
+            total = status.get('total', 0)
+            avail = status.get('available', status.get('budget', 0))
+            console.print(f"Connected. Tokens: {total}/{avail}")
         except ClientError as e:
             console.print(f"[red]Connection failed:[/] {e}")
             return
@@ -1901,7 +1917,10 @@ def main() -> None:
             rpc_cmd = args.rpc_command
             if rpc_cmd is None:
                 print("Usage: nexus3 rpc <command>")
-                print("Commands: detect, list, create, destroy, send, cancel, status, compact, shutdown")
+                print(
+                    "Commands: detect, list, create, destroy,"
+                    " send, cancel, status, compact, shutdown"
+                )
                 raise SystemExit(1)
 
             if rpc_cmd == "detect":

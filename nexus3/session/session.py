@@ -73,7 +73,8 @@ ReasoningCallback = Callable[[bool], None]
 # New batch-aware callback types
 BatchStartCallback = Callable[["tuple[ToolCall, ...]"], None]  # All tools in batch
 ToolActiveCallback = Callable[[str, str], None]  # (name, id) - tool starting execution
-BatchProgressCallback = Callable[[str, str, bool, str, str], None]  # (name, id, success, error_msg, output)
+# (name, id, success, error_msg, output)
+BatchProgressCallback = Callable[[str, str, bool, str, str], None]
 BatchHaltCallback = Callable[[], None]  # Sequential batch halted due to error
 BatchCompleteCallback = Callable[[], None]  # All tools in batch finished
 

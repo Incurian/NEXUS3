@@ -177,7 +177,9 @@ class StreamingDisplay:
 
         # Error on next line (first 120 chars)
         if tool.state == ToolState.ERROR and tool.error:
-            error_preview = escape_rich_markup(tool.error[:120] + ("..." if len(tool.error) > 120 else ""))
+            error_preview = escape_rich_markup(
+                tool.error[:120] + ("..." if len(tool.error) > 120 else "")
+            )
             line.append(f"\n      {error_preview}", style="red dim")
 
         return line

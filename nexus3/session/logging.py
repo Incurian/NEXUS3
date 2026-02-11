@@ -8,8 +8,8 @@ from time import time
 from typing import TYPE_CHECKING, Any
 
 from nexus3.core.secure_io import secure_mkdir
-from nexus3.session.events import SessionEvent
 from nexus3.core.types import Message, Role, ToolCall, ToolResult
+from nexus3.session.events import SessionEvent
 from nexus3.session.markdown import MarkdownWriter, RawWriter
 from nexus3.session.storage import SessionStorage
 from nexus3.session.types import LogConfig, LogStream, SessionInfo

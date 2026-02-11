@@ -129,9 +129,9 @@ def create_provider(
     )
 
 
-# Backwards compatibility: alias OpenRouterProvider to OpenAICompatProvider
-from nexus3.provider.openai_compat import OpenAICompatProvider as OpenRouterProvider
-from nexus3.provider.registry import ProviderRegistry
+# Backwards compatibility + re-exports (must be after create_provider to avoid circular import)
+from nexus3.provider.openai_compat import OpenAICompatProvider as OpenRouterProvider  # noqa: E402
+from nexus3.provider.registry import ProviderRegistry  # noqa: E402
 
 __all__ = [
     "create_provider",

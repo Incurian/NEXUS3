@@ -140,7 +140,7 @@ def redact_secrets(text: str) -> str:
     """
     result = text
 
-    for pattern_name, (pattern, replacement) in SECRET_PATTERNS.items():
+    for _pattern_name, (pattern, replacement) in SECRET_PATTERNS.items():
         result = pattern.sub(replacement, result)
 
     return result

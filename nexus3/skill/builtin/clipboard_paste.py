@@ -164,7 +164,10 @@ class PasteSkill(FileSkill):
 
         if entry is None:
             if resolved_scope:
-                return ToolResult(error=f"Clipboard key '{key}' not found in {resolved_scope.value} scope")
+                return ToolResult(
+                    error=f"Clipboard key '{key}' not found"
+                    f" in {resolved_scope.value} scope"
+                )
             return ToolResult(error=f"Clipboard key '{key}' not found in any accessible scope")
 
         if entry.is_expired:
@@ -187,7 +190,8 @@ class PasteSkill(FileSkill):
             elif create_if_missing:
                 if insertion_mode not in (InsertionMode.APPEND, InsertionMode.PREPEND):
                     return ToolResult(
-                        error=f"Cannot use mode '{mode}' with create_if_missing on non-existent file"
+                        error=f"Cannot use mode '{mode}' with"
+                        " create_if_missing on non-existent file"
                     )
                 content = ""
                 original_line_ending = '\n'

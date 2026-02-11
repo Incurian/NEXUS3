@@ -208,7 +208,7 @@ class ServiceContainer:
             List of allowed Path objects, or None for unrestricted access.
             Empty list means deny all path access.
         """
-        permissions: "AgentPermissions | None" = self.get("permissions")
+        permissions: AgentPermissions | None = self.get("permissions")
 
         if permissions is None:
             # Fallback for tests that don't set up full permissions
@@ -232,7 +232,7 @@ class ServiceContainer:
         Returns:
             List of blocked Path objects, or empty list if none configured.
         """
-        permissions: "AgentPermissions | None" = self.get("permissions")
+        permissions: AgentPermissions | None = self.get("permissions")
 
         if permissions is None:
             # Fallback for tests that don't set up full permissions

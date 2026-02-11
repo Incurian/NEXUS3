@@ -7,9 +7,9 @@ execution, confirmations, and iteration progress.
 Events are frozen dataclasses following the pattern in core/types.py.
 """
 
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-import time
 
 if TYPE_CHECKING:
     from nexus3.core.types import ToolCall

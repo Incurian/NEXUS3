@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from nexus3.clipboard import ClipboardManager, ClipboardScope, format_entry_detail
+from nexus3.clipboard import ClipboardScope, format_entry_detail
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import base_skill_factory
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 class ClipboardSearchSkill:
     """Search clipboard entries by content or description."""
 
-    def __init__(self, services: "ServiceContainer | None" = None) -> None:
+    def __init__(self, services: ServiceContainer | None = None) -> None:
         self._services = services
 
     @property

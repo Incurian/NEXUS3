@@ -20,11 +20,10 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from nexus3.core.secure_io import secure_mkdir
-
 from nexus3.config.schema import Config
 from nexus3.context.loader import ContextLoader
 from nexus3.core.permissions import load_custom_presets_from_config
+from nexus3.core.secure_io import secure_mkdir
 from nexus3.provider import ProviderRegistry
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
 from nexus3.rpc.pool import AgentPool, SharedComponents
@@ -84,7 +83,10 @@ def configure_server_file_logging(
     # Use resolved paths for comparison to handle relative vs absolute paths
     for handler in server_logger.handlers:
         if isinstance(handler, RotatingFileHandler):
-            if hasattr(handler, 'baseFilename') and Path(handler.baseFilename).resolve() == log_file_resolved:
+            if (
+                hasattr(handler, 'baseFilename')
+                and Path(handler.baseFilename).resolve() == log_file_resolved
+            ):
                 # Already configured
                 return log_file
 

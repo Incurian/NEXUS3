@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS clipboard (
 );
 
 CREATE INDEX IF NOT EXISTS idx_clipboard_key ON clipboard(key);
-CREATE INDEX IF NOT EXISTS idx_clipboard_expires ON clipboard(expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_clipboard_expires
+    ON clipboard(expires_at) WHERE expires_at IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -290,7 +291,9 @@ class ClipboardStorage:
         """Get all expired entries for review before cleanup."""
         assert self._conn is not None
         cur = self._conn.execute(
-            "SELECT * FROM clipboard WHERE expires_at IS NOT NULL AND expires_at <= ? ORDER BY expires_at",
+            "SELECT * FROM clipboard"
+            " WHERE expires_at IS NOT NULL AND expires_at <= ?"
+            " ORDER BY expires_at",
             (now,),
         )
         return [self._row_to_entry(row) for row in cur.fetchall()]

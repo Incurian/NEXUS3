@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 class ClipboardTagSkill:
     """Manage tags for clipboard entries."""
 
-    def __init__(self, services: "ServiceContainer | None" = None) -> None:
+    def __init__(self, services: ServiceContainer | None = None) -> None:
         self._services = services
 
     @property
@@ -24,7 +24,10 @@ class ClipboardTagSkill:
 
     @property
     def description(self) -> str:
-        return "Manage clipboard entry tags: list all tags, add/remove tags from entries, create/delete tags."
+        return (
+            "Manage clipboard entry tags: list all tags,"
+            " add/remove tags from entries, create/delete tags."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -152,7 +155,10 @@ class ClipboardTagSkill:
 
         return ToolResult(output=f"Removed tag '{name}' from '{entry_key}' [{scope}]")
 
-    def _create_tag(self, manager: ClipboardManager, name: str | None, description: str | None) -> ToolResult:
+    def _create_tag(
+        self, manager: ClipboardManager, name: str | None,
+        description: str | None,
+    ) -> ToolResult:
         """Create a new tag."""
         if not name:
             return ToolResult(error="name is required for create action")
@@ -160,7 +166,10 @@ class ClipboardTagSkill:
         # Tags are created automatically when added to entries
         # This action is for pre-creating tags with descriptions
         # For now, just validate and confirm
-        return ToolResult(output=f"Tag '{name}' ready to use (tags are auto-created when added to entries)")
+        return ToolResult(
+            output=f"Tag '{name}' ready to use"
+            " (tags are auto-created when added to entries)"
+        )
 
     def _delete_tag(self, manager: ClipboardManager, name: str | None) -> ToolResult:
         """Delete a tag (removes from all entries via CASCADE)."""
@@ -170,7 +179,10 @@ class ClipboardTagSkill:
         # Note: The storage layer handles CASCADE deletion
         # We need to add a delete_tag method to manager if not exists
         # For now, return not implemented
-        return ToolResult(error="delete_tag not yet implemented - remove tags from entries individually")
+        return ToolResult(
+            error="delete_tag not yet implemented"
+            " - remove tags from entries individually"
+        )
 
 
 clipboard_tag_factory = ClipboardTagSkill.factory

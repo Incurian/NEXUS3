@@ -47,7 +47,10 @@ class GlobSkill(FileSkill):
                 "exclude": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Patterns to exclude (e.g., ['node_modules', '.git', '__pycache__'])"
+                    "description": (
+                        "Patterns to exclude (e.g.,"
+                        " ['node_modules', '.git', '__pycache__'])"
+                    )
                 }
             },
             "required": ["pattern"]

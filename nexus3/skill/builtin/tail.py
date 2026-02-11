@@ -4,12 +4,11 @@ P2.5 SECURITY: Implements efficient tail reading with size limits.
 """
 
 import asyncio
-import os
 from collections import deque
 from pathlib import Path
 from typing import Any
 
-from nexus3.core.constants import MAX_FILE_SIZE_BYTES, MAX_OUTPUT_BYTES
+from nexus3.core.constants import MAX_OUTPUT_BYTES
 from nexus3.core.errors import PathSecurityError
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
@@ -37,14 +36,15 @@ def _tail_lines(
     line_buffer: deque[tuple[int, str]] = deque(maxlen=num_lines)
     total_lines = 0
 
-    with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+    with open(filepath, encoding="utf-8", errors="replace") as f:
         for line in f:
             total_lines += 1
             line_buffer.append((total_lines, line.rstrip()))
 
     # Check if output would exceed max_bytes
     result = list(line_buffer)
-    total_bytes = sum(len(line.encode("utf-8")) + 10 for _, line in result)  # +10 for line number prefix
+    # +10 for line number prefix
+    total_bytes = sum(len(line.encode("utf-8")) + 10 for _, line in result)
 
     truncated = False
     if total_bytes > max_bytes:
@@ -134,7 +134,7 @@ class TailSkill(FileSkill):
             output = "".join(numbered)
 
             if truncated:
-                output += f"\n[... output truncated to fit size limit ...]"
+                output += "\n[... output truncated to fit size limit ...]"
 
             return ToolResult(output=output)
 

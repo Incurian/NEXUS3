@@ -20,8 +20,6 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-logger = logging.getLogger(__name__)
-
 from nexus3.core.types import (
     ContentDelta,
     Message,
@@ -37,6 +35,7 @@ if TYPE_CHECKING:
     from nexus3.config.schema import ProviderConfig
     from nexus3.core.interfaces import RawLogCallback
 
+logger = logging.getLogger(__name__)
 
 # Anthropic API version header
 ANTHROPIC_VERSION = "2023-06-01"
@@ -257,8 +256,10 @@ class AnthropicProvider(BaseProvider):
     ) -> list[dict[str, Any]]:
         """Convert OpenAI tool format to Anthropic format.
 
-        OpenAI: {"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}
-        Anthropic: {"name": ..., "description": ..., "input_schema": ...}
+        OpenAI: {"type": "function", "function":
+            {"name": ..., "description": ..., "parameters": ...}}
+        Anthropic: {"name": ..., "description": ...,
+            "input_schema": ...}
 
         Args:
             openai_tools: Tools in OpenAI function format.

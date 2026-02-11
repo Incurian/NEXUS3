@@ -84,7 +84,8 @@ class RenameSkill(FileSkill):
             if dst_path.exists():
                 if not overwrite:
                     return ToolResult(
-                        error=f"Destination already exists: {destination}. Use overwrite=true to replace."
+                        error=f"Destination already exists: {destination}."
+                        " Use overwrite=true to replace."
                     )
                 # Remove destination if overwriting
                 if dst_path.is_dir():

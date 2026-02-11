@@ -125,7 +125,10 @@ class PermissionEnforcer:
             return None
 
         if not permissions.effective_policy.allows_action(tool_name):
-            return ToolResult(error=f"Tool '{tool_name}' is not allowed at current permission level")
+            return ToolResult(
+                error=f"Tool '{tool_name}' is not allowed"
+                " at current permission level"
+            )
         return None
 
     def _check_target_allowed(
@@ -213,7 +216,11 @@ class PermissionEnforcer:
         else:
             # Fallback without services - use policy paths directly
             tool_perm = permissions.tool_permissions.get(tool_name)
-            allowed = tool_perm.allowed_paths if tool_perm and tool_perm.allowed_paths is not None else permissions.effective_policy.allowed_paths
+            allowed = (
+                tool_perm.allowed_paths
+                if tool_perm and tool_perm.allowed_paths is not None
+                else permissions.effective_policy.allowed_paths
+            )
             blocked = permissions.effective_policy.blocked_paths
             engine = PathDecisionEngine(
                 allowed_paths=allowed,
@@ -224,7 +231,8 @@ class PermissionEnforcer:
 
         if not decision.allowed:
             return ToolResult(
-                error=f"Tool '{tool_name}' cannot access path '{target_path}': {decision.reason_detail}"
+                error=f"Tool '{tool_name}' cannot access path"
+                f" '{target_path}': {decision.reason_detail}"
             )
 
         return None

@@ -108,7 +108,8 @@ class RunPythonSkill(ExecutionSkill):
         if level == PermissionLevel.SANDBOXED:
             return ToolResult(
                 error=f"{self.name} is disabled in SANDBOXED mode. "
-                "This is a defense-in-depth check - the skill should not be registered for sandboxed agents."
+                "This is a defense-in-depth check - the skill should"
+                " not be registered for sandboxed agents."
             )
 
         if not code:

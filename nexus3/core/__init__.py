@@ -5,7 +5,6 @@ from nexus3.core.encoding import ENCODING, ENCODING_ERRORS, configure_stdio
 from nexus3.core.errors import ConfigError, NexusError, PathSecurityError, ProviderError
 from nexus3.core.interfaces import AsyncProvider
 from nexus3.core.paths import get_default_sandbox, validate_path, validate_sandbox
-from nexus3.core.resolver import PathResolver
 from nexus3.core.permissions import (
     AgentPermissions,
     PermissionDelta,
@@ -15,6 +14,16 @@ from nexus3.core.permissions import (
     ToolPermission,
     get_builtin_presets,
     resolve_preset,
+)
+from nexus3.core.resolver import PathResolver
+
+# Shell detection (Windows)
+from nexus3.core.shell_detection import (
+    WindowsShell,
+    check_console_codepage,
+    detect_windows_shell,
+    supports_ansi,
+    supports_unicode,
 )
 from nexus3.core.types import (
     ContentDelta,
@@ -28,15 +37,6 @@ from nexus3.core.types import (
     ToolResult,
 )
 from nexus3.core.url_validator import UrlSecurityError, validate_url
-
-# Shell detection (Windows)
-from nexus3.core.shell_detection import (
-    WindowsShell,
-    detect_windows_shell,
-    supports_ansi,
-    supports_unicode,
-    check_console_codepage,
-)
 
 __all__ = [
     "CancellationToken",

@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import _DecisionReason, _decide_path
+from nexus3.core.paths import _decide_path, _DecisionReason
 
 if TYPE_CHECKING:
     from nexus3.skill.services import ServiceContainer
@@ -153,9 +153,9 @@ class PathDecisionEngine:
     @classmethod
     def from_services(
         cls,
-        services: "ServiceContainer",
+        services: ServiceContainer,
         tool_name: str | None = None,
-    ) -> "PathDecisionEngine":
+    ) -> PathDecisionEngine:
         """Create engine from a ServiceContainer.
 
         This uses the per-agent and per-tool path configurations from

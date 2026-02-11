@@ -3,16 +3,15 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from nexus3.clipboard import ClipboardManager, ClipboardScope
+from nexus3.clipboard import ClipboardScope
 from nexus3.core.errors import PathSecurityError
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
 
 if TYPE_CHECKING:
-    from nexus3.skill.services import ServiceContainer
+    pass
 
 
 class ClipboardImportSkill(FileSkill):
@@ -50,7 +49,10 @@ class ClipboardImportSkill(FileSkill):
                 "dry_run": {
                     "type": "boolean",
                     "default": True,
-                    "description": "If true, show what would be imported without actually importing",
+                    "description": (
+                        "If true, show what would be imported"
+                        " without actually importing"
+                    ),
                 },
             },
             "required": ["path"],

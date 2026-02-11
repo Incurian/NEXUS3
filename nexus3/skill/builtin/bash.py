@@ -46,7 +46,8 @@ def _check_permission_level(services: "ServiceContainer", skill_name: str) -> To
     if level == PermissionLevel.SANDBOXED:
         return ToolResult(
             error=f"{skill_name} is disabled in SANDBOXED mode. "
-            "This is a defense-in-depth check - the skill should not be registered for sandboxed agents."
+            "This is a defense-in-depth check - the skill should"
+            " not be registered for sandboxed agents."
         )
     return None
 
@@ -214,7 +215,10 @@ class ShellUnsafeSkill(ExecutionSkill):
 
     @property
     def description(self) -> str:
-        return "Execute shell command with full shell features (pipes, redirects) - USE WITH CAUTION"
+        return (
+            "Execute shell command with full shell features"
+            " (pipes, redirects) - USE WITH CAUTION"
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -223,7 +227,10 @@ class ShellUnsafeSkill(ExecutionSkill):
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": "Shell command (supports | && > etc. but UNSAFE with untrusted input)"
+                    "description": (
+                        "Shell command (supports | && > etc."
+                        " but UNSAFE with untrusted input)"
+                    )
                 },
                 "timeout": {
                     "type": "integer",

@@ -68,9 +68,15 @@ def format_clipboard_context(
                 f"{scope.value}: showing {max_entries} of {len(scope_entries)}"
             )
 
-    footer = 'Use `paste(key="...")` to insert content. Use `clipboard_list(verbose=True)` to preview.'
+    footer = (
+        'Use `paste(key="...")` to insert content.'
+        ' Use `clipboard_list(verbose=True)` to preview.'
+    )
     if truncated_scopes:
-        footer += f" Truncated — {', '.join(truncated_scopes)}. Use `clipboard_list()` to see all."
+        footer += (
+            f" Truncated — {', '.join(truncated_scopes)}."
+            " Use `clipboard_list()` to see all."
+        )
 
     lines.extend(["", footer])
 
@@ -79,7 +85,8 @@ def format_clipboard_context(
     if expired_count > 0:
         lines.extend([
             "",
-            f"*Note: {expired_count} expired entries pending cleanup. Use clipboard_list to review.*",
+            f"*Note: {expired_count} expired entries pending cleanup."
+            " Use clipboard_list to review.*",
         ])
 
     return "\n".join(lines)

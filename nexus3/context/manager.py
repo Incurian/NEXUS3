@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from nexus3.clipboard import format_clipboard_context
+from nexus3.config.schema import ClipboardConfig
 from nexus3.context.token_counter import TokenCounter, get_token_counter
 from nexus3.core.types import Message, Role, ToolCall, ToolResult
 
@@ -15,7 +17,10 @@ def get_current_datetime_str() -> str:
         Formatted string like "Current date: 2026-01-13, Current time: 14:32 (local)"
     """
     now = datetime.now()
-    return f"Current date: {now.strftime('%Y-%m-%d')}, Current time: {now.strftime('%H:%M')} (local)"
+    return (
+        f"Current date: {now.strftime('%Y-%m-%d')},"
+        f" Current time: {now.strftime('%H:%M')} (local)"
+    )
 
 
 def get_session_start_str(
@@ -50,9 +55,9 @@ def get_session_start_str(
     if write_paths:
         parts.append(f" | Write paths: {', '.join(write_paths)}")
     elif preset == "trusted" and not has_confirmation_ui:
-        parts.append(f" | Writes: CWD only (no confirmation UI)")
+        parts.append(" | Writes: CWD only (no confirmation UI)")
     elif preset == "trusted" and has_confirmation_ui:
-        parts.append(f" | Writes: CWD unrestricted, elsewhere with user confirmation")
+        parts.append(" | Writes: CWD unrestricted, elsewhere with user confirmation")
 
     parts.append("]")
     return "".join(parts)
@@ -160,9 +165,6 @@ def inject_datetime_into_prompt(prompt: str, datetime_line: str) -> str:
         # Not a valid standalone header - continue searching
         search_start = pos + 1
 
-
-from nexus3.clipboard import format_clipboard_context
-from nexus3.config.schema import ClipboardConfig
 
 if TYPE_CHECKING:
     from nexus3.clipboard import ClipboardManager
