@@ -1,0 +1,56 @@
+{
+  "name": "nexus3-ide",
+  "displayName": "NEXUS3 IDE Integration",
+  "description": "IDE integration for NEXUS3 AI agent framework",
+  "version": "0.1.0",
+  "publisher": "nexus3",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "nexus3.diffAccept",
+        "title": "Accept Changes",
+        "icon": "$(check)"
+      },
+      {
+        "command": "nexus3.diffReject",
+        "title": "Reject Changes",
+        "icon": "$(close)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "nexus3.diffAccept",
+          "when": "resourceScheme == nexus3-diff",
+          "group": "navigation@1"
+        },
+        {
+          "command": "nexus3.diffReject",
+          "when": "resourceScheme == nexus3-diff",
+          "group": "navigation@2"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --sourcemap",
+    "watch": "npm run build -- --watch",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.5.10",
+    "esbuild": "^0.19.0",
+    "typescript": "^5.3.0"
+  }
+}

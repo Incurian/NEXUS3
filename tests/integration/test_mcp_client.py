@@ -290,6 +290,9 @@ class TestMCPSkillAdapter:
 
 # --- HTTP Transport Tests ---
 
+aiohttp = pytest.importorskip("aiohttp", reason="aiohttp not installed")
+
+
 @pytest.fixture
 async def http_server():
     """Start HTTP test server for tests."""
