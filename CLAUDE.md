@@ -637,6 +637,36 @@ Example compaction summary header:
 [CONTEXT SUMMARY - Generated: 2026-01-13 16:45]
 ```
 
+### Git Repository Context
+
+When an agent's CWD is inside a git repository, git context is automatically detected and injected into the system prompt. This gives agents awareness of the repository state without needing to run git commands.
+
+Example injection:
+```
+Git repository detected in CWD.
+  Branch: main
+  Status: 3 staged, 2 modified, 1 untracked, 2 stashes
+  Last commit: abc1234 fix login bug
+  Remote: origin → github.com/user/repo
+```
+
+**Refresh triggers:**
+
+| Event | Description |
+|-------|-------------|
+| Agent creation | Initial git context on startup |
+| Session restore | Refresh on `--resume` or saved session load |
+| CWD change | `/cwd` updates git context for new directory |
+| Tool batch completion | Refreshed if any tool could modify git state |
+| Context compaction | Refreshed alongside system prompt reload |
+| Config changes | `/model`, `/prompt`, `/gitlab on\|off` |
+
+**Properties:**
+- Hard-capped at 500 characters
+- Credentials stripped from remote URLs
+- Returns nothing (no injection) if not a git repo
+- Stash count and worktrees only shown when non-zero
+
 ---
 
 ## Permissions and Security

@@ -954,6 +954,9 @@ async def cmd_cwd(
         # Update ONLY this agent's cwd
         agent.services.register("cwd", new_path)
 
+        # Refresh git context for new directory
+        agent.context.refresh_git_context(new_path)
+
         return CommandOutput.success(
             message=f"Changed working directory to: {new_path}",
             data={"cwd": str(new_path)},
@@ -1253,6 +1256,11 @@ async def cmd_prompt(
         content = prompt_path.read_text(encoding="utf-8")
         agent.context.set_system_prompt(content)
 
+        # Refresh git context (prompt changed, context rebuilt)
+        cwd: Path | None = agent.services.get("cwd")
+        if cwd is not None:
+            agent.context.refresh_git_context(cwd)
+
         return CommandOutput.success(
             message=f"System prompt loaded from: {prompt_path} ({len(content)} chars)",
             data={
@@ -1511,6 +1519,11 @@ async def cmd_model(
             agent.session.provider = new_provider
         except ProviderError as e:
             return CommandOutput.error(f"Failed to switch model: {e.message}")
+
+    # Refresh git context (context window changed, prompt will be rebuilt)
+    cwd: Path | None = agent.services.get("cwd")
+    if cwd is not None:
+        agent.context.refresh_git_context(cwd)
 
     alias_info = f" (alias: {new_model.alias})" if new_model.alias else ""
     return CommandOutput.success(
@@ -2319,6 +2332,11 @@ def _gitlab_toggle(ctx: CommandContext, enable: bool) -> CommandOutput:
     agent.context.set_tool_definitions(
         agent.registry.get_definitions_for_permissions(perms)
     )
+
+    # Refresh git context (tool definitions changed)
+    cwd: Path | None = agent.services.get("cwd")
+    if cwd is not None:
+        agent.context.refresh_git_context(cwd)
 
     if enable:
         msg = f"GitLab: ON ({count} tools enabled)"

@@ -2,10 +2,12 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nexus3.clipboard import format_clipboard_context
 from nexus3.config.schema import ClipboardConfig
+from nexus3.context.git_context import get_git_context
 from nexus3.context.token_counter import TokenCounter, get_token_counter
 from nexus3.core.types import Message, Role, ToolCall, ToolResult
 
@@ -235,6 +237,7 @@ class ContextManager:
         self._system_prompt: str = ""
         self._tool_definitions: list[dict[str, Any]] = []
         self._messages: list[Message] = []
+        self._git_context: str | None = None
 
     # === Setup ===
 
@@ -247,6 +250,14 @@ class ContextManager:
         self._system_prompt = prompt
         if self._logger:
             self._logger.log_system(prompt)
+
+    def refresh_git_context(self, cwd: str | Path) -> None:
+        """Refresh cached git repository context for the given directory.
+
+        Args:
+            cwd: Working directory to check for git repository.
+        """
+        self._git_context = get_git_context(cwd)
 
     def add_session_start_message(
         self,
@@ -301,7 +312,8 @@ class ContextManager:
 
         This centralizes all system prompt modifications:
         1. Inject current date/time at the Environment section
-        2. Inject clipboard context if enabled
+        2. Inject git repository context if available
+        3. Inject clipboard context if enabled
 
         Returns:
             The fully constructed system prompt ready for API calls.
@@ -312,6 +324,10 @@ class ContextManager:
         # Start with datetime injection
         datetime_line = get_current_datetime_str()
         prompt = inject_datetime_into_prompt(self._system_prompt, datetime_line)
+
+        # Add git context if available
+        if self._git_context:
+            prompt = f"{prompt}\n\n{self._git_context}"
 
         # Add clipboard context if enabled and manager is available
         if (

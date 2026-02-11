@@ -13,6 +13,7 @@ from nexus3.context.compaction import (
     create_summary_message,
     select_messages_for_compaction,
 )
+from nexus3.context.git_context import should_refresh_git_context
 from nexus3.core.errors import sanitize_error_for_agent
 from nexus3.core.interfaces import AsyncProvider
 from nexus3.core.permissions import AgentPermissions, ConfirmationResult
@@ -582,6 +583,15 @@ class Session:
                 batch_complete = ToolBatchCompleted()
                 self._log_event(batch_complete)
                 yield batch_complete
+
+                # Refresh git context if any tool in batch could change git state
+                if self.context and any(
+                    should_refresh_git_context(tc.name)
+                    for tc in final_message.tool_calls
+                ):
+                    cwd = self._services.get_cwd() if self._services else Path.cwd()
+                    self.context.refresh_git_context(cwd)
+
                 yield IterationCompleted(
                     iteration=iteration_num + 1,
                     will_continue=True,
@@ -1032,6 +1042,10 @@ class Session:
 
         # Apply to context
         self.context.apply_compaction(summary_message, to_preserve, new_system_prompt)
+
+        # Refresh git context (picks up any changes since last refresh)
+        cwd = self._services.get_cwd() if self._services else Path.cwd()
+        self.context.refresh_git_context(cwd)
 
         new_usage = self.context.get_token_usage()
 

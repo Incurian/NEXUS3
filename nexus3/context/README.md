@@ -11,7 +11,7 @@ The context module is responsible for everything related to what an agent "knows
 3. **Tracking token usage** and enforcing budgets
 4. **Truncating** old messages when over budget
 5. **Compacting** via LLM summarization for longer sessions
-6. **Injecting dynamic content** (date/time, clipboard) safely into prompts
+6. **Injecting dynamic content** (date/time, git context, clipboard) safely into prompts
 
 ## Architecture
 
@@ -20,6 +20,7 @@ nexus3/context/
 ├── __init__.py        # Public exports
 ├── loader.py          # ContextLoader - layered config loading
 ├── manager.py         # ContextManager - runtime state and truncation
+├── git_context.py     # Git repository detection and context formatting
 ├── token_counter.py   # TokenCounter - pluggable token counting
 ├── compaction.py      # Compaction utilities - LLM summarization
 └── prompt_builder.py  # StructuredPrompt - typed prompt construction
@@ -175,7 +176,7 @@ class ContextConfig:
 1. **Message Management** - Add/clear user messages, assistant responses, tool results
 2. **Token Tracking** - Track usage across system prompt, tools, and messages
 3. **Truncation** - Remove old messages when over budget (preserving tool call/result pairs)
-4. **Dynamic Injection** - Inject current date/time and clipboard context into prompts per-request
+4. **Dynamic Injection** - Inject current date/time, git context, and clipboard context into prompts per-request
 
 #### Constructor Parameters
 
@@ -351,6 +352,35 @@ manager = ContextManager(
 ```
 
 The clipboard section is appended after the environment block during `build_messages()`.
+
+#### Git Context Injection
+
+When an agent's CWD is inside a git repository, git context is automatically injected into the system prompt. This gives agents awareness of branch, status, recent commit, and remote info.
+
+```python
+# Refresh git context (called on agent creation, cwd change, tool use, compaction)
+manager.refresh_git_context(Path("/home/user/project"))
+
+# Git context is automatically included in build_messages()
+messages = manager.build_messages()
+# System prompt now includes:
+# Git repository detected in CWD.
+#   Branch: main
+#   Status: 3 staged, 2 modified, 1 untracked, 2 stashes
+#   Last commit: abc1234 fix login bug
+#   Remote: origin → github.com/user/repo
+```
+
+Git context is refreshed on:
+- Agent creation and session restore
+- CWD changes (`/cwd`)
+- Tool batch completion (if any tool could modify git/working tree state)
+- Context compaction
+- Configuration changes (`/model`, `/prompt`, `/gitlab on|off`)
+
+The `should_refresh_git_context(tool_name)` helper determines which tools trigger a refresh (file-writing tools, git, bash, gitlab_* tools).
+
+Output is hard-capped at 500 characters. Credentials are stripped from remote URLs.
 
 #### Helper Functions
 
@@ -837,4 +867,4 @@ while True:
 
 ## Status
 
-Production-ready. Last updated: 2026-02-10
+Production-ready. Last updated: 2026-02-11

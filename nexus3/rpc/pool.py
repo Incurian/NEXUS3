@@ -604,6 +604,9 @@ class AgentPool:
             write_paths=write_paths,
         )
 
+        # Initialize git repository context
+        context.refresh_git_context(agent_cwd)
+
         # Register GitLab config for VCS skills
         gitlab_config = _convert_gitlab_config(self._shared.config)
         if gitlab_config:
@@ -925,6 +928,9 @@ class AgentPool:
         messages = deserialize_messages(saved.messages)
         for msg in messages:
             context._messages.append(msg)
+
+        # Refresh git repository context
+        context.refresh_git_context(agent_cwd)
 
         # Register GitLab config for VCS skills
         gitlab_config = _convert_gitlab_config(self._shared.config)
