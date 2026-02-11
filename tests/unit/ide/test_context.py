@@ -60,7 +60,10 @@ class TestFormatIdeContext:
 
     def test_truncation(self) -> None:
         diagnostics = [
-            Diagnostic(file_path=f"/very/long/path/file_{i}.py", line=i, message="x" * 50, severity="error")
+            Diagnostic(
+                file_path=f"/very/long/path/file_{i}.py",
+                line=i, message="x" * 50, severity="error",
+            )
             for i in range(100)
         ]
         result = format_ide_context("VS Code", diagnostics=diagnostics)

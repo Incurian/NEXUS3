@@ -13,7 +13,6 @@ def _make_config(enabled: bool = True, auto_connect: bool = True) -> MagicMock:
     config = MagicMock()
     config.enabled = enabled
     config.auto_connect = auto_connect
-    config.lock_dir_path = None
     return config
 
 
@@ -118,6 +117,123 @@ class TestIDEBridgeDisconnect:
     async def test_disconnect_when_not_connected(self) -> None:
         bridge = IDEBridge(_make_config())
         await bridge.disconnect()  # Should not raise
+
+
+class TestIDEBridgeReconnect:
+    @pytest.mark.asyncio
+    async def test_reconnect_if_dead_already_connected(self) -> None:
+        """Returns True without re-discovery when already connected."""
+        bridge = IDEBridge(_make_config())
+        mock_conn = MagicMock()
+        mock_conn.is_connected = True
+        bridge._connection = mock_conn
+
+        with patch("nexus3.ide.bridge.discover_ides") as mock_discover:
+            result = await bridge.reconnect_if_dead()
+
+        assert result is True
+        mock_discover.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reconnect_if_dead_finds_new_ide(self) -> None:
+        bridge = IDEBridge(_make_config())
+        bridge._last_cwd = Path("/test")
+        ide_info = _make_ide_info()
+
+        mock_client = AsyncMock()
+        with (
+            patch("nexus3.ide.bridge.discover_ides", return_value=[ide_info]),
+            patch("nexus3.ide.bridge.WebSocketTransport"),
+            patch("nexus3.ide.bridge.MCPClient", return_value=mock_client),
+        ):
+            result = await bridge.reconnect_if_dead()
+
+        assert result is True
+        assert bridge.is_connected or bridge._connection is not None
+
+    @pytest.mark.asyncio
+    async def test_reconnect_if_dead_no_ides_found(self) -> None:
+        bridge = IDEBridge(_make_config())
+        bridge._last_cwd = Path("/test")
+
+        with patch("nexus3.ide.bridge.discover_ides", return_value=[]):
+            result = await bridge.reconnect_if_dead()
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_reconnect_if_dead_connect_fails(self) -> None:
+        bridge = IDEBridge(_make_config())
+        bridge._last_cwd = Path("/test")
+        ide_info = _make_ide_info()
+
+        mock_client = AsyncMock()
+        mock_client.connect.side_effect = ConnectionError("refused")
+        with (
+            patch("nexus3.ide.bridge.discover_ides", return_value=[ide_info]),
+            patch("nexus3.ide.bridge.WebSocketTransport"),
+            patch("nexus3.ide.bridge.MCPClient", return_value=mock_client),
+        ):
+            result = await bridge.reconnect_if_dead()
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_reconnect_if_dead_no_cwd(self) -> None:
+        """Returns False when no cwd is available for re-discovery."""
+        bridge = IDEBridge(_make_config())
+        result = await bridge.reconnect_if_dead()
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_reconnect_if_dead_uses_explicit_cwd(self) -> None:
+        """Prefers explicit cwd over stored _last_cwd."""
+        bridge = IDEBridge(_make_config())
+        bridge._last_cwd = Path("/old")
+        ide_info = _make_ide_info()
+
+        with (
+            patch("nexus3.ide.bridge.discover_ides", return_value=[ide_info]) as mock_discover,
+            patch.object(bridge, "connect", new_callable=AsyncMock),
+        ):
+            await bridge.reconnect_if_dead(cwd=Path("/new"))
+
+        mock_discover.assert_called_once_with(Path("/new"))
+
+    @pytest.mark.asyncio
+    async def test_reconnect_cleans_up_old_connection(self) -> None:
+        """Old dead connection is disconnected before re-discovery."""
+        bridge = IDEBridge(_make_config())
+        bridge._last_cwd = Path("/test")
+        old_conn = MagicMock()
+        old_conn.is_connected = False
+        old_conn.close = AsyncMock()
+        bridge._connection = old_conn
+
+        with patch("nexus3.ide.bridge.discover_ides", return_value=[]):
+            await bridge.reconnect_if_dead()
+
+        old_conn.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_auto_connect_stores_last_cwd(self) -> None:
+        bridge = IDEBridge(_make_config())
+        ide_info = _make_ide_info()
+
+        with (
+            patch("nexus3.ide.bridge.discover_ides", return_value=[ide_info]),
+            patch.object(bridge, "connect", new_callable=AsyncMock),
+        ):
+            await bridge.auto_connect(Path("/my/project"))
+
+        assert bridge._last_cwd == Path("/my/project")
+
+    @pytest.mark.asyncio
+    async def test_auto_connect_stores_cwd_even_when_no_ides(self) -> None:
+        bridge = IDEBridge(_make_config())
+        with patch("nexus3.ide.bridge.discover_ides", return_value=[]):
+            await bridge.auto_connect(Path("/my/project"))
+        assert bridge._last_cwd == Path("/my/project")
 
 
 class TestIDEBridgeProperties:

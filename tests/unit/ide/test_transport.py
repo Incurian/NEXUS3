@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -19,7 +17,10 @@ class TestWebSocketTransport:
         async def fake_connect(*args, **kwargs):  # noqa: ANN002, ANN003
             return mock_ws
 
-        with patch("nexus3.ide.transport.websockets.connect", side_effect=fake_connect) as mock_connect:
+        with patch(
+            "nexus3.ide.transport.websockets.connect",
+            side_effect=fake_connect,
+        ) as mock_connect:
             transport = WebSocketTransport("ws://127.0.0.1:9999", "my-token")
             await transport.connect()
 
@@ -67,10 +68,38 @@ class TestWebSocketTransport:
         transport = WebSocketTransport("ws://127.0.0.1:9999", "token")
         transport._ws = MagicMock()
         transport._ws.protocol = MagicMock()
+        transport._listener_task = MagicMock()
+        transport._listener_task.done.return_value = False
         assert transport.is_connected is True
 
     def test_is_connected_false_no_protocol(self) -> None:
         transport = WebSocketTransport("ws://127.0.0.1:9999", "token")
         transport._ws = MagicMock()
         transport._ws.protocol = None
+        transport._listener_task = MagicMock()
+        transport._listener_task.done.return_value = False
         assert transport.is_connected is False
+
+    def test_is_connected_false_when_listener_done(self) -> None:
+        """Dead listener task means disconnected even if ws exists."""
+        transport = WebSocketTransport("ws://127.0.0.1:9999", "token")
+        transport._ws = MagicMock()
+        transport._ws.protocol = MagicMock()
+        transport._listener_task = MagicMock()
+        transport._listener_task.done.return_value = True
+        assert transport.is_connected is False
+
+    def test_is_connected_false_when_no_listener_task(self) -> None:
+        transport = WebSocketTransport("ws://127.0.0.1:9999", "token")
+        transport._ws = MagicMock()
+        transport._ws.protocol = MagicMock()
+        transport._listener_task = None
+        assert transport.is_connected is False
+
+    def test_is_connected_true_all_healthy(self) -> None:
+        transport = WebSocketTransport("ws://127.0.0.1:9999", "token")
+        transport._ws = MagicMock()
+        transport._ws.protocol = MagicMock()
+        transport._listener_task = MagicMock()
+        transport._listener_task.done.return_value = False
+        assert transport.is_connected is True

@@ -68,4 +68,9 @@ class WebSocketTransport(MCPTransport):
 
     @property
     def is_connected(self) -> bool:
-        return self._ws is not None and self._ws.protocol is not None
+        return (
+            self._ws is not None
+            and self._ws.protocol is not None
+            and self._listener_task is not None
+            and not self._listener_task.done()
+        )

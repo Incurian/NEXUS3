@@ -26,6 +26,7 @@ class IDEBridge:
         self._config = config
         self._connection: IDEConnection | None = None
         self._diff_lock = asyncio.Lock()  # Serialize openDiff requests
+        self._last_cwd: Path | None = None  # For reconnection
 
     async def auto_connect(self, cwd: Path) -> IDEConnection | None:
         """Discover and connect to the best-matching IDE for the given cwd.
@@ -34,6 +35,7 @@ class IDEBridge:
         """
         if not self._config.enabled or not self._config.auto_connect:
             return None
+        self._last_cwd = cwd  # Remember for reconnection
         ides = discover_ides(cwd)
         if not ides:
             return None
@@ -58,6 +60,34 @@ class IDEBridge:
         if self._connection:
             await self._connection.close()
             self._connection = None
+
+    async def reconnect_if_dead(self, cwd: Path | None = None) -> bool:
+        """Attempt reconnection if currently disconnected.
+
+        Returns True if connected (already or after reconnection).
+        """
+        if self.is_connected:
+            return True
+        effective_cwd = cwd or self._last_cwd
+        if not effective_cwd:
+            return False
+        # Clean up old connection
+        if self._connection:
+            try:
+                await self.disconnect()
+            except Exception:
+                self._connection = None
+        # Re-discover
+        ides = discover_ides(effective_cwd)
+        if not ides:
+            return False
+        try:
+            await self.connect(ides[0])
+            logger.info("IDE reconnected after connection loss")
+            return True
+        except Exception:
+            logger.debug("IDE reconnect failed", exc_info=True)
+            return False
 
     @property
     def connection(self) -> IDEConnection | None:

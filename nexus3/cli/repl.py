@@ -373,6 +373,15 @@ async def run_repl(
         ide_bridge = shared.ide_bridge if shared else None
         if (
             ide_bridge
+            and shared.config.ide.use_ide_diffs
+            and tool_call.name in _IDE_DIFF_TOOLS
+            and target_path
+        ):
+            # Attempt reconnect if dead
+            if not ide_bridge.is_connected:
+                await ide_bridge.reconnect_if_dead()
+        if (
+            ide_bridge
             and ide_bridge.is_connected
             and shared.config.ide.use_ide_diffs
             and tool_call.name in _IDE_DIFF_TOOLS

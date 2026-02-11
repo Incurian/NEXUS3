@@ -5,9 +5,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
-from nexus3.ide.discovery import IDEInfo, _is_pid_alive, discover_ides
+from nexus3.ide.discovery import _is_pid_alive, discover_ides
 
 
 class TestIsPidAlive:

@@ -8,10 +8,7 @@ import pytest
 
 from nexus3.ide.connection import (
     DiffOutcome,
-    Diagnostic,
-    EditorInfo,
     IDEConnection,
-    Selection,
 )
 from nexus3.ide.discovery import IDEInfo
 
@@ -81,7 +78,10 @@ class TestOpenDiff:
 class TestGetDiagnostics:
     @pytest.mark.asyncio
     async def test_parse_diagnostics(self) -> None:
-        diag_json = '[{"filePath":"/a.py","line":10,"message":"err","severity":"error","source":"pylint"}]'
+        diag_json = (
+            '[{"filePath":"/a.py","line":10,"message":"err",'
+            '"severity":"error","source":"pylint"}]'
+        )
         result = FakeMCPToolResult(content=[{"type": "text", "text": diag_json}])
         conn, _ = _make_connection(result)
 
@@ -112,7 +112,10 @@ class TestGetDiagnostics:
 class TestGetSelection:
     @pytest.mark.asyncio
     async def test_parse_selection(self) -> None:
-        sel_json = '{"filePath":"/a.py","text":"hello","startLine":1,"startCharacter":0,"endLine":1,"endCharacter":5}'
+        sel_json = (
+            '{"filePath":"/a.py","text":"hello","startLine":1,'
+            '"startCharacter":0,"endLine":1,"endCharacter":5}'
+        )
         result = FakeMCPToolResult(content=[{"type": "text", "text": sel_json}])
         conn, _ = _make_connection(result)
 
@@ -134,7 +137,10 @@ class TestGetSelection:
 class TestGetOpenEditors:
     @pytest.mark.asyncio
     async def test_parse_editors(self) -> None:
-        editors_json = '[{"filePath":"/a.py","isActive":true,"isDirty":false,"languageId":"python"}]'
+        editors_json = (
+            '[{"filePath":"/a.py","isActive":true,'
+            '"isDirty":false,"languageId":"python"}]'
+        )
         result = FakeMCPToolResult(content=[{"type": "text", "text": editors_json}])
         conn, _ = _make_connection(result)
 
