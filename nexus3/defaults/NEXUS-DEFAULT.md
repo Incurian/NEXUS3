@@ -158,8 +158,22 @@ outline(path="src/auth.py", diff=true)               # Entries with uncommitted 
 | Read a specific symbol | `outline` with `symbol` | Targeted — no need to know line numbers |
 | Read specific lines | `read_file` with `offset`/`limit` | Precise — use line numbers from outline |
 | Read full file | `read_file` | Expensive — use only when you need everything |
+| Read many files of same type | `concat_files` | Bulk read with token budgeting and dry-run |
 | Search for a pattern | `grep` | When you know what to look for but not where |
 | Find files by name | `glob` | When you know the filename pattern |
+
+**`outline` vs `concat_files` — when to use which:**
+
+| Scenario | Use | Why |
+|----------|-----|-----|
+| "What's in this file?" | `outline` | Structure only, cheap |
+| "What's in this directory?" | `outline` on directory | Per-file symbols, very cheap |
+| "I need the full source of all .py files" | `concat_files` | Bulk read with token budget |
+| "How big would reading all the code be?" | `concat_files` with `dry_run=true` | Token estimate without reading |
+| "I need one specific class body" | `outline` with `symbol` | Surgical extraction |
+| "Where are the changed sections?" | `outline` with `diff=true` | Focus on recent work |
+
+Rule of thumb: `outline` is for **navigating** (cheap, structural), `concat_files` is for **bulk reading** (expensive, full content). Start with `outline` to understand what you're dealing with, then use `read_file` or `concat_files` to get the content you actually need.
 
 ---
 
