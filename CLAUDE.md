@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+<!-- PART I: PROJECT -->
+
 ## Project Overview
 
 NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. The goal is a simpler, more maintainable, end-to-end tested agent with clear architecture.
@@ -14,56 +16,9 @@ NEXUS3 is a clean-slate rewrite of NEXUS2, an AI-powered CLI agent framework. Th
 
 ---
 
-## Dogfooding: Use NEXUS Subagents
-
-**When working on this codebase, use NEXUS3 subagents for research and exploration tasks.** This is dogfooding - we use our own product.
-
-### Starting the Server
-
-```bash
-# Start headless server (use port 9000 to avoid conflict with user's REPL on 8765)
-NEXUS_DEV=1 .venv/bin/python -m nexus3 --serve 9000 &
-
-# Or check if already running
-.venv/bin/python -m nexus3 rpc detect --port 9000
-```
-
-### Creating and Using Research Agents
-
-```bash
-# Create a research agent (trusted can read anywhere, writes within CWD)
-.venv/bin/python -m nexus3 rpc create researcher --preset trusted --cwd /home/inc/repos/NEXUS3 --port 9000
-
-# Send research tasks
-.venv/bin/python -m nexus3 rpc send researcher "Look at nexus3/rpc/ and summarize the JSON-RPC types" --port 9000
-
-# Check status (don't rush - let them work)
-.venv/bin/python -m nexus3 rpc status researcher --port 9000
-
-# Cleanup when done
-.venv/bin/python -m nexus3 rpc destroy researcher --port 9000
-```
-
-### Guidelines
-
-- **Run commands one at a time** (multi-turn), NOT as a multi-step script
-- **Use subagents for reading/research** - they help manage context window
-- **Verify subagent code** - if they write code, review before committing
-- **Reuse agents** - check `rpc status` before destroying; reuse if tokens remain
-- **Use long timeouts** - research tasks need `--timeout 300` or higher
-
-### Coordination Pattern
-
-Claude Code coordinates NEXUS subagents directly:
-- Create agents with appropriate CWD and permissions
-- Send focused research tasks
-- Collect and synthesize findings
-
-Do NOT use a NEXUS coordinator agent in the middle - Claude Code is better at coordination.
-
----
-
 ## Architecture
+
+### Module Structure
 
 ```
 nexus3/
@@ -86,11 +41,111 @@ nexus3/
 
 Each module has a `README.md` with detailed documentation.
 
----
+### Key Interfaces
 
-## Multi-Agent Server
+```python
+# Skill Protocol
+class Skill(Protocol):
+    @property
+    def name(self) -> str: ...
+    @property
+    def description(self) -> str: ...
+    @property
+    def parameters(self) -> dict[str, Any]: ...
+    async def execute(self, **kwargs: Any) -> ToolResult: ...
 
-### Architecture
+# AsyncProvider Protocol
+class AsyncProvider(Protocol):
+    async def complete(self, messages, tools) -> Message: ...
+    def stream(self, messages, tools) -> AsyncIterator[StreamEvent]: ...
+```
+
+### Skill Type Hierarchy
+
+Skills are organized into base classes that provide shared infrastructure for common patterns. Each base class handles boilerplate so individual skills focus on their unique logic.
+
+#### Hierarchy Overview
+
+```
+Skill (Protocol)
+├── BaseSkill         # Minimal abstract base (name, description, parameters, execute)
+├── FileSkill         # Path validation + per-tool allowed_paths resolution via ServiceContainer
+├── NexusSkill        # Server communication (port discovery, client management)
+├── ExecutionSkill    # Subprocess execution (timeout, output formatting)
+└── FilteredCommandSkill  # Permission-based command filtering + per-tool allowed_paths
+```
+
+#### Base Classes
+
+| Base Class | Purpose | Skills Using It |
+|------------|---------|-----------------|
+| `FileSkill` | Path validation, symlink resolution, allowed_paths | read_file, write_file, edit_file, append_file, tail, file_info, list_directory, mkdir, copy_file, rename, regex_replace, glob, grep |
+| `NexusSkill` | Server URL building, API key discovery, client error handling | nexus_create, nexus_destroy, nexus_send, nexus_status, nexus_cancel, nexus_shutdown |
+| `ExecutionSkill` | Timeout enforcement, working dir resolution, output formatting | bash, run_python |
+| `FilteredCommandSkill` | Read-only command filtering, blocked pattern matching | git |
+
+#### Creating New Skills
+
+**File operations** - inherit `FileSkill`:
+```python
+class MyFileSkill(FileSkill):
+    async def execute(self, path: str = "", **kwargs: Any) -> ToolResult:
+        validated = self._validate_path(path)  # Returns Path or ToolResult error
+        if isinstance(validated, ToolResult):
+            return validated
+        # Use validated path...
+
+my_file_skill_factory = file_skill_factory(MyFileSkill)
+```
+
+**Server communication** - inherit `NexusSkill`:
+```python
+class MyNexusSkill(NexusSkill):
+    async def execute(self, agent_id: str = "", port: int | None = None, **kwargs: Any) -> ToolResult:
+        return await self._execute_with_client(
+            port=port,
+            agent_id=agent_id,
+            operation=lambda client: client.some_method()
+        )
+
+my_nexus_skill_factory = nexus_skill_factory(MyNexusSkill)
+```
+
+**Subprocess execution** - inherit `ExecutionSkill`:
+```python
+class MyExecSkill(ExecutionSkill):
+    async def _create_process(self, work_dir: str | None) -> asyncio.subprocess.Process:
+        return await asyncio.create_subprocess_exec(...)
+
+    async def execute(self, timeout: int = 30, cwd: str | None = None, **kwargs: Any) -> ToolResult:
+        return await self._execute_subprocess(timeout=timeout, cwd=cwd, timeout_message="...")
+
+my_exec_skill_factory = execution_skill_factory(MyExecSkill)
+```
+
+**Command filtering** (e.g., docker, kubectl) - inherit `FilteredCommandSkill`:
+```python
+class MyFilteredSkill(FilteredCommandSkill):
+    def get_read_only_commands(self) -> frozenset[str]:
+        return frozenset({"ps", "logs", "inspect"})
+
+    def get_blocked_patterns(self) -> list[tuple[str, str]]:
+        return [("rm\\s+-f", "force remove is dangerous")]
+
+my_filtered_skill_factory = filtered_command_skill_factory(MyFilteredSkill)
+```
+
+**Utility/special logic** - inherit `BaseSkill` directly (catch-all for unique skills):
+```python
+class MySpecialSkill(BaseSkill):
+    async def execute(self, **kwargs: Any) -> ToolResult:
+        # Custom logic without shared infrastructure
+        ...
+```
+
+### Multi-Agent Server
+
+#### Server Architecture
 
 ```
 nexus3 --serve
@@ -103,7 +158,7 @@ nexus3 --serve
     └── POST /agent/{id} → Agent's Dispatcher (send/cancel/etc)
 ```
 
-### API
+#### API
 
 ```bash
 # Global methods (POST /)
@@ -122,7 +177,7 @@ nexus3 --serve
 {"method": "shutdown"}
 ```
 
-### Component Sharing
+#### Component Sharing
 
 | Shared (SharedComponents) | Per-Agent |
 |---------------------------|-----------|
@@ -132,6 +187,8 @@ nexus3 --serve
 | Base log directory | SkillRegistry, Session, Dispatcher |
 | MCPServerRegistry | |
 | Custom permission presets | |
+
+<!-- PART II: USER REFERENCE -->
 
 ---
 
@@ -207,14 +264,7 @@ Sessions persist conversation history, model choice, permissions, and working di
    - `--resume`: Load `~/.nexus3/last-session.json`
    - `--session NAME`: Load `~/.nexus3/sessions/{NAME}.json`
 
-### REPL Commands for Sessions
-
-| Command | Description |
-|---------|-------------|
-| `/save [name]` | Save current session (prompts for name if temp) |
-| `/clone <src> <dest>` | Clone agent or saved session |
-| `/rename <old> <new>` | Rename agent or saved session |
-| `/delete <name>` | Delete saved session from disk |
+See REPL Commands Reference for session commands (`/save`, `/clone`, `/rename`, `/delete`).
 
 ### Session File Format
 
@@ -434,6 +484,550 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 
 ---
 
+## Context System
+
+### Context Loading
+
+Context is loaded from multiple directory layers and merged together. Each layer extends the previous one.
+
+#### Layer Hierarchy
+
+```
+LAYER 1a: System Defaults (NEXUS-DEFAULT.md in package - auto-updates)
+    ↓
+LAYER 1b: Global (~/.nexus3/NEXUS.md - user customizations)
+    ↓
+LAYER 2: Ancestors (up to N levels above CWD, default 2)
+    ↓
+LAYER 3: Local (CWD/.nexus3/)
+```
+
+#### Directory Structure
+
+```
+nexus3/defaults/              # Package (auto-updates with upgrades)
+├── NEXUS-DEFAULT.md          # System docs, tools, permissions (ALWAYS loaded)
+└── NEXUS.md                  # Template (copied to ~/.nexus3/ on init)
+
+~/.nexus3/                    # Global (user customizations)
+├── NEXUS.md                  # User's custom instructions
+├── config.json               # Personal configuration
+└── mcp.json                  # Personal MCP servers
+
+./parent/.nexus3/             # Ancestor (1 level up)
+├── NEXUS.md
+└── config.json
+
+./.nexus3/                    # Local (CWD)
+├── NEXUS.md                  # Project-specific prompt
+├── config.json               # Project config overrides
+└── mcp.json                  # Project MCP servers
+```
+
+#### Split Context Design
+
+- **NEXUS-DEFAULT.md** (package only): Contains tool docs, permissions, limits - auto-updates with package upgrades
+- **NEXUS.md** (user's): Contains custom instructions - preserved across upgrades
+
+This split ensures users get new tool documentation automatically while keeping their customizations safe.
+
+#### Configuration Merging
+
+- **Configs**: Deep merged (local keys override global, unspecified keys preserved)
+- **NEXUS.md**: All layers included with labeled sections
+- **MCP servers**: Same name = local wins
+
+#### Subagent Context Inheritance
+
+Subagents created with `cwd` parameter get:
+1. Their cwd's NEXUS.md (if exists)
+2. Parent's context (non-redundantly)
+
+#### Init Commands
+
+```bash
+# Initialize global config
+nexus3 --init-global           # Create ~/.nexus3/ with defaults
+nexus3 --init-global-force     # Overwrite existing
+
+# Initialize local config (REPL)
+/init                         # Create ./.nexus3/ with templates
+/init --force                 # Overwrite existing
+/init --global                # Initialize ~/.nexus3/ instead
+```
+
+#### Context Config Options
+
+```json
+{
+  "context": {
+    "ancestor_depth": 2,       // How many parent dirs to check (0-10)
+    "include_readme": false,   // Always include README.md
+    "readme_as_fallback": false // Use README when no NEXUS.md (opt-in for security)
+  }
+}
+```
+
+### Context Compaction
+
+Context compaction summarizes old conversation history via LLM to reclaim token space while preserving essential information.
+
+#### How It Works
+
+1. **Trigger**: Compaction runs when `used_tokens > trigger_threshold * available_tokens` (default 90%)
+2. **Preserve recent**: The most recent messages (controlled by `recent_preserve_ratio`) are kept verbatim
+3. **Summarize old**: Older messages are sent to a fast model (default: claude-haiku) for summarization
+4. **Budget**: Summary is constrained to `summary_budget_ratio` of available tokens (default 25%)
+5. **System prompt reload**: During compaction, NEXUS.md is re-read, picking up any changes
+
+#### Configuration Options (`CompactionConfig`)
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enabled` | `true` | Enable automatic compaction |
+| `model` | `"anthropic/claude-haiku"` | Model for summarization |
+| `summary_budget_ratio` | `0.25` | Max tokens for summary (fraction of available) |
+| `recent_preserve_ratio` | `0.25` | Recent messages to preserve (fraction of available) |
+| `trigger_threshold` | `0.9` | Trigger when usage exceeds this fraction |
+
+```json
+{
+  "compaction": {
+    "enabled": true,
+    "model": "anthropic/claude-haiku",
+    "summary_budget_ratio": 0.25,
+    "recent_preserve_ratio": 0.25,
+    "trigger_threshold": 0.9
+  }
+}
+```
+
+#### Commands
+
+```bash
+/compact              # Manual compaction (even if below threshold)
+```
+
+#### Key Benefits
+
+- **Longer sessions**: Reclaim space without losing context
+- **System prompt updates**: Changes to NEXUS.md apply on next compaction
+- **Timestamped summaries**: Each summary includes when it was generated
+- **Configurable**: Tune thresholds for your use case
+
+### Temporal Context
+
+Agents always have accurate temporal awareness through three timestamp mechanisms:
+
+| Timestamp | When Set | Location | Purpose |
+|-----------|----------|----------|---------|
+| **Current date/time** | Every request | System prompt | Always accurate - agents know "now" |
+| **Session start** | Agent creation | First message in history | Marks when session began |
+| **Compaction** | On summary | Summary prefix | Indicates when history was summarized |
+
+Example session start messages:
+```
+[Session started: 2026-01-13 14:30 (local)]
+[Session started: 2026-01-13 14:30 (local) | Agent: worker-1 | Preset: sandboxed | CWD: /home/user/project]
+[Session started: 2026-01-13 14:30 (local) | Agent: main | Preset: trusted | CWD: /home/user/project | Writes: CWD unrestricted, elsewhere with user confirmation]
+```
+
+Example compaction summary header:
+```
+[CONTEXT SUMMARY - Generated: 2026-01-13 16:45]
+```
+
+---
+
+## Permissions and Security
+
+### Permission System
+
+#### Built-in Presets
+
+| Preset | Level | Description |
+|--------|-------|-------------|
+| `yolo` | YOLO | Full access, no confirmations (REPL-only) |
+| `trusted` | TRUSTED | Confirmations for destructive actions |
+| `sandboxed` | SANDBOXED | CWD only, no network, limited nexus tools (default for RPC) |
+
+#### Target Restrictions
+
+Some tools support `allowed_targets` restrictions that limit which agents they can communicate with:
+
+| Restriction | Meaning |
+|-------------|---------|
+| `None` | No restriction - can target any agent |
+| `"parent"` | Can only target the agent's parent (who created it) |
+| `"children"` | Can only target agents this one created |
+| `"family"` | Can target parent OR children |
+| `["id1", "id2"]` | Explicit allowlist of agent IDs |
+
+This is used by `nexus_send`, `nexus_status`, `nexus_cancel`, and `nexus_destroy` to control inter-agent communication.
+
+#### RPC Agent Permission Quirks (IMPORTANT)
+
+**These behaviors are intentional security defaults for RPC-created agents:**
+
+1. **Default agent is sandboxed**: When creating agents via RPC without specifying a preset, they default to `sandboxed` (NOT `trusted`). This is intentional - programmatic agents should be least-privileged by default.
+
+2. **Sandboxed agents can only read in their cwd**: A sandboxed agent's `allowed_paths` is set to `[cwd]` only. They cannot read files outside their working directory.
+
+3. **Sandboxed agents cannot write unless given explicit write paths**: By default, sandboxed agents have all write tools (`write_file`, `edit_file`, `append_file`, `regex_replace`, etc.) **disabled**. To enable writes, use `--write-path` (CLI) or `allowed_write_paths` (RPC JSON):
+   ```bash
+   nexus3 rpc create worker --cwd /tmp/sandbox --write-path /tmp/sandbox
+   ```
+
+4. **Trusted agents must be created explicitly**: To get a trusted agent, you must pass `--preset trusted` explicitly. Trusted is not the default for RPC.
+
+5. **Trusted agents in RPC mode**: Can read anywhere, but destructive operations follow the same confirmation logic (which auto-allows within CWD in non-interactive mode).
+
+6. **YOLO is REPL-only**: You CANNOT create a yolo agent via RPC (blocked in global_dispatcher). YOLO agents can only be created in the interactive REPL. Additionally, RPC `send` to YOLO agents is blocked unless the REPL is actively connected to that agent. If a user creates a YOLO agent in REPL, switches to another agent, then tries `nexus3 rpc send` to the YOLO agent, it fails with "Cannot send to YOLO agent - no REPL connected". This ensures YOLO operations always have active user supervision.
+
+7. **Trusted agents can only create sandboxed subagents**: A trusted agent cannot spawn another trusted agent - all subagents are sandboxed (ceiling enforcement).
+
+8. **Sandboxed agents have limited nexus tools**: Most nexus tools (`nexus_create`, `nexus_destroy`, `nexus_status`, `nexus_cancel`, `nexus_shutdown`) are disabled for sandboxed agents. However, **`nexus_send` IS enabled with `allowed_targets="parent"`** - sandboxed agents can send messages back to their parent agent to report results. They cannot message any other agent.
+
+9. **Subagent cwd must be within parent's cwd**: When creating a subagent, the child's `cwd` must be within the parent's `cwd`. This prevents privilege escalation where a child could operate in a directory the parent shouldn't access.
+
+10. **Subagent write paths must be within parent's cwd**: Similarly, `allowed_write_paths` for a subagent must be within the parent's `cwd`. A parent cannot grant write access to paths outside its own working directory.
+
+11. **Subagent cwd defaults to parent's cwd**: If no `cwd` is specified when creating a subagent, it inherits the parent's `cwd` (not the server process's cwd).
+
+**Example secure agent creation:**
+```bash
+# Read-only agent (default) - can only read in its cwd
+nexus3 rpc create reader --cwd /path/to/project
+
+# Agent with write access to specific directory
+nexus3 rpc create writer --cwd /path/to/project --write-path /path/to/project/output
+
+# Trusted agent (explicit - use with care)
+nexus3 rpc create coordinator --preset trusted
+```
+
+#### Key Features
+
+- **Per-tool configuration**: Enable/disable tools, per-tool paths, per-tool timeouts
+- **Permission presets**: Named configurations loaded from config or built-in
+- **Ceiling inheritance**: Subagents cannot exceed parent permissions
+- **Confirmation prompts**: TRUSTED mode prompts for destructive actions in REPL
+
+#### Commands
+
+```bash
+/permissions              # Show current permissions
+/permissions trusted      # Change preset (within ceiling)
+/permissions --disable write_file   # Disable a tool
+/permissions --list-tools           # List tool status
+```
+
+### Security Hardening
+
+Comprehensive security hardening completed January 2026:
+
+- **Permission system**: Ceiling enforcement, fail-closed defaults, path validation
+- **RPC hardening**: Token auth, header limits, SSRF protection, symlink defense
+- **Process isolation**: Process group kills on timeout, env sanitization
+- **Input validation**: URL validation, agent ID validation, MCP protocol hardening
+- **Output sanitization**: Terminal escape stripping, Rich markup escaping, secrets redaction
+- **MCP hardening** (added 2026-01-27):
+  - SSRF redirect bypass prevention (`follow_redirects=False`)
+  - MCP output sanitization via `sanitize_for_display()`
+  - Response size limits (10MB max via `MAX_MCP_OUTPUT_SIZE`)
+  - Config error sanitization (no secret leakage in validation errors)
+  - Session ID validation (alphanumeric only, 256 char max)
+- **Windows compatibility** (added 2026-01-28):
+  - Error path sanitization for Windows paths (C:\Users\..., UNC, domain\user)
+  - Cross-platform process tree termination (taskkill /T /F fallback)
+  - Environment variable sanitization includes Windows-specific vars
+  - CREATE_NO_WINDOW subprocess flag prevents window flashing
+
+**Test coverage**: 3400+ tests including 770+ security-specific tests.
+
+### Windows Compatibility
+
+#### Known Windows Security Limitations
+
+These are documented limitations, not bugs:
+
+| Issue | Impact | Mitigation |
+|-------|--------|------------|
+| `os.chmod()` no-op | Session files, tokens may be readable by other users | Restrict home directory access |
+| Symlink detection | `is_symlink()` misses junctions/reparse points | Symlink attack assumptions weaker |
+| Permission bits | `S_IRWXG\|S_IRWXO` checks meaningless | ACL-based validation not implemented |
+
+#### Shell Detection
+
+NEXUS3 detects the Windows shell environment at startup and adapts its output accordingly.
+
+| Shell | Detection | ANSI Support | Unicode | Notes |
+|-------|-----------|--------------|---------|-------|
+| Windows Terminal | `WT_SESSION` env var | Full | Full | Best experience |
+| PowerShell 7+ | Via Windows Terminal | Full | Full | |
+| Git Bash | `MSYSTEM` env var | Full | Full | MSYS2 environment |
+| PowerShell 5.1 | `PSModulePath` set | Limited | Limited | Legacy mode |
+| CMD.exe | `COMSPEC` check | None | None | Plain text only |
+
+When running in CMD.exe or PowerShell 5.1, NEXUS3 displays a warning suggesting better alternatives. Users can suppress these by running in Windows Terminal.
+
+For proper UTF-8 display, the console should use code page 65001. NEXUS3 warns if a different code page is detected. Run `chcp 65001` before starting NEXUS3 to fix character display issues.
+
+#### Key Functions
+
+- `detect_windows_shell()` - Returns WindowsShell enum
+- `supports_ansi()` - Check ANSI escape support
+- `supports_unicode()` - Check Unicode box drawing support
+- `check_console_codepage()` - Get current code page
+
+---
+
+## Configuration Reference
+
+```
+~/.nexus3/
+├── config.json      # Global config
+├── NEXUS.md         # Personal system prompt
+├── mcp.json         # Personal MCP servers
+├── rpc.token        # Auto-generated RPC token (default port)
+├── rpc-{port}.token # Port-specific RPC tokens
+├── sessions/        # Saved session files (JSON)
+├── last-session.json  # Auto-saved for --resume
+├── last-session-name  # Name of last session
+└── logs/
+    └── server.log   # Server lifecycle events (rotating, 5MB x 3 files)
+
+./NEXUS.md           # Project system prompt (overrides personal)
+.nexus3/logs/        # Session logs (gitignored)
+├── server.log       # Server lifecycle events when started from this directory
+└── <session-id>/    # Per-session conversation logs
+    ├── session.db   # SQLite database of messages
+    ├── context.md   # Markdown transcript
+    ├── verbose.md   # Debug output (if -V enabled)
+    └── raw.jsonl    # Raw API JSON (if --raw-log enabled)
+```
+
+### Server Logging
+
+Server lifecycle events are logged to `.nexus3/logs/server.log`:
+
+| Event | Log Level | Example |
+|-------|-----------|---------|
+| Server start | INFO | `JSON-RPC HTTP server running at http://127.0.0.1:8765/` |
+| Agent created | INFO | `Agent created: worker-1 (preset=trusted, cwd=/path, model=gpt)` |
+| Agent destroyed | INFO | `Agent destroyed: worker-1 (by external)` |
+| Shutdown requested | INFO | `Server shutdown requested` |
+| Idle timeout | INFO | `Idle timeout reached (1800s without RPC activity), shutting down` |
+| Server stopped | INFO | `HTTP server stopped` |
+
+**Log file rotation**: Max 5MB per file, 3 backup files (`server.log.1`, `.2`, `.3`)
+
+**Console output**:
+- Default: WARNING+ only
+- With `--verbose`: DEBUG+
+
+Use `tail -f .nexus3/logs/server.log` to monitor server activity in real-time.
+
+### Provider Configuration
+
+NEXUS3 supports multiple LLM providers via the `provider` config:
+
+| Type | Description |
+|------|-------------|
+| `openrouter` | OpenRouter.ai (default) |
+| `openai` | Direct OpenAI API |
+| `azure` | Azure OpenAI Service |
+| `anthropic` | Anthropic Claude API |
+| `ollama` | Local Ollama server |
+| `vllm` | vLLM OpenAI-compatible server |
+
+```json
+// OpenRouter (default)
+{"provider": {"type": "openrouter", "model": "anthropic/claude-sonnet-4"}}
+
+// OpenAI
+{"provider": {"type": "openai", "api_key_env": "OPENAI_API_KEY", "model": "gpt-4o"}}
+
+// Azure OpenAI
+{"provider": {
+  "type": "azure",
+  "base_url": "https://my-resource.openai.azure.com",
+  "api_key_env": "AZURE_OPENAI_KEY",
+  "deployment": "gpt-4",
+  "api_version": "2024-02-01"
+}}
+
+// Anthropic (native API)
+{"provider": {"type": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "model": "claude-sonnet-4-20250514"}}
+
+// Ollama (local)
+{"provider": {"type": "ollama", "base_url": "http://localhost:11434/v1", "model": "llama3.2"}}
+```
+
+See `nexus3/provider/README.md` for full documentation and adding new providers.
+
+### Prompt Caching
+
+NEXUS3 supports prompt caching to reduce costs (~90% savings on cached tokens):
+
+| Provider | Status | Config Required |
+|----------|--------|-----------------|
+| Anthropic | Full support | Automatic (enabled by default) |
+| OpenAI | Full support | None (automatic) |
+| Azure | Full support | None (automatic) |
+| OpenRouter | Pass-through | Automatic for Anthropic models |
+| Ollama/vLLM | No support | N/A (local) |
+
+Caching is enabled by default. To disable for a specific provider:
+
+```json
+{
+  "providers": {
+    "anthropic": {
+      "type": "anthropic",
+      "prompt_caching": false
+    }
+  }
+}
+```
+
+Cache metrics are logged at DEBUG level (visible with `-v` flag).
+
+### Multi-Provider Configuration
+
+NEXUS3 supports multiple simultaneous providers with named references:
+
+```json
+{
+  "providers": {
+    "openrouter": {
+      "type": "openrouter",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "base_url": "https://openrouter.ai/api/v1"
+    },
+    "anthropic": {
+      "type": "anthropic",
+      "api_key_env": "ANTHROPIC_API_KEY"
+    },
+    "local": {
+      "type": "ollama",
+      "base_url": "http://localhost:11434/v1"
+    }
+  },
+  "default_model": "haiku",
+
+  "models": {
+    "oss": { "id": "openai/gpt-oss-120b", "context_window": 131072 },
+    "haiku": { "id": "anthropic/claude-haiku-4.5", "context_window": 200000 },
+    "haiku-native": { "id": "claude-haiku-4.5", "provider": "anthropic", "context_window": 200000 },
+    "llama": { "id": "llama3.2", "provider": "local", "context_window": 128000 }
+  }
+}
+```
+
+**Key concepts:**
+- `providers`: Named provider configs, define once and reference by name
+- `default_model`: Which model alias to use by default (e.g., `"haiku"`)
+- `models[].provider`: Optional - reference a named provider (first matching provider used if omitted)
+- Backwards compatible: `provider` field still works for single-provider setups
+
+**Implementation (ProviderRegistry):**
+- Lazy initialization: Providers created on first use (avoids connecting to unused APIs)
+- Per-model routing: `resolve_model()` returns provider name alongside model settings
+- SharedComponents holds registry instead of single provider
+
+### Provider Timeout/Retry Config
+
+```json
+{
+  "provider": {
+    "type": "openrouter",
+    "request_timeout": 120.0,
+    "max_retries": 3,
+    "retry_backoff": 1.5
+  }
+}
+```
+
+### Server Config Example
+
+```json
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8765,
+    "log_level": "INFO"
+  }
+}
+```
+
+### GitLab Configuration
+
+GitLab tools require pre-configured instances in `~/.nexus3/config.json` or `.nexus3/config.json`:
+
+```json
+{
+  "gitlab": {
+    "instances": {
+      "default": {
+        "url": "https://gitlab.com",
+        "token_env": "GITLAB_TOKEN",
+        "username": "your-gitlab-username",
+        "email": "you@example.com",
+        "user_id": 12345
+      },
+      "work": {
+        "url": "https://gitlab.mycompany.com",
+        "token_env": "GITLAB_WORK_TOKEN",
+        "username": "your-work-username"
+      }
+    },
+    "default_instance": "default"
+  }
+}
+```
+
+**Token setup:**
+- Create a GitLab Personal Access Token with `api` scope
+- Store in environment variable (e.g., `GITLAB_TOKEN`)
+- Reference via `token_env` in config (recommended) or `token` field directly
+
+**Identity setup (optional but recommended):**
+- Add `username` and optionally `email`/`user_id` to each instance
+- Enables `"me"` shorthand in assignees, reviewers, and list filters
+- If not configured, `"me"` falls back to `GET /user` API call
+- Use `gitlab_repo` action `whoami` to verify your configured identity
+
+**Permission requirements:**
+- TRUSTED or YOLO level required (SANDBOXED blocked)
+- Read-only actions: No confirmation needed
+- Destructive actions: Confirmation in TRUSTED mode (stored per skill@instance)
+
+### Clipboard Configuration
+
+```json
+{
+  "clipboard": {
+    "enabled": true,
+    "inject_into_context": true,
+    "max_injected_entries": 10,  // per scope
+    "show_source_in_injection": true,
+    "max_entry_bytes": 1048576,
+    "warn_entry_bytes": 102400,
+    "default_ttl_seconds": null
+  }
+}
+```
+
+**Scope permissions by preset:**
+- `yolo`: Full access to agent/project/system scopes
+- `trusted`: Read/write agent+project, read-only system
+- `sandboxed`: Agent scope only (in-memory, session-only)
+
+<!-- PART III: DEVELOPMENT GUIDE -->
+
+---
+
 ## Design Principles
 
 1. **Async-first** - asyncio throughout, not threading
@@ -462,6 +1056,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | **Commit Often** | **Commit after each phase/logical unit. Don't wait for "everything done."** |
 | **Branch per Plan** | **One feature branch per plan. Merge only after checklist complete + user sign-off.** |
 | **Don't Revert Unrelated Changes** | **When committing, only stage files YOU modified. NEVER use `git checkout` or `git restore` on files you didn't change - they may contain the user's work from other tasks.** |
+| **Zero Lint/Test Failures** | **All tests and lints must pass 100% at all times. If a failure is introduced and cannot be immediately fixed, document it in the Known Failures section of this file with: what fails, why, and the plan to fix it. No silent regressions.** |
 
 ### Live Testing Requirement (MANDATORY)
 
@@ -661,27 +1256,6 @@ Every implementation checklist MUST include a documentation phase. Documentation
 
 ---
 
-## Key Interfaces
-
-```python
-# Skill Protocol
-class Skill(Protocol):
-    @property
-    def name(self) -> str: ...
-    @property
-    def description(self) -> str: ...
-    @property
-    def parameters(self) -> dict[str, Any]: ...
-    async def execute(self, **kwargs: Any) -> ToolResult: ...
-
-# AsyncProvider Protocol
-class AsyncProvider(Protocol):
-    async def complete(self, messages, tools) -> Message: ...
-    def stream(self, messages, tools) -> AsyncIterator[StreamEvent]: ...
-```
-
----
-
 ## Testing
 
 **IMPORTANT: Always use the virtualenv Python.** The system `python` command may not exist or may be a different version. All Python commands must use `.venv/bin/python` or `.venv/bin/pytest`:
@@ -702,11 +1276,25 @@ class AsyncProvider(Protocol):
 
 **Never use bare `python` or `pytest` commands** - they will likely fail with "command not found" or use the wrong Python version.
 
+### Current Status
+
+As of 2026-02-11: **All tests and lints pass 100%.**
+
+- `ruff check nexus3/` — 0 errors
+- `pytest tests/` — 3489 passed, 3 skipped (2 require API key, 1 Windows-only)
+
+### Known Failures
+
+None. If any test or lint failure is introduced and cannot be immediately resolved, document it here with:
+- **What** fails (exact test name or lint rule)
+- **Why** it fails (root cause)
+- **Plan** to fix (who, when, how)
+
 ---
 
-## NEXUS3 Commands
+## Claude Code Integration
 
-### For Claude Code (Bash Tool)
+### Running NEXUS3 from Claude Code
 
 The `nexus3` shell alias isn't available when running via Bash tool. **Always use `.venv/bin/python -m nexus3`**:
 
@@ -725,7 +1313,7 @@ NEXUS_DEV=1 .venv/bin/python -m nexus3 --serve 9000 &
 .venv/bin/python -m nexus3 rpc shutdown --port 9000
 ```
 
-### Multi-Turn Usage (Important!)
+#### Multi-Turn Usage (Important!)
 
 **Do NOT write shell scripts with multiple steps.** Execute commands one at a time in a multi-turn conversation:
 
@@ -739,7 +1327,7 @@ This allows you to:
 - React to errors or unexpected results
 - Adjust subsequent commands based on agent responses
 
-### User-Facing Commands (Reference)
+#### User-Facing Commands (Reference)
 
 When the user runs commands directly in their terminal, they use the `nexus3` alias:
 
@@ -750,7 +1338,7 @@ nexus3 rpc create worker            # Create agent
 nexus3 rpc send worker "message"    # Send message
 ```
 
-### Key Behaviors
+#### Key Behaviors
 
 - **Security:** `--serve` requires `NEXUS_DEV=1` env var (prevents unattended servers)
 - **Security:** `nexus3 rpc` commands do NOT auto-start servers
@@ -758,491 +1346,54 @@ nexus3 rpc send worker "message"    # Send message
 - **Port conflicts:** If user has REPL on 8765, use `--port 9000` for headless servers
 - All commands support `--api-key KEY` for explicit auth (auto-discovered by default)
 
----
+### Dogfooding: Use NEXUS Subagents
 
-## Configuration
+**When working on this codebase, use NEXUS3 subagents for research and exploration tasks.** This is dogfooding - we use our own product.
 
-```
-~/.nexus3/
-├── config.json      # Global config
-├── NEXUS.md         # Personal system prompt
-├── mcp.json         # Personal MCP servers
-├── rpc.token        # Auto-generated RPC token (default port)
-├── rpc-{port}.token # Port-specific RPC tokens
-├── sessions/        # Saved session files (JSON)
-├── last-session.json  # Auto-saved for --resume
-├── last-session-name  # Name of last session
-└── logs/
-    └── server.log   # Server lifecycle events (rotating, 5MB x 3 files)
-
-./NEXUS.md           # Project system prompt (overrides personal)
-.nexus3/logs/        # Session logs (gitignored)
-├── server.log       # Server lifecycle events when started from this directory
-└── <session-id>/    # Per-session conversation logs
-    ├── session.db   # SQLite database of messages
-    ├── context.md   # Markdown transcript
-    ├── verbose.md   # Debug output (if -V enabled)
-    └── raw.jsonl    # Raw API JSON (if --raw-log enabled)
-```
-
-### Server Logging
-
-Server lifecycle events are logged to `.nexus3/logs/server.log`:
-
-| Event | Log Level | Example |
-|-------|-----------|---------|
-| Server start | INFO | `JSON-RPC HTTP server running at http://127.0.0.1:8765/` |
-| Agent created | INFO | `Agent created: worker-1 (preset=trusted, cwd=/path, model=gpt)` |
-| Agent destroyed | INFO | `Agent destroyed: worker-1 (by external)` |
-| Shutdown requested | INFO | `Server shutdown requested` |
-| Idle timeout | INFO | `Idle timeout reached (1800s without RPC activity), shutting down` |
-| Server stopped | INFO | `HTTP server stopped` |
-
-**Log file rotation**: Max 5MB per file, 3 backup files (`server.log.1`, `.2`, `.3`)
-
-**Console output**:
-- Default: WARNING+ only
-- With `--verbose`: DEBUG+
-
-Use `tail -f .nexus3/logs/server.log` to monitor server activity in real-time.
-
-### Provider Configuration
-
-NEXUS3 supports multiple LLM providers via the `provider` config:
-
-| Type | Description |
-|------|-------------|
-| `openrouter` | OpenRouter.ai (default) |
-| `openai` | Direct OpenAI API |
-| `azure` | Azure OpenAI Service |
-| `anthropic` | Anthropic Claude API |
-| `ollama` | Local Ollama server |
-| `vllm` | vLLM OpenAI-compatible server |
-
-```json
-// OpenRouter (default)
-{"provider": {"type": "openrouter", "model": "anthropic/claude-sonnet-4"}}
-
-// OpenAI
-{"provider": {"type": "openai", "api_key_env": "OPENAI_API_KEY", "model": "gpt-4o"}}
-
-// Azure OpenAI
-{"provider": {
-  "type": "azure",
-  "base_url": "https://my-resource.openai.azure.com",
-  "api_key_env": "AZURE_OPENAI_KEY",
-  "deployment": "gpt-4",
-  "api_version": "2024-02-01"
-}}
-
-// Anthropic (native API)
-{"provider": {"type": "anthropic", "api_key_env": "ANTHROPIC_API_KEY", "model": "claude-sonnet-4-20250514"}}
-
-// Ollama (local)
-{"provider": {"type": "ollama", "base_url": "http://localhost:11434/v1", "model": "llama3.2"}}
-```
-
-See `nexus3/provider/README.md` for full documentation and adding new providers.
-
-### Prompt Caching
-
-NEXUS3 supports prompt caching to reduce costs (~90% savings on cached tokens):
-
-| Provider | Status | Config Required |
-|----------|--------|-----------------|
-| Anthropic | Full support | Automatic (enabled by default) |
-| OpenAI | Full support | None (automatic) |
-| Azure | Full support | None (automatic) |
-| OpenRouter | Pass-through | Automatic for Anthropic models |
-| Ollama/vLLM | No support | N/A (local) |
-
-Caching is enabled by default. To disable for a specific provider:
-
-```json
-{
-  "providers": {
-    "anthropic": {
-      "type": "anthropic",
-      "prompt_caching": false
-    }
-  }
-}
-```
-
-Cache metrics are logged at DEBUG level (visible with `-v` flag).
-
-### GitLab Configuration
-
-GitLab tools require pre-configured instances in `~/.nexus3/config.json` or `.nexus3/config.json`:
-
-```json
-{
-  "gitlab": {
-    "instances": {
-      "default": {
-        "url": "https://gitlab.com",
-        "token_env": "GITLAB_TOKEN",
-        "username": "your-gitlab-username",
-        "email": "you@example.com",
-        "user_id": 12345
-      },
-      "work": {
-        "url": "https://gitlab.mycompany.com",
-        "token_env": "GITLAB_WORK_TOKEN",
-        "username": "your-work-username"
-      }
-    },
-    "default_instance": "default"
-  }
-}
-```
-
-**Token setup:**
-- Create a GitLab Personal Access Token with `api` scope
-- Store in environment variable (e.g., `GITLAB_TOKEN`)
-- Reference via `token_env` in config (recommended) or `token` field directly
-
-**Identity setup (optional but recommended):**
-- Add `username` and optionally `email`/`user_id` to each instance
-- Enables `"me"` shorthand in assignees, reviewers, and list filters
-- If not configured, `"me"` falls back to `GET /user` API call
-- Use `gitlab_repo` action `whoami` to verify your configured identity
-
-**Permission requirements:**
-- TRUSTED or YOLO level required (SANDBOXED blocked)
-- Read-only actions: No confirmation needed
-- Destructive actions: Confirmation in TRUSTED mode (stored per skill@instance)
-
-### Clipboard Configuration
-
-```json
-{
-  "clipboard": {
-    "enabled": true,
-    "inject_into_context": true,
-    "max_injected_entries": 10,  // per scope
-    "show_source_in_injection": true,
-    "max_entry_bytes": 1048576,
-    "warn_entry_bytes": 102400,
-    "default_ttl_seconds": null
-  }
-}
-```
-
-**Scope permissions by preset:**
-- `yolo`: Full access to agent/project/system scopes
-- `trusted`: Read/write agent+project, read-only system
-- `sandboxed`: Agent scope only (in-memory, session-only)
-
-### Server Config Example
-
-```json
-{
-  "server": {
-    "host": "0.0.0.0",
-    "port": 8765,
-    "log_level": "INFO"
-  }
-}
-```
-
-### Provider Timeout/Retry Config
-
-```json
-{
-  "provider": {
-    "type": "openrouter",
-    "request_timeout": 120.0,
-    "max_retries": 3,
-    "retry_backoff": 1.5
-  }
-}
-```
-
-### Multi-Provider Configuration
-
-NEXUS3 supports multiple simultaneous providers with named references:
-
-```json
-{
-  "providers": {
-    "openrouter": {
-      "type": "openrouter",
-      "api_key_env": "OPENROUTER_API_KEY",
-      "base_url": "https://openrouter.ai/api/v1"
-    },
-    "anthropic": {
-      "type": "anthropic",
-      "api_key_env": "ANTHROPIC_API_KEY"
-    },
-    "local": {
-      "type": "ollama",
-      "base_url": "http://localhost:11434/v1"
-    }
-  },
-  "default_model": "haiku",
-
-  "models": {
-    "oss": { "id": "openai/gpt-oss-120b", "context_window": 131072 },
-    "haiku": { "id": "anthropic/claude-haiku-4.5", "context_window": 200000 },
-    "haiku-native": { "id": "claude-haiku-4.5", "provider": "anthropic", "context_window": 200000 },
-    "llama": { "id": "llama3.2", "provider": "local", "context_window": 128000 }
-  }
-}
-```
-
-**Key concepts:**
-- `providers`: Named provider configs, define once and reference by name
-- `default_model`: Which model alias to use by default (e.g., `"haiku"`)
-- `models[].provider`: Optional - reference a named provider (first matching provider used if omitted)
-- Backwards compatible: `provider` field still works for single-provider setups
-
-**Implementation (ProviderRegistry):**
-- Lazy initialization: Providers created on first use (avoids connecting to unused APIs)
-- Per-model routing: `resolve_model()` returns provider name alongside model settings
-- SharedComponents holds registry instead of single provider
-
-### Compaction Config Example
-
-```json
-{
-  "compaction": {
-    "enabled": true,
-    "model": "anthropic/claude-haiku",
-    "summary_budget_ratio": 0.25,
-    "recent_preserve_ratio": 0.25,
-    "trigger_threshold": 0.9
-  }
-}
-```
-
----
-
-## Context Compaction
-
-Context compaction summarizes old conversation history via LLM to reclaim token space while preserving essential information.
-
-### How It Works
-
-1. **Trigger**: Compaction runs when `used_tokens > trigger_threshold * available_tokens` (default 90%)
-2. **Preserve recent**: The most recent messages (controlled by `recent_preserve_ratio`) are kept verbatim
-3. **Summarize old**: Older messages are sent to a fast model (default: claude-haiku) for summarization
-4. **Budget**: Summary is constrained to `summary_budget_ratio` of available tokens (default 25%)
-5. **System prompt reload**: During compaction, NEXUS.md is re-read, picking up any changes
-
-### Configuration Options (`CompactionConfig`)
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `enabled` | `true` | Enable automatic compaction |
-| `model` | `"anthropic/claude-haiku"` | Model for summarization |
-| `summary_budget_ratio` | `0.25` | Max tokens for summary (fraction of available) |
-| `recent_preserve_ratio` | `0.25` | Recent messages to preserve (fraction of available) |
-| `trigger_threshold` | `0.9` | Trigger when usage exceeds this fraction |
-
-### Commands
+#### Starting the Server
 
 ```bash
-/compact              # Manual compaction (even if below threshold)
+# Start headless server (use port 9000 to avoid conflict with user's REPL on 8765)
+NEXUS_DEV=1 .venv/bin/python -m nexus3 --serve 9000 &
+
+# Or check if already running
+.venv/bin/python -m nexus3 rpc detect --port 9000
 ```
 
-### Key Benefits
-
-- **Longer sessions**: Reclaim space without losing context
-- **System prompt updates**: Changes to NEXUS.md apply on next compaction
-- **Timestamped summaries**: Each summary includes when it was generated
-- **Configurable**: Tune thresholds for your use case
-
----
-
-## Temporal Context
-
-Agents always have accurate temporal awareness through three timestamp mechanisms:
-
-| Timestamp | When Set | Location | Purpose |
-|-----------|----------|----------|---------|
-| **Current date/time** | Every request | System prompt | Always accurate - agents know "now" |
-| **Session start** | Agent creation | First message in history | Marks when session began |
-| **Compaction** | On summary | Summary prefix | Indicates when history was summarized |
-
-Example session start messages:
-```
-[Session started: 2026-01-13 14:30 (local)]
-[Session started: 2026-01-13 14:30 (local) | Agent: worker-1 | Preset: sandboxed | CWD: /home/user/project]
-[Session started: 2026-01-13 14:30 (local) | Agent: main | Preset: trusted | CWD: /home/user/project | Writes: CWD unrestricted, elsewhere with user confirmation]
-```
-
-Example compaction summary header:
-```
-[CONTEXT SUMMARY - Generated: 2026-01-13 16:45]
-```
-
----
-
-## Context Management
-
-Context is loaded from multiple directory layers and merged together. Each layer extends the previous one.
-
-### Layer Hierarchy
-
-```
-LAYER 1a: System Defaults (NEXUS-DEFAULT.md in package - auto-updates)
-    ↓
-LAYER 1b: Global (~/.nexus3/NEXUS.md - user customizations)
-    ↓
-LAYER 2: Ancestors (up to N levels above CWD, default 2)
-    ↓
-LAYER 3: Local (CWD/.nexus3/)
-```
-
-### Directory Structure
-
-```
-nexus3/defaults/              # Package (auto-updates with upgrades)
-├── NEXUS-DEFAULT.md          # System docs, tools, permissions (ALWAYS loaded)
-└── NEXUS.md                  # Template (copied to ~/.nexus3/ on init)
-
-~/.nexus3/                    # Global (user customizations)
-├── NEXUS.md                  # User's custom instructions
-├── config.json               # Personal configuration
-└── mcp.json                  # Personal MCP servers
-
-./parent/.nexus3/             # Ancestor (1 level up)
-├── NEXUS.md
-└── config.json
-
-./.nexus3/                    # Local (CWD)
-├── NEXUS.md                  # Project-specific prompt
-├── config.json               # Project config overrides
-└── mcp.json                  # Project MCP servers
-```
-
-### Split Context Design
-
-- **NEXUS-DEFAULT.md** (package only): Contains tool docs, permissions, limits - auto-updates with package upgrades
-- **NEXUS.md** (user's): Contains custom instructions - preserved across upgrades
-
-This split ensures users get new tool documentation automatically while keeping their customizations safe.
-
-### Configuration Merging
-
-- **Configs**: Deep merged (local keys override global, unspecified keys preserved)
-- **NEXUS.md**: All layers included with labeled sections
-- **MCP servers**: Same name = local wins
-
-### Subagent Context Inheritance
-
-Subagents created with `cwd` parameter get:
-1. Their cwd's NEXUS.md (if exists)
-2. Parent's context (non-redundantly)
-
-### Init Commands
+#### Creating and Using Research Agents
 
 ```bash
-# Initialize global config
-nexus3 --init-global           # Create ~/.nexus3/ with defaults
-nexus3 --init-global-force     # Overwrite existing
+# Create a research agent (trusted can read anywhere, writes within CWD)
+.venv/bin/python -m nexus3 rpc create researcher --preset trusted --cwd /home/inc/repos/NEXUS3 --port 9000
 
-# Initialize local config (REPL)
-/init                         # Create ./.nexus3/ with templates
-/init --force                 # Overwrite existing
-/init --global                # Initialize ~/.nexus3/ instead
+# Send research tasks
+.venv/bin/python -m nexus3 rpc send researcher "Look at nexus3/rpc/ and summarize the JSON-RPC types" --port 9000
+
+# Check status (don't rush - let them work)
+.venv/bin/python -m nexus3 rpc status researcher --port 9000
+
+# Cleanup when done
+.venv/bin/python -m nexus3 rpc destroy researcher --port 9000
 ```
 
-### Context Config Options
+#### Guidelines
 
-```json
-{
-  "context": {
-    "ancestor_depth": 2,       // How many parent dirs to check (0-10)
-    "include_readme": false,   // Always include README.md
-    "readme_as_fallback": false // Use README when no NEXUS.md (opt-in for security)
-  }
-}
-```
+- **Run commands one at a time** (multi-turn), NOT as a multi-step script
+- **Use subagents for reading/research** - they help manage context window
+- **Verify subagent code** - if they write code, review before committing
+- **Reuse agents** - check `rpc status` before destroying; reuse if tokens remain
+- **Use long timeouts** - research tasks need `--timeout 300` or higher
 
----
+#### Coordination Pattern
 
-## Permission System
+Claude Code coordinates NEXUS subagents directly:
+- Create agents with appropriate CWD and permissions
+- Send focused research tasks
+- Collect and synthesize findings
 
-### Built-in Presets
+Do NOT use a NEXUS coordinator agent in the middle - Claude Code is better at coordination.
 
-| Preset | Level | Description |
-|--------|-------|-------------|
-| `yolo` | YOLO | Full access, no confirmations (REPL-only) |
-| `trusted` | TRUSTED | Confirmations for destructive actions |
-| `sandboxed` | SANDBOXED | CWD only, no network, limited nexus tools (default for RPC) |
-
-### Target Restrictions
-
-Some tools support `allowed_targets` restrictions that limit which agents they can communicate with:
-
-| Restriction | Meaning |
-|-------------|---------|
-| `None` | No restriction - can target any agent |
-| `"parent"` | Can only target the agent's parent (who created it) |
-| `"children"` | Can only target agents this one created |
-| `"family"` | Can target parent OR children |
-| `["id1", "id2"]` | Explicit allowlist of agent IDs |
-
-This is used by `nexus_send`, `nexus_status`, `nexus_cancel`, and `nexus_destroy` to control inter-agent communication.
-
-### RPC Agent Permission Quirks (IMPORTANT)
-
-**These behaviors are intentional security defaults for RPC-created agents:**
-
-1. **Default agent is sandboxed**: When creating agents via RPC without specifying a preset, they default to `sandboxed` (NOT `trusted`). This is intentional - programmatic agents should be least-privileged by default.
-
-2. **Sandboxed agents can only read in their cwd**: A sandboxed agent's `allowed_paths` is set to `[cwd]` only. They cannot read files outside their working directory.
-
-3. **Sandboxed agents cannot write unless given explicit write paths**: By default, sandboxed agents have all write tools (`write_file`, `edit_file`, `append_file`, `regex_replace`, etc.) **disabled**. To enable writes, use `--write-path` (CLI) or `allowed_write_paths` (RPC JSON):
-   ```bash
-   nexus3 rpc create worker --cwd /tmp/sandbox --write-path /tmp/sandbox
-   ```
-
-4. **Trusted agents must be created explicitly**: To get a trusted agent, you must pass `--preset trusted` explicitly. Trusted is not the default for RPC.
-
-5. **Trusted agents in RPC mode**: Can read anywhere, but destructive operations follow the same confirmation logic (which auto-allows within CWD in non-interactive mode).
-
-6. **YOLO is REPL-only**: You CANNOT create a yolo agent via RPC (blocked in global_dispatcher). YOLO agents can only be created in the interactive REPL. Additionally, RPC `send` to YOLO agents is blocked unless the REPL is actively connected to that agent. If a user creates a YOLO agent in REPL, switches to another agent, then tries `nexus3 rpc send` to the YOLO agent, it fails with "Cannot send to YOLO agent - no REPL connected". This ensures YOLO operations always have active user supervision.
-
-7. **Trusted agents can only create sandboxed subagents**: A trusted agent cannot spawn another trusted agent - all subagents are sandboxed (ceiling enforcement).
-
-8. **Sandboxed agents have limited nexus tools**: Most nexus tools (`nexus_create`, `nexus_destroy`, `nexus_status`, `nexus_cancel`, `nexus_shutdown`) are disabled for sandboxed agents. However, **`nexus_send` IS enabled with `allowed_targets="parent"`** - sandboxed agents can send messages back to their parent agent to report results. They cannot message any other agent.
-
-9. **Subagent cwd must be within parent's cwd**: When creating a subagent, the child's `cwd` must be within the parent's `cwd`. This prevents privilege escalation where a child could operate in a directory the parent shouldn't access.
-
-10. **Subagent write paths must be within parent's cwd**: Similarly, `allowed_write_paths` for a subagent must be within the parent's `cwd`. A parent cannot grant write access to paths outside its own working directory.
-
-11. **Subagent cwd defaults to parent's cwd**: If no `cwd` is specified when creating a subagent, it inherits the parent's `cwd` (not the server process's cwd).
-
-**Example secure agent creation:**
-```bash
-# Read-only agent (default) - can only read in its cwd
-nexus3 rpc create reader --cwd /path/to/project
-
-# Agent with write access to specific directory
-nexus3 rpc create writer --cwd /path/to/project --write-path /path/to/project/output
-
-# Trusted agent (explicit - use with care)
-nexus3 rpc create coordinator --preset trusted
-```
-
-### Key Features
-
-- **Per-tool configuration**: Enable/disable tools, per-tool paths, per-tool timeouts
-- **Permission presets**: Named configurations loaded from config or built-in
-- **Ceiling inheritance**: Subagents cannot exceed parent permissions
-- **Confirmation prompts**: TRUSTED mode prompts for destructive actions in REPL
-
-### Commands
-
-```bash
-/permissions              # Show current permissions
-/permissions trusted      # Change preset (within ceiling)
-/permissions --disable write_file   # Disable a tool
-/permissions --list-tools           # List tool status
-```
+<!-- PART IV: STATUS -->
 
 ---
 
@@ -1290,154 +1441,3 @@ No known bugs at this time.
   The provider now detects orphaned tool_use blocks and synthesizes missing tool_results
   before sending to API. See ANTHROPIC-TOOL-RESULT-FIX-PLAN.md in .archive/ for details.
 -->
-
----
-
-## Skill Type Hierarchy
-
-Skills are organized into base classes that provide shared infrastructure for common patterns. Each base class handles boilerplate so individual skills focus on their unique logic.
-
-### Hierarchy Overview
-
-```
-Skill (Protocol)
-├── BaseSkill         # Minimal abstract base (name, description, parameters, execute)
-├── FileSkill         # Path validation + per-tool allowed_paths resolution via ServiceContainer
-├── NexusSkill        # Server communication (port discovery, client management)
-├── ExecutionSkill    # Subprocess execution (timeout, output formatting)
-└── FilteredCommandSkill  # Permission-based command filtering + per-tool allowed_paths
-```
-
-### Base Classes
-
-| Base Class | Purpose | Skills Using It |
-|------------|---------|-----------------|
-| `FileSkill` | Path validation, symlink resolution, allowed_paths | read_file, write_file, edit_file, append_file, tail, file_info, list_directory, mkdir, copy_file, rename, regex_replace, glob, grep |
-| `NexusSkill` | Server URL building, API key discovery, client error handling | nexus_create, nexus_destroy, nexus_send, nexus_status, nexus_cancel, nexus_shutdown |
-| `ExecutionSkill` | Timeout enforcement, working dir resolution, output formatting | bash, run_python |
-| `FilteredCommandSkill` | Read-only command filtering, blocked pattern matching | git |
-
-### Creating New Skills
-
-**File operations** - inherit `FileSkill`:
-```python
-class MyFileSkill(FileSkill):
-    async def execute(self, path: str = "", **kwargs: Any) -> ToolResult:
-        validated = self._validate_path(path)  # Returns Path or ToolResult error
-        if isinstance(validated, ToolResult):
-            return validated
-        # Use validated path...
-
-my_file_skill_factory = file_skill_factory(MyFileSkill)
-```
-
-**Server communication** - inherit `NexusSkill`:
-```python
-class MyNexusSkill(NexusSkill):
-    async def execute(self, agent_id: str = "", port: int | None = None, **kwargs: Any) -> ToolResult:
-        return await self._execute_with_client(
-            port=port,
-            agent_id=agent_id,
-            operation=lambda client: client.some_method()
-        )
-
-my_nexus_skill_factory = nexus_skill_factory(MyNexusSkill)
-```
-
-**Subprocess execution** - inherit `ExecutionSkill`:
-```python
-class MyExecSkill(ExecutionSkill):
-    async def _create_process(self, work_dir: str | None) -> asyncio.subprocess.Process:
-        return await asyncio.create_subprocess_exec(...)
-
-    async def execute(self, timeout: int = 30, cwd: str | None = None, **kwargs: Any) -> ToolResult:
-        return await self._execute_subprocess(timeout=timeout, cwd=cwd, timeout_message="...")
-
-my_exec_skill_factory = execution_skill_factory(MyExecSkill)
-```
-
-**Command filtering** (e.g., docker, kubectl) - inherit `FilteredCommandSkill`:
-```python
-class MyFilteredSkill(FilteredCommandSkill):
-    def get_read_only_commands(self) -> frozenset[str]:
-        return frozenset({"ps", "logs", "inspect"})
-
-    def get_blocked_patterns(self) -> list[tuple[str, str]]:
-        return [("rm\\s+-f", "force remove is dangerous")]
-
-my_filtered_skill_factory = filtered_command_skill_factory(MyFilteredSkill)
-```
-
-**Utility/special logic** - inherit `BaseSkill` directly (catch-all for unique skills):
-```python
-class MySpecialSkill(BaseSkill):
-    async def execute(self, **kwargs: Any) -> ToolResult:
-        # Custom logic without shared infrastructure
-        ...
-```
-
----
-
-## Security
-
-Comprehensive security hardening completed January 2026:
-
-- **Permission system**: Ceiling enforcement, fail-closed defaults, path validation
-- **RPC hardening**: Token auth, header limits, SSRF protection, symlink defense
-- **Process isolation**: Process group kills on timeout, env sanitization
-- **Input validation**: URL validation, agent ID validation, MCP protocol hardening
-- **Output sanitization**: Terminal escape stripping, Rich markup escaping, secrets redaction
-- **MCP hardening** (added 2026-01-27):
-  - SSRF redirect bypass prevention (`follow_redirects=False`)
-  - MCP output sanitization via `sanitize_for_display()`
-  - Response size limits (10MB max via `MAX_MCP_OUTPUT_SIZE`)
-  - Config error sanitization (no secret leakage in validation errors)
-  - Session ID validation (alphanumeric only, 256 char max)
-- **Windows compatibility** (added 2026-01-28):
-  - Error path sanitization for Windows paths (C:\Users\..., UNC, domain\user)
-  - Cross-platform process tree termination (taskkill /T /F fallback)
-  - Environment variable sanitization includes Windows-specific vars
-  - CREATE_NO_WINDOW subprocess flag prevents window flashing
-
-### Known Windows Security Limitations
-
-These are documented limitations, not bugs:
-
-| Issue | Impact | Mitigation |
-|-------|--------|------------|
-| `os.chmod()` no-op | Session files, tokens may be readable by other users | Restrict home directory access |
-| Symlink detection | `is_symlink()` misses junctions/reparse points | Symlink attack assumptions weaker |
-| Permission bits | `S_IRWXG\|S_IRWXO` checks meaningless | ACL-based validation not implemented |
-
-**Test coverage**: 3400+ tests including 770+ security-specific tests.
-
----
-
-## Windows Shell Compatibility
-
-NEXUS3 detects the Windows shell environment at startup and adapts its output accordingly.
-
-### Detected Shells
-
-| Shell | Detection | ANSI Support | Unicode | Notes |
-|-------|-----------|--------------|---------|-------|
-| Windows Terminal | `WT_SESSION` env var | Full | Full | Best experience |
-| PowerShell 7+ | Via Windows Terminal | Full | Full | |
-| Git Bash | `MSYSTEM` env var | Full | Full | MSYS2 environment |
-| PowerShell 5.1 | `PSModulePath` set | Limited | Limited | Legacy mode |
-| CMD.exe | `COMSPEC` check | None | None | Plain text only |
-
-### Startup Warnings
-
-When running in CMD.exe or PowerShell 5.1, NEXUS3 displays a warning suggesting better alternatives. Users can suppress these by running in Windows Terminal.
-
-### Console Code Page
-
-For proper UTF-8 display, the console should use code page 65001. NEXUS3 warns if a different code page is detected. Run `chcp 65001` before starting NEXUS3 to fix character display issues.
-
-### Key Functions
-
-- `detect_windows_shell()` - Returns WindowsShell enum
-- `supports_ansi()` - Check ANSI escape support
-- `supports_unicode()` - Check Unicode box drawing support
-- `check_console_codepage()` - Get current code page
