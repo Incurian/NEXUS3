@@ -29,6 +29,8 @@ class TestMainHelpCompleteness:
         "mcp",
         # GitLab
         "gitlab",
+        # IDE
+        "ide",
         # Initialization
         "init",
         # REPL control

@@ -2,7 +2,7 @@
 
 import os
 import warnings
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -52,7 +52,7 @@ def _normalize_paths(paths: list[str] | None) -> list[str] | None:
 ProviderType = Literal["openrouter", "openai", "azure", "anthropic", "ollama", "vllm"]
 
 
-class AuthMethod(str, Enum):
+class AuthMethod(StrEnum):
     """Authentication method for API requests."""
 
     BEARER = "bearer"  # Authorization: Bearer <key>
@@ -311,6 +311,46 @@ class ClipboardConfig(BaseModel):
     default_ttl_seconds: int | None = Field(
         default=None,
         description="Default TTL for new entries (seconds). None = permanent.",
+    )
+
+
+class IDEConfig(BaseModel):
+    """Configuration for IDE integration.
+
+    Controls automatic connection to VS Code (or other IDE) extensions
+    that expose an MCP server via WebSocket for diff viewing, diagnostics,
+    and editor context.
+
+    Example in config.json:
+        "ide": {
+            "enabled": true,
+            "auto_connect": true,
+            "inject_diagnostics": true,
+            "inject_open_editors": true
+        }
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(
+        default=True,
+        description="Enable IDE integration (bridge creation at startup)",
+    )
+    auto_connect: bool = Field(
+        default=True,
+        description="Automatically discover and connect to running IDEs",
+    )
+    inject_diagnostics: bool = Field(
+        default=True,
+        description="Inject LSP diagnostics into agent context",
+    )
+    inject_open_editors: bool = Field(
+        default=True,
+        description="Inject list of open editor tabs into agent context",
+    )
+    use_ide_diffs: bool = Field(
+        default=True,
+        description="Route file-write confirmations through IDE diff viewer",
     )
 
 
@@ -672,6 +712,7 @@ class Config(BaseModel):
     permissions: PermissionsConfig = PermissionsConfig()
     compaction: CompactionConfig = CompactionConfig()
     clipboard: ClipboardConfig = ClipboardConfig()
+    ide: IDEConfig = IDEConfig()
     context: ContextConfig = ContextConfig()
     mcp_servers: list[MCPServerConfig] = []
     server: ServerConfig = ServerConfig()

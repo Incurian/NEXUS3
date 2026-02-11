@@ -1110,6 +1110,7 @@ GitLab tools require pre-configured instances in `~/.nexus3/config.json` or `.ne
 | **Branch per Plan** | **One feature branch per plan. Merge only after checklist complete + user sign-off.** |
 | **Don't Revert Unrelated Changes** | **When committing, only stage files YOU modified. NEVER use `git checkout` or `git restore` on files you didn't change - they may contain the user's work from other tasks.** |
 | **Zero Lint/Test Failures** | **All tests and lints must pass 100% at all times. If a failure is introduced and cannot be immediately fixed, document it in the Known Failures section of this file with: what fails, why, and the plan to fix it. No silent regressions.** |
+| **Clean As You Go** | **Lint or test failures may not be ignored or skipped without the direct, explicit approval of the user. Fix them immediately — do not defer, suppress, or work around them. This rule applies regardless of whether the failure is related to the current task or believed to be from unrelated changes or a previous session.** |
 
 ### Live Testing Requirement (MANDATORY)
 

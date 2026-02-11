@@ -326,6 +326,75 @@ async def run_repl(
             tool_call, target_path, agent_cwd, key_monitor_pause, key_monitor_pause_ack
         )
 
+    # Tools eligible for IDE diff approval
+    _IDE_DIFF_TOOLS = frozenset({
+        "write_file", "edit_file", "edit_lines", "append_file",
+        "regex_replace", "patch",
+    })
+
+    async def _extract_proposed_content(
+        tool_call: ToolCall, target_path: Path
+    ) -> str | None:
+        """Extract the full proposed file content for a diff.
+
+        For write_file: content argument IS the full file.
+        For edit_file/append_file: read current file, apply change.
+        Returns None if extraction fails (fall back to terminal).
+        """
+        args = tool_call.arguments
+        if tool_call.name == "write_file":
+            return args.get("content", "")
+        # For modification tools, read current file and compute result
+        try:
+            current = target_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        if tool_call.name == "edit_file":
+            old = args.get("old_string", "")
+            new = args.get("new_string", "")
+            if args.get("replace_all"):
+                return current.replace(old, new)
+            return current.replace(old, new, 1)
+        if tool_call.name == "append_file":
+            content = args.get("content", "")
+            newline = "\n" if args.get("newline", True) else ""
+            return current + newline + content
+        # regex_replace, edit_lines, patch — more complex, fall back to terminal
+        return None
+
+    async def confirm_with_ide_or_terminal(
+        tool_call: ToolCall,
+        target_path: Path | None,
+        agent_cwd: Path,
+    ) -> ConfirmationResult:
+        """IDE-aware confirmation: route file writes to VS Code diff when available."""
+        from nexus3.ide.connection import DiffOutcome
+
+        ide_bridge = shared.ide_bridge if shared else None
+        if (
+            ide_bridge
+            and ide_bridge.is_connected
+            and shared.config.ide.use_ide_diffs
+            and tool_call.name in _IDE_DIFF_TOOLS
+            and target_path
+        ):
+            proposed = await _extract_proposed_content(tool_call, target_path)
+            if proposed is not None:
+                try:
+                    async with ide_bridge._diff_lock:  # noqa: SLF001
+                        outcome = await ide_bridge.connection.open_diff(
+                            old_file_path=str(target_path),
+                            new_file_path=str(target_path),
+                            new_file_contents=proposed,
+                            tab_name=target_path.name,
+                        )
+                    if outcome == DiffOutcome.FILE_SAVED:
+                        return ConfirmationResult.ALLOW_ONCE
+                    return ConfirmationResult.DENY
+                except Exception:
+                    logger.debug("IDE diff failed, falling back to terminal", exc_info=True)
+        return await confirm_with_pause(tool_call, target_path, agent_cwd)
+
     # =========================================================================
     # Phase 6: Lobby mode - determine startup mode based on CLI flags
     # =========================================================================
@@ -411,7 +480,17 @@ async def run_repl(
         return
 
     # Wire up confirmation callback for main agent
-    main_agent.session.on_confirm = confirm_with_pause
+    main_agent.session.on_confirm = confirm_with_ide_or_terminal
+
+    # Auto-connect to IDE if bridge is available
+    if shared.ide_bridge:
+        try:
+            agent_cwd = main_agent.services.get_cwd()
+            conn = await shared.ide_bridge.auto_connect(agent_cwd)
+            if conn:
+                console.print(f"[dim]IDE connected: {conn.ide_info.ide_name}[/]")
+        except Exception:
+            logger.debug("IDE auto-connect failed", exc_info=True)
 
     # Helper to get permission data from an agent
     def get_permission_data(agent: object) -> tuple[str, str | None, list[str]]:
@@ -1148,6 +1227,8 @@ async def run_repl(
             return await repl_commands.cmd_mcp(ctx, cmd_args or None)
         elif cmd_name == "gitlab":
             return await repl_commands.cmd_gitlab(ctx, cmd_args or None)
+        elif cmd_name == "ide":
+            return await repl_commands.cmd_ide(ctx, cmd_args or None)
         elif cmd_name == "init":
             return await repl_commands.cmd_init(ctx, cmd_args or None)
 
@@ -1362,7 +1443,7 @@ async def run_repl(
                             # Detach callbacks from old session, attach to new
                             _set_display_session(session)
                             _set_incoming_hook(new_agent.dispatcher)
-                            session.on_confirm = confirm_with_pause
+                            session.on_confirm = confirm_with_ide_or_terminal
                             # Update last session on switch
                             save_as_last_session(current_agent_id)
                             if not was_whisper:
@@ -1406,7 +1487,7 @@ async def run_repl(
                                     new_agent = pool.get(agent_name_to_restore)
                                     if new_agent:
                                         # Wire up confirmation callback
-                                        new_agent.session.on_confirm = confirm_with_pause
+                                        new_agent.session.on_confirm = confirm_with_ide_or_terminal
                                         restored_msgs = deserialize_messages(saved.messages)
                                         for msg in restored_msgs:
                                             new_agent.context._messages.append(msg)
@@ -1424,7 +1505,7 @@ async def run_repl(
                                         # Detach callbacks from old session, attach to new
                                         _set_display_session(session)
                                         _set_incoming_hook(new_agent.dispatcher)
-                                        session.on_confirm = confirm_with_pause
+                                        session.on_confirm = confirm_with_ide_or_terminal
                                         # Update last session on restore
                                         save_as_last_session(current_agent_id)
                                         console.print(
@@ -1458,7 +1539,7 @@ async def run_repl(
                                         config=agent_config,
                                     )
                                     # Wire up confirmation callback
-                                    new_agent.session.on_confirm = confirm_with_pause
+                                    new_agent.session.on_confirm = confirm_with_ide_or_terminal
                                     console.print(
                                         f"Created agent: {agent_name_to_create}",
                                         style="dim green",
@@ -1474,7 +1555,7 @@ async def run_repl(
                                         # Detach callbacks from old session, attach to new
                                         _set_display_session(session)
                                         _set_incoming_hook(new_agent.dispatcher)
-                                        session.on_confirm = confirm_with_pause
+                                        session.on_confirm = confirm_with_ide_or_terminal
                                         # Update last session on create+switch
                                         save_as_last_session(current_agent_id)
                                         console.print(

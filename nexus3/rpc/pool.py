@@ -68,6 +68,7 @@ from nexus3.skill.vcs.config import GitLabInstance
 
 if TYPE_CHECKING:
     from nexus3.config.schema import Config
+    from nexus3.ide.bridge import IDEBridge
     from nexus3.provider.registry import ProviderRegistry
     from nexus3.rpc.global_dispatcher import GlobalDispatcher
     from nexus3.session.session_manager import SessionManager
@@ -239,6 +240,7 @@ class SharedComponents:
         custom_presets: Custom permission presets loaded from config.
         mcp_registry: MCP server registry for external tool integration.
         is_repl: Whether running in REPL mode (affects context loading during compaction).
+        ide_bridge: IDE bridge for VS Code integration (REPL-only, optional).
     """
 
     config: Config
@@ -250,6 +252,7 @@ class SharedComponents:
     custom_presets: dict[str, PermissionPreset] = field(default_factory=dict)
     mcp_registry: MCPServerRegistry = field(default_factory=MCPServerRegistry)
     is_repl: bool = False
+    ide_bridge: IDEBridge | None = None
 
 
 @dataclass
@@ -578,6 +581,10 @@ class AgentPool:
             permissions=clipboard_perms,
         )
         services.register("clipboard_manager", clipboard_manager)
+
+        # Register IDE bridge if available
+        if self._shared.ide_bridge is not None:
+            services.register("ide_bridge", self._shared.ide_bridge)
 
         # Create context manager with model's context window
         context_config = ContextConfig(

@@ -592,6 +592,26 @@ class Session:
                     cwd = self._services.get_cwd() if self._services else Path.cwd()
                     self.context.refresh_git_context(cwd)
 
+                # Refresh IDE context if bridge available
+                ide_bridge = self._services.get("ide_bridge") if self._services else None
+                if self.context and ide_bridge and ide_bridge.is_connected:
+                    try:
+                        conn = ide_bridge.connection
+                        editors = await conn.get_open_editors()
+                        diagnostics = await conn.get_diagnostics()
+                        from nexus3.ide.context import format_ide_context
+                        ide_cfg = ide_bridge._config  # noqa: SLF001
+                        ide_ctx = format_ide_context(
+                            ide_name=conn.ide_info.ide_name,
+                            open_editors=editors,
+                            diagnostics=diagnostics,
+                            inject_diagnostics=ide_cfg.inject_diagnostics,
+                            inject_open_editors=ide_cfg.inject_open_editors,
+                        )
+                        self.context.refresh_ide_context(ide_ctx)
+                    except Exception:
+                        pass  # Non-fatal — IDE context is informational
+
                 yield IterationCompleted(
                     iteration=iteration_num + 1,
                     will_continue=True,

@@ -238,6 +238,7 @@ class ContextManager:
         self._tool_definitions: list[dict[str, Any]] = []
         self._messages: list[Message] = []
         self._git_context: str | None = None
+        self._ide_context: str | None = None
 
     # === Setup ===
 
@@ -258,6 +259,10 @@ class ContextManager:
             cwd: Working directory to check for git repository.
         """
         self._git_context = get_git_context(cwd)
+
+    def refresh_ide_context(self, ide_context: str | None) -> None:
+        """Update cached IDE context. Caller is responsible for formatting."""
+        self._ide_context = ide_context
 
     def add_session_start_message(
         self,
@@ -328,6 +333,10 @@ class ContextManager:
         # Add git context if available
         if self._git_context:
             prompt = f"{prompt}\n\n{self._git_context}"
+
+        # Add IDE context if available
+        if self._ide_context:
+            prompt = f"{prompt}\n\n{self._ide_context}"
 
         # Add clipboard context if enabled and manager is available
         if (

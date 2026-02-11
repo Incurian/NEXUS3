@@ -179,6 +179,11 @@ GitLab:
   /gitlab on|off      Enable/disable GitLab tools for this session
   /gitlab test [name] Test connection to a GitLab instance
 
+IDE Integration:
+  /ide                Show IDE connection status and settings
+  /ide connect        Scan for and connect to running IDEs
+  /ide disconnect     Disconnect from IDE
+
 Initialization:
   /init               Create .nexus3/ in current directory with templates
   /init --force       Overwrite existing config files
@@ -566,6 +571,28 @@ Notes:
   - Use /gitlab on to enable when you need them
   - State persists when you save/resume sessions
   - GitLab skills require TRUSTED or YOLO permission level""",
+
+    "ide": """/ide [connect|disconnect]
+
+Manage IDE integration (VS Code extension).
+
+Subcommands:
+  /ide              Show connection status and settings
+  /ide connect      Scan for and connect to running IDEs
+  /ide disconnect   Disconnect from IDE
+
+The IDE bridge auto-connects on REPL startup if enabled.
+When connected, file-write confirmations route through VS Code's diff viewer.
+IDE diagnostics and open editors are injected into agent context.
+
+Configuration (in config.json):
+  "ide": {
+    "enabled": true,         Enable IDE bridge creation
+    "auto_connect": true,    Auto-discover IDEs on startup
+    "use_ide_diffs": true,   Route file writes to IDE diff viewer
+    "inject_diagnostics": true,   Add LSP errors to context
+    "inject_open_editors": true   Add open tabs to context
+  }""",
 
     "init": """/init [FILENAME] [--force|-f] [--global|-g]
 
@@ -2701,3 +2728,77 @@ Note: Skills marked (Premium) require GitLab Premium subscription.
 Use /gitlab test to verify your GitLab connection."""
 
     return CommandOutput.success(message=reference)
+
+
+async def cmd_ide(ctx: CommandContext, args: str | None = None) -> CommandOutput:
+    """Handle /ide commands for IDE integration management.
+
+    Subcommands:
+        /ide              Show connection status
+        /ide connect      Manual connect (scan for IDEs)
+        /ide disconnect   Disconnect from IDE
+
+    Args:
+        ctx: Command context with pool access.
+        args: Subcommand and arguments.
+    """
+    ide_bridge = ctx.pool._shared.ide_bridge if ctx.pool else None  # noqa: SLF001
+
+    if not ide_bridge:
+        return CommandOutput.error("IDE integration is disabled (ide.enabled = false)")
+
+    subcmd = args.strip().lower() if args else ""
+
+    if subcmd == "connect":
+        # Manual connect: discover and connect to IDEs
+        agent = ctx.pool.get(ctx.current_agent_id) if ctx.current_agent_id else None
+        cwd = agent.services.get_cwd() if agent else Path.cwd()
+        try:
+            conn = await ide_bridge.auto_connect(cwd)
+            if conn:
+                return CommandOutput.success(
+                    message=f"Connected to: {conn.ide_info.ide_name} (port {conn.ide_info.port})"
+                )
+            return CommandOutput.error("No IDE found. Is the VS Code extension running?")
+        except Exception as e:
+            return CommandOutput.error(f"Connection failed: {e}")
+
+    elif subcmd == "disconnect":
+        if not ide_bridge.is_connected:
+            return CommandOutput.error("Not connected to any IDE")
+        await ide_bridge.disconnect()
+        return CommandOutput.success(message="Disconnected from IDE")
+
+    else:
+        # Status display
+        lines: list[str] = []
+        if ide_bridge.is_connected:
+            conn = ide_bridge.connection
+            lines.append(f"IDE: connected to {conn.ide_info.ide_name} (port {conn.ide_info.port})")
+            lines.append(f"  Workspace: {', '.join(conn.ide_info.workspace_folders)}")
+            # Try to get diagnostics summary
+            try:
+                diags = await conn.get_diagnostics()
+                errors = sum(1 for d in diags if d.severity == "error")
+                warnings = sum(1 for d in diags if d.severity == "warning")
+                lines.append(f"  Diagnostics: {errors} errors, {warnings} warnings")
+            except Exception:
+                lines.append("  Diagnostics: unavailable")
+            # Try to get open editors count
+            try:
+                editors = await conn.get_open_editors()
+                lines.append(f"  Open editors: {len(editors)}")
+            except Exception:
+                pass
+        else:
+            lines.append("IDE: not connected")
+            lines.append("Use /ide connect to scan for running IDEs")
+
+        config = ctx.pool._shared.config  # noqa: SLF001
+        lines.append("")
+        lines.append(f"  auto_connect: {config.ide.auto_connect}")
+        lines.append(f"  use_ide_diffs: {config.ide.use_ide_diffs}")
+        lines.append(f"  inject_diagnostics: {config.ide.inject_diagnostics}")
+        lines.append(f"  inject_open_editors: {config.ide.inject_open_editors}")
+
+        return CommandOutput.success(message="\n".join(lines))

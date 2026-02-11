@@ -34,8 +34,7 @@ class IDEBridge:
         """
         if not self._config.enabled or not self._config.auto_connect:
             return None
-        lock_dir = self._config.lock_dir_path  # Path | None
-        ides = discover_ides(cwd, lock_dir=lock_dir)
+        ides = discover_ides(cwd)
         if not ides:
             return None
         return await self.connect(ides[0])

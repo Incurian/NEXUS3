@@ -299,6 +299,12 @@ async def bootstrap_server_components(
         {k: v.model_dump() for k, v in config.permissions.presets.items()}
     )
 
+    # Phase 3.5: Create IDE bridge (optional, REPL-only)
+    ide_bridge = None
+    if is_repl and config.ide.enabled:
+        from nexus3.ide.bridge import IDEBridge
+        ide_bridge = IDEBridge(config=config.ide)
+
     # Phase 4: Create SharedComponents (immutable config bundle for all agents)
     shared = SharedComponents(
         config=config,
@@ -309,6 +315,7 @@ async def bootstrap_server_components(
         log_streams=log_streams,
         custom_presets=custom_presets,
         is_repl=is_repl,
+        ide_bridge=ide_bridge,
     )
 
     # Phase 5: Create AgentPool (without dispatcher initially)
