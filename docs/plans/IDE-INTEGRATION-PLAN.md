@@ -1057,7 +1057,7 @@ Validated by subagent against actual codebase. 7/8 claims verified with zero dis
 - [x] **P4.3** Add unit tests for reconnection logic (12 new tests)
 - [x] **P4.4** Verified: `ruff check nexus3/` 0 errors, `pytest tests/` 3743 passed
 
-### Phase 5: Documentation — DONE (commit TBD)
+### Phase 5: Documentation — DONE (commit b080fca)
 - [x] **P5.1** Write `nexus3/ide/README.md` (module architecture, classes, usage, security)
 - [x] **P5.2** Write `editors/vscode/README.md` (install, develop, tools reference, troubleshooting)
 - [x] **P5.3** Update `CLAUDE.md` Architecture section — ALREADY DONE (ide/ added in P3 commit)

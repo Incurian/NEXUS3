@@ -1543,13 +1543,9 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 
 | Plan | Description | Status |
 |------|-------------|--------|
-| `IDE-INTEGRATION-PLAN.md` | VS Code IDE integration (diffs, diagnostics, context) | **In progress** — P1+P2 done, P3 next |
+| `IDE-INTEGRATION-PLAN.md` | VS Code IDE integration (diffs, diagnostics, context) | **Complete** — All 5 phases done |
 | `DRY-CLEANUP-PLAN.md` | DRY violations, dead code removal, naming fixes from Opus 4.6 review | Planned |
 | `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | Planned |
-
-#### In Progress: IDE-INTEGRATION-PLAN
-
-Phase 1 (Python `nexus3/ide/` module) and Phase 2 (VS Code extension `editors/vscode/`) complete. Phase 3 (wiring into config, pool, bootstrap, context, repl, session) is next. See `docs/plans/IDE-INTEGRATION-PLAN.md` for full details and checklist.
 
 ### Known Bugs
 
