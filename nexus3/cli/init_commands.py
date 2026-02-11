@@ -139,7 +139,11 @@ def init_global(force: bool = False) -> tuple[bool, str]:
         return False, f"Failed to create global config: {e}"
 
 
-def init_local(cwd: Path | None = None, force: bool = False) -> tuple[bool, str]:
+def init_local(
+    cwd: Path | None = None,
+    force: bool = False,
+    filename: str = "AGENTS.md",
+) -> tuple[bool, str]:
     """Initialize a local ./.nexus3/ configuration directory.
 
     Creates project-specific configuration files with templates.
@@ -147,6 +151,7 @@ def init_local(cwd: Path | None = None, force: bool = False) -> tuple[bool, str]
     Args:
         cwd: Directory to initialize in. Defaults to Path.cwd().
         force: If True, overwrite existing files. If False, skip if directory exists.
+        filename: Name of the instruction file to create (default: AGENTS.md).
 
     Returns:
         Tuple of (success, message).
@@ -163,8 +168,8 @@ def init_local(cwd: Path | None = None, force: bool = False) -> tuple[bool, str]
         secure_mkdir(target_dir)
 
         # P1.8 SECURITY: Use _safe_write_text to prevent symlink attacks
-        # Create NEXUS.md template
-        _safe_write_text(target_dir / "NEXUS.md", NEXUS_MD_TEMPLATE)
+        # Create instruction file template
+        _safe_write_text(target_dir / filename, NEXUS_MD_TEMPLATE)
 
         # Create config.json template
         _safe_write_text(target_dir / "config.json", CONFIG_JSON_TEMPLATE)

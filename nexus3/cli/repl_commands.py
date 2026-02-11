@@ -567,24 +567,30 @@ Notes:
   - State persists when you save/resume sessions
   - GitLab skills require TRUSTED or YOLO permission level""",
 
-    "init": """/init [--force|-f] [--global|-g]
+    "init": """/init [FILENAME] [--force|-f] [--global|-g]
 
 Initialize NEXUS3 configuration directory with templates.
+
+Arguments:
+  FILENAME      Instruction file to create (default: AGENTS.md).
+                Supports: AGENTS.md, NEXUS.md, CLAUDE.md, or any .md file.
 
 Flags:
   --force, -f   Overwrite existing configuration files
   --global, -g  Initialize ~/.nexus3/ instead of local ./.nexus3/
 
 Examples:
-  /init                           # Create ./.nexus3/ with templates
+  /init                           # Create ./.nexus3/ with AGENTS.md
+  /init NEXUS.md                  # Create ./.nexus3/ with NEXUS.md
+  /init CLAUDE.md                 # Create ./.nexus3/ with CLAUDE.md
   /init --force                   # Overwrite existing local config
-  /init --global                  # Initialize ~/.nexus3/
+  /init --global                  # Initialize ~/.nexus3/ (always NEXUS.md)
 
 Created files (local):
   ./.nexus3/
-  ├── NEXUS.md       # Project-specific system prompt
-  ├── config.json    # Project configuration
-  └── mcp.json       # Project MCP servers""",
+  ├── AGENTS.md    # Project instruction file (or specified filename)
+  ├── config.json  # Project configuration
+  └── mcp.json     # Project MCP servers""",
 
     "help": """/help [command]
 
@@ -2186,9 +2192,11 @@ async def cmd_init(ctx: CommandContext, args: str | None) -> CommandOutput:
     """Initialize project configuration directory.
 
     Usage:
-        /init           - Create .nexus3/ in current directory
-        /init --force   - Overwrite existing files
-        /init --global  - Initialize ~/.nexus3/ instead
+        /init                - Create .nexus3/ with AGENTS.md (default)
+        /init NEXUS.md       - Create .nexus3/ with NEXUS.md
+        /init CLAUDE.md      - Create .nexus3/ with CLAUDE.md
+        /init --force        - Overwrite existing files
+        /init --global       - Initialize ~/.nexus3/ instead
     """
     from nexus3.cli.init_commands import init_global, init_local
 
@@ -2196,10 +2204,19 @@ async def cmd_init(ctx: CommandContext, args: str | None) -> CommandOutput:
     force = "--force" in parts or "-f" in parts
     global_mode = "--global" in parts or "-g" in parts
 
+    # Extract filename argument (any .md file that isn't a flag)
+    filename = "AGENTS.md"
+    for part in parts:
+        if part.startswith("-"):
+            continue
+        if part.lower().endswith(".md"):
+            filename = part
+            break
+
     if global_mode:
         success, message = init_global(force=force)
     else:
-        success, message = init_local(force=force)
+        success, message = init_local(force=force, filename=filename)
 
     if success:
         return CommandOutput.success(message=message)

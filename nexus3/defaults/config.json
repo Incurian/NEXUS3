@@ -102,7 +102,6 @@
     }
   ],
   "context": {
-    "include_readme": false,
-    "readme_as_fallback": false
+    "instruction_files": ["NEXUS.md", "AGENTS.md", "CLAUDE.md", "README.md"]
   }
 }

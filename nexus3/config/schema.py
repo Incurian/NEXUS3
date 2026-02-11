@@ -317,13 +317,14 @@ class ClipboardConfig(BaseModel):
 class ContextConfig(BaseModel):
     """Configuration for context loading.
 
-    Controls how NEXUS.md prompts are loaded from multiple directory layers.
+    Controls how instruction files are loaded from multiple directory layers.
+    The instruction_files list defines which filenames to search for and in
+    what priority order. First file found wins per layer.
 
     Example in config.json:
         "context": {
             "ancestor_depth": 2,
-            "include_readme": false,
-            "readme_as_fallback": true
+            "instruction_files": ["NEXUS.md", "AGENTS.md", "CLAUDE.md", "README.md"]
         }
     """
 
@@ -335,17 +336,33 @@ class ContextConfig(BaseModel):
         le=10,
         description="How many directory levels above CWD to search for .nexus3/",
     )
-    include_readme: bool = Field(
-        default=False,
-        description="Always include README.md in context alongside NEXUS.md",
-    )
-    readme_as_fallback: bool = Field(
-        default=False,
+    instruction_files: list[str] = Field(
+        default=["NEXUS.md", "AGENTS.md", "CLAUDE.md", "README.md"],
         description=(
-            "Use README.md as context when no NEXUS.md exists. "
-            "Opt-in for security: READMEs may contain untrusted content."
+            "Ordered list of instruction filenames to search for in each layer. "
+            "First file found wins. README.md entries are wrapped with "
+            "documentation boundaries for security."
         ),
     )
+
+    @field_validator("instruction_files", mode="after")
+    @classmethod
+    def validate_instruction_files(cls, v: list[str]) -> list[str]:
+        """Validate instruction file entries are safe filenames."""
+        for name in v:
+            if "/" in name or "\\" in name:
+                raise ValueError(
+                    f"instruction_files entries must be filenames, not paths: {name!r}"
+                )
+            if not name.lower().endswith(".md"):
+                raise ValueError(
+                    f"instruction_files entries must be .md files: {name!r}"
+                )
+            if ".." in name:
+                raise ValueError(
+                    f"instruction_files entries must not contain '..': {name!r}"
+                )
+        return v
 
 
 class ServerConfig(BaseModel):
@@ -607,6 +624,39 @@ class Config(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_deprecated_context_fields(cls, data: dict) -> dict:
+        """Migrate deprecated include_readme/readme_as_fallback to instruction_files."""
+        if not isinstance(data, dict):
+            return data
+        context = data.get("context")
+        if not isinstance(context, dict):
+            return data
+
+        if "instruction_files" not in context:
+            include_readme = context.pop("include_readme", None)
+            readme_as_fallback = context.pop("readme_as_fallback", None)
+
+            if include_readme is not None or readme_as_fallback is not None:
+                files = ["NEXUS.md", "AGENTS.md", "CLAUDE.md"]
+                if include_readme or readme_as_fallback:
+                    files.append("README.md")
+                context["instruction_files"] = files
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "Deprecated config fields 'include_readme' and "
+                    "'readme_as_fallback' migrated to 'instruction_files'. "
+                    "Please update your config.json."
+                )
+        else:
+            # instruction_files is set, just remove old fields silently
+            context.pop("include_readme", None)
+            context.pop("readme_as_fallback", None)
+
+        return data
 
     default_model: str = "haiku"
     """Default model alias (or 'provider/alias' format)."""

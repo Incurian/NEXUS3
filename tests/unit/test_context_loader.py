@@ -218,17 +218,18 @@ class TestContextLoader:
         assert "Local content" in context.system_prompt
 
     def test_readme_fallback(self, tmp_path: Path) -> None:
-        """Test README.md is used as fallback when NEXUS.md is missing."""
+        """Test README.md is used as fallback when no other instruction file exists."""
         project_dir = tmp_path / "project"
         project_dir.mkdir()
         nexus_dir = project_dir / ".nexus3"
         nexus_dir.mkdir()
-        # No NEXUS.md, but README.md exists in project root
+        # No NEXUS.md/AGENTS.md/CLAUDE.md, but README.md exists in project root
         (project_dir / "README.md").write_text("README content")
 
+        # Default instruction_files includes README.md as last resort
         loader = ContextLoader(
             cwd=project_dir,
-            context_config=ContextConfig(ancestor_depth=0, readme_as_fallback=True),
+            context_config=ContextConfig(ancestor_depth=0),
         )
         # Mock global to return nothing
         loader._get_global_dir = lambda: tmp_path / "nonexistent"  # type: ignore
@@ -238,16 +239,20 @@ class TestContextLoader:
         assert "README content" in context.system_prompt
 
     def test_readme_disabled(self, tmp_path: Path) -> None:
-        """Test README.md is not used when fallback is disabled."""
+        """Test README.md is not used when excluded from instruction_files."""
         project_dir = tmp_path / "project"
         project_dir.mkdir()
         nexus_dir = project_dir / ".nexus3"
         nexus_dir.mkdir()
         (project_dir / "README.md").write_text("README content")
 
+        # Exclude README.md from instruction_files
         loader = ContextLoader(
             cwd=project_dir,
-            context_config=ContextConfig(ancestor_depth=0, readme_as_fallback=False),
+            context_config=ContextConfig(
+                ancestor_depth=0,
+                instruction_files=["NEXUS.md", "AGENTS.md", "CLAUDE.md"],
+            ),
         )
         loader._get_global_dir = lambda: tmp_path / "nonexistent"  # type: ignore
         loader._get_defaults_dir = lambda: tmp_path / "nonexistent"  # type: ignore
@@ -499,3 +504,147 @@ class TestContextLoaderSubagent:
 
         # Should just use parent context (no duplication)
         assert prompt == "Parent already has this content"
+
+
+class TestInstructionFilePriority:
+    """Tests for configurable instruction file priority search."""
+
+    def test_finds_nexus_md_first(self, tmp_path: Path) -> None:
+        """NEXUS.md is found first when it exists (default priority)."""
+        nexus_dir = tmp_path / ".nexus3"
+        nexus_dir.mkdir()
+        (nexus_dir / "NEXUS.md").write_text("NEXUS content")
+        (tmp_path / "AGENTS.md").write_text("AGENTS content")
+
+        loader = ContextLoader(cwd=tmp_path)
+        result = loader._find_instruction_file(tmp_path)
+        assert result is not None
+        assert result.filename == "NEXUS.md"
+        assert result.content == "NEXUS content"
+
+    def test_falls_through_to_agents_md(self, tmp_path: Path) -> None:
+        """AGENTS.md found when no NEXUS.md exists."""
+        (tmp_path / ".agents").mkdir()
+        (tmp_path / ".agents" / "AGENTS.md").write_text("AGENTS content")
+
+        loader = ContextLoader(cwd=tmp_path)
+        result = loader._find_instruction_file(tmp_path)
+        assert result is not None
+        assert result.filename == "AGENTS.md"
+        assert result.source_path == tmp_path / ".agents" / "AGENTS.md"
+
+    def test_falls_through_to_claude_md(self, tmp_path: Path) -> None:
+        """CLAUDE.md found when no NEXUS.md or AGENTS.md exists."""
+        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".claude" / "CLAUDE.md").write_text("CLAUDE content")
+
+        loader = ContextLoader(cwd=tmp_path)
+        result = loader._find_instruction_file(tmp_path)
+        assert result is not None
+        assert result.filename == "CLAUDE.md"
+
+    def test_falls_through_to_readme(self, tmp_path: Path) -> None:
+        """README.md found as last resort."""
+        (tmp_path / "README.md").write_text("README content")
+
+        loader = ContextLoader(cwd=tmp_path)
+        result = loader._find_instruction_file(tmp_path)
+        assert result is not None
+        assert result.filename == "README.md"
+        assert result.is_readme is True
+
+    def test_no_instruction_file_found(self, tmp_path: Path) -> None:
+        """Returns None when no instruction file exists."""
+        loader = ContextLoader(cwd=tmp_path)
+        result = loader._find_instruction_file(tmp_path)
+        assert result is None
+
+    def test_nexus3_dir_checked_first_for_agents(self, tmp_path: Path) -> None:
+        """.nexus3/AGENTS.md takes priority over .agents/AGENTS.md."""
+        nexus_dir = tmp_path / ".nexus3"
+        nexus_dir.mkdir()
+        (nexus_dir / "AGENTS.md").write_text("from nexus3")
+        agents_dir = tmp_path / ".agents"
+        agents_dir.mkdir()
+        (agents_dir / "AGENTS.md").write_text("from agents")
+
+        config = ContextConfig(instruction_files=["AGENTS.md"])
+        loader = ContextLoader(cwd=tmp_path, context_config=config)
+        result = loader._find_instruction_file(tmp_path)
+        assert result is not None
+        assert result.source_path == nexus_dir / "AGENTS.md"
+        assert result.content == "from nexus3"
+
+    def test_claude_md_checks_agents_dir(self, tmp_path: Path) -> None:
+        """CLAUDE.md checks .agents/ directory."""
+        (tmp_path / ".agents").mkdir()
+        (tmp_path / ".agents" / "CLAUDE.md").write_text("CLAUDE in agents")
+
+        config = ContextConfig(instruction_files=["CLAUDE.md"])
+        loader = ContextLoader(cwd=tmp_path, context_config=config)
+        result = loader._find_instruction_file(tmp_path)
+        assert result is not None
+        assert result.source_path == tmp_path / ".agents" / "CLAUDE.md"
+
+    def test_custom_priority_list(self, tmp_path: Path) -> None:
+        """Custom instruction_files list is respected."""
+        (tmp_path / "CLAUDE.md").write_text("CLAUDE content")
+        (tmp_path / "AGENTS.md").write_text("AGENTS content")
+
+        config = ContextConfig(instruction_files=["CLAUDE.md", "AGENTS.md"])
+        loader = ContextLoader(cwd=tmp_path, context_config=config)
+        result = loader._find_instruction_file(tmp_path)
+        assert result is not None
+        assert result.filename == "CLAUDE.md"
+
+    def test_empty_instruction_files_list(self, tmp_path: Path) -> None:
+        """Empty list means no instruction file is searched for."""
+        (tmp_path / "NEXUS.md").write_text("content")
+
+        config = ContextConfig(instruction_files=[])
+        loader = ContextLoader(cwd=tmp_path, context_config=config)
+        result = loader._find_instruction_file(tmp_path)
+        assert result is None
+
+    def test_non_readme_not_marked(self, tmp_path: Path) -> None:
+        """Non-README files have is_readme=False."""
+        (tmp_path / ".nexus3").mkdir()
+        (tmp_path / ".nexus3" / "NEXUS.md").write_text("content")
+
+        loader = ContextLoader(cwd=tmp_path)
+        result = loader._find_instruction_file(tmp_path)
+        assert result is not None
+        assert result.is_readme is False
+
+    def test_agents_md_in_load(self, tmp_path: Path) -> None:
+        """Full load() discovers AGENTS.md in .agents/ directory."""
+        agents_dir = tmp_path / ".agents"
+        agents_dir.mkdir()
+        (agents_dir / "AGENTS.md").write_text("Agent instructions here")
+        (tmp_path / ".nexus3").mkdir()
+
+        loader = ContextLoader(
+            cwd=tmp_path,
+            context_config=ContextConfig(ancestor_depth=0),
+        )
+        loader._get_global_dir = lambda: tmp_path / "nonexistent"  # type: ignore
+        loader._get_defaults_dir = lambda: tmp_path / "nonexistent"  # type: ignore
+
+        context = loader.load()
+        assert "Agent instructions here" in context.system_prompt
+
+    def test_claude_md_in_load(self, tmp_path: Path) -> None:
+        """Full load() discovers CLAUDE.md in .claude/ directory."""
+        (tmp_path / ".claude").mkdir()
+        (tmp_path / ".claude" / "CLAUDE.md").write_text("Claude instructions")
+        (tmp_path / ".nexus3").mkdir()
+
+        loader = ContextLoader(
+            cwd=tmp_path,
+            context_config=ContextConfig(ancestor_depth=0),
+        )
+        loader._get_global_dir = lambda: tmp_path / "nonexistent"  # type: ignore
+        loader._get_defaults_dir = lambda: tmp_path / "nonexistent"  # type: ignore
+
+        context = loader.load()
+        assert "Claude instructions" in context.system_prompt

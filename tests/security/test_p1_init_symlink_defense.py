@@ -148,18 +148,18 @@ class TestInitLocalSymlinkDefense:
         # Actually with force=True it will try to write NEXUS.md first, which will work
         # Then fail on config.json which is the symlink
 
-    def test_refuses_symlink_in_nexus_md(self, tmp_path: Path) -> None:
-        """init_local should refuse if NEXUS.md is a symlink."""
+    def test_refuses_symlink_in_instruction_file(self, tmp_path: Path) -> None:
+        """init_local should refuse if the instruction file is a symlink."""
         from nexus3.cli.init_commands import init_local
 
         # Create the .nexus3 directory
         nexus_dir = tmp_path / ".nexus3"
         nexus_dir.mkdir()
 
-        # Create target file and symlink at NEXUS.md location
+        # Create target file and symlink at AGENTS.md location (default)
         target = tmp_path / "target.txt"
         target.write_text("sensitive")
-        (nexus_dir / "NEXUS.md").symlink_to(target)
+        (nexus_dir / "AGENTS.md").symlink_to(target)
 
         # init_local with force should fail
         success, msg = init_local(cwd=tmp_path, force=True)
@@ -179,7 +179,7 @@ class TestInitLocalSymlinkDefense:
         assert success is True
         nexus_dir = tmp_path / ".nexus3"
         assert nexus_dir.exists()
-        assert (nexus_dir / "NEXUS.md").exists()
+        assert (nexus_dir / "AGENTS.md").exists()
         assert (nexus_dir / "config.json").exists()
         assert (nexus_dir / "mcp.json").exists()
 

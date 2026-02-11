@@ -120,6 +120,29 @@ class ContextSources:
     mcp_sources: list[Path] = field(default_factory=list)
 
 
+# Search directories for instruction filenames, relative to project root.
+# Each filename maps to an ordered list of subdirectories to check.
+INSTRUCTION_FILE_SEARCH_DIRS: dict[str, list[str]] = {
+    "NEXUS.md": [".nexus3", "."],
+    "AGENTS.md": [".nexus3", ".agents", "."],
+    "CLAUDE.md": [".nexus3", ".claude", ".agents", "."],
+    "README.md": ["."],
+}
+
+# Default search pattern for filenames not in the map above
+DEFAULT_SEARCH_DIRS = [".nexus3", "."]
+
+
+@dataclass
+class InstructionFileResult:
+    """Result of searching for an instruction file."""
+
+    content: str
+    source_path: Path
+    filename: str  # e.g., "NEXUS.md", "AGENTS.md"
+    is_readme: bool  # True if this is a README.md (needs wrapping)
+
+
 @dataclass
 class ContextLayer:
     """A single layer of context (global, ancestor, or local)."""
@@ -127,10 +150,14 @@ class ContextLayer:
     name: str  # "global", "ancestor:dirname", "local"
     path: Path  # Directory path
 
-    prompt: str | None = None  # NEXUS.md content
-    readme: str | None = None  # README.md content
+    prompt: str | None = None  # Instruction file content
+    readme: str | None = None  # README.md content (for wrapping)
     config: dict[str, Any] | None = None  # config.json content (pre-validation)
     mcp: dict[str, Any] | None = None  # mcp.json content
+
+    # Track which instruction file was found (for accurate source labels)
+    prompt_source_path: Path | None = None
+    prompt_filename: str | None = None  # e.g., "NEXUS.md", "AGENTS.md"
 
 
 @dataclass
@@ -205,6 +232,52 @@ class ContextLoader:
             return path.read_text(encoding="utf-8-sig")
         return None
 
+    def _get_search_locations(self, filename: str, project_root: Path) -> list[Path]:
+        """Get ordered search locations for an instruction filename.
+
+        Args:
+            filename: The instruction filename (e.g., "NEXUS.md", "CLAUDE.md").
+            project_root: The project root directory.
+
+        Returns:
+            List of absolute file paths to check, in priority order.
+        """
+        search_dirs = INSTRUCTION_FILE_SEARCH_DIRS.get(filename, DEFAULT_SEARCH_DIRS)
+        locations = []
+        for dir_name in search_dirs:
+            if dir_name == ".":
+                locations.append(project_root / filename)
+            else:
+                locations.append(project_root / dir_name / filename)
+        return locations
+
+    def _find_instruction_file(
+        self, project_root: Path
+    ) -> InstructionFileResult | None:
+        """Search for the first matching instruction file using priority list.
+
+        Iterates through configured instruction_files list, checking each
+        filename's search locations. Returns the first file found.
+
+        Args:
+            project_root: The project root directory to search in.
+
+        Returns:
+            InstructionFileResult if found, None if no instruction file exists.
+        """
+        for filename in self._config.instruction_files:
+            locations = self._get_search_locations(filename, project_root)
+            for location in locations:
+                content = self._load_file(location)
+                if content is not None:
+                    return InstructionFileResult(
+                        content=content,
+                        source_path=location,
+                        filename=filename,
+                        is_readme=(filename.upper() == "README.MD"),
+                    )
+        return None
+
     def _load_layer(self, directory: Path, layer_name: str) -> ContextLayer:
         """Load all context files from a directory.
 
@@ -217,25 +290,16 @@ class ContextLoader:
         """
         layer = ContextLayer(name=layer_name, path=directory)
 
-        # Load NEXUS.md - check in .nexus3 first, then project root for legacy
-        nexus_path = directory / "NEXUS.md"
-        if not nexus_path.is_file() and directory.name == ".nexus3":
-            # Legacy: also check parent directory (project root)
-            legacy_path = directory.parent / "NEXUS.md"
-            if legacy_path.is_file():
-                nexus_path = legacy_path
-        layer.prompt = self._load_file(nexus_path)
-
-        # Load README.md (only from parent of .nexus3, not from .nexus3 itself)
-        # For .nexus3/ dirs, look for README.md in the parent (project root)
-        readme_path = directory.parent / "README.md"
-        if directory.name == ".nexus3" and readme_path.is_file():
-            layer.readme = self._load_file(readme_path)
-        elif directory.name != ".nexus3":
-            # Global or other directory structure
-            readme_in_dir = directory / "README.md"
-            if readme_in_dir.is_file():
-                layer.readme = self._load_file(readme_in_dir)
+        # Find instruction file using priority search
+        project_root = directory.parent if directory.name == ".nexus3" else directory
+        result = self._find_instruction_file(project_root)
+        if result is not None:
+            if result.is_readme:
+                layer.readme = result.content
+            else:
+                layer.prompt = result.content
+            layer.prompt_source_path = result.source_path
+            layer.prompt_filename = result.filename
 
         # Load config.json - ContextLoadError propagates for fail-fast behavior
         config_path = directory / "config.json"
@@ -343,23 +407,10 @@ END DOCUMENTATION
         content = layer.prompt
         readme_content: str | None = None
 
-        # Determine README source path (README.md is in parent of .nexus3)
-        if layer.path.name == ".nexus3":
-            readme_source_path = layer.path.parent / "README.md"
-        else:
-            readme_source_path = layer.path / "README.md"
-
-        # Handle README.md based on config
-        if content is None and self._config.readme_as_fallback and layer.readme:
-            # README used as fallback - wrap with boundaries
+        # If the instruction file found was README.md, wrap it with boundaries
+        if content is None and layer.readme and layer.prompt_filename == "README.md":
+            readme_source_path = layer.prompt_source_path or layer.path / "README.md"
             readme_content = self._format_readme_section(layer.readme, readme_source_path)
-        elif self._config.include_readme and layer.readme:
-            # Include README after NEXUS.md - wrap with boundaries
-            formatted_readme = self._format_readme_section(layer.readme, readme_source_path)
-            if content:
-                readme_content = formatted_readme  # Will be appended after content
-            else:
-                readme_content = formatted_readme
         elif not content:
             return None
 
@@ -375,32 +426,24 @@ END DOCUMENTATION
             header = "## Global Configuration"
         elif layer.name.startswith("ancestor:"):
             dirname = layer.name.split(":", 1)[1]
-            source_path = layer.path / "NEXUS.md"
+            source_path = layer.prompt_source_path or (layer.path / "NEXUS.md")
             header = f"## Ancestor Configuration ({dirname})"
         else:  # local
-            source_path = layer.path / "NEXUS.md"
+            source_path = layer.prompt_source_path or (layer.path / "NEXUS.md")
             header = "## Project Configuration"
 
         # Record source
         sources.prompt_sources.append(PromptSource(path=source_path, layer_name=layer.name))
 
         # Build final content
-        if content and readme_content:
-            # NEXUS.md content followed by wrapped README
-            return f"""{header}
-Source: {source_path}
-
-{content.strip()}
-
-{readme_content}"""
-        elif readme_content:
-            # Only README (as fallback) - include header but content is wrapped README
+        if readme_content:
+            # README as fallback - wrapped with documentation boundaries
+            readme_source_path = layer.prompt_source_path or layer.path / "README.md"
             return f"""{header}
 Source: {readme_source_path}
 
 {readme_content}"""
         else:
-            # Only NEXUS.md content
             return f"""{header}
 Source: {source_path}
 
@@ -600,21 +643,18 @@ Source: {source_path}
         Returns:
             System prompt for the subagent.
         """
-        # Load agent's local NEXUS.md
-        local_nexus = self._cwd / ".nexus3" / "NEXUS.md"
-
-        # Also check for NEXUS.md directly in cwd (legacy support)
-        if not local_nexus.is_file():
-            local_nexus = self._cwd / "NEXUS.md"
+        # Find instruction file using priority search
+        result = self._find_instruction_file(self._cwd)
+        local_instruction = result.source_path if result else self._cwd / ".nexus3" / "NEXUS.md"
 
         if not parent_context:
             # No parent - just load normally
             ctx = self.load(is_repl=False)
             return ctx.system_prompt
 
-        # Check if agent's NEXUS.md is already in parent's context
+        # Check if agent's instruction file is already in parent's context
         parent_paths = {s.path for s in parent_context.sources.prompt_sources}
-        if local_nexus in parent_paths:
+        if local_instruction in parent_paths:
             # Already loaded by parent - use parent context as-is
             return parent_context.system_prompt
 
@@ -629,19 +669,18 @@ Source: {source_path}
             env_start = parent_prompt.find("# Environment")
             parent_prompt = parent_prompt[:env_start].rstrip()
 
-        # Load agent's local NEXUS.md and prepend
-        if local_nexus.is_file():
-            agent_prompt = local_nexus.read_text(encoding="utf-8-sig")
+        # Prepend subagent's instruction file
+        if result and not result.is_readme:
             return f"""## Subagent Configuration
-Source: {local_nexus}
+Source: {result.source_path}
 
-{agent_prompt.strip()}
+{result.content.strip()}
 
 {parent_prompt}
 
 {env_info}"""
 
-        # No local NEXUS.md - use parent context with subagent's environment
+        # No local instruction file - use parent context with subagent's environment
         return f"""{parent_prompt}
 
 {env_info}"""

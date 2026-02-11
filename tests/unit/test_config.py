@@ -363,3 +363,88 @@ class TestLoadConfig:
             load_config(path=config_file)
 
         assert "validation failed" in str(exc_info.value)
+
+
+class TestContextConfigInstructionFiles:
+    """Tests for instruction_files config field and deprecated field migration."""
+
+    def test_default_instruction_files(self) -> None:
+        """Default instruction_files has correct priority."""
+        from nexus3.config.schema import ContextConfig
+
+        config = ContextConfig()
+        assert config.instruction_files == ["NEXUS.md", "AGENTS.md", "CLAUDE.md", "README.md"]
+
+    def test_rejects_path_in_instruction_files(self) -> None:
+        """Paths in instruction_files are rejected."""
+        from nexus3.config.schema import ContextConfig
+
+        with pytest.raises(Exception):
+            ContextConfig(instruction_files=["../NEXUS.md"])
+
+    def test_rejects_non_md_instruction_files(self) -> None:
+        """Non-.md files in instruction_files are rejected."""
+        from nexus3.config.schema import ContextConfig
+
+        with pytest.raises(Exception):
+            ContextConfig(instruction_files=["NEXUS.txt"])
+
+    def test_deprecated_include_readme_migration(self) -> None:
+        """Old include_readme field is migrated to instruction_files."""
+        from nexus3.config.schema import Config
+
+        data = {
+            "context": {
+                "include_readme": True,
+                "readme_as_fallback": False,
+            },
+            "providers": {
+                "test": {
+                    "type": "openrouter",
+                    "models": {"m": {"id": "test/model", "context_window": 1000}},
+                }
+            },
+            "default_model": "m",
+        }
+        config = Config.model_validate(data)
+        assert "README.md" in config.context.instruction_files
+
+    def test_deprecated_fields_removed_when_instruction_files_present(self) -> None:
+        """Old fields are silently removed when instruction_files is set."""
+        from nexus3.config.schema import Config
+
+        data = {
+            "context": {
+                "instruction_files": ["NEXUS.md"],
+                "include_readme": True,
+            },
+            "providers": {
+                "test": {
+                    "type": "openrouter",
+                    "models": {"m": {"id": "test/model", "context_window": 1000}},
+                }
+            },
+            "default_model": "m",
+        }
+        config = Config.model_validate(data)
+        assert config.context.instruction_files == ["NEXUS.md"]
+
+    def test_deprecated_fields_without_readme(self) -> None:
+        """When both old fields are false, README.md is not added."""
+        from nexus3.config.schema import Config
+
+        data = {
+            "context": {
+                "include_readme": False,
+                "readme_as_fallback": False,
+            },
+            "providers": {
+                "test": {
+                    "type": "openrouter",
+                    "models": {"m": {"id": "test/model", "context_window": 1000}},
+                }
+            },
+            "default_model": "m",
+        }
+        config = Config.model_validate(data)
+        assert "README.md" not in config.context.instruction_files

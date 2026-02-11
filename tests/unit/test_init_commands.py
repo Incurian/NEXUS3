@@ -59,7 +59,7 @@ class TestInitLocal:
     """Tests for init_local command."""
 
     def test_creates_local_dir(self, tmp_path: Path) -> None:
-        """Test creates .nexus3/ in current directory."""
+        """Test creates .nexus3/ with AGENTS.md by default."""
         project_dir = tmp_path / "project"
         project_dir.mkdir()
 
@@ -68,9 +68,31 @@ class TestInitLocal:
         assert success
         local_dir = project_dir / ".nexus3"
         assert local_dir.exists()
-        assert (local_dir / "NEXUS.md").exists()
+        assert (local_dir / "AGENTS.md").exists()
+        assert not (local_dir / "NEXUS.md").exists()
         assert (local_dir / "config.json").exists()
         assert (local_dir / "mcp.json").exists()
+
+    def test_creates_nexus_md_when_specified(self, tmp_path: Path) -> None:
+        """Test creates NEXUS.md when filename is specified."""
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        success, message = init_local(cwd=project_dir, filename="NEXUS.md")
+
+        assert success
+        assert (project_dir / ".nexus3" / "NEXUS.md").exists()
+        assert not (project_dir / ".nexus3" / "AGENTS.md").exists()
+
+    def test_creates_claude_md_when_specified(self, tmp_path: Path) -> None:
+        """Test creates CLAUDE.md when filename is specified."""
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+
+        success, message = init_local(cwd=project_dir, filename="CLAUDE.md")
+
+        assert success
+        assert (project_dir / ".nexus3" / "CLAUDE.md").exists()
 
     def test_template_content(self, tmp_path: Path) -> None:
         """Test created files have template content."""
@@ -79,11 +101,11 @@ class TestInitLocal:
 
         init_local(cwd=project_dir)
 
-        # Check NEXUS.md has placeholder sections
-        nexus_content = (project_dir / ".nexus3" / "NEXUS.md").read_text()
-        assert "## Overview" in nexus_content
-        assert "## Key Files" in nexus_content
-        assert "## Conventions" in nexus_content
+        # Check AGENTS.md (default) has placeholder sections
+        content = (project_dir / ".nexus3" / "AGENTS.md").read_text()
+        assert "## Overview" in content
+        assert "## Key Files" in content
+        assert "## Conventions" in content
 
         # Check config.json is valid JSON
         import json
@@ -111,11 +133,11 @@ class TestInitLocal:
         project_dir = tmp_path / "project"
         local_dir = project_dir / ".nexus3"
         local_dir.mkdir(parents=True)
-        (local_dir / "NEXUS.md").write_text("old content")
+        (local_dir / "AGENTS.md").write_text("old content")
 
         success, message = init_local(cwd=project_dir, force=True)
 
         assert success
-        content = (local_dir / "NEXUS.md").read_text()
+        content = (local_dir / "AGENTS.md").read_text()
         assert content != "old content"
         assert "## Overview" in content
