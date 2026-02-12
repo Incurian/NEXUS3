@@ -2,7 +2,7 @@
 
 import os
 import warnings
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -52,7 +52,7 @@ def _normalize_paths(paths: list[str] | None) -> list[str] | None:
 ProviderType = Literal["openrouter", "openai", "azure", "anthropic", "ollama", "vllm"]
 
 
-class AuthMethod(str, Enum):
+class AuthMethod(StrEnum):
     """Authentication method for API requests."""
 
     BEARER = "bearer"  # Authorization: Bearer <key>

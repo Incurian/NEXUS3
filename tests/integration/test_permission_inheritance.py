@@ -520,12 +520,13 @@ class TestChildCannotEnableToolsParentDisabled:
         parent_permissions = resolve_preset("yolo")
         parent_permissions.tool_permissions["write_file"] = ToolPermission(enabled=False)
 
-        # TRUSTED child permissions attempting to have write_file enabled
+        # TRUSTED child with write_file not in tool_permissions (None).
+        # None means "not specified" — not a conflict (pool handles defaults).
         child_permissions = resolve_preset("trusted")
-        # write_file is not in tool_permissions by default (meaning enabled)
+        assert parent_permissions.can_grant(child_permissions) is True
 
-        # Parent should NOT be able to grant these permissions to child
-        # (even though trusted < yolo) because write_file is disabled
+        # Child explicitly enables write_file → should be blocked
+        child_permissions.tool_permissions["write_file"] = ToolPermission(enabled=True)
         assert parent_permissions.can_grant(child_permissions) is False
 
     @pytest.mark.asyncio
@@ -559,21 +560,23 @@ class TestChildCannotEnableToolsParentDisabled:
 
     @pytest.mark.asyncio
     async def test_can_grant_checks_tool_permissions(self) -> None:
-        """can_grant should return False when child tries to enable parent-disabled tool."""
+        """can_grant checks explicit tool enables, not missing entries."""
         # YOLO parent with nexus_create disabled
         parent = resolve_preset("yolo")
         parent.tool_permissions["nexus_create"] = ToolPermission(enabled=False)
 
-        # TRUSTED child with nexus_create enabled (not in tool_permissions = enabled by default)
+        # TRUSTED child with nexus_create not in tool_permissions (None).
+        # None means "not specified in preset" — not a conflict, because
+        # runtime logic (pool) handles tool defaults independently per agent.
         child = resolve_preset("trusted")
+        assert parent.can_grant(child) is True
 
-        # can_grant should return False (tool restriction)
+        # Child explicitly ENABLES nexus_create → should be blocked
+        child.tool_permissions["nexus_create"] = ToolPermission(enabled=True)
         assert parent.can_grant(child) is False
 
-        # Now disable nexus_create in child too
+        # Child explicitly DISABLES nexus_create → should be allowed
         child.tool_permissions["nexus_create"] = ToolPermission(enabled=False)
-
-        # Now can_grant should return True (yolo can grant trusted if tools match)
         assert parent.can_grant(child) is True
 
 
@@ -779,6 +782,70 @@ class TestCanGrantLogic:
 
         # Parent cannot grant paths outside its scope
         assert parent.can_grant(child_outside) is False
+
+
+class TestTrustedParentExternalCwd:
+    """Trusted parent (unrestricted) can create sandboxed child at any CWD."""
+
+    def test_trusted_parent_can_grant_sandboxed_child_external_cwd(
+        self, tmp_path: Path,
+    ) -> None:
+        """Default trusted parent (allowed_paths=None) can create sandboxed child anywhere."""
+        parent_cwd = tmp_path / "parent_project"
+        parent_cwd.mkdir()
+        external_cwd = tmp_path / "totally_different_project"
+        external_cwd.mkdir()
+
+        parent = AgentPermissions(
+            base_preset="trusted",
+            effective_policy=PermissionPolicy(
+                level=PermissionLevel.TRUSTED,
+                allowed_paths=None,  # Default trusted — unrestricted
+                cwd=parent_cwd,
+            ),
+        )
+
+        child = AgentPermissions(
+            base_preset="sandboxed",
+            effective_policy=PermissionPolicy(
+                level=PermissionLevel.SANDBOXED,
+                allowed_paths=[external_cwd],
+                cwd=external_cwd,
+            ),
+        )
+
+        # Trusted parent with unrestricted paths can grant to any location
+        assert parent.can_grant(child) is True
+
+    def test_trusted_parent_restricted_cannot_grant_external_cwd(
+        self, tmp_path: Path,
+    ) -> None:
+        """Trusted parent with restricted allowed_paths cannot grant outside those paths."""
+        project_dir = tmp_path / "project"
+        project_dir.mkdir()
+        external = tmp_path / "external"
+        external.mkdir()
+
+        parent = AgentPermissions(
+            base_preset="trusted",
+            effective_policy=PermissionPolicy(
+                level=PermissionLevel.TRUSTED,
+                allowed_paths=[project_dir],  # Restricted
+                cwd=project_dir,
+            ),
+        )
+
+        child = AgentPermissions(
+            base_preset="sandboxed",
+            effective_policy=PermissionPolicy(
+                level=PermissionLevel.SANDBOXED,
+                allowed_paths=[external],
+                cwd=external,
+            ),
+        )
+
+        # Restricted trusted parent cannot grant outside its allowed_paths
+        assert parent.can_grant(child) is False
 
 
 class TestPermissionDeltaApplication:

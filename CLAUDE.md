@@ -740,9 +740,9 @@ This is used by `nexus_send`, `nexus_status`, `nexus_cancel`, and `nexus_destroy
 
 8. **Sandboxed agents have limited nexus tools**: Most nexus tools (`nexus_create`, `nexus_destroy`, `nexus_status`, `nexus_cancel`, `nexus_shutdown`) are disabled for sandboxed agents. However, **`nexus_send` IS enabled with `allowed_targets="parent"`** - sandboxed agents can send messages back to their parent agent to report results. They cannot message any other agent.
 
-9. **Subagent cwd must be within parent's cwd**: When creating a subagent, the child's `cwd` must be within the parent's `cwd`. This prevents privilege escalation where a child could operate in a directory the parent shouldn't access.
+9. **Subagent cwd restrictions depend on parent level**: For SANDBOXED parents, the child's `cwd` must be within the parent's `cwd` (prevents privilege escalation). TRUSTED and YOLO parents can create subagents at any CWD since they already have potential access to all paths.
 
-10. **Subagent write paths must be within parent's cwd**: Similarly, `allowed_write_paths` for a subagent must be within the parent's `cwd`. A parent cannot grant write access to paths outside its own working directory.
+10. **Subagent write paths must be within parent's scope**: For SANDBOXED parents, `allowed_write_paths` must be within the parent's `cwd`. TRUSTED and YOLO parents can grant write access to any path since they already have broader access.
 
 11. **Subagent cwd defaults to parent's cwd**: If no `cwd` is specified when creating a subagent, it inherits the parent's `cwd` (not the server process's cwd).
 
