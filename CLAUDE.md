@@ -1543,7 +1543,7 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 
 | Plan | Description | Status |
 |------|-------------|--------|
-| `IDE-INTEGRATION-PLAN.md` | VS Code IDE integration (diffs, diagnostics, context) | **Complete** — All 5 phases done |
+| `IDE-INTEGRATION-PLAN.md` | VS Code IDE integration (diffs, diagnostics, context) | **Complete** — All 5 phases done + WSL fix. Live testing in progress. |
 | `DRY-CLEANUP-PLAN.md` | DRY violations, dead code removal, naming fixes from Opus 4.6 review | Planned |
 | `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | Planned |
 

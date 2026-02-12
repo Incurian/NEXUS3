@@ -9,7 +9,8 @@
 ## Prerequisites
 
 - Windows 10/11 with VS Code installed (>= 1.85.0)
-- Node.js 18+ (`node --version`)
+- Node.js 18+ installed and available in PowerShell (`node --version`, `npm --version`)
+  - If not installed: `winget install OpenJS.NodeJS.LTS` then **reopen PowerShell**
 - NEXUS3 repo cloned and on `feature/ide-integration` branch
 - Working NEXUS3 virtualenv with `nexus3` alias
 
@@ -17,23 +18,43 @@
 
 ## Phase 0: Build & Install the VS Code Extension
 
+### Important: Cross-Filesystem npm Issues
+
+**Windows npm cannot run `npm install` on WSL filesystem paths** (via `\\wsl.localhost\...`). It fails with `EISDIR` errors because Linux symlinks in `node_modules/.bin/` are incompatible with Windows. You must copy the extension source to a native Windows path first.
+
+### Build Steps
+
 ```powershell
-# From the repo root
-cd editors\vscode
+# Copy extension source to a native Windows path (skipping any existing node_modules)
+robocopy \\wsl.localhost\Ubuntu\home\inc\repos\NEXUS3\editors\vscode C:\temp\nexus3-vscode /E /XD node_modules
+
+# Build from the Windows-native copy
+cd C:\temp\nexus3-vscode
 npm install
-npm run build
-npm run lint        # Should show zero errors
+npm run build       # Should produce dist/extension.js
+npm run lint        # Should show zero errors, zero output
 ```
 
-This produces `dist/extension.js`. To install in VS Code:
+> **If `npm` is not recognized:** Install Node.js first with `winget install OpenJS.NodeJS.LTS`, then close and reopen PowerShell so the PATH update takes effect.
+>
+> **If you change extension source in WSL:** Re-copy the changed files before rebuilding:
+> ```powershell
+> # Copy just the changed file (e.g., package.json)
+> Copy-Item \\wsl.localhost\Ubuntu\home\inc\repos\NEXUS3\editors\vscode\package.json C:\temp\nexus3-vscode\package.json
+> cd C:\temp\nexus3-vscode
+> npm install && npm run build
+> ```
+
+### Install into VS Code
+
+Copy the **built** extension (from `C:\temp\nexus3-vscode`, NOT from the WSL path) into VS Code's extensions directory:
 
 ```powershell
-# Option A: Symlink for development (run from elevated PowerShell)
-New-Item -ItemType Junction -Path "$env:USERPROFILE\.vscode\extensions\nexus3-ide" -Target "$(Get-Location)\editors\vscode"
-
-# Option B: Copy manually
-Copy-Item -Recurse editors\vscode "$env:USERPROFILE\.vscode\extensions\nexus3-ide"
+# From C:\temp\nexus3-vscode (the directory you just built in)
+Copy-Item -Recurse C:\temp\nexus3-vscode "$env:USERPROFILE\.vscode\extensions\nexus3-ide"
 ```
+
+> **Common mistake:** Don't use a relative path like `editors\vscode` — that's relative to the repo root. Use the full `C:\temp\nexus3-vscode` path since that's where you built.
 
 After installing, **reload VS Code** (`Ctrl+Shift+P` → "Developer: Reload Window").
 
@@ -41,31 +62,56 @@ After installing, **reload VS Code** (`Ctrl+Shift+P` → "Developer: Reload Wind
 
 ## Phase 1: Verify Extension Activation
 
-1. Open your NEXUS3 project folder in VS Code
-2. Open the Output panel (`Ctrl+Shift+U`) → select "Log (Extension Host)" from dropdown
-3. Look for:
-   ```
-   NEXUS3 IDE integration activating...
-   NEXUS3 IDE MCP server listening on 127.0.0.1:<PORT>
-   NEXUS3 IDE: server on port <PORT>, lock file: C:\Users\<you>\.nexus3\ide\<PORT>.lock
-   ```
-4. Verify lock file exists:
+1. Open your project folder in VS Code
+
+2. Check the **Developer Tools console** (NOT the Output panel):
+   - `Ctrl+Shift+P` → "Developer: Toggle Developer Tools"
+   - Click the **Console** tab
+   - Look for these three lines:
+     ```
+     [Extension Host] NEXUS3 IDE integration activating...
+     [Extension Host] NEXUS3 IDE MCP server listening on 127.0.0.1:<PORT>
+     [Extension Host] NEXUS3 IDE: server on port <PORT>, lock file: C:\Users\<you>\.nexus3\ide\<PORT>.lock
+     ```
+
+   > **Note:** The Output panel's "Log (Extension Host)" channel shows VS Code framework messages like `ExtensionService#_doActivateExtension nexus3.nexus3-ide`, but the extension's own `console.log` output appears in Developer Tools instead.
+
+3. Verify lock file exists:
    ```powershell
    dir $env:USERPROFILE\.nexus3\ide\
-   # Should show <PORT>.lock
-   type $env:USERPROFILE\.nexus3\ide\<PORT>.lock
-   # Should show JSON with pid, workspaceFolders, authToken
+   # Should show a .lock file named with the port number (e.g., 64451.lock)
    ```
-5. Verify `workspaceFolders` in the lock file matches your open VS Code workspace path
 
-**If no output / no lock file:** Check VS Code version >= 1.85.0, check extension is recognized in Extensions panel.
+4. Read the lock file (replace `<PORT>` with the actual port from step 2):
+   ```powershell
+   type $env:USERPROFILE\.nexus3\ide\64451.lock
+   ```
+   Should show JSON with `pid`, `workspaceFolders`, `ideName`, `authToken`.
+
+5. Note the `workspaceFolders` value:
+   - If VS Code opened a **local Windows folder**: `C:\Users\...`
+   - If VS Code opened a **WSL folder**: `\\wsl.localhost\Ubuntu\home\...`
+
+**If no output / no lock file:** Check VS Code version >= 1.85.0, check extension is recognized in Extensions panel (search "nexus3").
 
 ---
 
 ## Phase 2: Verify NEXUS3 Auto-Connect
 
-1. From a terminal **inside the same folder** that VS Code has open:
-   ```powershell
+### WSL ↔ Windows Cross-OS Setup
+
+If you run NEXUS3 in WSL but VS Code on Windows (common setup), discovery works automatically:
+- NEXUS3 in WSL scans **both** `~/.nexus3/ide/` (Linux) and the Windows user's `~/.nexus3/ide/` (via `/mnt/c/Users/<you>/.nexus3/ide/`)
+- UNC workspace paths like `\\wsl.localhost\Ubuntu\home\...` are translated to Linux paths `/home/...`
+- Windows PIDs are validated via `powershell.exe` interop
+
+### Test Auto-Connect
+
+1. From a terminal **whose CWD is within the VS Code workspace**:
+   ```bash
+   # WSL
+   nexus3 --fresh
+   # Or PowerShell
    nexus3 --fresh
    ```
 2. On startup, look for the dim message:
@@ -75,7 +121,7 @@ After installing, **reload VS Code** (`Ctrl+Shift+P` → "Developer: Reload Wind
 3. Run `/ide` — should show:
    ```
    IDE: connected to VS Code (port <PORT>)
-     Workspace: C:\Users\<you>\repos\NEXUS3
+     Workspace: <workspace path>
      Diagnostics: X errors, Y warnings
      Open editors: N
 
@@ -87,7 +133,7 @@ After installing, **reload VS Code** (`Ctrl+Shift+P` → "Developer: Reload Wind
 
 **If "No IDE found":**
 - Verify NEXUS3's CWD matches (or is a subdirectory of) a VS Code workspace folder
-- Check lock file exists and has correct workspace path
+- Check lock file exists: `ls ~/.nexus3/ide/` (Linux) or `ls /mnt/c/Users/$USER/.nexus3/ide/` (WSL checking Windows)
 - Try `/ide connect` manually
 
 ---
@@ -173,7 +219,7 @@ This is the main user-facing feature. You need a **trusted** agent (the default 
 1. **Multiple VS Code windows:** Open a second VS Code window with a different folder. Check that NEXUS3 connects to the one whose workspace matches the CWD (longest prefix match).
 
 2. **No VS Code running:** Close all VS Code windows, then start NEXUS3:
-   ```powershell
+   ```bash
    nexus3 --fresh
    ```
    Should start normally with no IDE connection, no errors. `/ide` shows "not connected".
@@ -194,10 +240,11 @@ This is the main user-facing feature. You need a **trusted** agent (the default 
 # Remove test file
 del test_ide_diff.py
 
-# Remove extension (if using symlink/junction)
-rmdir "$env:USERPROFILE\.vscode\extensions\nexus3-ide"
-# Or if copied:
+# Remove extension
 Remove-Item -Recurse "$env:USERPROFILE\.vscode\extensions\nexus3-ide"
+
+# Remove build directory
+Remove-Item -Recurse C:\temp\nexus3-vscode
 
 # Remove any config overrides you added
 # Stale lock files are auto-cleaned by NEXUS3
@@ -205,12 +252,15 @@ Remove-Item -Recurse "$env:USERPROFILE\.vscode\extensions\nexus3-ide"
 
 ---
 
-## Known Windows Considerations
+## Known Windows/WSL Considerations
 
 | Item | Status | Notes |
 |------|--------|-------|
 | Lock file `mode: 0o600` | No-op on Windows | `fs.writeFileSync` mode is ignored; files use NTFS ACLs |
-| `os.kill(pid, 0)` | Works | Python uses `OpenProcess` on Windows |
+| Cross-filesystem npm | **Fails** | Cannot `npm install` on `\\wsl.localhost\...` paths — copy to `C:\temp\` first |
+| WSL ↔ Windows discovery | Works | NEXUS3 in WSL scans Windows lock dir via `/mnt/c/`, translates UNC paths |
+| Windows PID validation from WSL | Works | Uses `powershell.exe` interop (falls back to "assume alive" if unavailable) |
+| UNC workspace paths | Translated | `\\wsl.localhost\Ubuntu\home\...` → `/home/...` automatically |
 | Path separators | Handled | `Path.resolve()` and `is_relative_to` use native format |
-| `~/.nexus3/ide/` | Works | `Path.home()` → `C:\Users\<user>` |
-| WebSocket `127.0.0.1` | Works | Windows Defender may prompt on first run |
+| WebSocket `127.0.0.1` | Works | WSL2 can reach Windows localhost; Windows Defender may prompt on first run |
+| Extension `console.log` | Developer Tools | Use `Ctrl+Shift+P` → "Developer: Toggle Developer Tools" → Console tab (NOT Output panel) |
