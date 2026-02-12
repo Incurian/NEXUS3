@@ -5,7 +5,11 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from nexus3.ide.discovery import _is_pid_alive, discover_ides
+from nexus3.ide.discovery import (
+    _is_pid_alive,
+    _wsl_unc_to_local,
+    discover_ides,
+)
 
 
 class TestIsPidAlive:
@@ -20,7 +24,10 @@ class TestIsPidAlive:
         assert _is_pid_alive(os.getpid()) is True
 
     def test_dead_pid(self) -> None:
-        with patch("os.kill", side_effect=ProcessLookupError):
+        with (
+            patch("os.kill", side_effect=ProcessLookupError),
+            patch("nexus3.ide.discovery._IS_WSL", False),
+        ):
             assert _is_pid_alive(99999) is False
 
     def test_permission_error_means_alive(self) -> None:
@@ -28,8 +35,54 @@ class TestIsPidAlive:
             assert _is_pid_alive(99999) is True
 
     def test_generic_os_error(self) -> None:
-        with patch("os.kill", side_effect=OSError):
+        with (
+            patch("os.kill", side_effect=OSError),
+            patch("nexus3.ide.discovery._IS_WSL", False),
+        ):
             assert _is_pid_alive(99999) is False
+
+
+class TestWslUncToLocal:
+    def test_wsl_localhost_path(self) -> None:
+        with patch.dict(os.environ, {"WSL_DISTRO_NAME": "Ubuntu"}):
+            result = _wsl_unc_to_local(
+                r"\\wsl.localhost\Ubuntu\home\inc\repos"
+            )
+        assert result == Path("/home/inc/repos")
+
+    def test_wsl_dollar_path(self) -> None:
+        with patch.dict(os.environ, {"WSL_DISTRO_NAME": "Ubuntu"}):
+            result = _wsl_unc_to_local(
+                r"\\wsl$\Ubuntu\home\inc\repos"
+            )
+        assert result == Path("/home/inc/repos")
+
+    def test_distro_mismatch_returns_none(self) -> None:
+        with patch.dict(os.environ, {"WSL_DISTRO_NAME": "Debian"}):
+            result = _wsl_unc_to_local(
+                r"\\wsl.localhost\Ubuntu\home\inc"
+            )
+        assert result is None
+
+    def test_no_distro_env_accepts_any(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            # Remove WSL_DISTRO_NAME
+            os.environ.pop("WSL_DISTRO_NAME", None)
+            result = _wsl_unc_to_local(
+                r"\\wsl.localhost\Ubuntu\home\inc"
+            )
+        assert result == Path("/home/inc")
+
+    def test_non_unc_returns_none(self) -> None:
+        result = _wsl_unc_to_local(r"C:\Users\inc")
+        assert result is None
+
+    def test_forward_slash_unc(self) -> None:
+        with patch.dict(os.environ, {"WSL_DISTRO_NAME": "Ubuntu"}):
+            result = _wsl_unc_to_local(
+                "//wsl.localhost/Ubuntu/home/inc"
+            )
+        assert result == Path("/home/inc")
 
 
 class TestDiscoverIdes:
@@ -122,6 +175,34 @@ class TestDiscoverIdes:
 
         result = discover_ides(tmp_path, lock_dir=lock_dir)
         assert result == []
+
+    def test_wsl_unc_workspace_match(self, tmp_path: Path) -> None:
+        """Lock file with UNC workspace path matches WSL cwd."""
+        lock_dir = tmp_path / "ide"
+        lock_dir.mkdir()
+        workspace = tmp_path / "project"
+        workspace.mkdir()
+
+        lock_data = {
+            "pid": os.getpid(),
+            "workspaceFolders": [
+                f"\\\\wsl.localhost\\Ubuntu{workspace}",
+            ],
+            "ideName": "VS Code",
+            "transport": "ws",
+            "authToken": "token",
+        }
+        lock_file = lock_dir / "5555.lock"
+        lock_file.write_text(json.dumps(lock_data), encoding="utf-8")
+
+        with (
+            patch("nexus3.ide.discovery._IS_WSL", True),
+            patch.dict(os.environ, {"WSL_DISTRO_NAME": "Ubuntu"}),
+        ):
+            result = discover_ides(workspace, lock_dir=lock_dir)
+
+        assert len(result) == 1
+        assert result[0].port == 5555
 
     def test_sorted_by_longest_prefix(self, tmp_path: Path) -> None:
         lock_dir = tmp_path / "ide"
