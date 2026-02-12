@@ -27,6 +27,7 @@ class IDEInfo:
     auth_token: str
     port: int
     lock_path: Path
+    host: str = "127.0.0.1"
 
 
 def _get_lock_dirs() -> list[Path]:
@@ -95,6 +96,30 @@ def _wsl_unc_to_local(unc_path: str) -> Path | None:
     if wsl_distro and distro.lower() != wsl_distro.lower():
         return None
     return Path(f"/{rest}")
+
+
+def _get_windows_host_ip() -> str:
+    """Get the Windows host IP from WSL2 for cross-OS networking.
+
+    In WSL2 NAT mode, 127.0.0.1 is WSL's own loopback — not Windows.
+    The Windows host IP is typically the nameserver in /etc/resolv.conf.
+    """
+    try:
+        for line in Path("/etc/resolv.conf").read_text(
+            errors="ignore",
+        ).splitlines():
+            if line.strip().startswith("nameserver"):
+                ip = line.split()[1]
+                if ip and ip != "127.0.0.1":
+                    return ip
+    except (OSError, IndexError):
+        pass
+    return "127.0.0.1"  # Fallback (mirrored mode or can't detect)
+
+
+def _is_windows_lock_dir(lock_path: Path) -> bool:
+    """Check if a lock file is from the Windows side (via /mnt/)."""
+    return str(lock_path).startswith("/mnt/")
 
 
 def _resolve_workspace_folder(folder: str) -> Path:
@@ -177,6 +202,12 @@ def _process_lock_file(
     ):
         return
 
+    # On WSL, lock files from /mnt/c/... indicate a Windows IDE —
+    # use the Windows host IP instead of 127.0.0.1 (WSL2 NAT mode).
+    host = "127.0.0.1"
+    if _IS_WSL and _is_windows_lock_dir(lock_file):
+        host = _get_windows_host_ip()
+
     results.append(IDEInfo(
         pid=pid,
         workspace_folders=folders,
@@ -185,6 +216,7 @@ def _process_lock_file(
         auth_token=data.get("authToken", ""),
         port=port,
         lock_path=lock_file,
+        host=host,
     ))
 
 

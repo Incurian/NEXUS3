@@ -46,7 +46,7 @@ class IDEBridge:
         if self._connection:
             await self.disconnect()
         transport = WebSocketTransport(
-            url=f"ws://127.0.0.1:{ide_info.port}",
+            url=f"ws://{ide_info.host}:{ide_info.port}",
             auth_token=ide_info.auth_token,
         )
         client = MCPClient(transport)

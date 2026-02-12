@@ -499,7 +499,12 @@ async def run_repl(
             if conn:
                 console.print(f"[dim]IDE connected: {conn.ide_info.ide_name}[/]")
         except Exception:
-            logger.debug("IDE auto-connect failed", exc_info=True)
+            # Note: can't use `logger` here — it's reassigned later in
+            # this function (line ~726) which makes Python treat it as
+            # local throughout, shadowing the module-level logger.
+            logging.getLogger(__name__).debug(
+                "IDE auto-connect failed", exc_info=True,
+            )
 
     # Helper to get permission data from an agent
     def get_permission_data(agent: object) -> tuple[str, str | None, list[str]]:
