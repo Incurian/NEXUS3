@@ -781,9 +781,9 @@ This is used by `nexus_send`, `nexus_status`, `nexus_cancel`, and `nexus_destroy
 
 8. **Sandboxed agents have limited nexus tools**: Most nexus tools (`nexus_create`, `nexus_destroy`, `nexus_status`, `nexus_cancel`, `nexus_shutdown`) are disabled for sandboxed agents. However, **`nexus_send` IS enabled with `allowed_targets="parent"`** - sandboxed agents can send messages back to their parent agent to report results. They cannot message any other agent.
 
-9. **Subagent cwd must be within parent's cwd**: When creating a subagent, the child's `cwd` must be within the parent's `cwd`. This prevents privilege escalation where a child could operate in a directory the parent shouldn't access.
+9. **Subagent cwd restrictions depend on parent level**: For SANDBOXED parents, the child's `cwd` must be within the parent's `cwd` (prevents privilege escalation). TRUSTED and YOLO parents can create subagents at any CWD since they already have potential access to all paths.
 
-10. **Subagent write paths must be within parent's cwd**: Similarly, `allowed_write_paths` for a subagent must be within the parent's `cwd`. A parent cannot grant write access to paths outside its own working directory.
+10. **Subagent write paths must be within parent's scope**: For SANDBOXED parents, `allowed_write_paths` must be within the parent's `cwd`. TRUSTED and YOLO parents can grant write access to any path since they already have broader access.
 
 11. **Subagent cwd defaults to parent's cwd**: If no `cwd` is specified when creating a subagent, it inherits the parent's `cwd` (not the server process's cwd).
 
@@ -1544,12 +1544,17 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 | Plan | Description | Status |
 |------|-------------|--------|
 | `IDE-INTEGRATION-PLAN.md` | VS Code IDE integration (diffs, diagnostics, context) | **Complete** — All 5 phases done + WSL fix. Live testing in progress. |
+| `DOUBLE-SPINNER-FIX-PLAN.md` | Fix double spinner / trapped ESC when concurrent RPC sends hit REPL | Planned |
 | `DRY-CLEANUP-PLAN.md` | DRY violations, dead code removal, naming fixes from Opus 4.6 review | Planned |
 | `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | Planned |
 
+#### Next Up: DRY-CLEANUP-PLAN
+
+Opus 4.6 codebase review identified 10 cleanup items in 4 phases. All decisions resolved. See `docs/plans/DRY-CLEANUP-PLAN.md` for full details.
+
 ### Known Bugs
 
-No known bugs at this time.
+- **Double spinner on concurrent RPC sends**: When two external `rpc send` requests arrive at an agent with active REPL, two spinners appear and ESC gets trapped. Root cause: missing `try/finally` for "ended" notification in `dispatcher.py:_handle_send()` + module-level spinner state variables can't handle rapid start/stop cycles. Fix planned in `DOUBLE-SPINNER-FIX-PLAN.md`.
 
 <!-- Previously fixed:
 - Client timeout cancel race condition: Fixed via provider-level synthesis in anthropic.py.

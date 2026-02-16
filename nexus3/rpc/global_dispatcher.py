@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from nexus3.core.errors import PathSecurityError, ProviderError
 from nexus3.core.paths import validate_path
 from nexus3.core.permissions import AgentPermissions, PermissionDelta, ToolPermission
+from nexus3.core.policy import PermissionLevel
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
 from nexus3.rpc.pool import Agent, AgentConfig, AuthorizationError
@@ -265,9 +266,14 @@ class GlobalDispatcher:
                         f"cwd '{cwd_path}' is outside parent's allowed paths"
                     ) from e
 
-            # For TRUSTED parents (allowed_paths=None), still validate against parent's cwd
-            # This ensures subagent can only operate within parent's working directory
-            if parent_cwd is not None and isinstance(parent_cwd, Path):
+            # For SANDBOXED parents, also validate against parent's cwd.
+            # TRUSTED parents can access any path (with confirmation),
+            # so restricting child cwd to parent's cwd is unnecessary.
+            if (
+                parent_permissions.effective_policy.level == PermissionLevel.SANDBOXED
+                and parent_cwd is not None
+                and isinstance(parent_cwd, Path)
+            ):
                 try:
                     cwd_path.resolve().relative_to(parent_cwd.resolve())
                 except ValueError as e:
@@ -308,9 +314,15 @@ class GlobalDispatcher:
                         f"allowed_write_path '{wp}' is outside sandbox root '{sandbox_root}'"
                     ) from e
 
-        # SECURITY: For subagents, validate write paths are within parent's cwd
-        # This prevents a parent from granting child write access outside parent's scope
-        if write_paths and parent_cwd is not None and isinstance(parent_cwd, Path):
+        # SECURITY: For SANDBOXED parent subagents, validate write paths within parent's cwd.
+        # TRUSTED parents can access any path (with confirmation), so no restriction needed.
+        if (
+            write_paths
+            and parent_permissions is not None
+            and parent_permissions.effective_policy.level == PermissionLevel.SANDBOXED
+            and parent_cwd is not None
+            and isinstance(parent_cwd, Path)
+        ):
             parent_cwd_resolved = parent_cwd.resolve()
             for wp in write_paths:
                 try:

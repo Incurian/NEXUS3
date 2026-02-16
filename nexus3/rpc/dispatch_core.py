@@ -89,6 +89,11 @@ async def dispatch_request(
             return None
         return make_error_response(request.id, INTERNAL_ERROR, e.message)
 
+    except PermissionError as e:
+        if request.id is None:
+            return None
+        return make_error_response(request.id, INVALID_PARAMS, str(e))
+
     except Exception as e:
         logger.error(
             "Unexpected error dispatching %s '%s': %s",

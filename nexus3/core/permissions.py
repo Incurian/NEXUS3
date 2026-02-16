@@ -131,7 +131,7 @@ class AgentPermissions:
 
         Subagent permissions must be strictly more restrictive:
         - Must have lower permission level (YOLO > TRUSTED > SANDBOXED)
-        - Can't enable tools this agent has disabled
+        - Can't explicitly enable tools this agent has disabled
         - Can't access paths this agent can't access (including allowances)
 
         Args:
@@ -153,11 +153,15 @@ class AgentPermissions:
         if their_level >= our_level:
             return False
 
-        # Check tool permissions - requested can't enable what we disabled
+        # Check tool permissions - child can't explicitly enable what we disabled.
+        # Only block if child's preset explicitly enables the tool (their_perm.enabled).
+        # If child doesn't mention the tool (None), it's not in the child's preset
+        # and will be handled at runtime (e.g., gitlab tools are disabled by the pool
+        # after preset resolution for all agents independently).
         for tool_name, our_perm in self.tool_permissions.items():
             if not our_perm.enabled:
                 their_perm = requested.tool_permissions.get(tool_name)
-                if their_perm is None or their_perm.enabled:
+                if their_perm is not None and their_perm.enabled:
                     return False
 
         # Check path permissions based on our level
@@ -175,21 +179,36 @@ class AgentPermissions:
         return True
 
     def _can_access_path(self, path: Path) -> bool:
-        """Check if we have access to a path (policy + allowances)."""
+        """Check if we have access to a path (policy + allowances).
+
+        Used by can_grant() to verify parent can grant child path access.
+        YOLO and unrestricted TRUSTED (allowed_paths=None) return True
+        because they can access any path — the ceiling check cares about
+        potential access, not just current CWD.
+        """
         if self.effective_policy.level == PermissionLevel.YOLO:
             return True
 
         if self.effective_policy._is_path_blocked(path):
             return False
 
-        # For SANDBOXED, check allowed_paths
+        # TRUSTED with no path restrictions can access anything
+        # (with user confirmation in interactive mode)
+        if (
+            self.effective_policy.level == PermissionLevel.TRUSTED
+            and self.effective_policy.allowed_paths is None
+        ):
+            return True
+
+        # TRUSTED with restricted allowed_paths or SANDBOXED: check paths
         if self.effective_policy.level == PermissionLevel.SANDBOXED:
             return self.effective_policy._is_path_allowed(path)
 
-        # For TRUSTED, check CWD + allowances
+        # TRUSTED with restricted paths: check CWD + allowances + allowed_paths
         if self.effective_policy.is_within_cwd(path):
             return True
-
+        if self.effective_policy._is_path_allowed(path):
+            return True
         return self.write_allowances.is_path_allowed(path)
 
     def apply_delta(self, delta: PermissionDelta) -> AgentPermissions:
