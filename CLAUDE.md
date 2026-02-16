@@ -1477,6 +1477,7 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 
 | Plan | Description | Effort |
 |------|-------------|--------|
+| `DOUBLE-SPINNER-FIX-PLAN.md` | Fix double spinner / trapped ESC when concurrent RPC sends hit REPL | 1 day |
 | `DRY-CLEANUP-PLAN.md` | DRY violations, dead code removal, naming fixes from Opus 4.6 review | 1-2 days |
 | `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | 2 weeks |
 
@@ -1486,7 +1487,7 @@ Opus 4.6 codebase review identified 10 cleanup items in 4 phases. All decisions 
 
 ### Known Bugs
 
-No known bugs at this time.
+- **Double spinner on concurrent RPC sends**: When two external `rpc send` requests arrive at an agent with active REPL, two spinners appear and ESC gets trapped. Root cause: missing `try/finally` for "ended" notification in `dispatcher.py:_handle_send()` + module-level spinner state variables can't handle rapid start/stop cycles. Fix planned in `DOUBLE-SPINNER-FIX-PLAN.md`.
 
 <!-- Previously fixed:
 - Client timeout cancel race condition: Fixed via provider-level synthesis in anthropic.py.
