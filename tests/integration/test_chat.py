@@ -172,14 +172,13 @@ class TestSessionStreaming:
 
     @pytest.mark.asyncio
     async def test_send_with_empty_chunks(self) -> None:
-        """Test that send() handles empty chunk list gracefully."""
+        """Test that send() yields warning when provider returns empty response."""
         provider = MockProvider(stream_chunks=[])
         session = Session(provider)
 
         chunks = [chunk async for chunk in session.send("test")]
 
-        assert chunks == []
-        assert "".join(chunks) == ""
+        assert chunks == ["[Provider returned an empty response]"]
 
     @pytest.mark.asyncio
     async def test_send_with_single_chunk(self) -> None:

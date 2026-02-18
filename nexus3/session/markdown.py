@@ -291,6 +291,21 @@ class RawWriter:
         }
         self._append_jsonl(entry)
 
+    def write_stream_complete(
+        self,
+        summary: dict[str, Any],
+        timestamp: float | None = None,
+    ) -> None:
+        """Write stream completion summary to raw.jsonl."""
+        from time import time
+
+        entry = {
+            "type": "stream_complete",
+            "timestamp": timestamp or time(),
+            **summary,
+        }
+        self._append_jsonl(entry)
+
     def _append_jsonl(self, entry: dict[str, Any]) -> None:
         """Append a JSON line to file (symlink-safe)."""
         secure_append(self.raw_path, json.dumps(entry) + "\n")

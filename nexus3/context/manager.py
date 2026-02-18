@@ -1,5 +1,6 @@
 """Context management for conversation state and token budgets."""
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -10,6 +11,8 @@ from nexus3.config.schema import ClipboardConfig
 from nexus3.context.git_context import get_git_context
 from nexus3.context.token_counter import TokenCounter, get_token_counter
 from nexus3.core.types import Message, Role, ToolCall, ToolResult
+
+logger = logging.getLogger(__name__)
 
 
 def get_current_datetime_str() -> str:
@@ -379,6 +382,10 @@ class ContextManager:
             content: Assistant response content
             tool_calls: Optional list of tool calls made
         """
+        if not content and not tool_calls:
+            logger.warning("Skipping empty assistant message (no content, no tool calls)")
+            return
+
         msg = Message(
             role=Role.ASSISTANT,
             content=content,

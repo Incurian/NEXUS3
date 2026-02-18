@@ -6,6 +6,7 @@ structure.
 """
 
 import json
+import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +15,8 @@ from typing import Any
 from nexus3.clipboard.types import ClipboardEntry, ClipboardScope
 from nexus3.core.errors import NexusError
 from nexus3.core.types import Message, Role, ToolCall
+
+logger = logging.getLogger(__name__)
 
 
 class SessionPersistenceError(NexusError):
@@ -198,14 +201,15 @@ def serialize_message(msg: Message) -> dict[str, Any]:
     return data
 
 
-def deserialize_message(data: dict[str, Any]) -> Message:
+def deserialize_message(data: dict[str, Any]) -> Message | None:
     """Deserialize a Message from a dictionary.
 
     Args:
         data: Dictionary representation of a Message.
 
     Returns:
-        Message object.
+        Message object, or None if the message is an empty assistant message
+        (no content, no tool calls) which would cause API errors if replayed.
     """
     role = Role(data["role"])
     content = data.get("content", "")
@@ -213,6 +217,11 @@ def deserialize_message(data: dict[str, Any]) -> Message:
     tool_calls: tuple[ToolCall, ...] = ()
     if "tool_calls" in data and data["tool_calls"]:
         tool_calls = tuple(deserialize_tool_call(tc) for tc in data["tool_calls"])
+
+    # Filter empty assistant messages that would cause cascading 400 errors
+    if role == Role.ASSISTANT and not content and not tool_calls:
+        logger.warning("Skipping empty assistant message during session restore")
+        return None
 
     tool_call_id = data.get("tool_call_id")
     meta = data.get("meta", {}) or {}
@@ -239,15 +248,15 @@ def serialize_messages(messages: list[Message]) -> list[dict[str, Any]]:
 
 
 def deserialize_messages(data: list[dict[str, Any]]) -> list[Message]:
-    """Deserialize a list of Messages.
+    """Deserialize a list of Messages, filtering out empty assistant messages.
 
     Args:
         data: List of dictionary representations.
 
     Returns:
-        List of Message objects.
+        List of Message objects (empty assistant messages are excluded).
     """
-    return [deserialize_message(msg_data) for msg_data in data]
+    return [m for m in (deserialize_message(d) for d in data) if m is not None]
 
 
 def serialize_clipboard_entries(entries: dict[str, ClipboardEntry]) -> list[dict[str, Any]]:

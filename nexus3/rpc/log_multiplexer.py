@@ -146,3 +146,13 @@ class LogMultiplexer:
         callback = self._get_current_callback()
         if callback is not None:
             callback.on_chunk(chunk)
+
+    def on_stream_complete(self, summary: dict[str, Any]) -> None:
+        """Forward stream completion summary to current agent's callback.
+
+        Args:
+            summary: Stream summary dict.
+        """
+        callback = self._get_current_callback()
+        if callback is not None:
+            callback.on_stream_complete(summary)

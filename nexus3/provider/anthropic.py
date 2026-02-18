@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
@@ -354,6 +355,12 @@ class AnthropicProvider(BaseProvider):
         tool_calls: list[ToolCall] = []
         seen_tool_ids: set[str] = set()
 
+        # Diagnostic tracking
+        event_count = 0
+        received_message_stop = False
+        finish_reason: str | None = None
+        stream_start = time.monotonic()
+
         buffer = ""
 
         async for chunk in response.aiter_text():
@@ -378,6 +385,7 @@ class AnthropicProvider(BaseProvider):
                     data_str = line[6:]
                     try:
                         data = json.loads(data_str)
+                        event_count += 1
 
                         # Log raw chunk if callback is set
                         if self._raw_log:
@@ -455,8 +463,21 @@ class AnthropicProvider(BaseProvider):
                                 )
                                 current_tool = None
 
+                        elif event_type == "message_delta":
+                            # Extract stop_reason
+                            delta = data.get("delta", {})
+                            sr = delta.get("stop_reason")
+                            if sr:
+                                finish_reason = sr
+
                         elif event_type == "message_stop":
                             # Message complete
+                            received_message_stop = True
+                            self._log_stream_summary(
+                                response, event_count, accumulated_content,
+                                tool_calls, received_message_stop, finish_reason,
+                                stream_start,
+                            )
                             yield StreamComplete(
                                 message=Message(
                                     role=Role.ASSISTANT,
@@ -470,6 +491,11 @@ class AnthropicProvider(BaseProvider):
                         continue
 
         # If we exit without message_stop, yield what we have
+        self._log_stream_summary(
+            response, event_count, accumulated_content,
+            tool_calls, received_message_stop, finish_reason,
+            stream_start,
+        )
         yield StreamComplete(
             message=Message(
                 role=Role.ASSISTANT,
@@ -477,3 +503,46 @@ class AnthropicProvider(BaseProvider):
                 tool_calls=tuple(tool_calls),
             )
         )
+
+    def _log_stream_summary(
+        self,
+        response: httpx.Response,
+        event_count: int,
+        content: str,
+        tool_calls: list[ToolCall],
+        received_message_stop: bool,
+        finish_reason: str | None,
+        stream_start: float,
+    ) -> None:
+        """Log stream completion summary and write to raw log."""
+        duration_ms = round((time.monotonic() - stream_start) * 1000)
+        tool_call_count = len(tool_calls)
+        content_length = len(content)
+
+        summary = {
+            "http_status": response.status_code,
+            "event_count": event_count,
+            "content_length": content_length,
+            "tool_call_count": tool_call_count,
+            "received_done": received_message_stop,
+            "finish_reason": finish_reason,
+            "duration_ms": duration_ms,
+        }
+
+        if not content and not tool_calls:
+            logger.warning(
+                "Empty stream response: status=%d, events=%d, "
+                "received_message_stop=%s, finish_reason=%s, duration=%dms",
+                response.status_code, event_count,
+                received_message_stop, finish_reason, duration_ms,
+            )
+        else:
+            logger.debug(
+                "Stream complete: events=%d, content_len=%d, tools=%d, "
+                "message_stop=%s, finish=%s, duration=%dms",
+                event_count, content_length, tool_call_count,
+                received_message_stop, finish_reason, duration_ms,
+            )
+
+        if self._raw_log:
+            self._raw_log.on_stream_complete(summary)

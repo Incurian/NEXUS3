@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
@@ -274,6 +275,12 @@ class OpenAICompatProvider(BaseProvider):
         tool_calls_by_index: dict[int, dict[str, str]] = {}
         seen_tool_indices: set[int] = set()
 
+        # Diagnostic tracking
+        event_count = 0
+        received_done = False
+        finish_reason: str | None = None
+        stream_start = time.monotonic()
+
         buffer = ""
 
         async for chunk in response.aiter_text():
@@ -294,6 +301,12 @@ class OpenAICompatProvider(BaseProvider):
 
                     # Check for stream end marker
                     if data == "[DONE]":
+                        received_done = True
+                        self._log_stream_summary(
+                            response, event_count, accumulated_content,
+                            tool_calls_by_index, received_done, finish_reason,
+                            stream_start,
+                        )
                         yield self._build_stream_complete(
                             accumulated_content, tool_calls_by_index
                         )
@@ -302,6 +315,14 @@ class OpenAICompatProvider(BaseProvider):
                     # Parse JSON data
                     try:
                         event_data = json.loads(data)
+                        event_count += 1
+
+                        # Extract finish_reason from final chunk
+                        choices = event_data.get("choices", [])
+                        if choices:
+                            fr = choices[0].get("finish_reason")
+                            if fr:
+                                finish_reason = fr
 
                         # Log raw chunk if callback is set
                         if self._raw_log:
@@ -327,6 +348,13 @@ class OpenAICompatProvider(BaseProvider):
             if line.startswith("data: ") and line[6:] != "[DONE]":
                 try:
                     event_data = json.loads(line[6:])
+                    event_count += 1
+
+                    choices = event_data.get("choices", [])
+                    if choices:
+                        fr = choices[0].get("finish_reason")
+                        if fr:
+                            finish_reason = fr
 
                     # Log raw chunk if callback is set
                     if self._raw_log:
@@ -345,7 +373,55 @@ class OpenAICompatProvider(BaseProvider):
                     pass
 
         # If we get here without [DONE], still yield StreamComplete
+        self._log_stream_summary(
+            response, event_count, accumulated_content,
+            tool_calls_by_index, received_done, finish_reason,
+            stream_start,
+        )
         yield self._build_stream_complete(accumulated_content, tool_calls_by_index)
+
+    def _log_stream_summary(
+        self,
+        response: httpx.Response,
+        event_count: int,
+        content: str,
+        tool_calls_by_index: dict[int, dict[str, str]],
+        received_done: bool,
+        finish_reason: str | None,
+        stream_start: float,
+    ) -> None:
+        """Log stream completion summary and write to raw log."""
+        duration_ms = round((time.monotonic() - stream_start) * 1000)
+        tool_call_count = len(tool_calls_by_index)
+        content_length = len(content)
+
+        summary = {
+            "http_status": response.status_code,
+            "event_count": event_count,
+            "content_length": content_length,
+            "tool_call_count": tool_call_count,
+            "received_done": received_done,
+            "finish_reason": finish_reason,
+            "duration_ms": duration_ms,
+        }
+
+        if not content and not tool_calls_by_index:
+            logger.warning(
+                "Empty stream response: status=%d, events=%d, "
+                "received_done=%s, finish_reason=%s, duration=%dms",
+                response.status_code, event_count,
+                received_done, finish_reason, duration_ms,
+            )
+        else:
+            logger.debug(
+                "Stream complete: events=%d, content_len=%d, tools=%d, "
+                "done=%s, finish=%s, duration=%dms",
+                event_count, content_length, tool_call_count,
+                received_done, finish_reason, duration_ms,
+            )
+
+        if self._raw_log:
+            self._raw_log.on_stream_complete(summary)
 
     async def _process_stream_event(
         self,

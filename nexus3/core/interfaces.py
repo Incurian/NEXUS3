@@ -56,6 +56,16 @@ class RawLogCallback(Protocol):
         """
         ...
 
+    def on_stream_complete(self, summary: dict[str, Any]) -> None:
+        """Called when a streaming response finishes.
+
+        Args:
+            summary: Stream summary with keys: http_status, event_count,
+                content_length, tool_call_count, received_done, finish_reason,
+                duration_ms.
+        """
+        ...
+
 
 class AsyncProvider(Protocol):
     """Protocol for async LLM providers.

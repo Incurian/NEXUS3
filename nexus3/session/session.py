@@ -301,7 +301,9 @@ class Session:
 
             # Log/store assistant response
             if final_message:
-                if self.context:
+                if not final_message.content and not final_message.tool_calls:
+                    yield "[Provider returned an empty response]"
+                elif self.context:
                     self.context.add_assistant_message(
                         final_message.content, list(final_message.tool_calls)
                     )
@@ -378,9 +380,12 @@ class Session:
 
             # Store assistant response
             if final_message:
-                self.context.add_assistant_message(
-                    final_message.content, list(final_message.tool_calls)
-                )
+                if not final_message.content and not final_message.tool_calls:
+                    yield ContentChunk(text="[Provider returned an empty response]")
+                else:
+                    self.context.add_assistant_message(
+                        final_message.content, list(final_message.tool_calls)
+                    )
 
             yield SessionCompleted(halted_at_limit=False)
         finally:
@@ -401,6 +406,7 @@ class Session:
         Yields:
             SessionEvent objects for all tool execution lifecycle events.
         """
+        consecutive_empty = 0
         for iteration_num in range(self.max_tool_iterations):
             self._last_iteration_count = iteration_num + 1
 
@@ -466,6 +472,7 @@ class Session:
                 return
 
             if final_message.tool_calls:
+                consecutive_empty = 0
                 # Add assistant message with tool calls
                 self.context.add_assistant_message(
                     final_message.content, list(final_message.tool_calls)
@@ -601,6 +608,19 @@ class Session:
                 self._last_action_at = datetime.now()
             else:
                 # No tool calls - this is the final response
+                if not final_message.content:
+                    # Empty response — don't save, warn user
+                    consecutive_empty += 1
+                    if consecutive_empty >= 2:
+                        yield ContentChunk(
+                            text="[Stopping: provider returned multiple empty responses in a row]"
+                        )
+                        yield SessionCompleted(halted_at_limit=False)
+                        return
+                    yield ContentChunk(text="[Provider returned an empty response]")
+                    continue
+
+                consecutive_empty = 0
                 self.context.add_assistant_message(final_message.content)
                 self._last_action_at = datetime.now()
 

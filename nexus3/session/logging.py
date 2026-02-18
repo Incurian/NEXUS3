@@ -302,6 +302,11 @@ class SessionLogger:
         if self._raw_writer:
             self._raw_writer.write_stream_chunk(chunk)
 
+    def log_raw_stream_complete(self, summary: dict[str, Any]) -> None:
+        """Log stream completion summary (raw only)."""
+        if self._raw_writer:
+            self._raw_writer.write_stream_complete(summary)
+
     # === Context Management ===
 
     def get_context_messages(self) -> list[Message]:
@@ -430,3 +435,11 @@ class RawLogCallbackAdapter:
             chunk: The parsed SSE chunk.
         """
         self._logger.log_raw_chunk(chunk)
+
+    def on_stream_complete(self, summary: dict[str, Any]) -> None:
+        """Log a stream completion summary.
+
+        Args:
+            summary: Stream summary dict.
+        """
+        self._logger.log_raw_stream_complete(summary)
