@@ -23,8 +23,12 @@ set -euo pipefail
 # CONFIGURATION -- Edit these to match your environment
 # =============================================================================
 
-# LLM endpoint (OpenAI-compatible /v1/chat/completions)
-ENDPOINT="https://your-llm-endpoint.example.com/v1/chat/completions"
+# LLM endpoint base URL (OpenAI-compatible)
+# Can end at /v1 or /v1/chat/completions -- either works.
+# Examples:
+#   ENDPOINT="https://api.example.com/v1"
+#   ENDPOINT="https://api.example.com/v1/chat/completions"
+ENDPOINT="https://your-llm-endpoint.example.com/v1"
 
 # Model identifier
 MODEL="your-model-id"
@@ -56,11 +60,27 @@ CERT_PATH=""
 # =============================================================================
 
 # --- Sanity check: was config edited? ---
-if [[ "$ENDPOINT" == "https://your-llm-endpoint.example.com/v1/chat/completions" ]]; then
+if [[ "$ENDPOINT" == "https://your-llm-endpoint.example.com/v1" ]]; then
     echo "ERROR: You must edit the CONFIGURATION section at the top of this script."
     echo "At minimum, set ENDPOINT and MODEL to match your LLM deployment."
     exit 1
 fi
+
+# --- Normalize endpoint ---
+# Strip trailing slash, then ensure we have both BASE_URL (/v1) and CHAT_URL (/v1/chat/completions)
+ENDPOINT="${ENDPOINT%/}"
+if [[ "$ENDPOINT" == */v1/chat/completions ]]; then
+    CHAT_URL="$ENDPOINT"
+    BASE_URL="${ENDPOINT%/chat/completions}"
+elif [[ "$ENDPOINT" == */v1 ]]; then
+    BASE_URL="$ENDPOINT"
+    CHAT_URL="${ENDPOINT}/chat/completions"
+else
+    # Assume it's a base URL, append /v1
+    BASE_URL="${ENDPOINT}/v1"
+    CHAT_URL="${ENDPOINT}/v1/chat/completions"
+fi
+ENDPOINT_HOST=$(echo "$ENDPOINT" | sed 's|https\?://||' | cut -d/ -f1)
 
 QUICK_MODE=false
 if [[ "${1:-}" == "--quick" ]]; then
@@ -133,9 +153,6 @@ PAYLOAD_STREAM=$(cat <<ENDJSON
 ENDJSON
 )
 
-# Extract base URL (everything before /v1/...)
-BASE_URL=$(echo "$ENDPOINT" | sed 's|\(/v1\)/.*|\1|')
-ENDPOINT_HOST=$(echo "$ENDPOINT" | sed 's|https\?://||' | cut -d/ -f1)
 
 # --- Helper functions ---
 
@@ -248,6 +265,7 @@ EOF
 header "STEP 0: Diagnostic Configuration"
 echo ""
 echo -e "  Endpoint:     ${BOLD}${ENDPOINT}${RESET}"
+echo -e "  Chat URL:     ${CHAT_URL}"
 echo -e "  Base URL:     ${BASE_URL}"
 echo -e "  Model:        ${BOLD}${MODEL}${RESET}"
 echo -e "  Alt model:    ${ALT_MODEL:-NONE}"
@@ -290,7 +308,7 @@ STEP1_BODY=$(curl -sS -v -w '\n__HTTP_CODE__:%{http_code}\n__TIME_TOTAL__:%{time
     -H "Authorization: Bearer ${API_KEY}" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD_SYNC" \
-    "$ENDPOINT" 2>>"$STEP1_LOG" || true)
+    "$CHAT_URL" 2>>"$STEP1_LOG" || true)
 
 echo "$STEP1_BODY" >> "$STEP1_LOG"
 
@@ -357,7 +375,7 @@ STEP2_BODY=$(curl -sS -v -N -w '\n__HTTP_CODE__:%{http_code}\n__TIME_TOTAL__:%{t
     -H "Authorization: Bearer ${API_KEY}" \
     -H "Content-Type: application/json" \
     -d "$PAYLOAD_STREAM" \
-    "$ENDPOINT" 2>"$STEP2_VERBOSE" || true)
+    "$CHAT_URL" 2>"$STEP2_VERBOSE" || true)
 
 echo "$STEP2_BODY" >> "$STEP2_LOG"
 cat "$STEP2_VERBOSE" >> "$STEP2_LOG"
@@ -448,7 +466,7 @@ STEP3_LOG="$OUTDIR/03-httpx-stream.txt"
 if [[ -z "$PYTHON" ]]; then
     echo "RESULT: SKIP - No python found" > "$STEP3_LOG"
 else
-$PYTHON - "$ENDPOINT" "$API_KEY" "$MODEL" "$TEST_MESSAGE" "$TIMEOUT" > "$STEP3_LOG" 2>&1 <<'PYEOF'
+$PYTHON - "$CHAT_URL" "$API_KEY" "$MODEL" "$TEST_MESSAGE" "$TIMEOUT" > "$STEP3_LOG" 2>&1 <<'PYEOF'
 import sys, json, time
 
 endpoint, api_key, model, message, timeout_s = sys.argv[1:6]
@@ -611,7 +629,7 @@ else
             -H "Authorization: Bearer ${API_KEY}" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD_SYNC" \
-            "$ENDPOINT" 2>/dev/null || true)
+            "$CHAT_URL" 2>/dev/null || true)
 
         HTTP=$(echo "$RESP" | grep '__HTTP_CODE__' | cut -d: -f2 || echo "0")
         BODY=$(echo "$RESP" | grep -v '^__' || true)
@@ -959,7 +977,7 @@ for cert_mode in "${CERT_MODES[@]}"; do
         -H "Authorization: Bearer ${API_KEY}" \
         -H "Content-Type: application/json" \
         -d "$PAYLOAD_SYNC" \
-        "$ENDPOINT" 2>/dev/null || true)
+        "$CHAT_URL" 2>/dev/null || true)
     CURL_SYNC_HTTP=$(echo "$CURL_SYNC_RESP" | grep '__HTTP_CODE__' | cut -d: -f2 || echo "0")
     CURL_SYNC_BODY=$(echo "$CURL_SYNC_RESP" | grep -v '^__' || true)
     CURL_SYNC_CONTENT=$(check_content "$CURL_SYNC_BODY")
@@ -978,7 +996,7 @@ for cert_mode in "${CERT_MODES[@]}"; do
         -H "Authorization: Bearer ${API_KEY}" \
         -H "Content-Type: application/json" \
         -d "$PAYLOAD_STREAM" \
-        "$ENDPOINT" 2>/dev/null || true)
+        "$CHAT_URL" 2>/dev/null || true)
     CURL_STREAM_HTTP=$(echo "$CURL_STREAM_RESP" | grep '__HTTP_CODE__' | cut -d: -f2 || echo "0")
     CURL_STREAM_SSE=$(echo "$CURL_STREAM_RESP" | grep -v '^__' || true)
     CURL_STREAM_DATA=$(echo "$CURL_STREAM_SSE" | grep -c '^data: ' || true)
@@ -1026,7 +1044,7 @@ headers = {
 
 try:
     with httpx.Client(timeout=${TIMEOUT}, verify=verify) as client:
-        with client.stream('POST', '${ENDPOINT}', json=payload, headers=headers) as response:
+        with client.stream('POST', '${CHAT_URL}', json=payload, headers=headers) as response:
             if response.status_code != 200:
                 print(f'HTTP {response.status_code}')
                 sys.exit(0)
@@ -1198,7 +1216,7 @@ else
                 -H "Authorization: Bearer ${API_KEY}" \
                 -H "Content-Type: application/json" \
                 -d "$PAYLOAD_STREAM" \
-                "$ENDPOINT" > "$STEP8_OUTFILE" 2>&1
+                "$CHAT_URL" > "$STEP8_OUTFILE" 2>&1
         ) &
         STEP8_PIDS="$STEP8_PIDS $!"
     done
@@ -1306,7 +1324,7 @@ ENDJSON
         -H "Authorization: Bearer ${API_KEY}" \
         -H "Content-Type: application/json" \
         -d "$ALT_PAYLOAD_SYNC" \
-        "$ENDPOINT" 2>>"$STEP9_LOG" || true)
+        "$CHAT_URL" 2>>"$STEP9_LOG" || true)
 
     ALT_SYNC_HTTP=$(echo "$ALT_SYNC_RESP" | grep '__HTTP_CODE__' | cut -d: -f2 || echo "0")
     ALT_SYNC_BODY=$(echo "$ALT_SYNC_RESP" | grep -v '^__' || true)
@@ -1322,7 +1340,7 @@ ENDJSON
         -H "Authorization: Bearer ${API_KEY}" \
         -H "Content-Type: application/json" \
         -d "$ALT_PAYLOAD_STREAM" \
-        "$ENDPOINT" 2>>"$STEP9_LOG" || true)
+        "$CHAT_URL" 2>>"$STEP9_LOG" || true)
 
     ALT_STREAM_HTTP=$(echo "$ALT_STREAM_RESP" | grep '__HTTP_CODE__' | cut -d: -f2 || echo "0")
     ALT_STREAM_SSE=$(echo "$ALT_STREAM_RESP" | grep -v '^__' || true)
@@ -1405,7 +1423,7 @@ else
         -H "Content-Type: application/json" \
         -H "Connection: close" \
         -d "$PAYLOAD_SYNC" \
-        "$ENDPOINT" 2>>"$STEP10_LOG" || true)
+        "$CHAT_URL" 2>>"$STEP10_LOG" || true)
 
     FRESH_HTTP=$(echo "$FRESH_RESP" | grep '__HTTP_CODE__' | cut -d: -f2 || echo "0")
     FRESH_TTFB=$(echo "$FRESH_RESP" | grep '__TIME_STARTTRANSFER__' | cut -d: -f2 || echo "?")
@@ -1426,14 +1444,14 @@ else
         -H "Authorization: Bearer ${API_KEY}" \
         -H "Content-Type: application/json" \
         -d "$PAYLOAD_SYNC" \
-        "$ENDPOINT" \
+        "$CHAT_URL" \
         --next \
         -sS -w '\n__HTTP_CODE2__:%{http_code}\n__TIME_TOTAL2__:%{time_total}\n__TIME_STARTTRANSFER2__:%{time_starttransfer}\n' \
         --max-time "$TIMEOUT" \
         -H "Authorization: Bearer ${API_KEY}" \
         -H "Content-Type: application/json" \
         -d "$PAYLOAD_SYNC" \
-        "$ENDPOINT" 2>>"$STEP10_LOG" || true)
+        "$CHAT_URL" 2>>"$STEP10_LOG" || true)
 
     REUSE_HTTP=$(echo "$REUSE_RESP" | grep '__HTTP_CODE2__' | cut -d: -f2 || echo "0")
     REUSE_TTFB=$(echo "$REUSE_RESP" | grep '__TIME_STARTTRANSFER2__' | cut -d: -f2 || echo "?")
@@ -1451,7 +1469,7 @@ else
         -H "Content-Type: application/json" \
         -H "Connection: close" \
         -d "$PAYLOAD_STREAM" \
-        "$ENDPOINT" 2>/dev/null || true)
+        "$CHAT_URL" 2>/dev/null || true)
 
     FRESH_STREAM_HTTP=$(echo "$FRESH_STREAM_RESP" | grep '__HTTP_CODE__' | cut -d: -f2 || echo "0")
     FRESH_STREAM_SSE=$(echo "$FRESH_STREAM_RESP" | grep -v '^__' || true)
