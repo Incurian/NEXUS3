@@ -47,11 +47,6 @@ RAPID_COUNT=5
 # Number of parallel streaming requests in Step 8
 PARALLEL_COUNT=3
 
-# Backend identity header name (for load balancer detection in Step 4)
-# Set to the response header your infra uses to identify which backend served the request.
-# Common: x-backend-server, x-served-by, x-aifactory-server
-SERVER_HEADER="x-aifactory-server"
-
 # Optional: path to corporate CA bundle for TLS comparison tests (Step 6)
 # e.g., /etc/ssl/certs/corporate-ca.pem or /usr/local/share/ca-certificates/corporate.crt
 CERT_PATH=""
@@ -236,7 +231,6 @@ Timeout:        ${TIMEOUT}s
 Quick mode:     ${QUICK_MODE}
 Rapid count:    ${RAPID_COUNT}
 Parallel count: ${PARALLEL_COUNT}
-Server header:  ${SERVER_HEADER}
 Cert path:      ${CERT_PATH:-NONE}
 Hostname:       $(hostname)
 Date:           $(date '+%Y-%m-%dT%H:%M:%S%z')
@@ -259,7 +253,6 @@ echo -e "  Model:        ${BOLD}${MODEL}${RESET}"
 echo -e "  Alt model:    ${ALT_MODEL:-NONE}"
 echo -e "  API key:      ${KEY_PREVIEW}"
 echo -e "  Timeout:      ${TIMEOUT}s"
-echo -e "  Server hdr:   ${SERVER_HEADER}"
 echo -e "  Cert path:    ${CERT_PATH:-NONE}"
 echo -e "  Output dir:   ${BOLD}${OUTDIR}/${RESET}"
 echo -e "  Platform:     ${PLATFORM}"
@@ -597,20 +590,22 @@ else
     header "STEP 4: Rapid-fire ${RAPID_COUNT}x requests (load balancer detection)"
     info "Sends ${RAPID_COUNT} quick non-streaming requests in sequence."
     info "If some succeed and some fail, a load balancer is routing to a bad backend."
-    info "Tracks '${SERVER_HEADER}' response header to identify which backend served each."
+    info "Auto-detects which response headers vary across requests to identify backends."
     echo ""
 
     STEP4_LOG="$OUTDIR/04-rapid-fire.txt"
+    STEP4_HDRDIR="$OUTDIR/04-headers"
+    mkdir -p "$STEP4_HDRDIR"
     PASS_COUNT=0
     FAIL_COUNT=0
     EMPTY_COUNT=0
-    declare -A BACKEND_PASS 2>/dev/null || true
-    declare -A BACKEND_FAIL 2>/dev/null || true
-    BACKENDS_SEEN=""
+
+    # Track result per request: "PASS", "EMPTY", or "FAIL" (for header correlation)
+    STEP4_RESULTS=""
 
     for i in $(seq 1 "$RAPID_COUNT"); do
-        # Capture response headers to a temp file for server header extraction
-        STEP4_HDRFILE="$OUTDIR/04-headers-${i}.txt"
+        # Capture response headers to a file (kept for post-loop analysis)
+        STEP4_HDRFILE="${STEP4_HDRDIR}/${i}.txt"
         RESP=$(curl -sS -D "$STEP4_HDRFILE" -w '\n__HTTP_CODE__:%{http_code}' \
             --max-time "$TIMEOUT" \
             -H "Authorization: Bearer ${API_KEY}" \
@@ -622,49 +617,148 @@ else
         BODY=$(echo "$RESP" | grep -v '^__' || true)
         HAS_CONTENT=$(check_content "$BODY")
 
-        # Extract backend server header (case-insensitive grep)
-        BACKEND=$(grep -i "^${SERVER_HEADER}:" "$STEP4_HDRFILE" 2>/dev/null | head -1 | sed "s/^[^:]*:[[:space:]]*//" | tr -d '\r' || echo "unknown")
-        if [[ -z "$BACKEND" ]]; then
-            BACKEND="(no header)"
-        fi
-
         {
             echo "--- Request $i ---"
             echo "HTTP: $HTTP"
-            echo "Backend: $BACKEND"
             echo "Content length: $HAS_CONTENT"
             echo "$BODY" | head -5
             echo ""
         } >> "$STEP4_LOG"
 
         if [[ "$HTTP" == "200" && "$HAS_CONTENT" -gt 0 ]]; then
-            echo -e "  Request ${i}/${RAPID_COUNT}: ${GREEN}HTTP ${HTTP}${RESET} -- ${HAS_CONTENT} chars  [backend: ${BACKEND}]"
+            echo -e "  Request ${i}/${RAPID_COUNT}: ${GREEN}HTTP ${HTTP}${RESET} -- ${HAS_CONTENT} chars"
             PASS_COUNT=$((PASS_COUNT + 1))
+            STEP4_RESULTS="${STEP4_RESULTS}PASS\n"
         elif [[ "$HTTP" == "200" ]]; then
-            echo -e "  Request ${i}/${RAPID_COUNT}: ${YELLOW}HTTP ${HTTP}${RESET} -- EMPTY (0 chars)  [backend: ${BOLD}${BACKEND}${RESET}]"
+            echo -e "  Request ${i}/${RAPID_COUNT}: ${YELLOW}HTTP ${HTTP}${RESET} -- EMPTY (0 chars)"
             EMPTY_COUNT=$((EMPTY_COUNT + 1))
+            STEP4_RESULTS="${STEP4_RESULTS}EMPTY\n"
         else
-            echo -e "  Request ${i}/${RAPID_COUNT}: ${RED}HTTP ${HTTP}${RESET}  [backend: ${BOLD}${BACKEND}${RESET}]"
+            echo -e "  Request ${i}/${RAPID_COUNT}: ${RED}HTTP ${HTTP}${RESET}"
             FAIL_COUNT=$((FAIL_COUNT + 1))
+            STEP4_RESULTS="${STEP4_RESULTS}FAIL\n"
         fi
-
-        # Track unique backends
-        if [[ "$BACKENDS_SEEN" != *"$BACKEND"* ]]; then
-            if [[ -n "$BACKENDS_SEEN" ]]; then
-                BACKENDS_SEEN="${BACKENDS_SEEN}, ${BACKEND}"
-            else
-                BACKENDS_SEEN="$BACKEND"
-            fi
-        fi
-
-        # Clean up header file
-        rm -f "$STEP4_HDRFILE"
     done
 
     echo ""
-    echo -e "  Results:  ${GREEN}${PASS_COUNT} pass${RESET}, ${YELLOW}${EMPTY_COUNT} empty${RESET}, ${RED}${FAIL_COUNT} error${RESET}"
-    echo -e "  Backends: ${BACKENDS_SEEN}"
+    echo -e "  Results: ${GREEN}${PASS_COUNT} pass${RESET}, ${YELLOW}${EMPTY_COUNT} empty${RESET}, ${RED}${FAIL_COUNT} error${RESET}"
 
+    # --- Auto-detect varying response headers and correlate with results ---
+    if [[ -n "$PYTHON" ]]; then
+        HEADER_ANALYSIS=$($PYTHON - "$STEP4_HDRDIR" "$RAPID_COUNT" <<'PYEOF'
+import os, sys
+from collections import defaultdict
+
+hdr_dir = sys.argv[1]
+count = int(sys.argv[2])
+
+# Read results from stdin
+results = []
+for line in sys.stdin:
+    line = line.strip()
+    if line:
+        results.append(line)
+
+# Parse all response headers from each request
+all_headers = []  # list of dict per request
+for i in range(1, count + 1):
+    hdr_file = os.path.join(hdr_dir, f"{i}.txt")
+    headers = {}
+    try:
+        with open(hdr_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if ":" in line and not line.startswith("HTTP/"):
+                    name, _, value = line.partition(":")
+                    name = name.strip().lower()
+                    value = value.strip()
+                    # Skip standard headers that always vary
+                    if name in ("date", "content-length", "x-request-id",
+                                "x-trace-id", "cf-ray", "x-correlation-id",
+                                "set-cookie", "age"):
+                        continue
+                    headers[name] = value
+    except FileNotFoundError:
+        pass
+    all_headers.append(headers)
+
+if not all_headers:
+    sys.exit(0)
+
+# Find headers whose values differ across requests
+all_keys = set()
+for h in all_headers:
+    all_keys.update(h.keys())
+
+varying = {}  # header_name -> list of values (one per request)
+for key in sorted(all_keys):
+    values = [h.get(key, "(absent)") for h in all_headers]
+    unique = set(values)
+    if len(unique) > 1:
+        varying[key] = values
+
+if not varying:
+    print("NO_VARYING_HEADERS")
+    sys.exit(0)
+
+# Print varying headers
+print("VARYING_HEADERS")
+for hdr_name, values in varying.items():
+    print(f"  {hdr_name}:")
+    for idx, val in enumerate(values):
+        result = results[idx] if idx < len(results) else "?"
+        marker = ""
+        if result == "EMPTY":
+            marker = " <-- EMPTY"
+        elif result == "FAIL":
+            marker = " <-- FAIL"
+        print(f"    req {idx+1}: {val}{marker}")
+
+# Check if any varying header correlates with failures
+if len(results) > 0 and any(r != "PASS" for r in results):
+    print("")
+    print("CORRELATION_CHECK")
+    for hdr_name, values in varying.items():
+        # Group results by header value
+        value_results = defaultdict(list)
+        for idx, val in enumerate(values):
+            result = results[idx] if idx < len(results) else "?"
+            value_results[val].append(result)
+        # Check if any value is predominantly failures
+        for val, res_list in value_results.items():
+            fail_count = sum(1 for r in res_list if r != "PASS")
+            total = len(res_list)
+            if fail_count == total and total > 0:
+                print(f"  SUSPECT: '{hdr_name}: {val}' -> {fail_count}/{total} failures")
+            elif fail_count > 0:
+                print(f"  MIXED:   '{hdr_name}: {val}' -> {fail_count}/{total} failures")
+PYEOF
+    echo -e "$STEP4_RESULTS")
+
+        echo ""
+        if echo "$HEADER_ANALYSIS" | grep -q "NO_VARYING_HEADERS"; then
+            echo -e "  ${DIM}All response headers identical across requests (no backend routing visible).${RESET}"
+        elif echo "$HEADER_ANALYSIS" | grep -q "VARYING_HEADERS"; then
+            echo -e "  ${BOLD}Headers that varied across requests:${RESET}"
+            echo "$HEADER_ANALYSIS" | grep -v '^VARYING_HEADERS$' | grep -v '^CORRELATION_CHECK$' | grep -v '^NO_VARYING_HEADERS$' | sed 's/^/  /'
+            echo ""
+            if echo "$HEADER_ANALYSIS" | grep -q "SUSPECT"; then
+                SUSPECTS=$(echo "$HEADER_ANALYSIS" | grep 'SUSPECT:' || true)
+                echo -e "  ${RED}${BOLD}Backend correlation found:${RESET}"
+                echo "$SUSPECTS" | sed 's/^/  /'
+                echo ""
+                advice "A specific backend consistently produces failures."
+                advice "Share this with your infra team to investigate that backend."
+            fi
+        fi
+    else
+        echo -e "  ${DIM}(Header analysis skipped -- requires Python)${RESET}"
+    fi
+
+    # Clean up header files
+    rm -rf "$STEP4_HDRDIR"
+
+    echo ""
     if [[ "$PASS_COUNT" -eq "$RAPID_COUNT" ]]; then
         result_pass "All ${RAPID_COUNT} requests returned content"
         advice "Server is consistently healthy right now. The issue may have been transient."
@@ -672,8 +766,7 @@ else
         result_fail "${EMPTY_COUNT}/${RAPID_COUNT} returned empty responses"
         advice "INTERMITTENT EMPTY RESPONSES CONFIRMED. Mixed results strongly suggest"
         advice "a load balancer routing to multiple backends, some of which are broken."
-        advice "Check the backend column above -- if empty responses correlate with a"
-        advice "specific backend name, that's your culprit."
+        advice "Check the varying headers above for backend correlation."
         advice "Report this to your infrastructure team with this log."
     elif [[ "$EMPTY_COUNT" -eq "$RAPID_COUNT" ]]; then
         result_fail "ALL ${RAPID_COUNT} requests returned empty"
@@ -1429,7 +1522,6 @@ cat > "$SUMMARY" <<SUMEOF
 - Model: ${MODEL}
 - Alt model: ${ALT_MODEL:-NONE}
 - Timeout: ${TIMEOUT}s
-- Server header: ${SERVER_HEADER}
 - Cert path: ${CERT_PATH:-NONE}
 
 ## Quick Reference
@@ -1439,7 +1531,7 @@ cat > "$SUMMARY" <<SUMEOF
 | 1 | Non-streaming curl | 01-sync-request.txt |
 | 2 | Streaming curl (+ TTFB analysis) | 02-stream-request.txt |
 | 3 | Python httpx (same lib as NEXUS) | 03-httpx-stream.txt |
-| 4 | Rapid-fire ${RAPID_COUNT}x + backend header tracking | 04-rapid-fire.txt |
+| 4 | Rapid-fire ${RAPID_COUNT}x + auto header analysis | 04-rapid-fire.txt |
 | 5 | TLS/DNS/connectivity | 05-connection-info.txt |
 | 6 | Certificate chain + TLS comparison matrix | 06-cert-analysis.txt, 06-tls-matrix.txt |
 | 7 | /v1/models health check | 07-models-check.txt |
@@ -1474,8 +1566,9 @@ difference, or connection reuse issue. File a bug with httpx.
 
 ### If Step 4 shows mixed results:
 **Load balancer routing to a bad backend.** Some requests hit healthy
-servers, some hit broken ones. Check the backend server header column
-to identify which backend is broken. Report to infrastructure team.
+servers, some hit broken ones. The auto-detected varying response
+headers will show which backend identifier correlates with failures.
+Report to infrastructure team.
 
 ### If Step 4 shows all empty:
 The model/endpoint is consistently broken right now. Not intermittent.
