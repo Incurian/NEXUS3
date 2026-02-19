@@ -425,17 +425,17 @@ STEP2_SSE=$(echo "$STEP2_BODY" | grep -v '^__' || true)
 DATA_LINES=$(echo "$STEP2_SSE" | grep -c '^data: ' || true)
 HAS_DONE=$(echo "$STEP2_SSE" | grep -c '^[[:space:]]*data: \[DONE\]' || true)
 
-CONTENT_EVENTS=$(echo "$STEP2_SSE" | grep '^data: ' | grep -v '\[DONE\]' | head -20 || true)
+ALL_DATA_EVENTS=$(echo "$STEP2_SSE" | grep '^data: ' | grep -v '\[DONE\]' || true)
 HAS_CONTENT_DELTA=0
 HAS_REASONING_DELTA=0
-if echo "$CONTENT_EVENTS" | grep -q '"content"'; then
+if echo "$ALL_DATA_EVENTS" | grep -q '"content"'; then
     HAS_CONTENT_DELTA=1
-elif echo "$CONTENT_EVENTS" | grep -q '"text_delta"'; then
+elif echo "$ALL_DATA_EVENTS" | grep -q '"text_delta"'; then
     HAS_CONTENT_DELTA=1
 fi
-if echo "$CONTENT_EVENTS" | grep -q '"reasoning_content"'; then
+if echo "$ALL_DATA_EVENTS" | grep -q '"reasoning_content"'; then
     HAS_REASONING_DELTA=1
-elif echo "$CONTENT_EVENTS" | grep -q '"reasoning"'; then
+elif echo "$ALL_DATA_EVENTS" | grep -q '"reasoning"'; then
     HAS_REASONING_DELTA=1
 fi
 
