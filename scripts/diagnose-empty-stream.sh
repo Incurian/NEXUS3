@@ -1119,7 +1119,7 @@ except ImportError:
     print('SKIP')
     sys.exit(0)
 
-import os, re
+import os, re, ssl
 cert_mode = '${cert_mode}'
 cert_path = '${CERT_PATH}'
 # Convert MSYS2/Git Bash paths (/c/Users/...) to Windows paths (C:/Users/...)
@@ -1129,7 +1129,10 @@ verify = True
 if cert_mode == 'insecure':
     verify = False
 elif cert_mode == 'custom' and cert_path and os.path.isfile(cert_path):
-    verify = cert_path
+    # Add custom CA on top of system CAs (not replacing them)
+    ctx = ssl.create_default_context()
+    ctx.load_verify_locations(cert_path)
+    verify = ctx
 elif cert_mode == 'custom' and cert_path:
     print(f'CERT NOT FOUND: {cert_path}')
     sys.exit(0)
