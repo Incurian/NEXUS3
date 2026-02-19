@@ -178,6 +178,91 @@ class TestOpenAIEmptyStream:
         assert summary["event_count"] == 1
 
 
+class TestReasoningContentField:
+    """Tests for reasoning_content field support (DeepSeek/vLLM/Azure AI Factory)."""
+
+    @pytest.mark.asyncio
+    async def test_reasoning_content_yields_reasoning_delta(
+        self, openai_provider: OpenRouterProvider
+    ) -> None:
+        """reasoning_content field in delta yields ReasoningDelta events."""
+        from nexus3.core.types import ContentDelta, ReasoningDelta, StreamComplete
+
+        reasoning_chunk = json.dumps({
+            "choices": [{"delta": {"reasoning_content": "Let me think..."}, "finish_reason": None}]
+        })
+        content_chunk = json.dumps({
+            "choices": [{"delta": {"content": "Hello!"}, "finish_reason": "stop"}]
+        })
+        response = _make_sse_response([
+            f"data: {reasoning_chunk}",
+            f"data: {content_chunk}",
+            "data: [DONE]",
+        ])
+
+        events = []
+        async for event in openai_provider._parse_stream(response):
+            events.append(event)
+
+        # Should get: ReasoningDelta, ContentDelta, StreamComplete
+        assert len(events) == 3
+        assert isinstance(events[0], ReasoningDelta)
+        assert events[0].text == "Let me think..."
+        assert isinstance(events[1], ContentDelta)
+        assert events[1].text == "Hello!"
+        assert isinstance(events[2], StreamComplete)
+        assert events[2].message.content == "Hello!"
+
+    @pytest.mark.asyncio
+    async def test_reasoning_field_still_works(
+        self, openai_provider: OpenRouterProvider
+    ) -> None:
+        """Legacy 'reasoning' field (Grok/xAI) still yields ReasoningDelta."""
+        from nexus3.core.types import ReasoningDelta, StreamComplete
+
+        chunk = json.dumps({
+            "choices": [{"delta": {"reasoning": "thinking..."}, "finish_reason": None}]
+        })
+        response = _make_sse_response([
+            f"data: {chunk}",
+            "data: [DONE]",
+        ])
+
+        events = []
+        async for event in openai_provider._parse_stream(response):
+            events.append(event)
+
+        assert isinstance(events[0], ReasoningDelta)
+        assert events[0].text == "thinking..."
+
+    @pytest.mark.asyncio
+    async def test_reasoning_content_not_in_final_message(
+        self, openai_provider: OpenRouterProvider
+    ) -> None:
+        """reasoning_content is NOT accumulated into the final message content."""
+        from nexus3.core.types import StreamComplete
+
+        reasoning_chunk = json.dumps({
+            "choices": [{"delta": {"reasoning_content": "Thinking about the answer"}, "finish_reason": None}]
+        })
+        content_chunk = json.dumps({
+            "choices": [{"delta": {"content": "42"}, "finish_reason": "stop"}]
+        })
+        response = _make_sse_response([
+            f"data: {reasoning_chunk}",
+            f"data: {content_chunk}",
+            "data: [DONE]",
+        ])
+
+        events = []
+        async for event in openai_provider._parse_stream(response):
+            events.append(event)
+
+        complete = [e for e in events if isinstance(e, StreamComplete)][0]
+        # Only content, not reasoning, should be in the message
+        assert complete.message.content == "42"
+
+
 class TestAnthropicEmptyStream:
     """Empty stream handling for Anthropic provider."""
 

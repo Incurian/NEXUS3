@@ -446,8 +446,10 @@ class OpenAICompatProvider(BaseProvider):
 
         delta = choices[0].get("delta", {})
 
-        # Handle reasoning delta (Grok/xAI models)
-        reasoning = delta.get("reasoning")
+        # Handle reasoning delta (multiple field names across providers)
+        # - "reasoning_content": DeepSeek, vLLM, Azure AI Factory
+        # - "reasoning": Grok/xAI, OpenRouter
+        reasoning = delta.get("reasoning_content") or delta.get("reasoning")
         if reasoning:
             yield ReasoningDelta(text=reasoning)
 
