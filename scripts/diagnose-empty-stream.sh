@@ -88,12 +88,17 @@ if [[ "${1:-}" == "--quick" ]]; then
 fi
 
 # --- Platform detection ---
+# Detect Python: python3 (Linux/macOS), python (Windows/Git Bash), py (Windows launcher)
+# Also verify it actually runs (Windows Store stubs can appear in PATH but just open Store)
 PYTHON=""
-if command -v python3 &>/dev/null; then
-    PYTHON=python3
-elif command -v python &>/dev/null; then
-    PYTHON=python
-fi
+for _py_candidate in python3 python py; do
+    if command -v "$_py_candidate" &>/dev/null; then
+        if "$_py_candidate" -c "import sys; sys.exit(0)" 2>/dev/null; then
+            PYTHON="$_py_candidate"
+            break
+        fi
+    fi
+done
 
 if [[ -n "${MSYSTEM:-}" ]]; then
     PLATFORM="Git Bash (MSYS2: ${MSYSTEM})"
@@ -183,8 +188,9 @@ advice() {
     echo -e "  ${DIM}=> $1${RESET}"
 }
 
-# Check if response body has content (uses Python if available, grep fallback)
-# Usage: has_content "$body"  -> prints char count (0 if empty)
+# Check if response body has content and/or reasoning (uses Python if available, grep fallback)
+# Usage: check_content "$body"  -> prints "content_chars:reasoning_chars"
+# For simple checks: content chars is the first field (cut -d: -f1)
 check_content() {
     local body="$1"
     if [[ -n "$PYTHON" ]]; then
@@ -192,17 +198,34 @@ check_content() {
 import sys, json
 try:
     d = json.load(sys.stdin)
-    c = d.get('choices', [{}])[0].get('message', {}).get('content', '')
-    print(len(c))
-except: print('0')
-" 2>/dev/null || echo "0"
+    msg = d.get('choices', [{}])[0].get('message', {})
+    c = msg.get('content', '') or ''
+    r = msg.get('reasoning_content', '') or msg.get('reasoning', '') or ''
+    print(f'{len(c)}:{len(r)}')
+except: print('0:0')
+" 2>/dev/null || echo "0:0"
     else
+        local c=0 r=0
         if echo "$body" | grep -q '"content"[[:space:]]*:[[:space:]]*"[^"]'; then
-            echo "1"
-        else
-            echo "0"
+            c=1
         fi
+        if echo "$body" | grep -q '"reasoning_content"[[:space:]]*:[[:space:]]*"[^"]'; then
+            r=1
+        elif echo "$body" | grep -q '"reasoning"[[:space:]]*:[[:space:]]*"[^"]'; then
+            r=1
+        fi
+        echo "${c}:${r}"
     fi
+}
+
+# Extract just the content char count (for pass/fail decisions)
+content_chars() {
+    echo "$1" | cut -d: -f1
+}
+
+# Extract just the reasoning char count
+reasoning_chars() {
+    echo "$1" | cut -d: -f2
 }
 
 # Build curl cert args based on mode: "default", "custom", "insecure"
@@ -325,13 +348,26 @@ echo -e "  Total time:        ${STEP1_TIME}s"
 echo ""
 
 if [[ "$STEP1_HTTP" == "200" && "${STEP1_SIZE:-0}" -gt 10 ]]; then
-    HAS_CONTENT=$(check_content "$STEP1_CONTENT")
-    if [[ "$HAS_CONTENT" -gt 0 ]]; then
-        result_pass "Server returned content (${HAS_CONTENT} chars)"
+    STEP1_CHECK=$(check_content "$STEP1_CONTENT")
+    STEP1_CC=$(content_chars "$STEP1_CHECK")
+    STEP1_RC=$(reasoning_chars "$STEP1_CHECK")
+    if [[ "$STEP1_CC" -gt 0 ]]; then
+        result_pass "Server returned content (${STEP1_CC} chars)"
+        if [[ "$STEP1_RC" -gt 0 ]]; then
+            info "Also received ${STEP1_RC} chars of reasoning/thinking trace."
+        fi
         advice "Non-streaming endpoint is healthy."
+    elif [[ "$STEP1_RC" -gt 0 ]]; then
+        result_warn "Server returned reasoning (${STEP1_RC} chars) but NO visible content"
+        advice "This is a THINKING MODEL. The model produced a reasoning/thinking trace"
+        advice "but no user-visible content in the 'content' field."
+        advice "This may be expected for short prompts, or the model may need a longer"
+        advice "max_tokens to complete both reasoning and response."
+        advice "NEXUS should handle this -- check if your provider code reads"
+        advice "'reasoning_content' from the response."
     else
-        result_fail "HTTP 200 but response has no content in choices[0].message.content"
-        advice "Server returned 200 OK but the response body has empty content."
+        result_fail "HTTP 200 but response has no content or reasoning"
+        advice "Server returned 200 OK but the response body is truly empty."
         advice "This suggests the model is generating empty responses -- server-side issue."
     fi
 elif [[ "$STEP1_HTTP" == "200" ]]; then
@@ -391,10 +427,16 @@ HAS_DONE=$(echo "$STEP2_SSE" | grep -c '^[[:space:]]*data: \[DONE\]' || true)
 
 CONTENT_EVENTS=$(echo "$STEP2_SSE" | grep '^data: ' | grep -v '\[DONE\]' | head -20 || true)
 HAS_CONTENT_DELTA=0
+HAS_REASONING_DELTA=0
 if echo "$CONTENT_EVENTS" | grep -q '"content"'; then
     HAS_CONTENT_DELTA=1
 elif echo "$CONTENT_EVENTS" | grep -q '"text_delta"'; then
     HAS_CONTENT_DELTA=1
+fi
+if echo "$CONTENT_EVENTS" | grep -q '"reasoning_content"'; then
+    HAS_REASONING_DELTA=1
+elif echo "$CONTENT_EVENTS" | grep -q '"reasoning"'; then
+    HAS_REASONING_DELTA=1
 fi
 
 echo -e "  HTTP status:       ${BOLD}${STEP2_HTTP}${RESET}"
@@ -404,6 +446,7 @@ echo -e "  Total time:        ${STEP2_TIME}s"
 echo -e "  SSE data lines:    ${DATA_LINES}"
 echo -e "  [DONE] marker:     $([ "$HAS_DONE" -gt 0 ] && echo 'yes' || echo 'NO')"
 echo -e "  Content deltas:    $([ "$HAS_CONTENT_DELTA" -eq 1 ] && echo 'yes' || echo 'NO')"
+echo -e "  Reasoning deltas:  $([ "$HAS_REASONING_DELTA" -eq 1 ] && echo 'YES (thinking model)' || echo 'no')"
 echo ""
 
 # TTFB analysis: flag suspiciously fast responses
@@ -423,11 +466,28 @@ fi
 
 if [[ "$STEP2_HTTP" == "200" && "$DATA_LINES" -gt 1 && "$HAS_CONTENT_DELTA" -eq 1 ]]; then
     result_pass "Streaming returned ${DATA_LINES} SSE events with content"
+    if [[ "$HAS_REASONING_DELTA" -eq 1 ]]; then
+        info "Thinking model detected -- reasoning deltas present alongside content."
+    fi
     advice "Streaming endpoint is healthy right now."
     if [[ "$HAS_DONE" -eq 0 ]]; then
         result_warn "No [DONE] marker at end of stream"
         advice "Server didn't send [DONE]. NEXUS handles this, but it's unusual."
     fi
+elif [[ "$STEP2_HTTP" == "200" && "$DATA_LINES" -gt 1 && "$HAS_REASONING_DELTA" -eq 1 && "$HAS_CONTENT_DELTA" -eq 0 ]]; then
+    result_warn "Streaming returned ${DATA_LINES} SSE events with REASONING but no content"
+    advice "THINKING MODEL DETECTED. The model streamed reasoning/thinking tokens"
+    advice "(in 'reasoning_content') but no visible content (in 'content')."
+    advice "This is likely why NEXUS reports an empty response -- it may only be"
+    advice "reading the 'content' field and ignoring 'reasoning_content'."
+    advice ""
+    advice "Possible causes:"
+    advice "  1. Model needs higher max_tokens to finish reasoning AND produce content"
+    advice "  2. NEXUS provider code doesn't extract 'reasoning_content' from deltas"
+    advice "  3. Server config issue -- model stuck in reasoning-only mode"
+    echo ""
+    echo -e "  ${YELLOW}First few SSE data lines:${RESET}"
+    echo "$STEP2_SSE" | grep '^data: ' | head -10 | sed 's/^/    /'
 elif [[ "$STEP2_HTTP" == "200" && "$DATA_LINES" -le 1 ]]; then
     result_fail "HTTP 200 but only ${DATA_LINES} SSE data lines (empty or near-empty stream)"
     advice "THIS IS THE BUG. Server returned 200 OK with SSE headers but no content."
@@ -496,6 +556,7 @@ print()
 
 event_count = 0
 content_chars = 0
+reasoning_chars = 0
 received_done = False
 finish_reason = None
 start = time.monotonic()
@@ -525,12 +586,21 @@ try:
                             if choices:
                                 delta = choices[0].get("delta", {})
                                 text = delta.get("content", "")
+                                # Check for reasoning/thinking content
+                                reasoning = delta.get("reasoning_content", "") or delta.get("reasoning", "")
                                 fr = choices[0].get("finish_reason")
                                 if fr:
                                     finish_reason = fr
-                                content_chars += len(text)
-                                preview = repr(text[:80]) if text else "(empty delta)"
-                                print(f"  [{event_count}] {preview}")
+                                content_chars += len(text) if text else 0
+                                reasoning_chars += len(reasoning) if reasoning else 0
+                                if text:
+                                    preview = repr(text[:80])
+                                    print(f"  [{event_count}] content: {preview}")
+                                elif reasoning:
+                                    preview = repr(reasoning[:80])
+                                    print(f"  [{event_count}] reasoning: {preview}")
+                                else:
+                                    print(f"  [{event_count}] (empty delta)")
                             elif data.get("type"):
                                 etype = data["type"]
                                 if etype == "content_block_delta":
@@ -553,12 +623,15 @@ try:
     print(f"=== SUMMARY ===")
     print(f"Events:         {event_count}")
     print(f"Content chars:  {content_chars}")
+    print(f"Reasoning chars: {reasoning_chars}")
     print(f"[DONE]:         {received_done}")
     print(f"finish_reason:  {finish_reason}")
     print(f"Duration:       {duration_ms}ms")
 
     if content_chars > 0:
         print(f"RESULT: PASS")
+    elif reasoning_chars > 0:
+        print(f"RESULT: REASONING_ONLY - {reasoning_chars} reasoning chars, 0 content chars")
     elif event_count == 0:
         print(f"RESULT: FAIL - Zero events (empty stream)")
     else:
@@ -577,15 +650,22 @@ fi
 STEP3_RESULT=$(grep '^RESULT:' "$STEP3_LOG" || echo "RESULT: UNKNOWN")
 STEP3_EVENTS=$(grep '^Events:' "$STEP3_LOG" | awk '{print $2}' || echo "?")
 STEP3_CONTENT=$(grep '^Content chars:' "$STEP3_LOG" | awk '{print $3}' || echo "?")
+STEP3_REASONING=$(grep '^Reasoning chars:' "$STEP3_LOG" | awk '{print $3}' || echo "0")
 STEP3_DURATION=$(grep '^Duration:' "$STEP3_LOG" | awk '{print $2}' || echo "?")
 
 if echo "$STEP3_RESULT" | grep -q "SKIP"; then
     result_warn "Skipped (${PYTHON:-no python found}; needs httpx: pip install httpx)"
 elif echo "$STEP3_RESULT" | grep -q "PASS"; then
-    echo -e "  Events: ${STEP3_EVENTS}, Content: ${STEP3_CONTENT} chars, Duration: ${STEP3_DURATION}"
+    echo -e "  Events: ${STEP3_EVENTS}, Content: ${STEP3_CONTENT} chars, Reasoning: ${STEP3_REASONING} chars, Duration: ${STEP3_DURATION}"
     result_pass "httpx streaming returned content"
     advice "Same HTTP library as NEXUS works fine. If NEXUS had an empty response"
     advice "at the same time, it was likely a transient server issue that resolved."
+elif echo "$STEP3_RESULT" | grep -q "REASONING_ONLY"; then
+    echo -e "  Events: ${STEP3_EVENTS}, Content: ${STEP3_CONTENT} chars, Reasoning: ${STEP3_REASONING} chars, Duration: ${STEP3_DURATION}"
+    result_warn "httpx got reasoning tokens but NO content"
+    advice "THINKING MODEL CONFIRMED via httpx. The model streams 'reasoning_content'"
+    advice "but no 'content'. This is the same behavior as curl (Step 2)."
+    advice "NEXUS needs to handle 'reasoning_content' in the streaming parser."
 elif echo "$STEP3_RESULT" | grep -q "Zero events"; then
     echo -e "  Events: ${STEP3_EVENTS}, Content: ${STEP3_CONTENT} chars, Duration: ${STEP3_DURATION}"
     result_fail "httpx got zero events (empty stream body)"
@@ -633,20 +713,26 @@ else
 
         HTTP=$(echo "$RESP" | grep '__HTTP_CODE__' | cut -d: -f2 || echo "0")
         BODY=$(echo "$RESP" | grep -v '^__' || true)
-        HAS_CONTENT=$(check_content "$BODY")
+        CHECK_RESULT=$(check_content "$BODY")
+        CC=$(content_chars "$CHECK_RESULT")
+        RC=$(reasoning_chars "$CHECK_RESULT")
 
         {
             echo "--- Request $i ---"
             echo "HTTP: $HTTP"
-            echo "Content length: $HAS_CONTENT"
+            echo "Content: $CC chars, Reasoning: $RC chars"
             echo "$BODY" | head -5
             echo ""
         } >> "$STEP4_LOG"
 
-        if [[ "$HTTP" == "200" && "$HAS_CONTENT" -gt 0 ]]; then
-            echo -e "  Request ${i}/${RAPID_COUNT}: ${GREEN}HTTP ${HTTP}${RESET} -- ${HAS_CONTENT} chars"
+        if [[ "$HTTP" == "200" && "$CC" -gt 0 ]]; then
+            echo -e "  Request ${i}/${RAPID_COUNT}: ${GREEN}HTTP ${HTTP}${RESET} -- ${CC} content chars"
             PASS_COUNT=$((PASS_COUNT + 1))
             STEP4_RESULTS="${STEP4_RESULTS}PASS\n"
+        elif [[ "$HTTP" == "200" && "$RC" -gt 0 ]]; then
+            echo -e "  Request ${i}/${RAPID_COUNT}: ${YELLOW}HTTP ${HTTP}${RESET} -- reasoning only (${RC} chars, 0 content)"
+            EMPTY_COUNT=$((EMPTY_COUNT + 1))
+            STEP4_RESULTS="${STEP4_RESULTS}EMPTY\n"
         elif [[ "$HTTP" == "200" ]]; then
             echo -e "  Request ${i}/${RAPID_COUNT}: ${YELLOW}HTTP ${HTTP}${RESET} -- EMPTY (0 chars)"
             EMPTY_COUNT=$((EMPTY_COUNT + 1))
@@ -980,9 +1066,13 @@ for cert_mode in "${CERT_MODES[@]}"; do
         "$CHAT_URL" 2>/dev/null || true)
     CURL_SYNC_HTTP=$(echo "$CURL_SYNC_RESP" | grep '__HTTP_CODE__' | cut -d: -f2 || echo "0")
     CURL_SYNC_BODY=$(echo "$CURL_SYNC_RESP" | grep -v '^__' || true)
-    CURL_SYNC_CONTENT=$(check_content "$CURL_SYNC_BODY")
-    if [[ "$CURL_SYNC_HTTP" == "200" && "$CURL_SYNC_CONTENT" -gt 0 ]]; then
+    CURL_SYNC_CHECK=$(check_content "$CURL_SYNC_BODY")
+    CURL_SYNC_CC=$(content_chars "$CURL_SYNC_CHECK")
+    CURL_SYNC_RC=$(reasoning_chars "$CURL_SYNC_CHECK")
+    if [[ "$CURL_SYNC_HTTP" == "200" && "$CURL_SYNC_CC" -gt 0 ]]; then
         CURL_SYNC_RESULT="PASS"
+    elif [[ "$CURL_SYNC_HTTP" == "200" && "$CURL_SYNC_RC" -gt 0 ]]; then
+        CURL_SYNC_RESULT="REASON"
     elif [[ "$CURL_SYNC_HTTP" == "200" ]]; then
         CURL_SYNC_RESULT="EMPTY"
     else
@@ -1001,11 +1091,17 @@ for cert_mode in "${CERT_MODES[@]}"; do
     CURL_STREAM_SSE=$(echo "$CURL_STREAM_RESP" | grep -v '^__' || true)
     CURL_STREAM_DATA=$(echo "$CURL_STREAM_SSE" | grep -c '^data: ' || true)
     CURL_STREAM_HAS_CONTENT=0
+    CURL_STREAM_HAS_REASONING=0
     if echo "$CURL_STREAM_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"content"'; then
         CURL_STREAM_HAS_CONTENT=1
     fi
+    if echo "$CURL_STREAM_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"reasoning_content"\|"reasoning"'; then
+        CURL_STREAM_HAS_REASONING=1
+    fi
     if [[ "$CURL_STREAM_HTTP" == "200" && "$CURL_STREAM_DATA" -gt 1 && "$CURL_STREAM_HAS_CONTENT" -eq 1 ]]; then
         CURL_STREAM_RESULT="PASS"
+    elif [[ "$CURL_STREAM_HTTP" == "200" && "$CURL_STREAM_DATA" -gt 1 && "$CURL_STREAM_HAS_REASONING" -eq 1 ]]; then
+        CURL_STREAM_RESULT="REASON"
     elif [[ "$CURL_STREAM_HTTP" == "200" ]]; then
         CURL_STREAM_RESULT="EMPTY"
     else
@@ -1049,6 +1145,7 @@ try:
                 print(f'HTTP {response.status_code}')
                 sys.exit(0)
             content_chars = 0
+            reasoning_chars = 0
             for chunk in response.iter_text():
                 for line in chunk.split('\n'):
                     line = line.strip()
@@ -1057,11 +1154,16 @@ try:
                             d = json.loads(line[6:])
                             choices = d.get('choices', [])
                             if choices:
-                                text = choices[0].get('delta', {}).get('content', '')
+                                delta = choices[0].get('delta', {})
+                                text = delta.get('content', '') or ''
+                                reason = delta.get('reasoning_content', '') or delta.get('reasoning', '') or ''
                                 content_chars += len(text)
+                                reasoning_chars += len(reason)
                         except: pass
             if content_chars > 0:
                 print('PASS')
+            elif reasoning_chars > 0:
+                print('REASON')
             else:
                 print('EMPTY')
 except Exception as e:
@@ -1074,9 +1176,10 @@ except Exception as e:
     color_result() {
         local r="$1"
         case "$r" in
-            PASS)  echo -e "${GREEN}${r}${RESET}" ;;
-            EMPTY) echo -e "${YELLOW}${r}${RESET}" ;;
-            SKIP)  echo -e "${DIM}${r}${RESET}" ;;
+            PASS)   echo -e "${GREEN}${r}${RESET}" ;;
+            REASON) echo -e "${YELLOW}${r}${RESET}" ;;
+            EMPTY)  echo -e "${YELLOW}${r}${RESET}" ;;
+            SKIP)   echo -e "${DIM}${r}${RESET}" ;;
             *)     echo -e "${RED}${r}${RESET}" ;;
         esac
     }
@@ -1239,18 +1342,25 @@ else
         P_SSE=$(grep -v '^__' "$STEP8_OUTFILE" || true)
         P_DATA=$(echo "$P_SSE" | grep -c '^data: ' || true)
         P_HAS_CONTENT=0
+        P_HAS_REASONING=0
         if echo "$P_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"content"'; then
             P_HAS_CONTENT=1
+        fi
+        if echo "$P_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"reasoning_content"\|"reasoning"'; then
+            P_HAS_REASONING=1
         fi
 
         {
             echo "--- Stream $i ---"
-            echo "HTTP: $P_HTTP, TTFB: ${P_TTFB}s, Size: ${P_SIZE}, Data lines: $P_DATA, Content: $P_HAS_CONTENT"
+            echo "HTTP: $P_HTTP, TTFB: ${P_TTFB}s, Size: ${P_SIZE}, Data lines: $P_DATA, Content: $P_HAS_CONTENT, Reasoning: $P_HAS_REASONING"
         } >> "$STEP8_LOG"
 
         if [[ "$P_HTTP" == "200" && "$P_DATA" -gt 1 && "$P_HAS_CONTENT" -eq 1 ]]; then
             echo -e "  Stream ${i}/${PARALLEL_COUNT}: ${GREEN}PASS${RESET} (${P_DATA} events, TTFB ${P_TTFB}s)"
             PARA_PASS=$((PARA_PASS + 1))
+        elif [[ "$P_HTTP" == "200" && "$P_DATA" -gt 1 && "$P_HAS_REASONING" -eq 1 ]]; then
+            echo -e "  Stream ${i}/${PARALLEL_COUNT}: ${YELLOW}REASON${RESET} (reasoning only, ${P_DATA} events, TTFB ${P_TTFB}s)"
+            PARA_EMPTY=$((PARA_EMPTY + 1))
         elif [[ "$P_HTTP" == "200" ]]; then
             echo -e "  Stream ${i}/${PARALLEL_COUNT}: ${YELLOW}EMPTY${RESET} (${P_DATA} data lines, TTFB ${P_TTFB}s)"
             PARA_EMPTY=$((PARA_EMPTY + 1))
@@ -1328,7 +1438,9 @@ ENDJSON
 
     ALT_SYNC_HTTP=$(echo "$ALT_SYNC_RESP" | grep '__HTTP_CODE__' | cut -d: -f2 || echo "0")
     ALT_SYNC_BODY=$(echo "$ALT_SYNC_RESP" | grep -v '^__' || true)
-    ALT_SYNC_CONTENT=$(check_content "$ALT_SYNC_BODY")
+    ALT_SYNC_CHECK=$(check_content "$ALT_SYNC_BODY")
+    ALT_SYNC_CONTENT=$(content_chars "$ALT_SYNC_CHECK")
+    ALT_SYNC_REASONING=$(reasoning_chars "$ALT_SYNC_CHECK")
 
     echo "$ALT_SYNC_RESP" >> "$STEP9_LOG"
     echo "" >> "$STEP9_LOG"
@@ -1346,8 +1458,12 @@ ENDJSON
     ALT_STREAM_SSE=$(echo "$ALT_STREAM_RESP" | grep -v '^__' || true)
     ALT_STREAM_DATA=$(echo "$ALT_STREAM_SSE" | grep -c '^data: ' || true)
     ALT_STREAM_HAS_CONTENT=0
+    ALT_STREAM_HAS_REASONING=0
     if echo "$ALT_STREAM_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"content"'; then
         ALT_STREAM_HAS_CONTENT=1
+    fi
+    if echo "$ALT_STREAM_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"reasoning_content"\|"reasoning"'; then
+        ALT_STREAM_HAS_REASONING=1
     fi
 
     echo "$ALT_STREAM_RESP" >> "$STEP9_LOG"
@@ -1359,18 +1475,25 @@ ENDJSON
     # Original model results (from Steps 1 and 2)
     ORIG_SYNC="HTTP ${STEP1_HTTP}"
     if [[ "$STEP1_HTTP" == "200" ]]; then
-        ORIG_SYNC_CONTENT=$(check_content "$STEP1_CONTENT")
-        if [[ "$ORIG_SYNC_CONTENT" -gt 0 ]]; then ORIG_SYNC="PASS"; else ORIG_SYNC="EMPTY"; fi
+        ORIG_SYNC_CHECK=$(check_content "$STEP1_CONTENT")
+        ORIG_SYNC_CC=$(content_chars "$ORIG_SYNC_CHECK")
+        ORIG_SYNC_RC=$(reasoning_chars "$ORIG_SYNC_CHECK")
+        if [[ "$ORIG_SYNC_CC" -gt 0 ]]; then ORIG_SYNC="PASS"
+        elif [[ "$ORIG_SYNC_RC" -gt 0 ]]; then ORIG_SYNC="REASON"
+        else ORIG_SYNC="EMPTY"; fi
     fi
     ALT_SYNC="HTTP ${ALT_SYNC_HTTP}"
     if [[ "$ALT_SYNC_HTTP" == "200" && "$ALT_SYNC_CONTENT" -gt 0 ]]; then ALT_SYNC="PASS"
+    elif [[ "$ALT_SYNC_HTTP" == "200" && "$ALT_SYNC_REASONING" -gt 0 ]]; then ALT_SYNC="REASON"
     elif [[ "$ALT_SYNC_HTTP" == "200" ]]; then ALT_SYNC="EMPTY"; fi
 
     ORIG_STREAM="HTTP ${STEP2_HTTP}"
     if [[ "$STEP2_HTTP" == "200" && "$HAS_CONTENT_DELTA" -eq 1 ]]; then ORIG_STREAM="PASS"
+    elif [[ "$STEP2_HTTP" == "200" && "$HAS_REASONING_DELTA" -eq 1 ]]; then ORIG_STREAM="REASON"
     elif [[ "$STEP2_HTTP" == "200" ]]; then ORIG_STREAM="EMPTY"; fi
     ALT_STREAM_R="HTTP ${ALT_STREAM_HTTP}"
     if [[ "$ALT_STREAM_HTTP" == "200" && "$ALT_STREAM_DATA" -gt 1 && "$ALT_STREAM_HAS_CONTENT" -eq 1 ]]; then ALT_STREAM_R="PASS"
+    elif [[ "$ALT_STREAM_HTTP" == "200" && "$ALT_STREAM_DATA" -gt 1 && "$ALT_STREAM_HAS_REASONING" -eq 1 ]]; then ALT_STREAM_R="REASON"
     elif [[ "$ALT_STREAM_HTTP" == "200" ]]; then ALT_STREAM_R="EMPTY"; fi
 
     printf "  %-20s %-12s %-12s\n" "Non-streaming" "$ORIG_SYNC" "$ALT_SYNC"
@@ -1429,9 +1552,11 @@ else
     FRESH_TTFB=$(echo "$FRESH_RESP" | grep '__TIME_STARTTRANSFER__' | cut -d: -f2 || echo "?")
     FRESH_TIME=$(echo "$FRESH_RESP" | grep '__TIME_TOTAL__' | cut -d: -f2 || echo "?")
     FRESH_BODY=$(echo "$FRESH_RESP" | grep -v '^__' || true)
-    FRESH_CONTENT=$(check_content "$FRESH_BODY")
+    FRESH_CHECK=$(check_content "$FRESH_BODY")
+    FRESH_CONTENT=$(content_chars "$FRESH_CHECK")
+    FRESH_REASONING=$(reasoning_chars "$FRESH_CHECK")
 
-    echo "Fresh: HTTP=${FRESH_HTTP} TTFB=${FRESH_TTFB} Total=${FRESH_TIME} Content=${FRESH_CONTENT}" >> "$STEP10_LOG"
+    echo "Fresh: HTTP=${FRESH_HTTP} TTFB=${FRESH_TTFB} Total=${FRESH_TIME} Content=${FRESH_CONTENT} Reasoning=${FRESH_REASONING}" >> "$STEP10_LOG"
 
     # Test 2: Reused connection (2 requests in sequence, same curl handle via retry)
     echo -e "  ${DIM}Testing reused connection (keep-alive, 2 requests)...${RESET}"
@@ -1457,9 +1582,11 @@ else
     REUSE_TTFB=$(echo "$REUSE_RESP" | grep '__TIME_STARTTRANSFER2__' | cut -d: -f2 || echo "?")
     REUSE_TIME=$(echo "$REUSE_RESP" | grep '__TIME_TOTAL2__' | cut -d: -f2 || echo "?")
     REUSE_BODY=$(echo "$REUSE_RESP" | grep -v '^__' || true)
-    REUSE_CONTENT=$(check_content "$REUSE_BODY")
+    REUSE_CHECK=$(check_content "$REUSE_BODY")
+    REUSE_CONTENT=$(content_chars "$REUSE_CHECK")
+    REUSE_REASONING=$(reasoning_chars "$REUSE_CHECK")
 
-    echo "Reuse: HTTP=${REUSE_HTTP} TTFB=${REUSE_TTFB} Total=${REUSE_TIME} Content=${REUSE_CONTENT}" >> "$STEP10_LOG"
+    echo "Reuse: HTTP=${REUSE_HTTP} TTFB=${REUSE_TTFB} Total=${REUSE_TIME} Content=${REUSE_CONTENT} Reasoning=${REUSE_REASONING}" >> "$STEP10_LOG"
 
     # Test 3: Streaming with fresh connection
     echo -e "  ${DIM}Testing streaming with fresh connection...${RESET}"
@@ -1475,8 +1602,12 @@ else
     FRESH_STREAM_SSE=$(echo "$FRESH_STREAM_RESP" | grep -v '^__' || true)
     FRESH_STREAM_DATA=$(echo "$FRESH_STREAM_SSE" | grep -c '^data: ' || true)
     FRESH_STREAM_HAS_CONTENT=0
+    FRESH_STREAM_HAS_REASONING=0
     if echo "$FRESH_STREAM_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"content"'; then
         FRESH_STREAM_HAS_CONTENT=1
+    fi
+    if echo "$FRESH_STREAM_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"reasoning_content"\|"reasoning"'; then
+        FRESH_STREAM_HAS_REASONING=1
     fi
 
     echo "" >> "$STEP10_LOG"
@@ -1494,9 +1625,9 @@ else
     FRESH_OK=0
     REUSE_OK=0
     FRESH_STREAM_OK=0
-    [[ "$FRESH_HTTP" == "200" && "$FRESH_CONTENT" -gt 0 ]] && FRESH_OK=1
-    [[ "$REUSE_HTTP" == "200" && "$REUSE_CONTENT" -gt 0 ]] && REUSE_OK=1
-    [[ "$FRESH_STREAM_HTTP" == "200" && "$FRESH_STREAM_DATA" -gt 1 && "$FRESH_STREAM_HAS_CONTENT" -eq 1 ]] && FRESH_STREAM_OK=1
+    [[ "$FRESH_HTTP" == "200" && ( "$FRESH_CONTENT" -gt 0 || "$FRESH_REASONING" -gt 0 ) ]] && FRESH_OK=1
+    [[ "$REUSE_HTTP" == "200" && ( "$REUSE_CONTENT" -gt 0 || "$REUSE_REASONING" -gt 0 ) ]] && REUSE_OK=1
+    [[ "$FRESH_STREAM_HTTP" == "200" && "$FRESH_STREAM_DATA" -gt 1 && ( "$FRESH_STREAM_HAS_CONTENT" -eq 1 || "$FRESH_STREAM_HAS_REASONING" -eq 1 ) ]] && FRESH_STREAM_OK=1
 
     if [[ "$FRESH_OK" -eq 1 && "$REUSE_OK" -eq 1 && "$FRESH_STREAM_OK" -eq 1 ]]; then
         result_pass "Both connection types work for sync and streaming"
@@ -1562,6 +1693,15 @@ cat > "$SUMMARY" <<SUMEOF
 ### If Step 1 fails (non-streaming):
 The server is unreachable or broken. Not a NEXUS issue.
 Check DNS, firewall, and server health.
+
+### If Steps 1-2 show REASONING but no CONTENT:
+**Thinking model detected.** The model produces reasoning/thinking
+tokens (in \`reasoning_content\`) but no user-visible output (in
+\`content\`). This is NOT an empty response -- the model IS working.
+Possible causes:
+- max_tokens too low for model to finish reasoning AND produce content
+- NEXUS provider doesn't read \`reasoning_content\` from deltas
+- Model is configured in reasoning-only mode
 
 ### If Step 1 passes but Step 2 fails (streaming):
 **The streaming endpoint is broken.** The server handles non-streaming
@@ -1653,6 +1793,7 @@ SUMEOF
 echo -e "  ${BOLD}Interpretation guide:${RESET}"
 echo ""
 echo -e "  ${DIM}Step 1 fail            ->${RESET} Server unreachable. Not NEXUS."
+echo -e "  ${DIM}Steps 1-2 REASON only  ->${RESET} ${BOLD}Thinking model.${RESET} Has reasoning, no content field."
 echo -e "  ${DIM}Step 1 pass, 2 fail    ->${RESET} ${BOLD}Streaming endpoint broken.${RESET} Server-side bug."
 echo -e "  ${DIM}Step 2 TTFB <50ms      ->${RESET} ${BOLD}Proxy short-circuited.${RESET} Model never ran."
 echo -e "  ${DIM}Steps 1-2 pass         ->${RESET} Issue was transient. Run faster next time."
