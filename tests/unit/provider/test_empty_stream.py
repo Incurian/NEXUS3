@@ -275,6 +275,104 @@ class TestSSENoSpaceFormat:
         complete = [e for e in events if isinstance(e, StreamComplete)][0]
         assert complete.message.content == "Hello world"
 
+    @pytest.mark.asyncio
+    async def test_corporate_server_format_exact(
+        self, openai_provider: OpenRouterProvider
+    ) -> None:
+        """Exact replica of corporate gpt-oss-120b SSE format.
+
+        Characteristics:
+        - 'data:' with no space after colon
+        - 'reasoning' field (not 'reasoning_content') + 'reasoning_details' array
+        - Empty content/reasoning deltas before real content
+        - No [DONE] marker at end
+        - finish_reason in last chunk with empty delta
+        """
+        from nexus3.core.types import ContentDelta, ReasoningDelta, StreamComplete
+
+        raw_log = MagicMock()
+        openai_provider._raw_log = raw_log
+
+        # Chunk 0: role + empty content (server warmup)
+        chunk0 = json.dumps({
+            "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}}],
+            "model": "gpt-oss-120b", "object": "chat.completion.chunk",
+        })
+        # Chunk 1: empty reasoning (reasoning warmup)
+        chunk1 = json.dumps({
+            "choices": [{"index": 0, "delta": {
+                "reasoning": "",
+                "reasoning_details": [{"index": 0, "type": "reasoning.text", "text": ""}],
+            }}],
+            "model": "gpt-oss-120b", "object": "chat.completion.chunk",
+        })
+        # Chunk 2: actual reasoning
+        chunk2 = json.dumps({
+            "choices": [{"index": 0, "delta": {
+                "reasoning": "User wants exactly:",
+                "reasoning_details": [{"index": 0, "type": "reasoning.text", "text": "User wants exactly:"}],
+            }}],
+            "model": "gpt-oss-120b", "object": "chat.completion.chunk",
+        })
+        # Chunk 3: empty content (transition from reasoning to content)
+        chunk3 = json.dumps({
+            "choices": [{"index": 0, "delta": {"content": ""}}],
+            "model": "gpt-oss-120b", "object": "chat.completion.chunk",
+        })
+        # Chunk 4-5: actual content
+        chunk4 = json.dumps({
+            "choices": [{"index": 0, "delta": {"content": "Hello, diagnostic"}}],
+            "model": "gpt-oss-120b", "object": "chat.completion.chunk",
+        })
+        chunk5 = json.dumps({
+            "choices": [{"index": 0, "delta": {"content": " test passed."}}],
+            "model": "gpt-oss-120b", "object": "chat.completion.chunk",
+        })
+        # Chunk 6: finish_reason with empty delta, no [DONE]
+        chunk6 = json.dumps({
+            "choices": [{"index": 0, "finish_reason": "stop", "delta": {}}],
+            "model": "gpt-oss-120b", "object": "chat.completion.chunk",
+            "usage": {"prompt_tokens": 75, "completion_tokens": 54, "total_tokens": 129},
+        })
+
+        # All lines use "data:" with NO space (corporate server format)
+        response = _make_sse_response([
+            f"data:{chunk0}",
+            f"data:{chunk1}",
+            f"data:{chunk2}",
+            f"data:{chunk3}",
+            f"data:{chunk4}",
+            f"data:{chunk5}",
+            f"data:{chunk6}",
+            # No [DONE] marker
+        ])
+
+        events = []
+        async for event in openai_provider._parse_stream(response):
+            events.append(event)
+
+        # Verify reasoning was captured
+        reasoning_events = [e for e in events if isinstance(e, ReasoningDelta)]
+        assert len(reasoning_events) == 1  # empty reasoning skipped, one real
+        assert reasoning_events[0].text == "User wants exactly:"
+
+        # Verify content was captured
+        content_events = [e for e in events if isinstance(e, ContentDelta)]
+        assert len(content_events) == 2  # empty content skipped
+        assert content_events[0].text == "Hello, diagnostic"
+        assert content_events[1].text == " test passed."
+
+        # Verify final message
+        complete = [e for e in events if isinstance(e, StreamComplete)][0]
+        assert complete.message.content == "Hello, diagnostic test passed."
+
+        # Verify stream summary (no [DONE])
+        summary = raw_log.on_stream_complete.call_args[0][0]
+        assert summary["received_done"] is False
+        assert summary["finish_reason"] == "stop"
+        assert summary["event_count"] == 7
+        assert summary["content_length"] == 30  # "Hello, diagnostic test passed."
+
 
 class TestReasoningContentField:
     """Tests for reasoning_content field support (DeepSeek/vLLM/Azure AI Factory)."""
