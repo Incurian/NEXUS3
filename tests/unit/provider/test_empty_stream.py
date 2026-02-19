@@ -263,6 +263,69 @@ class TestReasoningContentField:
         assert complete.message.content == "42"
 
 
+class TestNonStreamingReasoningContent:
+    """Tests for reasoning_content in non-streaming responses."""
+
+    def test_reasoning_content_logged(
+        self, openai_provider: OpenRouterProvider, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Non-streaming response with reasoning_content emits DEBUG log."""
+        response_data = {
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "The answer is 42.",
+                    "reasoning_content": "Let me think about this carefully...",
+                }
+            }]
+        }
+
+        with caplog.at_level("DEBUG", logger="nexus3.provider.openai_compat"):
+            message = openai_provider._parse_response(response_data)
+
+        assert message.content == "The answer is 42."
+        assert any("reasoning" in r.message.lower() and "36 chars" in r.message for r in caplog.records)
+
+    def test_reasoning_field_logged(
+        self, openai_provider: OpenRouterProvider, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Non-streaming response with legacy 'reasoning' field also logs."""
+        response_data = {
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "Hello!",
+                    "reasoning": "Thinking...",
+                }
+            }]
+        }
+
+        with caplog.at_level("DEBUG", logger="nexus3.provider.openai_compat"):
+            message = openai_provider._parse_response(response_data)
+
+        assert message.content == "Hello!"
+        assert any("reasoning" in r.message.lower() for r in caplog.records)
+
+    def test_no_reasoning_no_log(
+        self, openai_provider: OpenRouterProvider, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Non-streaming response without reasoning does not emit reasoning log."""
+        response_data = {
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "Just content.",
+                }
+            }]
+        }
+
+        with caplog.at_level("DEBUG", logger="nexus3.provider.openai_compat"):
+            message = openai_provider._parse_response(response_data)
+
+        assert message.content == "Just content."
+        assert not any("reasoning" in r.message.lower() for r in caplog.records)
+
+
 class TestAnthropicEmptyStream:
     """Empty stream handling for Anthropic provider."""
 

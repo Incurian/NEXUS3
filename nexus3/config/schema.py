@@ -156,6 +156,22 @@ class ProviderConfig(BaseModel):
     models: dict[str, ModelConfig] = {}
     """Model aliases available through this provider."""
 
+    @field_validator("ssl_ca_cert", mode="before")
+    @classmethod
+    def normalize_ssl_ca_cert(cls, v: str | None) -> str | None:
+        """Normalize ssl_ca_cert to absolute path."""
+        if v is None:
+            return None
+        expanded = os.path.expanduser(v)
+        absolute = os.path.abspath(expanded)
+        if not os.path.isfile(absolute):
+            warnings.warn(
+                f"SSL CA cert file does not exist: {v!r} -> {absolute}",
+                UserWarning,
+                stacklevel=4,
+            )
+        return absolute
+
 
 class ToolPermissionConfig(BaseModel):
     """Per-tool permission configuration in config.json.

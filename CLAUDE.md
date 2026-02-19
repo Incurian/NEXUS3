@@ -1330,10 +1330,10 @@ Every implementation checklist MUST include a documentation phase. Documentation
 
 ### Current Status
 
-As of 2026-02-11: **All tests and lints pass 100%.**
+As of 2026-02-19: **All tests and lints pass 100%.**
 
 - `ruff check nexus3/` — 0 errors
-- `pytest tests/` — 3489 passed, 3 skipped (2 require API key, 1 Windows-only)
+- `pytest tests/` — 3726 passed, 3 skipped (2 require API key, 1 Windows-only)
 
 ### Known Failures
 
@@ -1477,16 +1477,21 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 
 | Plan | Description | Effort |
 |------|-------------|--------|
+| `PROVIDER-BUGFIX-PLAN.md` | SSL cert handling, MSYS2 path normalization, reasoning_content logging | 1 day |
 | `DOUBLE-SPINNER-FIX-PLAN.md` | Fix double spinner / trapped ESC when concurrent RPC sends hit REPL | 1 day |
 | `DRY-CLEANUP-PLAN.md` | DRY violations, dead code removal, naming fixes from Opus 4.6 review | 1-2 days |
 | `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | 2 weeks |
 
-#### Next Up: DRY-CLEANUP-PLAN
+#### Next Up: PROVIDER-BUGFIX-PLAN
 
-Opus 4.6 codebase review identified 10 cleanup items in 4 phases. All decisions resolved. See `docs/plans/DRY-CLEANUP-PLAN.md` for full details.
+Three bugs found via diagnostic script testing on corporate endpoint. See `docs/plans/PROVIDER-BUGFIX-PLAN.md`:
+1. `ssl_ca_cert` replaces system CAs instead of adding to them (HTTP 502 on corporate proxies)
+2. `ssl_ca_cert` path not normalized for Git Bash MSYS2 format
+3. Non-streaming `_parse_response()` silently discards `reasoning_content`
 
 ### Known Bugs
 
+- **SSL custom cert replaces system CAs**: When `ssl_ca_cert` is set in provider config, `base.py` passes the path directly to httpx `verify=`, which drops all system CAs. Corporate proxies need both. Fix planned in `PROVIDER-BUGFIX-PLAN.md`.
 - **Double spinner on concurrent RPC sends**: When two external `rpc send` requests arrive at an agent with active REPL, two spinners appear and ESC gets trapped. Root cause: missing `try/finally` for "ended" notification in `dispatcher.py:_handle_send()` + module-level spinner state variables can't handle rapid start/stop cycles. Fix planned in `DOUBLE-SPINNER-FIX-PLAN.md`.
 
 <!-- Previously fixed:

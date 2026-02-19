@@ -237,6 +237,14 @@ class OpenAICompatProvider(BaseProvider):
             msg = choice["message"]
             content = msg.get("content") or ""
 
+            # Log reasoning content if present (not stored in Message, but useful for debugging)
+            reasoning = msg.get("reasoning_content") or msg.get("reasoning")
+            if reasoning:
+                logger.debug(
+                    "Non-streaming response includes reasoning (%d chars, content=%d chars)",
+                    len(reasoning), len(content),
+                )
+
             # Parse tool calls if present
             tool_calls: tuple[ToolCall, ...] = ()
             if "tool_calls" in msg and msg["tool_calls"]:

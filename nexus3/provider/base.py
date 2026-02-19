@@ -186,7 +186,11 @@ class BaseProvider(ABC):
             # SSL verification settings for on-prem/corporate deployments
             # Priority: ssl_ca_cert (custom CA) > verify_ssl (bool)
             if self._ssl_ca_cert:
-                verify: bool | str | ssl.SSLContext = self._ssl_ca_cert
+                # Add custom CA on top of system CAs (not replacing them).
+                # Corporate proxies need both the custom CA and standard root CAs.
+                ssl_context = ssl.create_default_context()
+                ssl_context.load_verify_locations(self._ssl_ca_cert)
+                verify: bool | str | ssl.SSLContext = ssl_context
             else:
                 verify = self._verify_ssl
 
