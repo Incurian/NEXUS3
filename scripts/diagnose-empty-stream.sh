@@ -422,10 +422,10 @@ STEP2_TTFB=$(echo "$STEP2_BODY" | grep '__TIME_STARTTRANSFER__' | cut -d: -f2 ||
 STEP2_SIZE=$(echo "$STEP2_BODY" | grep '__SIZE_DOWNLOAD__' | cut -d: -f2 || echo "0")
 STEP2_SSE=$(echo "$STEP2_BODY" | grep -v '^__' || true)
 
-DATA_LINES=$(echo "$STEP2_SSE" | grep -c '^data: ' || true)
-HAS_DONE=$(echo "$STEP2_SSE" | grep -c '^[[:space:]]*data: \[DONE\]' || true)
+DATA_LINES=$(echo "$STEP2_SSE" | grep -c '^data:' || true)
+HAS_DONE=$(echo "$STEP2_SSE" | grep -c '^[[:space:]]*data:[[:space:]]*\[DONE\]' || true)
 
-ALL_DATA_EVENTS=$(echo "$STEP2_SSE" | grep '^data: ' | grep -v '\[DONE\]' || true)
+ALL_DATA_EVENTS=$(echo "$STEP2_SSE" | grep '^data:' | grep -v '\[DONE\]' || true)
 HAS_CONTENT_DELTA=0
 HAS_REASONING_DELTA=0
 if echo "$ALL_DATA_EVENTS" | grep -q '"content"'; then
@@ -487,7 +487,7 @@ elif [[ "$STEP2_HTTP" == "200" && "$DATA_LINES" -gt 1 && "$HAS_REASONING_DELTA" 
     advice "  3. Server config issue -- model stuck in reasoning-only mode"
     echo ""
     echo -e "  ${YELLOW}First few SSE data lines:${RESET}"
-    echo "$STEP2_SSE" | grep '^data: ' | head -10 | sed 's/^/    /'
+    echo "$STEP2_SSE" | grep '^data:' | head -10 | sed 's/^/    /'
 elif [[ "$STEP2_HTTP" == "200" && "$DATA_LINES" -le 1 ]]; then
     result_fail "HTTP 200 but only ${DATA_LINES} SSE data lines (empty or near-empty stream)"
     advice "THIS IS THE BUG. Server returned 200 OK with SSE headers but no content."
@@ -504,7 +504,7 @@ elif [[ "$STEP2_HTTP" == "200" && "$HAS_CONTENT_DELTA" -eq 0 ]]; then
     advice "Server sent events but none contained text content. Check the raw SSE below."
     echo ""
     echo -e "  ${YELLOW}First few SSE lines:${RESET}"
-    echo "$STEP2_SSE" | grep '^data: ' | head -5 | sed 's/^/    /'
+    echo "$STEP2_SSE" | grep '^data:' | head -5 | sed 's/^/    /'
 else
     result_fail "HTTP ${STEP2_HTTP}"
     advice "Streaming request failed. Check ${STEP2_LOG} for details."
@@ -1089,13 +1089,13 @@ for cert_mode in "${CERT_MODES[@]}"; do
         "$CHAT_URL" 2>/dev/null || true)
     CURL_STREAM_HTTP=$(echo "$CURL_STREAM_RESP" | grep '__HTTP_CODE__' | cut -d: -f2 || echo "0")
     CURL_STREAM_SSE=$(echo "$CURL_STREAM_RESP" | grep -v '^__' || true)
-    CURL_STREAM_DATA=$(echo "$CURL_STREAM_SSE" | grep -c '^data: ' || true)
+    CURL_STREAM_DATA=$(echo "$CURL_STREAM_SSE" | grep -c '^data:' || true)
     CURL_STREAM_HAS_CONTENT=0
     CURL_STREAM_HAS_REASONING=0
-    if echo "$CURL_STREAM_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"content"'; then
+    if echo "$CURL_STREAM_SSE" | grep '^data:' | grep -v '\[DONE\]' | grep -q '"content"'; then
         CURL_STREAM_HAS_CONTENT=1
     fi
-    if echo "$CURL_STREAM_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"reasoning_content"\|"reasoning"'; then
+    if echo "$CURL_STREAM_SSE" | grep '^data:' | grep -v '\[DONE\]' | grep -q '"reasoning_content"\|"reasoning"'; then
         CURL_STREAM_HAS_REASONING=1
     fi
     if [[ "$CURL_STREAM_HTTP" == "200" && "$CURL_STREAM_DATA" -gt 1 && "$CURL_STREAM_HAS_CONTENT" -eq 1 ]]; then
@@ -1159,9 +1159,12 @@ try:
             for chunk in response.iter_text():
                 for line in chunk.split('\n'):
                     line = line.strip()
-                    if line.startswith('data: ') and line != 'data: [DONE]':
+                    if line.startswith('data:'):
+                        data_str = line[5:].removeprefix(' ')
+                        if data_str == '[DONE]':
+                            continue
                         try:
-                            d = json.loads(line[6:])
+                            d = json.loads(data_str)
                             choices = d.get('choices', [])
                             if choices:
                                 delta = choices[0].get('delta', {})
@@ -1350,13 +1353,13 @@ else
         P_TTFB=$(grep '__TIME_STARTTRANSFER__' "$STEP8_OUTFILE" | cut -d: -f2 || echo "?")
         P_SIZE=$(grep '__SIZE_DOWNLOAD__' "$STEP8_OUTFILE" | cut -d: -f2 || echo "0")
         P_SSE=$(grep -v '^__' "$STEP8_OUTFILE" || true)
-        P_DATA=$(echo "$P_SSE" | grep -c '^data: ' || true)
+        P_DATA=$(echo "$P_SSE" | grep -c '^data:' || true)
         P_HAS_CONTENT=0
         P_HAS_REASONING=0
-        if echo "$P_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"content"'; then
+        if echo "$P_SSE" | grep '^data:' | grep -v '\[DONE\]' | grep -q '"content"'; then
             P_HAS_CONTENT=1
         fi
-        if echo "$P_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"reasoning_content"\|"reasoning"'; then
+        if echo "$P_SSE" | grep '^data:' | grep -v '\[DONE\]' | grep -q '"reasoning_content"\|"reasoning"'; then
             P_HAS_REASONING=1
         fi
 
@@ -1466,13 +1469,13 @@ ENDJSON
 
     ALT_STREAM_HTTP=$(echo "$ALT_STREAM_RESP" | grep '__HTTP_CODE__' | cut -d: -f2 || echo "0")
     ALT_STREAM_SSE=$(echo "$ALT_STREAM_RESP" | grep -v '^__' || true)
-    ALT_STREAM_DATA=$(echo "$ALT_STREAM_SSE" | grep -c '^data: ' || true)
+    ALT_STREAM_DATA=$(echo "$ALT_STREAM_SSE" | grep -c '^data:' || true)
     ALT_STREAM_HAS_CONTENT=0
     ALT_STREAM_HAS_REASONING=0
-    if echo "$ALT_STREAM_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"content"'; then
+    if echo "$ALT_STREAM_SSE" | grep '^data:' | grep -v '\[DONE\]' | grep -q '"content"'; then
         ALT_STREAM_HAS_CONTENT=1
     fi
-    if echo "$ALT_STREAM_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"reasoning_content"\|"reasoning"'; then
+    if echo "$ALT_STREAM_SSE" | grep '^data:' | grep -v '\[DONE\]' | grep -q '"reasoning_content"\|"reasoning"'; then
         ALT_STREAM_HAS_REASONING=1
     fi
 
@@ -1610,13 +1613,13 @@ else
 
     FRESH_STREAM_HTTP=$(echo "$FRESH_STREAM_RESP" | grep '__HTTP_CODE__' | cut -d: -f2 || echo "0")
     FRESH_STREAM_SSE=$(echo "$FRESH_STREAM_RESP" | grep -v '^__' || true)
-    FRESH_STREAM_DATA=$(echo "$FRESH_STREAM_SSE" | grep -c '^data: ' || true)
+    FRESH_STREAM_DATA=$(echo "$FRESH_STREAM_SSE" | grep -c '^data:' || true)
     FRESH_STREAM_HAS_CONTENT=0
     FRESH_STREAM_HAS_REASONING=0
-    if echo "$FRESH_STREAM_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"content"'; then
+    if echo "$FRESH_STREAM_SSE" | grep '^data:' | grep -v '\[DONE\]' | grep -q '"content"'; then
         FRESH_STREAM_HAS_CONTENT=1
     fi
-    if echo "$FRESH_STREAM_SSE" | grep '^data: ' | grep -v '\[DONE\]' | grep -q '"reasoning_content"\|"reasoning"'; then
+    if echo "$FRESH_STREAM_SSE" | grep '^data:' | grep -v '\[DONE\]' | grep -q '"reasoning_content"\|"reasoning"'; then
         FRESH_STREAM_HAS_REASONING=1
     fi
 
