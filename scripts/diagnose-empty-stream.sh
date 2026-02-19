@@ -1119,13 +1119,20 @@ except ImportError:
     print('SKIP')
     sys.exit(0)
 
+import os, re
 cert_mode = '${cert_mode}'
 cert_path = '${CERT_PATH}'
+# Convert MSYS2/Git Bash paths (/c/Users/...) to Windows paths (C:/Users/...)
+if cert_path and re.match(r'^/[a-zA-Z]/', cert_path):
+    cert_path = cert_path[1].upper() + ':' + cert_path[2:]
 verify = True
 if cert_mode == 'insecure':
     verify = False
-elif cert_mode == 'custom' and cert_path:
+elif cert_mode == 'custom' and cert_path and os.path.isfile(cert_path):
     verify = cert_path
+elif cert_mode == 'custom' and cert_path:
+    print(f'CERT NOT FOUND: {cert_path}')
+    sys.exit(0)
 
 payload = {
     'model': '${MODEL}',
