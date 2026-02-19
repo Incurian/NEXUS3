@@ -178,6 +178,104 @@ class TestOpenAIEmptyStream:
         assert summary["event_count"] == 1
 
 
+class TestSSENoSpaceFormat:
+    """Tests for SSE data lines without space after colon (e.g., 'data:{...}').
+
+    Some OpenAI-compatible servers omit the optional space after 'data:'.
+    Both formats are valid per the SSE spec.
+    """
+
+    @pytest.mark.asyncio
+    async def test_data_no_space_parsed(
+        self, openai_provider: OpenRouterProvider
+    ) -> None:
+        """'data:{json}' (no space) is parsed correctly."""
+        from nexus3.core.types import StreamComplete
+
+        chunk = json.dumps({
+            "choices": [{"delta": {"content": "Hello!"}, "finish_reason": "stop"}]
+        })
+        # No space after "data:"
+        response = _make_sse_response([f"data:{chunk}"])
+
+        events = []
+        async for event in openai_provider._parse_stream(response):
+            events.append(event)
+
+        assert len(events) >= 1
+        complete = [e for e in events if isinstance(e, StreamComplete)][0]
+        assert complete.message.content == "Hello!"
+
+    @pytest.mark.asyncio
+    async def test_data_no_space_with_done(
+        self, openai_provider: OpenRouterProvider
+    ) -> None:
+        """'data:[DONE]' (no space) is recognized as stream end."""
+        from nexus3.core.types import StreamComplete
+
+        chunk = json.dumps({
+            "choices": [{"delta": {"content": "Hi"}, "finish_reason": "stop"}]
+        })
+        response = _make_sse_response([f"data:{chunk}", "data:[DONE]"])
+
+        events = []
+        async for event in openai_provider._parse_stream(response):
+            events.append(event)
+
+        complete = [e for e in events if isinstance(e, StreamComplete)][0]
+        assert complete.message.content == "Hi"
+
+    @pytest.mark.asyncio
+    async def test_data_no_space_reasoning_field(
+        self, openai_provider: OpenRouterProvider
+    ) -> None:
+        """'reasoning' field (no space format) yields ReasoningDelta."""
+        from nexus3.core.types import ContentDelta, ReasoningDelta, StreamComplete
+
+        reasoning_chunk = json.dumps({
+            "choices": [{"delta": {"reasoning": "thinking..."}, "finish_reason": None}]
+        })
+        content_chunk = json.dumps({
+            "choices": [{"delta": {"content": "done"}, "finish_reason": "stop"}]
+        })
+        response = _make_sse_response([
+            f"data:{reasoning_chunk}",
+            f"data:{content_chunk}",
+        ])
+
+        events = []
+        async for event in openai_provider._parse_stream(response):
+            events.append(event)
+
+        assert isinstance(events[0], ReasoningDelta)
+        assert events[0].text == "thinking..."
+        assert isinstance(events[1], ContentDelta)
+        assert events[1].text == "done"
+
+    @pytest.mark.asyncio
+    async def test_mixed_space_no_space(
+        self, openai_provider: OpenRouterProvider
+    ) -> None:
+        """Mix of 'data: ' and 'data:' lines in same stream works."""
+        from nexus3.core.types import StreamComplete
+
+        chunk1 = json.dumps({
+            "choices": [{"delta": {"content": "Hello"}, "finish_reason": None}]
+        })
+        chunk2 = json.dumps({
+            "choices": [{"delta": {"content": " world"}, "finish_reason": "stop"}]
+        })
+        # Mix formats
+        response = _make_sse_response([f"data: {chunk1}", f"data:{chunk2}", "data: [DONE]"])
+
+        events = []
+        async for event in openai_provider._parse_stream(response):
+            events.append(event)
+
+        complete = [e for e in events if isinstance(e, StreamComplete)][0]
+        assert complete.message.content == "Hello world"
+
+
 class TestReasoningContentField:
     """Tests for reasoning_content field support (DeepSeek/vLLM/Azure AI Factory)."""
 
@@ -416,3 +514,38 @@ class TestAnthropicEmptyStream:
 
         summary = raw_log.on_stream_complete.call_args[0][0]
         assert summary["event_count"] == 2  # message_start + message_stop
+
+    @pytest.mark.asyncio
+    async def test_anthropic_no_space_sse_format(
+        self, anthropic_provider: AnthropicProvider
+    ) -> None:
+        """Anthropic SSE with no space after colon is parsed correctly."""
+        from nexus3.core.types import StreamComplete
+
+        lines = [
+            'event:message_start',
+            'data:{"type": "message_start", "message": {"usage": {}}}',
+            '',
+            'event:content_block_start',
+            'data:{"type": "content_block_start", "content_block": {"type": "text", "text": ""}}',
+            '',
+            'event:content_block_delta',
+            'data:{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hi"}}',
+            '',
+            'event:content_block_stop',
+            'data:{"type": "content_block_stop"}',
+            '',
+            'event:message_delta',
+            'data:{"type": "message_delta", "delta": {"stop_reason": "end_turn"}}',
+            '',
+            'event:message_stop',
+            'data:{"type": "message_stop"}',
+        ]
+        response = _make_sse_response(lines)
+
+        events = []
+        async for event in anthropic_provider._parse_stream(response):
+            events.append(event)
+
+        complete = [e for e in events if isinstance(e, StreamComplete)][0]
+        assert complete.message.content == "Hi"

@@ -303,9 +303,9 @@ class OpenAICompatProvider(BaseProvider):
                 if not line or line.startswith(":"):
                     continue
 
-                # Handle data lines
-                if line.startswith("data: "):
-                    data = line[6:]  # Remove "data: " prefix
+                # Handle data lines (SSE spec: space after colon is optional)
+                if line.startswith("data:"):
+                    data = line[5:].removeprefix(" ")
 
                     # Check for stream end marker
                     if data == "[DONE]":
@@ -353,32 +353,34 @@ class OpenAICompatProvider(BaseProvider):
         # Process any remaining data in buffer
         if buffer.strip():
             line = buffer.strip()
-            if line.startswith("data: ") and line[6:] != "[DONE]":
-                try:
-                    event_data = json.loads(line[6:])
-                    event_count += 1
+            if line.startswith("data:"):
+                data = line[5:].removeprefix(" ")
+                if data != "[DONE]":
+                    try:
+                        event_data = json.loads(data)
+                        event_count += 1
 
-                    choices = event_data.get("choices", [])
-                    if choices:
-                        fr = choices[0].get("finish_reason")
-                        if fr:
-                            finish_reason = fr
+                        choices = event_data.get("choices", [])
+                        if choices:
+                            fr = choices[0].get("finish_reason")
+                            if fr:
+                                finish_reason = fr
 
-                    # Log raw chunk if callback is set
-                    if self._raw_log:
-                        self._raw_log.on_chunk(event_data)
+                        # Log raw chunk if callback is set
+                        if self._raw_log:
+                            self._raw_log.on_chunk(event_data)
 
-                    async for event in self._process_stream_event(
-                        event_data,
-                        tool_calls_by_index,
-                        seen_tool_indices,
-                    ):
-                        if isinstance(event, ContentDelta):
-                            accumulated_content += event.text
-                        yield event
+                        async for event in self._process_stream_event(
+                            event_data,
+                            tool_calls_by_index,
+                            seen_tool_indices,
+                        ):
+                            if isinstance(event, ContentDelta):
+                                accumulated_content += event.text
+                            yield event
 
-                except json.JSONDecodeError:
-                    pass
+                    except json.JSONDecodeError:
+                        pass
 
         # If we get here without [DONE], still yield StreamComplete
         self._log_stream_summary(

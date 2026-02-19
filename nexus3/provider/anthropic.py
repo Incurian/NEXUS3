@@ -375,14 +375,14 @@ class AnthropicProvider(BaseProvider):
                 if not line:
                     continue
 
-                # Handle event type lines
-                if line.startswith("event: "):
-                    event_type = line[7:]
+                # Handle event type lines (SSE spec: space after colon is optional)
+                if line.startswith("event:"):
+                    event_type = line[6:].removeprefix(" ")
                     continue
 
-                # Handle data lines
-                if line.startswith("data: "):
-                    data_str = line[6:]
+                # Handle data lines (SSE spec: space after colon is optional)
+                if line.startswith("data:"):
+                    data_str = line[5:].removeprefix(" ")
                     try:
                         data = json.loads(data_str)
                         event_count += 1

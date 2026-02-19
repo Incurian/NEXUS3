@@ -573,8 +573,8 @@ try:
                     line = raw_line.strip()
                     if not line or line.startswith("event:"):
                         continue
-                    if line.startswith("data: "):
-                        data_str = line[6:]
+                    if line.startswith("data:"):
+                        data_str = line[5:].removeprefix(" ")
                         if data_str == "[DONE]":
                             received_done = True
                             print(f"  [{event_count+1}] [DONE]")
