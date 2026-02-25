@@ -99,6 +99,7 @@ class OpenAICompatProvider(BaseProvider):
         messages: list[Message],
         tools: list[dict[str, Any]] | None,
         stream: bool,
+        dynamic_context: str | None = None,
     ) -> dict[str, Any]:
         """Build OpenAI-format request body.
 
@@ -106,6 +107,8 @@ class OpenAICompatProvider(BaseProvider):
             messages: List of Messages in the conversation.
             tools: Optional list of tool definitions.
             stream: Whether streaming is enabled.
+            dynamic_context: Optional volatile context to inject into the
+                last user message for cache-optimal placement.
 
         Returns:
             Request body dict in OpenAI format.
@@ -138,7 +141,40 @@ class OpenAICompatProvider(BaseProvider):
                         ]
                     break
 
+        # Inject dynamic context into last user message (after cache_control
+        # conversion so the system message format is already finalized)
+        if dynamic_context:
+            self._inject_dynamic_context(body["messages"], dynamic_context)
+
         return body
+
+    def _inject_dynamic_context(
+        self,
+        messages: list[dict[str, Any]],
+        dynamic_context: str,
+    ) -> None:
+        """Inject dynamic context into the last user message.
+
+        For standard OpenAI format (string content), appends with double newline.
+        For OpenRouter Anthropic passthrough (list content), appends a text block.
+
+        Args:
+            messages: OpenAI-format message dicts (mutated in place).
+            dynamic_context: The context string to inject.
+        """
+        # Find last user message (search backwards)
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].get("role") == "user":
+                content = messages[i]["content"]
+                if isinstance(content, str):
+                    messages[i]["content"] = content + "\n\n" + dynamic_context
+                elif isinstance(content, list):
+                    # OpenRouter Anthropic passthrough uses list content
+                    content.append({"type": "text", "text": dynamic_context})
+                return
+
+        # No user message found — add one
+        messages.append({"role": "user", "content": dynamic_context})
 
     def _message_to_dict(self, message: Message) -> dict[str, Any]:
         """Convert a Message to OpenAI-format dict.

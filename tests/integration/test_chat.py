@@ -41,6 +41,7 @@ class MockProvider:
         self.stream_chunks = stream_chunks if stream_chunks is not None else default_chunks
         self.complete_content = complete_content
         self.last_messages: list[Message] | None = None
+        self.last_dynamic_context: str | None = None
         self.stream_call_count = 0
         self.complete_call_count = 0
 
@@ -48,17 +49,20 @@ class MockProvider:
         self,
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
+        dynamic_context: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Yield predefined chunks as StreamEvents for testing.
 
         Args:
             messages: The conversation messages (stored for test assertions).
             tools: Optional tool definitions (ignored in mock).
+            dynamic_context: Optional dynamic context (stored for test assertions).
 
         Yields:
             StreamEvent objects (ContentDelta and StreamComplete).
         """
         self.last_messages = messages
+        self.last_dynamic_context = dynamic_context
         self.stream_call_count += 1
 
         # Yield content chunks
@@ -75,17 +79,20 @@ class MockProvider:
         self,
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
+        dynamic_context: str | None = None,
     ) -> Message:
         """Return a predefined Message for testing.
 
         Args:
             messages: The conversation messages (stored for test assertions).
             tools: Optional tool definitions (ignored in mock).
+            dynamic_context: Optional dynamic context (stored for test assertions).
 
         Returns:
             A Message with predefined content.
         """
         self.last_messages = messages
+        self.last_dynamic_context = dynamic_context
         self.complete_call_count += 1
         return Message(role=Role.ASSISTANT, content=self.complete_content)
 
@@ -120,7 +127,7 @@ class TestSessionStreaming:
 
     @pytest.mark.asyncio
     async def test_send_includes_system_prompt(self) -> None:
-        """Test that send() includes system prompt with dynamic datetime."""
+        """Test that send() includes static system prompt and dynamic context separately."""
         provider = MockProvider()
         context = ContextManager(config=ContextConfig())
         context.set_system_prompt("You are a helpful assistant.")
@@ -132,14 +139,18 @@ class TestSessionStreaming:
         assert provider.last_messages is not None
         assert len(provider.last_messages) == 2
 
-        # First message should be system prompt with dynamic datetime appended
+        # First message should be static system prompt (no datetime)
         assert provider.last_messages[0].role == Role.SYSTEM
-        assert provider.last_messages[0].content.startswith("You are a helpful assistant.")
-        assert "Current date:" in provider.last_messages[0].content
+        assert provider.last_messages[0].content == "You are a helpful assistant."
 
         # Second message should be user message
         assert provider.last_messages[1].role == Role.USER
         assert provider.last_messages[1].content == "Hello"
+
+        # Dynamic context should be passed separately (not in messages)
+        assert provider.last_dynamic_context is not None
+        assert "Current date:" in provider.last_dynamic_context
+        assert "<session-context>" in provider.last_dynamic_context
 
     @pytest.mark.asyncio
     async def test_send_without_system_prompt(self) -> None:

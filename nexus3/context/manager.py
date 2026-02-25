@@ -310,29 +310,23 @@ class ContextManager:
         """Get the current system prompt."""
         return self._system_prompt
 
-    def _build_system_prompt_for_api_call(self) -> str:
-        """Build the full system prompt with all dynamic injections.
+    def build_dynamic_context(self) -> str | None:
+        """Build volatile session context for injection at the conversation edge.
 
-        This centralizes all system prompt modifications:
-        1. Inject current date/time at the Environment section
-        2. Inject git repository context if available
-        3. Inject clipboard context if enabled
+        Dynamic content (datetime, git status, clipboard) is separated from the
+        static system prompt so the system prompt remains cacheable. This context
+        is injected into the last user message by the provider.
 
         Returns:
-            The fully constructed system prompt ready for API calls.
+            XML-wrapped string with datetime, git status, clipboard, or None
+            if there's nothing to inject.
         """
-        if not self._system_prompt:
-            return ""
+        parts: list[str] = []
+        parts.append(get_current_datetime_str())
 
-        # Start with datetime injection
-        datetime_line = get_current_datetime_str()
-        prompt = inject_datetime_into_prompt(self._system_prompt, datetime_line)
-
-        # Add git context if available
         if self._git_context:
-            prompt = f"{prompt}\n\n{self._git_context}"
+            parts.append(self._git_context)
 
-        # Add clipboard context if enabled and manager is available
         if (
             self._clipboard_manager is not None
             and self._clipboard_config.inject_into_context
@@ -343,9 +337,12 @@ class ContextManager:
                 show_source=self._clipboard_config.show_source_in_injection,
             )
             if clipboard_section:
-                prompt = f"{prompt}\n\n{clipboard_section}"
+                parts.append(clipboard_section)
 
-        return prompt
+        if not parts:
+            return None
+
+        return "<session-context>\n" + "\n\n".join(parts) + "\n</session-context>"
 
     @property
     def token_counter(self) -> TokenCounter:
@@ -527,19 +524,18 @@ class ContextManager:
     def build_messages(self) -> list[Message]:
         """Build message list for API call.
 
-        Includes system prompt (with dynamic date/time and clipboard context)
-        and messages that fit in context budget. Applies truncation if over budget.
-
-        The current date/time is injected fresh on every call to ensure the
-        agent always has accurate temporal context.
+        Uses the static system prompt (without dynamic injections) so it
+        remains cacheable. Dynamic context (datetime, git, clipboard) is
+        built separately via build_dynamic_context() and injected by the
+        provider into the last user message.
 
         Returns:
             List of messages ready for provider API call
         """
         result: list[Message] = []
 
-        # System prompt always first, with all dynamic injections
-        prompt = self._build_system_prompt_for_api_call()
+        # System prompt is static only (cacheable)
+        prompt = self._system_prompt
         if prompt:
             result.append(Message(role=Role.SYSTEM, content=prompt))
 
@@ -563,23 +559,29 @@ class ContextManager:
         """Get current token usage breakdown.
 
         Returns:
-            Dict with keys: system, tools, messages, total, budget, available, remaining
+            Dict with keys: system, dynamic, tools, messages, total, budget, available, remaining
+            - system: Static system prompt tokens (cacheable)
+            - dynamic: Dynamic context tokens (datetime, git, clipboard - per-request)
             - budget: Full context window size
             - available: Budget minus reserve tokens (what's usable for context)
             - remaining: Available minus total (how much space is left)
         """
-        # Count system prompt with all dynamic injections (matches build_messages)
-        prompt = self._build_system_prompt_for_api_call()
-        system_tokens = self._counter.count(prompt) if prompt else 0
+        # Static system prompt (cacheable)
+        system_tokens = self._counter.count(self._system_prompt) if self._system_prompt else 0
+
+        # Dynamic context (injected per-request into last user message)
+        dynamic = self.build_dynamic_context()
+        dynamic_tokens = self._counter.count(dynamic) if dynamic else 0
 
         tools_tokens = self._count_tools_tokens()
         message_tokens = self._counter.count_messages(self._messages)
-        total = system_tokens + tools_tokens + message_tokens
+        total = system_tokens + dynamic_tokens + tools_tokens + message_tokens
         available = self.config.max_tokens - self.config.reserve_tokens
         remaining = max(0, available - total)
 
         return {
             "system": system_tokens,
+            "dynamic": dynamic_tokens,
             "tools": tools_tokens,
             "messages": message_tokens,
             "total": total,
@@ -690,10 +692,11 @@ class ContextManager:
         Preserves tool call/result pairs as atomic units.
         """
         available = self.config.max_tokens - self.config.reserve_tokens
-        prompt = self._build_system_prompt_for_api_call()
-        system_tokens = self._counter.count(prompt) if prompt else 0
+        system_tokens = self._counter.count(self._system_prompt) if self._system_prompt else 0
+        dynamic = self.build_dynamic_context()
+        dynamic_tokens = self._counter.count(dynamic) if dynamic else 0
         tools_tokens = self._count_tools_tokens()
-        budget_for_messages = available - system_tokens - tools_tokens
+        budget_for_messages = available - system_tokens - dynamic_tokens - tools_tokens
 
         if budget_for_messages <= 0:
             # Return most recent group only
@@ -731,10 +734,11 @@ class ContextManager:
             return self._messages.copy()
 
         available = self.config.max_tokens - self.config.reserve_tokens
-        prompt = self._build_system_prompt_for_api_call()
-        system_tokens = self._counter.count(prompt) if prompt else 0
+        system_tokens = self._counter.count(self._system_prompt) if self._system_prompt else 0
+        dynamic = self.build_dynamic_context()
+        dynamic_tokens = self._counter.count(dynamic) if dynamic else 0
         tools_tokens = self._count_tools_tokens()
-        budget_for_messages = available - system_tokens - tools_tokens
+        budget_for_messages = available - system_tokens - dynamic_tokens - tools_tokens
 
         if budget_for_messages <= 0:
             return groups[-1] if groups else []

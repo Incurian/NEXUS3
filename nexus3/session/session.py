@@ -281,16 +281,20 @@ class Session:
 
                 messages = self.context.build_messages()
                 tools = self.context.get_tool_definitions()
+                dynamic_context = self.context.build_dynamic_context()
             else:
                 # Single-turn: build messages directly (backwards compatible)
                 if self.logger:
                     self.logger.log_user(user_input)
                 messages = [Message(role=Role.USER, content=user_input)]
                 tools = None
+                dynamic_context = None
 
             # Stream response from provider using new event-based interface
             final_message: Message | None = None
-            async for event in self.provider.stream(messages, tools):
+            async for event in self.provider.stream(
+                messages, tools, dynamic_context=dynamic_context,
+            ):
                 if isinstance(event, ContentDelta):
                     yield event.text
                     if cancel_token and cancel_token.is_cancelled:
@@ -371,9 +375,12 @@ class Session:
             # No tools - simple streaming mode
             messages = self.context.build_messages()
             tools = self.context.get_tool_definitions()
+            dynamic_context = self.context.build_dynamic_context()
 
             final_message: Message | None = None
-            async for stream_event in self.provider.stream(messages, tools):
+            async for stream_event in self.provider.stream(
+                messages, tools, dynamic_context=dynamic_context,
+            ):
                 if isinstance(stream_event, ContentDelta):
                     yield ContentChunk(text=stream_event.text)
                     if cancel_token and cancel_token.is_cancelled:
@@ -429,6 +436,7 @@ class Session:
             assert self.context is not None
             messages = self.context.build_messages()
             tools = self.context.get_tool_definitions()
+            dynamic_context = self.context.build_dynamic_context()
 
             # Stream response, accumulating content and detecting tool calls
             final_message: Message | None = None
@@ -443,7 +451,9 @@ class Session:
                 default_model = self._config.resolve_model()
                 show_reasoning = default_model.reasoning
 
-            async for event in self.provider.stream(messages, tools):
+            async for event in self.provider.stream(
+                messages, tools, dynamic_context=dynamic_context,
+            ):
                 if isinstance(event, ReasoningDelta):
                     if show_reasoning and not is_reasoning:
                         yield ReasoningStarted()

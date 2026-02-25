@@ -930,6 +930,20 @@ NEXUS3 supports prompt caching to reduce costs (~90% savings on cached tokens):
 | OpenRouter | Pass-through | Automatic for Anthropic models |
 | Ollama/vLLM | No support | N/A (local) |
 
+#### Cache-Optimized Message Structure
+
+Dynamic content (datetime, git status, clipboard) is separated from the static system prompt to maximize cache hits:
+
+```
+[SYSTEM: static instructions/tool docs, cache_control: ephemeral]  ← always cached
+[USER1, ASSISTANT1, ..., USERN-1, cache_control: ephemeral]        ← conversation prefix cached
+[USERN + <session-context>datetime/git/clipboard</session-context>] ← only new turn uncached
+```
+
+- **System prompt**: Purely static (instructions, tool docs, environment). Cached via `cache_control: ephemeral` (Anthropic) or automatic prefix matching (OpenAI/Azure).
+- **Dynamic context**: Current datetime, git status, and clipboard entries are injected as a `<session-context>` block into the last user-facing message. This keeps the system prompt and conversation history cacheable.
+- **Conversation cache breakpoint**: For Anthropic, a second `cache_control` marker is placed on the penultimate user message, caching the entire conversation prefix through the previous turn.
+
 Caching is enabled by default. To disable for a specific provider:
 
 ```json
@@ -1477,10 +1491,15 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 
 | Plan | Description | Effort |
 |------|-------------|--------|
+| `PROMPT-CACHE-OPTIMIZATION-PLAN.md` | Separate dynamic context from system prompt for cache-optimal message structure | 1-2 days |
 | `PROVIDER-BUGFIX-PLAN.md` | SSL cert handling, MSYS2 path normalization, reasoning_content logging | 1 day |
 | `DOUBLE-SPINNER-FIX-PLAN.md` | Fix double spinner / trapped ESC when concurrent RPC sends hit REPL | 1 day |
 | `DRY-CLEANUP-PLAN.md` | DRY violations, dead code removal, naming fixes from Opus 4.6 review | 1-2 days |
 | `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | 2 weeks |
+
+#### In Progress: PROMPT-CACHE-OPTIMIZATION-PLAN
+
+Dynamic content (datetime, git status, clipboard) was being injected into the system prompt, invalidating the cache (~10-15K tokens) on every API call. Fix moves dynamic content to the last user message via `<session-context>` tags. See `docs/plans/PROMPT-CACHE-OPTIMIZATION-PLAN.md`.
 
 #### Next Up: PROVIDER-BUGFIX-PLAN
 

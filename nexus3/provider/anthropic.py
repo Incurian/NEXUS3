@@ -121,6 +121,7 @@ class AnthropicProvider(BaseProvider):
         messages: list[Message],
         tools: list[dict[str, Any]] | None,
         stream: bool,
+        dynamic_context: str | None = None,
     ) -> dict[str, Any]:
         """Build Anthropic-format request body.
 
@@ -128,6 +129,8 @@ class AnthropicProvider(BaseProvider):
             messages: List of Messages in the conversation.
             tools: Optional list of tool definitions (OpenAI format, converted).
             stream: Whether streaming is enabled.
+            dynamic_context: Optional volatile context to inject into the
+                last user message for cache-optimal placement.
 
         Returns:
             Request body dict in Anthropic format.
@@ -141,6 +144,14 @@ class AnthropicProvider(BaseProvider):
 
         # Convert messages to Anthropic format
         anthropic_messages = self._convert_messages(conversation)
+
+        # Inject dynamic context into last user message (cache-optimal)
+        if dynamic_context:
+            self._inject_dynamic_context(anthropic_messages, dynamic_context)
+
+        # Add conversation cache breakpoint on penultimate user message
+        if self._config.prompt_caching:
+            self._add_conversation_cache_breakpoint(anthropic_messages)
 
         body: dict[str, Any] = {
             "model": self._model,
@@ -166,6 +177,77 @@ class AnthropicProvider(BaseProvider):
             body["tools"] = self._convert_tools(tools)
 
         return body
+
+    def _inject_dynamic_context(
+        self,
+        messages: list[dict[str, Any]],
+        dynamic_context: str,
+    ) -> None:
+        """Inject dynamic context into the last user message.
+
+        Appends a text block with the dynamic context to the last user
+        message's content list. This keeps the system prompt and conversation
+        history prefix stable and cacheable.
+
+        Args:
+            messages: Anthropic-format messages (mutated in place).
+            dynamic_context: The context string to inject.
+        """
+        # Find last user message (search backwards)
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].get("role") == "user":
+                content = messages[i]["content"]
+                if isinstance(content, list):
+                    content.append({"type": "text", "text": dynamic_context})
+                else:
+                    # String content — convert to list
+                    messages[i]["content"] = [
+                        {"type": "text", "text": content},
+                        {"type": "text", "text": dynamic_context},
+                    ]
+                return
+
+        # No user message found — create one (edge case: tool-only conversation)
+        messages.append({
+            "role": "user",
+            "content": [{"type": "text", "text": dynamic_context}],
+        })
+
+    def _add_conversation_cache_breakpoint(
+        self,
+        messages: list[dict[str, Any]],
+    ) -> None:
+        """Add cache breakpoint on the penultimate user message.
+
+        This caches the entire conversation prefix through the previous turn.
+        Anthropic supports up to 4 cache breakpoints; system prompt uses one,
+        this uses a second.
+
+        Args:
+            messages: Anthropic-format messages (mutated in place).
+        """
+        # Find second-to-last user message
+        user_indices = [
+            i for i, m in enumerate(messages) if m.get("role") == "user"
+        ]
+        if len(user_indices) < 2:
+            return  # Need at least 2 user messages
+
+        penultimate_idx = user_indices[-2]
+        content = messages[penultimate_idx]["content"]
+
+        if isinstance(content, list) and content:
+            # Add cache_control to the last block
+            content[-1]["cache_control"] = {"type": "ephemeral"}
+        elif isinstance(content, str):
+            # Convert to list with cache_control
+            messages[penultimate_idx]["content"] = [
+                {
+                    "type": "text",
+                    "text": content,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ]
 
     def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
         """Convert NEXUS3 messages to Anthropic format.
