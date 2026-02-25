@@ -29,6 +29,7 @@ Usage:
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
@@ -79,7 +80,7 @@ class LogMultiplexer:
         self._callbacks.pop(agent_id, None)
 
     @contextmanager
-    def agent_context(self, agent_id: str):
+    def agent_context(self, agent_id: str) -> Generator[None, None, None]:
         """Context manager to set the current agent for log routing.
 
         Use this to wrap code that makes provider calls so logs are routed

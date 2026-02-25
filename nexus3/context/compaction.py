@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 
+from nexus3.context.token_counter import TokenCounter
 from nexus3.core.redaction import redact_dict, redact_secrets
 from nexus3.core.types import Message, Role
 
@@ -126,7 +127,7 @@ def build_summarize_prompt(messages: list[Message]) -> str:
 
 def select_messages_for_compaction(
     messages: list[Message],
-    token_counter,  # TokenCounter protocol
+    token_counter: TokenCounter,
     available_budget: int,
     recent_preserve_ratio: float,
 ) -> tuple[list[Message], list[Message]]:

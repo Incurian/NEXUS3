@@ -142,7 +142,7 @@ async def run_serve(
     # Start server as a task so we can wait for bind success
     server_task = asyncio.create_task(
         run_http_server(
-            pool, global_dispatcher, effective_port, api_key=api_key,
+            pool, global_dispatcher, effective_port, api_key=api_key,  # type: ignore[arg-type]
             session_manager=session_manager,
             idle_timeout=None,  # No auto-shutdown in headless dev mode
             started_event=started_event,

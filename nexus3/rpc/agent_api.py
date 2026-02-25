@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _extract_result(response: Any) -> Any:
+def _extract_result(response: Any) -> dict[str, Any]:
     """Extract result from Response, raising ClientError on error.
 
     Args:
@@ -54,7 +54,8 @@ def _extract_result(response: Any) -> Any:
         code = response.error.get("code", -1)
         message = response.error.get("message", "Unknown error")
         raise ClientError(f"RPC error {code}: {message}")
-    return response.result
+    result: dict[str, Any] = response.result
+    return result
 
 
 class AgentScopedAPI:
@@ -325,7 +326,8 @@ class DirectAgentAPI:
         response = await self._global_dispatcher.dispatch(request)
         result = _extract_result(response)
         # GlobalDispatcher returns {"agents": [...]}
-        return result.get("agents", [])
+        agents: list[str] = result.get("agents", [])
+        return agents
 
     async def shutdown_server(self) -> dict[str, Any]:
         """Request graceful shutdown of the server.

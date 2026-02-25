@@ -173,6 +173,7 @@ class MockAgent:
         self.dispatcher = MagicMock()
         self.dispatcher.should_shutdown = False
         self.dispatcher.request_shutdown = MagicMock()
+        self.dispatcher.cancel_all_requests = AsyncMock()
 
         # Mock services (dict-like for .get())
         self.services = MagicMock()

@@ -282,7 +282,8 @@ class MCPClient:
                 code=error.get("code"),
             )
 
-        return response.get("result", {})
+        result: dict[str, Any] = response.get("result", {})
+        return result
 
     async def _notify(self, method: str, params: dict[str, Any] | None = None) -> None:
         """Send notification (no response expected).

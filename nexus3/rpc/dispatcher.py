@@ -424,9 +424,9 @@ class Dispatcher:
 
         return {
             "compacted": True,
-            "tokens_before": result.tokens_before,
-            "tokens_after": result.tokens_after,
-            "tokens_saved": result.tokens_before - result.tokens_after,
+            "tokens_before": result.original_token_count,
+            "tokens_after": result.new_token_count,
+            "tokens_saved": result.original_token_count - result.new_token_count,
         }
 
     async def cancel_all_requests(self) -> dict[str, bool]:

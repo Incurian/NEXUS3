@@ -56,7 +56,7 @@ async def terminate_process_tree(
 
     pid = process.pid
     if pid is None:
-        return
+        return  # type: ignore[unreachable]
 
     if sys.platform == "win32":
         await _terminate_windows(process, pid, graceful_timeout)

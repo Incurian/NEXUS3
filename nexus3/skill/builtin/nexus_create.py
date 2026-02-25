@@ -163,7 +163,7 @@ class NexusCreateSkill(NexusSkill):
         # Use _execute_with_client for DirectAgentAPI optimization
         # agent_id=None for global method (POST /)
         async def create_op(client: Any) -> dict[str, Any]:
-            return await client.create_agent(
+            result: dict[str, Any] = await client.create_agent(
                 agent_id,
                 preset=preset,
                 disable_tools=disable_tools,
@@ -174,6 +174,7 @@ class NexusCreateSkill(NexusSkill):
                 initial_message=initial_message,
                 wait_for_initial_response=wait_for_initial_response,
             )
+            return result
 
         return await self._execute_with_client(
             port=port,

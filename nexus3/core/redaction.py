@@ -158,7 +158,8 @@ def redact_dict(data: dict[str, Any]) -> dict[str, Any]:
     Returns:
         A new dictionary with secrets redacted from string values.
     """
-    return _redact_value(data)  # type: ignore[return-value]
+    result: dict[str, Any] = _redact_value(data)
+    return result
 
 
 def _redact_value(value: Any) -> Any:

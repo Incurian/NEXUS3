@@ -69,7 +69,7 @@ class ClipboardTagSkill:
         description: str | None = None,
         **kwargs: Any,
     ) -> ToolResult:
-        manager = self._services.get("clipboard_manager")
+        manager = self._services.get("clipboard_manager")  # type: ignore[union-attr]
         if manager is None:
             return ToolResult(error="Clipboard service not available")
 
@@ -185,4 +185,4 @@ class ClipboardTagSkill:
         )
 
 
-clipboard_tag_factory = ClipboardTagSkill.factory
+clipboard_tag_factory = ClipboardTagSkill.factory  # type: ignore[attr-defined]

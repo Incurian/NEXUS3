@@ -56,10 +56,15 @@ if TYPE_CHECKING:
 
         async def dispatch(self, request: Request) -> Response | None: ...
 
-    class GlobalDispatcher(Dispatcher, Protocol):
+    class GlobalDispatcher(Protocol):
         """Protocol for the global dispatcher that manages agents."""
 
-        pass
+        async def dispatch(
+            self, request: Request, requester_id: str | None = None,
+        ) -> Response | None: ...
+
+        @property
+        def shutdown_requested(self) -> bool: ...
 
     class AgentPool(Protocol):
         """Protocol for the agent pool."""
@@ -90,7 +95,7 @@ if TYPE_CHECKING:
 
         def load_session(self, name: str) -> SavedSession: ...
 
-    from nexus3.rpc.protocol import Request, Response
+    from nexus3.rpc.types import Request, Response
 
 logger = logging.getLogger(__name__)
 

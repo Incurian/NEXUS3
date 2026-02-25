@@ -77,7 +77,7 @@ class GitLabTimeSkill(GitLabSkill):
     def _get_target_path(
         self,
         client: GitLabClient,
-        project: str,
+        project: str | None,
         iid: int,
         target_type: str,
     ) -> str:

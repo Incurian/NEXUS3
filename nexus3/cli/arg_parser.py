@@ -4,7 +4,9 @@ This module contains the command-line argument parsing logic extracted from repl
 """
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 
 def add_api_key_arg(parser: argparse.ArgumentParser) -> None:
@@ -37,7 +39,7 @@ class _StoreTrueNoDefault(argparse.Action):
         self,
         parser: argparse.ArgumentParser,
         namespace: argparse.Namespace,
-        values: str | list[str] | None,
+        values: str | Sequence[Any] | None,
         option_string: str | None = None,
     ) -> None:
         setattr(namespace, self.dest, True)

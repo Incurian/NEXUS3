@@ -202,7 +202,7 @@ class ClipboardManager:
             return self._get_project_storage().get(key)
         elif scope == ClipboardScope.SYSTEM:
             return self._get_system_storage().get(key)
-        return None
+        return None  # type: ignore[unreachable]
 
     def update(
         self,
@@ -300,7 +300,7 @@ class ClipboardManager:
             return self._get_project_storage().delete(key)
         elif scope == ClipboardScope.SYSTEM:
             return self._get_system_storage().delete(key)
-        return False
+        return False  # type: ignore[unreachable]
 
     def clear(self, scope: ClipboardScope) -> int:
         """Clear all entries in scope. Returns count deleted."""
@@ -314,7 +314,7 @@ class ClipboardManager:
             return self._get_project_storage().clear()
         elif scope == ClipboardScope.SYSTEM:
             return self._get_system_storage().clear()
-        return 0
+        return 0  # type: ignore[unreachable]
 
     def list_entries(
         self,

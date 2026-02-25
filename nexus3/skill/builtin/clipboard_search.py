@@ -61,7 +61,7 @@ class ClipboardSearchSkill:
         if not query:
             return ToolResult(error="Query cannot be empty")
 
-        manager = self._services.get("clipboard_manager")
+        manager = self._services.get("clipboard_manager")  # type: ignore[union-attr]
         if manager is None:
             return ToolResult(error="Clipboard service not available")
 
@@ -92,4 +92,4 @@ class ClipboardSearchSkill:
         return ToolResult(output="\n".join(lines))
 
 
-clipboard_search_factory = ClipboardSearchSkill.factory
+clipboard_search_factory = ClipboardSearchSkill.factory  # type: ignore[attr-defined]

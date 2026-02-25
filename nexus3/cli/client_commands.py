@@ -127,8 +127,8 @@ async def cmd_send(
 
     try:
         async with NexusClient(url, api_key=key, timeout=timeout) as client:
-            result = await client.send(content, request_id=request_id)
-            _print_json(result)
+            send_result = await client.send(content, request_id=request_id)
+            _print_json(send_result)
             return 0
     except ClientError as e:
         error_msg = str(e)
@@ -171,8 +171,8 @@ async def cmd_cancel(
     key = _get_api_key(port, api_key)
     try:
         async with NexusClient(url, api_key=key) as client:
-            result = await client.cancel(request_id)
-            _print_json(result)
+            cancel_result = await client.cancel(request_id)
+            _print_json(cancel_result)
             return 0
     except ClientError as e:
         _print_error(str(e))
@@ -207,11 +207,11 @@ async def cmd_status(
         async with NexusClient(url, api_key=key) as client:
             tokens = await client.get_tokens()
             context = await client.get_context()
-            result = {
+            status_result = {
                 "tokens": tokens,
                 "context": context,
             }
-            _print_json(result)
+            _print_json(status_result)
             return 0
     except ClientError as e:
         _print_error(str(e))
@@ -247,8 +247,8 @@ async def cmd_compact(
     key = _get_api_key(port, api_key)
     try:
         async with NexusClient(url, api_key=key) as client:
-            result = await client.compact()
-            _print_json(result)
+            compact_result = await client.compact()
+            _print_json(compact_result)
             return 0
     except ClientError as e:
         _print_error(str(e))
@@ -282,8 +282,8 @@ async def cmd_shutdown(
     key = _get_api_key(port, api_key)
     try:
         async with NexusClient(url, api_key=key) as client:
-            result = await client.shutdown_server()
-            _print_json(result)
+            shutdown_result = await client.shutdown_server()
+            _print_json(shutdown_result)
             return 0
     except ClientError as e:
         _print_error(str(e))
@@ -428,8 +428,8 @@ async def cmd_destroy(
     key = _get_api_key(port, api_key)
     try:
         async with NexusClient(url, api_key=key) as client:
-            result = await client.destroy_agent(agent_id)
-            _print_json(result)
+            destroy_result = await client.destroy_agent(agent_id)
+            _print_json(destroy_result)
             return 0
     except ClientError as e:
         _print_error(str(e))

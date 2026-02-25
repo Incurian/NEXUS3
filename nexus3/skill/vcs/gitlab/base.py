@@ -230,7 +230,8 @@ class GitLabSkill(BaseSkill):
             return await client.lookup_user(inst.username)
         # API fallback
         user = await client.get_current_user()
-        return user["id"]
+        user_id: int = user["id"]
+        return user_id
 
     async def _resolve_me_username(self, client: GitLabClient) -> str:
         """Resolve 'me' to a username string (for list filters).
@@ -241,4 +242,5 @@ class GitLabSkill(BaseSkill):
         if inst and inst.username:
             return inst.username
         user = await client.get_current_user()
-        return user["username"]
+        username: str = user["username"]
+        return username

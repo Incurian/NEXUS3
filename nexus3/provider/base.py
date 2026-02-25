@@ -363,7 +363,7 @@ class BaseProvider(ABC):
                         f"API request failed with status {response.status_code}: {error_detail}"
                     )
 
-                data = response.json()
+                data: dict[str, Any] = response.json()
 
                 # Log raw response if callback is set
                 if self._raw_log:
@@ -541,7 +541,7 @@ class BaseProvider(ABC):
         ...
 
     @abstractmethod
-    async def _parse_stream(
+    def _parse_stream(
         self, response: httpx.Response
     ) -> AsyncIterator[StreamEvent]:
         """Parse streaming response to StreamEvents.

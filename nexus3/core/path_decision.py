@@ -224,6 +224,8 @@ class PathDecisionEngine:
             )
 
         # Path is allowed - check existence constraints
+        # When allowed=True, resolved_path is always set
+        assert internal.resolved_path is not None
         return self._check_existence_constraints(
             internal.resolved_path,
             internal.original_path,

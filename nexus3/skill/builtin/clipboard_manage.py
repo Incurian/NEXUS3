@@ -29,7 +29,7 @@ def clipboard_skill_factory(cls: type[_S]) -> Callable[[ServiceContainer], _S]:
     """
     def factory(services: ServiceContainer) -> _S:
         skill = cls(services)
-        _wrap_with_validation(skill)
+        _wrap_with_validation(skill)  # type: ignore[arg-type]
         return skill
 
     # Attach as class attribute for convenience

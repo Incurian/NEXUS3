@@ -63,4 +63,4 @@ class SleepSkill:
 
 
 # Export factory for registration
-sleep_skill_factory = SleepSkill.factory
+sleep_skill_factory = SleepSkill.factory  # type: ignore[attr-defined]

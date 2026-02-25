@@ -50,6 +50,10 @@ class MockTransport(MCPTransport):
     async def close(self) -> None:
         self.connected = False
 
+    @property
+    def is_connected(self) -> bool:
+        return self.connected
+
 
 class TestResponseIdMatching:
     """Tests for P2.9: Response ID matching."""

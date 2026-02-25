@@ -1597,16 +1597,16 @@ class OutlineSkill(FileSkill):
             parts.append(file_header)
 
             # Top-level entries
-            for entry in file_entries:
-                if entry.depth > 0:
+            for outline_entry in file_entries:
+                if outline_entry.depth > 0:
                     continue
-                line_part = f"  L{entry.line:>5} {entry.kind}: "
-                if entry.signature:
-                    line_part += entry.signature
+                line_part = f"  L{outline_entry.line:>5} {outline_entry.kind}: "
+                if outline_entry.signature:
+                    line_part += outline_entry.signature
                 else:
-                    line_part += entry.name
-                if tokens and entry.token_estimate > 0:
-                    line_part += f"  (~{entry.token_estimate} tokens)"
+                    line_part += outline_entry.name
+                if tokens and outline_entry.token_estimate > 0:
+                    line_part += f"  (~{outline_entry.token_estimate} tokens)"
                 parts.append(line_part)
 
             parts.append("")

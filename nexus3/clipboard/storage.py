@@ -285,7 +285,8 @@ class ClipboardStorage:
             "SELECT COUNT(*) FROM clipboard WHERE expires_at IS NOT NULL AND expires_at <= ?",
             (now,),
         )
-        return cur.fetchone()[0]
+        count: int = cur.fetchone()[0]
+        return count
 
     def get_expired(self, now: float) -> list[ClipboardEntry]:
         """Get all expired entries for review before cleanup."""

@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 from nexus3.cli.live_state import _current_live
 from nexus3.core.permissions import ConfirmationResult
@@ -44,7 +45,7 @@ def smart_truncate(value: str, max_length: int, preserve_ends: bool = False) -> 
     return value[:max_length - 3] + "..."
 
 
-def format_tool_params(arguments: dict, max_length: int = 140) -> str:
+def format_tool_params(arguments: dict[str, Any], max_length: int = 140) -> str:
     """Format tool arguments as a truncated string for display.
 
     Prioritizes path/file arguments (shown first, not truncated individually).

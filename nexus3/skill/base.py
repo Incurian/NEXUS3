@@ -94,7 +94,7 @@ def validate_skill_parameters(
         - This is defense-in-depth; session.py also validates before calling execute().
         - Useful for testing skills directly without going through session layer.
     """
-    import jsonschema
+    import jsonschema  # type: ignore[import-untyped]
 
     def decorator(
         func: Callable[..., Coroutine[Any, Any, ToolResult]],
@@ -224,7 +224,7 @@ def _wrap_with_validation(skill: "Skill") -> None:
 
 
 # Type variable for base_skill_factory
-_BS = TypeVar("_BS", bound="BaseSkill")
+_BS = TypeVar("_BS", bound="Skill")
 
 
 def base_skill_factory(cls: type[_BS]) -> type[_BS]:
@@ -255,7 +255,7 @@ def base_skill_factory(cls: type[_BS]) -> type[_BS]:
         The same class with a .factory attribute attached.
     """
     def factory(services: "ServiceContainer") -> _BS:
-        skill = cls(services)
+        skill = cls(services)  # type: ignore[call-arg]
         _wrap_with_validation(skill)
         return skill
 
@@ -766,7 +766,7 @@ class NexusSkill(ABC):
             scoped = api.for_agent(agent_id) if agent_id else None
             adapter = ClientAdapter(api, scoped)
             try:
-                result = await operation(adapter)
+                result = await operation(adapter)  # type: ignore[arg-type]
                 return ToolResult(output=json.dumps(result))
             except ClientError as e:
                 return ToolResult(error=str(e))

@@ -197,7 +197,7 @@ class PermissionEnforcer:
                 error=f"Tool '{tool_call.name}' cannot target agent '{target_agent_id}'"
             )
 
-        return None  # Unknown restriction type, allow (fail-open for forward compat)
+        return None  # type: ignore[unreachable]  # Unknown restriction type, allow (fail-open for forward compat)
 
     def _check_path_allowed(
         self,

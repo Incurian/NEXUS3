@@ -93,8 +93,8 @@ class AgentPermissions:
 
         Combines policy checks with session allowances.
         """
-        if isinstance(path, str):
-            path = Path(path)
+        if isinstance(path, str):  # type: ignore[unreachable]
+            path = Path(path)  # type: ignore[unreachable]
 
         # YOLO - always allowed
         if self.effective_policy.level == PermissionLevel.YOLO:
@@ -343,6 +343,7 @@ def resolve_preset(
     effective_cwd = cwd if cwd is not None else Path.cwd()
 
     # Determine allowed_paths and frozen status
+    allowed_paths: list[Path] | None
     if preset.level == PermissionLevel.SANDBOXED:
         # Sandboxed: Use provided cwd, or preset paths, or default to actual CWD
         # The cwd parameter overrides preset.allowed_paths for sandboxed agents

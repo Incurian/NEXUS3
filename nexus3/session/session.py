@@ -958,7 +958,7 @@ class Session:
                 sanitized_error = sanitize_error_for_agent(result.error, skill.name)
                 if sanitized_error != result.error:
                     logger.debug("Sanitized error for agent: %s", sanitized_error)
-                    result = ToolResult(output=result.output, error=sanitized_error)
+                    result = ToolResult(output=result.output, error=sanitized_error or "")
 
             return result
         except TimeoutError:
@@ -995,7 +995,7 @@ class Session:
         # Convert exceptions to ToolResults
         final_results: list[ToolResult] = []
         for r in results:
-            if isinstance(r, Exception):
+            if isinstance(r, BaseException):
                 raw = f"Execution error: {r}"
                 safe = sanitize_error_for_agent(raw, "")
                 final_results.append(ToolResult(error=safe or "Execution error"))

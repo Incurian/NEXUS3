@@ -1170,7 +1170,7 @@ async def _change_preset(
     agent: Agent,
     perms: AgentPermissions | None,
     preset_name: str,
-    custom_presets: dict | None = None,
+    custom_presets: dict[str, Any] | None = None,
 ) -> CommandOutput:
     """Change agent to a new preset."""
 
@@ -1507,10 +1507,13 @@ async def cmd_model(
     if current_tokens > new_model.context_window:
         # Context too large for new model - return error with guidance
         # (actual prompting for action is handled in REPL)
-        return CommandOutput.error(
-            f"Current context ({current_tokens:,} tokens) exceeds "
-            f"{name}'s capacity ({new_model.context_window:,} tokens).\n"
-            f"Use /compact first to reduce context, or start a fresh session.",
+        return CommandOutput(
+            result=CommandResult.ERROR,
+            message=(
+                f"Current context ({current_tokens:,} tokens) exceeds "
+                f"{name}'s capacity ({new_model.context_window:,} tokens).\n"
+                f"Use /compact first to reduce context, or start a fresh session."
+            ),
             data={
                 "action_required": "reduce_context",
                 "current_tokens": current_tokens,
@@ -2062,7 +2065,7 @@ async def cmd_mcp(
                     data={"resources": []},
                 )
 
-            lines: list[str] = []
+            lines = []
             all_resources: list[dict[str, Any]] = []
             for name in visible_servers:
                 server = registry.get(name, agent_id=current_agent_id)
@@ -2147,7 +2150,7 @@ async def cmd_mcp(
                     data={"prompts": []},
                 )
 
-            lines: list[str] = []
+            lines = []
             all_prompts: list[dict[str, Any]] = []
             for name in visible_servers:
                 server = registry.get(name, agent_id=current_agent_id)

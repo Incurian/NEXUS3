@@ -408,7 +408,7 @@ class PasteSkill(FileSkill):
             if len(marker or "") > 30:
                 marker_preview += "..."
             return f"inserted before marker '{marker_preview}'"
-        return mode.value
+        return mode.value  # type: ignore[unreachable]
 
 
 # Factory for dependency injection

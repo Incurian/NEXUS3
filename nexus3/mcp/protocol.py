@@ -276,9 +276,9 @@ class MCPPromptMessage:
         """Extract text from content."""
         if isinstance(self.content, str):
             return self.content
-        if isinstance(self.content, dict):
-            return self.content.get("text", str(self.content))
-        return str(self.content)
+        # content is dict[str, Any] — .get() returns Any, cast to str
+        text: str = self.content.get("text", str(self.content))
+        return text
 
 
 @dataclass
