@@ -220,3 +220,143 @@ class TestContextManagerTokenTracking:
         ctx.add_user_message("x" * 1000)
 
         assert ctx.is_over_budget()
+
+
+class TestFixOrphanedToolCalls:
+    """Test fix_orphaned_tool_calls() synthesizes missing tool results."""
+
+    def test_no_messages(self):
+        """No-op on empty context."""
+        ctx = ContextManager()
+        ctx.fix_orphaned_tool_calls()
+        assert len(ctx.messages) == 0
+
+    def test_no_tool_calls(self):
+        """No-op when no assistant messages have tool_calls."""
+        ctx = ContextManager()
+        ctx.add_user_message("Hello")
+        ctx.add_assistant_message("Hi")
+        ctx.fix_orphaned_tool_calls()
+        assert len(ctx.messages) == 2
+
+    def test_complete_tool_results(self):
+        """No-op when all tool results are present."""
+        from nexus3.core.types import ToolResult
+
+        ctx = ContextManager()
+        ctx.add_user_message("Do something")
+        ctx.add_assistant_message(
+            "Using tools",
+            tool_calls=[
+                ToolCall(id="c1", name="tool_a", arguments="{}"),
+                ToolCall(id="c2", name="tool_b", arguments="{}"),
+            ],
+        )
+        ctx.add_tool_result("c1", "tool_a", ToolResult(output="ok"))
+        ctx.add_tool_result("c2", "tool_b", ToolResult(output="ok"))
+
+        ctx.fix_orphaned_tool_calls()
+        assert len(ctx.messages) == 4  # user + assistant + 2 tool results
+
+    def test_all_results_missing(self):
+        """Synthesizes results when assistant message has tool_calls but no results."""
+        ctx = ContextManager()
+        ctx.add_user_message("Do something")
+        ctx.add_assistant_message(
+            "Using tools",
+            tool_calls=[
+                ToolCall(id="c1", name="tool_a", arguments="{}"),
+                ToolCall(id="c2", name="tool_b", arguments="{}"),
+            ],
+        )
+
+        ctx.fix_orphaned_tool_calls()
+
+        assert len(ctx.messages) == 4  # user + assistant + 2 synthetic results
+        assert ctx.messages[2].role == Role.TOOL
+        assert ctx.messages[2].tool_call_id == "c1"
+        assert "Cancelled" in ctx.messages[2].content
+        assert ctx.messages[3].role == Role.TOOL
+        assert ctx.messages[3].tool_call_id == "c2"
+        assert "Cancelled" in ctx.messages[3].content
+
+    def test_partial_results_missing(self):
+        """Synthesizes only the missing results (double-ESC scenario)."""
+        from nexus3.core.types import ToolResult
+
+        ctx = ContextManager()
+        ctx.add_user_message("Do something")
+        ctx.add_assistant_message(
+            "Using 3 tools",
+            tool_calls=[
+                ToolCall(id="c1", name="tool_a", arguments="{}"),
+                ToolCall(id="c2", name="tool_b", arguments="{}"),
+                ToolCall(id="c3", name="tool_c", arguments="{}"),
+            ],
+        )
+        # Only first tool completed before cancellation
+        ctx.add_tool_result("c1", "tool_a", ToolResult(output="ok"))
+
+        ctx.fix_orphaned_tool_calls()
+
+        assert len(ctx.messages) == 5  # user + assistant + 1 real + 2 synthetic
+        # First result is the real one
+        assert ctx.messages[2].tool_call_id == "c1"
+        assert ctx.messages[2].content == "ok"
+        # Synthetic results inserted after real one
+        assert ctx.messages[3].tool_call_id == "c2"
+        assert "Cancelled" in ctx.messages[3].content
+        assert ctx.messages[4].tool_call_id == "c3"
+        assert "Cancelled" in ctx.messages[4].content
+
+    def test_idempotent(self):
+        """Calling fix twice doesn't duplicate synthetic results."""
+        ctx = ContextManager()
+        ctx.add_assistant_message(
+            "Using tool",
+            tool_calls=[ToolCall(id="c1", name="tool_a", arguments="{}")],
+        )
+
+        ctx.fix_orphaned_tool_calls()
+        assert len(ctx.messages) == 2  # assistant + 1 synthetic
+
+        ctx.fix_orphaned_tool_calls()
+        assert len(ctx.messages) == 2  # no duplicates
+
+    def test_ignores_older_complete_batches(self):
+        """Only checks the most recent assistant+tool group."""
+        from nexus3.core.types import ToolResult
+
+        ctx = ContextManager()
+        # First complete batch
+        ctx.add_user_message("First task")
+        ctx.add_assistant_message(
+            "Done",
+            tool_calls=[ToolCall(id="c1", name="tool_a", arguments="{}")],
+        )
+        ctx.add_tool_result("c1", "tool_a", ToolResult(output="ok"))
+        ctx.add_assistant_message("All done")
+        # Second batch with missing results
+        ctx.add_user_message("Second task")
+        ctx.add_assistant_message(
+            "Working",
+            tool_calls=[
+                ToolCall(id="c2", name="tool_b", arguments="{}"),
+                ToolCall(id="c3", name="tool_c", arguments="{}"),
+            ],
+        )
+
+        ctx.fix_orphaned_tool_calls()
+
+        # Should have added 2 synthetic results for second batch
+        assert len(ctx.messages) == 8  # 3 (first batch) + 1 + 2 (second) + 2 synthetic
+        assert ctx.messages[6].tool_call_id == "c2"
+        assert ctx.messages[7].tool_call_id == "c3"
+
+    def test_user_message_stops_scan(self):
+        """Stops scanning when hitting a user message (nothing to fix)."""
+        ctx = ContextManager()
+        ctx.add_user_message("Hello")
+
+        ctx.fix_orphaned_tool_calls()
+        assert len(ctx.messages) == 1

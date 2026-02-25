@@ -428,6 +428,71 @@ class ContextManager:
         if self._logger:
             self._logger.log_tool_result(tool_call_id, name, result)
 
+    def fix_orphaned_tool_calls(self) -> None:
+        """Ensure all tool_use blocks have matching tool_result messages.
+
+        Scans messages backwards for the most recent assistant message with
+        tool_calls and checks that every tool_call ID has a corresponding
+        tool result message. Inserts synthetic "cancelled" results for any
+        missing ones.
+
+        This prevents API errors (e.g., "Unexpected role 'user' after role
+        'tool'") when the conversation is interrupted mid-tool-execution,
+        such as when the user presses ESC twice rapidly.
+        """
+        if not self._messages:
+            return
+
+        # Scan backwards to find the last assistant message with tool_calls
+        for i in range(len(self._messages) - 1, -1, -1):
+            msg = self._messages[i]
+            if msg.role == Role.USER:
+                # Hit a user message before finding an assistant with tool_calls.
+                # Nothing to fix.
+                return
+            if msg.role == Role.ASSISTANT and msg.tool_calls:
+                # Found assistant message with tool_calls.
+                # Collect tool_result IDs that follow it.
+                expected_ids = {tc.id for tc in msg.tool_calls}
+                found_ids: set[str] = set()
+                for j in range(i + 1, len(self._messages)):
+                    next_msg = self._messages[j]
+                    if next_msg.role == Role.TOOL and next_msg.tool_call_id:
+                        found_ids.add(next_msg.tool_call_id)
+                    elif next_msg.role in (Role.ASSISTANT, Role.USER):
+                        break
+
+                missing_ids = expected_ids - found_ids
+                if not missing_ids:
+                    return  # All tool results present
+
+                # Find insertion point: after the last existing tool result
+                insert_pos = i + 1
+                for j in range(i + 1, len(self._messages)):
+                    if self._messages[j].role == Role.TOOL:
+                        insert_pos = j + 1
+                    else:
+                        break
+
+                # Insert synthetic results (preserve tool_call order)
+                for tc in msg.tool_calls:
+                    if tc.id in missing_ids:
+                        synthetic = Message(
+                            role=Role.TOOL,
+                            content="Cancelled by user: tool execution was interrupted",
+                            tool_call_id=tc.id,
+                        )
+                        self._messages.insert(insert_pos, synthetic)
+                        insert_pos += 1
+
+                logger.warning(
+                    "Synthesized %d missing tool result(s) for orphaned "
+                    "tool calls: %s",
+                    len(missing_ids),
+                    list(missing_ids),
+                )
+                return
+
     def clear_messages(self) -> None:
         """Clear all messages (keeps system prompt and tools)."""
         self._messages.clear()

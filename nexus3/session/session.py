@@ -260,6 +260,9 @@ class Session:
             if self.context:
                 # Flush any cancelled tool results from previous turn
                 self._flush_cancelled_tools()
+                # Safety net: synthesize results for any orphaned tool_use
+                # blocks (e.g., from double-ESC destroying the generator)
+                self.context.fix_orphaned_tool_calls()
 
                 # Reset iteration state for this send()
                 self._halted_at_iteration_limit = False
@@ -346,6 +349,9 @@ class Session:
         try:
             # Flush any cancelled tool results from previous turn
             self._flush_cancelled_tools()
+            # Safety net: synthesize results for any orphaned tool_use
+            # blocks (e.g., from double-ESC destroying the generator)
+            self.context.fix_orphaned_tool_calls()
 
             # Reset iteration state for this turn
             self._halted_at_iteration_limit = False
