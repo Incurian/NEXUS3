@@ -46,4 +46,4 @@ class EchoSkill:
 
 
 # Export factory for registration
-echo_skill_factory = EchoSkill.factory
+echo_skill_factory = EchoSkill.factory  # type: ignore[attr-defined]

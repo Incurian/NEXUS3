@@ -52,6 +52,7 @@ class MockProviderForCancellation:
         self,
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
+        dynamic_context: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Return a StreamComplete with tool calls."""
         self.call_count += 1

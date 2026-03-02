@@ -24,7 +24,7 @@ Example usage:
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from nexus3.core.permissions import AgentPermissions, PermissionLevel
@@ -144,7 +144,7 @@ class ServiceContainer:
         Returns:
             AgentPermissions object if registered, None otherwise.
         """
-        return self.get("permissions")
+        return cast("AgentPermissions | None", self.get("permissions"))
 
     def get_cwd(self) -> Path:
         """Get the agent's working directory.
@@ -163,7 +163,7 @@ class ServiceContainer:
         Returns:
             DirectAgentAPI if available, None otherwise.
         """
-        return self.get("agent_api")
+        return cast("DirectAgentAPI | None", self.get("agent_api"))
 
     def get_permission_level(self) -> "PermissionLevel | None":
         """Get the agent's permission level.
@@ -177,7 +177,7 @@ class ServiceContainer:
         # Check for explicit level first
         level = self.get("permission_level")
         if level is not None:
-            return level
+            return cast("PermissionLevel", level)
 
         # Fall back to extracting from permissions
         permissions = self.get_permissions()
@@ -212,7 +212,7 @@ class ServiceContainer:
 
         if permissions is None:
             # Fallback for tests that don't set up full permissions
-            return self.get("allowed_paths")
+            return cast("list[Path] | None", self.get("allowed_paths"))
 
         # Check for per-tool override (only if tool_name provided)
         if tool_name is not None:
@@ -247,7 +247,7 @@ class ServiceContainer:
         Returns:
             Set of child agent IDs, or None if not registered.
         """
-        return self.get("child_agent_ids")
+        return cast("set[str] | None", self.get("child_agent_ids"))
 
     def get_mcp_registry(self) -> Any | None:
         """Get MCP registry if available.

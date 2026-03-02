@@ -103,7 +103,7 @@ def validate_tool_arguments(
     Raises:
         ValidationError: If required params missing or types don't match.
     """
-    import jsonschema
+    import jsonschema  # type: ignore[import-untyped]
 
     # Validate against schema (checks required fields and types)
     try:

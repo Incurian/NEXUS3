@@ -1,0 +1,65 @@
+# Plan A: Single Authorization Kernel (2026-03-02)
+
+## Overview
+
+Consolidate fragmented authorization logic into one policy decision layer used consistently by session, RPC, and tool execution paths.
+
+## Scope
+
+Included:
+- Introduce `AuthorizationKernel` and typed decision model.
+- Route existing auth checks through kernel adapters without changing behavior in phase 1.
+- Centralize lifecycle authorization (create/destroy/send/targeting).
+
+Deferred:
+- Capability-token migration (covered in Plan B).
+
+Excluded:
+- Broad permission semantics redesign.
+
+## Design Decisions and Rationale
+
+1. Preserve behavior first, then tighten policy.
+2. One entrypoint for both visibility and execution authorization decisions.
+3. Fail-closed defaults for unknown actions/resources.
+
+## Implementation Details
+
+Primary files to change:
+- [session/enforcer.py](/home/inc/repos/NEXUS3/nexus3/session/enforcer.py)
+- [session/session.py](/home/inc/repos/NEXUS3/nexus3/session/session.py)
+- [rpc/pool.py](/home/inc/repos/NEXUS3/nexus3/rpc/pool.py)
+- [core/permissions.py](/home/inc/repos/NEXUS3/nexus3/core/permissions.py)
+- New: `nexus3/core/authorization_kernel.py`
+
+Phases:
+1. Add kernel interfaces and decision DTOs.
+2. Add shadow-mode parity checks comparing legacy decision vs kernel decision.
+3. Route all tool/lifecycle checks through kernel adapters.
+4. Remove duplicated call-site policy branches once parity is stable.
+
+## Testing Strategy
+
+- Add unit parity tests for kernel vs legacy decisions.
+- Extend security tests around destroy/create authorization.
+- Ensure integration parity for sandboxed parent-send and inheritance tests.
+
+## Implementation Checklist
+
+- [ ] Define `AuthorizationKernel` API and decision schema.
+- [ ] Implement adapters for session and RPC call sites.
+- [ ] Add parity logging/assertions under test flag.
+- [ ] Remove duplicate authorization branches.
+
+## Documentation Updates
+
+- Update `nexus3/core/README.md` and `nexus3/rpc/README.md` for centralized authorization flow.
+- Update AGENTS/CLAUDE sections describing permission checks.
+
+## Related Documents
+
+- [Reviews Index (2026-03-02)](/home/inc/repos/NEXUS3/docs/reviews/README.md)
+- [Plans Index (2026-03-02)](/home/inc/repos/NEXUS3/docs/plans/README.md)
+- [Canonical Review Master Final](/home/inc/repos/NEXUS3/docs/reviews/CODEX-NEXUS3-REVIEW-MASTER-FINAL-2026-03-02.md)
+- [Architecture Investigation](/home/inc/repos/NEXUS3/docs/plans/ARCH-INVESTIGATION-2026-03-02.md)
+- [Architecture Milestone Schedule](/home/inc/repos/NEXUS3/docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md)

@@ -66,6 +66,7 @@ class MockProviderWithTools:
         self,
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
+        dynamic_context: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Stream response as StreamEvents."""
         self.last_messages = messages

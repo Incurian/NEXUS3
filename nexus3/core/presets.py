@@ -208,6 +208,7 @@ def load_custom_presets_from_config(
         description = preset_config.get("description", "")
 
         allowed_paths_config = preset_config.get("allowed_paths")
+        allowed_paths: list[Path] | None
         if allowed_paths_config is not None:
             allowed_paths = [Path(p) for p in allowed_paths_config]
         else:

@@ -47,7 +47,7 @@ def detect_windows_shell() -> WindowsShell:
         return WindowsShell.UNKNOWN
 
     # Windows Terminal wraps other shells - check first
-    if os.environ.get("WT_SESSION"):
+    if os.environ.get("WT_SESSION"):  # type: ignore[unreachable]
         logger.debug("Detected Windows Terminal via WT_SESSION")
         return WindowsShell.WINDOWS_TERMINAL
 
@@ -81,7 +81,7 @@ def supports_ansi() -> bool:
     if sys.platform != "win32":
         return True  # Unix always supports ANSI
 
-    shell = detect_windows_shell()
+    shell = detect_windows_shell()  # type: ignore[unreachable]
     return shell in {
         WindowsShell.WINDOWS_TERMINAL,
         WindowsShell.POWERSHELL_7,
@@ -99,7 +99,7 @@ def supports_unicode() -> bool:
     if sys.platform != "win32":
         return True  # Unix always supports Unicode
 
-    shell = detect_windows_shell()
+    shell = detect_windows_shell()  # type: ignore[unreachable]
     return shell in {
         WindowsShell.WINDOWS_TERMINAL,
         WindowsShell.POWERSHELL_7,
@@ -117,7 +117,7 @@ def check_console_codepage() -> tuple[int, bool]:
     if sys.platform != "win32":
         return (65001, True)
 
-    try:
+    try:  # type: ignore[unreachable]
         import ctypes
         codepage = ctypes.windll.kernel32.GetConsoleOutputCP()
         return (codepage, codepage == 65001)

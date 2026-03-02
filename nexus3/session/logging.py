@@ -267,7 +267,7 @@ class SessionLogger:
     def log_session_event(self, event: SessionEvent) -> None:
         """Persist SessionEvent to SQLite (always). verbose.md if VERBOSE."""
         # Use event timestamp if available, otherwise current time
-        ts: float = getattr(event, "timestamp", None) or time.time()
+        ts: float = getattr(event, "timestamp", None) or time()
         event_name: str = type(event).__name__.lower()
 
         data = asdict(event)

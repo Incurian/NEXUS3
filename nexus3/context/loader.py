@@ -444,6 +444,8 @@ Source: {readme_source_path}
 
 {readme_content}"""
         else:
+            # content is guaranteed non-None here (early return at line 414 handles None/empty)
+            assert content is not None
             return f"""{header}
 Source: {source_path}
 

@@ -290,7 +290,7 @@ async def cmd_status(
 
     # Get info from services
     permissions: AgentPermissions | None = None
-    model_info: dict | None = None
+    model_info: dict[str, Any] | None = None
     cwd: Path | None = None
     allowed_paths: list[Path] | None = None
     mcp_registry = None
@@ -338,7 +338,7 @@ async def cmd_status(
                         write_paths.append(p_str)
 
     # Get MCP server info
-    mcp_servers: list[dict] = []
+    mcp_servers: list[dict[str, Any]] = []
     if mcp_registry:
         for name in mcp_registry.list_servers(effective_id):
             server = mcp_registry.get(name, effective_id)
@@ -350,14 +350,16 @@ async def cmd_status(
                 })
 
     # Get compaction config from session
-    compaction_info: dict | None = None
+    compaction_info: dict[str, Any] | None = None
     if hasattr(agent, "session") and hasattr(agent.session, "_config"):
-        comp_cfg = agent.session._config.compaction
-        compaction_info = {
-            "enabled": comp_cfg.enabled,
-            "trigger_threshold": comp_cfg.trigger_threshold,
-            "model": comp_cfg.model,
-        }
+        _config = agent.session._config
+        if _config is not None:
+            comp_cfg = _config.compaction
+            compaction_info = {
+                "enabled": comp_cfg.enabled,
+                "trigger_threshold": comp_cfg.trigger_threshold,
+                "model": comp_cfg.model,
+            }
 
     # Get tool list if requested
     tool_list: list[str] | None = None
@@ -498,9 +500,9 @@ async def cmd_cancel(
                 f"Invalid request_id: {request_id} (must be an integer)"
             )
 
-    # Cancel via session
+    # Cancel via dispatcher
     try:
-        agent.session.cancel()
+        await agent.dispatcher.cancel_all_requests()
         return CommandOutput.success(
             message=f"Cancel requested for agent: {effective_id}",
             data={
@@ -513,13 +515,13 @@ async def cmd_cancel(
         return CommandOutput.error(f"Failed to cancel: {e}")
 
 
-async def get_permission_data(agent: object) -> tuple[str, str | None, list[str]]:
+async def get_permission_data(agent: Any) -> tuple[str, str | None, list[str]]:
     """Extract permission info from agent for serialization.
 
     Returns:
         Tuple of (permission_level, permission_preset, disabled_tools)
     """
-    perms = agent.services.get("permissions")  # type: ignore[union-attr]
+    perms = agent.services.get("permissions")
     if perms:
         level = perms.effective_policy.level.value
         preset = perms.base_preset
@@ -653,7 +655,7 @@ async def cmd_clone(
 
             # Copy context (messages and system prompt)
             for msg in src_agent.context.messages:
-                new_agent.context.add_message(msg)
+                new_agent.context._messages.append(msg)
             new_agent.context.set_system_prompt(src_agent.context.system_prompt or "")
 
             return CommandOutput.success(
@@ -719,7 +721,7 @@ async def cmd_rename(
 
             # Copy state
             for msg in old_agent.context.messages:
-                new_agent.context.add_message(msg)
+                new_agent.context._messages.append(msg)
             new_agent.context.set_system_prompt(old_agent.context.system_prompt or "")
 
             # Destroy old

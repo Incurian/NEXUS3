@@ -57,6 +57,10 @@ class MockTransport(MCPTransport):
             raise self.close_error
         self.connected = False
 
+    @property
+    def is_connected(self) -> bool:
+        return self.connected
+
 
 class TestClientTimeoutCleanupLogging:
     """Tests for P2.17a: client.py timeout cleanup logging."""

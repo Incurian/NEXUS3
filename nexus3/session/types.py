@@ -33,8 +33,8 @@ class LogConfig:
 
     def __post_init__(self) -> None:
         """Ensure base_dir is a Path."""
-        if isinstance(self.base_dir, str):
-            self.base_dir = Path(self.base_dir)
+        if isinstance(self.base_dir, str):  # type: ignore[unreachable]
+            self.base_dir = Path(self.base_dir)  # type: ignore[unreachable]
 
 
 @dataclass

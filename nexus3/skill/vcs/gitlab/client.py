@@ -245,7 +245,8 @@ class GitLabClient:
 
     async def get_current_user(self) -> dict[str, Any]:
         """Get authenticated user info."""
-        return await self.get("/user")
+        result: dict[str, Any] = await self.get("/user")
+        return result
 
     async def lookup_user(self, username: str) -> int:
         """Resolve a GitLab username to a numeric user ID (cached).
@@ -262,8 +263,9 @@ class GitLabClient:
         # GET /users?username=X returns partial matches; find exact match
         for user in users:
             if user["username"] == username:
-                self._user_cache[username] = user["id"]
-                return user["id"]
+                uid: int = user["id"]
+                self._user_cache[username] = uid
+                return uid
 
         raise GitLabAPIError(404, f"User '{username}' not found")
 
@@ -273,7 +275,8 @@ class GitLabClient:
 
     async def get_project(self, project: str) -> dict[str, Any]:
         """Get project by path or ID."""
-        return await self.get(f"/projects/{self._encode_path(project)}")
+        result: dict[str, Any] = await self.get(f"/projects/{self._encode_path(project)}")
+        return result
 
     async def list_projects(
         self,

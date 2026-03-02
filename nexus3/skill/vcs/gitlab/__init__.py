@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from nexus3.core.permissions import AgentPermissions
@@ -65,8 +66,8 @@ def register_gitlab_skills(
         return 0
 
     # Create factories that capture services and config
-    def make_factory(skill_class):
-        def factory(svc: ServiceContainer):
+    def make_factory(skill_class: type) -> Callable[[ServiceContainer], Any]:
+        def factory(svc: ServiceContainer) -> Any:
             config = svc.get_gitlab_config()
             if not config:
                 raise ValueError("GitLab not configured")

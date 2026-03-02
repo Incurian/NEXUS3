@@ -90,18 +90,19 @@ class ClipboardExportSkill(FileSkill):
             return ToolResult(output="No entries to export")
 
         # Convert to exportable format
-        export_data = {
+        entries_list: list[dict[str, Any]] = []
+        export_data: dict[str, Any] = {
             "version": "1.0",
             "exported_at": datetime.now().isoformat(),
             "entry_count": len(entries),
-            "entries": [],
+            "entries": entries_list,
         }
 
         for entry in entries:
             entry_dict = asdict(entry)
             # Convert scope enum to string
             entry_dict["scope"] = entry.scope.value
-            export_data["entries"].append(entry_dict)
+            entries_list.append(entry_dict)
 
         # Write to file
         json_content = json.dumps(export_data, indent=2, ensure_ascii=False)

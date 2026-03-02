@@ -96,12 +96,16 @@ class AsyncProvider(Protocol):
         self,
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
+        dynamic_context: str | None = None,
     ) -> Message:
         """Perform a non-streaming completion.
 
         Args:
             messages: The conversation history as a list of Messages.
             tools: Optional list of tool definitions in OpenAI function format.
+            dynamic_context: Optional volatile context (datetime, git, clipboard)
+                to inject into the last user message. Kept separate from messages
+                so the static message prefix remains cacheable.
 
         Returns:
             The assistant's response as a Message, potentially including tool_calls.
@@ -115,6 +119,7 @@ class AsyncProvider(Protocol):
         self,
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
+        dynamic_context: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Stream response with content and tool call detection.
 

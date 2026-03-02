@@ -3,7 +3,7 @@
 import os
 import warnings
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -643,10 +643,10 @@ class Config(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def migrate_deprecated_context_fields(cls, data: dict) -> dict:
+    def migrate_deprecated_context_fields(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Migrate deprecated include_readme/readme_as_fallback to instruction_files."""
         if not isinstance(data, dict):
-            return data
+            return data  # type: ignore[unreachable]
         context = data.get("context")
         if not isinstance(context, dict):
             return data
@@ -820,7 +820,7 @@ class Config(BaseModel):
         Returns:
             List of alias names from all providers.
         """
-        aliases = []
+        aliases: list[str] = []
         for provider_config in self.providers.values():
             aliases.extend(provider_config.models.keys())
         return aliases

@@ -154,7 +154,7 @@ def resolve_command(command: list[str]) -> list[str]:
     if sys.platform != "win32" or not command:
         return command
 
-    executable = command[0]
+    executable = command[0]  # type: ignore[unreachable]
 
     # Skip if already has a known Windows executable extension
     if any(executable.lower().endswith(ext) for ext in (".exe", ".cmd", ".bat", ".com")):
@@ -219,6 +219,12 @@ class MCPTransport(ABC):
     @abstractmethod
     async def close(self) -> None:
         """Close the transport."""
+        ...
+
+    @property
+    @abstractmethod
+    def is_connected(self) -> bool:
+        """Check if transport is connected."""
         ...
 
     async def __aenter__(self) -> "MCPTransport":
@@ -400,7 +406,8 @@ class StdioTransport(MCPTransport):
 
                 # P2.0.4: Strip CRLF/LF before JSON parsing (Windows compatibility)
                 line = line.rstrip(b"\r\n")
-                return json.loads(line.decode("utf-8"))
+                result: dict[str, Any] = json.loads(line.decode("utf-8"))
+                return result
             except json.JSONDecodeError as e:
                 raise MCPTransportError(f"Invalid JSON from server: {e}") from e
             except MCPTransportError:
@@ -749,7 +756,8 @@ class HTTPTransport(MCPTransport):
                 if response.status_code == 204 or not response.content:
                     raise MCPTransportError("Server returned empty response for request")
 
-                return response.json()
+                result: dict[str, Any] = response.json()
+                return result
 
             except httpx.TransportError as e:
                 last_error = e

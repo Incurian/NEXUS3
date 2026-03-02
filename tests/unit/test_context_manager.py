@@ -47,7 +47,7 @@ class TestContextManagerBasics:
         assert ctx.system_prompt == "You are helpful."
 
     def test_build_messages_includes_system_prompt(self):
-        """Test that build_messages includes system prompt first with dynamic datetime."""
+        """Test that build_messages includes static system prompt (no dynamic datetime)."""
         ctx = ContextManager()
         ctx.set_system_prompt("System prompt")
         ctx.add_user_message("Hello")
@@ -56,10 +56,27 @@ class TestContextManagerBasics:
 
         assert len(messages) == 2
         assert messages[0].role == Role.SYSTEM
-        # System prompt includes dynamic date/time appended
-        assert messages[0].content.startswith("System prompt")
-        assert "Current date:" in messages[0].content
+        # System prompt is static — no datetime injection
+        assert messages[0].content == "System prompt"
         assert messages[1].role == Role.USER
+
+    def test_build_dynamic_context(self):
+        """Test that build_dynamic_context returns session-context with datetime."""
+        ctx = ContextManager()
+        dynamic = ctx.build_dynamic_context()
+        assert dynamic is not None
+        assert "<session-context>" in dynamic
+        assert "</session-context>" in dynamic
+        assert "Current date:" in dynamic
+
+    def test_build_dynamic_context_with_git(self):
+        """Test that build_dynamic_context includes git context when set."""
+        ctx = ContextManager()
+        ctx._git_context = "Branch: main\nStatus: clean"
+        dynamic = ctx.build_dynamic_context()
+        assert dynamic is not None
+        assert "Branch: main" in dynamic
+        assert "Current date:" in dynamic
 
     def test_clear_messages(self):
         """Test clearing messages."""

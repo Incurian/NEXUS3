@@ -126,7 +126,7 @@ class ClipboardPermissions:
             return self.project_read
         elif scope == ClipboardScope.SYSTEM:
             return self.system_read
-        return False
+        return False  # type: ignore[unreachable]
 
     def can_write(self, scope: ClipboardScope) -> bool:
         """Check if this permission set allows writing to scope."""
@@ -136,7 +136,7 @@ class ClipboardPermissions:
             return self.project_write
         elif scope == ClipboardScope.SYSTEM:
             return self.system_write
-        return False
+        return False  # type: ignore[unreachable]
 
 
 # Preset permission configurations

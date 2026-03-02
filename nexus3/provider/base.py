@@ -363,7 +363,7 @@ class BaseProvider(ABC):
                         f"API request failed with status {response.status_code}: {error_detail}"
                     )
 
-                data = response.json()
+                data: dict[str, Any] = response.json()
 
                 # Log raw response if callback is set
                 if self._raw_log:
@@ -512,6 +512,7 @@ class BaseProvider(ABC):
         messages: list[Message],
         tools: list[dict[str, Any]] | None,
         stream: bool,
+        dynamic_context: str | None = None,
     ) -> dict[str, Any]:
         """Build the request body in provider-specific format.
 
@@ -519,6 +520,8 @@ class BaseProvider(ABC):
             messages: List of Messages in the conversation.
             tools: Optional list of tool definitions.
             stream: Whether streaming is enabled.
+            dynamic_context: Optional volatile context to inject into the
+                last user message for cache-optimal placement.
 
         Returns:
             Request body dict.
@@ -538,7 +541,7 @@ class BaseProvider(ABC):
         ...
 
     @abstractmethod
-    async def _parse_stream(
+    def _parse_stream(
         self, response: httpx.Response
     ) -> AsyncIterator[StreamEvent]:
         """Parse streaming response to StreamEvents.
@@ -557,12 +560,14 @@ class BaseProvider(ABC):
         self,
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
+        dynamic_context: str | None = None,
     ) -> Message:
         """Perform a non-streaming completion.
 
         Args:
             messages: The conversation history as a list of Messages.
             tools: Optional list of tool definitions in OpenAI function format.
+            dynamic_context: Optional volatile context to inject into last user message.
 
         Returns:
             The assistant's response as a Message.
@@ -571,7 +576,9 @@ class BaseProvider(ABC):
             ProviderError: If the API request fails.
         """
         url = self._build_endpoint(stream=False)
-        body = self._build_request_body(messages, tools, stream=False)
+        body = self._build_request_body(
+            messages, tools, stream=False, dynamic_context=dynamic_context,
+        )
 
         data = await self._make_request(url, body)
         return self._parse_response(data)
@@ -580,12 +587,14 @@ class BaseProvider(ABC):
         self,
         messages: list[Message],
         tools: list[dict[str, Any]] | None = None,
+        dynamic_context: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Stream response with content and tool call detection.
 
         Args:
             messages: The conversation history as a list of Messages.
             tools: Optional list of tool definitions in OpenAI function format.
+            dynamic_context: Optional volatile context to inject into last user message.
 
         Yields:
             StreamEvent subclasses (ContentDelta, ToolCallStarted, StreamComplete).
@@ -594,7 +603,9 @@ class BaseProvider(ABC):
             ProviderError: If the API request fails.
         """
         url = self._build_endpoint(stream=True)
-        body = self._build_request_body(messages, tools, stream=True)
+        body = self._build_request_body(
+            messages, tools, stream=True, dynamic_context=dynamic_context,
+        )
 
         async for response in self._make_streaming_request(url, body):
             async for event in self._parse_stream(response):

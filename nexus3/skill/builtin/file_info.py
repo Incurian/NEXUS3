@@ -15,13 +15,14 @@ from nexus3.skill.base import FileSkill, file_skill_factory
 
 def _format_size(size_bytes: int) -> str:
     """Format byte size as human-readable string."""
+    size: float = float(size_bytes)
     for unit in ["B", "KB", "MB", "GB", "TB"]:
-        if size_bytes < 1024:
+        if size < 1024:
             if unit == "B":
-                return f"{size_bytes} {unit}"
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f} PB"
+                return f"{int(size)} {unit}"
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} PB"
 
 
 def _format_permissions(mode: int, path: Path | None = None) -> str:
@@ -46,7 +47,7 @@ def _format_windows_attributes(path: Path) -> str:
     import ctypes
 
     try:
-        attrs = ctypes.windll.kernel32.GetFileAttributesW(str(path))
+        attrs = ctypes.windll.kernel32.GetFileAttributesW(str(path))  # type: ignore[attr-defined]
         if attrs == 0xFFFFFFFF:
             return "????"
 

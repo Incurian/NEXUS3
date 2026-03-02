@@ -70,9 +70,10 @@ from nexus3.rpc.bootstrap import (
 )
 from nexus3.rpc.detection import DetectionResult
 from nexus3.rpc.discovery import discover_servers, discover_token_ports, parse_port_spec
+from nexus3.rpc.dispatcher import Dispatcher
 from nexus3.rpc.http import run_http_server
 from nexus3.rpc.pool import Agent, AgentConfig, generate_temp_id
-from nexus3.session import LogStream, SessionManager
+from nexus3.session import LogStream, Session, SessionManager
 from nexus3.session.persistence import (
     SavedSession,
     deserialize_messages,
@@ -379,8 +380,7 @@ async def run_repl(
             saved_session = session_manager.load_session(agent_name)
             startup_mode = "session"
         else:
-            # Fallback (shouldn't happen)
-            agent_name = generate_temp_id(set())
+            agent_name = generate_temp_id(set())  # type: ignore[unreachable]
             startup_mode = "fresh"
 
     # =========================================================================
@@ -414,13 +414,13 @@ async def run_repl(
     main_agent.session.on_confirm = confirm_with_pause
 
     # Helper to get permission data from an agent
-    def get_permission_data(agent: object) -> tuple[str, str | None, list[str]]:
+    def get_permission_data(agent: Any) -> tuple[str, str | None, list[str]]:
         """Extract permission info from agent for serialization.
 
         Returns:
             Tuple of (permission_level, permission_preset, disabled_tools)
         """
-        perms = agent.services.get("permissions")  # type: ignore[union-attr]
+        perms = agent.services.get("permissions")
         if perms:
             level = perms.effective_policy.level.value
             preset = perms.base_preset
@@ -528,7 +528,7 @@ async def run_repl(
     started_event = asyncio.Event()
     http_task = asyncio.create_task(
         run_http_server(
-            pool, global_dispatcher, effective_port, api_key=api_key,
+            pool, global_dispatcher, effective_port, api_key=api_key,  # type: ignore[arg-type]
             session_manager=session_manager,
             idle_timeout=1800.0,
             started_event=started_event,
@@ -541,7 +541,7 @@ async def run_repl(
     loop = asyncio.get_running_loop()
 
     # Done-callback for http_task: log exit, cleanup token, warn user
-    def _on_http_task_done(task: asyncio.Task) -> None:
+    def _on_http_task_done(task: asyncio.Task[None]) -> None:
         """Handle http_task completion (crash, idle timeout, or cancellation)."""
         try:
             exc = task.exception()
@@ -635,7 +635,7 @@ async def run_repl(
 
     # Get the session from the main agent for direct REPL access
     session = main_agent.session
-    logger = main_agent.logger
+    session_logger = main_agent.logger
 
     # Spinner for streaming phases
     spinner = Spinner(console, theme)
@@ -701,7 +701,7 @@ async def run_repl(
             spinner.update("Responding...", Activity.RESPONDING)
 
     # Batch callbacks for tool execution
-    def on_batch_start(tool_calls: tuple) -> None:
+    def on_batch_start(tool_calls: tuple[Any, ...]) -> None:
         """Initialize batch - print thinking, then track tools."""
         nonlocal _stream_line_open
 
@@ -840,9 +840,9 @@ async def run_repl(
     # On switch, detach callbacks from the previous session.
     # =============================================================
 
-    _callback_session: object | None = None
+    _callback_session: Session | None = None
 
-    def _detach_repl_callbacks(sess: object) -> None:
+    def _detach_repl_callbacks(sess: Session) -> None:
         """Clear streaming callbacks from a session (NOT on_confirm)."""
         sess.on_tool_call = None
         sess.on_reasoning = None
@@ -852,7 +852,7 @@ async def run_repl(
         sess.on_batch_halt = None
         sess.on_batch_complete = None
 
-    def _attach_repl_callbacks(sess: object) -> None:
+    def _attach_repl_callbacks(sess: Session) -> None:
         """Attach streaming callbacks to a session."""
         sess.on_tool_call = on_tool_call
         sess.on_reasoning = on_reasoning
@@ -862,7 +862,7 @@ async def run_repl(
         sess.on_batch_halt = on_batch_halt
         sess.on_batch_complete = on_batch_complete
 
-    def _set_display_session(new_sess: object) -> None:
+    def _set_display_session(new_sess: Session) -> None:
         """Detach callbacks from prior displayed session; attach to new_sess."""
         nonlocal _callback_session
         if _callback_session is not None and _callback_session is not new_sess:
@@ -880,7 +880,7 @@ async def run_repl(
     # notify the user so they know processing is happening.
     # =============================================================
 
-    _current_dispatcher: object | None = None
+    _current_dispatcher: Dispatcher | None = None
     _INCOMING_TURN_SENTINEL = object()  # Sentinel to interrupt prompt
     _incoming_turn_active = False  # Flag to track if incoming turn in progress
     _incoming_turn_done: asyncio.Event | None = None  # Signal spinner to stop
@@ -932,7 +932,7 @@ async def run_repl(
 
             # Interrupt the prompt if active - this makes it "agent's turn"
             if prompt_session.app and prompt_session.app.is_running:
-                prompt_session.app.exit(result=_INCOMING_TURN_SENTINEL)
+                prompt_session.app.exit(result=_INCOMING_TURN_SENTINEL)  # type: ignore[call-overload]
                 # Yield to let prompt actually exit before we print
                 await asyncio.sleep(0)
                 # Move up and clear the prompt line (prompt_toolkit adds newline on exit)
@@ -963,7 +963,7 @@ async def run_repl(
                     pass
                 _incoming_spinner_task = None
 
-    def _set_incoming_hook(dispatcher: object) -> None:
+    def _set_incoming_hook(dispatcher: Dispatcher) -> None:
         """Set the incoming turn hook on a dispatcher."""
         nonlocal _current_dispatcher
         # Clear hook on old dispatcher
@@ -979,7 +979,7 @@ async def run_repl(
     # Print welcome message
     console.print("[bold]NEXUS3 v0.1.0[/bold]")
     console.print(f"Agent: {current_agent_id}", style="dim")
-    console.print(f"Session: {logger.session_dir}", style="dim")
+    console.print(f"Session: {session_logger.session_dir}", style="dim")
     console.print(f"Server: http://127.0.0.1:{effective_port}", style="dim")
     # Show prompt sources (from ContextLoader)
     for source in shared.base_context.sources.prompt_sources:
@@ -1352,13 +1352,14 @@ async def run_repl(
                             )
                         # Switch to new agent
                         new_id = output.new_agent_id
+                        assert new_id is not None  # guaranteed by SWITCH_AGENT result
                         new_agent = pool.get(new_id)
                         if new_agent:
                             pool.set_repl_connected(current_agent_id, False)
                             current_agent_id = new_id
                             pool.set_repl_connected(new_id, True)
                             session = new_agent.session
-                            logger = new_agent.logger
+                            session_logger = new_agent.logger
                             # Detach callbacks from old session, attach to new
                             _set_display_session(session)
                             _set_incoming_hook(new_agent.dispatcher)
@@ -1382,6 +1383,7 @@ async def run_repl(
                         action = output.data.get("action") if output.data else None
 
                         if action == "prompt_restore":
+                            assert output.data is not None
                             # Restore saved session
                             if output.message:
                                 console.print(f"[yellow]{output.message}[/]")
@@ -1420,7 +1422,7 @@ async def run_repl(
                                         current_agent_id = agent_name_to_restore
                                         pool.set_repl_connected(agent_name_to_restore, True)
                                         session = new_agent.session
-                                        logger = new_agent.logger
+                                        session_logger = new_agent.logger
                                         # Detach callbacks from old session, attach to new
                                         _set_display_session(session)
                                         _set_incoming_hook(new_agent.dispatcher)
@@ -1435,6 +1437,7 @@ async def run_repl(
                                     console.print(f"[red]Failed to restore: {e}[/]")
 
                         elif action in ("prompt_create", "prompt_create_whisper"):
+                            assert output.data is not None
                             # Create new agent
                             if output.message:
                                 console.print(f"[yellow]{output.message}[/]")
@@ -1470,7 +1473,7 @@ async def run_repl(
                                         current_agent_id = agent_name_to_create
                                         pool.set_repl_connected(agent_name_to_create, True)
                                         session = new_agent.session
-                                        logger = new_agent.logger
+                                        session_logger = new_agent.logger
                                         # Detach callbacks from old session, attach to new
                                         _set_display_session(session)
                                         _set_incoming_hook(new_agent.dispatcher)
@@ -1506,6 +1509,7 @@ async def run_repl(
             # Determine target session (whisper mode may redirect)
             if whisper.is_active():
                 target_id = whisper.target_agent_id
+                assert target_id is not None  # guaranteed when whisper is active
                 target_agent = pool.get(target_id)
                 if target_agent is None:
                     console.print(f"[red]Whisper target not found: {target_id}[/]")
@@ -1547,13 +1551,13 @@ async def run_repl(
 
             async def do_stream(
                 inp: str = user_input,
-                target_sess: object = active_session,
+                target_sess: Session = active_session,
                 agent_id: str = current_agent_id,
             ) -> None:
                 nonlocal _first_chunk_received, _stream_line_open
                 # Wrap in agent_context for correct raw log routing
                 with pool.log_multiplexer.agent_context(agent_id):
-                    async for chunk in target_sess.send(inp):  # type: ignore[union-attr]
+                    async for chunk in target_sess.send(inp):
                         if not _first_chunk_received:
                             _first_chunk_received = True
                             spinner.update("Responding...", Activity.RESPONDING)
@@ -2066,7 +2070,7 @@ def _run_with_reload(args: argparse.Namespace) -> None:
     watchfiles.run_process(
         watch_path,
         target=cmd[0],
-        args=cmd[1:],
+        args=tuple(cmd[1:]),
         callback=lambda changes: print(f"[reload] Detected changes: {changes}"),
     )
 

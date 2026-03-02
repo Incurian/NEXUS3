@@ -69,7 +69,7 @@ class NexusSendSkill(NexusSkill):
 
         async def send_and_format(client: Any) -> dict[str, Any]:
             """Send message and format response with halt warning if needed."""
-            result = await client.send(
+            result: dict[str, Any] = await client.send(
                 content,
                 source="nexus_send",
                 source_agent_id=sender_id,
