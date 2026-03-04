@@ -370,10 +370,28 @@ class TestFixOrphanedToolCalls:
         assert ctx.messages[6].tool_call_id == "c2"
         assert ctx.messages[7].tool_call_id == "c3"
 
-    def test_user_message_stops_scan(self):
-        """Stops scanning when hitting a user message (nothing to fix)."""
+    def test_inserts_missing_results_before_following_user_message(self):
+        """Repairs orphaned tool batch even when a user message already follows."""
         ctx = ContextManager()
-        ctx.add_user_message("Hello")
+        ctx.add_user_message("Task 1")
+        ctx.add_assistant_message(
+            "Using tools",
+            tool_calls=[
+                ToolCall(id="c1", name="tool_a", arguments="{}"),
+                ToolCall(id="c2", name="tool_b", arguments="{}"),
+            ],
+        )
+        # Simulate interruption where next user message was appended before
+        # tool results were persisted.
+        ctx.add_user_message("Task 2")
 
         ctx.fix_orphaned_tool_calls()
-        assert len(ctx.messages) == 1
+        assert len(ctx.messages) == 5
+        assert ctx.messages[2].role == Role.TOOL
+        assert ctx.messages[2].tool_call_id == "c1"
+        assert "Cancelled" in ctx.messages[2].content
+        assert ctx.messages[3].role == Role.TOOL
+        assert ctx.messages[3].tool_call_id == "c2"
+        assert "Cancelled" in ctx.messages[3].content
+        assert ctx.messages[4].role == Role.USER
+        assert ctx.messages[4].content == "Task 2"
