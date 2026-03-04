@@ -452,12 +452,20 @@ class OpenAICompatProvider(BaseProvider):
         }
 
         if not content and not tool_calls_by_index:
-            logger.warning(
-                "Empty stream response: status=%d, events=%d, "
-                "received_done=%s, finish_reason=%s, duration=%dms",
-                response.status_code, event_count,
-                received_done, finish_reason, duration_ms,
-            )
+            if received_done:
+                logger.warning(
+                    "Empty stream response: status=%d, events=%d, "
+                    "received_done=%s, finish_reason=%s, duration=%dms",
+                    response.status_code, event_count,
+                    received_done, finish_reason, duration_ms,
+                )
+            else:
+                logger.debug(
+                    "Incomplete empty stream (likely interrupted/cancelled): "
+                    "status=%d, events=%d, received_done=%s, finish_reason=%s, duration=%dms",
+                    response.status_code, event_count,
+                    received_done, finish_reason, duration_ms,
+                )
         else:
             logger.debug(
                 "Stream complete: events=%d, content_len=%d, tools=%d, "

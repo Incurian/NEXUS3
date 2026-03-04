@@ -72,6 +72,19 @@ class MockProviderForCancellation:
         )
 
 
+class MockProviderWithoutStreamComplete:
+    """Mock provider that emits an event but never yields StreamComplete."""
+
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+        dynamic_context: str | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        yield ToolCallStarted(index=0, id="tc1", name="slow_skill")
+        return
+
+
 class SlowSkill(BaseSkill):
     """Skill that can be configured to be slow or raise CancelledError."""
 
@@ -162,6 +175,34 @@ class TestEarlyCancellationPreventsOrphans:
         else:
             # No assistant message = no orphans possible
             assert len(tool_results) == 0
+
+    @pytest.mark.asyncio
+    async def test_cancel_mid_stream_before_stream_complete_reports_cancelled(self):
+        """Cancellation after non-content stream event yields SessionCancelled."""
+        provider = MockProviderWithoutStreamComplete()
+        context = ContextManager(config=ContextConfig(max_tokens=10000))
+        context.set_system_prompt("System prompt")
+
+        services = create_services_with_permissions()
+        registry = SkillRegistry(services=services)
+        registry.register("slow_skill", lambda _: SlowSkill())
+
+        session = Session(
+            provider=provider,
+            context=context,
+            registry=registry,
+            services=services,
+        )
+
+        cancel_token = CancellationToken()
+        events = []
+        async for event in session.run_turn("Test", use_tools=True, cancel_token=cancel_token):
+            events.append(event)
+            # Simulate ESC after first stream event, before any StreamComplete.
+            if len(events) == 1:
+                cancel_token.cancel()
+
+        assert any(isinstance(e, SessionCancelled) for e in events)
 
 
 class TestSequentialCancellationAddsResults:

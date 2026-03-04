@@ -295,6 +295,8 @@ class Session:
             async for event in self.provider.stream(
                 messages, tools, dynamic_context=dynamic_context,
             ):
+                if cancel_token and cancel_token.is_cancelled:
+                    return
                 if isinstance(event, ContentDelta):
                     yield event.text
                     if cancel_token and cancel_token.is_cancelled:
@@ -305,6 +307,11 @@ class Session:
                         self.on_tool_call(event.name, event.id)
                 elif isinstance(event, StreamComplete):
                     final_message = event.message
+
+            # If cancellation arrived mid-stream before StreamComplete,
+            # exit quietly instead of treating as empty provider output.
+            if cancel_token and cancel_token.is_cancelled:
+                return
 
             # Log/store assistant response
             if final_message:
@@ -381,6 +388,9 @@ class Session:
             async for stream_event in self.provider.stream(
                 messages, tools, dynamic_context=dynamic_context,
             ):
+                if cancel_token and cancel_token.is_cancelled:
+                    yield SessionCancelled()
+                    return
                 if isinstance(stream_event, ContentDelta):
                     yield ContentChunk(text=stream_event.text)
                     if cancel_token and cancel_token.is_cancelled:
@@ -390,6 +400,10 @@ class Session:
                     yield ToolDetected(name=stream_event.name, tool_id=stream_event.id)
                 elif isinstance(stream_event, StreamComplete):
                     final_message = stream_event.message
+
+            if cancel_token and cancel_token.is_cancelled:
+                yield SessionCancelled()
+                return
 
             # Store assistant response
             if final_message:
@@ -454,6 +468,9 @@ class Session:
             async for event in self.provider.stream(
                 messages, tools, dynamic_context=dynamic_context,
             ):
+                if cancel_token and cancel_token.is_cancelled:
+                    yield SessionCancelled()
+                    return
                 if isinstance(event, ReasoningDelta):
                     if show_reasoning and not is_reasoning:
                         yield ReasoningStarted()
@@ -476,6 +493,10 @@ class Session:
                         yield ReasoningEnded()
                     is_reasoning = False
                     final_message = event.message
+
+            if cancel_token and cancel_token.is_cancelled:
+                yield SessionCancelled()
+                return
 
             if final_message is None:
                 yield SessionCompleted(halted_at_limit=False)

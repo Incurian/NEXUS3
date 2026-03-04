@@ -158,6 +158,18 @@ class TestOpenAIEmptyStream:
         assert any("Empty stream response" in r.message for r in caplog.records)
 
     @pytest.mark.asyncio
+    async def test_incomplete_empty_stream_does_not_warn(
+        self, openai_provider: OpenRouterProvider, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Empty stream without [DONE] is treated as interrupted, not warning."""
+        response = _make_sse_response([])
+        with caplog.at_level("WARNING", logger="nexus3.provider.openai_compat"):
+            async for _ in openai_provider._parse_stream(response):
+                pass
+
+        assert not any("Empty stream response" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
     async def test_no_done_marker_still_logs(
         self, openai_provider: OpenRouterProvider
     ) -> None:
@@ -582,13 +594,31 @@ class TestAnthropicEmptyStream:
     async def test_empty_stream_logs_warning(
         self, anthropic_provider: AnthropicProvider, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Empty Anthropic stream triggers a warning log."""
-        response = _make_sse_response([])
+        """Completed empty Anthropic stream triggers a warning log."""
+        response = _make_sse_response([
+            'event: message_start',
+            'data: {"type": "message_start", "message": {"usage": {}}}',
+            '',
+            'event: message_stop',
+            'data: {"type": "message_stop"}',
+        ])
         with caplog.at_level("WARNING", logger="nexus3.provider.anthropic"):
             async for _ in anthropic_provider._parse_stream(response):
                 pass
 
         assert any("Empty stream response" in r.message for r in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_incomplete_empty_stream_does_not_warn(
+        self, anthropic_provider: AnthropicProvider, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Incomplete empty Anthropic stream is treated as interrupted, not warning."""
+        response = _make_sse_response([])
+        with caplog.at_level("WARNING", logger="nexus3.provider.anthropic"):
+            async for _ in anthropic_provider._parse_stream(response):
+                pass
+
+        assert not any("Empty stream response" in r.message for r in caplog.records)
 
     @pytest.mark.asyncio
     async def test_event_count_tracked(
