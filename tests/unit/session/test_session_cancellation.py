@@ -85,6 +85,23 @@ class MockProviderWithoutStreamComplete:
         return
 
 
+class MockProviderRejectToolThenUser:
+    """Provider that fails if TOOL is immediately followed by USER."""
+
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+        dynamic_context: str | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        for i in range(len(messages) - 1):
+            if messages[i].role == Role.TOOL and messages[i + 1].role == Role.USER:
+                raise AssertionError("Unexpected role 'user' after role 'tool'")
+        yield StreamComplete(
+            message=Message(role=Role.ASSISTANT, content="ok", tool_calls=())
+        )
+
+
 class SlowSkill(BaseSkill):
     """Skill that can be configured to be slow or raise CancelledError."""
 
@@ -473,3 +490,42 @@ class TestCancelledToolFlushSafety:
 
         assert "".join(chunks) == "ok"
         assert not any(m.role == Role.TOOL for m in context.messages)
+
+    @pytest.mark.asyncio
+    async def test_cancelled_tool_tail_repaired_before_next_user_turn(self):
+        """A cancelled tool tail should not produce TOOL->USER sequence next turn."""
+        # First provider creates a tool call batch.
+        provider = MockProviderForCancellation(
+            tool_calls=[ToolCall(id="tc1", name="slow_skill", arguments={})]
+        )
+        context = ContextManager(config=ContextConfig(max_tokens=10000))
+        context.set_system_prompt("System prompt")
+
+        cancel_token = CancellationToken()
+        services = create_services_with_permissions()
+        registry = SkillRegistry(services=services)
+        # This skill executes once and cancels the token, leaving tool-tail state.
+        registry.register("slow_skill", lambda _: SlowSkill(cancel_token=cancel_token))
+
+        session = Session(
+            provider=provider,
+            context=context,
+            registry=registry,
+            services=services,
+        )
+
+        # First turn: cancellation after tool execution.
+        async for _ in session.run_turn("first", cancel_token=cancel_token):
+            pass
+
+        # Second turn provider asserts no TOOL->USER adjacency.
+        session.provider = MockProviderRejectToolThenUser()
+        chunks = []
+        async for chunk in session.send("second"):
+            chunks.append(chunk)
+
+        # No assertion error means no TOOL->USER violation in provider input.
+        # Response may arrive as StreamComplete-only (no ContentDelta chunks),
+        # so validate persisted assistant message instead.
+        assert context.messages[-1].role == Role.ASSISTANT
+        assert context.messages[-1].content == "ok"

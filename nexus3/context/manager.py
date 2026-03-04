@@ -535,6 +535,60 @@ class ContextManager:
 
         return removed
 
+    def ensure_assistant_after_tool_results(self) -> bool:
+        """Ensure a trailing TOOL-result batch is followed by an assistant message.
+
+        Some providers reject a new USER message directly after TOOL messages
+        (even when tool_call pairing is valid). If the conversation currently
+        ends with TOOL results from a prior interrupted/cancelled turn, append a
+        synthetic assistant note so the next USER turn has a safe role sequence.
+
+        Returns:
+            True if a synthetic assistant message was appended, False otherwise.
+        """
+        if not self._messages:
+            return False
+
+        if self._messages[-1].role != Role.TOOL:
+            return False
+
+        # Find start of trailing contiguous TOOL block.
+        start = len(self._messages) - 1
+        while start >= 0 and self._messages[start].role == Role.TOOL:
+            start -= 1
+        start += 1
+
+        assistant_idx = start - 1
+        if assistant_idx < 0:
+            return False
+
+        assistant_msg = self._messages[assistant_idx]
+        if assistant_msg.role != Role.ASSISTANT or not assistant_msg.tool_calls:
+            return False
+
+        expected_ids = {tc.id for tc in assistant_msg.tool_calls}
+        found_ids = {
+            m.tool_call_id for m in self._messages[start:] if m.tool_call_id is not None
+        }
+
+        # Only synthesize if this is a valid/repairable tool-result tail.
+        if not expected_ids.issubset(found_ids):
+            return False
+
+        synthetic = Message(
+            role=Role.ASSISTANT,
+            content="Previous turn was cancelled after tool execution.",
+        )
+        self._messages.append(synthetic)
+        if self._logger:
+            self._logger.log_assistant(synthetic.content)
+
+        logger.warning(
+            "Appended synthetic assistant message after trailing tool results "
+            "to maintain valid role sequencing"
+        )
+        return True
+
     def clear_messages(self) -> None:
         """Clear all messages (keeps system prompt and tools)."""
         self._messages.clear()

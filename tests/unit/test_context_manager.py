@@ -431,3 +431,34 @@ class TestPruneUnpairedToolResults:
         tool_msgs = [m for m in ctx.messages if m.role == Role.TOOL]
         assert len(tool_msgs) == 1
         assert tool_msgs[0].tool_call_id == "c1"
+
+
+class TestEnsureAssistantAfterToolResults:
+    """Tests for synthetic assistant insertion after trailing tool results."""
+
+    def test_appends_assistant_after_valid_trailing_tool_block(self):
+        from nexus3.core.types import ToolResult
+
+        ctx = ContextManager()
+        ctx.add_user_message("Task")
+        ctx.add_assistant_message(
+            "Using tool",
+            tool_calls=[ToolCall(id="c1", name="tool_a", arguments="{}")],
+        )
+        ctx.add_tool_result("c1", "tool_a", ToolResult(output="ok"))
+
+        changed = ctx.ensure_assistant_after_tool_results()
+
+        assert changed is True
+        assert ctx.messages[-1].role == Role.ASSISTANT
+        assert "cancelled" in ctx.messages[-1].content.lower()
+
+    def test_noop_when_last_message_not_tool(self):
+        ctx = ContextManager()
+        ctx.add_user_message("Task")
+        ctx.add_assistant_message("Done")
+
+        changed = ctx.ensure_assistant_after_tool_results()
+
+        assert changed is False
+        assert ctx.messages[-1].role == Role.ASSISTANT

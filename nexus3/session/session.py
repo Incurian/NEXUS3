@@ -285,6 +285,8 @@ class Session:
                 # Safety net: synthesize results for any orphaned tool_use
                 # blocks (e.g., from double-ESC destroying the generator)
                 self.context.fix_orphaned_tool_calls()
+                # Some providers reject USER directly after TOOL messages.
+                self.context.ensure_assistant_after_tool_results()
 
                 # Reset iteration state for this send()
                 self._halted_at_iteration_limit = False
@@ -387,6 +389,8 @@ class Session:
             # Safety net: synthesize results for any orphaned tool_use
             # blocks (e.g., from double-ESC destroying the generator)
             self.context.fix_orphaned_tool_calls()
+            # Some providers reject USER directly after TOOL messages.
+            self.context.ensure_assistant_after_tool_results()
 
             # Reset iteration state for this turn
             self._halted_at_iteration_limit = False
