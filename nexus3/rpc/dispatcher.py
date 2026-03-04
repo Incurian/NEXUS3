@@ -13,7 +13,12 @@ from pydantic import ValidationError as PydanticValidationError
 from nexus3.core.cancel import CancellationToken
 from nexus3.core.permissions import PermissionLevel
 from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
-from nexus3.rpc.schemas import CancelParamsSchema, CompactParamsSchema, GetMessagesParamsSchema
+from nexus3.rpc.schemas import (
+    CancelParamsSchema,
+    CompactParamsSchema,
+    EmptyParamsSchema,
+    GetMessagesParamsSchema,
+)
 from nexus3.rpc.types import Request, Response
 from nexus3.session import Session
 
@@ -269,6 +274,11 @@ class Dispatcher:
         Returns:
             Dict with 'success' key set to True.
         """
+        try:
+            EmptyParamsSchema.model_validate({}, strict=False)
+        except PydanticValidationError as exc:
+            raise InvalidParamsError("Invalid shutdown parameters") from exc
+
         self._should_shutdown = True
         return {"success": True}
 
@@ -286,6 +296,11 @@ class Dispatcher:
         Raises:
             InvalidParamsError: If no context manager is configured.
         """
+        try:
+            EmptyParamsSchema.model_validate({}, strict=False)
+        except PydanticValidationError as exc:
+            raise InvalidParamsError("Invalid get_tokens parameters") from exc
+
         if not self._context:
             raise InvalidParamsError("No context manager configured")
         return self._context.get_token_usage()
@@ -309,6 +324,11 @@ class Dispatcher:
         Raises:
             InvalidParamsError: If no context manager is configured.
         """
+        try:
+            EmptyParamsSchema.model_validate({}, strict=False)
+        except PydanticValidationError as exc:
+            raise InvalidParamsError("Invalid get_context parameters") from exc
+
         if not self._context:
             raise InvalidParamsError("No context manager configured")
         messages = self._context.messages

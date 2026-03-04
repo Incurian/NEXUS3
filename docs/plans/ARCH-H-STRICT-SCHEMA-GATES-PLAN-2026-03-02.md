@@ -55,6 +55,8 @@ Phases:
 - [ ] Wire schema validation into ingress paths.
   - [x] M1 Phase 2 slice: wired typed validation in `rpc/global_dispatcher.py::_handle_destroy_agent` and `rpc/dispatcher.py::_handle_get_messages` with compatibility-style `InvalidParamsError` mapping.
   - [x] M1 Phase 2 slice: wired typed validation in `rpc/dispatcher.py::_handle_cancel` and `rpc/dispatcher.py::_handle_compact` with compat-safe (`strict=False`) `InvalidParamsError` mapping.
+  - [x] M1 Phase 2 slice: wired compat-safe typed ingress hooks for remaining low-risk no-arg methods in `rpc/dispatcher.py` (`shutdown`, `get_tokens`, `get_context`) and `rpc/global_dispatcher.py` (`list_agents`, `shutdown_server`) while preserving permissive extras behavior.
+  - [ ] Remaining M1 Phase 2 ingress coverage beyond low-risk methods (including stricter/behavior-sensitive paths) still pending.
 - [ ] Remove silent malformed-entry skips.
 - [ ] Consolidate duplicate MCP config models.
 

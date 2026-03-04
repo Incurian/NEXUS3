@@ -22,7 +22,10 @@ import secrets
 import sys
 from typing import Any
 
+from rich.console import Console
+
 from nexus3.client import ClientError, NexusClient
+from nexus3.display.safe_sink import SafeSink
 from nexus3.rpc.auth import discover_rpc_token
 from nexus3.rpc.detection import DetectionResult, detect_server
 
@@ -48,12 +51,17 @@ def _print_json(data: Any) -> None:
 
 def _print_error(message: str) -> None:
     """Print error message to stderr."""
-    print(f"Error: {message}", file=sys.stderr)
+    sink = SafeSink(Console(file=sys.stderr, markup=False, highlight=False), stream=sys.stderr)
+    sink.write_trusted("Error: ")
+    sink.write_untrusted(message)
+    sink.write_trusted("\n")
 
 
 def _print_info(message: str) -> None:
     """Print info message to stderr (so it doesn't pollute JSON output)."""
-    print(message, file=sys.stderr)
+    sink = SafeSink(Console(file=sys.stderr, markup=False, highlight=False), stream=sys.stderr)
+    sink.write_untrusted(message)
+    sink.write_trusted("\n")
 
 
 async def _check_server(port: int = DEFAULT_PORT) -> bool:

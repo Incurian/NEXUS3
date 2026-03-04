@@ -2,15 +2,14 @@
 
 from unittest.mock import patch
 
-import pytest
-from nexus3.mcp.errors import MCPErrorContext
 from nexus3.mcp.error_formatter import (
-    format_config_validation_error,
     format_command_not_found,
-    format_server_crash,
+    format_config_validation_error,
     format_json_error,
+    format_server_crash,
     format_timeout_error,
 )
+from nexus3.mcp.errors import MCPErrorContext
 
 
 class TestFormatConfigValidationError:
@@ -177,6 +176,13 @@ class TestFormatServerCrash:
         # First lines should be truncated
         assert "line0" not in result
 
+    def test_stderr_lines_are_sanitized(self):
+        context = MCPErrorContext(server_name="test")
+        stderr = ["\x1b[31m[bold]boom[/bold]\x1b[0m"]
+        result = format_server_crash(context, exit_code=1, stderr_lines=stderr)
+        assert "\x1b[" not in result
+        assert r"\[bold]boom\[/bold]" in result
+
 
 class TestFormatJsonError:
     def test_basic_json_error(self):
@@ -213,6 +219,13 @@ class TestFormatJsonError:
         result = format_json_error(None, raw_text="bad", error_msg="Parse error")
         assert "invalid json" in result.lower()  # "Server sent invalid JSON"
         assert "Parse error" in result
+
+    def test_raw_preview_is_sanitized(self):
+        context = MCPErrorContext(server_name="test")
+        raw = "\x1b[2J[red]oops[/red]\x07"
+        result = format_json_error(context, raw_text=raw, error_msg="bad payload")
+        assert "\x1b[" not in result
+        assert r"'\\[red]oops\\[/red]'" in result
 
 
 class TestFormatTimeoutError:

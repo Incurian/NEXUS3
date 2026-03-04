@@ -87,3 +87,36 @@ class TestGlobGatewayEnforcement:
         assert result.output is not None
         assert "inside.py" in result.output
         assert "hidden.py" not in result.output
+
+    @pytest.mark.asyncio
+    async def test_glob_skips_symlink_directory_escape(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        async def _inline_to_thread(func, /, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        monkeypatch.setattr(asyncio, "to_thread", _inline_to_thread)
+
+        allowed = tmp_path / "allowed"
+        outside = tmp_path / "outside"
+        allowed.mkdir()
+        outside.mkdir()
+        (allowed / "inside.py").write_text("print('ok')")
+        (outside / "secret.py").write_text("print('secret')")
+
+        link_dir = allowed / "linked-outside"
+        try:
+            link_dir.symlink_to(outside, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"symlink creation not supported: {exc}")
+
+        skill = _build_glob_skill(cwd=tmp_path, allowed_paths=[allowed])
+        result = await skill.execute(pattern="**/*.py", path=str(allowed))
+
+        assert not result.error
+        assert result.output is not None
+        assert "inside.py" in result.output
+        assert "linked-outside/secret.py" not in result.output
+        assert "secret.py" not in result.output

@@ -23,7 +23,7 @@ class SafeSink:
 
     def print_untrusted(self, content: str, style: str | None = None, end: str = "\n") -> None:
         """Print untrusted text through Rich after full display sanitization."""
-        safe_content = sanitize_for_display(content)
+        safe_content = self.sanitize_print_content(content)
         self.console.print(safe_content, style=style, end=end)
 
     def write_trusted(self, chunk: str) -> None:
@@ -36,9 +36,19 @@ class SafeSink:
 
     def write_untrusted(self, chunk: str) -> None:
         """Write untrusted text directly to stream after terminal sanitization."""
-        safe_chunk = strip_terminal_escapes(chunk)
+        safe_chunk = self.sanitize_stream_content(chunk)
         if not safe_chunk:
             return
         stream = self._stream or sys.stdout
         stream.write(safe_chunk)
         stream.flush()
+
+    @staticmethod
+    def sanitize_print_content(content: str) -> str:
+        """Sanitize untrusted text for Rich-rendered output."""
+        return sanitize_for_display(content)
+
+    @staticmethod
+    def sanitize_stream_content(chunk: str) -> str:
+        """Sanitize untrusted text for raw stream writes."""
+        return strip_terminal_escapes(chunk)

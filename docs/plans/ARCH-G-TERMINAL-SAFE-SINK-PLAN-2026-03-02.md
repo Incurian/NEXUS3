@@ -51,6 +51,11 @@ Phases:
 - Added `nexus3/display/safe_sink.py` with explicit trusted/untrusted print and stream APIs using existing `text_safety` primitives.
 - Integrated minimally into `InlinePrinter` (trusted `print`, untrusted streaming chunk sink) without broad call-site migration.
 - Added focused unit tests for sink sanitization contract under `tests/unit/display/test_safe_sink.py`.
+- 2026-03-04: Phase 2 high-risk migration slice completed.
+- Migrated `nexus3/cli/client_commands.py` stderr paths (`_print_error`, `_print_info`) to `SafeSink` trusted/untrusted stream writes.
+- Hardened `nexus3/mcp/error_formatter.py` dynamic-field rendering through `SafeSink` print sanitization contract for server/context/command/stderr/raw preview interpolation.
+- Added focused regression tests in `tests/unit/cli/test_client_commands_safe_sink.py` and extended `tests/unit/mcp/test_error_formatter.py` sanitization coverage.
+- Validation: targeted `ruff` and targeted `pytest` suites passed.
 
 ## Testing Strategy
 
@@ -61,7 +66,7 @@ Phases:
 ## Implementation Checklist
 
 - [x] Add safe sink abstraction.
-- [ ] Migrate high-risk output paths.
+- [x] Migrate high-risk output paths.
 - [ ] Migrate all remaining print/stream paths.
 - [ ] Remove redundant/fragmented sanitization call sites.
 

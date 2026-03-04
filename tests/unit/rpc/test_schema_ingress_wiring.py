@@ -41,6 +41,15 @@ class _StubPool:
         return None
 
 
+class _StubContext:
+    def __init__(self) -> None:
+        self.messages: list[Any] = []
+        self.system_prompt = None
+
+    def get_token_usage(self) -> dict[str, int]:
+        return {"input_tokens": 3, "output_tokens": 4, "total_tokens": 7}
+
+
 @pytest.mark.asyncio
 async def test_dispatcher_get_messages_schema_validation_preserves_error_style() -> None:
     message = SimpleNamespace(
@@ -114,3 +123,88 @@ async def test_dispatcher_compact_schema_validation_rejects_invalid_force() -> N
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
     assert "boolean" in response.error["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_noarg_ingress_wiring_keeps_compat_with_extra_params() -> None:
+    dispatcher = Dispatcher(_StubSession(), context=_StubContext(), agent_id="agent-1")
+
+    shutdown_response = await dispatcher.dispatch(
+        Request(
+            jsonrpc="2.0",
+            method="shutdown",
+            params={"unexpected": "value"},
+            id=1,
+        )
+    )
+    get_tokens_response = await dispatcher.dispatch(
+        Request(
+            jsonrpc="2.0",
+            method="get_tokens",
+            params={"unexpected": "value"},
+            id=2,
+        )
+    )
+    get_context_response = await dispatcher.dispatch(
+        Request(
+            jsonrpc="2.0",
+            method="get_context",
+            params={"unexpected": "value"},
+            id=3,
+        )
+    )
+
+    assert shutdown_response is not None
+    assert shutdown_response.error is None
+    assert shutdown_response.result == {"success": True}
+
+    assert get_tokens_response is not None
+    assert get_tokens_response.error is None
+    assert get_tokens_response.result == {
+        "input_tokens": 3,
+        "output_tokens": 4,
+        "total_tokens": 7,
+    }
+
+    assert get_context_response is not None
+    assert get_context_response.error is None
+    assert get_context_response.result == {
+        "message_count": 0,
+        "system_prompt": False,
+        "halted_at_iteration_limit": False,
+        "last_iteration_count": 0,
+        "max_tool_iterations": 10,
+    }
+
+
+@pytest.mark.asyncio
+async def test_global_noarg_ingress_wiring_keeps_compat_with_extra_params() -> None:
+    dispatcher = GlobalDispatcher(_StubPool())
+
+    list_agents_response = await dispatcher.dispatch(
+        Request(
+            jsonrpc="2.0",
+            method="list_agents",
+            params={"unexpected": "value"},
+            id=1,
+        )
+    )
+    shutdown_server_response = await dispatcher.dispatch(
+        Request(
+            jsonrpc="2.0",
+            method="shutdown_server",
+            params={"unexpected": "value"},
+            id=2,
+        )
+    )
+
+    assert list_agents_response is not None
+    assert list_agents_response.error is None
+    assert list_agents_response.result == {"agents": []}
+
+    assert shutdown_server_response is not None
+    assert shutdown_server_response.error is None
+    assert shutdown_server_response.result == {
+        "success": True,
+        "message": "Server shutting down",
+    }

@@ -1390,6 +1390,34 @@ class TestOutlineSkill:
         assert "hidden.py" not in result.output
 
     @pytest.mark.asyncio
+    async def test_directory_respects_symlinked_directory_paths(self, tmp_path, monkeypatch):
+        async def _inline_to_thread(func, /, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        monkeypatch.setattr(asyncio, "to_thread", _inline_to_thread)
+
+        allowed = tmp_path / "allowed"
+        outside = tmp_path / "outside"
+        allowed.mkdir()
+        outside.mkdir()
+        (allowed / "inside.py").write_text("def inside():\n    pass\n")
+        (outside / "secret.py").write_text("def secret():\n    pass\n")
+        link_dir = allowed / "linked-outside"
+        try:
+            link_dir.symlink_to(outside, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"symlink creation not supported: {exc}")
+
+        scoped_skill = _build_outline_skill(cwd=tmp_path, allowed_paths=[allowed])
+        result = await scoped_skill.execute(path=str(allowed))
+
+        assert result.success
+        assert result.output is not None
+        assert "inside.py" in result.output
+        assert "linked-outside/secret.py" not in result.output
+        assert "secret.py" not in result.output
+
+    @pytest.mark.asyncio
     async def test_empty_file(self, skill, tmp_path):
         f = tmp_path / "empty.py"
         f.write_text("")

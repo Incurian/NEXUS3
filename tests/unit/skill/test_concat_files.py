@@ -871,6 +871,44 @@ class TestGatewayEnforcement:
         assert "secret.py" not in result.output
 
     @pytest.mark.asyncio
+    async def test_concat_files_skips_symlink_directory_escape(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        async def _inline_to_thread(func, /, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        monkeypatch.setattr("asyncio.to_thread", _inline_to_thread)
+
+        allowed = tmp_path / "allowed"
+        outside = tmp_path / "outside"
+        allowed.mkdir()
+        outside.mkdir()
+        (allowed / "inside.py").write_text("print('ok')\n")
+        (outside / "secret.py").write_text("print('secret')\n")
+
+        link_dir = allowed / "linked-outside"
+        try:
+            link_dir.symlink_to(outside, target_is_directory=True)
+        except OSError as exc:
+            pytest.skip(f"symlink creation not supported: {exc}")
+
+        skill = _build_concat_skill(cwd=tmp_path, allowed_paths=[allowed])
+        result = await skill.execute(
+            extensions=["py"],
+            path=str(allowed),
+            dry_run=True,
+            gitignore=False,
+        )
+
+        assert result.success
+        assert result.output is not None
+        assert "inside.py" in result.output
+        assert "linked-outside/secret.py" not in result.output
+        assert "secret.py" not in result.output
+
+    @pytest.mark.asyncio
     async def test_concat_files_git_discovery_skips_outside_candidates(
         self,
         tmp_path: Path,

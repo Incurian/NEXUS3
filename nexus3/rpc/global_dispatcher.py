@@ -28,7 +28,7 @@ from nexus3.core.policy import PermissionLevel
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
 from nexus3.rpc.pool import Agent, AgentConfig, AuthorizationError
-from nexus3.rpc.schemas import DestroyAgentParamsSchema
+from nexus3.rpc.schemas import DestroyAgentParamsSchema, EmptyParamsSchema
 from nexus3.rpc.types import Request, Response
 
 if TYPE_CHECKING:
@@ -553,6 +553,11 @@ class GlobalDispatcher:
                     - created_at: str - ISO 8601 timestamp of creation
                     - message_count: int - Number of messages in context
         """
+        try:
+            EmptyParamsSchema.model_validate({}, strict=False)
+        except PydanticValidationError as exc:
+            raise InvalidParamsError("Invalid list_agents parameters") from exc
+
         agents = self._pool.list()
 
         return {"agents": agents}
@@ -572,6 +577,11 @@ class GlobalDispatcher:
                 - success: bool - Always True
                 - message: str - Confirmation message
         """
+        try:
+            EmptyParamsSchema.model_validate({}, strict=False)
+        except PydanticValidationError as exc:
+            raise InvalidParamsError("Invalid shutdown_server parameters") from exc
+
         self._shutdown_requested = True
         logger.info("Server shutdown requested")
         return {
