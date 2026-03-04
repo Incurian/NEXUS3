@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import validate_path
+from nexus3.core.filesystem_access import FilesystemAccessGateway
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
 
@@ -79,6 +79,7 @@ class GlobSkill(FileSkill):
         try:
             # Validate path (resolves symlinks, checks allowed_paths if set)
             base_path = self._validate_path(path)
+            fs_gateway = FilesystemAccessGateway(self._services, tool_name=self.name)
 
             # Verify base path exists and is a directory
             is_dir = await asyncio.to_thread(base_path.is_dir)
@@ -90,13 +91,11 @@ class GlobSkill(FileSkill):
             # Execute glob
             def do_glob() -> list[Path]:
                 results = []
-                for match in base_path.glob(pattern):
-                    # If sandbox is active, verify each result is within sandbox
-                    if self._allowed_paths is not None:
-                        try:
-                            validate_path(match, allowed_paths=self._allowed_paths)
-                        except PathSecurityError:
-                            continue  # Skip results outside sandbox
+                authorized_matches = fs_gateway.iter_authorized_paths(
+                    base_path.glob(pattern),
+                    must_exist=True,
+                )
+                for match in authorized_matches:
 
                     # Check exclusion patterns
                     if exclude:

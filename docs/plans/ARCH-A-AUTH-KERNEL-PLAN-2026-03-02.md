@@ -29,6 +29,9 @@ Primary files to change:
 - [session/enforcer.py](/home/inc/repos/NEXUS3/nexus3/session/enforcer.py)
 - [session/session.py](/home/inc/repos/NEXUS3/nexus3/session/session.py)
 - [rpc/pool.py](/home/inc/repos/NEXUS3/nexus3/rpc/pool.py)
+- [rpc/global_dispatcher.py](/home/inc/repos/NEXUS3/nexus3/rpc/global_dispatcher.py)
+- [rpc/dispatcher.py](/home/inc/repos/NEXUS3/nexus3/rpc/dispatcher.py)
+- [rpc/agent_api.py](/home/inc/repos/NEXUS3/nexus3/rpc/agent_api.py)
 - [core/permissions.py](/home/inc/repos/NEXUS3/nexus3/core/permissions.py)
 - New: `nexus3/core/authorization_kernel.py`
 
@@ -46,7 +49,7 @@ Phases:
 
 ## Implementation Checklist
 
-- [ ] Define `AuthorizationKernel` API and decision schema.
+- [x] Define `AuthorizationKernel` API and decision schema. (M0 Slice A foundation)
 - [ ] Implement adapters for session and RPC call sites.
 - [ ] Add parity logging/assertions under test flag.
 - [ ] Remove duplicate authorization branches.

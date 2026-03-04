@@ -45,6 +45,7 @@ Phases:
 - CRLF/LF mixed newline preservation tests.
 - Non-UTF8 and binary-adjacent patch safety tests.
 - Ambiguous basename targeting failure tests.
+- Migration tests replacing current basename-accept behavior with ambiguity fail-closed behavior.
 
 ## Implementation Checklist
 
@@ -52,6 +53,7 @@ Phases:
 - [ ] Implement byte-strict applier.
 - [ ] Add legacy compatibility mode and migration flag.
 - [ ] Harden file target resolution.
+- [ ] Add ambiguity fail-closed and byte-fidelity regression tests (EOF/non-UTF8/binary-adjacent).
 - [ ] Flip default and remove fragile legacy branches.
 
 ## Documentation Updates

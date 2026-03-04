@@ -27,8 +27,11 @@ Excluded:
 
 Primary files to change:
 - [rpc/global_dispatcher.py](/home/inc/repos/NEXUS3/nexus3/rpc/global_dispatcher.py)
+- [rpc/dispatch_core.py](/home/inc/repos/NEXUS3/nexus3/rpc/dispatch_core.py)
+- [rpc/http.py](/home/inc/repos/NEXUS3/nexus3/rpc/http.py)
 - [session/session.py](/home/inc/repos/NEXUS3/nexus3/session/session.py)
 - [skill/registry.py](/home/inc/repos/NEXUS3/nexus3/skill/registry.py)
+- [skill/base.py](/home/inc/repos/NEXUS3/nexus3/skill/base.py)
 - [skill/builtin/bash.py](/home/inc/repos/NEXUS3/nexus3/skill/builtin/bash.py)
 - [skill/builtin/run_python.py](/home/inc/repos/NEXUS3/nexus3/skill/builtin/run_python.py)
 - [skill/services.py](/home/inc/repos/NEXUS3/nexus3/skill/services.py)

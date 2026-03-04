@@ -1,0 +1,129 @@
+{
+  "cases": [
+    {
+      "id": "repair_missing_tool_and_prune_invalid_tool_results",
+      "system_prompt": "System baseline prompt",
+      "input_messages": [
+        {
+          "role": "user",
+          "content": "Task 1"
+        },
+        {
+          "role": "assistant",
+          "content": "Using tools",
+          "tool_calls": [
+            {"id": "c1", "name": "tool_a", "arguments": {"k": "v"}},
+            {"id": "c2", "name": "tool_b", "arguments": {"n": 2}}
+          ]
+        },
+        {
+          "role": "tool",
+          "content": "ok",
+          "tool_call_id": "c1"
+        },
+        {
+          "role": "tool",
+          "content": "invalid extra result",
+          "tool_call_id": "orphan-1"
+        },
+        {
+          "role": "user",
+          "content": "Task 2"
+        },
+        {
+          "role": "tool",
+          "content": "standalone tool",
+          "tool_call_id": "orphan-2"
+        }
+      ],
+      "expected": {
+        "pruned_tool_results": 2,
+        "assistant_appended": false,
+        "compiled": [
+          {
+            "role": "system",
+            "content": "System baseline prompt"
+          },
+          {
+            "role": "user",
+            "content": "Task 1"
+          },
+          {
+            "role": "assistant",
+            "content": "Using tools",
+            "tool_calls": [
+              {"id": "c1", "name": "tool_a"},
+              {"id": "c2", "name": "tool_b"}
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "ok",
+            "tool_call_id": "c1"
+          },
+          {
+            "role": "tool",
+            "content": "Cancelled by user: tool execution was interrupted",
+            "tool_call_id": "c2"
+          },
+          {
+            "role": "user",
+            "content": "Task 2"
+          }
+        ]
+      }
+    },
+    {
+      "id": "append_assistant_after_trailing_tool_batch",
+      "system_prompt": "System baseline prompt",
+      "input_messages": [
+        {
+          "role": "user",
+          "content": "Task"
+        },
+        {
+          "role": "assistant",
+          "content": "Using tool",
+          "tool_calls": [
+            {"id": "c1", "name": "tool_a", "arguments": {"x": 1}}
+          ]
+        },
+        {
+          "role": "tool",
+          "content": "ok",
+          "tool_call_id": "c1"
+        }
+      ],
+      "expected": {
+        "pruned_tool_results": 0,
+        "assistant_appended": true,
+        "compiled": [
+          {
+            "role": "system",
+            "content": "System baseline prompt"
+          },
+          {
+            "role": "user",
+            "content": "Task"
+          },
+          {
+            "role": "assistant",
+            "content": "Using tool",
+            "tool_calls": [
+              {"id": "c1", "name": "tool_a"}
+            ]
+          },
+          {
+            "role": "tool",
+            "content": "ok",
+            "tool_call_id": "c1"
+          },
+          {
+            "role": "assistant",
+            "content": "Previous turn was cancelled after tool execution."
+          }
+        ]
+      }
+    }
+  ]
+}

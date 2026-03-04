@@ -1,0 +1,16 @@
+{
+  "cases": [
+    {
+      "id": "preserve_crlf_after_patch",
+      "initial_hex": "616c7068610d0a626574610d0a",
+      "diff_file": "patch_crlf_update.diff",
+      "expected_hex": "616c7068610d0a424554410d0a"
+    },
+    {
+      "id": "preserve_missing_final_newline_after_patch",
+      "initial_hex": "6c696e65310a6c696e6532",
+      "diff_file": "patch_noeol_update.diff",
+      "expected_hex": "6c696e65310a6c696e65322d75706461746564"
+    }
+  ]
+}

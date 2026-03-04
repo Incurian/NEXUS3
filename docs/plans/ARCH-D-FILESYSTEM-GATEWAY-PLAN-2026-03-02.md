@@ -8,7 +8,7 @@ Create a single filesystem access layer that enforces allowed/blocked path decis
 
 Included:
 - New shared access gateway module.
-- Migrate `outline`, `concat_files`, `grep`, and `glob_search` to gateway.
+- Migrate `outline`, `concat_files`, `grep`, and `glob` to gateway.
 - Enforce per-entry path checks and symlink-safe access behavior.
 
 Deferred:
@@ -22,6 +22,7 @@ Excluded:
 1. Every candidate file must be authorized at use time, not just base-directory validation.
 2. Gateway must consume existing decision primitives (`PathDecisionEngine`, `PathResolver`).
 3. Keep fast-path scan performance while enforcing policy post-filtering.
+4. Migration must remove direct per-candidate `validate_path(...allowed_paths=...)` usage in multi-file loops and route through ServiceContainer-aware gateway decisions.
 
 ## Implementation Details
 
@@ -31,7 +32,7 @@ Primary files to change:
 - [skill/builtin/outline.py](/home/inc/repos/NEXUS3/nexus3/skill/builtin/outline.py)
 - [skill/builtin/concat_files.py](/home/inc/repos/NEXUS3/nexus3/skill/builtin/concat_files.py)
 - [skill/builtin/grep.py](/home/inc/repos/NEXUS3/nexus3/skill/builtin/grep.py)
-- [skill/builtin/glob_search.py](/home/inc/repos/NEXUS3/nexus3/skill/builtin/glob_search.py)
+- [skill/builtin/glob_search.py](/home/inc/repos/NEXUS3/nexus3/skill/builtin/glob_search.py) (`glob` skill)
 - New: `nexus3/core/filesystem_access.py`
 
 Phases:
@@ -48,10 +49,11 @@ Phases:
 
 ## Implementation Checklist
 
-- [ ] Add filesystem gateway.
+- [x] Add filesystem gateway.
+- [x] M1 first migration slice: migrate `glob` to gateway + targeted parity tests.
 - [ ] Migrate `outline`.
 - [ ] Migrate `concat_files`.
-- [ ] Migrate `grep` and `glob_search`.
+- [ ] Migrate `grep` and `glob`.
 - [ ] Add blocked-path and symlink regression suite.
 
 ## Documentation Updates

@@ -1,0 +1,6 @@
+--- a/target.txt
++++ b/target.txt
+@@ -1,2 +1,2 @@
+ alpha
+-beta
++BETA

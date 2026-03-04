@@ -42,6 +42,10 @@ Excluded:
 2. Keep plans behavior-preserving in early phases and defer breaking changes to gated flips.
 3. Require dedicated tests per architecture step before broad rollout.
 
+Current-state addendum (2026-03-04):
+- Path decision/resolver integration work is already present in the repo baseline.
+- M0/M1 execution should focus on remaining authorization/gateway/schema/sink gaps and avoid duplicating already-landed A2-style path decision plumbing.
+
 ## Plan Index
 
 1. [ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md)

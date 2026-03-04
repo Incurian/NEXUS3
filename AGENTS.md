@@ -88,6 +88,12 @@ Minimum plan sections:
 
 Update the plan incrementally while you work.
 
+Execution tracking SOP (applies to every major plan):
+- Add/maintain a running status section in `AGENTS.md` with branch, active milestone/phase, recent commits, and next gate.
+- Check off plan checklist items as soon as they are completed (same working session).
+- When disconnected/compacted, resume from `AGENTS.md` running status first, then reconcile plan checklists before new edits.
+- When spawning Codex subagents, explicitly instruct them to avoid escalated/sandbox-bypass commands unless absolutely required by the task, to prevent avoidable approval stalls.
+
 ## Testing and Validation
 
 Always use virtualenv executables:
@@ -146,6 +152,92 @@ When changing behavior:
 - Update `CLAUDE.md` and `AGENTS.md` sections that describe the changed behavior
 - Update command/help text for CLI or REPL changes
 - Record temporary breakages in `CLAUDE.md` Known Failures if they cannot be fixed immediately
+
+## Current Debugging Handoff (2026-03-04)
+
+Status:
+- Probably fixed as of 2026-03-04 after the cancellation/role-sequence hardening set (`5fe3f59`, `612df40`, `6daec54`, `0b04467`), but keep all notes below as the fallback playbook if it recurs.
+
+Goal:
+- Eliminate recurring post-cancel provider failures:
+  - `Provider returned an empty response`
+  - `API request failed (400): Unexpected role 'user' after role 'tool'`
+
+Recent commits on `master` (chronological):
+- `5fe3f59`: Mid-stream cancellation handling + reduce false empty-stream warnings.
+- `612df40`: Prevent orphan tool-result sequences after cancellation.
+- `6daec54`: Repair trailing tool-result tail by inserting synthetic assistant before next user turn.
+- `0b04467`: Improve diagnostics:
+  - log provider 4xx/5xx error bodies to `raw.jsonl`
+  - emit `session.preflight` role snapshots to `verbose.md` before provider calls.
+
+What is currently implemented:
+- Pre-turn repair pipeline in `Session.send()` and `Session.run_turn()`:
+  1. `_flush_cancelled_tools()` (now guarded; drops stale cancelled IDs)
+  2. `context.prune_unpaired_tool_results()` (global scrub of invalid TOOL messages)
+  3. `context.fix_orphaned_tool_calls()` (synthesizes missing tool results)
+  4. `context.ensure_assistant_after_tool_results()` (prevents USER-after-TOOL tail)
+- Provider stream warnings:
+  - completed empty streams still warn
+  - incomplete/interrupted empty streams now debug-log instead of warning.
+
+Important caveat:
+- If users still report 400 role errors, assume there is another sequence shape not covered yet.
+- Do not guess; inspect logs from failing run with the exact commands below.
+
+How to capture actionable logs:
+```bash
+nexus3 -V --raw-log --resume
+# or: nexus3 -V --raw-log --session <NAME>
+```
+
+Then reproduce once and collect newest session directory under:
+- `./.nexus3/logs/YYYY-MM-DD_HHMMSS_*/`
+
+Required files:
+- `verbose.md` (must include `session.preflight` entries)
+- `raw.jsonl` (must include request + 4xx response bodies)
+- `context.md` (conversation sequence around failure)
+
+What to inspect first on next pass:
+1. In `verbose.md`, locate last `session.preflight` block before the 400.
+2. Verify role order in that preflight snapshot:
+   - especially `... TOOL -> USER` adjacency
+   - duplicate TOOL results
+   - TOOL results without matching assistant tool_calls.
+3. In `raw.jsonl`, verify failing request payload `messages` exactly matches the preflight sequence.
+4. Add a unit test reproducing that exact shape before patching.
+
+Suggested next hardening if failure persists:
+- Add a provider-agnostic message normalizer in `Session` just before provider call:
+  - enforce invariants for assistant/tool batches
+  - optionally collapse illegal trailing TOOL blocks into a synthetic assistant note
+  - emit one structured warning event with before/after diff summary.
+
+## Architecture Overhaul Running Status (2026-03-04)
+
+Branch:
+- `feat/arch-overhaul-execution`
+
+Current milestone:
+- `M1` (Boundary Enforcement Wave) in progress.
+
+Immediate tasks:
+- Continue M1 implementation slices:
+  - Plan D gateway migration (`outline`, `concat_files`, `grep`) after `glob` first slice
+  - Plan H Phase 2 ingress schema wiring (compatibility mode where required)
+  - Plan G Phase 1 safe sink API
+
+Progress snapshot:
+- Completed: architecture plan sanity corrections merged locally (schedule + plans A-H scope/gates/checklist alignment).
+- Completed: Plan A M0 foundation interfaces (`nexus3/core/authorization_kernel.py`) + unit tests.
+- Completed: Plan H M0 schema inventory scaffold (`nexus3/rpc/schemas.py`) + unit tests.
+- Completed: baseline E/F harness fixtures/tests under `tests/fixtures/arch_baseline/`, `tests/unit/context/test_compile_baseline.py`, and `tests/unit/patch/test_byte_roundtrip_baseline.py`.
+- In progress: M1 Plan D Phase 1 started with filesystem gateway foundation (`nexus3/core/filesystem_access.py`) and first migration slice (`glob_search.py`) plus targeted unit tests.
+- Next gate: run expanded validation (`ruff`, targeted pytest done; broader suites pending) and then continue M1 (Plan D/H/G phase work).
+
+Recovery note:
+- If interrupted, restart from this section and `docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md`, then continue checklist-driven execution.
 
 ## Source of Truth
 

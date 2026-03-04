@@ -1,5 +1,15 @@
 """Core types and interfaces."""
 
+from nexus3.core.authorization_kernel import (
+    AdapterAuthorizationKernel,
+    AuthorizationAction,
+    AuthorizationAdapter,
+    AuthorizationDecision,
+    AuthorizationKernel,
+    AuthorizationRequest,
+    AuthorizationResource,
+    AuthorizationResourceType,
+)
 from nexus3.core.cancel import CancellationToken
 from nexus3.core.encoding import ENCODING, ENCODING_ERRORS, configure_stdio
 from nexus3.core.errors import ConfigError, NexusError, PathSecurityError, ProviderError
@@ -47,6 +57,14 @@ __all__ = [
     "ConfigError",
     "ProviderError",
     "PathSecurityError",
+    "AuthorizationAction",
+    "AuthorizationResourceType",
+    "AuthorizationResource",
+    "AuthorizationRequest",
+    "AuthorizationDecision",
+    "AuthorizationAdapter",
+    "AuthorizationKernel",
+    "AdapterAuthorizationKernel",
     "UrlSecurityError",
     "AsyncProvider",
     "Message",

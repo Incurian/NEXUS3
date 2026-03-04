@@ -45,6 +45,7 @@ Phases:
 - Add tests for attenuation, expiry, revocation, and replay rejection.
 - Add HTTP path tests for malformed/expired capabilities.
 - Preserve compatibility tests during transition period.
+- Add explicit negative tests for malformed capability payloads on direct API and HTTP ingress paths.
 
 ## Implementation Checklist
 

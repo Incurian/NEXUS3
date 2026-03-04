@@ -22,7 +22,7 @@ Excluded:
 
 1. Parse and validate once at ingress, then operate on typed objects.
 2. Reject malformed boundary payloads with explicit actionable diagnostics.
-3. Use a compatibility phase with warnings to reduce client breakage risk.
+3. Use a compatibility phase with warnings for RPC method params only; existing strict MCP entry validation remains fail-fast.
 
 ## Implementation Details
 
@@ -38,9 +38,9 @@ Primary files to change:
 
 Phases:
 1. Add typed RPC schemas and `mcp.json` envelope schema without behavior flip.
-2. Route dispatch/load paths through schema validators with compatibility warnings.
-3. Enforce strict mode by default and remove silent fallthrough.
-4. Consolidate MCP config model definitions to one source of truth.
+2. Route dispatch/load paths through schema validators with compatibility warnings (RPC params only; do not relax strict MCP validation).
+3. Consolidate MCP config model definitions to one source of truth.
+4. Enforce strict mode by default where typed schemas and compatibility telemetry are established; remove silent fallthrough.
 
 ## Testing Strategy
 
@@ -50,8 +50,8 @@ Phases:
 
 ## Implementation Checklist
 
-- [ ] Define RPC param schema models.
-- [ ] Define strict `mcp.json` envelope model.
+- [x] Define RPC param schema models.
+- [x] Define strict `mcp.json` envelope model.
 - [ ] Wire schema validation into ingress paths.
 - [ ] Remove silent malformed-entry skips.
 - [ ] Consolidate duplicate MCP config models.

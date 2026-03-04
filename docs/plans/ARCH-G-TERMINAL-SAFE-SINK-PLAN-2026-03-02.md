@@ -31,6 +31,10 @@ Primary files to change:
 - [display/spinner.py](/home/inc/repos/NEXUS3/nexus3/display/spinner.py)
 - [display/streaming.py](/home/inc/repos/NEXUS3/nexus3/display/streaming.py)
 - [cli/repl.py](/home/inc/repos/NEXUS3/nexus3/cli/repl.py)
+- [cli/lobby.py](/home/inc/repos/NEXUS3/nexus3/cli/lobby.py)
+- [cli/connect_lobby.py](/home/inc/repos/NEXUS3/nexus3/cli/connect_lobby.py)
+- [cli/repl_commands.py](/home/inc/repos/NEXUS3/nexus3/cli/repl_commands.py)
+- [cli/confirmation_ui.py](/home/inc/repos/NEXUS3/nexus3/cli/confirmation_ui.py)
 - [cli/client_commands.py](/home/inc/repos/NEXUS3/nexus3/cli/client_commands.py)
 - [mcp/error_formatter.py](/home/inc/repos/NEXUS3/nexus3/mcp/error_formatter.py)
 - New: `nexus3/display/safe_sink.py`

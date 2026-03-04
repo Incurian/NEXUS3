@@ -10,7 +10,7 @@ This schedule turns the A-H architecture plans into execution milestones with de
 
 Target scope:
 - Plan H Phase 1 (schema inventory/models, no behavior flip)
-- Plan A Phase 0 (authorization inventory + kernel interface)
+- Plan A Phase 1 (authorization inventory + kernel interface)
 - Baseline tests/fixtures for Plan E/F migration harness
 
 Owners:
@@ -23,8 +23,14 @@ Dependencies:
 
 Exit gates:
 - New schema and kernel interfaces merged behind behavior-preserving adapters.
-- Added baseline regression fixtures for context compile and patch byte roundtrips.
+- Added baseline regression fixtures for context compile and patch byte roundtrips, including:
+  - `tests/unit/patch/test_byte_roundtrip_baseline.py`
+  - `tests/unit/context/test_compile_baseline.py`
+  - fixtures under `tests/fixtures/arch_baseline/`
 - CI green on `.venv/bin/pytest tests/ -v`, `.venv/bin/ruff check nexus3/`, `.venv/bin/mypy nexus3/`.
+
+Status note (2026-03-04):
+- M0 E/F harness baseline implemented with deterministic fixture-driven parity tests for context repair/build sequencing and patch byte roundtrip behavior.
 
 ### M1: Boundary Enforcement Wave
 
@@ -42,7 +48,7 @@ Dependencies:
 - M0 complete
 
 Exit gates:
-- `outline`, `concat_files`, `grep`, `glob_search` enforce per-file allowed/blocked decisions.
+- `outline`, `concat_files`, `grep`, `glob` enforce per-file allowed/blocked decisions.
 - Malformed RPC/mcp inputs fail through typed validators (compat mode enabled if needed).
 - High-risk untrusted terminal outputs routed through safe sink.
 - Security regression suite for blocked-path/symlink/terminal payloads passing.
@@ -50,9 +56,9 @@ Exit gates:
 ### M2: Authorization and Concurrency Wave
 
 Target scope:
-- Plan A Phases 1-3 (route checks through kernel, remove duplicate branches)
+- Plan A Phases 2-4 (route checks through kernel, remove duplicate branches)
 - Plan C Phases 1-3 (immutable request context + skill statelessness)
-- Plan H Phase 3 (strict mode default flip where safe)
+- Plan H Phase 3 (strict mode default flip where safe and validated)
 
 Owners:
 - `Owner A: TBD`
@@ -61,12 +67,13 @@ Owners:
 
 Dependencies:
 - M1 complete
+- Plan C phases 1-2 complete before Plan A phase 3/4 cutover.
 
 Exit gates:
 - All lifecycle/tool authorization uses kernel path.
 - No shared mutable requester state in global dispatcher path.
 - Parallel skill execution tests prove no cross-call mutable state leaks.
-- Strict schema mode default enabled for approved ingress surfaces.
+- Strict schema mode default enabled only for approved ingress surfaces with typed schemas and compatibility telemetry.
 
 ### M3: Data Integrity Wave
 
@@ -86,6 +93,12 @@ Exit gates:
 - Ambiguous patch targets fail closed.
 - Provider pipelines consume invariant-checked compiled context.
 - No orphan tool-result messages in compiler outputs.
+- Quality gates green: `.venv/bin/pytest tests/ -v`, `.venv/bin/pytest tests/integration/ -v`, `.venv/bin/ruff check nexus3/`, `.venv/bin/mypy nexus3/`.
+- Live validation executed for behavior/RPC/skills/permissions changes:
+  - `nexus3 &`
+  - `nexus3 rpc create test-agent`
+  - `nexus3 rpc send test-agent "describe your permissions and what you can do"`
+  - `nexus3 rpc destroy test-agent`
 
 ### M4: Delegation and Strategic Evolution
 
@@ -103,9 +116,15 @@ Dependencies:
 - M3 complete
 
 Exit gates:
-- Capability-based delegation active on primary paths; legacy identity path deprecated.
+- Capability-based delegation active on primary paths; legacy identity path removed.
 - Graph-backed context path validated for parity and invariants.
 - Terminal sink boundary fully adopted across display/CLI paths.
+- Quality gates green: `.venv/bin/pytest tests/ -v`, `.venv/bin/pytest tests/integration/ -v`, `.venv/bin/ruff check nexus3/`, `.venv/bin/mypy nexus3/`.
+- Live validation executed for behavior/RPC/skills/permissions changes:
+  - `nexus3 &`
+  - `nexus3 rpc create test-agent`
+  - `nexus3 rpc send test-agent "describe your permissions and what you can do"`
+  - `nexus3 rpc destroy test-agent`
 
 ## Cross-Milestone Dependency Rules
 
@@ -113,6 +132,7 @@ Exit gates:
 2. Do not flip strict schemas globally before compatibility diagnostics are verified in M1/M2.
 3. Do not flip patch defaults to byte_strict before M3 fidelity tests are consistently green.
 4. Keep one architecture owner accountable per plan, even when implementation contributors are multiple.
+5. Scope M0/M1 to remaining gaps; do not duplicate already-landed path decision/resolver integration.
 
 ## Recommended Team Slice
 

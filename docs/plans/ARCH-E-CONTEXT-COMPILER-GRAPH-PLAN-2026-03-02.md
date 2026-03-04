@@ -28,6 +28,7 @@ Excluded:
 Primary files to change:
 - [context/manager.py](/home/inc/repos/NEXUS3/nexus3/context/manager.py)
 - [context/compaction.py](/home/inc/repos/NEXUS3/nexus3/context/compaction.py)
+- [session/session.py](/home/inc/repos/NEXUS3/nexus3/session/session.py)
 - [provider/openai_compat.py](/home/inc/repos/NEXUS3/nexus3/provider/openai_compat.py)
 - [provider/anthropic.py](/home/inc/repos/NEXUS3/nexus3/provider/anthropic.py)
 - [core/types.py](/home/inc/repos/NEXUS3/nexus3/core/types.py)
@@ -36,7 +37,7 @@ Primary files to change:
 
 Phases:
 1. Build compiler IR and invariants over existing message list.
-2. Route both providers through compiler output with parity tests.
+2. Route both providers through compiler output with parity tests, and migrate `Session` preflight repair logic to compiler-backed invariants.
 3. Introduce optional graph representation for provenance/compaction edges.
 4. Switch compaction/truncation to graph-aware compilation.
 
@@ -45,11 +46,13 @@ Phases:
 - Provider parity tests for identical transcript inputs.
 - Property tests for no orphan tool results and valid role order.
 - Compaction/truncation equivalence tests before and after graph phase.
+- Preflight/request payload parity tests and migration tests removing provider-local orphan synthesis logic.
 
 ## Implementation Checklist
 
 - [ ] Add compiler IR and invariant checker.
 - [ ] Integrate with provider adapters.
+- [ ] Migrate session preflight pipeline to compiler-backed invariants.
 - [ ] Add graph model prototype.
 - [ ] Migrate compaction/truncation through compiler pipeline.
 
