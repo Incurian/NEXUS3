@@ -87,10 +87,13 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 
 Execution notes:
 - `bash_safe` executes binaries directly by default.
+- `source` is a shell builtin; `bash_safe` cannot execute `source` directly as a command.
 - On Windows, prefer explicit interpreters: `.venv/Scripts/python.exe script.py`.
 - For shell semantics (activation scripts, pipes, `&&`), use `shell_UNSAFE` with trusted input.
 - Alternatively, invoke shell semantics explicitly via command wrappers:
   `bash -c "<command>"`, `powershell -Command "<command>"`, `cmd /c "<command>"`.
+- Example (venv activation + script): `bash -c "source .venv/Scripts/activate && python your_script.py"`.
+- Example (shell script): `bash -c "./scripts/your_script.sh"`.
 - Use an explicit `cwd` when project-relative commands fail; relative `cwd` resolves from the agent's current working directory.
 
 ### Agent Communication
@@ -635,6 +638,15 @@ Git Bash maps drives to POSIX-style paths. Either format works:
 | Tool arguments JSON parse failure | Backslashes in Windows paths break JSON | Use forward slashes in all paths: `D:/path` not `D:\path` |
 | `Failed to execute: [WinError 2] The system cannot find the file specified` | Command isn't an executable (often `source`, `activate`, or an unqualified script) | Use `.venv/Scripts/python.exe <script.py>` directly, or invoke a shell (`bash -c`, `powershell -Command`, `cmd /c`) |
 | Command works in your terminal but fails in agent | Relative paths/cwd resolved from the agent's cwd, not your terminal tab | Pass explicit `cwd` and prefer absolute paths (`D:/...`) while debugging |
+
+### Tempo / AgentBridge (Windows)
+
+For Unreal + AgentBridge workflows, prefer explicit shell wrappers when commands depend on shell behavior:
+- `bash -c "source .venv/Scripts/activate && python your_script.py"`
+- `bash -c "./scripts/your_script.sh"`
+
+For simple Python entrypoints, direct interpreter invocation is usually more reliable:
+- `.venv/Scripts/python.exe your_script.py`
 
 ### Debug Flags
 - `-v` / `--verbose`: Show debug output in terminal (HTTP headers, timing, cache metrics)
