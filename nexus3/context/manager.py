@@ -484,6 +484,57 @@ class ContextManager:
 
             i = j
 
+    def prune_unpaired_tool_results(self) -> int:
+        """Remove TOOL messages that are not paired with a preceding assistant tool batch.
+
+        Valid TOOL messages must be contiguous immediately after an assistant
+        message with tool_calls and must reference one of that batch's ids.
+
+        Returns:
+            Number of TOOL messages removed.
+        """
+        if not self._messages:
+            return 0
+
+        removed = 0
+        i = 0
+        while i < len(self._messages):
+            msg = self._messages[i]
+
+            if msg.role == Role.ASSISTANT and msg.tool_calls:
+                expected_ids = {tc.id for tc in msg.tool_calls}
+                seen_ids: set[str] = set()
+                j = i + 1
+                while j < len(self._messages) and self._messages[j].role == Role.TOOL:
+                    tool_msg = self._messages[j]
+                    tool_id = tool_msg.tool_call_id
+                    if tool_id in expected_ids and tool_id not in seen_ids:
+                        seen_ids.add(tool_id)
+                        j += 1
+                        continue
+
+                    # Unknown/duplicate tool_result in this contiguous block.
+                    del self._messages[j]
+                    removed += 1
+                i = j
+                continue
+
+            if msg.role == Role.TOOL:
+                # TOOL message outside a valid assistant tool_calls block.
+                del self._messages[i]
+                removed += 1
+                continue
+
+            i += 1
+
+        if removed:
+            logger.warning(
+                "Pruned %d unpaired tool result message(s) from context",
+                removed,
+            )
+
+        return removed
+
     def clear_messages(self) -> None:
         """Clear all messages (keeps system prompt and tools)."""
         self._messages.clear()

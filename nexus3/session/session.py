@@ -207,7 +207,26 @@ class Session:
             self._pending_cancelled_tools.clear()
             return
 
+        # Only flush cancelled results for tool IDs that are still expected by
+        # an assistant tool_calls batch and do not already have a result.
+        expected_ids: set[str] = set()
+        found_result_ids: set[str] = set()
+        for msg in self.context.messages:
+            if msg.role == Role.ASSISTANT and msg.tool_calls:
+                expected_ids.update(tc.id for tc in msg.tool_calls)
+            elif msg.role == Role.TOOL and msg.tool_call_id:
+                found_result_ids.add(msg.tool_call_id)
+
+        valid_ids = expected_ids - found_result_ids
         for tool_id, tool_name in self._pending_cancelled_tools:
+            if tool_id not in valid_ids:
+                logger.debug(
+                    "Dropping stale cancelled tool result without matching "
+                    "assistant tool_call: %s (%s)",
+                    tool_id,
+                    tool_name,
+                )
+                continue
             cancelled_result = ToolResult(
                 error="Cancelled by user: tool execution was interrupted"
             )
@@ -260,6 +279,9 @@ class Session:
             if self.context:
                 # Flush any cancelled tool results from previous turn
                 self._flush_cancelled_tools()
+                # Remove any dangling tool results that could break provider
+                # role sequencing on the next request.
+                self.context.prune_unpaired_tool_results()
                 # Safety net: synthesize results for any orphaned tool_use
                 # blocks (e.g., from double-ESC destroying the generator)
                 self.context.fix_orphaned_tool_calls()
@@ -360,6 +382,8 @@ class Session:
         try:
             # Flush any cancelled tool results from previous turn
             self._flush_cancelled_tools()
+            # Remove dangling/unpaired tool results before building messages.
+            self.context.prune_unpaired_tool_results()
             # Safety net: synthesize results for any orphaned tool_use
             # blocks (e.g., from double-ESC destroying the generator)
             self.context.fix_orphaned_tool_calls()

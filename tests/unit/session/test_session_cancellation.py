@@ -443,3 +443,33 @@ class TestProviderSynthesizesMissingResults:
         # No synthetic "interrupted" messages
         for block in tool_results:
             assert "interrupted" not in block["content"].lower()
+
+
+class TestCancelledToolFlushSafety:
+    """Ensure pending cancelled tools do not create orphan TOOL messages."""
+
+    @pytest.mark.asyncio
+    async def test_stale_cancelled_tools_are_dropped(self):
+        """Cancelled tool IDs without matching assistant tool_call are ignored."""
+        provider = MockProviderForCancellation(tool_calls=[], content="ok")
+        context = ContextManager(config=ContextConfig(max_tokens=10000))
+        context.set_system_prompt("System prompt")
+
+        services = create_services_with_permissions()
+        session = Session(
+            provider=provider,
+            context=context,
+            registry=None,
+            services=services,
+        )
+
+        # Simulate stale pending cancellation from an interrupted turn where no
+        # assistant tool_call message was persisted.
+        session.add_cancelled_tools([("stale-tool-id", "read_file")])
+
+        chunks = []
+        async for chunk in session.send("hello"):
+            chunks.append(chunk)
+
+        assert "".join(chunks) == "ok"
+        assert not any(m.role == Role.TOOL for m in context.messages)

@@ -395,3 +395,39 @@ class TestFixOrphanedToolCalls:
         assert "Cancelled" in ctx.messages[3].content
         assert ctx.messages[4].role == Role.USER
         assert ctx.messages[4].content == "Task 2"
+
+
+class TestPruneUnpairedToolResults:
+    """Tests for pruning invalid standalone/duplicate tool result messages."""
+
+    def test_prunes_standalone_tool_message(self):
+        from nexus3.core.types import ToolResult
+
+        ctx = ContextManager()
+        ctx.add_user_message("Hi")
+        ctx.add_tool_result("orphan-1", "tool_x", ToolResult(output="x"))
+        ctx.add_user_message("Next")
+
+        removed = ctx.prune_unpaired_tool_results()
+
+        assert removed == 1
+        assert [m.role for m in ctx.messages] == [Role.USER, Role.USER]
+
+    def test_prunes_duplicate_tool_result_in_batch(self):
+        from nexus3.core.types import ToolResult
+
+        ctx = ContextManager()
+        ctx.add_user_message("Task")
+        ctx.add_assistant_message(
+            "Using tool",
+            tool_calls=[ToolCall(id="c1", name="tool_a", arguments="{}")],
+        )
+        ctx.add_tool_result("c1", "tool_a", ToolResult(output="ok-1"))
+        ctx.add_tool_result("c1", "tool_a", ToolResult(output="ok-2"))
+
+        removed = ctx.prune_unpaired_tool_results()
+
+        assert removed == 1
+        tool_msgs = [m for m in ctx.messages if m.role == Role.TOOL]
+        assert len(tool_msgs) == 1
+        assert tool_msgs[0].tool_call_id == "c1"
