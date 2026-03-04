@@ -17,7 +17,7 @@ from typing import Any
 
 from nexus3.core.constants import MAX_GREP_FILE_SIZE
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import validate_path
+from nexus3.core.filesystem_access import FilesystemAccessGateway
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
 
@@ -532,14 +532,13 @@ class GrepSkill(FileSkill):
         # This moves validation/size checks out of the hot loop
         valid_files: list[tuple[Path, Path | str]] = []
         files_skipped_size = 0
+        fs_gateway = FilesystemAccessGateway(self._services, tool_name=self.name)
+        authorized_files = fs_gateway.iter_authorized_paths(
+            files_to_search,
+            must_exist=True,
+        )
 
-        for file_path in files_to_search:
-            # Validate each file against sandbox
-            if self._allowed_paths is not None:
-                try:
-                    validate_path(file_path, allowed_paths=self._allowed_paths)
-                except PathSecurityError:
-                    continue
+        for file_path in authorized_files:
 
             # P2.5 SECURITY: Skip files that are too large
             try:

@@ -5,8 +5,8 @@ to prevent terminal injection from malicious/buggy LLM output.
 """
 
 import io
-from typing import Callable
-from unittest.mock import MagicMock, patch
+from collections.abc import Callable
+from unittest.mock import MagicMock
 
 import pytest
 from rich.console import Console
@@ -50,8 +50,8 @@ def printer() -> InlinePrinter:
 def print_chunk(printer: InlinePrinter, mock_stdout: MockStdout) -> Callable[[str], str]:
     """Return a function that prints a chunk and returns the captured output."""
     def _print_chunk(chunk: str) -> str:
-        with patch('nexus3.display.printer.sys.stdout', mock_stdout):
-            printer.print_streaming_chunk(chunk)
+        printer.safe_sink._stream = mock_stdout
+        printer.print_streaming_chunk(chunk)
         return mock_stdout.getvalue()
     return _print_chunk
 

@@ -45,6 +45,13 @@ Phases:
 3. Migrate remaining display calls to sink and remove duplicate sanitization branches.
 4. Validate terminal behavior across supported output modes.
 
+## Execution Status
+
+- 2026-03-04: Phase 1 foundation completed.
+- Added `nexus3/display/safe_sink.py` with explicit trusted/untrusted print and stream APIs using existing `text_safety` primitives.
+- Integrated minimally into `InlinePrinter` (trusted `print`, untrusted streaming chunk sink) without broad call-site migration.
+- Added focused unit tests for sink sanitization contract under `tests/unit/display/test_safe_sink.py`.
+
 ## Testing Strategy
 
 - Extend escape-injection security tests across all sink entrypoints.
@@ -53,7 +60,7 @@ Phases:
 
 ## Implementation Checklist
 
-- [ ] Add safe sink abstraction.
+- [x] Add safe sink abstraction.
 - [ ] Migrate high-risk output paths.
 - [ ] Migrate all remaining print/stream paths.
 - [ ] Remove redundant/fragmented sanitization call sites.

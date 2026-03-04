@@ -1,10 +1,8 @@
 """Inline printing with gumball status indicators."""
 
-import sys
-
 from rich.console import Console
 
-from nexus3.core.text_safety import strip_terminal_escapes
+from nexus3.display.safe_sink import SafeSink
 from nexus3.display.theme import Status, Theme
 
 
@@ -19,6 +17,7 @@ class InlinePrinter:
     def __init__(self, console: Console, theme: Theme) -> None:
         self.console = console
         self.theme = theme
+        self.safe_sink = SafeSink(console)
 
     def print(self, content: str, style: str | None = None, end: str = "\n") -> None:
         """Print content (scrolls normally).
@@ -28,7 +27,7 @@ class InlinePrinter:
             style: Optional Rich style string
             end: String to append (default newline)
         """
-        self.console.print(content, style=style, end=end)
+        self.safe_sink.print_trusted(content, style=style, end=end)
 
     def print_gumball(self, status: Status, message: str, indent: int = 0) -> None:
         """Print a gumball indicator with message.
@@ -93,11 +92,8 @@ class InlinePrinter:
         Uses raw stdout to avoid conflicts with Rich.Live.
         Strips ANSI escape sequences and control chars to prevent terminal injection.
         """
-        sanitized = strip_terminal_escapes(chunk)
-        sys.stdout.write(sanitized)
-        sys.stdout.flush()
+        self.safe_sink.write_untrusted(chunk)
 
     def finish_streaming(self) -> None:
         """Finish streaming output (print newline)."""
-        sys.stdout.write("\n")
-        sys.stdout.flush()
+        self.safe_sink.write_trusted("\n")

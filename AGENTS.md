@@ -226,14 +226,17 @@ Immediate tasks:
 - Continue M1 implementation slices:
   - Plan D gateway migration (`outline`, `concat_files`, `grep`) after `glob` first slice
   - Plan H Phase 2 ingress schema wiring (compatibility mode where required)
-  - Plan G Phase 1 safe sink API
+  - Plan G Phase 2 high-risk path migration on top of new sink foundation
 
 Progress snapshot:
 - Completed: architecture plan sanity corrections merged locally (schedule + plans A-H scope/gates/checklist alignment).
 - Completed: Plan A M0 foundation interfaces (`nexus3/core/authorization_kernel.py`) + unit tests.
 - Completed: Plan H M0 schema inventory scaffold (`nexus3/rpc/schemas.py`) + unit tests.
 - Completed: Plan H M1 Phase 2 first compat-safe ingress slice (`destroy_agent`, `get_messages`) wired to typed schemas with existing-style RPC error mapping + focused unit tests.
+- Completed: Plan H M1 Phase 2 incremental compat-safe ingress slice (`cancel`, `compact`) wired in `rpc/dispatcher.py` with focused wiring tests.
 - Completed: baseline E/F harness fixtures/tests under `tests/fixtures/arch_baseline/`, `tests/unit/context/test_compile_baseline.py`, and `tests/unit/patch/test_byte_roundtrip_baseline.py`.
+- Completed: Plan G M1 Phase 1 foundation safe sink API (`nexus3/display/safe_sink.py`) with minimal `InlinePrinter` integration and focused unit tests (`tests/unit/display/test_safe_sink.py`).
+- Completed: M1 Plan D grep migration slice routed fallback per-candidate authorization through `FilesystemAccessGateway` and added focused blocked/outside/symlink grep tests.
 - In progress: M1 Plan D Phase 1 started with filesystem gateway foundation (`nexus3/core/filesystem_access.py`) and first migration slice (`glob_search.py`) plus targeted unit tests.
 - Next gate: run expanded validation (`ruff`, targeted pytest done; broader suites pending) and then continue M1 (Plan D/H/G phase work).
 

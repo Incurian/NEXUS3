@@ -53,7 +53,7 @@ Phases:
 - [x] M1 first migration slice: migrate `glob` to gateway + targeted parity tests.
 - [x] Migrate `outline`.
 - [ ] Migrate `concat_files`.
-- [ ] Migrate `grep` and `glob`.
+- [x] Migrate `grep` and `glob`.
 - [ ] Add blocked-path and symlink regression suite.
 
 ## Documentation Updates

@@ -13,7 +13,7 @@ from pydantic import ValidationError as PydanticValidationError
 from nexus3.core.cancel import CancellationToken
 from nexus3.core.permissions import PermissionLevel
 from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
-from nexus3.rpc.schemas import GetMessagesParamsSchema
+from nexus3.rpc.schemas import CancelParamsSchema, CompactParamsSchema, GetMessagesParamsSchema
 from nexus3.rpc.types import Request, Response
 from nexus3.session import Session
 
@@ -404,12 +404,25 @@ class Dispatcher:
         Raises:
             InvalidParamsError: If 'request_id' is missing.
         """
-        request_id = params.get("request_id")
-        # D4: Use 'is None' not truthiness - request_id=0 is valid JSON-RPC id
-        # But reject empty string explicitly (almost certainly a user error)
-        if request_id is None or request_id == "":
+        # Preserve existing compat error style for missing request_id while
+        # moving typed validation to ingress in non-strict mode.
+        if "request_id" not in params or params.get("request_id") == "":
             raise InvalidParamsError("Missing required parameter: request_id")
 
+        try:
+            validated = CancelParamsSchema.model_validate(
+                {"request_id": params["request_id"]},
+                strict=False,
+            )
+        except PydanticValidationError as exc:
+            errors = exc.errors()
+            if errors:
+                raise InvalidParamsError(
+                    str(errors[0].get("msg", "Invalid request_id"))
+                ) from exc
+            raise InvalidParamsError("Invalid request_id") from exc
+
+        request_id = validated.request_id
         token = self._active_requests.get(request_id)
         if token:
             token.cancel()
@@ -432,7 +445,19 @@ class Dispatcher:
             OR
             - compacted: False, reason: why compaction didn't occur
         """
-        force = params.get("force", True)  # Default to force for RPC
+        candidate: dict[str, Any] = {}
+        if "force" in params:
+            candidate["force"] = params["force"]
+
+        try:
+            validated = CompactParamsSchema.model_validate(candidate, strict=False)
+        except PydanticValidationError as exc:
+            errors = exc.errors()
+            if errors:
+                raise InvalidParamsError(str(errors[0].get("msg", "Invalid force value"))) from exc
+            raise InvalidParamsError("Invalid compact parameters") from exc
+
+        force = validated.force
 
         result = await self._session.compact(force=force)
 
