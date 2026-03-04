@@ -964,14 +964,6 @@ class ExecutionSkill(ABC):
 
         return output
 
-    def _format_spawn_error(self, error: OSError) -> str:
-        """Format process spawn failures.
-
-        Subclasses can override this to provide tool-specific, actionable
-        guidance (for example, command-not-found hints).
-        """
-        return f"Failed to execute: {error}"
-
     @abstractmethod
     async def _create_process(
         self,
@@ -1026,7 +1018,7 @@ class ExecutionSkill(ABC):
             return ToolResult(output=output)
 
         except OSError as e:
-            return ToolResult(error=self._format_spawn_error(e))
+            return ToolResult(error=f"Failed to execute: {e}")
         except Exception as e:
             return ToolResult(error=f"Error during execution: {e}")
 

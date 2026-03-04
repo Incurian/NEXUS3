@@ -177,36 +177,12 @@ class BashSafeSkill(ExecutionSkill):
 
         if not self._args:
             return ToolResult(error="Empty command after parsing")
-        if self._args[0].lower() == "source":
-            return ToolResult(
-                error=(
-                    "'source' is a shell builtin and cannot run via bash_safe. "
-                    "Use shell_UNSAFE for shell builtins, or run scripts directly "
-                    "via a Python executable "
-                    "(for Windows virtualenvs: .venv\\Scripts\\python.exe script.py)."
-                )
-            )
 
         return await self._execute_subprocess(
             timeout=timeout,
             cwd=cwd,
             timeout_message="Command timed out after {timeout}s"
         )
-
-    def _format_spawn_error(self, error: OSError) -> str:
-        """Provide actionable command-not-found guidance for bash_safe."""
-        if isinstance(error, FileNotFoundError):
-            cmd = self._args[0] if self._args else "<unknown>"
-            base = f"Failed to execute: command not found: {cmd}"
-            if sys.platform == "win32":
-                return (
-                    f"{base}. On Windows, use an explicit executable (for example "
-                    "'.venv\\Scripts\\python.exe script.py'). "
-                    "If you need shell builtins/pipes, use shell_UNSAFE."
-                )
-            return f"{base}. If this is a shell builtin, use shell_UNSAFE."
-        return super()._format_spawn_error(error)
-
 
 class ShellUnsafeSkill(ExecutionSkill):
     """UNSAFE shell skill using shell=True (full shell interpretation).

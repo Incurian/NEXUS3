@@ -34,11 +34,11 @@ class MockServiceContainer:
         return self._data.get("cwd", Path.cwd())
 
 
-class TestBashSafeActionableErrors:
-    """Actionable errors for common Windows execution failures."""
+class TestBashSafeWindowsBehavior:
+    """Windows behavior checks for bash_safe."""
 
     @pytest.mark.asyncio
-    async def test_source_builtin_returns_guidance(self, tmp_path: Path) -> None:
+    async def test_source_is_parsed_like_normal_command(self, tmp_path: Path) -> None:
         services = MockServiceContainer(
             permission_level=PermissionLevel.TRUSTED,
             allowed_paths=[tmp_path],
@@ -46,18 +46,20 @@ class TestBashSafeActionableErrors:
         )
         skill = BashSafeSkill(services)
 
+        async def raise_missing(_: str | None) -> MagicMock:
+            raise FileNotFoundError(2, "The system cannot find the file specified")
+
+        skill._create_process = raise_missing  # type: ignore[method-assign]
         result = await skill.execute(
             command="source .venv/Scripts/activate",
             cwd=str(tmp_path),
         )
 
         assert result.error is not None
-        assert "shell builtin" in result.error
-        assert "shell_UNSAFE" in result.error
-        assert ".venv\\Scripts\\python.exe" in result.error
+        assert "Failed to execute" in result.error
 
     @pytest.mark.asyncio
-    async def test_winerror_2_returns_command_not_found_guidance(self, tmp_path: Path) -> None:
+    async def test_winerror_2_returns_default_spawn_error(self, tmp_path: Path) -> None:
         services = MockServiceContainer(
             permission_level=PermissionLevel.TRUSTED,
             allowed_paths=[tmp_path],
@@ -73,9 +75,7 @@ class TestBashSafeActionableErrors:
             result = await skill.execute(command="missing_executable", cwd=str(tmp_path))
 
         assert result.error is not None
-        assert "command not found: missing_executable" in result.error
-        assert "On Windows" in result.error
-        assert "shell_UNSAFE" in result.error
+        assert "Failed to execute" in result.error
 
 
 class TestShellUnsafeWindowsShellSelection:

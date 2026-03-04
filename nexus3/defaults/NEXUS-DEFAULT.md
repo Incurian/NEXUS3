@@ -86,9 +86,11 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 | `git` | `command`, `cwd`? | Git commands (permission-filtered by level) |
 
 Execution notes:
-- `bash_safe` executes binaries directly. Shell builtins like `source` are not valid there.
+- `bash_safe` executes binaries directly by default.
 - On Windows, prefer explicit interpreters: `.venv/Scripts/python.exe script.py`.
 - For shell semantics (activation scripts, pipes, `&&`), use `shell_UNSAFE` with trusted input.
+- Alternatively, invoke shell semantics explicitly via command wrappers:
+  `bash -c "<command>"`, `powershell -Command "<command>"`, `cmd /c "<command>"`.
 - Use an explicit `cwd` when project-relative commands fail; relative `cwd` resolves from the agent's current working directory.
 
 ### Agent Communication
@@ -631,7 +633,7 @@ Git Bash maps drives to POSIX-style paths. Either format works:
 | GitLab tools not available | Disabled by default, or missing config | Run `/gitlab on` to enable; configure GitLab in config.json |
 | MCP tools not showing | Server not connected or tool listing failed | Use `/mcp connect <name>` or `/mcp retry <name>` |
 | Tool arguments JSON parse failure | Backslashes in Windows paths break JSON | Use forward slashes in all paths: `D:/path` not `D:\path` |
-| `Failed to execute: [WinError 2] The system cannot find the file specified` | Command isn't an executable (often `source`, `activate`, or an unqualified script) | Use `.venv/Scripts/python.exe <script.py>` directly, or use `shell_UNSAFE` for shell builtins |
+| `Failed to execute: [WinError 2] The system cannot find the file specified` | Command isn't an executable (often `source`, `activate`, or an unqualified script) | Use `.venv/Scripts/python.exe <script.py>` directly, or invoke a shell (`bash -c`, `powershell -Command`, `cmd /c`) |
 | Command works in your terminal but fails in agent | Relative paths/cwd resolved from the agent's cwd, not your terminal tab | Pass explicit `cwd` and prefer absolute paths (`D:/...`) while debugging |
 
 ### Debug Flags

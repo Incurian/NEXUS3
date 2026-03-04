@@ -1434,9 +1434,10 @@ NEXUS3 includes 40 built-in skills organized by category, plus 21 GitLab integra
 - `bash_safe` uses `shlex.split()` — shell operators (`|`, `&&`, `>`) do NOT work
 - Use `shell_UNSAFE` only when you need shell features AND trust the input
 - `shell_UNSAFE` always requires confirmation (no "allow always" option)
-- `source` is a shell builtin and cannot run via `bash_safe`
 - On Windows, prefer explicit interpreter execution for project scripts:
   `.venv\Scripts\python.exe script.py` (or `.venv/Scripts/python.exe` in Git Bash)
+- If you need shell semantics from `bash_safe`, invoke a shell explicitly, for example:
+  `bash -c "source .venv/Scripts/activate && python script.py"`
 - Default timeout: 30 seconds, max: 300 seconds
 
 ### Version Control
@@ -1995,7 +1996,14 @@ Windows uses `taskkill /T /F` for process tree termination. Some processes may n
 **Problem: `Failed to execute: [WinError 2] The system cannot find the file specified`**
 
 The command is not an executable (commonly `source`, activation scripts, or unqualified script names).
-Use `.venv\Scripts\python.exe <script.py>` directly, or use `shell_UNSAFE` if you need shell builtins/pipes.
+Use `.venv\Scripts\python.exe <script.py>` directly, or invoke a shell explicitly:
+`bash -c "<command>"`, `powershell -Command "<command>"`, or `cmd /c "<command>"`.
+
+**Tempo/AgentBridge tip (Windows)**
+
+In Unreal + AgentBridge workflows, commands that previously worked in an interactive shell often need explicit shell invocation when run through tools:
+- `bash -c "source .venv/Scripts/activate && python your_script.py"`
+- `bash -c "./scripts/your_script.sh"`
 
 **Problem: Relative paths resolve unexpectedly**
 
