@@ -8,9 +8,12 @@ import secrets
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ValidationError as PydanticValidationError
+
 from nexus3.core.cancel import CancellationToken
 from nexus3.core.permissions import PermissionLevel
 from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
+from nexus3.rpc.schemas import GetMessagesParamsSchema
 from nexus3.rpc.types import Request, Response
 from nexus3.session import Session
 
@@ -331,13 +334,30 @@ class Dispatcher:
         Raises:
             InvalidParamsError: If offset/limit are invalid.
         """
-        offset = params.get("offset", 0)
-        limit = params.get("limit", 200)
+        candidate: dict[str, Any] = {}
+        if "offset" in params:
+            candidate["offset"] = params["offset"]
+        if "limit" in params:
+            candidate["limit"] = params["limit"]
 
-        if not isinstance(offset, int) or offset < 0:
-            raise InvalidParamsError("offset must be a non-negative integer")
-        if not isinstance(limit, int) or limit <= 0 or limit > 2000:
-            raise InvalidParamsError("limit must be an integer between 1 and 2000")
+        try:
+            validated = GetMessagesParamsSchema.model_validate(candidate, strict=True)
+        except PydanticValidationError as exc:
+            for error in exc.errors():
+                loc = error.get("loc", ())
+                field = loc[0] if loc else None
+                if field == "offset":
+                    raise InvalidParamsError(
+                        "offset must be a non-negative integer"
+                    ) from exc
+                if field == "limit":
+                    raise InvalidParamsError(
+                        "limit must be an integer between 1 and 2000"
+                    ) from exc
+            raise InvalidParamsError("Invalid get_messages parameters") from exc
+
+        offset = validated.offset
+        limit = validated.limit
 
         if not self._context:
             raise InvalidParamsError("No context manager configured")

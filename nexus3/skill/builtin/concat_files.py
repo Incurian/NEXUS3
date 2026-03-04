@@ -23,7 +23,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import validate_path
+from nexus3.core.filesystem_access import FilesystemAccessGateway
 from nexus3.core.process import WINDOWS_CREATIONFLAGS
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
@@ -457,6 +457,7 @@ class ConcatFilesSkill(FileSkill):
     async def _find_files_git(
         self,
         base_path: Path,
+        fs_gateway: FilesystemAccessGateway,
         extensions: list[str],
         exclude: list[str] | None,
     ) -> list[Path]:
@@ -466,6 +467,7 @@ class ConcatFilesSkill(FileSkill):
 
         Args:
             base_path: Directory to search in.
+            fs_gateway: Gateway for per-candidate path authorization.
             extensions: File extensions to match (without dots).
             exclude: Additional patterns to exclude.
 
@@ -536,9 +538,12 @@ class ConcatFilesSkill(FileSkill):
             # Convert to paths and filter
             def process_files() -> list[Path]:
                 results: list[Path] = []
-                for filename in all_files:
-                    path = base_path / filename
-
+                candidates: list[Path] = [base_path / filename for filename in all_files]
+                authorized_candidates = fs_gateway.iter_authorized_paths(
+                    candidates,
+                    must_exist=True,
+                )
+                for path in authorized_candidates:
                     try:
                         if not path.is_file():
                             continue
@@ -546,13 +551,6 @@ class ConcatFilesSkill(FileSkill):
                         # Check exclusions (default + user)
                         if self._should_exclude(path, exclude):
                             continue
-
-                        # Validate against sandbox if active
-                        if self._allowed_paths is not None:
-                            try:
-                                validate_path(path, allowed_paths=self._allowed_paths)
-                            except PathSecurityError:
-                                continue  # Skip files outside sandbox
 
                         results.append(path)
                     except (OSError, PermissionError):
@@ -573,6 +571,7 @@ class ConcatFilesSkill(FileSkill):
     async def _find_files_glob(
         self,
         base_path: Path,
+        fs_gateway: FilesystemAccessGateway,
         extensions: list[str],
         exclude: list[str] | None,
     ) -> list[Path]:
@@ -580,6 +579,7 @@ class ConcatFilesSkill(FileSkill):
 
         Args:
             base_path: Directory to search in.
+            fs_gateway: Gateway for per-candidate path authorization.
             extensions: File extensions to match (without dots).
             exclude: Additional patterns to exclude.
 
@@ -592,20 +592,17 @@ class ConcatFilesSkill(FileSkill):
             for ext in extensions:
                 pattern = f"**/*.{ext}"
                 try:
-                    for path in base_path.glob(pattern):
+                    authorized_matches = fs_gateway.iter_authorized_paths(
+                        base_path.glob(pattern),
+                        must_exist=True,
+                    )
+                    for path in authorized_matches:
                         if not path.is_file():
                             continue
 
                         # Check exclusions
                         if self._should_exclude(path, exclude):
                             continue
-
-                        # Validate against sandbox if active
-                        if self._allowed_paths is not None:
-                            try:
-                                validate_path(path, allowed_paths=self._allowed_paths)
-                            except PathSecurityError:
-                                continue  # Skip files outside sandbox
 
                         results.append(path)
                 except (OSError, PermissionError):
@@ -1270,14 +1267,15 @@ class ConcatFilesSkill(FileSkill):
             return ToolResult(error=f"Directory not found: {path}")
 
         # Find files - use git if available and gitignore=True, else glob
+        fs_gateway = FilesystemAccessGateway(self._services, tool_name=self.name)
         use_git = False
         if gitignore:
             use_git = await self._git_available(base_path)
 
         if use_git:
-            file_paths = await self._find_files_git(base_path, extensions, exclude)
+            file_paths = await self._find_files_git(base_path, fs_gateway, extensions, exclude)
         else:
-            file_paths = await self._find_files_glob(base_path, extensions, exclude)
+            file_paths = await self._find_files_glob(base_path, fs_gateway, extensions, exclude)
 
         if not file_paths:
             ext_str = ", ".join(extensions)

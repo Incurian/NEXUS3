@@ -19,6 +19,8 @@ from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from pydantic import ValidationError as PydanticValidationError
+
 from nexus3.core.errors import PathSecurityError, ProviderError
 from nexus3.core.paths import validate_path
 from nexus3.core.permissions import AgentPermissions, PermissionDelta, ToolPermission
@@ -26,6 +28,7 @@ from nexus3.core.policy import PermissionLevel
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
 from nexus3.rpc.pool import Agent, AgentConfig, AuthorizationError
+from nexus3.rpc.schemas import DestroyAgentParamsSchema
 from nexus3.rpc.types import Request, Response
 
 if TYPE_CHECKING:
@@ -492,15 +495,25 @@ class GlobalDispatcher:
             InvalidParamsError: If agent_id is missing, invalid, or requester
                                is not authorized to destroy the agent.
         """
-        agent_id = params.get("agent_id")
-
-        # Validate required parameter
-        if agent_id is None:
+        if "agent_id" not in params:
             raise InvalidParamsError("Missing required parameter: agent_id")
-        if not isinstance(agent_id, str):
+        if not isinstance(params["agent_id"], str):
             raise InvalidParamsError(
-                f"agent_id must be string, got: {type(agent_id).__name__}"
+                f"agent_id must be string, got: {type(params['agent_id']).__name__}"
             )
+
+        try:
+            validated = DestroyAgentParamsSchema.model_validate(
+                {"agent_id": params["agent_id"]},
+                strict=True,
+            )
+        except PydanticValidationError as exc:
+            errors = exc.errors()
+            if errors:
+                raise InvalidParamsError(str(errors[0].get("msg", "Invalid agent_id"))) from exc
+            raise InvalidParamsError("Invalid agent_id") from exc
+
+        agent_id = validated.agent_id
 
         # Destroy the agent through the pool (with authorization check)
         try:

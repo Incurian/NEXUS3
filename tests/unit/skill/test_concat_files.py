@@ -1,12 +1,14 @@
 """Tests for concat_files skill."""
 
-import pytest
 from pathlib import Path
 
+import pytest
+
 from nexus3.skill.builtin.concat_files import (
-    concat_files_factory,
     DEFAULT_EXCLUDES,
     EXT_TO_LANG,
+    ConcatFilesSkill,
+    concat_files_factory,
 )
 from nexus3.skill.services import ServiceContainer
 
@@ -25,6 +27,19 @@ class TestConcatFilesSkill:
     def skill(self, services):
         """Create concat_files skill instance."""
         return concat_files_factory(services)
+
+
+def _build_concat_skill(
+    *,
+    cwd: Path,
+    allowed_paths: list[Path] | None,
+    blocked_paths: list[Path] | None = None,
+) -> ConcatFilesSkill:
+    services = ServiceContainer()
+    services.register("cwd", cwd)
+    services.register("allowed_paths", allowed_paths)
+    services.register("blocked_paths", blocked_paths or [])
+    return concat_files_factory(services)
 
 
 class TestBasicFunctionality(TestConcatFilesSkill):
@@ -440,7 +455,9 @@ class TestExclusions(TestConcatFilesSkill):
 
         assert result.success
         assert "app.js" in result.output
-        assert "node_modules" not in result.output or "index.js" not in result.output.split("node_modules")[-1]
+        assert "node_modules" not in result.output or "index.js" not in (
+            result.output.split("node_modules")[-1]
+        )
 
     @pytest.mark.asyncio
     async def test_default_excludes_git(self, skill, tmp_path):
@@ -775,3 +792,126 @@ class TestAllBinaryFilesCase(TestConcatFilesSkill):
 
         assert result.success
         assert "binary" in result.output.lower()
+
+
+class TestGatewayEnforcement:
+    """FilesystemAccessGateway parity checks for concat_files."""
+
+    @pytest.mark.asyncio
+    async def test_concat_files_skips_blocked_paths(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        async def _inline_to_thread(func, /, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        monkeypatch.setattr("asyncio.to_thread", _inline_to_thread)
+
+        allowed = tmp_path / "allowed"
+        blocked = allowed / "blocked"
+        allowed.mkdir()
+        blocked.mkdir()
+        (allowed / "inside.py").write_text("print('ok')\n")
+        (blocked / "hidden.py").write_text("print('hidden')\n")
+
+        skill = _build_concat_skill(
+            cwd=tmp_path,
+            allowed_paths=[allowed],
+            blocked_paths=[blocked],
+        )
+        result = await skill.execute(
+            extensions=["py"],
+            path=str(allowed),
+            dry_run=True,
+            gitignore=False,
+        )
+
+        assert result.success
+        assert result.output is not None
+        assert "inside.py" in result.output
+        assert "hidden.py" not in result.output
+
+    @pytest.mark.asyncio
+    async def test_concat_files_skips_symlink_escape(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        async def _inline_to_thread(func, /, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        monkeypatch.setattr("asyncio.to_thread", _inline_to_thread)
+
+        allowed = tmp_path / "allowed"
+        outside = tmp_path / "outside"
+        allowed.mkdir()
+        outside.mkdir()
+        (allowed / "inside.py").write_text("print('ok')\n")
+        (outside / "secret.py").write_text("print('secret')\n")
+
+        link = allowed / "secret-link.py"
+        try:
+            link.symlink_to(outside / "secret.py")
+        except OSError as exc:
+            pytest.skip(f"symlink creation not supported: {exc}")
+
+        skill = _build_concat_skill(cwd=tmp_path, allowed_paths=[allowed])
+        result = await skill.execute(
+            extensions=["py"],
+            path=str(allowed),
+            dry_run=True,
+            gitignore=False,
+        )
+
+        assert result.success
+        assert result.output is not None
+        assert "inside.py" in result.output
+        assert "secret-link.py" not in result.output
+        assert "secret.py" not in result.output
+
+    @pytest.mark.asyncio
+    async def test_concat_files_git_discovery_skips_outside_candidates(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        async def _inline_to_thread(func, /, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        monkeypatch.setattr("asyncio.to_thread", _inline_to_thread)
+
+        allowed = tmp_path / "allowed"
+        outside = tmp_path / "outside"
+        allowed.mkdir()
+        outside.mkdir()
+        (allowed / "inside.py").write_text("print('ok')\n")
+        (outside / "secret.py").write_text("print('secret')\n")
+
+        class _FakeProc:
+            def __init__(self, output: bytes) -> None:
+                self.returncode = 0
+                self._output = output
+
+            async def communicate(self) -> tuple[bytes, bytes]:
+                return self._output, b""
+
+        async def _fake_subprocess_exec(*args, **kwargs):
+            if "--others" in args:
+                return _FakeProc(b"")
+            return _FakeProc(b"inside.py\0../outside/secret.py\0")
+
+        monkeypatch.setattr("asyncio.create_subprocess_exec", _fake_subprocess_exec)
+
+        skill = _build_concat_skill(cwd=tmp_path, allowed_paths=[allowed])
+        result = await skill.execute(
+            extensions=["py"],
+            path=str(allowed),
+            dry_run=True,
+            gitignore=True,
+        )
+
+        assert result.success
+        assert result.output is not None
+        assert "inside.py" in result.output
+        assert "secret.py" not in result.output

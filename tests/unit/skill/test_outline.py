@@ -1,8 +1,8 @@
 """Tests for outline skill."""
 
+import asyncio
 import subprocess
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -11,6 +11,7 @@ from nexus3.skill.builtin.outline import (
     FILENAME_TO_PARSER,
     PARSERS,
     OutlineEntry,
+    OutlineSkill,
     _annotate_diff_markers,
     _annotate_token_estimates,
     _compute_end_lines,
@@ -39,10 +40,21 @@ from nexus3.skill.builtin.outline import (
 )
 from nexus3.skill.services import ServiceContainer
 
-
 # =============================================================================
 # Fixtures
 # =============================================================================
+
+def _build_outline_skill(
+    *,
+    cwd: Path,
+    allowed_paths: list[Path] | None,
+    blocked_paths: list[Path] | None = None,
+) -> OutlineSkill:
+    services = ServiceContainer()
+    services.register("cwd", cwd)
+    services.register("allowed_paths", allowed_paths)
+    services.register("blocked_paths", blocked_paths or [])
+    return outline_factory(services)
 
 
 @pytest.fixture
@@ -1323,6 +1335,59 @@ class TestOutlineSkill:
         result = await skill.execute(path=str(sub))
         assert result.success
         assert "No supported files" in result.output
+
+    @pytest.mark.asyncio
+    async def test_directory_respects_allowed_paths(self, tmp_path, monkeypatch):
+        async def _inline_to_thread(func, /, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        monkeypatch.setattr(asyncio, "to_thread", _inline_to_thread)
+
+        allowed = tmp_path / "allowed"
+        outside = tmp_path / "outside"
+        allowed.mkdir()
+        outside.mkdir()
+        (allowed / "inside.py").write_text("def inside():\n    pass\n")
+        (outside / "outside.py").write_text("def outside():\n    pass\n")
+        try:
+            (allowed / "outside_link.py").symlink_to(outside / "outside.py")
+        except OSError as exc:
+            pytest.skip(f"symlink creation not supported: {exc}")
+
+        scoped_skill = _build_outline_skill(cwd=tmp_path, allowed_paths=[allowed])
+        result = await scoped_skill.execute(path=str(allowed))
+
+        assert result.success
+        assert result.output is not None
+        assert "inside.py" in result.output
+        assert "outside_link.py" not in result.output
+        assert "outside.py" not in result.output
+
+    @pytest.mark.asyncio
+    async def test_directory_respects_blocked_paths(self, tmp_path, monkeypatch):
+        async def _inline_to_thread(func, /, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        monkeypatch.setattr(asyncio, "to_thread", _inline_to_thread)
+
+        allowed = tmp_path / "allowed"
+        blocked = allowed / "blocked"
+        allowed.mkdir()
+        blocked.mkdir()
+        (allowed / "ok.py").write_text("def ok():\n    pass\n")
+        (blocked / "hidden.py").write_text("def hidden():\n    pass\n")
+
+        scoped_skill = _build_outline_skill(
+            cwd=tmp_path,
+            allowed_paths=[allowed],
+            blocked_paths=[blocked],
+        )
+        result = await scoped_skill.execute(path=str(allowed))
+
+        assert result.success
+        assert result.output is not None
+        assert "ok.py" in result.output
+        assert "hidden.py" not in result.output
 
     @pytest.mark.asyncio
     async def test_empty_file(self, skill, tmp_path):

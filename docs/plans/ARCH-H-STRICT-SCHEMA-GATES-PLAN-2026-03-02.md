@@ -53,6 +53,7 @@ Phases:
 - [x] Define RPC param schema models.
 - [x] Define strict `mcp.json` envelope model.
 - [ ] Wire schema validation into ingress paths.
+  - [x] M1 Phase 2 slice: wired typed validation in `rpc/global_dispatcher.py::_handle_destroy_agent` and `rpc/dispatcher.py::_handle_get_messages` with compatibility-style `InvalidParamsError` mapping.
 - [ ] Remove silent malformed-entry skips.
 - [ ] Consolidate duplicate MCP config models.
 

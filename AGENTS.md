@@ -232,6 +232,7 @@ Progress snapshot:
 - Completed: architecture plan sanity corrections merged locally (schedule + plans A-H scope/gates/checklist alignment).
 - Completed: Plan A M0 foundation interfaces (`nexus3/core/authorization_kernel.py`) + unit tests.
 - Completed: Plan H M0 schema inventory scaffold (`nexus3/rpc/schemas.py`) + unit tests.
+- Completed: Plan H M1 Phase 2 first compat-safe ingress slice (`destroy_agent`, `get_messages`) wired to typed schemas with existing-style RPC error mapping + focused unit tests.
 - Completed: baseline E/F harness fixtures/tests under `tests/fixtures/arch_baseline/`, `tests/unit/context/test_compile_baseline.py`, and `tests/unit/patch/test_byte_roundtrip_baseline.py`.
 - In progress: M1 Plan D Phase 1 started with filesystem gateway foundation (`nexus3/core/filesystem_access.py`) and first migration slice (`glob_search.py`) plus targeted unit tests.
 - Next gate: run expanded validation (`ruff`, targeted pytest done; broader suites pending) and then continue M1 (Plan D/H/G phase work).

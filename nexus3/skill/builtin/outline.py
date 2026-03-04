@@ -15,6 +15,7 @@ from typing import Any
 
 from nexus3.core.constants import MAX_FILE_SIZE_BYTES, MAX_OUTPUT_BYTES
 from nexus3.core.errors import PathSecurityError
+from nexus3.core.filesystem_access import FilesystemAccessGateway
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
 
@@ -1534,6 +1535,7 @@ class OutlineSkill(FileSkill):
         diff: bool = False,
     ) -> ToolResult:
         """Outline all supported files in a directory (non-recursive)."""
+        fs_gateway = FilesystemAccessGateway(self._services, tool_name=self.name)
         try:
             entries_raw = sorted(dir_path.iterdir(), key=lambda p: p.name)
         except PermissionError:
@@ -1541,7 +1543,11 @@ class OutlineSkill(FileSkill):
 
         # Filter to supported files only
         file_paths: list[Path] = []
-        for entry in entries_raw:
+        authorized_entries = fs_gateway.iter_authorized_paths(
+            entries_raw,
+            must_exist=True,
+        )
+        for entry in authorized_entries:
             if entry.name.startswith("."):
                 continue
             if not entry.is_file():
