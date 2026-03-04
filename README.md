@@ -1434,6 +1434,9 @@ NEXUS3 includes 40 built-in skills organized by category, plus 21 GitLab integra
 - `bash_safe` uses `shlex.split()` — shell operators (`|`, `&&`, `>`) do NOT work
 - Use `shell_UNSAFE` only when you need shell features AND trust the input
 - `shell_UNSAFE` always requires confirmation (no "allow always" option)
+- `source` is a shell builtin and cannot run via `bash_safe`
+- On Windows, prefer explicit interpreter execution for project scripts:
+  `.venv\Scripts\python.exe script.py` (or `.venv/Scripts/python.exe` in Git Bash)
 - Default timeout: 30 seconds, max: 300 seconds
 
 ### Version Control
@@ -1988,6 +1991,16 @@ Use Windows Terminal or Git Bash for full ANSI support. CMD.exe and PowerShell 5
 **Problem: Process cleanup warnings on timeout**
 
 Windows uses `taskkill /T /F` for process tree termination. Some processes may not clean up as gracefully as on Unix.
+
+**Problem: `Failed to execute: [WinError 2] The system cannot find the file specified`**
+
+The command is not an executable (commonly `source`, activation scripts, or unqualified script names).
+Use `.venv\Scripts\python.exe <script.py>` directly, or use `shell_UNSAFE` if you need shell builtins/pipes.
+
+**Problem: Relative paths resolve unexpectedly**
+
+Execution `cwd` and relative paths are resolved from the agent's working directory, not your host shell's current tab.
+Pass explicit `cwd` and prefer absolute paths (Windows: `D:/...`) when troubleshooting.
 
 ### WSL-Specific Issues
 
