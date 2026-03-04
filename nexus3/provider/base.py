@@ -10,6 +10,7 @@ SECURITY: P2.13 - Error body size caps prevent memory exhaustion from large erro
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import random
@@ -297,6 +298,27 @@ class BaseProvider(ABC):
         """
         return status_code in RETRYABLE_STATUS_CODES
 
+    def _parse_error_body_for_logging(
+        self,
+        error_body: bytes,
+        *,
+        truncated: bool,
+    ) -> dict[str, Any]:
+        """Parse error body into JSON-safe dict for raw logging."""
+        error_text = error_body.decode(errors="replace")
+        try:
+            parsed = json.loads(error_text)
+            if isinstance(parsed, dict):
+                payload: dict[str, Any] = parsed
+            else:
+                payload = {"error": parsed}
+        except json.JSONDecodeError:
+            payload = {"error": error_text}
+
+        if truncated:
+            payload["_truncated"] = True
+        return payload
+
     async def _make_request(
         self,
         url: str,
@@ -343,8 +365,18 @@ class BaseProvider(ABC):
                 # Retryable server errors - retry with backoff
                 if self._is_retryable_error(response.status_code):
                     # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
-                    error_body = response.content[:MAX_ERROR_BODY_SIZE]
+                    full_error_body = response.content
+                    truncated = len(full_error_body) > MAX_ERROR_BODY_SIZE
+                    error_body = full_error_body[:MAX_ERROR_BODY_SIZE]
                     error_detail = error_body.decode(errors="replace")
+                    if self._raw_log:
+                        self._raw_log.on_response(
+                            response.status_code,
+                            self._parse_error_body_for_logging(
+                                error_body,
+                                truncated=truncated,
+                            ),
+                        )
                     last_error = ProviderError(
                         f"API request failed with status {response.status_code}: {error_detail}"
                     )
@@ -357,8 +389,18 @@ class BaseProvider(ABC):
                 # Other client errors (400, etc.) - fail immediately
                 if response.status_code >= 400:
                     # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
-                    error_body = response.content[:MAX_ERROR_BODY_SIZE]
+                    full_error_body = response.content
+                    truncated = len(full_error_body) > MAX_ERROR_BODY_SIZE
+                    error_body = full_error_body[:MAX_ERROR_BODY_SIZE]
                     error_detail = error_body.decode(errors="replace")
+                    if self._raw_log:
+                        self._raw_log.on_response(
+                            response.status_code,
+                            self._parse_error_body_for_logging(
+                                error_body,
+                                truncated=truncated,
+                            ),
+                        )
                     raise ProviderError(
                         f"API request failed with status {response.status_code}: {error_detail}"
                     )
@@ -441,10 +483,19 @@ class BaseProvider(ABC):
 
                     # Retryable server errors - retry with backoff
                     if self._is_retryable_error(response.status_code):
-                        error_body = await response.aread()
+                        full_error_body = await response.aread()
                         # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
-                        error_body = error_body[:MAX_ERROR_BODY_SIZE]
+                        truncated = len(full_error_body) > MAX_ERROR_BODY_SIZE
+                        error_body = full_error_body[:MAX_ERROR_BODY_SIZE]
                         error_msg = error_body.decode(errors="replace")
+                        if self._raw_log:
+                            self._raw_log.on_response(
+                                response.status_code,
+                                self._parse_error_body_for_logging(
+                                    error_body,
+                                    truncated=truncated,
+                                ),
+                            )
                         last_error = ProviderError(
                             f"API request failed ({response.status_code}): {error_msg}"
                         )
@@ -456,10 +507,19 @@ class BaseProvider(ABC):
 
                     # Other client errors (400, etc.) - fail immediately
                     if response.status_code >= 400:
-                        error_body = await response.aread()
+                        full_error_body = await response.aread()
                         # P2.13 SECURITY: Limit error body size to prevent memory exhaustion
-                        error_body = error_body[:MAX_ERROR_BODY_SIZE]
+                        truncated = len(full_error_body) > MAX_ERROR_BODY_SIZE
+                        error_body = full_error_body[:MAX_ERROR_BODY_SIZE]
                         error_msg = error_body.decode(errors="replace")
+                        if self._raw_log:
+                            self._raw_log.on_response(
+                                response.status_code,
+                                self._parse_error_body_for_logging(
+                                    error_body,
+                                    truncated=truncated,
+                                ),
+                            )
                         raise ProviderError(
                             f"API request failed ({response.status_code}): {error_msg}"
                         )

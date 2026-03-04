@@ -102,6 +102,31 @@ class TestMaxRetriesZero:
             assert mock_client.post.call_count == 1
 
     @pytest.mark.asyncio
+    async def test_raw_log_response_recorded_on_400_non_stream(
+        self, provider: OpenRouterProvider
+    ) -> None:
+        """Raw log callback receives error response payload on 400 errors."""
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.content = b'{"error":{"message":"bad request"}}'
+
+        raw_log = MagicMock()
+        provider.set_raw_log_callback(raw_log)
+
+        with patch.object(provider, "_ensure_client") as mock_ensure:
+            mock_client = AsyncMock()
+            mock_client.post.return_value = mock_response
+            mock_ensure.return_value = mock_client
+
+            with pytest.raises(ProviderError):
+                await provider._make_request("http://localhost/test", {"test": 1})
+
+        raw_log.on_response.assert_called_once()
+        status, body = raw_log.on_response.call_args[0]
+        assert status == 400
+        assert body["error"]["message"] == "bad request"
+
+    @pytest.mark.asyncio
     async def test_max_retries_zero_streaming(
         self, provider: OpenRouterProvider
     ) -> None:
@@ -130,6 +155,38 @@ class TestMaxRetriesZero:
             assert mock_client.stream.call_count == 1
             assert len(responses) == 1
             assert responses[0] is mock_response
+
+    @pytest.mark.asyncio
+    async def test_raw_log_response_recorded_on_400_streaming(
+        self, provider: OpenRouterProvider
+    ) -> None:
+        """Streaming path logs parsed 400 response payload to raw callback."""
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.aread = AsyncMock(return_value=b'{"error":{"message":"role sequence"}}')
+
+        async_context_manager = AsyncMock()
+        async_context_manager.__aenter__.return_value = mock_response
+        async_context_manager.__aexit__.return_value = None
+
+        raw_log = MagicMock()
+        provider.set_raw_log_callback(raw_log)
+
+        with patch.object(provider, "_ensure_client") as mock_ensure:
+            mock_client = MagicMock()
+            mock_client.stream.return_value = async_context_manager
+            mock_ensure.return_value = mock_client
+
+            with pytest.raises(ProviderError):
+                async for _ in provider._make_streaming_request(
+                    "http://localhost/test", {"test": 1}
+                ):
+                    pass
+
+        raw_log.on_response.assert_called_once()
+        status, body = raw_log.on_response.call_args[0]
+        assert status == 400
+        assert body["error"]["message"] == "role sequence"
 
 
 class TestMaxRetriesComparison:

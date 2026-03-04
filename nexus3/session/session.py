@@ -1,6 +1,7 @@
 """Chat session coordinator for NEXUS3."""
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
@@ -193,6 +194,40 @@ class Session:
         if self.logger:
             self.logger.log_session_event(event)
 
+    def _log_provider_preflight(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None,
+        dynamic_context: str | None,
+        *,
+        path: str,
+    ) -> None:
+        """Emit a compact role-sequence snapshot before provider calls."""
+        if not self.logger:
+            return
+
+        snapshot: list[dict[str, Any]] = []
+        for i, msg in enumerate(messages):
+            row: dict[str, Any] = {
+                "i": i,
+                "role": msg.role.value,
+                "content_len": len(msg.content),
+            }
+            if msg.tool_call_id:
+                row["tool_call_id"] = msg.tool_call_id
+            if msg.tool_calls:
+                row["tool_calls"] = [{"id": tc.id, "name": tc.name} for tc in msg.tool_calls]
+            snapshot.append(row)
+
+        preflight = {
+            "path": path,
+            "message_count": len(messages),
+            "tool_count": len(tools or []),
+            "dynamic_context_len": len(dynamic_context) if dynamic_context else 0,
+            "messages": snapshot,
+        }
+        self.logger.log_http_debug("session.preflight", json.dumps(preflight))
+
     def add_cancelled_tools(self, tools: list[tuple[str, str]]) -> None:
         """Store cancelled tool calls to report on next send().
 
@@ -316,6 +351,9 @@ class Session:
 
             # Stream response from provider using new event-based interface
             final_message: Message | None = None
+            self._log_provider_preflight(
+                messages, tools, dynamic_context, path="send.simple",
+            )
             async for event in self.provider.stream(
                 messages, tools, dynamic_context=dynamic_context,
             ):
@@ -413,6 +451,9 @@ class Session:
             dynamic_context = self.context.build_dynamic_context()
 
             final_message: Message | None = None
+            self._log_provider_preflight(
+                messages, tools, dynamic_context, path="run_turn.simple",
+            )
             async for stream_event in self.provider.stream(
                 messages, tools, dynamic_context=dynamic_context,
             ):
@@ -493,6 +534,9 @@ class Session:
                 default_model = self._config.resolve_model()
                 show_reasoning = default_model.reasoning
 
+            self._log_provider_preflight(
+                messages, tools, dynamic_context, path="run_turn.tools.iteration",
+            )
             async for event in self.provider.stream(
                 messages, tools, dynamic_context=dynamic_context,
             ):
