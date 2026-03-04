@@ -65,17 +65,72 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 | `outline` | `path`, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`? | Structural outline of file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Use `symbol` for filtered read, `tokens` for estimates, `diff` for changes |
 
 ### File Operations (Write)
-| Tool | Key Parameters | Description |
-|------|----------------|-------------|
-| `write_file` | `path`, `content` | Write/create files (read first!) |
-| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | String replacement (must be unique unless replace_all=true) |
-| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | Replace lines by number |
-| `append_file` | `path`, `content`, `newline`? | Append content to a file |
-| `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`? | Pattern-based find/replace |
-| `patch` | `target`, `diff`?, `diff_file`?, `mode`? | Apply unified diffs (strict/tolerant/fuzzy) |
-| `copy_file` | `source`, `destination`, `overwrite`? | Copy a file |
-| `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory |
-| `mkdir` | `path` | Create directory (and parents) |
+| Tool | Key Parameters | Description | Use Case |
+|------|----------------|-------------|----------|
+| `write_file` | `path`, `content` | Create or overwrite a file (entire file content replaced) | New files, generated files, intentional full rewrites |
+| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | Exact string replacement; supports atomic batched edits via `edits` | Precise literal edits where old text is known exactly |
+| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | Replace line ranges by 1-indexed line numbers | Replacing a known block/function by line range |
+| `append_file` | `path`, `content`, `newline`? | Append content at end of file | Add log/changelog entries or trailing sections |
+| `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | Pattern-based regex replacement | Broad renames or format rewrites across a file |
+| `patch` | `target`, `diff`?, `diff_file`?, `mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy) | Complex multi-line edits, diff-driven refactors |
+| `copy_file` | `source`, `destination`, `overwrite`? | Copy a file | Backup before risky edits, duplicate templates |
+| `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory | File moves/renames |
+| `mkdir` | `path` | Create directory (and parents) | Prepare output directories |
+
+### Choosing the Right Edit Tool
+
+| Goal | Recommended Tool | Why |
+|------|------------------|-----|
+| Replace a specific literal string | `edit_file` | Exact match with strong safety checks |
+| Apply multiple literal edits atomically | `edit_file` + `edits` | All edits succeed or fail together |
+| Replace a known line range | `edit_lines` | Explicit positional edit with line control |
+| Pattern-based replacement | `regex_replace` | Flexible match with regex flags |
+| Apply a complex code change from a diff | `patch` | Best for multi-line structural edits |
+| Add new content at end of file | `append_file` | Simple append semantics |
+| Replace whole file content | `write_file` | Full overwrite by design |
+
+Quick selection flow:
+1. New file or full rewrite: use `write_file`.
+2. Exact literal edit: use `edit_file`.
+3. Line-range/block replacement: use `edit_lines`.
+4. Pattern-driven replacement: use `regex_replace`.
+5. Multi-hunk or refactor diff: use `patch`.
+6. Add only to end: use `append_file`.
+
+### Write Tool Guidance
+
+**`edit_file` (exact string replacement)**
+- Best for replacing known literal snippets.
+- `old_string` must match exactly, including whitespace and line breaks.
+- If the match is ambiguous (appears multiple times), use more context or `replace_all=true`.
+- Use `edits` for atomic multi-change updates.
+
+**`edit_lines` (line-number replacement)**
+- Best when line numbers are known (for example, from `outline` + `read_file`).
+- `new_content` replaces full lines; indentation must be correct.
+- For multiple edits in one file, apply from bottom to top to avoid line drift.
+
+**`regex_replace` (pattern replacement)**
+- Use for controlled broad updates.
+- Prefer specific patterns (`\bname\b` instead of `name`) to avoid accidental matches.
+- Use `count` to cap replacements when testing risky patterns.
+- Supports `ignore_case`, `multiline`, and `dotall`.
+
+**`patch` (unified diff application)**
+- Preferred for complex multi-line changes and refactors.
+- Use `dry_run=true` before applying risky patches.
+- Use `mode="fuzzy"` only when strict matching fails due to code drift.
+- Diff lines must be prefixed (` ` context, `-` removal, `+` addition).
+
+**`append_file` (append-only)**
+- Appends content to the end of an existing file.
+- `newline=true` adds a leading newline if file does not already end with one.
+- Avoid for structured formats that require internal edits (JSON/YAML often need in-place edits instead).
+
+**`write_file` (create/overwrite)**
+- Creates a file or overwrites all existing content.
+- Destructive for existing files; read first if unsure.
+- Use `copy_file` first when you want a rollback point.
 
 ### Execution
 | Tool | Key Parameters | Description |
@@ -185,6 +240,57 @@ outline(path="src/auth.py", diff=true)               # Entries with uncommitted 
 | "Where are the changed sections?" | `outline` with `diff=true` | Focus on recent work |
 
 Rule of thumb: `outline` is for **navigating** (cheap, structural), `concat_files` is for **bulk reading** (expensive, full content). Start with `outline` to understand what you're dealing with, then use `read_file` or `concat_files` to get the content you actually need.
+
+### Best Practices for Editing Files
+
+1. Read before write: use `read_file` (and `outline` for navigation) before any edit.
+2. Prefer the least powerful tool that can do the job safely (`edit_file` > `regex_replace` > `patch` for simple edits).
+3. For multiple literal edits, use atomic `edit_file` + `edits`.
+4. For `edit_lines`, preserve indentation and edit bottom-to-top for multiple ranges.
+5. For `regex_replace`, start with narrow patterns and optional `count` limits.
+6. For `patch`, run `dry_run=true` before applying high-risk diffs.
+7. Use `copy_file` to back up critical files before destructive changes.
+8. Validate syntax-sensitive files (JSON/YAML/Python) after editing.
+
+### Common Pitfalls with File Editing
+
+| Pitfall | Tool | Cause | Fix |
+|---------|------|-------|-----|
+| "String not found" or ambiguous match | `edit_file` | `old_string` does not match exactly, or appears multiple times | Read file first; include more surrounding context or use `replace_all=true` deliberately |
+| Broken indentation or block scope | `edit_lines` | `new_content` indentation does not match file style | Copy indentation pattern from nearby lines |
+| Unintended broad replacements | `regex_replace` | Pattern too permissive | Add boundaries/anchors and test with a small `count` first |
+| Patch application failure | `patch` | Context drift or malformed diff | Use `dry_run=true`; then `mode="fuzzy"` when appropriate |
+| Invalid structured file after append | `append_file` | Appending to formats that require interior edits | Use `edit_file`, `edit_lines`, or `patch` instead |
+| Accidental data loss | `write_file` | Entire file overwritten unintentionally | Read first and create backup via `copy_file` |
+
+### Editing Workflow Examples
+
+Replace a function body by line range:
+```
+outline(path="utils.py", symbol="calculate_discount")
+read_file(path="utils.py", offset=40, limit=30)
+edit_lines(
+  path="utils.py",
+  start_line=45,
+  end_line=52,
+  new_content="def calculate_discount(price):\n    return price * 0.9 if price > 1000 else price\n",
+)
+```
+
+Rename a variable with regex boundaries:
+```
+regex_replace(
+  path="config.py",
+  pattern="\\bversion_1\\b",
+  replacement="version_2",
+)
+```
+
+Validate and apply a patch safely:
+```
+patch(target="src/utils.py", diff=patch_text, dry_run=True)
+patch(target="src/utils.py", diff=patch_text, mode="strict")
+```
 
 ---
 
@@ -523,6 +629,11 @@ For MCP configuration details, see `nexus3/mcp/README.md`.
 - **Default timeout**: 120 seconds
 - **Process groups killed on timeout**: No orphan processes
 - **Max tool iterations per response**: 100 (configurable)
+
+### Large Payload Guidance
+- Provider/server output limits may truncate very large responses or tool argument payloads.
+- For large generated documents or diffs, prefer chunked writes (`write_file` + repeated `append_file`) over one oversized tool call.
+- If a tool-call JSON payload is malformed unexpectedly, retry with a smaller payload chunk.
 
 ---
 

@@ -62,8 +62,9 @@ class AppendFileSkill(FileSkill):
     @property
     def description(self) -> str:
         return (
-            "Append content to a file. "
-            "IMPORTANT: Read the file first to understand its current content and structure."
+            "Append content to the end of a file. "
+            "Use for adding new trailing content (logs/changelog entries, footer blocks). "
+            "IMPORTANT: Do not use for in-place edits; use edit_file/edit_lines/patch instead."
         )
 
     @property

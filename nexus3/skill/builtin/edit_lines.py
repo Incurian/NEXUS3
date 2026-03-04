@@ -26,11 +26,11 @@ class EditLinesSkill(FileSkill):
     @property
     def description(self) -> str:
         return (
-            "Replace lines by line number. "
-            "IMPORTANT: new_content must include proper indentation - the entire line is replaced. "
-            "For Python, match the original indentation (spaces/tabs) exactly. "
-            "For multiple edits, work bottom-to-top to avoid line number drift. "
-            "Use edit_file for safer string-based edits that preserve context."
+            "Replace one or more lines by line number. "
+            "Use when you know exact line ranges for a block/function update. "
+            "IMPORTANT: new_content replaces whole lines and must preserve correct indentation. "
+            "For multiple edits, work bottom-to-top to avoid line drift. "
+            "Use edit_file/regex_replace for text-pattern edits."
         )
 
     @property

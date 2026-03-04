@@ -31,10 +31,10 @@ class EditFileSkill(FileSkill):
     @property
     def description(self) -> str:
         return (
-            "Edit a file using string replacement. "
-            "IMPORTANT: Read the file first to verify your old_string matches exactly. "
-            "For line-based editing, use edit_lines instead. "
-            "For multiple edits, use the 'edits' array parameter for atomic batch operations."
+            "Edit a file using exact string replacement. "
+            "Use for literal find/replace and atomic multi-edit batches via 'edits'. "
+            "IMPORTANT: old_string must match exactly (including whitespace/newlines). "
+            "Use edit_lines for line-number edits and regex_replace for pattern-based edits."
         )
 
     @property

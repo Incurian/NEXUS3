@@ -101,6 +101,11 @@ Always use virtualenv executables:
 
 Never rely on bare `python` or `pytest`.
 
+Known sandbox caveat (Codex CLI environment):
+- In this repo, sandboxed runs may hang on tests that execute file I/O via `asyncio.to_thread(...)` (for example, `Path.read_bytes` inside file-edit skills).
+- Symptom: pytest collects tests, starts first test, then stalls without pass/fail output.
+- Workaround: rerun the same pytest command unsandboxed/escalated to verify real pass/fail status.
+
 Live validation is required for changes that affect agent behavior, RPC, skills, or permissions:
 
 ```bash

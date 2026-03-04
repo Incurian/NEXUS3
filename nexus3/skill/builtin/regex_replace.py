@@ -34,8 +34,10 @@ class RegexReplaceSkill(FileSkill):
     @property
     def description(self) -> str:
         return (
-            "Replace text in a file using regular expression pattern. "
-            "IMPORTANT: Read the file first to verify your pattern matches the intended text."
+            "Replace text in a file using a regular expression pattern. "
+            "Use for pattern-driven edits and broad renames where exact string replacement is insufficient. "
+            "IMPORTANT: Use specific patterns to avoid unintended matches; "
+            "use edit_file for simple literal replacements."
         )
 
     @property

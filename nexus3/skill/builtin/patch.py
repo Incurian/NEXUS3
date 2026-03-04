@@ -53,14 +53,10 @@ class PatchSkill(FileSkill):
     @property
     def description(self) -> str:
         return (
-            "Apply a unified diff to a file. "
-            "Validates patches before applying and auto-fixes common LLM errors. "
-            "Use mode='fuzzy' for code that may have drifted slightly. "
-            "Use dry_run=True to validate without applying changes. "
-            "DIFF FORMAT TIPS: (1) Every line in a hunk needs a prefix: ' ' for context, "
-            "'-' for removal, '+' for addition. (2) Blank context lines need a space prefix "
-            "(not empty). (3) Line numbers are 1-indexed. (4) Context lines must match "
-            "the actual file content exactly."
+            "Apply a unified diff to a file (strict/tolerant/fuzzy modes). "
+            "Use for complex multi-line changes and diff-driven refactors. "
+            "Use dry_run=True to validate before applying and mode='fuzzy' for drifted code. "
+            "Diff lines must be prefixed: ' ' context, '-' removal, '+' addition."
         )
 
     @property

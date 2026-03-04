@@ -24,9 +24,9 @@ class WriteFileSkill(FileSkill):
     @property
     def description(self) -> str:
         return (
-            "Write content to a file (creates or overwrites). "
-            "IMPORTANT: If modifying an existing file, read it first"
-            " to understand its current state."
+            "Create or overwrite a file with full content replacement. "
+            "Use for new files or intentional full rewrites. "
+            "IMPORTANT: This replaces the entire file; use edit tools for partial changes."
         )
 
     @property
