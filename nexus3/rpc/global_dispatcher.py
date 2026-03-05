@@ -26,10 +26,9 @@ from nexus3.core.paths import validate_path
 from nexus3.core.permissions import AgentPermissions, PermissionDelta, ToolPermission
 from nexus3.core.policy import PermissionLevel
 from nexus3.core.request_context import RequestContext
-from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
 from nexus3.rpc.pool import Agent, AgentConfig, AuthorizationError
-from nexus3.rpc.schemas import DestroyAgentParamsSchema, EmptyParamsSchema
+from nexus3.rpc.schemas import CreateAgentParamsSchema, DestroyAgentParamsSchema, EmptyParamsSchema
 from nexus3.rpc.types import Request, Response
 
 if TYPE_CHECKING:
@@ -149,73 +148,125 @@ class GlobalDispatcher:
                 or if parameter types are invalid, or if requested permissions
                 exceed parent ceiling.
         """
-        agent_id = params.get("agent_id")
-        system_prompt = params.get("system_prompt")
-        preset = params.get("preset")
-        disable_tools = params.get("disable_tools")
-        parent_agent_id = params.get("parent_agent_id")
-        cwd_param = params.get("cwd")
-        allowed_write_paths = params.get("allowed_write_paths")
-        model = params.get("model")
-        initial_message = params.get("initial_message")
+        # Compat-safe schema ingress wiring: validate only fields with stable
+        # legacy semantics in this method (extra params remain permissive).
+        schema_candidate: dict[str, Any] = {}
+        for key in (
+            "agent_id",
+            "system_prompt",
+            "preset",
+            "disable_tools",
+            "cwd",
+            "allowed_write_paths",
+            "model",
+            "initial_message",
+        ):
+            if key in params:
+                schema_candidate[key] = params[key]
 
-        # Validate agent_id if provided
-        if agent_id is not None:
-            if not isinstance(agent_id, str):
-                raise InvalidParamsError(
-                    f"agent_id must be string, got: {type(agent_id).__name__}"
-                )
-            # SECURITY: Validate agent_id format to prevent path traversal
-            try:
-                validate_agent_id(agent_id)
-            except ValidationError as e:
-                raise InvalidParamsError(e.message) from e
-
-        # Validate system_prompt if provided
-        if system_prompt is not None and not isinstance(system_prompt, str):
-            raise InvalidParamsError(
-                f"system_prompt must be string, got: {type(system_prompt).__name__}"
+        try:
+            validated = CreateAgentParamsSchema.model_validate(
+                schema_candidate,
+                strict=False,
             )
+        except PydanticValidationError as exc:
+            errors = exc.errors()
+            if errors:
+                error = errors[0]
+                loc = error.get("loc", ())
+                field = str(loc[0]) if loc else None
+                raw_value = params.get(field) if field else None
+                message = str(error.get("msg", "Invalid create_agent parameters"))
 
-        # Validate preset if provided
-        if preset is not None:
-            if not isinstance(preset, str):
-                raise InvalidParamsError(
-                    f"preset must be string, got: {type(preset).__name__}"
-                )
-            # yolo is NOT allowed via RPC - only through interactive REPL
-            valid_presets = {"trusted", "sandboxed"}
-            if preset not in valid_presets:
-                raise InvalidParamsError(
-                    f"Invalid preset: {preset}. Valid: {sorted(valid_presets)}"
-                )
+                if field == "agent_id":
+                    if not isinstance(raw_value, str):
+                        raise InvalidParamsError(
+                            f"agent_id must be string, got: {type(raw_value).__name__}"
+                        ) from exc
+                    if message.startswith("Value error, agent_id invalid: "):
+                        raise InvalidParamsError(
+                            message.removeprefix("Value error, agent_id invalid: ")
+                        ) from exc
 
-        # Validate disable_tools if provided
-        if disable_tools is not None:
-            if not isinstance(disable_tools, list):
-                raise InvalidParamsError(
-                    f"disable_tools must be array, got: {type(disable_tools).__name__}"
-                )
-            for i, tool in enumerate(disable_tools):
-                if not isinstance(tool, str):
+                if field == "system_prompt" and raw_value is not None:
                     raise InvalidParamsError(
-                        f"disable_tools[{i}] must be string, got: {type(tool).__name__}"
-                    )
+                        f"system_prompt must be string, got: {type(raw_value).__name__}"
+                    ) from exc
 
-        # Validate model if provided
-        if model is not None and not isinstance(model, str):
-            raise InvalidParamsError(
-                f"model must be string, got: {type(model).__name__}"
-            )
+                if field == "preset":
+                    if raw_value is not None and not isinstance(raw_value, str):
+                        raise InvalidParamsError(
+                            f"preset must be string, got: {type(raw_value).__name__}"
+                        ) from exc
+                    if isinstance(raw_value, str):
+                        valid_presets = {"trusted", "sandboxed"}
+                        raise InvalidParamsError(
+                            f"Invalid preset: {raw_value}. Valid: {sorted(valid_presets)}"
+                        ) from exc
 
-        # Validate initial_message if provided
-        if initial_message is not None:
-            if not isinstance(initial_message, str):
-                raise InvalidParamsError(
-                    f"initial_message must be string, got: {type(initial_message).__name__}"
-                )
-            if not initial_message.strip():
-                raise InvalidParamsError("initial_message cannot be empty")
+                if field == "disable_tools":
+                    if raw_value is not None and not isinstance(raw_value, list):
+                        raise InvalidParamsError(
+                            f"disable_tools must be array, got: {type(raw_value).__name__}"
+                        ) from exc
+                    if (
+                        len(loc) > 1
+                        and isinstance(loc[1], int)
+                        and isinstance(raw_value, list)
+                        and loc[1] < len(raw_value)
+                    ):
+                        bad_value = raw_value[loc[1]]
+                        raise InvalidParamsError(
+                            "disable_tools"
+                            f"[{loc[1]}] must be string, got: {type(bad_value).__name__}"
+                        ) from exc
+
+                if field == "model" and raw_value is not None:
+                    raise InvalidParamsError(
+                        f"model must be string, got: {type(raw_value).__name__}"
+                    ) from exc
+
+                if field == "cwd" and raw_value is not None:
+                    raise InvalidParamsError(
+                        f"cwd must be string, got: {type(raw_value).__name__}"
+                    ) from exc
+
+                if field == "allowed_write_paths":
+                    if raw_value is not None and not isinstance(raw_value, list):
+                        raise InvalidParamsError(
+                            f"allowed_write_paths must be array, got: {type(raw_value).__name__}"
+                        ) from exc
+                    if (
+                        len(loc) > 1
+                        and isinstance(loc[1], int)
+                        and isinstance(raw_value, list)
+                        and loc[1] < len(raw_value)
+                    ):
+                        bad_value = raw_value[loc[1]]
+                        raise InvalidParamsError(
+                            "allowed_write_paths"
+                            f"[{loc[1]}] must be string, got: {type(bad_value).__name__}"
+                        ) from exc
+
+                if field == "initial_message":
+                    if raw_value is not None and not isinstance(raw_value, str):
+                        raise InvalidParamsError(
+                            f"initial_message must be string, got: {type(raw_value).__name__}"
+                        ) from exc
+                    if isinstance(raw_value, str) and not raw_value.strip():
+                        raise InvalidParamsError("initial_message cannot be empty") from exc
+
+            raise InvalidParamsError("Invalid create_agent parameters") from exc
+
+        agent_id = validated.agent_id
+        system_prompt = validated.system_prompt
+        preset = validated.preset
+        disable_tools = validated.disable_tools
+        parent_agent_id = params.get("parent_agent_id")
+        cwd_param = validated.cwd
+        allowed_write_paths = validated.allowed_write_paths
+        model = validated.model
+        initial_message = validated.initial_message
 
         # Validate and look up parent_agent_id FIRST (needed for cwd resolution)
         # SECURITY: Look up parent permissions from pool instead of trusting RPC data

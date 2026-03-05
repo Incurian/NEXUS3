@@ -18,6 +18,7 @@ from nexus3.rpc.schemas import (
     CompactParamsSchema,
     EmptyParamsSchema,
     GetMessagesParamsSchema,
+    SendParamsSchema,
 )
 from nexus3.rpc.types import Request, Response
 from nexus3.session import Session
@@ -151,6 +152,14 @@ class Dispatcher:
             raise InvalidParamsError(
                 f"content must be string, got: {type(content).__name__}"
             )
+        try:
+            # Compat-safe schema ingress wiring: validate only fields with
+            # established strict behavior for this method.
+            SendParamsSchema.model_validate({"content": content}, strict=False)
+        except PydanticValidationError as exc:
+            raise InvalidParamsError(
+                f"content must be string, got: {type(content).__name__}"
+            ) from exc
 
         # Block RPC sends to YOLO agents when no REPL connected
         if self._pool and self._agent_id:

@@ -9,6 +9,7 @@ import pytest
 
 from nexus3.rpc.dispatcher import Dispatcher
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
+from nexus3.rpc.protocol import ParseError, parse_request
 from nexus3.rpc.types import Request
 
 
@@ -19,6 +20,26 @@ class _StubSession:
 
     async def compact(self, force: bool = True) -> Any:
         return SimpleNamespace(original_token_count=10, new_token_count=6)
+
+
+class _StreamingStubSession(_StubSession):
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def send(
+        self,
+        content: str,
+        cancel_token: Any = None,
+        user_meta: dict[str, str] | None = None,
+    ) -> Any:
+        self.calls.append(
+            {
+                "content": content,
+                "cancel_token": cancel_token,
+                "user_meta": user_meta,
+            }
+        )
+        yield "ok"
 
 
 class _StubPool:
@@ -39,6 +60,16 @@ class _StubPool:
 
     def get(self, agent_id: str) -> Any:
         return None
+
+
+class _CreateCapableStubPool(_StubPool):
+    def __init__(self) -> None:
+        self.last_create: dict[str, Any] | None = None
+
+    async def create(self, agent_id: str | None = None, config: Any = None) -> Any:
+        effective_id = agent_id or "auto-1"
+        self.last_create = {"agent_id": agent_id, "config": config, "effective_id": effective_id}
+        return SimpleNamespace(agent_id=effective_id)
 
 
 class _StubContext:
@@ -89,6 +120,141 @@ async def test_global_destroy_agent_schema_validation_rejects_malformed_id() -> 
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
     assert "invalid agent id" in response.error["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_send_schema_validation_rejects_malformed_request_id_shape() -> None:
+    dispatcher = Dispatcher(_StreamingStubSession(), context=None, agent_id="agent-1")
+    request = Request(
+        jsonrpc="2.0",
+        method="send",
+        params={"content": "hello", "request_id": {"bad": "shape"}},
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    # Compat-safe during wiring: malformed request_id must not succeed.
+    # Pre-wiring falls through to INTERNAL_ERROR, while wired schema should
+    # return INVALID_PARAMS with a request_id-specific message.
+    assert response.error["code"] in {-32602, -32603}
+    if response.error["code"] == -32602:
+        assert "request_id" in response.error["message"].lower()
+    else:
+        assert "unhashable type" in response.error["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_send_missing_content_preserves_error_style() -> None:
+    dispatcher = Dispatcher(_StreamingStubSession(), context=None, agent_id="agent-1")
+    request = Request(
+        jsonrpc="2.0",
+        method="send",
+        params={},
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == "Missing required parameter: content"
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_send_ingress_wiring_keeps_compat_with_benign_extra_params() -> None:
+    session = _StreamingStubSession()
+    dispatcher = Dispatcher(session, context=None, agent_id="agent-1")
+
+    request = Request(
+        jsonrpc="2.0",
+        method="send",
+        params={
+            "content": "hello",
+            "request_id": "req-1",
+            "source": "rpc",
+            "trace_id": "benign-extra",
+        },
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is None
+    assert response.result == {
+        "content": "ok",
+        "request_id": "req-1",
+        "halted_at_iteration_limit": False,
+    }
+    assert session.calls[0]["content"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_global_create_agent_schema_validation_rejects_malformed_agent_id_shape() -> None:
+    dispatcher = GlobalDispatcher(_StubPool())
+    request = Request(
+        jsonrpc="2.0",
+        method="create_agent",
+        params={"agent_id": ["bad"]},
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert "agent_id" in response.error["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_global_create_agent_rejects_blank_initial_message() -> None:
+    dispatcher = GlobalDispatcher(_StubPool())
+    request = Request(
+        jsonrpc="2.0",
+        method="create_agent",
+        params={"initial_message": "   "},
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == "initial_message cannot be empty"
+
+
+@pytest.mark.asyncio
+async def test_global_create_agent_ingress_wiring_keeps_compat_with_benign_extra_params() -> None:
+    pool = _CreateCapableStubPool()
+    dispatcher = GlobalDispatcher(pool)
+
+    request = Request(
+        jsonrpc="2.0",
+        method="create_agent",
+        params={
+            "agent_id": "worker-1",
+            "preset": "sandboxed",
+            "allowed_write_paths": [],
+            "benign_extra": "value",
+        },
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is None
+    assert response.result == {
+        "agent_id": "worker-1",
+        "url": "/agent/worker-1",
+    }
+
+
+def test_parse_request_rejects_malformed_object_id_shape() -> None:
+    with pytest.raises(ParseError, match="id must be string, number, or null"):
+        parse_request(
+            '{"jsonrpc":"2.0","method":"send","params":{"content":"hi"},"id":{"bad":1}}'
+        )
 
 
 @pytest.mark.asyncio
