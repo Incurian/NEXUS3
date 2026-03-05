@@ -229,7 +229,7 @@ Immediate tasks:
 - Plan F Phase 3 is committed as `4c10b0b` (`plan f phase 3: wire legacy vs byte_strict skill mode`).
 - Plan F Phase 4 is committed as `a342401` (`plan f phase 4: fail closed on ambiguous patch targets`).
 - Plan F Phase 5 is committed as `87c5df1` (`plan f phase 5: add non-utf8 byte-strict fidelity regressions`).
-- Plan F Phase 6 default-flip slice is complete in the working tree (`byte_strict` now default for patch skill, explicit `legacy` fallback retained); commit as standalone checkpoint.
+- Plan F Phase 6 is committed as `195ab86` (`plan f phase 6: default patch skill to byte_strict`).
 - Next target before Plan E: close the remaining Plan F legacy-branch retirement/judgment item, then begin M3 Plan E Phase 1 compiler/invariant work.
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
@@ -1247,9 +1247,32 @@ Execution checkpoint (2026-03-05, architecture execution round 36):
   - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py` -> passed.
   - `.venv/bin/mypy nexus3/skill/builtin/patch.py` -> passed.
 - Next gate:
-  1. Commit Plan F Phase 6 code+tests+docs as standalone checkpoint.
-  2. Decide whether to retire remaining legacy-only branches now or explicitly defer retirement with rationale and target window.
-  3. Begin M3 Plan E Phase 1 compiler/invariant implementation after Plan F closeout note is finalized.
+  1. Decide whether to retire remaining legacy-only branches now or explicitly defer retirement with rationale and target window.
+  2. Begin M3 Plan E Phase 1 compiler/invariant implementation after Plan F closeout note is finalized.
+  3. Keep follow-on deferred plans in backlog mode until their M4/post-M4 dependency gates are met.
+
+Pre-compact checkpoint (2026-03-05, post-round36 commit):
+- Branch/head:
+  - `feat/arch-overhaul-execution`
+  - `195ab86` (`plan f phase 6: default patch skill to byte_strict`)
+- Architecture execution commits in this run:
+  1. `1079cd7` Plan F Phase 1 (AST v2 foundation + baseline fixtures).
+  2. `4ded3fa` Plan F Phase 2 (byte-strict AST-v2 apply path).
+  3. `4c10b0b` Plan F Phase 3 (legacy/byte_strict mode flag wiring in patch skill).
+  4. `a342401` Plan F Phase 4 (exact-path preference + ambiguity fail-closed target matching).
+  5. `87c5df1` Plan F Phase 5 (non-UTF8/binary-adjacent byte-fidelity regressions).
+  6. `195ab86` Plan F Phase 6 (default patch skill fidelity mode flipped to byte_strict).
+- Current open architecture decision before Plan E:
+  1. Keep legacy fallback branch as-is for soak window (explicitly deferred with rationale/window), or
+  2. Retire remaining legacy-only patch-skill branch logic now and finalize Plan F checklist closeout.
+- Resume-first commands after compact:
+  1. `git status --short --branch`
+  2. `sed -n '217,260p' AGENTS.md`
+  3. `sed -n '1,240p' docs/plans/ARCH-F-PATCH-AST-BYTE-FIDELITY-PLAN-2026-03-02.md`
+  4. `sed -n '1,260p' docs/plans/ARCH-E-CONTEXT-COMPILER-GRAPH-PLAN-2026-03-02.md`
+- Next implementation targets after compact:
+  1. Resolve Plan F legacy-branch retirement/defer decision and sync checklist/docs.
+  2. Start M3 Plan E Phase 1 (`nexus3/context/compiler.py` IR + invariant checker scaffold + focused tests).
 
 ## Source of Truth
 
