@@ -12,7 +12,8 @@ Included:
 - Introduce request context object (request id, requester, policy snapshot, trace id).
 
 Deferred:
-- Wider service-container immutability redesign.
+- Wider service-container immutability redesign (follow-on plan:
+  [ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md)).
 
 Excluded:
 - Capability delegation semantics (Plan B).
@@ -55,6 +56,10 @@ Phases:
 - [x] Remove global mutable requester field.
 - [x] Make selected built-in skills stateless per call.
 - [x] Add concurrency tests and stress-style regressions.
+
+Closeout note (2026-03-05):
+- The remaining deferred boundary for service-container immutability is tracked
+  in [ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md).
 
 ### M2 Commit 1 Status (2026-03-04)
 

@@ -85,6 +85,7 @@ Phases:
 Closeout note (2026-03-05):
 - Plan A is effectively complete for the current branch scope.
 - The remaining accepted boundary is create-stage `parent_can_grant` precomputation in `rpc/pool.py`, which is still consumed by kernel evaluation and remains deferred only because adapter-local recomputation would require a broader authorization-request model redesign.
+- Follow-on execution plan for that boundary: [ARCH-A-AUTH-REQUEST-MODEL-V2-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-A-AUTH-REQUEST-MODEL-V2-PLAN-2026-03-05.md).
 
 ## Documentation Updates
 

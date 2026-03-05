@@ -10,7 +10,7 @@ During diagnostic testing of NEXUS on a corporate OpenAI-compatible endpoint (Az
 3. Non-streaming `_parse_response()` silently discards `reasoning_content` → no logging, could confuse debugging
 
 **Deferred:**
-- Keep-alive connection failures (test 10: "fresh works but keep-alive fails") — the empty stream guard already protects against the worst outcome. Investigation deferred.
+- Keep-alive connection failures (test 10: "fresh works but keep-alive fails") — the empty stream guard already protects against the worst outcome. Follow-on investigation plan: [PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md).
 
 ## Bug Details
 
@@ -158,4 +158,4 @@ if reasoning:
 
 ## Deferred
 
-- **Keep-alive failures**: Test 10 showed "fresh connection works but keep-alive fails". This is likely the corporate proxy routing reused connections to a bad backend (matching earlier `gcell`/`pcell` observations). The empty stream guard (c735329) already prevents cascading failures from this. httpx's connection pool should handle stale connections gracefully in most cases. Defer investigation unless users report intermittent failures that the guard doesn't catch.
+- **Keep-alive failures**: Test 10 showed "fresh connection works but keep-alive fails". This is likely the corporate proxy routing reused connections to a bad backend (matching earlier `gcell`/`pcell` observations). The empty stream guard (c735329) already prevents cascading failures from this. httpx's connection pool should handle stale connections gracefully in most cases. Deferred investigation is tracked in [PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md).

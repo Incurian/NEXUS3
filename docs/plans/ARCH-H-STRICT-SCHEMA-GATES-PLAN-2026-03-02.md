@@ -18,6 +18,7 @@ Included:
 
 Deferred:
 - Any future simplification of legacy error-text compatibility shims after the strict boundary rollout has fully settled.
+  - Follow-on execution plan: [ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md).
 
 Excluded:
 - New schema framework adoption.
