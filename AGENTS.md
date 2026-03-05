@@ -245,6 +245,10 @@ Progress snapshot:
 - Completed: M1 Plan D grep migration slice routed fallback per-candidate authorization through `FilesystemAccessGateway` and added focused blocked/outside/symlink grep tests.
 - Completed: M1 Plan D tool migrations (`glob`, `outline`, `concat_files`, `grep`) to `FilesystemAccessGateway`; remaining Plan D work is consolidated regression/perf guard coverage.
 - Completed: M1 Plan D consolidated blocked-path/symlink regression coverage across migrated tool tests (`glob`, `outline`, `concat_files`, `grep`).
+- Completed: M2 Plan C Phase 1 destroy-path request-context slice:
+  - added immutable `RequestContext` model (`nexus3/core/request_context.py`)
+  - removed global mutable requester field in `GlobalDispatcher`
+  - propagated request context through global dispatcher destroy flow into pool authorization call
 - Next gate: run expanded validation (broader suites pending) and continue M1 Plan H ingress wiring plus Plan G Phase 3 migration slices.
 
 Recovery note:

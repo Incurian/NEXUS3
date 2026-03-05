@@ -25,6 +25,7 @@ from nexus3.core.errors import PathSecurityError, ProviderError
 from nexus3.core.paths import validate_path
 from nexus3.core.permissions import AgentPermissions, PermissionDelta, ToolPermission
 from nexus3.core.policy import PermissionLevel
+from nexus3.core.request_context import RequestContext
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
 from nexus3.rpc.pool import Agent, AgentConfig, AuthorizationError
@@ -78,8 +79,6 @@ class GlobalDispatcher:
             "list_agents": self._handle_list_agents,
             "shutdown_server": self._handle_shutdown_server,
         }
-        # Requester context set by dispatch() before calling handlers
-        self._current_requester_id: str | None = None
 
     def handles(self, method: str) -> bool:
         """Check if this dispatcher handles the given method.
@@ -107,12 +106,18 @@ class GlobalDispatcher:
         Returns:
             A Response object, or None for notifications (requests without id).
         """
-        # Store requester context for handlers (esp. _handle_destroy_agent)
-        self._current_requester_id = requester_id
-        try:
-            return await dispatch_request(request, self._handlers, "global method")
-        finally:
-            self._current_requester_id = None
+        request_context = RequestContext(
+            requester_id=requester_id,
+            request_id=str(request.id) if request.id is not None else None,
+        )
+
+        handlers = dict(self._handlers)
+
+        async def handle_destroy_with_context(params: dict[str, Any]) -> dict[str, Any]:
+            return await self._handle_destroy_agent(params, request_context)
+
+        handlers["destroy_agent"] = handle_destroy_with_context
+        return await dispatch_request(request, handlers, "global method")
 
     async def _handle_create_agent(self, params: dict[str, Any]) -> dict[str, Any]:
         """Create a new agent.
@@ -471,7 +476,11 @@ class GlobalDispatcher:
 
         return result
 
-    async def _handle_destroy_agent(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def _handle_destroy_agent(
+        self,
+        params: dict[str, Any],
+        request_context: RequestContext | None = None,
+    ) -> dict[str, Any]:
         """Destroy an agent.
 
         Removes an agent from the pool and cleans up its resources.
@@ -516,10 +525,11 @@ class GlobalDispatcher:
         agent_id = validated.agent_id
 
         # Destroy the agent through the pool (with authorization check)
+        requester_id = None if request_context is None else request_context.requester_id
         try:
             success = await self._pool.destroy(
                 agent_id,
-                requester_id=self._current_requester_id,
+                requester_id=requester_id,
             )
         except AuthorizationError as e:
             raise InvalidParamsError(str(e)) from e
@@ -528,7 +538,7 @@ class GlobalDispatcher:
             logger.info(
                 "Agent destroyed: %s (by %s)",
                 agent_id,
-                self._current_requester_id or "external",
+                requester_id or "external",
             )
         else:
             logger.warning("Agent destroy failed: %s not found", agent_id)

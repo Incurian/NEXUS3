@@ -51,10 +51,18 @@ Phases:
 
 ## Implementation Checklist
 
-- [ ] Introduce request context model.
-- [ ] Remove global mutable requester field.
+- [x] Introduce request context model.
+- [x] Remove global mutable requester field.
 - [ ] Make selected built-in skills stateless per call.
-- [ ] Add concurrency tests and stress-style regressions.
+- [x] Add concurrency tests and stress-style regressions.
+
+### M2 Commit 1 Status (2026-03-04)
+
+- Added immutable `RequestContext` model at `nexus3/core/request_context.py`.
+- Propagated request context through `GlobalDispatcher.dispatch()` into destroy-path authorization.
+- Removed shared mutable requester field usage in global destroy flow.
+- Added focused unit coverage for `RequestContext` immutability/field shape and
+  overlapping destroy dispatch requester isolation in `tests/unit/`.
 
 ## Documentation Updates
 

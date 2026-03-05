@@ -9,6 +9,7 @@ Tests for:
 - Security: Tool definition filtering, ceiling isolation, parent_agent_id tracking
 """
 
+import asyncio
 from dataclasses import FrozenInstanceError, fields
 from datetime import datetime
 from pathlib import Path
@@ -18,10 +19,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nexus3.core.permissions import (
-    AgentPermissions,
-    PermissionDelta,
-    PermissionLevel,
-    PermissionPolicy,
     ToolPermission,
     resolve_preset,
 )
@@ -369,6 +366,7 @@ class MockAgentPool:
     def __init__(self):
         self._agents: dict[str, Any] = {}
         self._next_id = 1
+        self.last_destroy_requester_id: str | None = None
 
     async def create(
         self,
@@ -398,6 +396,7 @@ class MockAgentPool:
         admin_override: bool = False,
     ) -> bool:
         """Destroy mock agent."""
+        self.last_destroy_requester_id = requester_id
         if agent_id in self._agents:
             del self._agents[agent_id]
             return True
@@ -484,6 +483,98 @@ class TestGlobalDispatcher:
         assert response.result is not None
         assert response.result["success"] is True
         assert response.result["agent_id"] == "to-destroy"
+
+    @pytest.mark.asyncio
+    async def test_destroy_agent_propagates_requester_context(self):
+        """destroy_agent forwards requester_id from dispatch context."""
+        pool = MockAgentPool()
+        await pool.create(agent_id="to-destroy")
+        dispatcher = GlobalDispatcher(pool)
+
+        request = Request(
+            jsonrpc="2.0",
+            method="destroy_agent",
+            params={"agent_id": "to-destroy"},
+            id=1,
+        )
+        response = await dispatcher.dispatch(request, requester_id="requester-1")
+
+        assert response is not None
+        assert response.error is None
+        assert pool.last_destroy_requester_id == "requester-1"
+
+    @pytest.mark.asyncio
+    async def test_destroy_agent_requester_isolation_for_overlapping_dispatches(self):
+        """Overlapping destroy dispatches keep requester identity per request."""
+
+        class CoordinatedPool(MockAgentPool):
+            def __init__(self) -> None:
+                super().__init__()
+                self.destroy_calls: list[tuple[str, str | None]] = []
+                self._destroy_release = asyncio.Event()
+
+            async def destroy(
+                self,
+                agent_id: str,
+                requester_id: str | None = None,
+                *,
+                admin_override: bool = False,
+            ) -> bool:
+                self.destroy_calls.append((agent_id, requester_id))
+                if len(self.destroy_calls) == 2:
+                    self._destroy_release.set()
+                await self._destroy_release.wait()
+                return await super().destroy(
+                    agent_id,
+                    requester_id=requester_id,
+                    admin_override=admin_override,
+                )
+
+        pool = CoordinatedPool()
+        await pool.create(agent_id="victim-a")
+        await pool.create(agent_id="victim-b")
+        dispatcher = GlobalDispatcher(pool)
+
+        original_handler = dispatcher._handlers["destroy_agent"]
+        handlers_ready = 0
+        both_ready = asyncio.Event()
+
+        async def delayed_destroy(params: dict[str, Any]) -> dict[str, Any]:
+            nonlocal handlers_ready
+            handlers_ready += 1
+            if handlers_ready == 2:
+                both_ready.set()
+            await both_ready.wait()
+            return await original_handler(params)
+
+        dispatcher._handlers["destroy_agent"] = delayed_destroy
+
+        request_a = Request(
+            jsonrpc="2.0",
+            method="destroy_agent",
+            params={"agent_id": "victim-a"},
+            id=1,
+        )
+        request_b = Request(
+            jsonrpc="2.0",
+            method="destroy_agent",
+            params={"agent_id": "victim-b"},
+            id=2,
+        )
+
+        response_a, response_b = await asyncio.gather(
+            dispatcher.dispatch(request_a, requester_id="requester-a"),
+            dispatcher.dispatch(request_b, requester_id="requester-b"),
+        )
+
+        assert response_a is not None
+        assert response_a.error is None
+        assert response_b is not None
+        assert response_b.error is None
+
+        destroy_call_map = {agent_id: requester_id for agent_id, requester_id in pool.destroy_calls}
+        assert destroy_call_map["victim-a"] == "requester-a"
+        assert destroy_call_map["victim-b"] == "requester-b"
 
     @pytest.mark.asyncio
     async def test_destroy_agent_not_found(self):
@@ -816,8 +907,15 @@ class TestGlobalDispatcherParentAgentId:
         # Mock the services.get to return appropriate values for each key
         parent_cwd = Path.cwd()
         pool._agents["parent-1"].services = MagicMock()
+        def parent_services_get(key: str) -> Any:
+            if key == "permissions":
+                return resolve_preset("trusted", cwd=parent_cwd)
+            if key == "cwd":
+                return parent_cwd
+            return None
+
         pool._agents["parent-1"].services.get = MagicMock(
-            side_effect=lambda key: resolve_preset("trusted", cwd=parent_cwd) if key == "permissions" else parent_cwd if key == "cwd" else None
+            side_effect=parent_services_get
         )
 
         request = Request(

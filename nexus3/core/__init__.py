@@ -25,6 +25,7 @@ from nexus3.core.permissions import (
     get_builtin_presets,
     resolve_preset,
 )
+from nexus3.core.request_context import RequestContext
 from nexus3.core.resolver import PathResolver
 
 # Shell detection (Windows)
@@ -93,6 +94,7 @@ __all__ = [
     "AgentPermissions",
     "get_builtin_presets",
     "resolve_preset",
+    "RequestContext",
     # Shell detection
     "WindowsShell",
     "detect_windows_shell",
