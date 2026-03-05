@@ -852,6 +852,23 @@ Compact checkpoint (2026-03-06, architecture execution round 23):
   2. Plan G: only residual work is optional consistency/documentation polish; functional sanitization coverage is now complete for active CLI/display paths.
   3. Keep `CLAUDE.md` and `AGENTS.md` aligned for any additional behavior-level changes in subsequent rounds.
 
+Compact checkpoint (2026-03-06, pre-compact handover 3):
+- Current branch/head: `feat/arch-overhaul-execution` @ `f4e4a27`.
+- Tracked working tree: clean.
+- Intentional untracked carry-over (do not touch): `docs/plans/DOUBLE-SPINNER-FIX-PLAN.md`, `editors/`, `err/`.
+- New commits landed in this execution segment (chronological):
+  1. `57e7697` - Plan A/G/H: create auth authoritative + strict `create_agent` ingress + sink residual cleanup.
+  2. `586c423` - Plan A/G/H: kernelized `_check_enabled`, retired dead schema projection helper, hardened sink boundaries.
+  3. `f4e4a27` - Plan A/G: kernelized destroy external/admin contexts + final CLI sink consistency + module README consistency refresh.
+- Resume-first commands after compact:
+  1. `git status --short --branch`
+  2. `git log --oneline -n 8`
+  3. `rg -n "architecture execution round 23|pre-compact handover 3" AGENTS.md`
+- First implementation targets after compact:
+  1. Plan A: decide/execute whether to kernelize remaining session-level MCP/GitLab permission gating in `nexus3/session/session.py` (currently direct `can_use_mcp` / `can_use_gitlab` checks outside `PermissionEnforcer`).
+  2. Plan A: evaluate whether create ceiling `can_grant` computations in `nexus3/rpc/pool.py::_create_unlocked` should be migrated fully into adapter-internal policy decisions or explicitly documented as accepted boundary.
+  3. Docs sync: if behavior changes in either target, mirror into `nexus3/session/README.md`, `nexus3/rpc/README.md`, and both `AGENTS.md`/`CLAUDE.md`.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.
