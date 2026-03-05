@@ -141,7 +141,15 @@ Status note (2026-03-05):
     (typed edges + tool-batch atomic groups)
   - exported graph interfaces in `nexus3/context/__init__.py`
   - added focused graph regressions in `tests/unit/context/test_graph.py`
-- Next target: Plan E Phase 4 compiler/graph-backed compaction-truncation integration.
+- Plan E Phase 4 committed as `00c59ed`:
+  - migrated truncation grouping in `nexus3/context/manager.py` to
+    compiler/graph-derived atomic groups
+  - migrated compaction selection in `nexus3/context/compaction.py` to
+    compiler-normalized atomic-group preservation
+  - added focused compaction/truncation regressions in
+    `tests/unit/test_compaction.py` and `tests/unit/test_context_manager.py`
+- Next target: close M3/M4 transition bookkeeping and continue M4 scope
+  sequencing (Plan B / remaining Plan G wave) per dependency gates.
 
 ### M4: Delegation and Strategic Evolution
 

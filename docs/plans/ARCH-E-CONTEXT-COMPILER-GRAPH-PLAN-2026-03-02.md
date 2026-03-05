@@ -54,7 +54,7 @@ Phases:
 - [x] Integrate with provider adapters.
 - [x] Migrate session preflight pipeline to compiler-backed invariants.
 - [x] Add graph model prototype.
-- [ ] Migrate compaction/truncation through compiler pipeline.
+- [x] Migrate compaction/truncation through compiler pipeline.
 
 Status note (2026-03-05, M3 Plan E Phase 1):
 - Added `nexus3/context/compiler.py` with typed compiler IR and invariant
@@ -111,6 +111,25 @@ Status note (2026-03-05, Plan E Phase 3, committed as `5632652`):
   - `.venv/bin/mypy nexus3/context/graph.py nexus3/context/__init__.py`
   - `.venv/bin/pytest -q tests/unit/context/test_graph.py tests/unit/context/test_compiler.py tests/unit/context/test_compile_baseline.py` -> `12 passed`
   - `.venv/bin/pytest -q tests/unit/test_context_manager.py` -> `27 passed`
+
+Status note (2026-03-05, Plan E Phase 4, committed as `00c59ed`):
+- Migrated truncation and compaction selection through compiler/graph pipeline:
+  - `nexus3/context/manager.py::_identify_message_groups(...)` now builds
+    groups from `build_context_graph(...)` and persists normalized messages
+    before truncation grouping.
+  - `nexus3/context/compaction.py::select_messages_for_compaction(...)`
+    now selects from compiler-normalized atomic groups instead of raw
+    per-message slicing.
+- Added focused regressions for graph-backed group behavior:
+  - `tests/unit/test_compaction.py`:
+    - preserves assistant tool batches atomically
+    - verifies compiler repair is applied before compaction selection
+  - `tests/unit/test_context_manager.py`:
+    - validates truncation path normalizes orphan TOOL messages
+- Focused validation passed:
+  - `.venv/bin/ruff check nexus3/context/manager.py nexus3/context/compaction.py tests/unit/test_context_manager.py tests/unit/test_compaction.py`
+  - `.venv/bin/mypy nexus3/context/manager.py nexus3/context/compaction.py nexus3/context/graph.py nexus3/context/__init__.py`
+  - `.venv/bin/pytest -q tests/unit/test_context_manager.py tests/unit/test_compaction.py tests/unit/context/test_graph.py tests/unit/context/test_compiler.py tests/unit/context/test_compile_baseline.py` -> `75 passed`
 
 ## Documentation Updates
 

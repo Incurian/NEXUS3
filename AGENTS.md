@@ -220,7 +220,7 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `M3/M4 transition` active: Data Integrity Wave closeout with early Plan E Phase 3 execution landed.
+- `M3/M4 transition` active: Plan E Phases 1-4 are now committed; transition bookkeeping + next M4 slices are pending.
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
@@ -236,8 +236,10 @@ Immediate tasks:
   (`plan e phase 2: integrate compiler into session and providers`).
 - Plan E Phase 3 is committed as `5632652`
   (`plan e phase 3: add context graph prototype`).
-- Next target: execute Plan E Phase 4 compiler/graph-backed
-  compaction-truncation integration.
+- Plan E Phase 4 is committed as `00c59ed`
+  (`plan e phase 4: migrate compaction and truncation to graph pipeline`).
+- Next target: close M3/M4 transition bookkeeping and sequence next M4
+  implementation slices (Plan B and remaining Plan G wave).
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -245,6 +247,8 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `00c59ed` plan e phase 4: migrate compaction and truncation to graph pipeline
+- `6829838` docs: record plan e phase 3 execution status
 - `5632652` plan e phase 3: add context graph prototype
 - `5bdce8e` docs: align m3 running status wording
 - `d95b599` docs: sync plan e phase 2 committed status and compact checkpoint
@@ -298,6 +302,13 @@ Progress snapshot:
   - exported graph interfaces in `nexus3/context/__init__.py`.
   - added focused graph regressions in `tests/unit/context/test_graph.py`.
   - updated `nexus3/context/README.md` architecture docs for compiler+graph.
+- Completed (2026-03-05): Plan E Phase 4 compaction/truncation migration (`00c59ed`):
+  - migrated truncation grouping in `nexus3/context/manager.py` to
+    compiler/graph-derived atomic message groups.
+  - migrated compaction selection in `nexus3/context/compaction.py` to
+    compiler-normalized atomic-group preservation.
+  - added focused regressions in `tests/unit/test_compaction.py` and
+    `tests/unit/test_context_manager.py`.
 - Completed: Plan A M0 foundation interfaces (`nexus3/core/authorization_kernel.py`) + unit tests.
 - Completed: Plan H M0 schema inventory scaffold (`nexus3/rpc/schemas.py`) + unit tests.
 - Completed: Plan H M1 Phase 2 first compat-safe ingress slice (`destroy_agent`, `get_messages`) wired to typed schemas with existing-style RPC error mapping + focused unit tests.
@@ -1441,6 +1452,44 @@ Pre-compact checkpoint (2026-03-05, post-round39 commit):
 - Next implementation targets after compact:
   1. Plan E Phase 4 compiler/graph-backed compaction-truncation integration.
   2. M3 closeout/M4 status bookkeeping after Phase 4 slice lands.
+
+Execution checkpoint (2026-03-05, architecture execution round 40):
+- Scope completed this round (Plan E Phase 4 compaction/truncation migration):
+  1. `nexus3/context/manager.py::_identify_message_groups(...)` now sources
+     atomic groups from `build_context_graph(...)` and persists normalized
+     context before truncation grouping.
+  2. `nexus3/context/compaction.py::select_messages_for_compaction(...)` now
+     runs over compiler-normalized graph groups rather than raw message slices.
+  3. Added focused compaction/truncation regressions:
+     - `tests/unit/test_compaction.py` (atomic tool-batch preservation +
+       compiler-repair-aware selection)
+     - `tests/unit/test_context_manager.py`
+       (truncation normalization of orphan tool messages)
+- Focused validation executed this round:
+  - `.venv/bin/ruff check nexus3/context/manager.py nexus3/context/compaction.py tests/unit/test_context_manager.py tests/unit/test_compaction.py` -> passed.
+  - `.venv/bin/mypy nexus3/context/manager.py nexus3/context/compaction.py nexus3/context/graph.py nexus3/context/__init__.py` -> passed.
+  - `.venv/bin/pytest -q tests/unit/test_context_manager.py tests/unit/test_compaction.py tests/unit/context/test_graph.py tests/unit/context/test_compiler.py tests/unit/context/test_compile_baseline.py` -> `75 passed`.
+- Next gate:
+  1. M3/M4 transition bookkeeping closeout across AGENTS + milestone schedule.
+  2. Sequence next M4 implementation slice (Plan B and/or remaining Plan G wave) based on dependency gates.
+
+Pre-compact checkpoint (2026-03-05, post-round40 commit):
+- Branch/head:
+  - `feat/arch-overhaul-execution`
+  - `00c59ed` (`plan e phase 4: migrate compaction and truncation to graph pipeline`)
+- Architecture execution commits this round:
+  1. `00c59ed` Plan E Phase 4 (compiler/graph-backed compaction-truncation migration).
+- Current local working state:
+  1. Non-architecture local artifacts remain dirty/untracked:
+     `CLAUDE.md`, `editors/`, `err/`, `package-lock.json`.
+- Resume-first commands after compact:
+  1. `git status --short --branch`
+  2. `git log --oneline -n 12`
+  3. `sed -n '220,320p' AGENTS.md`
+  4. `sed -n '1,260p' docs/plans/ARCH-E-CONTEXT-COMPILER-GRAPH-PLAN-2026-03-02.md`
+- Next implementation targets after compact:
+  1. Confirm M3/M4 transition closeout note and milestone ordering.
+  2. Start next M4 implementation slice (Plan B or remaining Plan G wave).
 
 ## Source of Truth
 
