@@ -564,14 +564,8 @@ class Dispatcher:
         Raises:
             InvalidParamsError: If offset/limit are invalid.
         """
-        candidate: dict[str, Any] = {}
-        if "offset" in params:
-            candidate["offset"] = params["offset"]
-        if "limit" in params:
-            candidate["limit"] = params["limit"]
-
         try:
-            validated = GetMessagesParamsSchema.model_validate(candidate, strict=True)
+            validated = GetMessagesParamsSchema.model_validate(params, strict=True)
         except PydanticValidationError as exc:
             for error in exc.errors():
                 loc = error.get("loc", ())

@@ -98,7 +98,20 @@ class _StubContext:
 
 
 @pytest.mark.asyncio
-async def test_dispatcher_get_messages_schema_validation_preserves_error_style() -> None:
+@pytest.mark.parametrize(
+    ("params", "expected_message"),
+    [
+        ({"offset": "1"}, "offset must be a non-negative integer"),
+        ({"offset": -1}, "offset must be a non-negative integer"),
+        ({"limit": 0}, "limit must be an integer between 1 and 2000"),
+        ({"limit": 2001}, "limit must be an integer between 1 and 2000"),
+        ({"limit": "10"}, "limit must be an integer between 1 and 2000"),
+    ],
+)
+async def test_dispatcher_get_messages_schema_validation_preserves_error_style(
+    params: dict[str, object],
+    expected_message: str,
+) -> None:
     message = SimpleNamespace(
         role=SimpleNamespace(value="user"),
         content="hello",
@@ -110,7 +123,7 @@ async def test_dispatcher_get_messages_schema_validation_preserves_error_style()
     request = Request(
         jsonrpc="2.0",
         method="get_messages",
-        params={"offset": "1"},
+        params=params,
         id=1,
     )
     response = await dispatcher.dispatch(request)
@@ -118,7 +131,31 @@ async def test_dispatcher_get_messages_schema_validation_preserves_error_style()
     assert response is not None
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
-    assert response.error["message"] == "offset must be a non-negative integer"
+    assert response.error["message"] == expected_message
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_get_messages_schema_validation_rejects_unknown_extra_params() -> None:
+    message = SimpleNamespace(
+        role=SimpleNamespace(value="user"),
+        content="hello",
+        tool_call_id=None,
+    )
+    context = SimpleNamespace(messages=[message], system_prompt=None)
+    dispatcher = Dispatcher(_StubSession(), context=context, agent_id="agent-1")
+
+    request = Request(
+        jsonrpc="2.0",
+        method="get_messages",
+        params={"offset": 0, "limit": 10, "unexpected": "value"},
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == "Invalid get_messages parameters"
 
 
 @pytest.mark.asyncio

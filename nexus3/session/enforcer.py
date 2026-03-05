@@ -9,7 +9,6 @@ handling of copy_file/rename destination paths.
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -49,9 +48,6 @@ PATH_TOOLS = frozenset({
     "file_info", "list_directory", "mkdir", "copy_file", "rename",
     "regex_replace", "glob", "grep",
 })
-
-logger = logging.getLogger(__name__)
-
 
 class _AgentTargetAuthorizationAdapter:
     """Kernel adapter mirroring legacy target-restriction checks."""
@@ -266,36 +262,19 @@ class PermissionEnforcer:
 
         # Handle special relationship-based restrictions
         if allowed == "parent":
-            legacy_allowed = (
-                permissions.parent_agent_id is not None
-                and target_agent_id == permissions.parent_agent_id
-            )
-            legacy_reason = "parent_allowed" if legacy_allowed else "not_parent"
-            legacy_error = (
+            deny_error = (
                 f"Tool '{tool_call.name}' can only target parent agent "
                 f"('{permissions.parent_agent_id or 'none'}')"
             )
 
         elif allowed == "children":
-            legacy_allowed = bool(child_ids and target_agent_id in child_ids)
-            legacy_reason = "child_allowed" if legacy_allowed else "not_child"
-            legacy_error = f"Tool '{tool_call.name}' can only target child agents"
+            deny_error = f"Tool '{tool_call.name}' can only target child agents"
 
         elif allowed == "family":
-            legacy_allowed = (
-                (
-                    permissions.parent_agent_id is not None
-                    and target_agent_id == permissions.parent_agent_id
-                )
-                or bool(child_ids and target_agent_id in child_ids)
-            )
-            legacy_reason = "family_allowed" if legacy_allowed else "not_family"
-            legacy_error = f"Tool '{tool_call.name}' can only target parent or child agents"
+            deny_error = f"Tool '{tool_call.name}' can only target parent or child agents"
 
         elif isinstance(allowed, list):
-            legacy_allowed = target_agent_id in allowed
-            legacy_reason = "explicit_allowed" if legacy_allowed else "not_in_allowlist"
-            legacy_error = f"Tool '{tool_call.name}' cannot target agent '{target_agent_id}'"
+            deny_error = f"Tool '{tool_call.name}' cannot target agent '{target_agent_id}'"
 
         else:
             return None  # Unknown restriction type, allow (fail-open for forward compat)
@@ -320,26 +299,9 @@ class PermissionEnforcer:
             },
         )
         kernel_decision = self._target_authorization_kernel.authorize(kernel_request)
-        if kernel_decision.allowed != legacy_allowed:
-            logger.warning(
-                "Target authorization shadow mismatch for tool=%s target=%s",
-                tool_call.name,
-                target_agent_id,
-                extra={
-                    "event": "target_auth_shadow_mismatch",
-                    "tool_name": tool_call.name,
-                    "target_agent_id": target_agent_id,
-                    "requester_id": principal_id,
-                    "legacy_allowed": legacy_allowed,
-                    "legacy_reason": legacy_reason,
-                    "kernel_allowed": kernel_decision.allowed,
-                    "kernel_reason": kernel_decision.reason,
-                },
-            )
-
-        if legacy_allowed:
+        if kernel_decision.allowed:
             return None
-        return ToolResult(error=legacy_error)
+        return ToolResult(error=deny_error)
 
     def _check_path_allowed(
         self,

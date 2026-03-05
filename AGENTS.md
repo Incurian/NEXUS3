@@ -681,6 +681,22 @@ Compact checkpoint (2026-03-06, pre-compact handover):
   - `git status --short --branch`
   - then continue from this section and Plan A checklist.
 
+Compact checkpoint (2026-03-06, architecture execution round 15):
+- Branch head at start of round: `11297f4`; working tree now includes parallel Plan A + Plan H follow-up slices.
+- New slices completed this round:
+  1. Plan A converted `session/enforcer.py::_check_target_allowed` from shadow parity to kernel-authoritative enforcement.
+  2. Removed target-authorization legacy/shadow mismatch warning branch while preserving target-deny wording semantics.
+  3. Plan H tightened `rpc/dispatcher.py::_handle_get_messages` ingress to strict full-param validation so unknown extra params are rejected (no more candidate-field projection that dropped extras).
+  4. Updated focused regressions in `tests/unit/session/test_enforcer.py` and `tests/unit/rpc/test_schema_ingress_wiring.py` for authoritative/strict behavior.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/session/enforcer.py nexus3/rpc/dispatcher.py tests/unit/session/test_enforcer.py tests/unit/rpc/test_schema_ingress_wiring.py` passed.
+  - `.venv/bin/mypy nexus3/session/enforcer.py nexus3/rpc/dispatcher.py` passed.
+  - `.venv/bin/pytest -v tests/unit/session/test_enforcer.py tests/unit/rpc/test_schema_ingress_wiring.py` passed (`85 passed`).
+- Immediate resume targets:
+  1. Plan A: evaluate next safe kernel-authoritative flip for create authorization in `rpc/pool.py::_create_unlocked` (currently still legacy-authoritative with kernel shadow compare).
+  2. Plan H: evaluate strict-value (not just extra-key) flips for behavior-sensitive handlers still using `strict=False` (`send`, `cancel`, `compact`, `create_agent`) and protocol `error` object strict typing.
+  3. Plan G: finish residual sink-boundary cleanup in `display/streaming.py` tool metadata rendering and remaining dynamic REPL command-result print paths.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.
