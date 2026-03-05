@@ -401,6 +401,14 @@ Resume-first checklist (post-compact):
 Recovery note:
 - If interrupted, restart from this section and `docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md`, then continue checklist-driven execution.
 
+Compact checkpoint (2026-03-05, end of session):
+- Branch head: `5106528` (docs tracking after round 6).
+- Workspace state at handoff: clean tracked tree; ignore unrelated untracked (`docs/plans/DOUBLE-SPINNER-FIX-PLAN.md`, `editors/`, `err/`).
+- Immediate next execution slices:
+  1. Plan H: evaluate strict-default ingress flips where compat behavior is now proven by tests (start with request/response envelope paths in `nexus3/rpc/protocol.py`).
+  2. Plan G: migrate remaining dynamic `console.print`/`spinner.print` surfaces in `nexus3/cli/repl.py` not yet routed through SafeSink formatter helpers.
+  3. Plan A: identify next lifecycle authorization callsite beyond current enforcer/pool/dispatcher coverage and add shadow parity + focused tests.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.
