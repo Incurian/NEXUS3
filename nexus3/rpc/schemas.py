@@ -49,10 +49,27 @@ class RpcErrorObjectSchema(StrictSchemaModel):
 class RpcResponseEnvelopeSchema(StrictSchemaModel):
     """Strict JSON-RPC response envelope schema."""
 
+    # Keep response ingress compat-safe: unknown top-level fields are ignored.
+    model_config = ConfigDict(extra="ignore")
+
     jsonrpc: Literal["2.0"]
     id: JsonRpcId | None
     result: Any | None = None
-    error: RpcErrorObjectSchema | None = None
+    error: dict[str, Any] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_result_error_presence(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        has_result = "result" in data
+        has_error = "error" in data
+        if has_result and has_error:
+            raise ValueError("response cannot have both 'result' and 'error'")
+        if not has_result and not has_error:
+            raise ValueError("response must have either 'result' or 'error'")
+        return data
 
     @field_validator("id", mode="before")
     @classmethod
@@ -61,13 +78,16 @@ class RpcResponseEnvelopeSchema(StrictSchemaModel):
             raise ValueError("id must be string, integer, or null")
         return value
 
-    @model_validator(mode="after")
-    def validate_result_error_exclusivity(self) -> RpcResponseEnvelopeSchema:
-        has_result = self.result is not None
-        has_error = self.error is not None
-        if has_result == has_error:
-            raise ValueError("response must contain exactly one of 'result' or 'error'")
-        return self
+    @field_validator("error", mode="before")
+    @classmethod
+    def validate_error_shape(cls, value: Any) -> dict[str, Any] | None:
+        if value is None:
+            return value
+        if not isinstance(value, dict):
+            raise ValueError("error must be an object")
+        if "code" not in value or "message" not in value:
+            raise ValueError("error must have 'code' and 'message' fields")
+        return value
 
 
 class EmptyParamsSchema(StrictSchemaModel):

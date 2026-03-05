@@ -14,6 +14,7 @@ from nexus3.rpc.schemas import (
     GetMessagesParamsSchema,
     MCPConfigEnvelopeSchema,
     RpcRequestEnvelopeSchema,
+    RpcResponseEnvelopeSchema,
     SendParamsSchema,
 )
 
@@ -49,6 +50,25 @@ def test_rpc_request_envelope_rejects_bool_id() -> None:
                 "method": "send",
                 "params": {"content": "hi"},
                 "id": True,
+            }
+        )
+
+
+def test_rpc_response_envelope_uses_result_error_key_presence() -> None:
+    RpcResponseEnvelopeSchema.model_validate(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": None,
+        }
+    )
+    with pytest.raises(ValidationError, match="response cannot have both"):
+        RpcResponseEnvelopeSchema.model_validate(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {},
+                "error": {"code": -32000, "message": "boom"},
             }
         )
 

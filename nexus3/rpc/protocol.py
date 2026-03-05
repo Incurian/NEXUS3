@@ -3,7 +3,10 @@
 import json
 from typing import Any
 
+from pydantic import ValidationError as PydanticValidationError
+
 from nexus3.core.errors import NexusError
+from nexus3.rpc.schemas import RpcResponseEnvelopeSchema
 from nexus3.rpc.types import Request, Response
 
 
@@ -194,40 +197,44 @@ def parse_response(line: str) -> Response:
     if not isinstance(data, dict):
         raise ParseError("Response must be a JSON object")
 
-    # Validate jsonrpc version
-    jsonrpc = data.get("jsonrpc")
-    if jsonrpc != "2.0":
-        raise ParseError(f"jsonrpc must be '2.0', got: {jsonrpc!r}")
+    try:
+        validated = RpcResponseEnvelopeSchema.model_validate(data, strict=True)
+    except PydanticValidationError as e:
+        errors = e.errors()
+        if errors:
+            err = errors[0]
+            loc = err.get("loc", ())
+            field = loc[0] if loc else None
+            message = str(err.get("msg", "Invalid JSON-RPC response"))
 
-    # Get id (required in responses, can be null)
-    if "id" not in data:
-        raise ParseError("Response must have 'id' field")
-    response_id = data.get("id")
-    if response_id is not None and (
-        isinstance(response_id, bool) or not isinstance(response_id, (str, int))
-    ):
-        raise ParseError(f"id must be string, number, or null, got: {type(response_id).__name__}")
+            if field == "jsonrpc":
+                raise ParseError(f"jsonrpc must be '2.0', got: {data.get('jsonrpc')!r}") from e
 
-    # Must have either result or error, but not both
-    has_result = "result" in data
-    has_error = "error" in data
+            if field == "id":
+                if "id" not in data:
+                    raise ParseError("Response must have 'id' field") from e
+                raise ParseError(
+                    f"id must be string, number, or null, got: {type(data.get('id')).__name__}"
+                ) from e
 
-    if has_result and has_error:
-        raise ParseError("Response cannot have both 'result' and 'error'")
-    if not has_result and not has_error:
-        raise ParseError("Response must have either 'result' or 'error'")
+            if field == "error":
+                error = data.get("error")
+                if not isinstance(error, dict):
+                    raise ParseError(
+                        f"error must be an object, got: {type(error).__name__}"
+                    ) from e
+                raise ParseError("error must have 'code' and 'message' fields") from e
 
-    # Validate error structure if present
-    error = data.get("error")
-    if error is not None:
-        if not isinstance(error, dict):
-            raise ParseError(f"error must be an object, got: {type(error).__name__}")
-        if "code" not in error or "message" not in error:
-            raise ParseError("error must have 'code' and 'message' fields")
+            if "response cannot have both 'result' and 'error'" in message:
+                raise ParseError("Response cannot have both 'result' and 'error'") from e
+            if "response must have either 'result' or 'error'" in message:
+                raise ParseError("Response must have either 'result' or 'error'") from e
+
+        raise ParseError("Invalid JSON-RPC response") from e
 
     return Response(
-        jsonrpc=jsonrpc,
-        id=response_id,
-        result=data.get("result"),
-        error=error,
+        jsonrpc=validated.jsonrpc,
+        id=validated.id,
+        result=validated.result,
+        error=validated.error,
     )

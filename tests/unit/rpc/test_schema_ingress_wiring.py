@@ -9,7 +9,7 @@ import pytest
 
 from nexus3.rpc.dispatcher import Dispatcher
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
-from nexus3.rpc.protocol import ParseError, parse_request
+from nexus3.rpc.protocol import ParseError, parse_request, parse_response
 from nexus3.rpc.types import Request
 
 
@@ -348,6 +348,25 @@ def test_parse_request_rejects_malformed_object_id_shape() -> None:
 def test_parse_request_rejects_boolean_id() -> None:
     with pytest.raises(ParseError, match="id must be string, number, or null, got: bool"):
         parse_request('{"jsonrpc":"2.0","method":"send","params":{"content":"hi"},"id":true}')
+
+
+def test_parse_response_rejects_malformed_error_shape() -> None:
+    with pytest.raises(ParseError, match="error must have 'code' and 'message' fields"):
+        parse_response('{"jsonrpc":"2.0","id":1,"error":{"message":"missing-code"}}')
+
+
+def test_parse_response_rejects_non_object_error_shape() -> None:
+    with pytest.raises(ParseError, match="error must be an object, got: str"):
+        parse_response('{"jsonrpc":"2.0","id":1,"error":"boom"}')
+
+
+def test_parse_response_schema_ingress_keeps_compat_for_null_result_and_extra_fields() -> None:
+    response = parse_response('{"jsonrpc":"2.0","id":1,"result":null,"extra":"ignored"}')
+
+    assert response.jsonrpc == "2.0"
+    assert response.id == 1
+    assert response.result is None
+    assert response.error is None
 
 
 @pytest.mark.asyncio
