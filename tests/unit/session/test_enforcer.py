@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nexus3.core.authorization_kernel import AuthorizationDecision
 from nexus3.core.permissions import AgentPermissions
 from nexus3.core.policy import PermissionLevel, PermissionPolicy
 from nexus3.core.presets import ToolPermission
@@ -563,3 +564,74 @@ class TestCheckAllWithTargetValidation:
         result_bad = enforcer.check_all(tool_call_bad, permissions)
         assert result_bad is not None
         assert "can only target parent agent" in result_bad.error
+
+
+class TestTargetAuthorizationShadowParity:
+    """Tests for target authorization kernel shadow parity behavior."""
+
+    def _make_permissions(self) -> AgentPermissions:
+        return AgentPermissions(
+            base_preset="trusted",
+            effective_policy=PermissionPolicy(
+                level=PermissionLevel.TRUSTED,
+                allowed_paths=None,
+                blocked_paths=[],
+                cwd=Path("/project"),
+            ),
+            tool_permissions={
+                "nexus_send": ToolPermission(enabled=True, allowed_targets="parent"),
+            },
+            parent_agent_id="parent-agent",
+        )
+
+    def _make_tool_call(self, target_agent_id: str) -> ToolCall:
+        return ToolCall(
+            id="call-1",
+            name="nexus_send",
+            arguments={"agent_id": target_agent_id, "content": "hello"},
+        )
+
+    def test_shadow_parity_no_warning_when_adapter_matches_legacy(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        services = MagicMock()
+        services.get.return_value = "agent-1"
+        services.get_child_agent_ids.return_value = set()
+        enforcer = PermissionEnforcer(services=services)
+        permissions = self._make_permissions()
+        tool_call = self._make_tool_call("parent-agent")
+
+        with caplog.at_level("WARNING", logger="nexus3.session.enforcer"):
+            result = enforcer._check_target_allowed(tool_call, permissions)
+
+        assert result is None
+        assert not any("Target authorization shadow mismatch" in r.message for r in caplog.records)
+
+    def test_shadow_mismatch_logs_warning_but_preserves_legacy_enforcement(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        services = MagicMock()
+        services.get.return_value = "agent-1"
+        services.get_child_agent_ids.return_value = set()
+        enforcer = PermissionEnforcer(services=services)
+        permissions = self._make_permissions()
+        tool_call = self._make_tool_call("parent-agent")
+
+        def deny_request(request):
+            return AuthorizationDecision.deny(request, reason="forced_deny")
+
+        enforcer._target_authorization_kernel.authorize = deny_request  # type: ignore[method-assign]
+
+        with caplog.at_level("WARNING", logger="nexus3.session.enforcer"):
+            result = enforcer._check_target_allowed(tool_call, permissions)
+
+        # Behavior remains legacy-enforced: parent target still allowed.
+        assert result is None
+        records = [r for r in caplog.records if "Target authorization shadow mismatch" in r.message]
+        assert len(records) == 1
+        record = records[0]
+        assert getattr(record, "event", None) == "target_auth_shadow_mismatch"
+        assert getattr(record, "legacy_allowed", None) is True
+        assert getattr(record, "kernel_allowed", None) is False

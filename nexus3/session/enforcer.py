@@ -9,9 +9,18 @@ handling of copy_file/rename destination paths.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from nexus3.core.authorization_kernel import (
+    AdapterAuthorizationKernel,
+    AuthorizationAction,
+    AuthorizationDecision,
+    AuthorizationRequest,
+    AuthorizationResource,
+    AuthorizationResourceType,
+)
 from nexus3.core.path_decision import PathDecisionEngine
 from nexus3.core.presets import ToolPermission  # noqa: F401 - needed for P2
 from nexus3.core.types import ToolResult
@@ -41,6 +50,58 @@ PATH_TOOLS = frozenset({
     "regex_replace", "glob", "grep",
 })
 
+logger = logging.getLogger(__name__)
+
+
+class _AgentTargetAuthorizationAdapter:
+    """Kernel adapter mirroring legacy target-restriction checks."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.AGENT_TARGET:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.AGENT:
+            return None
+
+        mode = request.context.get("allowed_targets_mode")
+        target_agent_id = request.resource.identifier
+        caller_parent_agent_id = request.context.get("caller_parent_agent_id")
+        target_in_child_set = bool(request.context.get("target_in_child_set", False))
+        target_in_explicit_allowlist = bool(
+            request.context.get("target_in_explicit_allowlist", False)
+        )
+
+        if mode == "parent":
+            if (
+                isinstance(caller_parent_agent_id, str)
+                and caller_parent_agent_id
+                and target_agent_id == caller_parent_agent_id
+            ):
+                return AuthorizationDecision.allow(request, reason="parent_allowed")
+            return AuthorizationDecision.deny(request, reason="not_parent")
+
+        if mode == "children":
+            if target_in_child_set:
+                return AuthorizationDecision.allow(request, reason="child_allowed")
+            return AuthorizationDecision.deny(request, reason="not_child")
+
+        if mode == "family":
+            if (
+                isinstance(caller_parent_agent_id, str)
+                and caller_parent_agent_id
+                and target_agent_id == caller_parent_agent_id
+            ):
+                return AuthorizationDecision.allow(request, reason="parent_allowed")
+            if target_in_child_set:
+                return AuthorizationDecision.allow(request, reason="child_allowed")
+            return AuthorizationDecision.deny(request, reason="not_family")
+
+        if mode == "explicit":
+            if target_in_explicit_allowlist:
+                return AuthorizationDecision.allow(request, reason="explicit_allowed")
+            return AuthorizationDecision.deny(request, reason="not_in_allowlist")
+
+        return AuthorizationDecision.allow(request, reason="unknown_mode_fail_open")
+
 
 class PermissionEnforcer:
     """Enforces permission policies for tool execution.
@@ -54,6 +115,10 @@ class PermissionEnforcer:
 
     def __init__(self, services: ServiceContainer | None = None) -> None:
         self._services = services
+        self._target_authorization_kernel = AdapterAuthorizationKernel(
+            adapters=(_AgentTargetAuthorizationAdapter(),),
+            default_allow=False,
+        )
 
     def check_all(
         self,
@@ -160,44 +225,84 @@ class PermissionEnforcer:
             return None  # Will fail later with "no agent_id provided"
 
         allowed = tool_perm.allowed_targets
+        child_ids = self._services.get_child_agent_ids() if self._services else None
 
         # Handle special relationship-based restrictions
         if allowed == "parent":
-            if permissions.parent_agent_id and target_agent_id == permissions.parent_agent_id:
-                return None  # Allowed
-            return ToolResult(
-                error=f"Tool '{tool_call.name}' can only target parent agent "
-                      f"('{permissions.parent_agent_id or 'none'}')"
+            legacy_allowed = (
+                permissions.parent_agent_id is not None
+                and target_agent_id == permissions.parent_agent_id
+            )
+            legacy_reason = "parent_allowed" if legacy_allowed else "not_parent"
+            legacy_error = (
+                f"Tool '{tool_call.name}' can only target parent agent "
+                f"('{permissions.parent_agent_id or 'none'}')"
             )
 
         elif allowed == "children":
-            child_ids = self._services.get_child_agent_ids() if self._services else None
-            if child_ids and target_agent_id in child_ids:
-                return None  # Allowed
-            return ToolResult(
-                error=f"Tool '{tool_call.name}' can only target child agents"
-            )
+            legacy_allowed = bool(child_ids and target_agent_id in child_ids)
+            legacy_reason = "child_allowed" if legacy_allowed else "not_child"
+            legacy_error = f"Tool '{tool_call.name}' can only target child agents"
 
         elif allowed == "family":
-            # Parent or children
-            if permissions.parent_agent_id and target_agent_id == permissions.parent_agent_id:
-                return None
-            child_ids = self._services.get_child_agent_ids() if self._services else None
-            if child_ids and target_agent_id in child_ids:
-                return None
-            return ToolResult(
-                error=f"Tool '{tool_call.name}' can only target parent or child agents"
+            legacy_allowed = (
+                (
+                    permissions.parent_agent_id is not None
+                    and target_agent_id == permissions.parent_agent_id
+                )
+                or bool(child_ids and target_agent_id in child_ids)
             )
+            legacy_reason = "family_allowed" if legacy_allowed else "not_family"
+            legacy_error = f"Tool '{tool_call.name}' can only target parent or child agents"
 
         elif isinstance(allowed, list):
-            # Explicit allowlist
-            if target_agent_id in allowed:
-                return None
-            return ToolResult(
-                error=f"Tool '{tool_call.name}' cannot target agent '{target_agent_id}'"
+            legacy_allowed = target_agent_id in allowed
+            legacy_reason = "explicit_allowed" if legacy_allowed else "not_in_allowlist"
+            legacy_error = f"Tool '{tool_call.name}' cannot target agent '{target_agent_id}'"
+
+        else:
+            return None  # Unknown restriction type, allow (fail-open for forward compat)
+
+        requester_id = self._services.get("agent_id") if self._services else None
+        principal_id = requester_id if isinstance(requester_id, str) and requester_id else "unknown"
+        allowed_mode = allowed if isinstance(allowed, str) else "explicit"
+        kernel_request = AuthorizationRequest(
+            action=AuthorizationAction.AGENT_TARGET,
+            resource=AuthorizationResource(
+                resource_type=AuthorizationResourceType.AGENT,
+                identifier=target_agent_id,
+            ),
+            principal_id=principal_id,
+            context={
+                "allowed_targets_mode": allowed_mode,
+                "caller_parent_agent_id": permissions.parent_agent_id or "",
+                "target_in_child_set": bool(child_ids and target_agent_id in child_ids),
+                "target_in_explicit_allowlist": bool(
+                    isinstance(allowed, list) and target_agent_id in allowed
+                ),
+            },
+        )
+        kernel_decision = self._target_authorization_kernel.authorize(kernel_request)
+        if kernel_decision.allowed != legacy_allowed:
+            logger.warning(
+                "Target authorization shadow mismatch for tool=%s target=%s",
+                tool_call.name,
+                target_agent_id,
+                extra={
+                    "event": "target_auth_shadow_mismatch",
+                    "tool_name": tool_call.name,
+                    "target_agent_id": target_agent_id,
+                    "requester_id": principal_id,
+                    "legacy_allowed": legacy_allowed,
+                    "legacy_reason": legacy_reason,
+                    "kernel_allowed": kernel_decision.allowed,
+                    "kernel_reason": kernel_decision.reason,
+                },
             )
 
-        return None  # type: ignore[unreachable]  # Unknown restriction type, allow (fail-open for forward compat)
+        if legacy_allowed:
+            return None
+        return ToolResult(error=legacy_error)
 
     def _check_path_allowed(
         self,
