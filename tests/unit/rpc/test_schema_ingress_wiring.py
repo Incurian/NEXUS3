@@ -197,6 +197,7 @@ async def test_global_destroy_agent_schema_validation_rejects_unknown_extra_para
     ("request_id", "expected_message"),
     [
         (True, "request_id must be string or integer"),
+        (1.0, "request_id must be string or integer"),
         ("", "request_id cannot be empty"),
         ({"bad": "shape"}, "request_id must be string or integer"),
     ],
@@ -229,8 +230,16 @@ async def test_dispatcher_send_schema_validation_rejects_malformed_request_id_sh
             "source must be string, got: int",
         ),
         (
+            {"content": "hello", "source": b"rpc"},
+            "source must be string, got: bytes",
+        ),
+        (
             {"content": "hello", "source_agent_id": {"bad": "shape"}},
             "source_agent_id must be string or integer, got: dict",
+        ),
+        (
+            {"content": "hello", "source_agent_id": 1.0},
+            "source_agent_id must be string or integer, got: float",
         ),
         (
             {"content": "hello", "source_agent_id": False},

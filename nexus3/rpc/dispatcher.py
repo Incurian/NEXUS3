@@ -261,7 +261,7 @@ class Dispatcher:
             InvalidParamsError: If 'content' is missing.
         """
         try:
-            validated = SendParamsSchema.model_validate(params, strict=False)
+            validated = SendParamsSchema.model_validate(params, strict=True)
         except PydanticValidationError as exc:
             errors = exc.errors()
             if errors:
