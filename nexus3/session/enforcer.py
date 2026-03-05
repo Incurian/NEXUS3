@@ -103,6 +103,24 @@ class _AgentTargetAuthorizationAdapter:
         return AuthorizationDecision.allow(request, reason="unknown_mode_fail_open")
 
 
+class _ToolActionAuthorizationAdapter:
+    """Kernel adapter mirroring legacy tool action-allowance checks."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.TOOL_EXECUTE:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.TOOL:
+            return None
+
+        if bool(request.context.get("tool_explicitly_enabled", False)):
+            return AuthorizationDecision.allow(request, reason="explicit_enabled")
+
+        if bool(request.context.get("policy_allows_action", False)):
+            return AuthorizationDecision.allow(request, reason="policy_allowed")
+
+        return AuthorizationDecision.deny(request, reason="policy_denied")
+
+
 class PermissionEnforcer:
     """Enforces permission policies for tool execution.
 
@@ -115,6 +133,10 @@ class PermissionEnforcer:
 
     def __init__(self, services: ServiceContainer | None = None) -> None:
         self._services = services
+        self._action_authorization_kernel = AdapterAuthorizationKernel(
+            adapters=(_ToolActionAuthorizationAdapter(),),
+            default_allow=False,
+        )
         self._target_authorization_kernel = AdapterAuthorizationKernel(
             adapters=(_AgentTargetAuthorizationAdapter(),),
             default_allow=False,
@@ -183,18 +205,58 @@ class PermissionEnforcer:
         it bypasses SANDBOXED_DISABLED_TOOLS. This allows the sandboxed preset
         to enable nexus_send with restrictions (allowed_targets="parent").
         """
-        # Check if tool is explicitly enabled in tool_permissions
         tool_perm = permissions.tool_permissions.get(tool_name)
-        if tool_perm is not None and tool_perm.enabled:
-            # Explicit enabled=True overrides policy-level restrictions
-            return None
+        tool_explicitly_enabled = bool(tool_perm is not None and tool_perm.enabled)
+        policy_allows_action = bool(permissions.effective_policy.allows_action(tool_name))
 
-        if not permissions.effective_policy.allows_action(tool_name):
-            return ToolResult(
-                error=f"Tool '{tool_name}' is not allowed"
-                " at current permission level"
+        if tool_explicitly_enabled:
+            legacy_allowed = True
+            legacy_reason = "explicit_enabled"
+        elif policy_allows_action:
+            legacy_allowed = True
+            legacy_reason = "policy_allowed"
+        else:
+            legacy_allowed = False
+            legacy_reason = "policy_denied"
+        legacy_error = (
+            f"Tool '{tool_name}' is not allowed at current permission level"
+        )
+
+        requester_id = self._services.get("agent_id") if self._services else None
+        principal_id = requester_id if isinstance(requester_id, str) and requester_id else "unknown"
+
+        kernel_request = AuthorizationRequest(
+            action=AuthorizationAction.TOOL_EXECUTE,
+            resource=AuthorizationResource(
+                resource_type=AuthorizationResourceType.TOOL,
+                identifier=tool_name,
+            ),
+            principal_id=principal_id,
+            context={
+                "tool_explicitly_enabled": tool_explicitly_enabled,
+                "policy_allows_action": policy_allows_action,
+            },
+        )
+        kernel_decision = self._action_authorization_kernel.authorize(kernel_request)
+        if kernel_decision.allowed != legacy_allowed:
+            logger.warning(
+                "Tool action authorization shadow mismatch for tool=%s requester=%s",
+                tool_name,
+                principal_id,
+                extra={
+                    "event": "tool_action_auth_shadow_mismatch",
+                    "tool_name": tool_name,
+                    "requester_id": principal_id,
+                    "legacy_allowed": legacy_allowed,
+                    "legacy_reason": legacy_reason,
+                    "kernel_allowed": kernel_decision.allowed,
+                    "kernel_reason": kernel_decision.reason,
+                },
             )
-        return None
+
+        if legacy_allowed:
+            return None
+        return ToolResult(error=legacy_error)
 
     def _check_target_allowed(
         self,

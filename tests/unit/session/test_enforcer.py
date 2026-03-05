@@ -635,3 +635,66 @@ class TestTargetAuthorizationShadowParity:
         assert getattr(record, "event", None) == "target_auth_shadow_mismatch"
         assert getattr(record, "legacy_allowed", None) is True
         assert getattr(record, "kernel_allowed", None) is False
+
+
+class TestActionAuthorizationShadowParity:
+    """Tests for tool action authorization kernel shadow parity behavior."""
+
+    def _make_permissions(self) -> AgentPermissions:
+        return AgentPermissions(
+            base_preset="sandboxed",
+            effective_policy=PermissionPolicy(
+                level=PermissionLevel.SANDBOXED,
+                allowed_paths=[Path("/sandbox")],
+                blocked_paths=[],
+                cwd=Path("/sandbox"),
+            ),
+            tool_permissions={},
+        )
+
+    def test_shadow_parity_no_warning_when_adapter_matches_legacy(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        enforcer = PermissionEnforcer()
+        permissions = self._make_permissions()
+
+        with caplog.at_level("WARNING", logger="nexus3.session.enforcer"):
+            result = enforcer._check_action_allowed("nexus_send", permissions)
+
+        assert result is not None
+        assert result.error == "Tool 'nexus_send' is not allowed at current permission level"
+        assert not any(
+            "Tool action authorization shadow mismatch" in r.message
+            for r in caplog.records
+        )
+
+    def test_shadow_mismatch_logs_warning_but_preserves_legacy_enforcement(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        services = MagicMock()
+        services.get.return_value = "agent-1"
+        enforcer = PermissionEnforcer(services=services)
+        permissions = self._make_permissions()
+        permissions.tool_permissions["nexus_send"] = ToolPermission(enabled=True)
+
+        def deny_request(request):
+            return AuthorizationDecision.deny(request, reason="forced_deny")
+
+        enforcer._action_authorization_kernel.authorize = deny_request  # type: ignore[method-assign]
+
+        with caplog.at_level("WARNING", logger="nexus3.session.enforcer"):
+            result = enforcer._check_action_allowed("nexus_send", permissions)
+
+        # Behavior remains legacy-enforced: explicit enable still allows execution.
+        assert result is None
+        records = [
+            r for r in caplog.records
+            if "Tool action authorization shadow mismatch" in r.message
+        ]
+        assert len(records) == 1
+        record = records[0]
+        assert getattr(record, "event", None) == "tool_action_auth_shadow_mismatch"
+        assert getattr(record, "legacy_allowed", None) is True
+        assert getattr(record, "kernel_allowed", None) is False
