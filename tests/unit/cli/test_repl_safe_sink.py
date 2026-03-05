@@ -7,13 +7,17 @@ from unittest.mock import MagicMock
 from rich.console import Console
 
 from nexus3.cli.repl import (
+    _format_autosave_error_line,
     _format_incoming_response_sent_line,
     _format_incoming_started_line,
+    _format_repl_error_line,
     _format_tool_call_trace_line,
     _format_tool_error_trace_line,
     _format_tool_halt_trace_line,
     _format_tool_response_trace_line,
     _format_tool_result_trace_line,
+    _format_turn_cancelled_status_line,
+    _format_turn_completed_status_line,
 )
 from nexus3.display.safe_sink import SafeSink
 
@@ -137,4 +141,45 @@ def test_incoming_response_sent_line_sanitizes_preview_and_keeps_ellipsis() -> N
     )
 
     assert line == "[bold green]✓ Response sent:[/] \\[green]sent\\[/green]..."
+    assert "\x1b" not in line
+
+
+def test_turn_cancelled_status_line_sanitizes_cancel_reason() -> None:
+    sink = _make_sink()
+
+    line = _format_turn_cancelled_status_line(
+        sink,
+        cancel_reason="Cancelled: [red]exec[/red]\x1b]8;;https://evil\x07x\x1b]8;;\x07",
+    )
+
+    assert line == "[bright_yellow]● Cancelled: \\[red]exec\\[/red]x[/]"
+    assert "\x1b" not in line
+
+
+def test_turn_completed_status_line_formats_duration_with_wrapper_parity() -> None:
+    sink = _make_sink()
+
+    line = _format_turn_completed_status_line(sink, turn_duration=1.26)
+
+    assert line == "[dim]Turn completed in 1.3s[/]"
+
+
+def test_repl_error_line_sanitizes_dynamic_message() -> None:
+    sink = _make_sink()
+
+    line = _format_repl_error_line(sink, message="[red]boom[/red]\x1b[31m")
+
+    assert line == "[red]Error:[/] \\[red]boom\\[/red]"
+    assert "\x1b" not in line
+
+
+def test_autosave_error_line_sanitizes_dynamic_error_text() -> None:
+    sink = _make_sink()
+
+    line = _format_autosave_error_line(
+        sink,
+        error="[magenta]disk full[/magenta]\x1b[2J",
+    )
+
+    assert line == "[dim red]Auto-save failed: \\[magenta]disk full\\[/magenta][/]"
     assert "\x1b" not in line

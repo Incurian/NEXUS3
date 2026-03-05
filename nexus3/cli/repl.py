@@ -167,6 +167,31 @@ def _format_incoming_response_sent_line(
     return f"[bold green]✓ Response sent:[/] {safe_preview}{ellipsis}"
 
 
+def _format_turn_cancelled_status_line(safe_sink: SafeSink, cancel_reason: str) -> str:
+    """Format post-turn cancelled status while preserving trusted Rich wrapper markup."""
+    safe_reason = _sanitize_tool_trace_text(safe_sink, cancel_reason)
+    return f"[bright_yellow]● {safe_reason}[/]"
+
+
+def _format_turn_completed_status_line(safe_sink: SafeSink, turn_duration: float) -> str:
+    """Format post-turn completion status while preserving trusted Rich wrapper markup."""
+    duration_text = f"{turn_duration:.1f}s"
+    safe_duration = _sanitize_tool_trace_text(safe_sink, duration_text)
+    return f"[dim]Turn completed in {safe_duration}[/]"
+
+
+def _format_repl_error_line(safe_sink: SafeSink, message: str) -> str:
+    """Format REPL error line while preserving trusted Rich wrapper markup."""
+    safe_message = _sanitize_tool_trace_text(safe_sink, message)
+    return f"[red]Error:[/] {safe_message}"
+
+
+def _format_autosave_error_line(safe_sink: SafeSink, error: str) -> str:
+    """Format auto-save failure line while preserving trusted Rich wrapper markup."""
+    safe_error = _sanitize_tool_trace_text(safe_sink, error)
+    return f"[dim red]Auto-save failed: {safe_error}[/]"
+
+
 async def run_repl(
     verbose: bool = False,
     log_verbose: bool = False,
@@ -1659,7 +1684,7 @@ async def run_repl(
                 if _stream_line_open:
                     spinner.print("")
                     _stream_line_open = False
-                spinner.print(f"[red]Error:[/] {e.message}")
+                spinner.print(_format_repl_error_line(safe_sink, e.message))
                 spinner.print("")
                 _had_errors = True
             finally:
@@ -1690,9 +1715,9 @@ async def run_repl(
             # Show completion status
             turn_duration = _time.monotonic() - turn_start_time
             if was_cancelled:
-                console.print(f"[bright_yellow]● {cancel_reason}[/]")
+                console.print(_format_turn_cancelled_status_line(safe_sink, cancel_reason))
             else:
-                console.print(f"[dim]Turn completed in {turn_duration:.1f}s[/]")
+                console.print(_format_turn_completed_status_line(safe_sink, turn_duration))
 
             # Auto-save last session after each interaction
             try:
@@ -1720,7 +1745,7 @@ async def run_repl(
                     session_manager.save_last_session(saved, current_agent_id)
             except Exception as e:
                 # Log but don't fail REPL for auto-save errors
-                console.print(f"[dim red]Auto-save failed: {e}[/]")
+                console.print(_format_autosave_error_line(safe_sink, str(e)))
 
         except KeyboardInterrupt:
             console.print("")
