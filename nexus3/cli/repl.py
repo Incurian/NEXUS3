@@ -57,10 +57,10 @@ from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError, ProviderError
 from nexus3.core.paths import display_path
 from nexus3.core.permissions import ConfirmationResult, PermissionLevel
-from nexus3.core.text_safety import escape_rich_markup
 from nexus3.core.types import ToolCall
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.display import Activity, Spinner, get_console
+from nexus3.display.safe_sink import SafeSink
 from nexus3.display.theme import load_theme
 from nexus3.rpc.auth import ServerTokenManager, generate_api_key
 from nexus3.rpc.bootstrap import (
@@ -91,6 +91,60 @@ load_dotenv()
 
 
 # NOTE: parse_args() is imported from nexus3.cli.arg_parser
+
+
+def _sanitize_tool_trace_text(
+    safe_sink: SafeSink, value: str, *, markup_already_escaped: bool = False
+) -> str:
+    """Sanitize tool trace text before interpolation into Rich wrappers."""
+    if markup_already_escaped:
+        return safe_sink.sanitize_stream_content(value)
+    return safe_sink.sanitize_print_content(value)
+
+
+def _format_tool_call_trace_line(safe_sink: SafeSink, name: str, params: str) -> str:
+    """Format a tool call line while preserving trusted Rich wrapper markup."""
+    safe_name = _sanitize_tool_trace_text(safe_sink, name)
+    if params:
+        safe_params = _sanitize_tool_trace_text(
+            safe_sink, params, markup_already_escaped=True
+        )
+        return f"  [cyan]●[/] {safe_name}: {safe_params}"
+    return f"  [cyan]●[/] {safe_name}"
+
+
+def _format_tool_result_trace_line(
+    safe_sink: SafeSink, result_preview: str, duration_str: str
+) -> str:
+    """Format a tool success line while preserving trusted Rich wrapper markup."""
+    if result_preview:
+        safe_preview = _sanitize_tool_trace_text(safe_sink, result_preview)
+        return f"      [green]→[/] {safe_preview}{duration_str}"
+    return f"      [green]→[/] done{duration_str}"
+
+
+def _format_tool_response_trace_line(safe_sink: SafeSink, preview: str, ellipsis: str) -> str:
+    """Format nexus_send response preview line with SafeSink sanitization."""
+    safe_preview = _sanitize_tool_trace_text(safe_sink, preview)
+    return f"      [dim cyan]↳ Response: {safe_preview}{ellipsis}[/]"
+
+
+def _format_tool_error_trace_line(safe_sink: SafeSink, error: str, duration_str: str) -> str:
+    """Format a tool error line while preserving trusted Rich wrapper markup."""
+    error_preview = error[:120] + ("..." if len(error) > 120 else "")
+    safe_error = _sanitize_tool_trace_text(safe_sink, error_preview)
+    return f"      [red]→[/] [red]{safe_error}[/]{duration_str}"
+
+
+def _format_tool_halt_trace_line(safe_sink: SafeSink, name: str, params: str) -> str:
+    """Format a halted tool line while preserving trusted Rich wrapper markup."""
+    safe_name = _sanitize_tool_trace_text(safe_sink, name)
+    if params:
+        safe_params = _sanitize_tool_trace_text(
+            safe_sink, params, markup_already_escaped=True
+        )
+        return f"  [dark_orange]●[/] {safe_name}: {safe_params} [dark_orange](halted)[/]"
+    return f"  [dark_orange]●[/] {safe_name} [dark_orange](halted)[/]"
 
 
 async def run_repl(
@@ -639,6 +693,7 @@ async def run_repl(
 
     # Spinner for streaming phases
     spinner = Spinner(console, theme)
+    safe_sink = SafeSink(console)
 
     # =============================================================
     # Turn state tracking
@@ -741,10 +796,7 @@ async def run_repl(
             _, params = _pending_tools[tool_id]
 
         # Print tool call line
-        if params:
-            spinner.print(f"  [cyan]●[/] {name}: {params}")
-        else:
-            spinner.print(f"  [cyan]●[/] {name}")
+        spinner.print(_format_tool_call_trace_line(safe_sink, name, params))
 
         # Track start time and active state
         _tool_start_times[tool_id] = _time.monotonic()
@@ -754,7 +806,10 @@ async def run_repl(
         _pending_tools.pop(tool_id, None)
 
         # Update spinner
-        spinner.update(f"Running: {name}", Activity.TOOL_CALLING)
+        safe_name = _sanitize_tool_trace_text(
+            safe_sink, name, markup_already_escaped=True
+        )
+        spinner.update(f"Running: {safe_name}", Activity.TOOL_CALLING)
 
     def on_batch_progress(name: str, tool_id: str, success: bool, error: str, output: str) -> None:
         """Tool completed - print result line with duration."""
@@ -776,10 +831,7 @@ async def run_repl(
         if success:
             # Success - show result summary
             result_preview = _summarize_tool_output(name, output)
-            if result_preview:
-                spinner.print(f"      [green]→[/] {result_preview}{duration_str}")
-            else:
-                spinner.print(f"      [green]→[/] done{duration_str}")
+            spinner.print(_format_tool_result_trace_line(safe_sink, result_preview, duration_str))
 
             # Special handling for nexus_send - show response content
             if name == "nexus_send" and output:
@@ -789,22 +841,20 @@ async def run_repl(
                     if content:
                         preview = " ".join(content.split())[:100]
                         ellipsis = "..." if len(content) > 100 else ""
-                        spinner.print(f"      [dim cyan]↳ Response: {preview}{ellipsis}[/]")
+                        spinner.print(
+                            _format_tool_response_trace_line(safe_sink, preview, ellipsis)
+                        )
                 except (_json.JSONDecodeError, KeyError):
                     pass
         else:
             _had_errors = True
             # Error - show error message
-            error_preview = escape_rich_markup(error[:120] + ("..." if len(error) > 120 else ""))
-            spinner.print(f"      [red]→[/] [red]{error_preview}[/]{duration_str}")
+            spinner.print(_format_tool_error_trace_line(safe_sink, error, duration_str))
 
     def on_batch_halt() -> None:
         """Sequential batch halted - print halted for remaining pending tools."""
         for _tool_id, (name, params) in list(_pending_tools.items()):
-            if params:
-                spinner.print(f"  [dark_orange]●[/] {name}: {params} [dark_orange](halted)[/]")
-            else:
-                spinner.print(f"  [dark_orange]●[/] {name} [dark_orange](halted)[/]")
+            spinner.print(_format_tool_halt_trace_line(safe_sink, name, params))
         _pending_tools.clear()
 
     def on_batch_complete() -> None:
