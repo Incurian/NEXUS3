@@ -21,6 +21,14 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError as PydanticValidationError
 
+from nexus3.core.authorization_kernel import (
+    AdapterAuthorizationKernel,
+    AuthorizationAction,
+    AuthorizationDecision,
+    AuthorizationRequest,
+    AuthorizationResource,
+    AuthorizationResourceType,
+)
 from nexus3.core.errors import PathSecurityError, ProviderError
 from nexus3.core.paths import validate_path
 from nexus3.core.permissions import AgentPermissions, PermissionDelta, ToolPermission
@@ -43,6 +51,19 @@ logger = logging.getLogger(__name__)
 
 # Type alias for handler functions
 Handler = Callable[[dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
+
+
+class _ShutdownAuthorizationAdapter:
+    """Kernel adapter mirroring legacy GlobalDispatcher.shutdown_server policy."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.SESSION_WRITE:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.RPC:
+            return None
+        if request.resource.identifier != "shutdown_server":
+            return None
+        return AuthorizationDecision.allow(request, reason="shutdown_server_allowed")
 
 
 class GlobalDispatcher:
@@ -77,6 +98,10 @@ class GlobalDispatcher:
         """
         self._pool = pool
         self._shutdown_requested = False
+        self._shutdown_authorization_kernel = AdapterAuthorizationKernel(
+            adapters=(_ShutdownAuthorizationAdapter(),),
+            default_allow=False,
+        )
         self._handlers: dict[str, Handler] = {
             "create_agent": self._handle_create_agent,
             "destroy_agent": self._handle_destroy_agent,
@@ -123,8 +148,12 @@ class GlobalDispatcher:
         async def handle_destroy_with_context(params: dict[str, Any]) -> dict[str, Any]:
             return await self._handle_destroy_agent(params, request_context)
 
+        async def handle_shutdown_with_context(params: dict[str, Any]) -> dict[str, Any]:
+            return await self._handle_shutdown_server(params, request_context)
+
         handlers["create_agent"] = handle_create_with_context
         handlers["destroy_agent"] = handle_destroy_with_context
+        handlers["shutdown_server"] = handle_shutdown_with_context
         return await dispatch_request(request, handlers, "global method")
 
     async def _handle_create_agent(
@@ -569,7 +598,7 @@ class GlobalDispatcher:
 
         try:
             validated = DestroyAgentParamsSchema.model_validate(
-                {"agent_id": params["agent_id"]},
+                dict(params),
                 strict=True,
             )
         except PydanticValidationError as exc:
@@ -628,7 +657,11 @@ class GlobalDispatcher:
 
         return {"agents": agents}
 
-    async def _handle_shutdown_server(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def _handle_shutdown_server(
+        self,
+        params: dict[str, Any],
+        request_context: RequestContext | None = None,
+    ) -> dict[str, Any]:
         """Signal the server to shut down.
 
         Sets a flag that the HTTP server loop can check to initiate
@@ -647,6 +680,32 @@ class GlobalDispatcher:
             EmptyParamsSchema.model_validate({}, strict=False)
         except PydanticValidationError as exc:
             raise InvalidParamsError("Invalid shutdown_server parameters") from exc
+
+        requester_id = None if request_context is None else request_context.requester_id
+        principal_id = requester_id or "external"
+        legacy_allowed = True
+        kernel_request = AuthorizationRequest(
+            action=AuthorizationAction.SESSION_WRITE,
+            resource=AuthorizationResource(
+                resource_type=AuthorizationResourceType.RPC,
+                identifier="shutdown_server",
+            ),
+            principal_id=principal_id,
+        )
+        kernel_decision = self._shutdown_authorization_kernel.authorize(kernel_request)
+        if kernel_decision.allowed != legacy_allowed:
+            logger.warning(
+                "Shutdown authorization shadow mismatch for requester=%s",
+                principal_id,
+                extra={
+                    "event": "shutdown_server_auth_shadow_mismatch",
+                    "requester_id": principal_id,
+                    "legacy_allowed": legacy_allowed,
+                    "legacy_reason": "shutdown_server_allowed",
+                    "kernel_allowed": kernel_decision.allowed,
+                    "kernel_reason": kernel_decision.reason,
+                },
+            )
 
         self._shutdown_requested = True
         logger.info("Server shutdown requested")

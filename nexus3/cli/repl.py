@@ -286,6 +286,30 @@ def _format_scanned_ports_line(safe_sink: SafeSink, ports: list[int]) -> str:
     return f"[dim]Scanned ports: {safe_ports}[/]"
 
 
+def _format_unknown_rpc_command_line(safe_sink: SafeSink, rpc_cmd: object) -> str:
+    """Format unknown-rpc-command line while preserving trusted text wrapper."""
+    safe_rpc_cmd = _sanitize_tool_trace_text(safe_sink, str(rpc_cmd))
+    return f"Unknown rpc command: {safe_rpc_cmd}"
+
+
+def _format_reload_watching_line(safe_sink: SafeSink, watch_path: Path) -> str:
+    """Format reload-watch startup line while preserving trusted text wrapper."""
+    safe_watch_path = _sanitize_tool_trace_text(safe_sink, str(watch_path))
+    return f"[reload] Watching {safe_watch_path} for changes..."
+
+
+def _format_reload_starting_line(safe_sink: SafeSink, port: object) -> str:
+    """Format reload-start startup line while preserving trusted text wrapper."""
+    safe_port = _sanitize_tool_trace_text(safe_sink, str(port))
+    return f"[reload] Starting server on port {safe_port}"
+
+
+def _format_reload_detected_changes_line(safe_sink: SafeSink, changes: object) -> str:
+    """Format reload-change callback line while preserving trusted text wrapper."""
+    safe_changes = _sanitize_tool_trace_text(safe_sink, str(changes))
+    return f"[reload] Detected changes: {safe_changes}"
+
+
 async def run_repl(
     verbose: bool = False,
     log_verbose: bool = False,
@@ -2135,6 +2159,8 @@ def main() -> None:
     import logging
 
     args = parse_args()
+    console = get_console()
+    safe_sink = SafeSink(console)
 
     # Configure logging based on verbosity
     log_level = logging.DEBUG if getattr(args, "verbose", False) else logging.WARNING
@@ -2201,7 +2227,7 @@ def main() -> None:
             elif rpc_cmd == "shutdown":
                 exit_code = asyncio.run(cmd_shutdown(args.port, args.api_key))
             else:
-                print(f"Unknown rpc command: {rpc_cmd}")
+                console.print(_format_unknown_rpc_command_line(safe_sink, rpc_cmd))
                 exit_code = 1
             raise SystemExit(exit_code)
 
@@ -2211,7 +2237,7 @@ def main() -> None:
 
             force = args.init_global_force
             success, message = init_global(force=force)
-            print(message)
+            safe_sink.print_untrusted(message)
             raise SystemExit(0 if success else 1)
 
         # Handle connect mode (REPL as client)
@@ -2283,10 +2309,12 @@ def _run_with_reload(args: argparse.Namespace) -> None:
     # Find the nexus3 package directory to watch
     import nexus3
     watch_path = Path(nexus3.__file__).parent
+    console = get_console()
+    safe_sink = SafeSink(console)
 
-    print(f"[reload] Watching {watch_path} for changes...")
-    print(f"[reload] Starting server on port {args.serve}")
-    print("")
+    console.print(_format_reload_watching_line(safe_sink, watch_path))
+    console.print(_format_reload_starting_line(safe_sink, args.serve))
+    console.print("")
 
     # Build the command to run
     cmd = [
@@ -2307,7 +2335,9 @@ def _run_with_reload(args: argparse.Namespace) -> None:
         watch_path,
         target=cmd[0],
         args=tuple(cmd[1:]),
-        callback=lambda changes: print(f"[reload] Detected changes: {changes}"),
+        callback=lambda changes: console.print(
+            _format_reload_detected_changes_line(safe_sink, changes)
+        ),
     )
 
 

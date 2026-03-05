@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from rich.console import Console
@@ -18,6 +19,9 @@ from nexus3.cli.repl import (
     _format_invalid_port_spec_line,
     _format_provider_initialization_failed_line,
     _format_red_message_line,
+    _format_reload_detected_changes_line,
+    _format_reload_starting_line,
+    _format_reload_watching_line,
     _format_repl_context_metadata_line,
     _format_repl_error_line,
     _format_repl_startup_metadata_line,
@@ -32,6 +36,7 @@ from nexus3.cli.repl import (
     _format_tool_result_trace_line,
     _format_turn_cancelled_status_line,
     _format_turn_completed_status_line,
+    _format_unknown_rpc_command_line,
     _format_warning_message_line,
 )
 from nexus3.display.safe_sink import SafeSink
@@ -321,3 +326,35 @@ def test_client_connect_and_metadata_lines_sanitize_dynamic_fields() -> None:
     assert connected == "Connected. Tokens: \\[red]10\\[/red]/\\[cyan]90\\[/cyan]x"
     assert metadata == "Context: {'k': '\\[bold]v\\[/bold]'}"
     assert scanned_ports == "[dim]Scanned ports: [8765, 9000][/]"
+
+
+def test_unknown_rpc_command_line_sanitizes_dynamic_command() -> None:
+    sink = _make_sink()
+
+    line = _format_unknown_rpc_command_line(
+        sink, "[red]bad[/red]\x1b]8;;https://evil\x07x\x1b]8;;\x07"
+    )
+
+    assert line == "Unknown rpc command: \\[red]bad\\[/red]x"
+    assert "\x1b" not in line
+
+
+def test_reload_lines_sanitize_dynamic_watch_path_port_and_changes() -> None:
+    sink = _make_sink()
+
+    watch_line = _format_reload_watching_line(
+        sink, Path("/tmp/[bold]nexus3[/bold]\x1b[31m")
+    )
+    start_line = _format_reload_starting_line(
+        sink, "[red]8765[/red]\x1b[31m"
+    )
+    changes_line = _format_reload_detected_changes_line(
+        sink, ["[red]x.py[/red]\x1b[31m"]
+    )
+
+    assert watch_line == "[reload] Watching /tmp/\\[bold]nexus3\\[/bold] for changes..."
+    assert start_line == "[reload] Starting server on port \\[red]8765\\[/red]"
+    assert changes_line == "[reload] Detected changes: ['\\[red]x.py\\[/red]\\x1b[31m']"
+    assert "\x1b" not in watch_line
+    assert "\x1b" not in start_line
+    assert "\x1b" not in changes_line

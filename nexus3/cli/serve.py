@@ -37,6 +37,8 @@ from dotenv import load_dotenv
 from nexus3.config.loader import load_config
 from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError
+from nexus3.display import get_console
+from nexus3.display.safe_sink import SafeSink
 from nexus3.rpc.auth import ServerTokenManager, generate_api_key
 from nexus3.rpc.bootstrap import bootstrap_server_components, configure_server_logging
 from nexus3.rpc.detection import DetectionResult, detect_server
@@ -48,6 +50,59 @@ configure_stdio()
 
 # Load .env file if present
 load_dotenv()
+
+
+def _sanitize_serve_text(safe_sink: SafeSink, value: object) -> str:
+    """Sanitize dynamic serve output text before Rich interpolation."""
+    return safe_sink.sanitize_print_content(str(value))
+
+
+def _format_serve_config_error_line(safe_sink: SafeSink, message: str) -> str:
+    """Format config-error line while preserving trusted text wrapper."""
+    safe_message = _sanitize_serve_text(safe_sink, message)
+    return f"Configuration error: {safe_message}"
+
+
+def _format_serve_existing_server_line(safe_sink: SafeSink, port: int) -> str:
+    """Format existing-server detection line while preserving trusted text wrapper."""
+    safe_port = _sanitize_serve_text(safe_sink, port)
+    return f"Error: NEXUS3 server already running on port {safe_port}"
+
+
+def _format_serve_connect_hint_line(safe_sink: SafeSink, port: int) -> str:
+    """Format connect-hint line while preserving trusted text wrapper."""
+    safe_port = _sanitize_serve_text(safe_sink, port)
+    return f"Use 'nexus3 --connect http://localhost:{safe_port}' to connect to it"
+
+
+def _format_serve_other_service_line(safe_sink: SafeSink, port: int) -> str:
+    """Format occupied-port line while preserving trusted text wrapper."""
+    safe_port = _sanitize_serve_text(safe_sink, port)
+    return f"Error: Port {safe_port} is already in use by another service"
+
+
+def _format_serve_url_line(safe_sink: SafeSink, port: int) -> str:
+    """Format server-url startup line while preserving trusted text wrapper."""
+    safe_port = _sanitize_serve_text(safe_sink, port)
+    return f"Server: http://127.0.0.1:{safe_port}"
+
+
+def _format_serve_token_file_line(safe_sink: SafeSink, token_path: Path) -> str:
+    """Format token-file startup line while preserving trusted text wrapper."""
+    safe_token_path = _sanitize_serve_text(safe_sink, token_path)
+    return f"Token file: {safe_token_path}"
+
+
+def _format_serve_server_log_line(safe_sink: SafeSink, server_log_file: Path) -> str:
+    """Format server-log startup line while preserving trusted text wrapper."""
+    safe_server_log_file = _sanitize_serve_text(safe_sink, server_log_file)
+    return f"Server log: {safe_server_log_file}"
+
+
+def _format_serve_session_logs_line(safe_sink: SafeSink, base_log_dir: Path) -> str:
+    """Format session-logs startup line while preserving trusted text wrapper."""
+    safe_base_log_dir = _sanitize_serve_text(safe_sink, base_log_dir)
+    return f"Session logs: {safe_base_log_dir}"
 
 
 async def run_serve(
@@ -74,11 +129,14 @@ async def run_serve(
         raw_log: Enable raw API logging stream.
         log_dir: Directory for session logs.
     """
+    console = get_console()
+    safe_sink = SafeSink(console)
+
     # Load configuration first to get default port
     try:
         config = load_config()
     except NexusError as e:
-        print(f"Configuration error: {e.message}")
+        console.print(_format_serve_config_error_line(safe_sink, e.message))
         return
 
     # Use config port if not specified
@@ -87,11 +145,11 @@ async def run_serve(
     # Check for existing server on the port
     detection_result = await detect_server(effective_port)
     if detection_result == DetectionResult.NEXUS_SERVER:
-        print(f"Error: NEXUS3 server already running on port {effective_port}")
-        print(f"Use 'nexus3 --connect http://localhost:{effective_port}' to connect to it")
+        console.print(_format_serve_existing_server_line(safe_sink, effective_port))
+        console.print(_format_serve_connect_hint_line(safe_sink, effective_port))
         return
     elif detection_result == DetectionResult.OTHER_SERVICE:
-        print(f"Error: Port {effective_port} is already in use by another service")
+        console.print(_format_serve_other_service_line(safe_sink, effective_port))
         return
 
     # Base log directory
@@ -159,20 +217,20 @@ async def run_serve(
                 await server_task
             except asyncio.CancelledError:
                 pass
-            print("Server failed to start (bind timeout)")
+            console.print("Server failed to start (bind timeout)")
             return
 
         # Server bound successfully - now write token file
         token_manager.save(api_key)
 
         # Print startup info
-        print("NEXUS3 Multi-Agent HTTP Server")
-        print(f"Server: http://127.0.0.1:{effective_port}")
-        print(f"Token file: {token_manager.token_path}")
-        print(f"Server log: {server_log_file}")
-        print(f"Session logs: {base_log_dir}")
-        print("Press Ctrl+C to stop")
-        print("")
+        console.print("NEXUS3 Multi-Agent HTTP Server")
+        console.print(_format_serve_url_line(safe_sink, effective_port))
+        console.print(_format_serve_token_file_line(safe_sink, token_manager.token_path))
+        console.print(_format_serve_server_log_line(safe_sink, server_log_file))
+        console.print(_format_serve_session_logs_line(safe_sink, base_log_dir))
+        console.print("Press Ctrl+C to stop")
+        console.print("")
 
         # Wait for server to finish (runs until shutdown)
         await server_task

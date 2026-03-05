@@ -139,6 +139,23 @@ async def test_global_destroy_agent_schema_validation_rejects_malformed_id() -> 
 
 
 @pytest.mark.asyncio
+async def test_global_destroy_agent_schema_validation_rejects_unknown_extra_params() -> None:
+    dispatcher = GlobalDispatcher(_StubPool())
+    request = Request(
+        jsonrpc="2.0",
+        method="destroy_agent",
+        params={"agent_id": "agent-1", "unexpected": "value"},
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert "extra inputs are not permitted" in response.error["message"].lower()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("request_id", "expected_message"),
     [
@@ -690,6 +707,27 @@ async def test_global_noarg_ingress_wiring_keeps_compat_with_extra_params() -> N
     assert list_agents_response is not None
     assert list_agents_response.error is None
     assert list_agents_response.result == {"agents": []}
+
+    assert shutdown_server_response is not None
+    assert shutdown_server_response.error is None
+    assert shutdown_server_response.result == {
+        "success": True,
+        "message": "Server shutting down",
+    }
+
+
+@pytest.mark.asyncio
+async def test_global_shutdown_server_ingress_wiring_keeps_compat_with_extra_params() -> None:
+    dispatcher = GlobalDispatcher(_StubPool())
+
+    shutdown_server_response = await dispatcher.dispatch(
+        Request(
+            jsonrpc="2.0",
+            method="shutdown_server",
+            params={"unexpected": "value"},
+            id=1,
+        )
+    )
 
     assert shutdown_server_response is not None
     assert shutdown_server_response.error is None

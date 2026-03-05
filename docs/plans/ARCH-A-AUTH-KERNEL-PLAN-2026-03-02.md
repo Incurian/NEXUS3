@@ -59,6 +59,7 @@ Phases:
 - Progress (2026-03-05): M2 Commit 6 completed for create-lifecycle authorization shadow parity in [rpc/pool.py](/home/inc/repos/NEXUS3/nexus3/rpc/pool.py) at parent ceiling gates with legacy-enforced decisions + kernel shadow compare mismatch warning (`create_auth_shadow_mismatch`).
 - Progress (2026-03-05): M2 Commit 7 expanded create-lifecycle parity coverage for delta-ceiling branch in [tests/unit/rpc/test_pool_create_auth_shadow.py](/home/inc/repos/NEXUS3/tests/unit/rpc/test_pool_create_auth_shadow.py), confirming both parity and mismatch-warning behavior while legacy enforcement remains authoritative.
 - Progress (2026-03-05): M2 Commit 8 propagated create requester context through [rpc/agent_api.py](/home/inc/repos/NEXUS3/nexus3/rpc/agent_api.py), [rpc/global_dispatcher.py](/home/inc/repos/NEXUS3/nexus3/rpc/global_dispatcher.py), and [rpc/pool.py](/home/inc/repos/NEXUS3/nexus3/rpc/pool.py), adding shadow-only requester/parent binding parity warnings while preserving legacy create enforcement and error semantics.
+- Progress (2026-03-05): M2 Commit 9 added `shutdown_server` lifecycle shadow parity in [rpc/global_dispatcher.py](/home/inc/repos/NEXUS3/nexus3/rpc/global_dispatcher.py), with request-context requester propagation and mismatch warning telemetry while preserving legacy always-allow behavior and response/error semantics.
 - [ ] Remove duplicate authorization branches.
 
 ## Documentation Updates

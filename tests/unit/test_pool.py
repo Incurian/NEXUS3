@@ -10,6 +10,7 @@ Tests for:
 """
 
 import asyncio
+import logging
 from dataclasses import FrozenInstanceError, fields
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from nexus3.core.authorization_kernel import (
+    AuthorizationAction,
+    AuthorizationDecision,
+    AuthorizationRequest,
+    AuthorizationResource,
+    AuthorizationResourceType,
+)
 from nexus3.core.permissions import (
     ToolPermission,
     resolve_preset,
@@ -697,6 +705,81 @@ class TestGlobalDispatcher:
         assert response is not None
         assert response.error is not None
         assert response.error["code"] == -32601  # METHOD_NOT_FOUND
+
+    @pytest.mark.asyncio
+    async def test_shutdown_server_preserves_legacy_success_response(self):
+        """shutdown_server remains allowed and returns the unchanged payload."""
+        pool = MockAgentPool()
+        dispatcher = GlobalDispatcher(pool)
+
+        request = Request(
+            jsonrpc="2.0",
+            method="shutdown_server",
+            params={},
+            id=1,
+        )
+        response = await dispatcher.dispatch(request, requester_id="requester-1")
+
+        assert response is not None
+        assert response.error is None
+        assert response.result == {
+            "success": True,
+            "message": "Server shutting down",
+        }
+        assert dispatcher.shutdown_requested is True
+
+    @pytest.mark.asyncio
+    async def test_shutdown_server_emits_shadow_mismatch_warning_without_behavior_flip(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """shutdown_server logs shadow mismatch but still follows legacy allow behavior."""
+        pool = MockAgentPool()
+        dispatcher = GlobalDispatcher(pool)
+
+        kernel_request = AuthorizationRequest(
+            action=AuthorizationAction.SESSION_WRITE,
+            resource=AuthorizationResource(
+                resource_type=AuthorizationResourceType.RPC,
+                identifier="shutdown_server",
+            ),
+            principal_id="requester-1",
+        )
+        dispatcher._shutdown_authorization_kernel.authorize = MagicMock(
+            return_value=AuthorizationDecision.deny(
+                kernel_request,
+                reason="forced_deny_for_test",
+            )
+        )
+
+        caplog.set_level(logging.WARNING)
+        response = await dispatcher.dispatch(
+            Request(
+                jsonrpc="2.0",
+                method="shutdown_server",
+                params={},
+                id=1,
+            ),
+            requester_id="requester-1",
+        )
+
+        assert response is not None
+        assert response.error is None
+        assert response.result == {
+            "success": True,
+            "message": "Server shutting down",
+        }
+        mismatch_records = [
+            record
+            for record in caplog.records
+            if getattr(record, "event", None) == "shutdown_server_auth_shadow_mismatch"
+        ]
+        assert len(mismatch_records) == 1
+        record = mismatch_records[0]
+        assert getattr(record, "requester_id", None) == "requester-1"
+        assert getattr(record, "legacy_allowed", None) is True
+        assert getattr(record, "kernel_allowed", None) is False
+        assert getattr(record, "kernel_reason", None) == "forced_deny_for_test"
 
     @pytest.mark.asyncio
     async def test_handles_method(self):
