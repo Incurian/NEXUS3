@@ -32,6 +32,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from nexus3.display.safe_sink import SafeSink
+
 if TYPE_CHECKING:
     from rich.console import Console
 
@@ -153,29 +155,35 @@ async def _show_auth_recovery_menu(
     """
     from nexus3.rpc.discovery import AuthStatus
 
-    console.print()
-    console.print(f"[bold]Cannot connect to {server.base_url}[/]")
+    sink = SafeSink(console)
+    safe_base_url = sink.sanitize_print_content(server.base_url)
+    safe_port = sink.sanitize_print_content(str(server.port))
+
+    sink.print_trusted("")
+    sink.print_trusted(f"[bold]Cannot connect to {safe_base_url}[/]")
 
     # Show diagnostic info - focus on "different server" not "key problem"
     if server.auth == AuthStatus.REQUIRED:
         if server.token_present:
-            console.print("[yellow]Credentials don't match the running server.[/]")
+            sink.print_trusted("[yellow]Credentials don't match the running server.[/]")
         else:
-            console.print("[yellow]No credentials found for this server.[/]")
+            sink.print_trusted("[yellow]No credentials found for this server.[/]")
     elif server.auth == AuthStatus.INVALID_TOKEN:
-        console.print("[yellow]Credentials don't match the running server.[/]")
+        sink.print_trusted("[yellow]Credentials don't match the running server.[/]")
 
-    console.print()
-    console.print("[dim]This often happens when another process started a server on this port.[/]")
-    console.print()
+    sink.print_trusted("")
+    sink.print_trusted(
+        "[dim]This often happens when another process started a server on this port.[/]"
+    )
+    sink.print_trusted("")
 
     # Offer recovery options - prioritize actions that don't need keys
-    console.print("[dim]Options:[/]")
-    console.print("  p) Start a new server on different port (recommended)")
-    console.print(f"  r) Replace server on port {server.port} (shutdown and restart)")
-    console.print("  k) Enter API key manually (advanced)")
-    console.print("  b) Back")
-    console.print()
+    sink.print_trusted("[dim]Options:[/]")
+    sink.print_trusted("  p) Start a new server on different port (recommended)")
+    sink.print_trusted(f"  r) Replace server on port {safe_port} (shutdown and restart)")
+    sink.print_trusted("  k) Enter API key manually (advanced)")
+    sink.print_trusted("  b) Back")
+    sink.print_trusted("")
 
     while True:
         try:
@@ -198,9 +206,11 @@ async def _show_auth_recovery_menu(
             continue
 
         if choice == "r":
-            console.print()
-            console.print("[yellow]Note: This requires the server to accept shutdown requests.[/]")
-            console.print("[yellow]If the token is invalid, this may fail.[/]")
+            sink.print_trusted("")
+            sink.print_trusted(
+                "[yellow]Note: This requires the server to accept shutdown requests.[/]"
+            )
+            sink.print_trusted("[yellow]If the token is invalid, this may fail.[/]")
             try:
                 confirm = console.input("Continue anyway? [y/N]: ").strip().lower()
             except (EOFError, KeyboardInterrupt):
@@ -223,7 +233,7 @@ async def _show_auth_recovery_menu(
                 )
             continue
 
-        console.print("[dim]Please enter p, r, k, or b[/]")
+        sink.print_trusted("[dim]Please enter p, r, k, or b[/]")
 
 
 async def show_connect_lobby(
@@ -253,40 +263,45 @@ async def show_connect_lobby(
     """
     from nexus3.rpc.discovery import AuthStatus
 
+    sink = SafeSink(console)
     nexus_servers = _get_nexus_servers(servers)
 
     # Display header
-    console.print()
-    console.print("[bold]NEXUS3 Connect[/]")
-    console.print()
+    sink.print_trusted("")
+    sink.print_trusted("[bold]NEXUS3 Connect[/]")
+    sink.print_trusted("")
 
     # Display discovered servers
     if nexus_servers:
-        console.print("[dim]Discovered servers:[/]")
-        console.print()
+        sink.print_trusted("[dim]Discovered servers:[/]")
+        sink.print_trusted("")
 
         for i, server in enumerate(nexus_servers, 1):
             auth_status = _format_auth_status(server)
             agent_count = _format_agent_count(server)
-            parts = [f"  {i}) {server.base_url}", auth_status]
+            safe_base_url = sink.sanitize_print_content(server.base_url)
+            parts = [f"  {i}) {safe_base_url}", auth_status]
             if agent_count:
                 parts.append(agent_count)
-            console.print("  ".join(parts))
+            sink.print_trusted("  ".join(parts))
 
-        console.print()
+        sink.print_trusted("")
     else:
-        console.print("[dim]No NEXUS3 servers found.[/]")
-        console.print()
+        sink.print_trusted("[dim]No NEXUS3 servers found.[/]")
+        sink.print_trusted("")
 
     # Build menu options
-    console.print("[dim]Options:[/]")
+    sink.print_trusted("[dim]Options:[/]")
     if not default_port_in_use:
-        console.print(f"  n) Start embedded server (port {default_port})")
-    console.print("  p) Start embedded server on different port...")
-    console.print("  s) Scan additional ports...")
-    console.print("  u) Connect to URL manually...")
-    console.print("  q) Quit")
-    console.print()
+        safe_default_port = sink.sanitize_print_content(str(default_port))
+        sink.print_trusted(
+            f"  n) Start embedded server (port {safe_default_port})"
+        )
+    sink.print_trusted("  p) Start embedded server on different port...")
+    sink.print_trusted("  s) Scan additional ports...")
+    sink.print_trusted("  u) Connect to URL manually...")
+    sink.print_trusted("  q) Quit")
+    sink.print_trusted("")
 
     # Build valid server choices
     valid_server_nums = set(range(1, len(nexus_servers) + 1))
@@ -383,14 +398,18 @@ async def show_connect_lobby(
         # Invalid input
         if nexus_servers:
             if default_port_in_use:
-                console.print(f"[dim]Please enter 1-{len(nexus_servers)}, p, s, u, or q[/]")
+                sink.print_trusted(
+                    f"[dim]Please enter 1-{len(nexus_servers)}, p, s, u, or q[/]"
+                )
             else:
-                console.print(f"[dim]Please enter 1-{len(nexus_servers)}, n, p, s, u, or q[/]")
+                sink.print_trusted(
+                    f"[dim]Please enter 1-{len(nexus_servers)}, n, p, s, u, or q[/]"
+                )
         else:
             if default_port_in_use:
-                console.print("[dim]Please enter p, s, u, or q[/]")
+                sink.print_trusted("[dim]Please enter p, s, u, or q[/]")
             else:
-                console.print("[dim]Please enter n, p, s, u, or q[/]")
+                sink.print_trusted("[dim]Please enter n, p, s, u, or q[/]")
 
 
 async def show_agent_picker(
@@ -412,10 +431,13 @@ async def show_agent_picker(
         ConnectResult if user selected/created an agent, or None to go back.
     """
     agents = server.agents or []
+    sink = SafeSink(console)
+    safe_base_url = sink.sanitize_print_content(server.base_url)
+    safe_port = sink.sanitize_print_content(str(server.port))
 
-    console.print()
-    console.print(f"[bold]Agents on {server.base_url}:[/]")
-    console.print()
+    sink.print_trusted("")
+    sink.print_trusted(f"[bold]Agents on {safe_base_url}:[/]")
+    sink.print_trusted("")
 
     if agents:
         for i, agent_info in enumerate(agents, 1):
@@ -423,23 +445,26 @@ async def show_agent_picker(
             msg_count = agent_info.get("message_count", 0)
             permission_level = agent_info.get("permission_level", "unknown")
             is_temp = agent_info.get("is_temp", False)
+            safe_agent_id = sink.sanitize_print_content(str(agent_id))
+            safe_msg_count = sink.sanitize_print_content(str(msg_count))
+            safe_permission_level = sink.sanitize_print_content(str(permission_level))
 
             # Format display
             temp_marker = "[dim](temp)[/] " if is_temp else ""
-            console.print(
-                f"  {i}) [cyan]{agent_id}[/] {temp_marker}"
-                f"[dim]({msg_count} messages, {permission_level})[/]"
+            sink.print_trusted(
+                f"  {i}) [cyan]{safe_agent_id}[/] {temp_marker}"
+                f"[dim]({safe_msg_count} messages, {safe_permission_level})[/]"
             )
     else:
-        console.print("  [dim]No agents currently running[/]")
+        sink.print_trusted("  [dim]No agents currently running[/]")
 
-    console.print()
-    console.print("  c) Enter agent ID manually")
-    console.print("  n) Create new agent")
-    console.print(f"  r) Replace server on port {server.port} (shutdown and restart)")
-    console.print("  p) Start another server on different port...")
-    console.print("  b) Back")
-    console.print()
+    sink.print_trusted("")
+    sink.print_trusted("  c) Enter agent ID manually")
+    sink.print_trusted("  n) Create new agent")
+    sink.print_trusted(f"  r) Replace server on port {safe_port} (shutdown and restart)")
+    sink.print_trusted("  p) Start another server on different port...")
+    sink.print_trusted("  b) Back")
+    sink.print_trusted("")
 
     valid_agent_nums = set(range(1, len(agents) + 1))
 
@@ -466,8 +491,8 @@ async def show_agent_picker(
 
         # Handle create new agent
         if choice == "n":
-            console.print()
-            console.print("[dim]Enter a name for the new agent:[/]")
+            sink.print_trusted("")
+            sink.print_trusted("[dim]Enter a name for the new agent:[/]")
             agent_id = prompt_for_agent_id(console)
             if agent_id:
                 return ConnectResult(
@@ -516,9 +541,9 @@ async def show_agent_picker(
 
         # Invalid input
         if agents:
-            console.print(f"[dim]Please enter 1-{len(agents)}, c, n, r, p, or b[/]")
+            sink.print_trusted(f"[dim]Please enter 1-{len(agents)}, c, n, r, p, or b[/]")
         else:
-            console.print("[dim]Please enter c, n, r, p, or b[/]")
+            sink.print_trusted("[dim]Please enter c, n, r, p, or b[/]")
 
 
 def prompt_for_port_spec(console: Console) -> str | None:

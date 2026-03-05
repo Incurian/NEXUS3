@@ -128,26 +128,68 @@ async def test_global_destroy_agent_schema_validation_rejects_malformed_id() -> 
 
 
 @pytest.mark.asyncio
-async def test_dispatcher_send_schema_validation_rejects_malformed_request_id_shape() -> None:
+@pytest.mark.parametrize(
+    ("request_id", "expected_message"),
+    [
+        (True, "request_id must be string or integer"),
+        ("", "request_id cannot be empty"),
+        ({"bad": "shape"}, "request_id must be string or integer"),
+    ],
+)
+async def test_dispatcher_send_schema_validation_rejects_malformed_request_id_shape(
+    request_id: object,
+    expected_message: str,
+) -> None:
     dispatcher = Dispatcher(_StreamingStubSession(), context=None, agent_id="agent-1")
     request = Request(
         jsonrpc="2.0",
         method="send",
-        params={"content": "hello", "request_id": {"bad": "shape"}},
+        params={"content": "hello", "request_id": request_id},
         id=1,
     )
     response = await dispatcher.dispatch(request)
 
     assert response is not None
     assert response.error is not None
-    # Compat-safe during wiring: malformed request_id must not succeed.
-    # Pre-wiring falls through to INTERNAL_ERROR, while wired schema should
-    # return INVALID_PARAMS with a request_id-specific message.
-    assert response.error["code"] in {-32602, -32603}
-    if response.error["code"] == -32602:
-        assert "request_id" in response.error["message"].lower()
-    else:
-        assert "unhashable type" in response.error["message"].lower()
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == expected_message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("params", "expected_message"),
+    [
+        (
+            {"content": "hello", "source": 123},
+            "source must be string, got: int",
+        ),
+        (
+            {"content": "hello", "source_agent_id": {"bad": "shape"}},
+            "source_agent_id must be string or integer, got: dict",
+        ),
+        (
+            {"content": "hello", "source_agent_id": False},
+            "source_agent_id must be string or integer, got: bool",
+        ),
+    ],
+)
+async def test_dispatcher_send_schema_validation_rejects_malformed_optional_attribution_params(
+    params: dict[str, object],
+    expected_message: str,
+) -> None:
+    dispatcher = Dispatcher(_StreamingStubSession(), context=None, agent_id="agent-1")
+    request = Request(
+        jsonrpc="2.0",
+        method="send",
+        params=params,
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == expected_message
 
 
 @pytest.mark.asyncio

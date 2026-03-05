@@ -60,6 +60,10 @@ Phases:
 - Migrated `nexus3/cli/repl_commands.py::_mcp_connection_consent` dynamic `server_name` and `tool_names` rendering to `SafeSink` sanitization before Rich-markup output.
 - Added focused regression tests in `tests/unit/cli/test_repl_commands_safe_sink.py`.
 - Validation: `.venv/bin/ruff check nexus3/cli/repl_commands.py tests/unit/cli/test_repl_commands_safe_sink.py` and `.venv/bin/pytest -v tests/unit/cli/test_repl_commands_safe_sink.py tests/unit/test_repl_commands.py` passed.
+- 2026-03-05: Phase 3 incremental migration slice completed (connect/lobby prompts).
+- Migrated high-volume dynamic CLI rendering in `nexus3/cli/connect_lobby.py` and `nexus3/cli/lobby.py` to sanitize untrusted interpolated fields through `SafeSink` while preserving trusted static Rich markup.
+- Added focused regressions in `tests/unit/cli/test_connect_lobby_safe_sink.py` and `tests/unit/cli/test_lobby_safe_sink.py`.
+- Validation: `.venv/bin/ruff check nexus3/cli/connect_lobby.py nexus3/cli/lobby.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/cli/test_lobby_safe_sink.py` and `.venv/bin/pytest -v tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/cli/test_lobby_safe_sink.py tests/unit/test_lobby.py` passed.
 
 ## Testing Strategy
 

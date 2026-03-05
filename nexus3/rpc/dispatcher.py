@@ -67,7 +67,7 @@ class Dispatcher:
         self._log_multiplexer = log_multiplexer
         self._pool = pool
         self._should_shutdown = False
-        self._active_requests: dict[str, CancellationToken] = {}
+        self._active_requests: dict[str | int, CancellationToken] = {}
         self._turn_lock = asyncio.Lock()
 
         # REPL hook: called when a non-REPL send triggers a turn
@@ -152,14 +152,39 @@ class Dispatcher:
             raise InvalidParamsError(
                 f"content must be string, got: {type(content).__name__}"
             )
+        schema_candidate: dict[str, Any] = {"content": content}
+        for key in ("request_id", "source", "source_agent_id"):
+            if key in params:
+                schema_candidate[key] = params[key]
         try:
-            # Compat-safe schema ingress wiring: validate only fields with
-            # established strict behavior for this method.
-            SendParamsSchema.model_validate({"content": content}, strict=False)
+            # Compat-safe schema ingress wiring: validate only known send
+            # fields and keep extra params permissive.
+            validated = SendParamsSchema.model_validate(schema_candidate, strict=False)
         except PydanticValidationError as exc:
-            raise InvalidParamsError(
-                f"content must be string, got: {type(content).__name__}"
-            ) from exc
+            errors = exc.errors()
+            if errors:
+                error = errors[0]
+                loc = error.get("loc", ())
+                field = str(loc[0]) if loc else None
+                raw_value = params.get(field) if field else None
+                if field == "content":
+                    raise InvalidParamsError(
+                        f"content must be string, got: {type(content).__name__}"
+                    ) from exc
+                if field == "request_id":
+                    if raw_value == "":
+                        raise InvalidParamsError("request_id cannot be empty") from exc
+                    raise InvalidParamsError("request_id must be string or integer") from exc
+                if field == "source":
+                    raise InvalidParamsError(
+                        f"source must be string, got: {type(raw_value).__name__}"
+                    ) from exc
+                if field == "source_agent_id":
+                    raise InvalidParamsError(
+                        "source_agent_id must be string or integer, "
+                        f"got: {type(raw_value).__name__}"
+                    ) from exc
+            raise InvalidParamsError("Invalid send parameters") from exc
 
         # Block RPC sends to YOLO agents when no REPL connected
         if self._pool and self._agent_id:
@@ -175,8 +200,8 @@ class Dispatcher:
 
         # Source attribution (stored in Message.meta)
         # Default missing source to "rpc" to ensure external sends have attribution
-        source = params.get("source") or "rpc"
-        source_agent_id = params.get("source_agent_id")
+        source = validated.source or "rpc"
+        source_agent_id = validated.source_agent_id
 
         # Build user_meta for non-repl sends (REPL-originated messages don't need attribution)
         user_meta: dict[str, str] | None = None
@@ -186,7 +211,11 @@ class Dispatcher:
                 user_meta["source_agent_id"] = str(source_agent_id)
 
         # Generate or use provided request_id
-        request_id = params.get("request_id") or secrets.token_hex(8)
+        request_id = (
+            validated.request_id
+            if validated.request_id is not None
+            else secrets.token_hex(8)
+        )
 
         # Create cancellation token and track it
         token = CancellationToken()
@@ -503,7 +532,7 @@ class Dispatcher:
             "tokens_saved": result.original_token_count - result.new_token_count,
         }
 
-    async def cancel_all_requests(self) -> dict[str, bool]:
+    async def cancel_all_requests(self) -> dict[str | int, bool]:
         """Cancel all in-progress requests.
 
         This is called during agent destruction to gracefully cancel

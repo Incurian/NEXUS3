@@ -93,6 +93,13 @@ class SendParamsSchema(StrictSchemaModel):
             raise ValueError("request_id cannot be empty")
         return value
 
+    @field_validator("source_agent_id", mode="before")
+    @classmethod
+    def reject_boolean_source_agent_id(cls, value: str | int | None) -> str | int | None:
+        if isinstance(value, bool):
+            raise ValueError("source_agent_id must be string or integer")
+        return value
+
 
 class CancelParamsSchema(StrictSchemaModel):
     """Params schema for dispatcher.cancel."""

@@ -25,6 +25,7 @@ from pathlib import Path
 
 from rich.console import Console
 
+from nexus3.display.safe_sink import SafeSink
 from nexus3.session.session_manager import SessionManager
 
 
@@ -116,6 +117,7 @@ async def show_lobby(
         LobbyResult with user's choice and any associated data.
     """
     # Gather session info
+    sink = SafeSink(console)
     last_session_info = session_manager.load_last_session()
     saved_sessions = session_manager.list_sessions()
 
@@ -130,9 +132,13 @@ async def show_lobby(
         time_ago = format_time_ago(session.modified_at)
         msg_count = len(session.messages)
         display_name = name if not name.startswith(".") else f"temp ({name})"
+        safe_display_name = sink.sanitize_print_content(display_name)
+        safe_time_ago = sink.sanitize_print_content(time_ago)
+        safe_msg_count = sink.sanitize_print_content(str(msg_count))
         options.append(
             (
-                f"Resume: [cyan]{display_name}[/] [dim]({time_ago}, {msg_count} messages)[/]",
+                f"Resume: [cyan]{safe_display_name}[/] "
+                f"[dim]({safe_time_ago}, {safe_msg_count} messages)[/]",
                 LobbyChoice.RESUME,
                 name,
             )
@@ -144,15 +150,15 @@ async def show_lobby(
         options.append(("Choose from saved...", LobbyChoice.SELECT, None))
 
     # Display header
-    console.print()
-    console.print("[bold]NEXUS3 REPL[/]")
-    console.print()
+    sink.print_trusted("")
+    sink.print_trusted("[bold]NEXUS3 REPL[/]")
+    sink.print_trusted("")
 
     # Display options
     for i, (label, _, _) in enumerate(options, 1):
-        console.print(f"  {i}) {label}")
+        sink.print_trusted(f"  {i}) {label}")
 
-    console.print()
+    sink.print_trusted("")
 
     # Build valid choices string
     valid_choices = "/".join(str(i) for i in range(1, len(options) + 1))
@@ -190,7 +196,7 @@ async def show_lobby(
             pass
 
         # Invalid input
-        console.print(f"[dim]Please enter {valid_choices} or q[/]")
+        sink.print_trusted(f"[dim]Please enter {valid_choices} or q[/]")
 
 
 async def show_session_list(
@@ -208,24 +214,28 @@ async def show_session_list(
     Returns:
         Selected session name or None if user cancelled.
     """
+    sink = SafeSink(console)
     sessions = session_manager.list_sessions()
 
     if not sessions:
-        console.print("[dim]No saved sessions found.[/]")
+        sink.print_trusted("[dim]No saved sessions found.[/]")
         return None
 
-    console.print()
-    console.print("[bold]Saved Sessions[/]")
-    console.print()
+    sink.print_trusted("")
+    sink.print_trusted("[bold]Saved Sessions[/]")
+    sink.print_trusted("")
 
     # Display sessions
     for i, summary in enumerate(sessions, 1):
         time_ago = format_time_ago(summary.modified_at)
-        console.print(
-            f"  {i}) [cyan]{summary.name}[/] [dim]({time_ago}, {summary.message_count} messages)[/]"
+        safe_name = sink.sanitize_print_content(summary.name)
+        safe_time_ago = sink.sanitize_print_content(time_ago)
+        safe_msg_count = sink.sanitize_print_content(str(summary.message_count))
+        sink.print_trusted(
+            f"  {i}) [cyan]{safe_name}[/] [dim]({safe_time_ago}, {safe_msg_count} messages)[/]"
         )
 
-    console.print()
+    sink.print_trusted("")
 
     # Build valid choices
     valid_range = f"1-{len(sessions)}" if len(sessions) > 1 else "1"
@@ -246,4 +256,4 @@ async def show_session_list(
         except ValueError:
             pass
 
-        console.print(f"[dim]Please enter {valid_range} or b to go back[/]")
+        sink.print_trusted(f"[dim]Please enter {valid_range} or b to go back[/]")

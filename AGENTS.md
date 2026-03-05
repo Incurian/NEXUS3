@@ -250,6 +250,10 @@ Progress snapshot:
   - removed silent malformed `mcp.json` container/entry skips in `nexus3/context/loader.py::_merge_mcp_servers`
   - malformed `mcpServers`/`servers` container types and non-object list entries now raise `MCPConfigError` with contextual source metadata
   - added focused regressions in `tests/unit/context/test_loader_mcp_fail_fast.py`, including compatibility fallback when `mcpServers` is empty and `servers` is present
+- Completed: Plan H M1 Phase 2 send-ingress extension:
+  - expanded compat-safe schema validation in `nexus3/rpc/dispatcher.py::_handle_send` to cover optional `request_id`, `source`, and `source_agent_id`
+  - preserved explicit `InvalidParamsError` mappings for malformed optional fields and prevented unhashable `request_id` shapes from reaching internal tracking structures
+  - added focused malformed-parameter regressions in `tests/unit/rpc/test_schema_ingress_wiring.py`
 - Completed: baseline E/F harness fixtures/tests under `tests/fixtures/arch_baseline/`, `tests/unit/context/test_compile_baseline.py`, and `tests/unit/patch/test_byte_roundtrip_baseline.py`.
 - Completed: Plan G M1 Phase 1 foundation safe sink API (`nexus3/display/safe_sink.py`) with minimal `InlinePrinter` integration and focused unit tests (`tests/unit/display/test_safe_sink.py`).
 - Completed: Plan G M1 Phase 2 high-risk output migration:
@@ -261,6 +265,10 @@ Progress snapshot:
   - `nexus3/cli/repl_commands.py::_mcp_connection_consent` now sanitizes dynamic MCP server/tool text through `SafeSink` before Rich-rendered prompt output.
   - Added focused tests in `tests/unit/cli/test_repl_commands_safe_sink.py`.
   - Focused validation passed via `.venv/bin/ruff check nexus3/cli/repl_commands.py tests/unit/cli/test_repl_commands_safe_sink.py` and `.venv/bin/pytest -v tests/unit/cli/test_repl_commands_safe_sink.py tests/unit/test_repl_commands.py`.
+- Completed: Plan G M1 Phase 3 incremental output migration slice (connect/lobby prompts):
+  - `nexus3/cli/connect_lobby.py` and `nexus3/cli/lobby.py` now sanitize dynamic/untrusted interpolated CLI values through `SafeSink` while preserving trusted static Rich markup.
+  - Added focused sanitization+parity regressions in `tests/unit/cli/test_connect_lobby_safe_sink.py` and `tests/unit/cli/test_lobby_safe_sink.py`.
+  - Focused validation passed via `.venv/bin/ruff check nexus3/cli/connect_lobby.py nexus3/cli/lobby.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/cli/test_lobby_safe_sink.py` and `.venv/bin/pytest -v tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/cli/test_lobby_safe_sink.py tests/unit/test_lobby.py`.
 - Completed: M1 Plan D grep migration slice routed fallback per-candidate authorization through `FilesystemAccessGateway` and added focused blocked/outside/symlink grep tests.
 - Completed: M1 Plan D tool migrations (`glob`, `outline`, `concat_files`, `grep`) to `FilesystemAccessGateway`; remaining Plan D work is consolidated regression/perf guard coverage.
 - Completed: M1 Plan D consolidated blocked-path/symlink regression coverage across migrated tool tests (`glob`, `outline`, `concat_files`, `grep`).

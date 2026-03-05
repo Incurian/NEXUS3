@@ -58,6 +58,7 @@ Phases:
   - [x] M1 Phase 2 slice: wired compat-safe typed ingress hooks for remaining low-risk no-arg methods in `rpc/dispatcher.py` (`shutdown`, `get_tokens`, `get_context`) and `rpc/global_dispatcher.py` (`list_agents`, `shutdown_server`) while preserving permissive extras behavior.
   - [x] M1 Phase 2 behavior-sensitive slice: wired compat-safe typed ingress validation in `rpc/dispatcher.py::_handle_send` and `rpc/global_dispatcher.py::_handle_create_agent` with legacy-style `InvalidParamsError` mapping and focused wiring tests.
   - [x] M1 Phase 2 behavior-sensitive extension: validated `parent_agent_id` and conditional `wait_for_initial_response` in `rpc/global_dispatcher.py::_handle_create_agent` with preserved legacy `InvalidParamsError` wording and focused ingress wiring tests.
+  - [x] M1 Phase 2 behavior-sensitive extension: expanded `rpc/dispatcher.py::_handle_send` compat-safe ingress validation to include optional `request_id`/`source`/`source_agent_id` with legacy-style `InvalidParamsError` mappings and focused malformed-parameter regressions.
   - [ ] Remaining M1 Phase 2 ingress coverage beyond low-risk methods (including stricter/behavior-sensitive paths) still pending.
 - [x] Remove silent malformed-entry skips.
   - [x] M1 Phase 3 slice: `context/loader.py::_merge_mcp_servers` now fail-fast rejects malformed MCP container/entry shapes (`mcpServers` non-object, `servers` non-array, non-object entries in `servers[]`) with actionable `MCPConfigError` context.
