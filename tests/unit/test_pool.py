@@ -689,6 +689,59 @@ class TestGlobalDispatcher:
         assert agent_ids == {"agent-1", "agent-2"}
 
     @pytest.mark.asyncio
+    async def test_list_agents_emits_shadow_mismatch_warning_without_behavior_flip(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """list_agents logs shadow mismatch but still follows legacy allow behavior."""
+        pool = MockAgentPool()
+        await pool.create(agent_id="agent-1")
+        dispatcher = GlobalDispatcher(pool)
+
+        kernel_request = AuthorizationRequest(
+            action=AuthorizationAction.SESSION_READ,
+            resource=AuthorizationResource(
+                resource_type=AuthorizationResourceType.RPC,
+                identifier="list_agents",
+            ),
+            principal_id="requester-1",
+        )
+        dispatcher._list_agents_authorization_kernel.authorize = MagicMock(
+            return_value=AuthorizationDecision.deny(
+                kernel_request,
+                reason="forced_deny_for_test",
+            )
+        )
+
+        caplog.set_level(logging.WARNING)
+        response = await dispatcher.dispatch(
+            Request(
+                jsonrpc="2.0",
+                method="list_agents",
+                params={},
+                id=1,
+            ),
+            requester_id="requester-1",
+        )
+
+        assert response is not None
+        assert response.error is None
+        assert response.result is not None
+        assert len(response.result["agents"]) == 1
+        assert response.result["agents"][0]["agent_id"] == "agent-1"
+        mismatch_records = [
+            record
+            for record in caplog.records
+            if getattr(record, "event", None) == "list_agents_auth_shadow_mismatch"
+        ]
+        assert len(mismatch_records) == 1
+        record = mismatch_records[0]
+        assert getattr(record, "requester_id", None) == "requester-1"
+        assert getattr(record, "legacy_allowed", None) is True
+        assert getattr(record, "kernel_allowed", None) is False
+        assert getattr(record, "kernel_reason", None) == "forced_deny_for_test"
+
+    @pytest.mark.asyncio
     async def test_method_not_found(self):
         """Unknown method returns METHOD_NOT_FOUND error."""
         pool = MockAgentPool()

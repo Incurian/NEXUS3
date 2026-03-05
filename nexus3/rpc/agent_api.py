@@ -323,7 +323,7 @@ class DirectAgentAPI:
             params=None,
             id=1,
         )
-        response = await self._global_dispatcher.dispatch(request)
+        response = await self._global_dispatcher.dispatch(request, self._requester_id)
         result = _extract_result(response)
         # GlobalDispatcher returns {"agents": [...]}
         agents: list[str] = result.get("agents", [])
@@ -341,7 +341,7 @@ class DirectAgentAPI:
             params=None,
             id=1,
         )
-        response = await self._global_dispatcher.dispatch(request)
+        response = await self._global_dispatcher.dispatch(request, self._requester_id)
         return _extract_result(response)
 
 

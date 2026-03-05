@@ -49,6 +49,11 @@ class SafeSink:
         return sanitize_for_display(content)
 
     @staticmethod
+    def sanitize_print_value(value: object) -> str:
+        """Sanitize an arbitrary value for Rich-rendered output."""
+        return sanitize_for_display(str(value))
+
+    @staticmethod
     def sanitize_stream_content(chunk: str) -> str:
         """Sanitize untrusted text for raw stream writes."""
         return strip_terminal_escapes(chunk)

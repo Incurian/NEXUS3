@@ -70,3 +70,13 @@ def test_write_trusted_preserves_terminal_sequences() -> None:
     sink.write_trusted("\x1b[31mtrusted\x1b[0m")
 
     assert stdout.getvalue() == "\x1b[31mtrusted\x1b[0m"
+
+
+def test_sanitize_print_value_sanitizes_arbitrary_object() -> None:
+    class UnsafeValue:
+        def __str__(self) -> str:
+            return "\x1b[31m[bold]unsafe[/bold]\x1b[0m"
+
+    safe_value = SafeSink.sanitize_print_value(UnsafeValue())
+
+    assert safe_value == r"\[bold]unsafe\[/bold]"

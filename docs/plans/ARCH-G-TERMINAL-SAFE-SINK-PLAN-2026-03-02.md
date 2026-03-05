@@ -98,6 +98,10 @@ Phases:
 - Migrated residual dynamic output in `nexus3/cli/repl.py` (`main`, `_run_with_reload`) and `nexus3/cli/serve.py` (`run_serve`) to SafeSink-backed sanitization helpers while preserving startup/error wording and flow.
 - Added focused `serve` sanitization regressions in `tests/unit/cli/test_serve_safe_sink.py` and extended `tests/unit/cli/test_repl_safe_sink.py` for top-level REPL reload/command formatting paths.
 - Validation: `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/serve.py tests/unit/cli/test_repl_safe_sink.py tests/unit/cli/test_serve_safe_sink.py` and `.venv/bin/pytest -v tests/unit/cli/test_repl_safe_sink.py tests/unit/cli/test_serve_safe_sink.py` passed.
+- 2026-03-05: Phase 3 cleanup slice completed (SafeSink helper dedup).
+- Added shared `SafeSink.sanitize_print_value(...)` entrypoint and removed duplicated local sanitization wrappers in `nexus3/cli/serve.py` and `nexus3/mcp/error_formatter.py`.
+- Added focused helper coverage in `tests/unit/display/test_safe_sink.py` and validated existing `serve` + MCP formatting regressions remain green.
+- Validation: `.venv/bin/ruff check nexus3/display/safe_sink.py nexus3/cli/serve.py nexus3/mcp/error_formatter.py tests/unit/display/test_safe_sink.py tests/unit/cli/test_serve_safe_sink.py tests/unit/mcp/test_error_formatter.py` and `.venv/bin/pytest -v tests/unit/display/test_safe_sink.py tests/unit/cli/test_serve_safe_sink.py tests/unit/mcp/test_error_formatter.py` passed.
 
 ## Testing Strategy
 
@@ -119,7 +123,8 @@ Phases:
   - [x] Migrated residual dynamic top-level REPL/serve startup-reload surfaces (`nexus3/cli/repl.py::main`, `nexus3/cli/repl.py::_run_with_reload`, `nexus3/cli/serve.py::run_serve`) to SafeSink sanitization helpers.
 - [ ] Remove redundant/fragmented sanitization call sites.
   - [x] Removed redundant ad hoc escaping in `nexus3/cli/confirmation_ui.py::confirm_tool_action` during SafeSink migration.
-  - Resume target: collapse duplicate formatter/escaping helper branches into shared `SafeSink` entrypoints and remove remaining fragmented sanitization call sites.
+  - [x] Collapsed duplicate sanitize-wrapper branches in `nexus3/cli/serve.py` and `nexus3/mcp/error_formatter.py` onto shared `SafeSink.sanitize_print_value(...)`.
+  - Resume target: continue collapsing any remaining fragmented formatter/sanitizer branches into shared SafeSink entrypoints.
 
 ## Documentation Updates
 

@@ -6,11 +6,6 @@ from nexus3.display.safe_sink import SafeSink
 from nexus3.mcp.errors import MCPErrorContext
 
 
-def _safe(value: object) -> str:
-    """Sanitize dynamic values for terminal-safe Rich display."""
-    return SafeSink.sanitize_print_content(str(value))
-
-
 def format_config_validation_error(
     context: MCPErrorContext | None,
     field: str,
@@ -22,18 +17,20 @@ def format_config_validation_error(
     lines = ["", "MCP Configuration Error", "\u2501" * 23, ""]
 
     if context:
-        lines.append(f'Server: "{_safe(context.server_name)}"')
+        lines.append(f'Server: "{SafeSink.sanitize_print_value(context.server_name)}"')
         if context.source_path:
             layer_desc = f" ({context.source_layer} config)" if context.source_layer else ""
-            lines.append(f"Source: {_safe(context.source_path)}{layer_desc}")
+            lines.append(
+                f"Source: {SafeSink.sanitize_print_value(context.source_path)}{layer_desc}"
+            )
         lines.append("")
 
-    lines.append(f"Problem: {_safe(error_msg)}")
+    lines.append(f"Problem: {SafeSink.sanitize_print_value(error_msg)}")
 
     if provided_value is not None:
-        lines.append(f"  You provided: {_safe(provided_value)}")
+        lines.append(f"  You provided: {SafeSink.sanitize_print_value(provided_value)}")
     if expected_format is not None:
-        lines.append(f"  Expected:     {_safe(expected_format)}")
+        lines.append(f"  Expected:     {SafeSink.sanitize_print_value(expected_format)}")
 
     return "\n".join(lines)
 
@@ -46,13 +43,15 @@ def format_command_not_found(
     lines = ["", "MCP Server Launch Failed", "\u2501" * 24, ""]
 
     if context:
-        lines.append(f'Server: "{_safe(context.server_name)}"')
+        lines.append(f'Server: "{SafeSink.sanitize_print_value(context.server_name)}"')
         if context.source_path:
             layer_desc = f" ({context.source_layer} config)" if context.source_layer else ""
-            lines.append(f"Source: {_safe(context.source_path)}{layer_desc}")
+            lines.append(
+                f"Source: {SafeSink.sanitize_print_value(context.source_path)}{layer_desc}"
+            )
         lines.append("")
 
-    lines.append(f"Problem: Command not found: {_safe(command)}")
+    lines.append(f"Problem: Command not found: {SafeSink.sanitize_print_value(command)}")
     lines.append("")
     lines.append("Likely causes:")
 
@@ -66,35 +65,57 @@ def format_command_not_found(
         lines.append("  2. Node.js is not in PATH for the subprocess")
         lines.append("")
         lines.append("Troubleshooting:")
-        lines.append(f"  - Check if {_safe(command)} exists: {which_cmd} {_safe(command)}")
+        lines.append(
+            "  - Check if "
+            f"{SafeSink.sanitize_print_value(command)} exists: {which_cmd} "
+            f"{SafeSink.sanitize_print_value(command)}"
+        )
         lines.append("  - Install Node.js: https://nodejs.org")
     elif command in ("python", "python3", "pip", "pip3"):
         lines.append("  1. Python is not installed")
         lines.append("  2. Python is not in PATH")
         lines.append("")
         lines.append("Troubleshooting:")
-        lines.append(f"  - Check if {_safe(command)} exists: {which_cmd} {_safe(command)}")
+        lines.append(
+            "  - Check if "
+            f"{SafeSink.sanitize_print_value(command)} exists: {which_cmd} "
+            f"{SafeSink.sanitize_print_value(command)}"
+        )
         lines.append("  - Install Python: https://python.org")
     elif command in ("uvx", "uv"):
         lines.append("  1. uv is not installed")
         lines.append("  2. uv is not in PATH")
         lines.append("")
         lines.append("Troubleshooting:")
-        lines.append(f"  - Check if {_safe(command)} exists: {which_cmd} {_safe(command)}")
+        lines.append(
+            "  - Check if "
+            f"{SafeSink.sanitize_print_value(command)} exists: {which_cmd} "
+            f"{SafeSink.sanitize_print_value(command)}"
+        )
         lines.append("  - Install uv: https://docs.astral.sh/uv/")
     elif command in ("docker", "podman"):
-        lines.append(f"  1. {_safe(command)} is not installed")
-        lines.append(f"  2. {_safe(command)} daemon is not running")
+        lines.append(f"  1. {SafeSink.sanitize_print_value(command)} is not installed")
+        lines.append(f"  2. {SafeSink.sanitize_print_value(command)} daemon is not running")
         lines.append("")
         lines.append("Troubleshooting:")
-        lines.append(f"  - Check if {_safe(command)} exists: {which_cmd} {_safe(command)}")
-        lines.append(f"  - Check daemon status: {_safe(command)} info")
+        lines.append(
+            "  - Check if "
+            f"{SafeSink.sanitize_print_value(command)} exists: {which_cmd} "
+            f"{SafeSink.sanitize_print_value(command)}"
+        )
+        lines.append(f"  - Check daemon status: {SafeSink.sanitize_print_value(command)} info")
     else:
-        lines.append(f"  1. {_safe(command)} is not installed")
-        lines.append(f"  2. {_safe(command)} is not in PATH for the subprocess")
+        lines.append(f"  1. {SafeSink.sanitize_print_value(command)} is not installed")
+        lines.append(
+            f"  2. {SafeSink.sanitize_print_value(command)} is not in PATH for the subprocess"
+        )
         lines.append("")
         lines.append("Troubleshooting:")
-        lines.append(f"  - Check if {_safe(command)} exists: {which_cmd} {_safe(command)}")
+        lines.append(
+            "  - Check if "
+            f"{SafeSink.sanitize_print_value(command)} exists: {which_cmd} "
+            f"{SafeSink.sanitize_print_value(command)}"
+        )
 
     # Add Windows-specific hints
     if is_windows:
@@ -117,12 +138,14 @@ def format_server_crash(
     lines = ["", "MCP Server Crashed", "\u2501" * 18, ""]
 
     if context:
-        lines.append(f'Server: "{_safe(context.server_name)}"')
+        lines.append(f'Server: "{SafeSink.sanitize_print_value(context.server_name)}"')
         if context.source_path:
             layer_desc = f" ({context.source_layer} config)" if context.source_layer else ""
-            lines.append(f"Source: {_safe(context.source_path)}{layer_desc}")
+            lines.append(
+                f"Source: {SafeSink.sanitize_print_value(context.source_path)}{layer_desc}"
+            )
         if context.command:
-            lines.append(f"Command: {_safe(context.command)}")
+            lines.append(f"Command: {SafeSink.sanitize_print_value(context.command)}")
         lines.append("")
 
     if exit_code is not None:
@@ -134,7 +157,7 @@ def format_server_crash(
         lines.append("")
         lines.append("Server stderr (last lines):")
         for line in stderr_lines[-10:]:
-            lines.append(f"  {_safe(line)}")
+            lines.append(f"  {SafeSink.sanitize_print_value(line)}")
 
     lines.append("")
     lines.append("Troubleshooting:")
@@ -165,22 +188,25 @@ def format_json_error(
     lines = ["", "MCP Protocol Error", "\u2501" * 18, ""]
 
     if context:
-        lines.append(f'Server: "{_safe(context.server_name)}"')
+        lines.append(f'Server: "{SafeSink.sanitize_print_value(context.server_name)}"')
         lines.append("")
 
     lines.append("Problem: Server sent invalid JSON")
 
     if line is not None and column is not None:
-        lines.append(f"  Error at line {line}, column {column}: {_safe(error_msg)}")
+        lines.append(
+            "  Error at line "
+            f"{line}, column {column}: {SafeSink.sanitize_print_value(error_msg)}"
+        )
     else:
-        lines.append(f"  {_safe(error_msg)}")
+        lines.append(f"  {SafeSink.sanitize_print_value(error_msg)}")
 
     # Show snippet of the raw text
     if raw_text:
         preview = raw_text[:200] + "..." if len(raw_text) > 200 else raw_text
         lines.append("")
         lines.append("Raw response (preview):")
-        lines.append(f"  {_safe(preview)!r}")
+        lines.append(f"  {SafeSink.sanitize_print_value(preview)!r}")
 
     lines.append("")
     lines.append("Likely causes:")
@@ -204,12 +230,14 @@ def format_timeout_error(
     lines = ["", "MCP Server Timeout", "\u2501" * 18, ""]
 
     if context:
-        lines.append(f'Server: "{_safe(context.server_name)}"')
+        lines.append(f'Server: "{SafeSink.sanitize_print_value(context.server_name)}"')
         if context.source_path:
             layer_desc = f" ({context.source_layer} config)" if context.source_layer else ""
-            lines.append(f"Source: {_safe(context.source_path)}{layer_desc}")
+            lines.append(
+                f"Source: {SafeSink.sanitize_print_value(context.source_path)}{layer_desc}"
+            )
         if context.command:
-            lines.append(f"Command: {_safe(context.command)}")
+            lines.append(f"Command: {SafeSink.sanitize_print_value(context.command)}")
         lines.append("")
 
     lines.append(f"Problem: {phase.capitalize()} timed out after {timeout}s")

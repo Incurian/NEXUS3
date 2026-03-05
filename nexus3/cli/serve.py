@@ -52,56 +52,51 @@ configure_stdio()
 load_dotenv()
 
 
-def _sanitize_serve_text(safe_sink: SafeSink, value: object) -> str:
-    """Sanitize dynamic serve output text before Rich interpolation."""
-    return safe_sink.sanitize_print_content(str(value))
-
-
 def _format_serve_config_error_line(safe_sink: SafeSink, message: str) -> str:
     """Format config-error line while preserving trusted text wrapper."""
-    safe_message = _sanitize_serve_text(safe_sink, message)
+    safe_message = safe_sink.sanitize_print_value(message)
     return f"Configuration error: {safe_message}"
 
 
 def _format_serve_existing_server_line(safe_sink: SafeSink, port: int) -> str:
     """Format existing-server detection line while preserving trusted text wrapper."""
-    safe_port = _sanitize_serve_text(safe_sink, port)
+    safe_port = safe_sink.sanitize_print_value(port)
     return f"Error: NEXUS3 server already running on port {safe_port}"
 
 
 def _format_serve_connect_hint_line(safe_sink: SafeSink, port: int) -> str:
     """Format connect-hint line while preserving trusted text wrapper."""
-    safe_port = _sanitize_serve_text(safe_sink, port)
+    safe_port = safe_sink.sanitize_print_value(port)
     return f"Use 'nexus3 --connect http://localhost:{safe_port}' to connect to it"
 
 
 def _format_serve_other_service_line(safe_sink: SafeSink, port: int) -> str:
     """Format occupied-port line while preserving trusted text wrapper."""
-    safe_port = _sanitize_serve_text(safe_sink, port)
+    safe_port = safe_sink.sanitize_print_value(port)
     return f"Error: Port {safe_port} is already in use by another service"
 
 
 def _format_serve_url_line(safe_sink: SafeSink, port: int) -> str:
     """Format server-url startup line while preserving trusted text wrapper."""
-    safe_port = _sanitize_serve_text(safe_sink, port)
+    safe_port = safe_sink.sanitize_print_value(port)
     return f"Server: http://127.0.0.1:{safe_port}"
 
 
 def _format_serve_token_file_line(safe_sink: SafeSink, token_path: Path) -> str:
     """Format token-file startup line while preserving trusted text wrapper."""
-    safe_token_path = _sanitize_serve_text(safe_sink, token_path)
+    safe_token_path = safe_sink.sanitize_print_value(token_path)
     return f"Token file: {safe_token_path}"
 
 
 def _format_serve_server_log_line(safe_sink: SafeSink, server_log_file: Path) -> str:
     """Format server-log startup line while preserving trusted text wrapper."""
-    safe_server_log_file = _sanitize_serve_text(safe_sink, server_log_file)
+    safe_server_log_file = safe_sink.sanitize_print_value(server_log_file)
     return f"Server log: {safe_server_log_file}"
 
 
 def _format_serve_session_logs_line(safe_sink: SafeSink, base_log_dir: Path) -> str:
     """Format session-logs startup line while preserving trusted text wrapper."""
-    safe_base_log_dir = _sanitize_serve_text(safe_sink, base_log_dir)
+    safe_base_log_dir = safe_sink.sanitize_print_value(base_log_dir)
     return f"Session logs: {safe_base_log_dir}"
 
 

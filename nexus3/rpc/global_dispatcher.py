@@ -66,6 +66,19 @@ class _ShutdownAuthorizationAdapter:
         return AuthorizationDecision.allow(request, reason="shutdown_server_allowed")
 
 
+class _ListAgentsAuthorizationAdapter:
+    """Kernel adapter mirroring legacy GlobalDispatcher.list_agents policy."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.SESSION_READ:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.RPC:
+            return None
+        if request.resource.identifier != "list_agents":
+            return None
+        return AuthorizationDecision.allow(request, reason="list_agents_allowed")
+
+
 class GlobalDispatcher:
     """Handles global (non-agent-specific) RPC methods.
 
@@ -98,6 +111,10 @@ class GlobalDispatcher:
         """
         self._pool = pool
         self._shutdown_requested = False
+        self._list_agents_authorization_kernel = AdapterAuthorizationKernel(
+            adapters=(_ListAgentsAuthorizationAdapter(),),
+            default_allow=False,
+        )
         self._shutdown_authorization_kernel = AdapterAuthorizationKernel(
             adapters=(_ShutdownAuthorizationAdapter(),),
             default_allow=False,
@@ -148,11 +165,17 @@ class GlobalDispatcher:
         async def handle_destroy_with_context(params: dict[str, Any]) -> dict[str, Any]:
             return await self._handle_destroy_agent(params, request_context)
 
+        async def handle_list_agents_with_context(
+            params: dict[str, Any],
+        ) -> dict[str, Any]:
+            return await self._handle_list_agents(params, request_context)
+
         async def handle_shutdown_with_context(params: dict[str, Any]) -> dict[str, Any]:
             return await self._handle_shutdown_server(params, request_context)
 
         handlers["create_agent"] = handle_create_with_context
         handlers["destroy_agent"] = handle_destroy_with_context
+        handlers["list_agents"] = handle_list_agents_with_context
         handlers["shutdown_server"] = handle_shutdown_with_context
         return await dispatch_request(request, handlers, "global method")
 
@@ -634,7 +657,11 @@ class GlobalDispatcher:
             "agent_id": agent_id,
         }
 
-    async def _handle_list_agents(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def _handle_list_agents(
+        self,
+        params: dict[str, Any],
+        request_context: RequestContext | None = None,
+    ) -> dict[str, Any]:
         """List all agents.
 
         Returns information about all active agents in the pool.
@@ -653,6 +680,32 @@ class GlobalDispatcher:
             EmptyParamsSchema.model_validate(params, strict=True)
         except PydanticValidationError as exc:
             raise InvalidParamsError("Invalid list_agents parameters") from exc
+
+        requester_id = None if request_context is None else request_context.requester_id
+        principal_id = requester_id or "external"
+        legacy_allowed = True
+        kernel_request = AuthorizationRequest(
+            action=AuthorizationAction.SESSION_READ,
+            resource=AuthorizationResource(
+                resource_type=AuthorizationResourceType.RPC,
+                identifier="list_agents",
+            ),
+            principal_id=principal_id,
+        )
+        kernel_decision = self._list_agents_authorization_kernel.authorize(kernel_request)
+        if kernel_decision.allowed != legacy_allowed:
+            logger.warning(
+                "List agents authorization shadow mismatch for requester=%s",
+                principal_id,
+                extra={
+                    "event": "list_agents_auth_shadow_mismatch",
+                    "requester_id": principal_id,
+                    "legacy_allowed": legacy_allowed,
+                    "legacy_reason": "list_agents_allowed",
+                    "kernel_allowed": kernel_decision.allowed,
+                    "kernel_reason": kernel_decision.reason,
+                },
+            )
 
         agents = self._pool.list()
 

@@ -257,6 +257,32 @@ class TestDirectAgentAPI:
 
         assert result == [{"agent_id": "a"}, {"agent_id": "b"}]
 
+    async def test_list_agents_forwards_requester_id(self, pool, global_dispatcher):
+        """list_agents() forwards requester_id to GlobalDispatcher."""
+        api = DirectAgentAPI(pool, global_dispatcher, requester_id="requester-1")
+        global_dispatcher.response = Response(
+            jsonrpc="2.0",
+            id=1,
+            result={"agents": []},
+        )
+
+        await api.list_agents()
+
+        assert global_dispatcher.requester_ids == ["requester-1"]
+
+    async def test_shutdown_server_forwards_requester_id(self, pool, global_dispatcher):
+        """shutdown_server() forwards requester_id to GlobalDispatcher."""
+        api = DirectAgentAPI(pool, global_dispatcher, requester_id="requester-1")
+        global_dispatcher.response = Response(
+            jsonrpc="2.0",
+            id=1,
+            result={"success": True, "message": "Server shutting down"},
+        )
+
+        await api.shutdown_server()
+
+        assert global_dispatcher.requester_ids == ["requester-1"]
+
     async def test_for_agent_returns_scoped_api(self, api, pool):
         """Test that for_agent() returns an AgentScopedAPI."""
         scoped = api.for_agent("test-agent")

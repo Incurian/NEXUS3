@@ -736,3 +736,22 @@ async def test_global_shutdown_server_ingress_wiring_rejects_extra_params() -> N
     assert shutdown_server_response.error is not None
     assert shutdown_server_response.error["code"] == -32602  # INVALID_PARAMS
     assert shutdown_server_response.error["message"] == "Invalid shutdown_server parameters"
+
+
+@pytest.mark.asyncio
+async def test_global_list_agents_ingress_wiring_rejects_extra_params() -> None:
+    dispatcher = GlobalDispatcher(_StubPool())
+
+    list_agents_response = await dispatcher.dispatch(
+        Request(
+            jsonrpc="2.0",
+            method="list_agents",
+            params={"unexpected": "value"},
+            id=1,
+        )
+    )
+
+    assert list_agents_response is not None
+    assert list_agents_response.error is not None
+    assert list_agents_response.error["code"] == -32602  # INVALID_PARAMS
+    assert list_agents_response.error["message"] == "Invalid list_agents parameters"

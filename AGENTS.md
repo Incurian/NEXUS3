@@ -363,6 +363,10 @@ Progress snapshot:
   - migrated residual dynamic top-level lines in `nexus3/cli/repl.py::main`, `nexus3/cli/repl.py::_run_with_reload`, and `nexus3/cli/serve.py::run_serve` to SafeSink-backed sanitization helpers.
   - preserved startup/error wording and flow while sanitizing dynamic command/path/message fields.
   - added focused serve sanitization regressions in `tests/unit/cli/test_serve_safe_sink.py` and extended `tests/unit/cli/test_repl_safe_sink.py`.
+- Completed: Plan G Phase 3 cleanup slice (SafeSink helper dedup):
+  - added shared `SafeSink.sanitize_print_value(...)` helper in `nexus3/display/safe_sink.py`.
+  - removed duplicate local sanitize-wrapper helpers in `nexus3/cli/serve.py` and `nexus3/mcp/error_formatter.py` by routing through shared SafeSink entrypoint.
+  - added focused helper regression in `tests/unit/display/test_safe_sink.py` and confirmed existing serve/MCP formatter suites remain green.
 - Completed: M1 Plan D grep migration slice routed fallback per-candidate authorization through `FilesystemAccessGateway` and added focused blocked/outside/symlink grep tests.
 - Completed: M1 Plan D tool migrations (`glob`, `outline`, `concat_files`, `grep`) to `FilesystemAccessGateway`; remaining Plan D work is consolidated regression/perf guard coverage.
 - Completed: M1 Plan D consolidated blocked-path/symlink regression coverage across migrated tool tests (`glob`, `outline`, `concat_files`, `grep`).
@@ -403,6 +407,11 @@ Progress snapshot:
   - added `shutdown_server` shadow authorization-kernel parity comparison in `nexus3/rpc/global_dispatcher.py` with request-context requester usage.
   - preserved legacy always-allow shutdown behavior and response/error semantics as authoritative.
   - added focused parity/mismatch regressions in `tests/unit/test_pool.py` and ingress guard coverage in `tests/unit/rpc/test_schema_ingress_wiring.py`.
+- Completed: M2 Plan A Phase 2+3 list-agents lifecycle shadow parity slice:
+  - added `list_agents` shadow authorization-kernel parity comparison in `nexus3/rpc/global_dispatcher.py` with request-context requester usage.
+  - added direct API requester propagation for `list_agents` and `shutdown_server` in `nexus3/rpc/agent_api.py` for parity telemetry consistency.
+  - preserved legacy always-allow list behavior and response semantics as authoritative.
+  - added focused parity/mismatch regressions in `tests/unit/test_pool.py`, `tests/unit/test_agent_api.py`, and ingress guard coverage in `tests/unit/rpc/test_schema_ingress_wiring.py`.
 - Completed: M2 Plan C Phase 3 execution-skill request-safety slice:
   - removed per-call mutable state from `bash_safe`, `shell_UNSAFE`, and `run_python`
   - refactored subprocess creation helpers to pass command/code as local parameters
@@ -418,9 +427,13 @@ Progress snapshot:
   - `.venv/bin/ruff check nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_pool.py tests/unit/test_rpc_dispatcher.py` passed.
   - `.venv/bin/mypy nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py` passed.
   - `.venv/bin/pytest -v tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_pool.py tests/unit/test_rpc_dispatcher.py` passed (`112 passed`).
+- Validation snapshot (2026-03-05, G/A cleanup + parity round):
+  - `.venv/bin/ruff check nexus3/cli/serve.py nexus3/display/safe_sink.py nexus3/mcp/error_formatter.py nexus3/rpc/agent_api.py nexus3/rpc/global_dispatcher.py tests/unit/display/test_safe_sink.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_agent_api.py tests/unit/test_pool.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/agent_api.py nexus3/rpc/global_dispatcher.py nexus3/display/safe_sink.py nexus3/mcp/error_formatter.py` passed.
+  - `.venv/bin/pytest -v tests/unit/display/test_safe_sink.py tests/unit/cli/test_serve_safe_sink.py tests/unit/mcp/test_error_formatter.py tests/unit/test_pool.py tests/unit/test_agent_api.py tests/unit/rpc/test_schema_ingress_wiring.py` passed (`178 passed`).
 - Next gate:
   - Plan H: target remaining behavior-sensitive compat branches and finalize strict-default ingress posture where safe.
-  - Plan G: continue redundant sanitization-callsite cleanup by consolidating duplicate formatter/escaping helpers into shared SafeSink entrypoints.
+  - Plan G: continue redundant sanitization-callsite cleanup by identifying any remaining fragmented formatter/sanitizer branches for SafeSink consolidation.
   - Plan A: continue adapter rollout into remaining lifecycle call sites and sequence duplicate authorization branch removal once shadow telemetry is stable.
 
 Resume-first checklist (post-compact):
@@ -481,6 +494,18 @@ Compact checkpoint (2026-03-05, architecture execution round 3):
 - Immediate resume targets:
   1. Plan H: remaining behavior-sensitive compat branches.
   2. Plan G: formatter/sanitization dedup cleanup.
+  3. Plan A: next lifecycle adapter parity slice before duplicate branch removal.
+
+Compact checkpoint (2026-03-05, architecture execution round 4):
+- Branch head at start of round: `6c66b85`; working tree now includes Plan G SafeSink dedup and Plan A list-agents parity slices.
+- New slices completed this round:
+  1. Plan G SafeSink helper dedup (`sanitize_print_value`) and local-wrapper removal in serve/MCP formatter paths.
+  2. Plan A `list_agents` lifecycle shadow parity + direct API requester propagation consistency.
+- Validation result for this round:
+  - integrated lint + mypy + pytest suites passed (`178 passed`).
+- Immediate resume targets:
+  1. Plan H: remaining behavior-sensitive compat branches.
+  2. Plan G: identify any remaining fragmented sanitizer/formatter call-site branches for consolidation.
   3. Plan A: next lifecycle adapter parity slice before duplicate branch removal.
 
 ## Source of Truth
