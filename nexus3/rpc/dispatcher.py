@@ -20,6 +20,7 @@ from nexus3.core.authorization_kernel import (
 )
 from nexus3.core.cancel import CancellationToken
 from nexus3.core.permissions import PermissionLevel
+from nexus3.core.request_context import RequestContext
 from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
 from nexus3.rpc.schemas import (
     CancelParamsSchema,
@@ -62,6 +63,45 @@ class _SendAuthorizationAdapter:
         return AuthorizationDecision.deny(request, reason="no_repl_for_yolo")
 
 
+class _ShutdownAuthorizationAdapter:
+    """Kernel adapter mirroring legacy dispatcher shutdown policy."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.SESSION_WRITE:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.RPC:
+            return None
+        if request.resource.identifier != "shutdown":
+            return None
+        return AuthorizationDecision.allow(request, reason="shutdown_allowed")
+
+
+class _CancelAuthorizationAdapter:
+    """Kernel adapter mirroring legacy dispatcher cancel policy."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.SESSION_WRITE:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.RPC:
+            return None
+        if request.resource.identifier != "cancel":
+            return None
+        return AuthorizationDecision.allow(request, reason="cancel_allowed")
+
+
+class _CompactAuthorizationAdapter:
+    """Kernel adapter mirroring legacy dispatcher compact policy."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.SESSION_WRITE:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.RPC:
+            return None
+        if request.resource.identifier != "compact":
+            return None
+        return AuthorizationDecision.allow(request, reason="compact_allowed")
+
+
 class Dispatcher:
     """Routes JSON-RPC requests to handler methods.
 
@@ -101,6 +141,18 @@ class Dispatcher:
             adapters=(_SendAuthorizationAdapter(),),
             default_allow=False,
         )
+        self._shutdown_authorization_kernel = AdapterAuthorizationKernel(
+            adapters=(_ShutdownAuthorizationAdapter(),),
+            default_allow=False,
+        )
+        self._cancel_authorization_kernel = AdapterAuthorizationKernel(
+            adapters=(_CancelAuthorizationAdapter(),),
+            default_allow=False,
+        )
+        self._compact_authorization_kernel = AdapterAuthorizationKernel(
+            adapters=(_CompactAuthorizationAdapter(),),
+            default_allow=False,
+        )
 
         # REPL hook: called when a non-REPL send triggers a turn
         self.on_incoming_turn: (
@@ -132,16 +184,44 @@ class Dispatcher:
         """
         self._should_shutdown = True
 
-    async def dispatch(self, request: Request) -> Response | None:
+    async def dispatch(
+        self,
+        request: Request,
+        requester_id: str | None = None,
+    ) -> Response | None:
         """Dispatch a request to the appropriate handler.
 
         Args:
             request: The parsed JSON-RPC request.
+            requester_id: Requesting agent identity when available.
 
         Returns:
             A Response object, or None for notifications (requests without id).
         """
-        return await dispatch_request(request, self._handlers, "method")
+        request_context = RequestContext(
+            requester_id=requester_id,
+            request_id=str(request.id) if request.id is not None else None,
+        )
+        handlers = dict(self._handlers)
+
+        async def handle_send_with_context(params: dict[str, Any]) -> dict[str, Any]:
+            return await self._handle_send(params, request_context)
+
+        async def handle_shutdown_with_context(params: dict[str, Any]) -> dict[str, Any]:
+            return await self._handle_shutdown(params, request_context)
+
+        async def handle_cancel_with_context(params: dict[str, Any]) -> dict[str, Any]:
+            return await self._handle_cancel(params, request_context)
+
+        async def handle_compact_with_context(params: dict[str, Any]) -> dict[str, Any]:
+            return await self._handle_compact(params, request_context)
+
+        handlers["send"] = handle_send_with_context
+        handlers["shutdown"] = handle_shutdown_with_context
+        handlers["cancel"] = handle_cancel_with_context
+        handlers["compact"] = handle_compact_with_context
+
+        return await dispatch_request(request, handlers, "method")
 
     async def _notify_incoming(self, payload: dict[str, Any]) -> None:
         """Notify the REPL about an incoming turn (non-REPL source).
@@ -157,7 +237,11 @@ class Dispatcher:
         except Exception:
             logger.debug("incoming-turn hook failed", exc_info=True)
 
-    async def _handle_send(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def _handle_send(
+        self,
+        params: dict[str, Any],
+        request_context: RequestContext | None = None,
+    ) -> dict[str, Any]:
         """Handle the 'send' method.
 
         Sends a message to the LLM and returns the full response.
@@ -227,9 +311,13 @@ class Dispatcher:
                 else ("repl_connected" if repl_connected else "no_repl_for_yolo")
             )
             principal_id = (
-                str(validated.source_agent_id)
-                if validated.source_agent_id is not None
-                else (validated.source or "rpc")
+                request_context.requester_id
+                if request_context is not None and request_context.requester_id is not None
+                else (
+                    str(validated.source_agent_id)
+                    if validated.source_agent_id is not None
+                    else (validated.source or "rpc")
+                )
             )
             kernel_request = AuthorizationRequest(
                 action=AuthorizationAction.AGENT_SEND,
@@ -370,7 +458,11 @@ class Dispatcher:
         finally:
             self._active_requests.pop(request_id, None)
 
-    async def _handle_shutdown(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def _handle_shutdown(
+        self,
+        params: dict[str, Any],
+        request_context: RequestContext | None = None,
+    ) -> dict[str, Any]:
         """Handle the 'shutdown' method.
 
         Sets the shutdown flag to signal the main loop to exit.
@@ -385,6 +477,37 @@ class Dispatcher:
             EmptyParamsSchema.model_validate(params, strict=True)
         except PydanticValidationError as exc:
             raise InvalidParamsError("Invalid shutdown parameters") from exc
+
+        principal_id = (
+            request_context.requester_id
+            if request_context is not None and request_context.requester_id is not None
+            else "rpc"
+        )
+        legacy_allowed = True
+        kernel_request = AuthorizationRequest(
+            action=AuthorizationAction.SESSION_WRITE,
+            resource=AuthorizationResource(
+                resource_type=AuthorizationResourceType.RPC,
+                identifier="shutdown",
+            ),
+            principal_id=principal_id,
+        )
+        kernel_decision = self._shutdown_authorization_kernel.authorize(kernel_request)
+        if kernel_decision.allowed != legacy_allowed:
+            logger.warning(
+                "Shutdown authorization shadow mismatch for target=%s requester=%s",
+                self._agent_id,
+                principal_id,
+                extra={
+                    "event": "shutdown_auth_shadow_mismatch",
+                    "target_agent_id": self._agent_id,
+                    "requester_id": principal_id,
+                    "legacy_allowed": legacy_allowed,
+                    "legacy_reason": "shutdown_allowed",
+                    "kernel_allowed": kernel_decision.allowed,
+                    "kernel_reason": kernel_decision.reason,
+                },
+            )
 
         self._should_shutdown = True
         return {"success": True}
@@ -516,7 +639,11 @@ class Dispatcher:
             "messages": serialized,
         }
 
-    async def _handle_cancel(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def _handle_cancel(
+        self,
+        params: dict[str, Any],
+        request_context: RequestContext | None = None,
+    ) -> dict[str, Any]:
         """Handle the 'cancel' method.
 
         Cancels an in-progress request by its request_id.
@@ -552,6 +679,37 @@ class Dispatcher:
                     raise InvalidParamsError("request_id must be string or integer") from exc
             raise InvalidParamsError("Invalid request_id") from exc
 
+        principal_id = (
+            request_context.requester_id
+            if request_context is not None and request_context.requester_id is not None
+            else "rpc"
+        )
+        legacy_allowed = True
+        kernel_request = AuthorizationRequest(
+            action=AuthorizationAction.SESSION_WRITE,
+            resource=AuthorizationResource(
+                resource_type=AuthorizationResourceType.RPC,
+                identifier="cancel",
+            ),
+            principal_id=principal_id,
+        )
+        kernel_decision = self._cancel_authorization_kernel.authorize(kernel_request)
+        if kernel_decision.allowed != legacy_allowed:
+            logger.warning(
+                "Cancel authorization shadow mismatch for target=%s requester=%s",
+                self._agent_id,
+                principal_id,
+                extra={
+                    "event": "cancel_auth_shadow_mismatch",
+                    "target_agent_id": self._agent_id,
+                    "requester_id": principal_id,
+                    "legacy_allowed": legacy_allowed,
+                    "legacy_reason": "cancel_allowed",
+                    "kernel_allowed": kernel_decision.allowed,
+                    "kernel_reason": kernel_decision.reason,
+                },
+            )
+
         request_id = validated.request_id
         token = self._active_requests.get(request_id)
         if token:
@@ -559,7 +717,11 @@ class Dispatcher:
             return {"cancelled": True, "request_id": request_id}
         return {"cancelled": False, "request_id": request_id, "reason": "not_found_or_completed"}
 
-    async def _handle_compact(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def _handle_compact(
+        self,
+        params: dict[str, Any],
+        request_context: RequestContext | None = None,
+    ) -> dict[str, Any]:
         """Handle the 'compact' method.
 
         Forces context compaction/summarization to reclaim token space.
@@ -586,6 +748,37 @@ class Dispatcher:
             if errors:
                 raise InvalidParamsError(str(errors[0].get("msg", "Invalid force value"))) from exc
             raise InvalidParamsError("Invalid compact parameters") from exc
+
+        principal_id = (
+            request_context.requester_id
+            if request_context is not None and request_context.requester_id is not None
+            else "rpc"
+        )
+        legacy_allowed = True
+        kernel_request = AuthorizationRequest(
+            action=AuthorizationAction.SESSION_WRITE,
+            resource=AuthorizationResource(
+                resource_type=AuthorizationResourceType.RPC,
+                identifier="compact",
+            ),
+            principal_id=principal_id,
+        )
+        kernel_decision = self._compact_authorization_kernel.authorize(kernel_request)
+        if kernel_decision.allowed != legacy_allowed:
+            logger.warning(
+                "Compact authorization shadow mismatch for target=%s requester=%s",
+                self._agent_id,
+                principal_id,
+                extra={
+                    "event": "compact_auth_shadow_mismatch",
+                    "target_agent_id": self._agent_id,
+                    "requester_id": principal_id,
+                    "legacy_allowed": legacy_allowed,
+                    "legacy_reason": "compact_allowed",
+                    "kernel_allowed": kernel_decision.allowed,
+                    "kernel_reason": kernel_decision.reason,
+                },
+            )
 
         force = validated.force
 

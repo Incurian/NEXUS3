@@ -536,6 +536,21 @@ Compact checkpoint (2026-03-06, architecture execution round 5):
   2. Plan G: continue sanitization/formatter consolidation from remaining REPL and display fragmented call sites.
   3. Plan A: add next agent-scoped lifecycle shadow parity slice (`shutdown`/`cancel`/`compact`) with requester-context hardening.
 
+Compact checkpoint (2026-03-06, architecture execution round 6):
+- Branch head at start of round: `a1362a5`; working tree now includes parallel Plan G and Plan A follow-up slices.
+- New slices completed this round:
+  1. Plan G consolidated `nexus3/mcp/skill_adapter.py` result sanitization onto `SafeSink` shared entrypoint and added focused adapter sanitization regressions.
+  2. Plan A added agent-scoped lifecycle shadow parity in `nexus3/rpc/dispatcher.py` for `shutdown`/`cancel`/`compact` with legacy behavior still authoritative.
+  3. Plan A propagated trusted requester context through agent-scoped API dispatch (`nexus3/rpc/agent_api.py`) and updated send-shadow principal selection to prefer trusted requester identity when available.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/mcp/skill_adapter.py nexus3/rpc/dispatcher.py nexus3/rpc/agent_api.py tests/unit/mcp/test_skill_adapter.py tests/unit/test_rpc_dispatcher.py tests/unit/test_agent_api.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/dispatcher.py nexus3/rpc/agent_api.py nexus3/mcp/skill_adapter.py` passed.
+  - `.venv/bin/pytest -v tests/unit/mcp/test_skill_adapter.py tests/unit/test_rpc_dispatcher.py tests/unit/test_agent_api.py` passed (`42 passed`).
+- Immediate resume targets:
+  1. Plan H: tighten remaining behavior-sensitive compat ingress in dispatcher (`send`, `cancel`, `compact`) and evaluate strict flips with legacy error wording preservation.
+  2. Plan G: continue remaining fragmented sanitizer consolidation in display/REPL residual call sites (`spinner.py`, `streaming.py`, and any remaining direct dynamic prints).
+  3. Plan A: identify first safe duplicate authorization branch removal candidate after parity telemetry stabilization.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.

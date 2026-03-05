@@ -102,6 +102,10 @@ Phases:
 - Added shared `SafeSink.sanitize_print_value(...)` entrypoint and removed duplicated local sanitization wrappers in `nexus3/cli/serve.py` and `nexus3/mcp/error_formatter.py`.
 - Added focused helper coverage in `tests/unit/display/test_safe_sink.py` and validated existing `serve` + MCP formatting regressions remain green.
 - Validation: `.venv/bin/ruff check nexus3/display/safe_sink.py nexus3/cli/serve.py nexus3/mcp/error_formatter.py tests/unit/display/test_safe_sink.py tests/unit/cli/test_serve_safe_sink.py tests/unit/mcp/test_error_formatter.py` and `.venv/bin/pytest -v tests/unit/display/test_safe_sink.py tests/unit/cli/test_serve_safe_sink.py tests/unit/mcp/test_error_formatter.py` passed.
+- 2026-03-06: Phase 3 cleanup slice completed (MCP skill adapter sink consolidation).
+- Migrated `nexus3/mcp/skill_adapter.py` dynamic tool result sanitization from direct core helper usage to shared `SafeSink` sanitizer entrypoint to reduce fragmented boundary patterns.
+- Added focused adapter sanitization regressions in `tests/unit/mcp/test_skill_adapter.py` for success/error payload escaping (ANSI + Rich markup).
+- Validation: `.venv/bin/ruff check nexus3/mcp/skill_adapter.py tests/unit/mcp/test_skill_adapter.py`, `.venv/bin/mypy nexus3/mcp/skill_adapter.py`, and `.venv/bin/pytest -v tests/unit/mcp/test_skill_adapter.py` passed.
 
 ## Testing Strategy
 
@@ -124,6 +128,7 @@ Phases:
 - [ ] Remove redundant/fragmented sanitization call sites.
   - [x] Removed redundant ad hoc escaping in `nexus3/cli/confirmation_ui.py::confirm_tool_action` during SafeSink migration.
   - [x] Collapsed duplicate sanitize-wrapper branches in `nexus3/cli/serve.py` and `nexus3/mcp/error_formatter.py` onto shared `SafeSink.sanitize_print_value(...)`.
+  - [x] Consolidated MCP skill adapter result sanitization in `nexus3/mcp/skill_adapter.py` to `SafeSink` shared sanitizer entrypoint.
   - Resume target: continue collapsing any remaining fragmented formatter/sanitizer branches into shared SafeSink entrypoints.
 
 ## Documentation Updates

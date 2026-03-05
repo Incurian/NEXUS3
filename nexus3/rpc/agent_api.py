@@ -65,15 +65,22 @@ class AgentScopedAPI:
     HTTP for in-process communication.
     """
 
-    def __init__(self, pool: AgentPool, agent_id: str) -> None:
+    def __init__(
+        self,
+        pool: AgentPool,
+        agent_id: str,
+        requester_id: str | None = None,
+    ) -> None:
         """Initialize agent-scoped API.
 
         Args:
             pool: The AgentPool to look up agents.
             agent_id: The target agent's ID.
+            requester_id: Trusted caller identity for agent-scoped authorization.
         """
         self._pool = pool
         self._agent_id = agent_id
+        self._requester_id = requester_id
 
     def _get_dispatcher(self) -> Dispatcher:
         """Get the dispatcher for this agent.
@@ -124,7 +131,7 @@ class AgentScopedAPI:
             params=params,
             id=1,
         )
-        response = await dispatcher.dispatch(request)
+        response = await dispatcher.dispatch(request, self._requester_id)
         return _extract_result(response)
 
     async def cancel(self, request_id: str | int | None = None) -> dict[str, Any]:
@@ -144,7 +151,7 @@ class AgentScopedAPI:
             params=params,
             id=1,
         )
-        response = await dispatcher.dispatch(request)
+        response = await dispatcher.dispatch(request, self._requester_id)
         return _extract_result(response)
 
     async def get_tokens(self) -> dict[str, Any]:
@@ -160,7 +167,7 @@ class AgentScopedAPI:
             params=None,
             id=1,
         )
-        response = await dispatcher.dispatch(request)
+        response = await dispatcher.dispatch(request, self._requester_id)
         return _extract_result(response)
 
     async def get_context(self) -> dict[str, Any]:
@@ -176,7 +183,7 @@ class AgentScopedAPI:
             params=None,
             id=1,
         )
-        response = await dispatcher.dispatch(request)
+        response = await dispatcher.dispatch(request, self._requester_id)
         return _extract_result(response)
 
     async def shutdown(self) -> dict[str, Any]:
@@ -192,7 +199,7 @@ class AgentScopedAPI:
             params=None,
             id=1,
         )
-        response = await dispatcher.dispatch(request)
+        response = await dispatcher.dispatch(request, self._requester_id)
         return _extract_result(response)
 
 
@@ -234,7 +241,7 @@ class DirectAgentAPI:
         Returns:
             AgentScopedAPI for the specified agent.
         """
-        return AgentScopedAPI(self._pool, agent_id)
+        return AgentScopedAPI(self._pool, agent_id, requester_id=self._requester_id)
 
     async def create_agent(
         self,

@@ -22,11 +22,15 @@ class MockDispatcher:
 
     def __init__(self):
         self.calls: list[Request] = []
+        self.requester_ids: list[str | None] = []
         self.response: Response | None = None
 
-    async def dispatch(self, request: Request) -> Response | None:
+    async def dispatch(
+        self, request: Request, requester_id: str | None = None
+    ) -> Response | None:
         """Record the request and return the configured response."""
         self.calls.append(request)
+        self.requester_ids.append(requester_id)
         return self.response
 
 
@@ -178,6 +182,19 @@ class TestAgentScopedAPI:
         assert call.method == "cancel"
         assert call.params == {"request_id": 0}
 
+    async def test_send_forwards_requester_id(self, pool):
+        """AgentScopedAPI forwards requester_id to dispatcher."""
+        scoped_api = AgentScopedAPI(pool, "test-agent", requester_id="caller-1")
+        pool.agents["test-agent"].dispatcher.response = Response(
+            jsonrpc="2.0",
+            id=1,
+            result={"content": "ok", "request_id": "r1"},
+        )
+
+        await scoped_api.send("Hello")
+
+        assert pool.agents["test-agent"].dispatcher.requester_ids == ["caller-1"]
+
 
 # === DirectAgentAPI Tests ===
 
@@ -289,6 +306,14 @@ class TestDirectAgentAPI:
 
         assert isinstance(scoped, AgentScopedAPI)
         assert scoped._agent_id == "test-agent"
+
+    async def test_for_agent_inherits_requester_id(self, pool, global_dispatcher):
+        """for_agent() propagates DirectAgentAPI requester identity."""
+        api = DirectAgentAPI(pool, global_dispatcher, requester_id="caller-1")
+
+        scoped = api.for_agent("test-agent")
+
+        assert scoped._requester_id == "caller-1"
 
 
 # === ClientAdapter Tests ===

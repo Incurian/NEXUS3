@@ -393,6 +393,173 @@ class TestSendAuthorizationShadowParity:
         assert record.legacy_allowed is False
         assert record.kernel_allowed is True
 
+    @pytest.mark.asyncio
+    async def test_send_shadow_uses_trusted_requester_context_for_principal(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Trusted requester context takes precedence over payload source_agent_id."""
+        session = MockSession(chunks=["unused"])
+        permissions = MagicMock()
+        permissions.effective_policy.level = PermissionLevel.YOLO
+        services = MagicMock()
+        services.get.side_effect = lambda key, default=None: (
+            permissions if key == "permissions" else default
+        )
+        session._services = services
+        pool = MagicMock()
+        pool.is_repl_connected.return_value = False
+        dispatcher = Dispatcher(session, agent_id="target-agent", pool=pool)
+
+        class _ForceAllowKernel:
+            def authorize(self, request: Any) -> AuthorizationDecision:
+                return AuthorizationDecision.allow(request, reason="forced_allow")
+
+        dispatcher._send_authorization_kernel = _ForceAllowKernel()
+
+        request = Request(
+            jsonrpc="2.0",
+            method="send",
+            params={"content": "hello", "source_agent_id": "spoofed-caller"},
+            id=1,
+        )
+        with caplog.at_level(logging.WARNING, logger="nexus3.rpc.dispatcher"):
+            response = await dispatcher.dispatch(request, requester_id="trusted-caller")
+
+        assert response is not None
+        assert response.error is not None
+        assert response.error["message"] == "Cannot send to YOLO agent - no REPL connected"
+
+        records = [
+            rec for rec in caplog.records
+            if getattr(rec, "event", None) == "send_auth_shadow_mismatch"
+        ]
+        assert len(records) == 1
+        record = records[0]
+        assert record.requester_id == "trusted-caller"
+
+
+class TestAgentLifecycleAuthorizationShadowParity:
+    """Tests for shutdown/cancel/compact auth shadow parity."""
+
+    @pytest.mark.asyncio
+    async def test_shutdown_auth_shadow_mismatch_warns_but_legacy_path_stays_authoritative(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Mismatch warning is emitted while legacy shutdown success remains authoritative."""
+        session = MockSession(chunks=["unused"])
+        dispatcher = Dispatcher(session, agent_id="target-agent")
+
+        class _ForceDenyKernel:
+            def authorize(self, request: Any) -> AuthorizationDecision:
+                return AuthorizationDecision.deny(request, reason="forced_deny")
+
+        dispatcher._shutdown_authorization_kernel = _ForceDenyKernel()
+
+        request = Request(jsonrpc="2.0", method="shutdown", params={}, id=1)
+        with caplog.at_level(logging.WARNING, logger="nexus3.rpc.dispatcher"):
+            response = await dispatcher.dispatch(request, requester_id="caller-1")
+
+        assert response is not None
+        assert response.error is None
+        assert response.result == {"success": True}
+        assert dispatcher.should_shutdown is True
+
+        records = [
+            rec for rec in caplog.records
+            if getattr(rec, "event", None) == "shutdown_auth_shadow_mismatch"
+        ]
+        assert len(records) == 1
+        assert records[0].requester_id == "caller-1"
+        assert records[0].legacy_allowed is True
+        assert records[0].kernel_allowed is False
+
+    @pytest.mark.asyncio
+    async def test_cancel_auth_shadow_mismatch_warns_but_legacy_path_stays_authoritative(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Mismatch warning is emitted while legacy cancel result remains authoritative."""
+        session = MockSession(chunks=["unused"])
+        dispatcher = Dispatcher(session, agent_id="target-agent")
+
+        class _ForceDenyKernel:
+            def authorize(self, request: Any) -> AuthorizationDecision:
+                return AuthorizationDecision.deny(request, reason="forced_deny")
+
+        dispatcher._cancel_authorization_kernel = _ForceDenyKernel()
+
+        request = Request(
+            jsonrpc="2.0",
+            method="cancel",
+            params={"request_id": "does-not-exist"},
+            id=1,
+        )
+        with caplog.at_level(logging.WARNING, logger="nexus3.rpc.dispatcher"):
+            response = await dispatcher.dispatch(request, requester_id="caller-2")
+
+        assert response is not None
+        assert response.error is None
+        assert response.result is not None
+        assert response.result["cancelled"] is False
+        assert response.result["reason"] == "not_found_or_completed"
+
+        records = [
+            rec for rec in caplog.records
+            if getattr(rec, "event", None) == "cancel_auth_shadow_mismatch"
+        ]
+        assert len(records) == 1
+        assert records[0].requester_id == "caller-2"
+        assert records[0].legacy_allowed is True
+        assert records[0].kernel_allowed is False
+
+    @pytest.mark.asyncio
+    async def test_compact_auth_shadow_mismatch_warns_but_legacy_path_stays_authoritative(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Mismatch warning is emitted while legacy compact path remains authoritative."""
+
+        class CompactSession(MockSession):
+            async def compact(self, force: bool = True) -> Any:
+                return type(
+                    "CompactResult",
+                    (),
+                    {"original_token_count": 20, "new_token_count": 8},
+                )()
+
+        session = CompactSession(chunks=["unused"])
+        dispatcher = Dispatcher(session, agent_id="target-agent")
+
+        class _ForceDenyKernel:
+            def authorize(self, request: Any) -> AuthorizationDecision:
+                return AuthorizationDecision.deny(request, reason="forced_deny")
+
+        dispatcher._compact_authorization_kernel = _ForceDenyKernel()
+
+        request = Request(jsonrpc="2.0", method="compact", params={"force": True}, id=1)
+        with caplog.at_level(logging.WARNING, logger="nexus3.rpc.dispatcher"):
+            response = await dispatcher.dispatch(request, requester_id="caller-3")
+
+        assert response is not None
+        assert response.error is None
+        assert response.result == {
+            "compacted": True,
+            "tokens_before": 20,
+            "tokens_after": 8,
+            "tokens_saved": 12,
+        }
+
+        records = [
+            rec for rec in caplog.records
+            if getattr(rec, "event", None) == "compact_auth_shadow_mismatch"
+        ]
+        assert len(records) == 1
+        assert records[0].requester_id == "caller-3"
+        assert records[0].legacy_allowed is True
+        assert records[0].kernel_allowed is False
+
 
 class TestNoContextManagerErrors:
     """Tests for get_tokens/get_context without context manager."""
