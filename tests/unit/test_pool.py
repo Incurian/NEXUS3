@@ -31,7 +31,7 @@ from nexus3.core.permissions import (
 )
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
 from nexus3.rpc.http import _extract_agent_id
-from nexus3.rpc.pool import AgentConfig, AgentPool, SharedComponents
+from nexus3.rpc.pool import AgentConfig, AgentPool, AuthorizationError, SharedComponents
 from nexus3.rpc.types import Request
 
 # -----------------------------------------------------------------------------
@@ -268,6 +268,83 @@ class TestAgentPool:
 
         result = await pool.destroy("nonexistent")
         assert result is False
+
+    @pytest.mark.asyncio
+    async def test_destroy_self_requester_allowed(self, tmp_path):
+        """destroy() allows self-destruction when requester matches target."""
+        shared = create_mock_shared_components(tmp_path)
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            await pool.create(agent_id="self-agent")
+
+            result = await pool.destroy("self-agent", requester_id="self-agent")
+
+            assert result is True
+            assert "self-agent" not in pool
+
+    @pytest.mark.asyncio
+    async def test_destroy_parent_requester_allowed(self, tmp_path):
+        """destroy() allows a parent requester to destroy its child."""
+        shared = create_mock_shared_components(tmp_path)
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            await pool.create(agent_id="parent-agent")
+            child = await pool.create(agent_id="child-agent")
+            child_permissions = child.services.get("permissions")
+            assert child_permissions is not None
+            child_permissions.parent_agent_id = "parent-agent"
+
+            result = await pool.destroy("child-agent", requester_id="parent-agent")
+
+            assert result is True
+            assert "child-agent" not in pool
+
+    @pytest.mark.asyncio
+    async def test_destroy_unauthorized_requester_denied_fail_closed(self, tmp_path):
+        """destroy() denies unrelated requesters and leaves target intact."""
+        shared = create_mock_shared_components(tmp_path)
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            await pool.create(agent_id="target-agent")
+            await pool.create(agent_id="other-agent")
+
+            with pytest.raises(AuthorizationError) as exc_info:
+                await pool.destroy("target-agent", requester_id="other-agent")
+
+            assert "not authorized to destroy" in str(exc_info.value)
+            assert "target-agent" in pool
+
+    @pytest.mark.asyncio
+    async def test_destroy_forced_kernel_deny_is_authoritative(self, tmp_path):
+        """destroy() fails closed when kernel denies, even for self-requesters."""
+        shared = create_mock_shared_components(tmp_path)
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            await pool.create(agent_id="self-agent")
+            kernel_request = AuthorizationRequest(
+                action=AuthorizationAction.AGENT_DESTROY,
+                resource=AuthorizationResource(
+                    resource_type=AuthorizationResourceType.AGENT,
+                    identifier="self-agent",
+                ),
+                principal_id="self-agent",
+            )
+            pool._destroy_authorization_kernel.authorize = MagicMock(
+                return_value=AuthorizationDecision.deny(
+                    kernel_request,
+                    reason="forced_deny_for_test",
+                )
+            )
+
+            with pytest.raises(AuthorizationError) as exc_info:
+                await pool.destroy("self-agent", requester_id="self-agent")
+
+            assert "not authorized to destroy" in str(exc_info.value)
+            assert "self-agent" in pool
 
     @pytest.mark.asyncio
     async def test_list_returns_agent_info_dicts(self, tmp_path):

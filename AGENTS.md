@@ -624,6 +624,21 @@ Compact checkpoint (2026-03-06, architecture execution round 11):
   2. Plan G: continue residual dynamic REPL print sweep and minor CLI consistency consolidation.
   3. Plan H: audit for any remaining compatibility-only protocol/schema behaviors and either retire or document them.
 
+Compact checkpoint (2026-03-06, architecture execution round 12):
+- Branch head at start of round: `9a9b073`; working tree now includes Plan A `AgentPool.destroy` duplicate-branch removal.
+- New slice completed this round:
+  1. Plan A converted destroy authorization in `nexus3/rpc/pool.py` from shadow parity to kernel-authoritative enforcement.
+  2. Preserved existing user-facing `AuthorizationError` wording while removing legacy shadow-only branch logic.
+  3. Added focused destroy authorization coverage in `tests/unit/test_pool.py` (self allow, parent allow, unauthorized deny, forced kernel deny authoritative behavior).
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/rpc/pool.py tests/unit/test_pool.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/pool.py` passed.
+  - `.venv/bin/pytest -v tests/unit/test_pool.py` passed (`59 passed`).
+- Immediate resume targets:
+  1. Plan A: evaluate remaining duplicate authorization branches in session enforcer policy checks for next safe kernel-authoritative flip.
+  2. Plan G: continue residual dynamic REPL print sweep and minor CLI consistency consolidation.
+  3. Plan H: audit for any remaining compatibility-only protocol/schema behaviors and either retire or document them.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.

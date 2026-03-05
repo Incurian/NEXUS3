@@ -892,7 +892,7 @@ class AgentPool:
         parent_agent_id: str | None = None,
     ) -> None:
         """Compare legacy create-ceiling checks against kernel shadow decisions."""
-        kernel_context: dict[str, str | int | bool] = {
+        kernel_context: dict[str, str | int | float | bool | None] = {
             "check_stage": check_stage,
             "parent_depth": parent_depth,
             "max_depth": MAX_AGENT_DEPTH,
@@ -1321,25 +1321,6 @@ class AgentPool:
             if not admin_override and requester_id is not None:
                 # Get the target agent's permissions to check parent_agent_id
                 target_permissions: AgentPermissions | None = agent.services.get("permissions")
-
-                # Legacy decision (enforced): self-destroy or direct parent destroy.
-                legacy_allowed = (
-                    requester_id == agent_id
-                    or (
-                        target_permissions is not None
-                        and target_permissions.parent_agent_id == requester_id
-                    )
-                )
-                legacy_reason = "self_destroy" if requester_id == agent_id else (
-                    "parent_destroy"
-                    if (
-                        target_permissions is not None
-                        and target_permissions.parent_agent_id == requester_id
-                    )
-                    else "not_parent_or_self"
-                )
-
-                # Kernel decision (shadow only): compare parity, do not enforce yet.
                 kernel_request = AuthorizationRequest(
                     action=AuthorizationAction.AGENT_DESTROY,
                     resource=AuthorizationResource(
@@ -1356,23 +1337,7 @@ class AgentPool:
                     },
                 )
                 kernel_decision = self._destroy_authorization_kernel.authorize(kernel_request)
-                if kernel_decision.allowed != legacy_allowed:
-                    logger.warning(
-                        "Destroy authorization shadow mismatch for target=%s requester=%s",
-                        agent_id,
-                        requester_id,
-                        extra={
-                            "event": "destroy_auth_shadow_mismatch",
-                            "target_agent_id": agent_id,
-                            "requester_id": requester_id,
-                            "legacy_allowed": legacy_allowed,
-                            "legacy_reason": legacy_reason,
-                            "kernel_allowed": kernel_decision.allowed,
-                            "kernel_reason": kernel_decision.reason,
-                        },
-                    )
-
-                if not legacy_allowed:
+                if not kernel_decision.allowed:
                     raise AuthorizationError(
                         f"Agent '{requester_id}' is not authorized to destroy '{agent_id}'"
                     )
