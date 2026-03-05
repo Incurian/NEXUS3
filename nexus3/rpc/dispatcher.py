@@ -635,7 +635,7 @@ class Dispatcher:
         try:
             validated = CancelParamsSchema.model_validate(
                 params,
-                strict=False,
+                strict=True,
             )
         except PydanticValidationError as exc:
             errors = exc.errors()

@@ -714,6 +714,21 @@ Compact checkpoint (2026-03-06, architecture execution round 16):
   2. Plan H: evaluate strict-value flips for behavior-sensitive handlers still using `strict=False` (`send`, `cancel`, `compact`, `create_agent`) while preserving legacy error wording.
   3. Plan H: decide whether to enforce strict typed `error` object shape in `rpc/protocol.py::parse_response` using `RpcErrorObjectSchema`.
 
+Compact checkpoint (2026-03-06, architecture execution round 17):
+- Branch head at start of round: `e24a164`; working tree now includes a focused Plan H strict-value ingress follow-up.
+- New slice completed this round:
+  1. Plan H tightened `rpc/dispatcher.py::_handle_cancel` from compat-style value coercion (`strict=False`) to strict-value schema validation (`strict=True`).
+  2. Preserved existing invalid-params wording semantics for missing/malformed `request_id` and lifecycle authorization deny wording.
+  3. Extended focused ingress regressions in `tests/unit/rpc/test_schema_ingress_wiring.py` to assert float `request_id` rejection and integer `request_id` happy-path behavior.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/rpc/dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/dispatcher.py` passed.
+  - `.venv/bin/pytest -v tests/unit/rpc/test_schema_ingress_wiring.py` passed (`56 passed`).
+- Immediate resume targets:
+  1. Plan H: evaluate next strict-value flip candidate (`send` or `compact`) with legacy wording preservation.
+  2. Plan H: assess `rpc/protocol.py::parse_response` strict typed `error` object enforcement via `RpcErrorObjectSchema`.
+  3. Plan A: continue duplicate-authorization-branch removal in `rpc/pool.py::_create_unlocked` (create authorization still legacy-authoritative).
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.

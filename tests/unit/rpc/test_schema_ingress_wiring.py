@@ -630,7 +630,7 @@ async def test_dispatcher_cancel_schema_validation_preserves_missing_error_style
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("request_id", [True, {"bad": "shape"}])
+@pytest.mark.parametrize("request_id", [True, 1.0, {"bad": "shape"}])
 async def test_dispatcher_cancel_schema_validation_rejects_malformed_request_id_type(
     request_id: object,
 ) -> None:
@@ -647,6 +647,26 @@ async def test_dispatcher_cancel_schema_validation_rejects_malformed_request_id_
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
     assert response.error["message"] == "request_id must be string or integer"
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_cancel_schema_validation_accepts_integer_request_id_happy_path() -> None:
+    dispatcher = Dispatcher(_StubSession(), context=None, agent_id="agent-1")
+    token = CancellationToken()
+    dispatcher._active_requests[7] = token
+
+    request = Request(
+        jsonrpc="2.0",
+        method="cancel",
+        params={"request_id": 7},
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is None
+    assert response.result == {"cancelled": True, "request_id": 7}
+    assert token.is_cancelled is True
 
 
 @pytest.mark.asyncio
