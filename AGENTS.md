@@ -508,6 +508,21 @@ Compact checkpoint (2026-03-05, architecture execution round 4):
   2. Plan G: identify any remaining fragmented sanitizer/formatter call-site branches for consolidation.
   3. Plan A: next lifecycle adapter parity slice before duplicate branch removal.
 
+Compact checkpoint (2026-03-05, pre-compact handover):
+- Branch head at handover: `026e9f3`.
+- Working tree status: clean tracked files; ignore unrelated existing untracked paths (`docs/plans/DOUBLE-SPINNER-FIX-PLAN.md`, `editors/`, `err/`).
+- Latest validated state:
+  - Plan H strict ingress slices applied through strict no-arg handler flips.
+  - Plan G dedup slice applied (`SafeSink.sanitize_print_value`) with serve/MCP formatter wrapper cleanup.
+  - Plan A parity slices applied through `shutdown_server` and `list_agents` lifecycle shadow coverage.
+  - Latest integrated validation suite passed (`178 passed`) with ruff+mypy green.
+- Resume order after compact:
+  1. Plan H: identify and tighten remaining behavior-sensitive compatibility branches (if any) and confirm strict-default posture completeness.
+  2. Plan G: audit for remaining fragmented sanitization/formatter call sites and consolidate to shared SafeSink entrypoints.
+  3. Plan A: select next lifecycle parity adapter slice, then begin planning/sequence for duplicate authorization branch removal.
+- SOP reminder:
+  - Continue checklist-driven execution and update both relevant plan docs and this `AGENTS.md` status/checkpoint block in the same session before each commit.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.
