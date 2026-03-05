@@ -232,10 +232,10 @@ Immediate tasks:
 - Plan F Phase 6 is committed as `195ab86` (`plan f phase 6: default patch skill to byte_strict`).
 - Plan F Phase 7 is committed as `6e946cf` (`plan f phase 7: retire patch legacy runtime path`).
 - Plan E Phase 1 is committed as `e9d6c3e` (`plan e phase 1: add context compiler ir foundation`).
-- Plan E Phase 2 provider/session integration is implemented in working tree
-  (pending commit in current execution round).
-- Next target after Phase 2 commit: carry remaining Plan E graph/compaction
-  slices into M4 backlog window (Phases 3-4).
+- Plan E Phase 2 is committed as `e3cd304`
+  (`plan e phase 2: integrate compiler into session and providers`).
+- Next target: carry remaining Plan E graph/compaction slices into M4 backlog
+  window (Phases 3-4), unless milestone scope is explicitly expanded.
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -243,6 +243,7 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `e3cd304` plan e phase 2: integrate compiler into session and providers
 - `e9d6c3e` plan e phase 1: add context compiler ir foundation
 - `6e946cf` plan f phase 7: retire patch legacy runtime path
 - `78ef205` rpc/protocol: wire parse_request to request schema ingress
@@ -273,7 +274,7 @@ Progress snapshot:
   - added [ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md)
   - updated [ARCH-MILESTONE-SCHEDULE-2026-03-02.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md) with explicit backlog dependency/exit gates
   - updated [docs/plans/README.md](/home/inc/repos/NEXUS3/docs/plans/README.md) follow-on index section
-- Completed (working tree, 2026-03-05): Plan E Phase 2 provider/session integration:
+- Completed (2026-03-05): Plan E Phase 2 provider/session integration (`e3cd304`):
   - migrated `Session.send()`/`Session.run_turn()` pre-user preflight repair
     path to compiler-backed normalization (`compile_context_messages(...)`)
     with persisted repaired history via `ContextManager.replace_messages(...)`.
@@ -1364,9 +1365,28 @@ Execution checkpoint (2026-03-05, architecture execution round 38):
   - `.venv/bin/mypy nexus3/session/session.py nexus3/context/manager.py nexus3/provider/anthropic.py nexus3/provider/openai_compat.py` -> passed.
   - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/unit/provider/test_compiler_integration.py tests/unit/provider/test_prompt_caching.py` -> `36 passed`.
 - Next gate:
-  1. Commit Plan E Phase 2 code+tests+docs as a standalone checkpoint.
-  2. Update milestone/plan status to mark Phase 2 committed.
-  3. Keep Plan E Phases 3-4 queued for M4 window unless milestone scope shifts.
+  1. Keep Plan E Phases 3-4 queued for M4 window unless milestone scope shifts.
+  2. Continue deferred follow-on plans only when their dependency gates are met.
+
+Pre-compact checkpoint (2026-03-05, post-round38 commit):
+- Branch/head:
+  - `feat/arch-overhaul-execution`
+  - `e3cd304` (`plan e phase 2: integrate compiler into session and providers`)
+- Architecture execution commits this round:
+  1. `e3cd304` Plan E Phase 2 (session preflight compiler integration +
+     provider compiler shaping + Anthropic synthesis retirement).
+- Current local working state:
+  1. Non-architecture local artifacts remain dirty/untracked:
+     `CLAUDE.md`, `editors/`, `err/`, `package-lock.json`.
+- Resume-first commands after compact:
+  1. `git status --short --branch`
+  2. `git log --oneline -n 8`
+  3. `sed -n '217,280p' AGENTS.md`
+  4. `sed -n '1,220p' docs/plans/ARCH-E-CONTEXT-COMPILER-GRAPH-PLAN-2026-03-02.md`
+- Next implementation targets after compact:
+  1. Plan E Phase 3 planning/execution scoping for M4 graph model
+     introduction window.
+  2. Keep deferred follow-on plans backlog-gated until M4/post-M4 windows.
 
 ## Source of Truth
 
