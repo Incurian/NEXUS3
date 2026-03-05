@@ -62,6 +62,11 @@ class _StubPool:
         return None
 
 
+class _NoParentLookupPool(_StubPool):
+    def get(self, agent_id: str) -> Any:
+        raise AssertionError("get() should not be called in this test")
+
+
 class _CreateCapableStubPool(_StubPool):
     def __init__(self) -> None:
         self.last_create: dict[str, Any] | None = None
@@ -222,6 +227,47 @@ async def test_global_create_agent_rejects_blank_initial_message() -> None:
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
     assert response.error["message"] == "initial_message cannot be empty"
+
+
+@pytest.mark.asyncio
+async def test_global_create_agent_parent_id_wiring_blocks_lookup_for_malformed_id() -> None:
+    dispatcher = GlobalDispatcher(_NoParentLookupPool())
+    request = Request(
+        jsonrpc="2.0",
+        method="create_agent",
+        params={
+            "agent_id": "child-1",
+            "parent_agent_id": "../../escape",
+        },
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == "Parent agent not found: ../../escape"
+
+
+@pytest.mark.asyncio
+async def test_global_create_agent_wait_flag_wiring_rejects_invalid_type_pre_create() -> None:
+    dispatcher = GlobalDispatcher(_StubPool())
+    request = Request(
+        jsonrpc="2.0",
+        method="create_agent",
+        params={
+            "agent_id": "worker-1",
+            "initial_message": "hello",
+            "wait_for_initial_response": {"bad": True},
+        },
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == "wait_for_initial_response must be boolean"
 
 
 @pytest.mark.asyncio

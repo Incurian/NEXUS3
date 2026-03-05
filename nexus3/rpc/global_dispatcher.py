@@ -156,6 +156,7 @@ class GlobalDispatcher:
             "system_prompt",
             "preset",
             "disable_tools",
+            "parent_agent_id",
             "cwd",
             "allowed_write_paths",
             "model",
@@ -163,6 +164,10 @@ class GlobalDispatcher:
         ):
             if key in params:
                 schema_candidate[key] = params[key]
+        # Keep compat behavior: only validate wait_for_initial_response when
+        # initial_message is actively provided.
+        if params.get("initial_message") is not None and "wait_for_initial_response" in params:
+            schema_candidate["wait_for_initial_response"] = params["wait_for_initial_response"]
 
         try:
             validated = CreateAgentParamsSchema.model_validate(
@@ -226,6 +231,17 @@ class GlobalDispatcher:
                         f"model must be string, got: {type(raw_value).__name__}"
                     ) from exc
 
+                if field == "parent_agent_id":
+                    if raw_value is not None and not isinstance(raw_value, str):
+                        raise InvalidParamsError(
+                            f"parent_agent_id must be string, got: {type(raw_value).__name__}"
+                        ) from exc
+                    if isinstance(raw_value, str) and message.startswith(
+                        "Value error, parent_agent_id invalid: "
+                    ):
+                        # Preserve legacy style for malformed parent IDs.
+                        raise InvalidParamsError(f"Parent agent not found: {raw_value}") from exc
+
                 if field == "cwd" and raw_value is not None:
                     raise InvalidParamsError(
                         f"cwd must be string, got: {type(raw_value).__name__}"
@@ -255,6 +271,9 @@ class GlobalDispatcher:
                         ) from exc
                     if isinstance(raw_value, str) and not raw_value.strip():
                         raise InvalidParamsError("initial_message cannot be empty") from exc
+
+                if field == "wait_for_initial_response":
+                    raise InvalidParamsError("wait_for_initial_response must be boolean") from exc
 
             raise InvalidParamsError("Invalid create_agent parameters") from exc
 

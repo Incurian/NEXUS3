@@ -220,13 +220,15 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `M1` (Boundary Enforcement Wave) in progress.
+- `M1` (Boundary Enforcement Wave) and `M2` (Authorization/Concurrency Wave) in progress.
 
 Immediate tasks:
 - Continue M1 implementation slices:
-  - Plan D gateway migration (`outline`, `concat_files`, `grep`) after `glob` first slice
   - Plan H Phase 2 ingress schema wiring (remaining non-low-risk paths; compatibility mode where required)
   - Plan G Phase 3 remaining output-path migration after high-risk slice completion
+- Continue M2 implementation slices:
+  - Plan A Phase 2+3 expansion beyond destroy-path shadow parity
+  - Plan C propagation beyond destroy path as needed by remaining auth/rpc routes
 
 Progress snapshot:
 - Completed: architecture plan sanity corrections merged locally (schedule + plans A-H scope/gates/checklist alignment).
@@ -236,6 +238,10 @@ Progress snapshot:
 - Completed: Plan H M1 Phase 2 incremental compat-safe ingress slice (`cancel`, `compact`) wired in `rpc/dispatcher.py` with focused wiring tests.
 - Completed: Plan H M1 Phase 2 low-risk no-arg ingress compat-safe schema hooks wired for `shutdown`/`get_tokens`/`get_context` and `list_agents`/`shutdown_server`, with focused compat wiring tests.
 - Completed: Plan H M1 Phase 2 behavior-sensitive ingress slice wired in `rpc/dispatcher.py::_handle_send` and `rpc/global_dispatcher.py::_handle_create_agent` with compat-safe schema validation and preserved `InvalidParamsError` style mappings, plus focused wiring tests.
+- Completed: Plan H M1 Phase 2 behavior-sensitive extension for `create_agent`:
+  - added compat-safe ingress validation coverage for `parent_agent_id` and conditional `wait_for_initial_response` in `rpc/global_dispatcher.py::_handle_create_agent`
+  - preserved legacy-style `InvalidParamsError` message mappings (`Parent agent not found: ...`, `wait_for_initial_response must be boolean`)
+  - added focused wiring regressions in `tests/unit/rpc/test_schema_ingress_wiring.py`
 - Completed: baseline E/F harness fixtures/tests under `tests/fixtures/arch_baseline/`, `tests/unit/context/test_compile_baseline.py`, and `tests/unit/patch/test_byte_roundtrip_baseline.py`.
 - Completed: Plan G M1 Phase 1 foundation safe sink API (`nexus3/display/safe_sink.py`) with minimal `InlinePrinter` integration and focused unit tests (`tests/unit/display/test_safe_sink.py`).
 - Completed: Plan G M1 Phase 2 high-risk output migration:
@@ -243,6 +249,10 @@ Progress snapshot:
   - `nexus3/mcp/error_formatter.py` dynamic fields now use `SafeSink` print sanitization.
   - Focused tests added/updated in `tests/unit/cli/test_client_commands_safe_sink.py` and `tests/unit/mcp/test_error_formatter.py`.
   - Focused validation passed via `.venv/bin/ruff check` and `.venv/bin/pytest -v tests/unit/mcp/test_error_formatter.py tests/unit/cli/test_client_commands_safe_sink.py tests/unit/display/test_safe_sink.py`.
+- Completed: Plan G M1 Phase 3 incremental output migration slice:
+  - `nexus3/cli/repl_commands.py::_mcp_connection_consent` now sanitizes dynamic MCP server/tool text through `SafeSink` before Rich-rendered prompt output.
+  - Added focused tests in `tests/unit/cli/test_repl_commands_safe_sink.py`.
+  - Focused validation passed via `.venv/bin/ruff check nexus3/cli/repl_commands.py tests/unit/cli/test_repl_commands_safe_sink.py` and `.venv/bin/pytest -v tests/unit/cli/test_repl_commands_safe_sink.py tests/unit/test_repl_commands.py`.
 - Completed: M1 Plan D grep migration slice routed fallback per-candidate authorization through `FilesystemAccessGateway` and added focused blocked/outside/symlink grep tests.
 - Completed: M1 Plan D tool migrations (`glob`, `outline`, `concat_files`, `grep`) to `FilesystemAccessGateway`; remaining Plan D work is consolidated regression/perf guard coverage.
 - Completed: M1 Plan D consolidated blocked-path/symlink regression coverage across migrated tool tests (`glob`, `outline`, `concat_files`, `grep`).

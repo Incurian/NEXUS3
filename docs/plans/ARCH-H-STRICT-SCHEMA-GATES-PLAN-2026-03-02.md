@@ -57,6 +57,7 @@ Phases:
   - [x] M1 Phase 2 slice: wired typed validation in `rpc/dispatcher.py::_handle_cancel` and `rpc/dispatcher.py::_handle_compact` with compat-safe (`strict=False`) `InvalidParamsError` mapping.
   - [x] M1 Phase 2 slice: wired compat-safe typed ingress hooks for remaining low-risk no-arg methods in `rpc/dispatcher.py` (`shutdown`, `get_tokens`, `get_context`) and `rpc/global_dispatcher.py` (`list_agents`, `shutdown_server`) while preserving permissive extras behavior.
   - [x] M1 Phase 2 behavior-sensitive slice: wired compat-safe typed ingress validation in `rpc/dispatcher.py::_handle_send` and `rpc/global_dispatcher.py::_handle_create_agent` with legacy-style `InvalidParamsError` mapping and focused wiring tests.
+  - [x] M1 Phase 2 behavior-sensitive extension: validated `parent_agent_id` and conditional `wait_for_initial_response` in `rpc/global_dispatcher.py::_handle_create_agent` with preserved legacy `InvalidParamsError` wording and focused ingress wiring tests.
   - [ ] Remaining M1 Phase 2 ingress coverage beyond low-risk methods (including stricter/behavior-sensitive paths) still pending.
 - [ ] Remove silent malformed-entry skips.
 - [ ] Consolidate duplicate MCP config models.

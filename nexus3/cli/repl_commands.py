@@ -35,6 +35,7 @@ from nexus3.core.permissions import (
 from nexus3.core.secure_io import SymlinkError, check_no_symlink
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.display import get_console
+from nexus3.display.safe_sink import SafeSink
 from nexus3.rpc.pool import is_temp_agent
 
 if TYPE_CHECKING:
@@ -1585,13 +1586,18 @@ async def _mcp_connection_consent(
         return (True, True)
 
     console = get_console()
+    sink = SafeSink(console)
+    safe_server_name = sink.sanitize_print_content(server_name)
+    safe_tool_summary = ", ".join(
+        sink.sanitize_print_content(tool_name) for tool_name in tool_names
+    )
 
-    console.print(f"\n[yellow]Connect to MCP server '{server_name}'?[/]")
-    console.print(f"  [dim]Tools:[/] {', '.join(tool_names)}")
-    console.print()
-    console.print("  [cyan][1][/] Allow all tools (this session)")
-    console.print("  [cyan][2][/] Require confirmation for each tool")
-    console.print("  [cyan][3][/] Deny connection")
+    sink.print_trusted(f"\n[yellow]Connect to MCP server '{safe_server_name}'?[/]")
+    sink.print_trusted(f"  [dim]Tools:[/] {safe_tool_summary}")
+    sink.print_trusted("")
+    sink.print_trusted("  [cyan][1][/] Allow all tools (this session)")
+    sink.print_trusted("  [cyan][2][/] Require confirmation for each tool")
+    sink.print_trusted("  [cyan][3][/] Deny connection")
 
     def get_input() -> str:
         try:

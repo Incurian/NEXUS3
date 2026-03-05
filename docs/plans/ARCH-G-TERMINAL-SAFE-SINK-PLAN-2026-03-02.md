@@ -56,6 +56,10 @@ Phases:
 - Hardened `nexus3/mcp/error_formatter.py` dynamic-field rendering through `SafeSink` print sanitization contract for server/context/command/stderr/raw preview interpolation.
 - Added focused regression tests in `tests/unit/cli/test_client_commands_safe_sink.py` and extended `tests/unit/mcp/test_error_formatter.py` sanitization coverage.
 - Validation: targeted `ruff` and targeted `pytest` suites passed.
+- 2026-03-05: Phase 3 incremental migration slice completed.
+- Migrated `nexus3/cli/repl_commands.py::_mcp_connection_consent` dynamic `server_name` and `tool_names` rendering to `SafeSink` sanitization before Rich-markup output.
+- Added focused regression tests in `tests/unit/cli/test_repl_commands_safe_sink.py`.
+- Validation: `.venv/bin/ruff check nexus3/cli/repl_commands.py tests/unit/cli/test_repl_commands_safe_sink.py` and `.venv/bin/pytest -v tests/unit/cli/test_repl_commands_safe_sink.py tests/unit/test_repl_commands.py` passed.
 
 ## Testing Strategy
 
