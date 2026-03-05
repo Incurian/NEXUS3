@@ -893,6 +893,19 @@ Compact checkpoint (2026-03-06, architecture execution round 24):
   2. Plan A: document/resolve remaining intentional non-kernel surfaces (notably path access checks and agent read methods) and either migrate or mark deferred with explicit scope notes.
   3. Docs sync: keep `CLAUDE.md` aligned with new session-level MCP/GitLab kernelization and direct-dispatch strict-ingress behavior.
 
+Compact checkpoint (2026-03-06, post-round-24 pause handover):
+- Current branch/head: `feat/arch-overhaul-execution` @ `ad9380d`.
+- Tracked working tree: clean.
+- Intentional untracked carry-over (do not touch): `docs/plans/DOUBLE-SPINNER-FIX-PLAN.md`, `editors/`, `err/`.
+- Follow-up audit completed with Codex explorer after `ad9380d`:
+  1. Remaining high-value non-kernel surfaces are concentrated in MCP/GitLab tool-visibility gating and a few inline lifecycle/HTTP requester-context surfaces.
+  2. Recommended next low-risk slice: kernelize MCP tool-visibility gating in `rpc/pool.py` create/restore paths (and REPL refresh if needed) while preserving current behavior.
+  3. Recommended focused tests for next slice: `tests/unit/test_pool.py` (MCP visibility allow/deny parity) and `tests/unit/test_repl_commands.py` (refresh path deny behavior).
+- Resume-first commands after compact:
+  1. `git status --short --branch`
+  2. `git log --oneline -n 8`
+  3. `rg -n "architecture execution round 24|post-round-24 pause handover" AGENTS.md`
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.
