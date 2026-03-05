@@ -53,7 +53,7 @@ Phases:
 - [x] Add compiler IR and invariant checker.
 - [x] Integrate with provider adapters.
 - [x] Migrate session preflight pipeline to compiler-backed invariants.
-- [ ] Add graph model prototype.
+- [x] Add graph model prototype.
 - [ ] Migrate compaction/truncation through compiler pipeline.
 
 Status note (2026-03-05, M3 Plan E Phase 1):
@@ -95,6 +95,22 @@ Status note (2026-03-05, M3 Plan E Phase 2, committed as `e3cd304`):
   - `.venv/bin/ruff check nexus3/session/session.py nexus3/context/manager.py nexus3/provider/anthropic.py nexus3/provider/openai_compat.py tests/unit/session/test_session_cancellation.py tests/unit/provider/test_compiler_integration.py`
   - `.venv/bin/mypy nexus3/session/session.py nexus3/context/manager.py nexus3/provider/anthropic.py nexus3/provider/openai_compat.py`
   - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/unit/provider/test_compiler_integration.py tests/unit/provider/test_prompt_caching.py` -> `36 passed`
+
+Status note (2026-03-05, Plan E Phase 3, committed as `5632652`):
+- Added graph prototype module `nexus3/context/graph.py`:
+  - typed graph nodes/edges (`ContextGraph`, `ContextGraphEdge`,
+    `GraphEdgeKind`) over compiler-normalized messages
+  - tool-batch-aware atomic grouping model (`ContextMessageGroup`) for
+    future truncation/compaction migration
+  - query helpers (`incoming(...)`, `outgoing(...)`) for edge traversal
+- Exported graph interfaces in `nexus3/context/__init__.py`.
+- Added focused graph regressions in `tests/unit/context/test_graph.py`.
+- Updated `nexus3/context/README.md` architecture docs for compiler+graph.
+- Focused validation passed:
+  - `.venv/bin/ruff check nexus3/context/graph.py nexus3/context/__init__.py nexus3/context/README.md tests/unit/context/test_graph.py`
+  - `.venv/bin/mypy nexus3/context/graph.py nexus3/context/__init__.py`
+  - `.venv/bin/pytest -q tests/unit/context/test_graph.py tests/unit/context/test_compiler.py tests/unit/context/test_compile_baseline.py` -> `12 passed`
+  - `.venv/bin/pytest -q tests/unit/test_context_manager.py` -> `27 passed`
 
 ## Documentation Updates
 

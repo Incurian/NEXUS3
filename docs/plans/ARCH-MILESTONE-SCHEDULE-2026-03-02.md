@@ -136,7 +136,12 @@ Status note (2026-03-05):
   - added focused regressions in
     `tests/unit/session/test_session_cancellation.py` and
     `tests/unit/provider/test_compiler_integration.py`
-- Next M3 target: close M3 scope review and keep Plan E Phases 3-4 queued for M4.
+- Plan E Phase 3 committed as `5632652`:
+  - added compiler-backed graph prototype in `nexus3/context/graph.py`
+    (typed edges + tool-batch atomic groups)
+  - exported graph interfaces in `nexus3/context/__init__.py`
+  - added focused graph regressions in `tests/unit/context/test_graph.py`
+- Next target: Plan E Phase 4 compiler/graph-backed compaction-truncation integration.
 
 ### M4: Delegation and Strategic Evolution
 
