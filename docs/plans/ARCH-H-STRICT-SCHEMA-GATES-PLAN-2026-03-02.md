@@ -64,8 +64,9 @@ Phases:
   - [x] M1 Phase 2 handler cleanup slice: removed ad hoc `cancel` request_id precheck in `rpc/dispatcher.py` and rely on `CancelParamsSchema` ingress validation with preserved legacy compat errors; removed duplicate post-create wait-flag parsing in `rpc/global_dispatcher.py` and reused already schema-validated field.
   - [x] M1 Phase 2 projection cleanup slice: introduced shared schema-field projection helper (`project_known_schema_fields`) and used it in `rpc/dispatcher.py::_handle_send` and `rpc/global_dispatcher.py::_handle_create_agent` to reduce ad hoc field-selection branches while preserving compat-safe behavior and legacy error wording.
   - [x] M1 Phase 2 create-agent cleanup slice: removed redundant post-schema `allowed_write_paths` type guards in `rpc/global_dispatcher.py` and preserved malformed-shape wording via schema error mapping; kept path/security containment checks unchanged.
+  - [x] M1 Phase 2 no-arg ingress cleanup slice: added compat-safe `EmptyParamsSchema` ingress guard for `rpc/dispatcher.py::_handle_cancel_all` with permissive extra-param compatibility preserved.
   - [ ] Remaining M1 Phase 2 ingress coverage beyond low-risk methods (including stricter/behavior-sensitive paths) still pending.
-    - Resume target: prioritize remaining residual handler guards and strict mode tightening where compat telemetry is already stable.
+    - Resume target: prioritize strict mode tightening/removal of remaining compat-only branches where telemetry is already stable.
 - [x] Remove silent malformed-entry skips.
   - [x] M1 Phase 3 slice: `context/loader.py::_merge_mcp_servers` now fail-fast rejects malformed MCP container/entry shapes (`mcpServers` non-object, `servers` non-array, non-object entries in `servers[]`) with actionable `MCPConfigError` context.
 - [x] Consolidate duplicate MCP config models.
