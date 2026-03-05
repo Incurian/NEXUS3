@@ -1,8 +1,12 @@
 """Unit tests for nexus3.patch.applier module."""
 
-import pytest
-
-from nexus3.patch import ApplyMode, ApplyResult, apply_patch
+from nexus3.patch import (
+    ApplyMode,
+    ApplyResult,
+    apply_patch,
+    parse_unified_diff,
+    parse_unified_diff_v2,
+)
 from nexus3.patch.types import Hunk, PatchFile
 
 
@@ -489,3 +493,47 @@ class TestApplyModeEnum:
         # Call without mode parameter - should use STRICT
         result = apply_patch(content, patch)
         assert result.success is True
+
+
+class TestApplyPatchAstV2:
+    """Tests for applying AST-v2 patches through the legacy apply flow."""
+
+    def test_ast_v2_input_matches_legacy_apply_result(self) -> None:
+        """Applying a projected AST-v2 patch should match legacy parse/apply output."""
+        content = "line1\nline2\nline3\n"
+        diff_text = """\
+--- a/test.py
++++ b/test.py
+@@ -1,3 +1,3 @@
+ line1
+-line2
++new_line
+ line3
+"""
+        legacy_patch = parse_unified_diff(diff_text)[0]
+        v2_patch = parse_unified_diff_v2(diff_text)[0]
+
+        legacy_result = apply_patch(content, legacy_patch, mode=ApplyMode.STRICT)
+        v2_result = apply_patch(content, v2_patch, mode=ApplyMode.STRICT)
+
+        assert v2_result == legacy_result
+
+    def test_ast_v2_input_preserves_strict_vs_tolerant_behavior(self) -> None:
+        """AST-v2 input should keep current strict/tolerant semantics unchanged."""
+        content = "line1  \nline2\nline3\n"
+        diff_text = """\
+--- a/test.py
++++ b/test.py
+@@ -1,3 +1,3 @@
+ line1
+-line2
++new_line
+ line3
+"""
+        v2_patch = parse_unified_diff_v2(diff_text)[0]
+
+        strict_result = apply_patch(content, v2_patch, mode=ApplyMode.STRICT)
+        tolerant_result = apply_patch(content, v2_patch, mode=ApplyMode.TOLERANT)
+
+        assert strict_result.success is False
+        assert tolerant_result.success is True

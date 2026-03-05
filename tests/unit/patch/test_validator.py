@@ -1,7 +1,5 @@
 """Unit tests for nexus3.patch.validator module."""
 
-import pytest
-
 from nexus3.patch import validate_patch, validate_patch_set
 from nexus3.patch.types import Hunk, PatchFile
 from nexus3.patch.validator import ValidationResult

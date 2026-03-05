@@ -100,6 +100,12 @@ Exit gates:
   - `nexus3 rpc send test-agent "describe your permissions and what you can do"`
   - `nexus3 rpc destroy test-agent`
 
+Status note (2026-03-05):
+- Plan F Phase 1 foundation landed in working tree:
+  - AST v2 models + parser hook + applier bridge (no default behavior flip)
+  - Expanded fixture-driven patch byte roundtrip baselines (explicit no-EOL marker + whitespace-sensitive payload)
+- Next M3 target: Plan F Phase 2 (`byte_strict` parse/apply path + fidelity regressions).
+
 ### M4: Delegation and Strategic Evolution
 
 Target scope:
@@ -126,6 +132,74 @@ Exit gates:
   - `nexus3 rpc send test-agent "describe your permissions and what you can do"`
   - `nexus3 rpc destroy test-agent`
 
+## Explicit Deferred Follow-On Backlog (Added 2026-03-05)
+
+1. Plan A follow-on boundary removal:
+   - [ARCH-A-AUTH-REQUEST-MODEL-V2-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-A-AUTH-REQUEST-MODEL-V2-PLAN-2026-03-05.md)
+   - Target window: M4 early (after M3 data-integrity gates are green).
+   - Dependency gates:
+     - M3 complete.
+     - Current Plan A kernel-authoritative behavior remains stable.
+   - Exit gates:
+     - Create-stage `parent_can_grant` precompute path removed from `rpc/pool.py`.
+     - Create adapter computes grant checks from typed auth request context.
+     - Focused create authorization regression suites pass.
+
+2. Plan H follow-on shim retirement:
+   - [ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md)
+   - Target window: post-M4 cleanup after strict ingress has soaked in production-like use.
+   - Dependency gates:
+     - Strict ingress default remains stable across protocol + direct dispatch + method param ingress.
+     - No active client breakage reports that depend on legacy error wording.
+   - Exit gates:
+     - Compatibility-only error-text mapping shims are removed or explicitly retained with rationale.
+     - Canonical malformed-input diagnostics documented in `nexus3/rpc/README.md`.
+     - Focused RPC ingress regression suites pass with updated expectations.
+
+3. Plan C follow-on service immutability:
+   - [ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md)
+   - Target window: M4 mid (after current Plan A/Plan C runtime behavior is stable).
+   - Dependency gates:
+     - Current request-context propagation behavior is stable under existing tests.
+     - No active regressions in REPL runtime mutation paths (`/cd`, `/permissions`, `/model`).
+   - Exit gates:
+     - Production runtime mutation paths no longer rely on open-ended `ServiceContainer.register(...)`.
+     - Typed immutability/mutation regression coverage is in place for pool + REPL + session paths.
+     - Focused pool/repl/session authorization suites pass.
+
+4. Provider keep-alive deferred investigation:
+   - [PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md)
+   - Target window: M4 late / post-M4 stabilization window.
+   - Dependency gates:
+     - Existing provider empty-stream guards and retry behavior remain stable.
+     - Repro artifacts exist from keep-alive diagnostics (Step 10 style runs).
+   - Exit gates:
+     - Decision recorded as either "no code change required" or "bounded mitigation landed".
+     - If mitigation lands, provider keep-alive recovery tests are green.
+     - Deferred tracker references are updated in config-ops and provider plan docs.
+
+5. Structural refactor wave:
+   - [STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md)
+   - Target window: post-M4 cleanup (non-blocking for security gates).
+   - Dependency gates:
+     - No unresolved high-priority behavior defects in REPL/session/pool runtime paths.
+     - Existing integration and regression baselines are green before each extraction slice.
+   - Exit gates:
+     - `repl.py`, `session.py`, and `pool.py` responsibilities are decomposed with stable public entrypoints.
+     - Display config contract is explicit and no-op placeholder wiring is removed.
+     - Focused parity suites remain green after extraction slices.
+
+6. Post-M4 validation campaign:
+   - [POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md)
+   - Target window: immediate post-M4 release-candidate validation phase.
+   - Dependency gates:
+     - M4 implementation gates complete.
+     - Candidate build designated for live validation campaign.
+   - Exit gates:
+     - Soak/perf, Windows-native, TOCTOU-race, and terminal red-team tracks are executed with archived artifacts.
+     - Follow-up defects are filed with owners and target windows.
+     - Deferred validation tracking section is updated with evidence links.
+
 ## Cross-Milestone Dependency Rules
 
 1. Do not start Plan B deprecation work before Plan A + Plan C baseline is stable.
@@ -133,6 +207,7 @@ Exit gates:
 3. Do not flip patch defaults to byte_strict before M3 fidelity tests are consistently green.
 4. Keep one architecture owner accountable per plan, even when implementation contributors are multiple.
 5. Scope M0/M1 to remaining gaps; do not duplicate already-landed path decision/resolver integration.
+6. Do not execute Plan H shim retirement until strict-ingress behavior has completed a full stability/compatibility observation window.
 
 ## Recommended Team Slice
 
@@ -160,10 +235,11 @@ Required status payload per plan:
 ## Deferred Validation Tracking (Post-M4)
 
 Still required after implementation waves:
-1. Long soak/performance validation under representative workloads.
-2. Windows-native validation on actual Windows hosts.
-3. Timing-sensitive TOCTOU/lifecycle race validation under high concurrency.
-4. Real terminal red-team validation across emulator variants.
+1. Execute [POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md) as the canonical closeout runbook.
+2. Long soak/performance validation under representative workloads.
+3. Windows-native validation on actual Windows hosts.
+4. Timing-sensitive TOCTOU/lifecycle race validation under high concurrency.
+5. Real terminal red-team validation across emulator variants.
 
 ## Related Documents
 

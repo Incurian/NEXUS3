@@ -1,0 +1,8 @@
+--- a/target.txt
++++ b/target.txt
+@@ -1,2 +1,2 @@
+ alpha
+-beta
+\ No newline at end of file
++BETA
+\ No newline at end of file

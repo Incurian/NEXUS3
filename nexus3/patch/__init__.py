@@ -5,9 +5,9 @@ commonly used by git diff, diff -u, and other tools.
 
 Main components:
 - Types: Hunk, PatchFile, PatchSet - structured representation of diffs
-- Parser: parse_unified_diff() - convert diff text to objects
+- Parser: parse_unified_diff() and parse_unified_diff_v2() - convert diff text to objects
 - Validator: validate_patch() - verify patches against file content
-- Applier: apply_patch() - apply patches with configurable strictness
+- Applier: apply_patch() - apply patches with configurable strictness (legacy/v2 inputs)
 
 Example usage:
     >>> from nexus3.patch import parse_unified_diff, validate_patch, apply_patch
@@ -31,7 +31,15 @@ Example usage:
 """
 
 from nexus3.patch.applier import ApplyMode, ApplyResult, apply_patch
-from nexus3.patch.parser import parse_unified_diff
+from nexus3.patch.ast_v2 import (
+    HunkLineV2,
+    HunkV2,
+    PatchFileV2,
+    RawLineV2,
+    project_patch_file_v2_to_v1,
+    project_patch_files_v2_to_v1,
+)
+from nexus3.patch.parser import parse_unified_diff, parse_unified_diff_v2
 from nexus3.patch.types import Hunk, PatchFile, PatchSet
 from nexus3.patch.validator import ValidationResult, validate_patch, validate_patch_set
 
@@ -40,8 +48,15 @@ __all__ = [
     "Hunk",
     "PatchFile",
     "PatchSet",
+    "RawLineV2",
+    "HunkLineV2",
+    "HunkV2",
+    "PatchFileV2",
+    "project_patch_file_v2_to_v1",
+    "project_patch_files_v2_to_v1",
     # Parser
     "parse_unified_diff",
+    "parse_unified_diff_v2",
     # Validator
     "ValidationResult",
     "validate_patch",

@@ -8,7 +8,10 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from enum import Enum
 
+from nexus3.patch.ast_v2 import PatchFileV2, coerce_patch_file_v1
 from nexus3.patch.types import Hunk, PatchFile
+
+PatchInput = PatchFile | PatchFileV2
 
 
 class ApplyMode(Enum):
@@ -260,7 +263,7 @@ def _perform_replacement(
 
 def apply_patch(
     content: str,
-    patch: PatchFile,
+    patch: PatchInput,
     mode: ApplyMode = ApplyMode.STRICT,
     fuzzy_threshold: float = 0.8,
 ) -> ApplyResult:
@@ -271,7 +274,7 @@ def apply_patch(
 
     Args:
         content: Original file content
-        patch: Patch to apply
+        patch: Patch to apply (legacy PatchFile or AST-v2 PatchFileV2)
         mode: Matching strictness (STRICT, TOLERANT, FUZZY)
         fuzzy_threshold: Minimum similarity for fuzzy mode (0.5-1.0)
 
@@ -288,6 +291,8 @@ def apply_patch(
         >>> result.new_content
         'line1\\nnew_line\\n'
     """
+    patch_v1 = coerce_patch_file_v1(patch)
+
     # Handle empty content (new file case)
     if not content:
         lines: list[str] = []
@@ -296,7 +301,7 @@ def apply_patch(
         lines = content.splitlines()
 
     # Handle case with no hunks
-    if not patch.hunks:
+    if not patch_v1.hunks:
         return ApplyResult(
             success=True,
             new_content=content,
@@ -313,7 +318,7 @@ def apply_patch(
     current_lines = list(lines)  # Work on a copy
     offset = 0
 
-    for i, hunk in enumerate(patch.hunks):
+    for i, hunk in enumerate(patch_v1.hunks):
         new_lines, new_offset, error, warning = _apply_hunk(
             current_lines, hunk, offset, mode, fuzzy_threshold
         )

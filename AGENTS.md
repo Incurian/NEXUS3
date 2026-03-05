@@ -220,13 +220,22 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `M2` (Authorization/Concurrency Wave) late-stage execution in progress.
-- `M1` boundary work for active Plan G/Plan H scope is complete on this branch.
+- `M3` kickoff target: Data Integrity Wave (Plan F first, then Plan E).
+- `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
-- Continue M2 implementation slices:
-  - Record the final Plan A GitLab residual slice and validation in plan/docs status
-  - Then pause at this checkpoint; next resume target is either commit this slice or take the optional Plan G consistency polish pass
+- Checkpoint and commit the current uncommitted dispatcher/docs/plan updates so
+  M3 starts from a clean state.
+- M3 Plan F Phase 1 foundation is now complete in the working tree (AST v2 +
+  parser/applier bridge + expanded baseline fixtures); commit this as its own
+  checkpoint before starting the next phase.
+- Start main-plan execution at M3 Plan F Phase 2 (`byte_strict` parse/apply
+  path + fidelity regressions) before any follow-on deferred plan execution.
+- Keep follow-on deferred plans queued behind their dependency gates
+  (M4/post-M4 windows) as recorded in milestone schedule.
+- Deferred follow-on planning checkpoint (2026-03-05):
+  - Added explicit unblocking/execution plans for all currently tracked deferred boundaries (Plan A, Plan H, Plan C service immutability, provider keep-alive investigation, structural refactor wave, post-M4 validation campaign).
+  - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
 - `78ef205` rpc/protocol: wire parse_request to request schema ingress
@@ -252,6 +261,11 @@ Recent execution commits (latest first):
 
 Progress snapshot:
 - Completed: architecture plan sanity corrections merged locally (schedule + plans A-H scope/gates/checklist alignment).
+- Completed: deferred-boundary follow-on planning closeout (2026-03-05):
+  - added [ARCH-A-AUTH-REQUEST-MODEL-V2-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-A-AUTH-REQUEST-MODEL-V2-PLAN-2026-03-05.md)
+  - added [ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md)
+  - updated [ARCH-MILESTONE-SCHEDULE-2026-03-02.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md) with explicit backlog dependency/exit gates
+  - updated [docs/plans/README.md](/home/inc/repos/NEXUS3/docs/plans/README.md) follow-on index section
 - Completed: Plan A M0 foundation interfaces (`nexus3/core/authorization_kernel.py`) + unit tests.
 - Completed: Plan H M0 schema inventory scaffold (`nexus3/rpc/schemas.py`) + unit tests.
 - Completed: Plan H M1 Phase 2 first compat-safe ingress slice (`destroy_agent`, `get_messages`) wired to typed schemas with existing-style RPC error mapping + focused unit tests.
@@ -1079,6 +1093,69 @@ Compact checkpoint (2026-03-05, architecture execution round 30):
   1. Decide whether to commit this closeout round as its own checkpoint before starting the next architecture slice.
   2. Re-open the milestone schedule and pick the next highest-value post-M2 slice (likely Plan H strict-ingress closeout or Plan G cleanup).
   3. Keep AGENTS/plan checklists synchronized before compact or handoff.
+
+Pre-compact checkpoint (2026-03-05, deferred follow-up planning backlog):
+- Status:
+  - Added and indexed follow-on plans for previously accepted deferrals:
+    - `docs/plans/ARCH-A-AUTH-REQUEST-MODEL-V2-PLAN-2026-03-05.md`
+    - `docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md`
+  - Added and indexed remaining tracker-backed deferred plans:
+    - `docs/plans/ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md`
+    - `docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md`
+    - `docs/plans/STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md`
+    - `docs/plans/POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md`
+  - Added explicit backlog dependency/exit gates for follow-on items in:
+    - `docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md`
+- Remaining plan-authoring backlog:
+  - None. All currently tracked deferred items now have dedicated plan docs.
+- Additional resume notes:
+  - This working tree now includes an uncommitted behavior fix in:
+    - `nexus3/rpc/dispatcher.py` (restore context-gated exposure for `get_tokens/get_context/get_messages`)
+    - `tests/unit/test_rpc_dispatcher.py` (method-not-found regression + request-context test wiring update)
+  - Focused + broad touched-scope validation already run successfully after that fix:
+    - `360 passed` on the multi-suite verification run.
+  - Unrelated untracked files currently present (do not touch unless explicitly requested):
+    - `docs/plans/DOUBLE-SPINNER-FIX-PLAN.md`, `editors/`, `err/`, `package-lock.json`.
+- First actions after resume:
+  - Status: completed in architecture execution round 31 (2026-03-05); kept here as historical handoff context.
+  1. Decide whether to commit the currently staged/uncommitted dispatcher/test/doc updates as a checkpoint before starting the next architecture implementation slice.
+  2. Main-plan next slice (start here after compact): M3 Plan F Phase 1 foundation.
+     - Add `nexus3/patch/ast_v2.py` typed AST scaffold.
+     - Add/extend roundtrip baseline fixtures for patch parse/apply fidelity.
+     - Wire minimal parser/applier integration hooks without default-behavior flip.
+     - Run focused gates:
+       - `.venv/bin/pytest -q tests/unit/patch/test_parser.py tests/unit/patch/test_applier.py tests/unit/patch/test_byte_roundtrip_baseline.py`
+       - `.venv/bin/ruff check nexus3/patch tests/unit/patch`
+       - `.venv/bin/mypy nexus3/patch`
+  3. Commit Plan F Phase 1 as a standalone logical checkpoint before Phase 2.
+  4. Next target after Phase 1: M3 Plan F Phase 2 (`byte_strict` parse/apply path) with fidelity regressions.
+  5. Keep follow-on deferred plans in backlog mode until their M4/post-M4 dependency gates are satisfied.
+
+Compact-ready execution note (2026-03-05):
+- Recommended immediate implementation order:
+  1. M3 Plan F Phase 1 (`AST v2 + fixtures`).
+  2. M3 Plan F Phase 2 (`byte_strict` apply path).
+  3. M3 Plan F Phase 4 (`ambiguous target fail-closed`) and remaining Plan F migration slices.
+  4. M3 Plan E Phase 1 compiler IR/invariants once Plan F foundation commits are stable.
+- Do not start Plan A/H/C follow-on deferred plans yet; those are scheduled for
+  M4/post-M4 windows in the milestone backlog.
+
+Execution checkpoint (2026-03-05, architecture execution round 31):
+- Scope completed this round (M3 Plan F Phase 1 foundation):
+  1. Added `nexus3/patch/ast_v2.py` typed AST v2 models with raw-line bytes/newline metadata and v2->v1 projection/coercion helpers.
+  2. Added additive parser hook `parse_unified_diff_v2(...)` in `nexus3/patch/parser.py` while preserving existing `parse_unified_diff(...)` behavior.
+  3. Added applier bridge so `nexus3/patch/applier.py::apply_patch(...)` accepts `PatchFileV2` without changing existing strict/tolerant/fuzzy semantics.
+  4. Expanded fixture-driven baseline coverage in `tests/fixtures/arch_baseline/` and `tests/unit/patch/test_byte_roundtrip_baseline.py` for explicit no-EOL marker and whitespace-sensitive payload cases.
+  5. Added parser/applier AST-v2 parity coverage in `tests/unit/patch/test_parser.py` and `tests/unit/patch/test_applier.py`.
+- Focused validation executed this round:
+  - `.venv/bin/pytest -q tests/unit/patch/test_parser.py tests/unit/patch/test_applier.py tests/unit/patch/test_byte_roundtrip_baseline.py` -> `50 passed`.
+  - `.venv/bin/ruff check nexus3/patch tests/unit/patch` -> passed (includes a small cleanup in `tests/unit/patch/test_validator.py` removing an unused import).
+  - `.venv/bin/mypy nexus3/patch` -> passed.
+  - `.venv/bin/pytest -q tests/unit/patch/test_validator.py` -> `14 passed`.
+- Next gate:
+  1. Commit current Plan F Phase 1 code+fixture+doc checkpoint as a standalone logical unit.
+  2. Start M3 Plan F Phase 2 (`byte_strict` parse/apply path) with newline/EOF-fidelity regressions.
+  3. Keep follow-on deferred plans in backlog mode until their M4/post-M4 dependency gates are met.
 
 ## Source of Truth
 

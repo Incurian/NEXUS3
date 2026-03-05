@@ -11,6 +11,7 @@ The patch module provides tools for working with unified diffs (the format used 
 ```
 nexus3/patch/
 ├── __init__.py     # Public exports
+├── ast_v2.py       # Additive AST v2 models (raw bytes/newline metadata)
 ├── types.py        # Hunk, PatchFile, PatchSet dataclasses
 ├── parser.py       # Parse unified diff text into structured objects
 ├── validator.py    # Validate patches and auto-fix common LLM errors
@@ -71,6 +72,23 @@ result = apply_patch(content, patch, mode=ApplyMode.FUZZY, fuzzy_threshold=0.7)
 if result.warnings:
     print(f"Fuzzy matches: {result.warnings}")
 ```
+
+## AST V2 (Phase 1 Foundation)
+
+AST v2 is an additive API that keeps legacy behavior unchanged while carrying
+raw-byte/newline metadata needed for byte-fidelity migration phases.
+
+```python
+from nexus3.patch import parse_unified_diff_v2, apply_patch, ApplyMode
+
+patch_v2 = parse_unified_diff_v2(diff_text)[0]
+result = apply_patch(content, patch_v2, mode=ApplyMode.STRICT)  # bridges to current flow
+```
+
+Current phase guarantees:
+- `parse_unified_diff(...)` output/behavior is unchanged.
+- `apply_patch(...)` strict/tolerant/fuzzy semantics are unchanged.
+- AST v2 currently projects into legacy apply logic (no default `byte_strict` flip yet).
 
 ## Validation Features
 
@@ -262,8 +280,15 @@ from nexus3.patch import (
     Hunk,
     PatchFile,
     PatchSet,
+    RawLineV2,
+    HunkLineV2,
+    HunkV2,
+    PatchFileV2,
+    project_patch_file_v2_to_v1,
+    project_patch_files_v2_to_v1,
     # Parser
     parse_unified_diff,
+    parse_unified_diff_v2,
     # Validator
     ValidationResult,
     validate_patch,
@@ -294,4 +319,4 @@ None - this module is self-contained.
 
 ## Status
 
-Production-ready. Last updated: 2026-02-01
+Production-ready. Last updated: 2026-03-05

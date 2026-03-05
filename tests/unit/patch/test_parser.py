@@ -1,8 +1,10 @@
 """Unit tests for nexus3.patch.parser module."""
 
-import pytest
-
-from nexus3.patch import parse_unified_diff
+from nexus3.patch import (
+    parse_unified_diff,
+    parse_unified_diff_v2,
+    project_patch_files_v2_to_v1,
+)
 from nexus3.patch.types import Hunk, PatchFile
 
 
@@ -314,6 +316,75 @@ index 789..012 100644
         assert files[1].path == "src/b.py"
 
 
+class TestParseUnifiedDiffV2:
+    """Tests for parse_unified_diff_v2 function."""
+
+    def test_v2_projects_to_legacy_parity(self) -> None:
+        """Projected AST-v2 output should match legacy parser output."""
+        diff_text = """\
+--- a/file.py
++++ b/file.py
+@@ -1,4 +1,4 @@
+ line1
+-old line
++new line
+ line3
+ line4
+"""
+        legacy_files = parse_unified_diff(diff_text)
+        v2_files = parse_unified_diff_v2(diff_text)
+
+        assert project_patch_files_v2_to_v1(v2_files) == legacy_files
+
+    def test_v2_preserves_raw_bytes_and_newline_metadata(self) -> None:
+        """AST-v2 should keep per-line raw bytes and newline token details."""
+        diff_text = (
+            "--- a/file.py\r\n"
+            "+++ b/file.py\r\n"
+            "@@ -1 +1 @@\r\n"
+            "-old\r\n"
+            "+new"
+        )
+        files = parse_unified_diff_v2(diff_text)
+
+        assert len(files) == 1
+        patch_file = files[0]
+        assert patch_file.old_header_line is not None
+        assert patch_file.new_header_line is not None
+        assert patch_file.old_header_line.raw_bytes == b"--- a/file.py"
+        assert patch_file.old_header_line.newline == "\r\n"
+        assert patch_file.new_header_line.newline == "\r\n"
+
+        hunk = patch_file.hunks[0]
+        assert hunk.header_line is not None
+        assert hunk.header_line.newline == "\r\n"
+        assert hunk.lines[0].raw_line.raw_bytes == b"-old"
+        assert hunk.lines[0].raw_content_bytes == b"old"
+        assert hunk.lines[0].raw_line.newline == "\r\n"
+        assert hunk.lines[1].raw_line.raw_bytes == b"+new"
+        assert hunk.lines[1].raw_content_bytes == b"new"
+        assert hunk.lines[1].raw_line.newline == ""
+        assert hunk.lines[1].raw_line.has_newline is False
+
+    def test_v2_tracks_no_newline_markers(self) -> None:
+        """AST-v2 should track the no-newline marker on the preceding hunk line."""
+        diff_text = """\
+--- a/file.py
++++ b/file.py
+@@ -1 +1 @@
+-old
+\\ No newline at end of file
++new
+\\ No newline at end of file
+"""
+        files = parse_unified_diff_v2(diff_text)
+
+        assert len(files) == 1
+        hunk = files[0].hunks[0]
+        assert hunk.lines[0].no_newline_at_eof is True
+        assert hunk.lines[1].no_newline_at_eof is True
+
+
 class TestHunkMethods:
     """Tests for Hunk helper methods."""
 
@@ -390,8 +461,9 @@ class TestPatchSetMethods:
             ]
         )
 
-        assert ps.get_file("a.py") is not None
-        assert ps.get_file("a.py").path == "a.py"
+        patch_file = ps.get_file("a.py")
+        assert patch_file is not None
+        assert patch_file.path == "a.py"
         assert ps.get_file("nonexistent.py") is None
 
     def test_file_paths(self) -> None:

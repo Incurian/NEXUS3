@@ -49,12 +49,22 @@ Phases:
 
 ## Implementation Checklist
 
-- [ ] Add AST v2 and serializer/parsers.
+- [x] Add AST v2 parser/projection foundation (raw-line/newline metadata, v2 parse hook, v2->v1 applier bridge).
 - [ ] Implement byte-strict applier.
 - [ ] Add legacy compatibility mode and migration flag.
 - [ ] Harden file target resolution.
 - [ ] Add ambiguity fail-closed and byte-fidelity regression tests (EOF/non-UTF8/binary-adjacent).
 - [ ] Flip default and remove fragile legacy branches.
+
+Status note (2026-03-05, M3 Plan F Phase 1):
+- Added `nexus3/patch/ast_v2.py` with typed v2 AST models carrying raw bytes and newline metadata.
+- Added additive parser hook `parse_unified_diff_v2(...)` in `nexus3/patch/parser.py` with parity projection helpers.
+- Added minimal applier integration bridge so `apply_patch(...)` accepts `PatchFileV2` without changing existing strict/tolerant/fuzzy semantics.
+- Expanded fixture-driven patch byte roundtrip baselines for explicit no-EOL marker and whitespace-sensitive payload cases.
+- Focused gates passed:
+  - `.venv/bin/pytest -q tests/unit/patch/test_parser.py tests/unit/patch/test_applier.py tests/unit/patch/test_byte_roundtrip_baseline.py`
+  - `.venv/bin/ruff check nexus3/patch tests/unit/patch`
+  - `.venv/bin/mypy nexus3/patch`
 
 ## Documentation Updates
 
