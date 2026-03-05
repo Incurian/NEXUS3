@@ -49,10 +49,34 @@ Phases:
 
 ## Implementation Checklist
 
-- [ ] Define capability schema and signer/verifier.
+- [x] Define capability schema and signer/verifier.
 - [ ] Integrate into direct API path.
 - [ ] Integrate optional HTTP transport.
 - [ ] Remove legacy identity-only authorization path.
+
+## Execution Status
+
+- 2026-03-05: Phase 1 completed and committed as `14bc820`.
+- Added `nexus3/core/capabilities.py` with:
+  - typed capability claims model (`CapabilityClaims`)
+  - signed token issue/verify service (`CapabilitySigner`) using
+    HMAC-SHA256 over canonical JSON payloads
+  - explicit error taxonomy for format/signature/expiry/scope/revocation/replay
+  - revocation/replay protocols and in-memory stores
+  - secret generation helper (`generate_capability_secret`)
+- Exported capability APIs through `nexus3/core/__init__.py`.
+- Added focused regressions in `tests/unit/core/test_capabilities.py`:
+  - round-trip issue/verify
+  - tamper/signature rejection
+  - expiry and required-scope checks
+  - parent attenuation (scope + expiry)
+  - revocation and replay rejection
+  - malformed token rejection
+- Updated `nexus3/core/README.md` with capability token API/module docs.
+- Validation:
+  - `.venv/bin/ruff check nexus3/core/capabilities.py nexus3/core/__init__.py nexus3/core/README.md tests/unit/core/test_capabilities.py` passed.
+  - `.venv/bin/mypy nexus3/core/capabilities.py nexus3/core/__init__.py` passed.
+  - `.venv/bin/pytest -q tests/unit/core/test_capabilities.py` passed (`11 passed`).
 
 ## Documentation Updates
 

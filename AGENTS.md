@@ -220,7 +220,7 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `M3/M4 transition` active: Plan E Phases 1-4 are now committed; transition bookkeeping + next M4 slices are pending.
+- `M4` early execution active: Plan E Phases 1-4 and Plan B Phase 1 are committed on this branch.
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
@@ -238,8 +238,9 @@ Immediate tasks:
   (`plan e phase 3: add context graph prototype`).
 - Plan E Phase 4 is committed as `00c59ed`
   (`plan e phase 4: migrate compaction and truncation to graph pipeline`).
-- Next target: close M3/M4 transition bookkeeping and sequence next M4
-  implementation slices (Plan B and remaining Plan G wave).
+- Plan B Phase 1 is committed as `14bc820`
+  (`plan b phase 1: add capability token primitives`).
+- Next target: Plan B Phase 2 integration into direct API dispatch paths.
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -247,6 +248,7 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `14bc820` plan b phase 1: add capability token primitives
 - `00c59ed` plan e phase 4: migrate compaction and truncation to graph pipeline
 - `6829838` docs: record plan e phase 3 execution status
 - `5632652` plan e phase 3: add context graph prototype
@@ -309,6 +311,12 @@ Progress snapshot:
     compiler-normalized atomic-group preservation.
   - added focused regressions in `tests/unit/test_compaction.py` and
     `tests/unit/test_context_manager.py`.
+- Completed (2026-03-05): Plan B Phase 1 capability primitives (`14bc820`):
+  - added signed capability token module `nexus3/core/capabilities.py`
+    (claims model, signer/verifier, revocation/replay stores, secret helper).
+  - exported capability APIs in `nexus3/core/__init__.py`.
+  - added focused regressions in `tests/unit/core/test_capabilities.py`.
+  - updated `nexus3/core/README.md` capability API/module documentation.
 - Completed: Plan A M0 foundation interfaces (`nexus3/core/authorization_kernel.py`) + unit tests.
 - Completed: Plan H M0 schema inventory scaffold (`nexus3/rpc/schemas.py`) + unit tests.
 - Completed: Plan H M1 Phase 2 first compat-safe ingress slice (`destroy_agent`, `get_messages`) wired to typed schemas with existing-style RPC error mapping + focused unit tests.
@@ -1490,6 +1498,42 @@ Pre-compact checkpoint (2026-03-05, post-round40 commit):
 - Next implementation targets after compact:
   1. Confirm M3/M4 transition closeout note and milestone ordering.
   2. Start next M4 implementation slice (Plan B or remaining Plan G wave).
+
+Execution checkpoint (2026-03-05, architecture execution round 41):
+- Scope completed this round (Plan B Phase 1 capability primitives):
+  1. Added `nexus3/core/capabilities.py`:
+     - typed claim model (`CapabilityClaims`)
+     - signed token issue/verify service (`CapabilitySigner`)
+     - revocation/replay protocols + in-memory stores
+     - capability secret generation helper.
+  2. Exported capability APIs in `nexus3/core/__init__.py`.
+  3. Added focused tests in `tests/unit/core/test_capabilities.py`.
+  4. Updated `nexus3/core/README.md` to document capability primitives.
+- Focused validation executed this round:
+  - `.venv/bin/ruff check nexus3/core/capabilities.py nexus3/core/__init__.py nexus3/core/README.md tests/unit/core/test_capabilities.py` -> passed.
+  - `.venv/bin/mypy nexus3/core/capabilities.py nexus3/core/__init__.py` -> passed.
+  - `.venv/bin/pytest -q tests/unit/core/test_capabilities.py` -> `11 passed`.
+- Next gate:
+  1. Plan B Phase 2: wire capability verification into direct API dispatch path.
+  2. Pause here for requested compaction checkpoint before starting Phase 2.
+
+Pre-compact checkpoint (2026-03-05, post-round41 commit):
+- Branch/head:
+  - `feat/arch-overhaul-execution`
+  - `14bc820` (`plan b phase 1: add capability token primitives`)
+- Architecture execution commits this round:
+  1. `14bc820` Plan B Phase 1 (capability schema + signer/verifier primitives).
+- Current local working state:
+  1. Non-architecture local artifacts remain dirty/untracked:
+     `CLAUDE.md`, `editors/`, `err/`, `package-lock.json`.
+- Resume-first commands after compact:
+  1. `git status --short --branch`
+  2. `git log --oneline -n 12`
+  3. `sed -n '220,340p' AGENTS.md`
+  4. `sed -n '1,260p' docs/plans/ARCH-B-CAPABILITY-TOKENS-PLAN-2026-03-02.md`
+- Next implementation targets after compact:
+  1. Plan B Phase 2 direct API path integration for capabilities.
+  2. Keep deferred follow-on plans backlog-gated by documented dependency windows.
 
 ## Source of Truth
 

@@ -148,8 +148,12 @@ Status note (2026-03-05):
     compiler-normalized atomic-group preservation
   - added focused compaction/truncation regressions in
     `tests/unit/test_compaction.py` and `tests/unit/test_context_manager.py`
-- Next target: close M3/M4 transition bookkeeping and continue M4 scope
-  sequencing (Plan B / remaining Plan G wave) per dependency gates.
+- Plan B Phase 1 committed as `14bc820`:
+  - added `nexus3/core/capabilities.py` (signed capability claims +
+    issue/verify + revocation/replay primitives)
+  - exported capability APIs in `nexus3/core/__init__.py`
+  - added focused capability regressions in `tests/unit/core/test_capabilities.py`
+- Next target: Plan B Phase 2 integration into direct API dispatch paths.
 
 ### M4: Delegation and Strategic Evolution
 
