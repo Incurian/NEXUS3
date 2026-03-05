@@ -638,56 +638,39 @@ class AgentPool:
         create_requester_id = requester_id or effective_config.parent_agent_id or "external"
 
         if effective_config.parent_agent_id is not None:
-            self._compare_create_authorization_shadow(
+            self._enforce_create_authorization(
                 target_agent_id=effective_id,
                 requester_id=create_requester_id,
                 check_stage="requester_parent_binding",
                 parent_depth=parent_permissions.depth if parent_permissions is not None else 0,
-                parent_can_grant=None,
-                legacy_allowed=True,
-                legacy_reason="requester_parent_binding_not_enforced_legacy",
+                denial_message=(
+                    "Cannot create agent: requester does not match the parent agent"
+                ),
                 parent_agent_id=effective_config.parent_agent_id,
             )
 
         # SECURITY: Check ceiling BEFORE applying delta
         # This ensures the base preset is allowed, then we check the delta result
         if parent_permissions is not None:
-            # Check recursion depth limit
-            depth_allowed = parent_permissions.depth < MAX_AGENT_DEPTH
-            self._compare_create_authorization_shadow(
+            self._enforce_create_authorization(
                 target_agent_id=effective_id,
                 requester_id=create_requester_id,
                 check_stage="max_depth",
                 parent_depth=parent_permissions.depth,
-                parent_can_grant=None,
-                legacy_allowed=depth_allowed,
-                legacy_reason=(
-                    "within_max_depth" if depth_allowed else "max_depth_exceeded"
+                denial_message=(
+                    f"Cannot create agent: max nesting depth ({MAX_AGENT_DEPTH}) exceeded"
                 ),
             )
-            if not depth_allowed:
-                raise PermissionError(
-                    f"Cannot create agent: max nesting depth ({MAX_AGENT_DEPTH}) exceeded"
-                )
             # First check: base preset must be allowed
             base_can_grant = parent_permissions.can_grant(permissions)
-            self._compare_create_authorization_shadow(
+            self._enforce_create_authorization(
                 target_agent_id=effective_id,
                 requester_id=create_requester_id,
                 check_stage="base_ceiling",
                 parent_depth=parent_permissions.depth,
                 parent_can_grant=base_can_grant,
-                legacy_allowed=base_can_grant,
-                legacy_reason=(
-                    "base_preset_within_parent_ceiling"
-                    if base_can_grant
-                    else "base_preset_exceeds_parent_ceiling"
-                ),
+                denial_message=f"Requested preset '{preset_name}' exceeds parent ceiling",
             )
-            if not base_can_grant:
-                raise PermissionError(
-                    f"Requested preset '{preset_name}' exceeds parent ceiling"
-                )
 
         # Apply delta if provided
         if effective_config.delta:
@@ -695,23 +678,14 @@ class AgentPool:
             # Second check: delta result must also be allowed
             if parent_permissions is not None:
                 delta_can_grant = parent_permissions.can_grant(permissions)
-                self._compare_create_authorization_shadow(
+                self._enforce_create_authorization(
                     target_agent_id=effective_id,
                     requester_id=create_requester_id,
                     check_stage="delta_ceiling",
                     parent_depth=parent_permissions.depth,
                     parent_can_grant=delta_can_grant,
-                    legacy_allowed=delta_can_grant,
-                    legacy_reason=(
-                        "delta_within_parent_ceiling"
-                        if delta_can_grant
-                        else "delta_exceeds_parent_ceiling"
-                    ),
+                    denial_message="Permission delta would exceed parent ceiling",
                 )
-                if not delta_can_grant:
-                    raise PermissionError(
-                        "Permission delta would exceed parent ceiling"
-                    )
 
         # Set ceiling reference and depth after all checks pass
         # SECURITY FIX: Use deepcopy to prevent shared references
@@ -879,19 +853,18 @@ class AgentPool:
 
         return agent
 
-    def _compare_create_authorization_shadow(
+    def _enforce_create_authorization(
         self,
         *,
         target_agent_id: str,
         requester_id: str,
         check_stage: str,
         parent_depth: int,
-        parent_can_grant: bool | None,
-        legacy_allowed: bool,
-        legacy_reason: str,
+        denial_message: str,
+        parent_can_grant: bool | None = None,
         parent_agent_id: str | None = None,
     ) -> None:
-        """Compare legacy create-ceiling checks against kernel shadow decisions."""
+        """Apply create authorization kernel decision for a specific create stage."""
         kernel_context: dict[str, str | int | float | bool | None] = {
             "check_stage": check_stage,
             "parent_depth": parent_depth,
@@ -912,23 +885,8 @@ class AgentPool:
             context=kernel_context,
         )
         kernel_decision = self._create_authorization_kernel.authorize(kernel_request)
-        if kernel_decision.allowed != legacy_allowed:
-            logger.warning(
-                "Create authorization shadow mismatch for target=%s requester=%s stage=%s",
-                target_agent_id,
-                requester_id,
-                check_stage,
-                extra={
-                    "event": "create_auth_shadow_mismatch",
-                    "target_agent_id": target_agent_id,
-                    "requester_id": requester_id,
-                    "check_stage": check_stage,
-                    "legacy_allowed": legacy_allowed,
-                    "legacy_reason": legacy_reason,
-                    "kernel_allowed": kernel_decision.allowed,
-                    "kernel_reason": kernel_decision.reason,
-                },
-            )
+        if not kernel_decision.allowed:
+            raise PermissionError(denial_message)
 
     async def create_temp(self, config: AgentConfig | None = None) -> Agent:
         """Create a new temp agent with auto-generated ID.

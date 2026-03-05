@@ -215,7 +215,7 @@ class GlobalDispatcher:
         try:
             validated = CreateAgentParamsSchema.model_validate(
                 dict(params),
-                strict=False,
+                strict=True,
             )
         except PydanticValidationError as exc:
             errors = exc.errors()

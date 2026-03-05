@@ -410,6 +410,30 @@ async def test_global_create_agent_wait_flag_wiring_rejects_invalid_type_pre_cre
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("wait_for_initial_response", ["true", 1])
+async def test_global_create_agent_wait_flag_wiring_rejects_coercible_values_pre_create(
+    wait_for_initial_response: object,
+) -> None:
+    dispatcher = GlobalDispatcher(_StubPool())
+    request = Request(
+        jsonrpc="2.0",
+        method="create_agent",
+        params={
+            "agent_id": "worker-1",
+            "initial_message": "hello",
+            "wait_for_initial_response": wait_for_initial_response,
+        },
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == "wait_for_initial_response must be boolean"
+
+
+@pytest.mark.asyncio
 async def test_global_create_agent_parent_id_wiring_rejects_invalid_type_pre_lookup() -> None:
     dispatcher = GlobalDispatcher(_NoParentLookupPool())
     request = Request(

@@ -16,7 +16,7 @@ from nexus3.core.text_safety import ANSI_ESCAPE_PATTERN
 from nexus3.display.printer import InlinePrinter
 from nexus3.display.spinner import Spinner
 from nexus3.display.streaming import StreamingDisplay, ToolState, ToolStatus
-from nexus3.display.theme import Status, Theme
+from nexus3.display.theme import Activity, Status, Theme
 
 
 class MockStdout:
@@ -340,6 +340,17 @@ class TestSpinnerStreamingSanitization:
             sys.stdout = original_stdout
 
         assert mock_stdout.getvalue() == "safe red\n"
+
+    def test_rich_render_sanitizes_dynamic_status_text(self) -> None:
+        spinner = Spinner(console=MagicMock(spec=Console), theme=Theme())
+        spinner.update("[red]run[/red]\x1b[31m\nnext\rline", activity=Activity.TOOL_CALLING)
+
+        rendered = spinner.__rich__().plain
+
+        assert r"\[red]run\[/red] next line" in rendered
+        assert "\x1b" not in rendered
+        assert "\n" not in rendered
+        assert "\r" not in rendered
 
 
 class TestStreamingDisplaySanitization:

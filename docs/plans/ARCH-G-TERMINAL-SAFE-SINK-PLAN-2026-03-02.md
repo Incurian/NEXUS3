@@ -129,6 +129,11 @@ Phases:
 - Hardened `nexus3/cli/confirmation_ui.py::_format_full_tool_details` and `_show_tool_details` by sanitizing tool/id/path/argument details with stream-safe sanitization before external pager/editor rendering.
 - Added focused regressions in `tests/unit/cli/test_repl_safe_sink.py` and `tests/unit/cli/test_confirmation_ui_safe_sink.py`.
 - Validation: `.venv/bin/ruff check nexus3/display/streaming.py nexus3/cli/repl.py nexus3/cli/confirmation_ui.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py tests/unit/cli/test_confirmation_ui_safe_sink.py`, `.venv/bin/mypy nexus3/display/streaming.py nexus3/cli/repl.py nexus3/cli/confirmation_ui.py`, and `.venv/bin/pytest -v tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py tests/unit/cli/test_confirmation_ui_safe_sink.py` passed (`74 passed`).
+- 2026-03-05: Phase 3 residual cleanup slice completed (spinner status boundary + REPL residual dynamic prints).
+- Hardened `nexus3/display/spinner.py::__rich__` spinner status text boundary by sanitizing dynamic `self.text` via `SafeSink.sanitize_print_value(...)` and normalizing line breaks before render.
+- Replaced residual direct dynamic `console.print` paths in `nexus3/cli/repl.py` for "port in use by another service" and Windows console codepage warnings with SafeSink-backed formatter helpers.
+- Added focused regressions in `tests/unit/display/test_escape_sanitization.py` and `tests/unit/cli/test_repl_safe_sink.py`.
+- Validation: `.venv/bin/ruff check nexus3/display/spinner.py nexus3/cli/repl.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py docs/plans/ARCH-G-TERMINAL-SAFE-SINK-PLAN-2026-03-02.md`, `.venv/bin/mypy nexus3/display/spinner.py nexus3/cli/repl.py`, and `.venv/bin/pytest -v tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py` passed.
 
 ## Testing Strategy
 
@@ -148,6 +153,7 @@ Phases:
   - [x] Migrated `nexus3/cli/repl.py` startup metadata/status dynamic lines to `SafeSink` sanitization.
   - [x] Migrated `nexus3/cli/repl.py` remaining dynamic `run_repl`/`run_repl_client`/`_run_connect_with_discovery` status and error interpolation paths to SafeSink sanitization helpers.
   - [x] Migrated residual dynamic top-level REPL/serve startup-reload surfaces (`nexus3/cli/repl.py::main`, `nexus3/cli/repl.py::_run_with_reload`, `nexus3/cli/serve.py::run_serve`) to SafeSink sanitization helpers.
+  - [x] Closed residual spinner-status and REPL port/codepage dynamic output gaps with SafeSink-backed sanitization helpers.
 - [x] Remove redundant/fragmented sanitization call sites.
   - [x] Removed redundant ad hoc escaping in `nexus3/cli/confirmation_ui.py::confirm_tool_action` during SafeSink migration.
   - [x] Collapsed duplicate sanitize-wrapper branches in `nexus3/cli/serve.py` and `nexus3/mcp/error_formatter.py` onto shared `SafeSink.sanitize_print_value(...)`.

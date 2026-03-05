@@ -75,10 +75,11 @@ Phases:
   - [x] M1 Phase 2 send strict-value follow-up slice: tightened `rpc/dispatcher.py::_handle_send` to run `SendParamsSchema` with `strict=True`, preserving legacy malformed-field `InvalidParamsError` wording while rejecting coercible `request_id`/attribution values (for example `request_id=1.0`, `source_agent_id=1.0`, `source=b"rpc"`).
   - [x] M1 Phase 2 cancel strict-value follow-up slice: tightened `rpc/dispatcher.py::_handle_cancel` to run `CancelParamsSchema` with `strict=True`, preserving legacy missing/malformed `request_id` wording while newly rejecting float-shaped IDs (e.g. `1.0`) as malformed type.
   - [x] M1 Phase 2 compact strict-value follow-up slice: tightened `rpc/dispatcher.py::_handle_compact` to run `CompactParamsSchema` with `strict=True`, preserving legacy invalid-force wording while rejecting coercible non-boolean values (e.g. `"true"`, `1`).
+  - [x] M1 Phase 2 create-agent strict-value follow-up slice: tightened `rpc/global_dispatcher.py::_handle_create_agent` to run `CreateAgentParamsSchema` with `strict=True`, preserving established `InvalidParamsError` wording for malformed known fields while rejecting coercible `wait_for_initial_response` values (e.g. `"true"`, `1`).
   - [x] M1 Phase 2 dispatcher get-messages strict ingress slice: tightened `rpc/dispatcher.py::_handle_get_messages` to validate full params object (unknown extra params now rejected) while preserving legacy `InvalidParamsError` wording for malformed `offset`/`limit`.
   - [x] M1 Phase 2 protocol strictness flip: removed `parse_request` empty-method compatibility shim in `rpc/protocol.py`; empty string method is now rejected at ingress with explicit ParseError wording (`method must be a non-empty string`).
-  - [ ] Remaining M1 Phase 2 ingress coverage beyond low-risk methods (including stricter/behavior-sensitive paths) still pending.
-    - Resume target: evaluate any residual compatibility-only ingress paths and determine whether strict-default flips are safe.
+  - [x] Remaining M1 Phase 2 ingress coverage beyond low-risk methods completed.
+    - Follow-up audit result (2026-03-06): behavior-sensitive method ingress (`send`, `cancel`, `compact`, `create_agent`) and request/response envelope parsing are now strict-default; no residual compatibility-only parameter projection paths remain in dispatcher/global-dispatcher/protocol ingress.
 - [x] Remove silent malformed-entry skips.
   - [x] M1 Phase 3 slice: `context/loader.py::_merge_mcp_servers` now fail-fast rejects malformed MCP container/entry shapes (`mcpServers` non-object, `servers` non-array, non-object entries in `servers[]`) with actionable `MCPConfigError` context.
 - [x] Consolidate duplicate MCP config models.

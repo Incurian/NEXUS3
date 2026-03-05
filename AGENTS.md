@@ -794,6 +794,23 @@ Compact checkpoint (2026-03-06, pre-compact handover 2):
   1. Plan H `create_agent` strict-value ingress evaluation in `nexus3/rpc/global_dispatcher.py` + focused ingress regressions.
   2. Then return to Plan A `rpc/pool.py::_create_unlocked` duplicate-branch removal.
 
+Compact checkpoint (2026-03-06, architecture execution round 21):
+- Branch head at start of round: `6a0c64b`; working tree now includes parallel Plan A + Plan H + Plan G follow-up slices implemented via Codex subagents.
+- New slices completed this round:
+  1. Plan A converted create authorization in `nexus3/rpc/pool.py::_create_unlocked` from legacy-authoritative shadow parity to kernel-authoritative enforcement.
+  2. Plan A removed dead create shadow-mismatch branch/logging (`_compare_create_authorization_shadow`) and preserved legacy `PermissionError` wording for max-depth/base-ceiling/delta-ceiling denies.
+  3. Plan H tightened `nexus3/rpc/global_dispatcher.py::_handle_create_agent` to strict-value schema validation (`CreateAgentParamsSchema(..., strict=True)`), preserving established malformed-field error wording and rejecting coercible wait-flag values.
+  4. Plan G closed residual sink-boundary cleanup by sanitizing dynamic spinner status text in `nexus3/display/spinner.py::__rich__` and routing residual REPL dynamic port/codepage lines through SafeSink-backed helpers in `nexus3/cli/repl.py`.
+  5. Updated focused regressions in `tests/unit/rpc/test_pool_create_auth_shadow.py`, `tests/unit/test_pool.py`, `tests/unit/rpc/test_schema_ingress_wiring.py`, `tests/unit/display/test_escape_sanitization.py`, and `tests/unit/cli/test_repl_safe_sink.py`.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/rpc/pool.py nexus3/rpc/global_dispatcher.py nexus3/display/spinner.py nexus3/cli/repl.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_pool.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md docs/plans/ARCH-G-TERMINAL-SAFE-SINK-PLAN-2026-03-02.md docs/plans/ARCH-H-STRICT-SCHEMA-GATES-PLAN-2026-03-02.md` passed.
+  - `.venv/bin/mypy nexus3/rpc/pool.py nexus3/rpc/global_dispatcher.py nexus3/display/spinner.py nexus3/cli/repl.py` passed.
+  - `.venv/bin/pytest -v tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_pool.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py` passed (`206 passed`).
+- Immediate resume targets:
+  1. Plan A: evaluate remaining duplicate authorization surfaces (notably whether `_check_enabled` can be routed through kernel-authoritative decisions in `session/enforcer.py`) and sequence final duplicate-branch cleanup.
+  2. Plan H: optional cleanup pass to remove now-unused compatibility projection helper `project_known_schema_fields(...)` in `nexus3/rpc/schemas.py` (audit confirms no active callsites).
+  3. Plan G: perform a final low-risk audit pass for any residual dynamic print interpolation outside SafeSink helper patterns and either close or explicitly document accepted trusted-only exceptions.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.

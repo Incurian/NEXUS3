@@ -12,6 +12,7 @@ from nexus3.cli.repl import (
     _format_client_metadata_line,
     _format_connected_tokens_line,
     _format_connecting_line,
+    _format_console_codepage_warning_line,
     _format_created_agent_line,
     _format_created_agent_success_line,
     _format_embedded_rpc_listening_line,
@@ -19,6 +20,7 @@ from nexus3.cli.repl import (
     _format_incoming_started_line,
     _format_invalid_port_spec_line,
     _format_plain_message_line,
+    _format_port_in_use_by_other_service_line,
     _format_provider_initialization_failed_line,
     _format_red_message_line,
     _format_reload_detected_changes_line,
@@ -367,6 +369,30 @@ def test_scanning_additional_ports_and_failed_start_lines_sanitize_dynamic_field
     assert failed_start_line == "[red]Error:[/] Server failed to start on port \\[red]8765\\[/red]"
     assert "\x1b" not in scanning_line
     assert "\x1b" not in failed_start_line
+
+
+def test_port_in_use_line_sanitizes_dynamic_port() -> None:
+    sink = _make_sink()
+
+    line = _format_port_in_use_by_other_service_line(
+        sink,
+        port="[red]8765[/red]\x1b[2J",
+    )
+
+    assert line == "[red]Error:[/] Port \\[red]8765\\[/red] is in use by another service"
+    assert "\x1b" not in line
+
+
+def test_console_codepage_warning_line_sanitizes_dynamic_codepage() -> None:
+    sink = _make_sink()
+
+    line = _format_console_codepage_warning_line(
+        sink,
+        codepage="[cyan]1252[/cyan]\x1b]8;;https://evil\x07x\x1b]8;;\x07",
+    )
+
+    assert line == "[yellow]Console code page is \\[cyan]1252\\[/cyan]x[/], not UTF-8 (65001)."
+    assert "\x1b" not in line
 
 
 def test_warning_and_red_message_lines_sanitize_dynamic_message() -> None:

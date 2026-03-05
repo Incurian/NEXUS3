@@ -205,6 +205,18 @@ def _format_server_failed_to_start_line(safe_sink: SafeSink, port: object) -> st
     return f"[red]Error:[/] Server failed to start on port {safe_port}"
 
 
+def _format_port_in_use_by_other_service_line(safe_sink: SafeSink, port: object) -> str:
+    """Format occupied-port line while preserving trusted Rich wrapper markup."""
+    safe_port = _sanitize_tool_trace_text(safe_sink, str(port))
+    return f"[red]Error:[/] Port {safe_port} is in use by another service"
+
+
+def _format_console_codepage_warning_line(safe_sink: SafeSink, codepage: object) -> str:
+    """Format Windows codepage warning while preserving trusted Rich wrapper markup."""
+    safe_codepage = _sanitize_tool_trace_text(safe_sink, str(codepage))
+    return f"[yellow]Console code page is {safe_codepage}[/], not UTF-8 (65001)."
+
+
 def _format_autosave_error_line(safe_sink: SafeSink, error: str) -> str:
     """Format auto-save failure line while preserving trusted Rich wrapper markup."""
     safe_error = _sanitize_tool_trace_text(safe_sink, error)
@@ -553,7 +565,7 @@ async def run_repl(
                 is_other_service = server.detection == DetectionResult.OTHER_SERVICE
                 if is_target and is_other_service:
                     console.print(
-                        f"[red]Error:[/] Port {effective_port} is in use by another service"
+                        _format_port_in_use_by_other_service_line(safe_sink, effective_port)
                     )
                     return
             # No servers, proceed to start embedded server
@@ -1322,7 +1334,7 @@ async def run_repl(
         codepage, is_utf8 = check_console_codepage()
         if not is_utf8 and codepage != 0:
             console.print(
-                f"[yellow]Console code page is {codepage}[/], not UTF-8 (65001).",
+                _format_console_codepage_warning_line(safe_sink, codepage),
                 style="dim",
             )
             console.print(

@@ -207,9 +207,13 @@ class Spinner:
         elif self.activity == Activity.RESPONDING:
             parts.append("Responding...")
         elif self.activity == Activity.TOOL_CALLING:
-            parts.append(self.text or "Running tools...")
+            if self.text:
+                parts.append(SafeSink.sanitize_print_value(self.text))
+            else:
+                parts.append("Running tools...")
         else:
-            parts.append(self.text or "")
+            if self.text:
+                parts.append(SafeSink.sanitize_print_value(self.text))
 
         # Elapsed time (show after 1 second)
         elapsed = self.elapsed
@@ -218,7 +222,7 @@ class Spinner:
 
         status = " ".join(filter(None, parts))
         # Live renderable must remain single-line.
-        status = status.replace("\n", " ")
+        status = status.replace("\n", " ").replace("\r", " ")
 
         # Build the line: spinner + status + cancel hint
         result = Text()

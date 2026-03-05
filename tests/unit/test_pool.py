@@ -31,7 +31,13 @@ from nexus3.core.permissions import (
 )
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
 from nexus3.rpc.http import _extract_agent_id
-from nexus3.rpc.pool import AgentConfig, AgentPool, AuthorizationError, SharedComponents
+from nexus3.rpc.pool import (
+    MAX_AGENT_DEPTH,
+    AgentConfig,
+    AgentPool,
+    AuthorizationError,
+    SharedComponents,
+)
 from nexus3.rpc.types import Request
 
 # -----------------------------------------------------------------------------
@@ -222,6 +228,47 @@ class TestAgentPool:
 
             assert "duplicate-id" in str(exc_info.value)
             assert "already exists" in str(exc_info.value).lower()
+
+    @pytest.mark.asyncio
+    async def test_create_forced_kernel_deny_is_authoritative(self, tmp_path):
+        """create() fails closed when the create authorization kernel denies."""
+        shared = create_mock_shared_components(tmp_path)
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            parent_permissions = resolve_preset("trusted")
+            parent_permissions.depth = 0
+
+            kernel_request = AuthorizationRequest(
+                action=AuthorizationAction.AGENT_CREATE,
+                resource=AuthorizationResource(
+                    resource_type=AuthorizationResourceType.AGENT,
+                    identifier="child-agent",
+                ),
+                principal_id="external",
+                context={
+                    "check_stage": "max_depth",
+                    "parent_depth": 0,
+                    "max_depth": MAX_AGENT_DEPTH,
+                },
+            )
+            pool._create_authorization_kernel.authorize = MagicMock(
+                return_value=AuthorizationDecision.deny(
+                    kernel_request,
+                    reason="forced_deny_for_test",
+                )
+            )
+
+            with pytest.raises(PermissionError, match="max nesting depth"):
+                await pool.create(
+                    config=AgentConfig(
+                        agent_id="child-agent",
+                        preset="sandboxed",
+                        parent_permissions=parent_permissions,
+                    )
+                )
+
+            assert "child-agent" not in pool
 
     @pytest.mark.asyncio
     async def test_get_returns_agent(self, tmp_path):
