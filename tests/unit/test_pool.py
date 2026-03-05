@@ -10,7 +10,6 @@ Tests for:
 """
 
 import asyncio
-import logging
 from dataclasses import FrozenInstanceError, fields
 from datetime import datetime
 from pathlib import Path
@@ -689,11 +688,8 @@ class TestGlobalDispatcher:
         assert agent_ids == {"agent-1", "agent-2"}
 
     @pytest.mark.asyncio
-    async def test_list_agents_emits_shadow_mismatch_warning_without_behavior_flip(
-        self,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """list_agents logs shadow mismatch but still follows legacy allow behavior."""
+    async def test_list_agents_denied_by_kernel_fails_closed(self) -> None:
+        """list_agents fails closed when the authorization kernel denies."""
         pool = MockAgentPool()
         await pool.create(agent_id="agent-1")
         dispatcher = GlobalDispatcher(pool)
@@ -713,7 +709,6 @@ class TestGlobalDispatcher:
             )
         )
 
-        caplog.set_level(logging.WARNING)
         response = await dispatcher.dispatch(
             Request(
                 jsonrpc="2.0",
@@ -725,21 +720,11 @@ class TestGlobalDispatcher:
         )
 
         assert response is not None
-        assert response.error is None
-        assert response.result is not None
-        assert len(response.result["agents"]) == 1
-        assert response.result["agents"][0]["agent_id"] == "agent-1"
-        mismatch_records = [
-            record
-            for record in caplog.records
-            if getattr(record, "event", None) == "list_agents_auth_shadow_mismatch"
-        ]
-        assert len(mismatch_records) == 1
-        record = mismatch_records[0]
-        assert getattr(record, "requester_id", None) == "requester-1"
-        assert getattr(record, "legacy_allowed", None) is True
-        assert getattr(record, "kernel_allowed", None) is False
-        assert getattr(record, "kernel_reason", None) == "forced_deny_for_test"
+        assert response.error is not None
+        assert response.error["code"] == -32602  # INVALID_PARAMS
+        assert "list_agents denied" in response.error["message"]
+        assert "forced_deny_for_test" in response.error["message"]
+        assert response.result is None
 
     @pytest.mark.asyncio
     async def test_method_not_found(self):
@@ -782,11 +767,8 @@ class TestGlobalDispatcher:
         assert dispatcher.shutdown_requested is True
 
     @pytest.mark.asyncio
-    async def test_shutdown_server_emits_shadow_mismatch_warning_without_behavior_flip(
-        self,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """shutdown_server logs shadow mismatch but still follows legacy allow behavior."""
+    async def test_shutdown_server_denied_by_kernel_fails_closed(self) -> None:
+        """shutdown_server fails closed when the authorization kernel denies."""
         pool = MockAgentPool()
         dispatcher = GlobalDispatcher(pool)
 
@@ -805,7 +787,6 @@ class TestGlobalDispatcher:
             )
         )
 
-        caplog.set_level(logging.WARNING)
         response = await dispatcher.dispatch(
             Request(
                 jsonrpc="2.0",
@@ -817,22 +798,12 @@ class TestGlobalDispatcher:
         )
 
         assert response is not None
-        assert response.error is None
-        assert response.result == {
-            "success": True,
-            "message": "Server shutting down",
-        }
-        mismatch_records = [
-            record
-            for record in caplog.records
-            if getattr(record, "event", None) == "shutdown_server_auth_shadow_mismatch"
-        ]
-        assert len(mismatch_records) == 1
-        record = mismatch_records[0]
-        assert getattr(record, "requester_id", None) == "requester-1"
-        assert getattr(record, "legacy_allowed", None) is True
-        assert getattr(record, "kernel_allowed", None) is False
-        assert getattr(record, "kernel_reason", None) == "forced_deny_for_test"
+        assert response.error is not None
+        assert response.error["code"] == -32602  # INVALID_PARAMS
+        assert "shutdown_server denied" in response.error["message"]
+        assert "forced_deny_for_test" in response.error["message"]
+        assert response.result is None
+        assert dispatcher.shutdown_requested is False
 
     @pytest.mark.asyncio
     async def test_handles_method(self):

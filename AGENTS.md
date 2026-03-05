@@ -566,6 +566,20 @@ Compact checkpoint (2026-03-06, architecture execution round 7):
   2. Plan G: sweep residual direct dynamic `console.print` sites in `nexus3/cli/repl.py` and low-risk CLI consistency paths for final consolidation.
   3. Plan A: plan/execute first safe duplicate-authorization-branch removal slice after shadow telemetry coverage.
 
+Compact checkpoint (2026-03-06, architecture execution round 8):
+- Branch head at start of round: `514c799`; working tree now includes a Plan A phase-4 starter cleanup slice.
+- New slice completed this round:
+  1. Plan A converted `list_agents` and `shutdown_server` in `nexus3/rpc/global_dispatcher.py` from shadow-only legacy-allow parity to kernel-authoritative enforcement.
+  2. Removed duplicate legacy-allow comparison/warning branches for those two methods and added fail-closed deny-path assertions in `tests/unit/test_pool.py`.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/rpc/global_dispatcher.py tests/unit/test_pool.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/global_dispatcher.py` passed.
+  - `.venv/bin/pytest -v tests/unit/test_pool.py` passed (`55 passed`).
+- Immediate resume targets:
+  1. Plan A: evaluate next safe duplicate-branch removal candidate (`rpc/dispatcher.py` lifecycle checks) while preserving external error semantics.
+  2. Plan H: decide on remaining compatibility-only protocol parse path (`empty method` rewrite) and whether to flip to strict reject.
+  3. Plan G: sweep residual direct dynamic `console.print` sites in `nexus3/cli/repl.py` and low-risk CLI consistency paths for final consolidation.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.

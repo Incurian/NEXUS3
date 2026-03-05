@@ -678,7 +678,6 @@ class GlobalDispatcher:
 
         requester_id = None if request_context is None else request_context.requester_id
         principal_id = requester_id or "external"
-        legacy_allowed = True
         kernel_request = AuthorizationRequest(
             action=AuthorizationAction.SESSION_READ,
             resource=AuthorizationResource(
@@ -688,19 +687,9 @@ class GlobalDispatcher:
             principal_id=principal_id,
         )
         kernel_decision = self._list_agents_authorization_kernel.authorize(kernel_request)
-        if kernel_decision.allowed != legacy_allowed:
-            logger.warning(
-                "List agents authorization shadow mismatch for requester=%s",
-                principal_id,
-                extra={
-                    "event": "list_agents_auth_shadow_mismatch",
-                    "requester_id": principal_id,
-                    "legacy_allowed": legacy_allowed,
-                    "legacy_reason": "list_agents_allowed",
-                    "kernel_allowed": kernel_decision.allowed,
-                    "kernel_reason": kernel_decision.reason,
-                },
-            )
+        if not kernel_decision.allowed:
+            reason = kernel_decision.reason or "authorization policy denied request"
+            raise InvalidParamsError(f"list_agents denied: {reason}")
 
         agents = self._pool.list()
 
@@ -732,7 +721,6 @@ class GlobalDispatcher:
 
         requester_id = None if request_context is None else request_context.requester_id
         principal_id = requester_id or "external"
-        legacy_allowed = True
         kernel_request = AuthorizationRequest(
             action=AuthorizationAction.SESSION_WRITE,
             resource=AuthorizationResource(
@@ -742,19 +730,9 @@ class GlobalDispatcher:
             principal_id=principal_id,
         )
         kernel_decision = self._shutdown_authorization_kernel.authorize(kernel_request)
-        if kernel_decision.allowed != legacy_allowed:
-            logger.warning(
-                "Shutdown authorization shadow mismatch for requester=%s",
-                principal_id,
-                extra={
-                    "event": "shutdown_server_auth_shadow_mismatch",
-                    "requester_id": principal_id,
-                    "legacy_allowed": legacy_allowed,
-                    "legacy_reason": "shutdown_server_allowed",
-                    "kernel_allowed": kernel_decision.allowed,
-                    "kernel_reason": kernel_decision.reason,
-                },
-            )
+        if not kernel_decision.allowed:
+            reason = kernel_decision.reason or "authorization policy denied request"
+            raise InvalidParamsError(f"shutdown_server denied: {reason}")
 
         self._shutdown_requested = True
         logger.info("Server shutdown requested")
