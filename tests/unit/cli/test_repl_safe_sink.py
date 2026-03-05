@@ -7,6 +7,8 @@ from unittest.mock import MagicMock
 from rich.console import Console
 
 from nexus3.cli.repl import (
+    _format_incoming_response_sent_line,
+    _format_incoming_started_line,
     _format_tool_call_trace_line,
     _format_tool_error_trace_line,
     _format_tool_halt_trace_line,
@@ -93,3 +95,46 @@ def test_tool_halt_trace_line_sanitizes_dynamic_fields_and_preserves_shapes() ->
         "  [dark_orange]●[/] \\[i]wait\\[/i]: arg=\\[blue]x\\[/blue] [dark_orange](halted)[/]"
     )
     assert without_params == "  [dark_orange]●[/] \\[i]wait\\[/i] [dark_orange](halted)[/]"
+
+
+def test_incoming_started_line_sanitizes_preview_and_source_agent_route() -> None:
+    sink = _make_sink()
+
+    line = _format_incoming_started_line(
+        sink,
+        source="[magenta]rpc[/magenta]",
+        source_agent="[cyan]agent-2[/cyan]\x1b[31m",
+        preview="[bold]hello[/bold]\x1b[2J",
+    )
+
+    assert line == (
+        "[bold cyan]▶ INCOMING from \\[cyan]agent-2\\[/cyan]:[/] \\[bold]hello\\[/bold]..."
+    )
+    assert "\x1b" not in line
+
+
+def test_incoming_started_line_sanitizes_source_for_non_agent_route() -> None:
+    sink = _make_sink()
+
+    line = _format_incoming_started_line(
+        sink,
+        source="[magenta]rpc[/magenta]\x1b]8;;https://evil\x07x\x1b]8;;\x07",
+        source_agent=None,
+        preview="preview",
+    )
+
+    assert line == "[bold cyan]▶ INCOMING (\\[magenta]rpc\\[/magenta]x):[/] preview..."
+    assert "\x1b" not in line
+
+
+def test_incoming_response_sent_line_sanitizes_preview_and_keeps_ellipsis() -> None:
+    sink = _make_sink()
+
+    line = _format_incoming_response_sent_line(
+        sink,
+        preview="[green]sent[/green]\x1b[31m",
+        ellipsis="...",
+    )
+
+    assert line == "[bold green]✓ Response sent:[/] \\[green]sent\\[/green]..."
+    assert "\x1b" not in line

@@ -147,6 +147,26 @@ def _format_tool_halt_trace_line(safe_sink: SafeSink, name: str, params: str) ->
     return f"  [dark_orange]●[/] {safe_name} [dark_orange](halted)[/]"
 
 
+def _format_incoming_started_line(
+    safe_sink: SafeSink, source: str, source_agent: str | None, preview: str
+) -> str:
+    """Format incoming-start notification while preserving trusted Rich wrapper markup."""
+    safe_preview = _sanitize_tool_trace_text(safe_sink, preview)
+    if source_agent:
+        safe_source_agent = _sanitize_tool_trace_text(safe_sink, source_agent)
+        return f"[bold cyan]▶ INCOMING from {safe_source_agent}:[/] {safe_preview}..."
+    safe_source = _sanitize_tool_trace_text(safe_sink, source)
+    return f"[bold cyan]▶ INCOMING ({safe_source}):[/] {safe_preview}..."
+
+
+def _format_incoming_response_sent_line(
+    safe_sink: SafeSink, preview: str, ellipsis: str
+) -> str:
+    """Format incoming-end success notification with SafeSink sanitization."""
+    safe_preview = _sanitize_tool_trace_text(safe_sink, preview)
+    return f"[bold green]✓ Response sent:[/] {safe_preview}{ellipsis}"
+
+
 async def run_repl(
     verbose: bool = False,
     log_verbose: bool = False,
@@ -959,7 +979,9 @@ async def run_repl(
                 raw_preview = _incoming_end_payload.get("content_preview", "")
                 preview = " ".join(raw_preview.split())[:50]
                 ellipsis = "..." if len(raw_preview) > 50 else ""
-                console.print(f"[bold green]✓ Response sent:[/] {preview}{ellipsis}")
+                console.print(
+                    _format_incoming_response_sent_line(safe_sink, preview, ellipsis)
+                )
             elif _incoming_end_payload.get("cancelled"):
                 console.print("[bold yellow]✗ Request cancelled[/]")
             _incoming_end_payload = None
@@ -990,10 +1012,9 @@ async def run_repl(
                 sys.stdout.flush()
 
             # Print notification
-            if source_agent:
-                console.print(f"[bold cyan]▶ INCOMING from {source_agent}:[/] {preview}...")
-            else:
-                console.print(f"[bold cyan]▶ INCOMING ({source}):[/] {preview}...")
+            console.print(
+                _format_incoming_started_line(safe_sink, source, source_agent, preview)
+            )
             console.bell()
 
             # Start spinner task
