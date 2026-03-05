@@ -286,6 +286,7 @@ class GlobalDispatcher:
         allowed_write_paths = validated.allowed_write_paths
         model = validated.model
         initial_message = validated.initial_message
+        wait_for_initial_response = validated.wait_for_initial_response
 
         # Validate and look up parent_agent_id FIRST (needed for cwd resolution)
         # SECURITY: Look up parent permissions from pool instead of trusting RPC data
@@ -501,10 +502,6 @@ class GlobalDispatcher:
 
         # Handle initial_message if provided
         if initial_message is not None:
-            wait_for_initial_response = params.get("wait_for_initial_response", False)
-            if not isinstance(wait_for_initial_response, bool):
-                raise InvalidParamsError("wait_for_initial_response must be boolean")
-
             request_id = str(uuid.uuid4())
             from nexus3.rpc.types import Request as RpcRequest
 

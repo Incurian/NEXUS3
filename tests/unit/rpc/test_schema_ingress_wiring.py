@@ -370,12 +370,15 @@ def test_parse_response_schema_ingress_keeps_compat_for_null_result_and_extra_fi
 
 
 @pytest.mark.asyncio
-async def test_dispatcher_cancel_schema_validation_preserves_missing_error_style() -> None:
+@pytest.mark.parametrize("params", [{}, {"request_id": ""}])
+async def test_dispatcher_cancel_schema_validation_preserves_missing_error_style(
+    params: dict[str, object],
+) -> None:
     dispatcher = Dispatcher(_StubSession(), context=None, agent_id="agent-1")
     request = Request(
         jsonrpc="2.0",
         method="cancel",
-        params={"request_id": ""},
+        params=params,
         id=1,
     )
     response = await dispatcher.dispatch(request)
@@ -384,6 +387,26 @@ async def test_dispatcher_cancel_schema_validation_preserves_missing_error_style
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
     assert response.error["message"] == "Missing required parameter: request_id"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("request_id", [True, {"bad": "shape"}])
+async def test_dispatcher_cancel_schema_validation_rejects_malformed_request_id_type(
+    request_id: object,
+) -> None:
+    dispatcher = Dispatcher(_StubSession(), context=None, agent_id="agent-1")
+    request = Request(
+        jsonrpc="2.0",
+        method="cancel",
+        params={"request_id": request_id},
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == "request_id must be string or integer"
 
 
 @pytest.mark.asyncio

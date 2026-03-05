@@ -462,22 +462,25 @@ class Dispatcher:
         Raises:
             InvalidParamsError: If 'request_id' is missing.
         """
-        # Preserve existing compat error style for missing request_id while
-        # moving typed validation to ingress in non-strict mode.
-        if "request_id" not in params or params.get("request_id") == "":
-            raise InvalidParamsError("Missing required parameter: request_id")
-
+        candidate: dict[str, Any] = {}
+        if "request_id" in params:
+            candidate["request_id"] = params["request_id"]
         try:
             validated = CancelParamsSchema.model_validate(
-                {"request_id": params["request_id"]},
+                candidate,
                 strict=False,
             )
         except PydanticValidationError as exc:
             errors = exc.errors()
             if errors:
-                raise InvalidParamsError(
-                    str(errors[0].get("msg", "Invalid request_id"))
-                ) from exc
+                error = errors[0]
+                loc = error.get("loc", ())
+                field = str(loc[0]) if loc else None
+                raw_value = params.get(field) if field else None
+                if field == "request_id":
+                    if error.get("type") == "missing" or raw_value == "":
+                        raise InvalidParamsError("Missing required parameter: request_id") from exc
+                    raise InvalidParamsError("request_id must be string or integer") from exc
             raise InvalidParamsError("Invalid request_id") from exc
 
         request_id = validated.request_id
