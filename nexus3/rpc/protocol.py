@@ -63,7 +63,9 @@ def parse_request(line: str) -> Request:
 
     # Get id (optional - None means notification)
     request_id = data.get("id")
-    if request_id is not None and not isinstance(request_id, (str, int)):
+    if request_id is not None and (
+        isinstance(request_id, bool) or not isinstance(request_id, (str, int))
+    ):
         raise ParseError(f"id must be string, number, or null, got: {type(request_id).__name__}")
 
     return Request(
@@ -201,7 +203,9 @@ def parse_response(line: str) -> Response:
     if "id" not in data:
         raise ParseError("Response must have 'id' field")
     response_id = data.get("id")
-    if response_id is not None and not isinstance(response_id, (str, int)):
+    if response_id is not None and (
+        isinstance(response_id, bool) or not isinstance(response_id, (str, int))
+    ):
         raise ParseError(f"id must be string, number, or null, got: {type(response_id).__name__}")
 
     # Must have either result or error, but not both

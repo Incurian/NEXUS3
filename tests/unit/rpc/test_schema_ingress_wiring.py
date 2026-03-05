@@ -345,6 +345,11 @@ def test_parse_request_rejects_malformed_object_id_shape() -> None:
         )
 
 
+def test_parse_request_rejects_boolean_id() -> None:
+    with pytest.raises(ParseError, match="id must be string, number, or null, got: bool"):
+        parse_request('{"jsonrpc":"2.0","method":"send","params":{"content":"hi"},"id":true}')
+
+
 @pytest.mark.asyncio
 async def test_dispatcher_cancel_schema_validation_preserves_missing_error_style() -> None:
     dispatcher = Dispatcher(_StubSession(), context=None, agent_id="agent-1")

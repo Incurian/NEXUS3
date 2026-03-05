@@ -7,8 +7,7 @@ import pytest
 
 from nexus3.client import ClientError, NexusClient
 from nexus3.rpc.protocol import ParseError, parse_response, serialize_request
-from nexus3.rpc.types import Request, Response
-
+from nexus3.rpc.types import Request
 
 # === Protocol function tests ===
 
@@ -98,6 +97,13 @@ class TestParseResponse:
             parse_response('{"jsonrpc":"2.0","id":1}')
 
         assert "result" in str(exc_info.value) or "error" in str(exc_info.value)
+
+    def test_parse_response_rejects_boolean_id(self):
+        """Response with boolean id raises ParseError."""
+        with pytest.raises(ParseError) as exc_info:
+            parse_response('{"jsonrpc":"2.0","id":true,"result":"ok"}')
+
+        assert str(exc_info.value) == "id must be string, number, or null, got: bool"
 
 
 # === NexusClient tests ===

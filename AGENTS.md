@@ -254,6 +254,9 @@ Progress snapshot:
   - expanded compat-safe schema validation in `nexus3/rpc/dispatcher.py::_handle_send` to cover optional `request_id`, `source`, and `source_agent_id`
   - preserved explicit `InvalidParamsError` mappings for malformed optional fields and prevented unhashable `request_id` shapes from reaching internal tracking structures
   - added focused malformed-parameter regressions in `tests/unit/rpc/test_schema_ingress_wiring.py`
+- Completed: Plan H M1 Phase 2 protocol-boundary hardening:
+  - `nexus3/rpc/protocol.py` request/response parsing now explicitly rejects boolean JSON-RPC `id` values (bool no longer accepted via int subclass behavior)
+  - added focused parse tests in `tests/unit/rpc/test_schema_ingress_wiring.py` and `tests/unit/test_client.py`
 - Completed: baseline E/F harness fixtures/tests under `tests/fixtures/arch_baseline/`, `tests/unit/context/test_compile_baseline.py`, and `tests/unit/patch/test_byte_roundtrip_baseline.py`.
 - Completed: Plan G M1 Phase 1 foundation safe sink API (`nexus3/display/safe_sink.py`) with minimal `InlinePrinter` integration and focused unit tests (`tests/unit/display/test_safe_sink.py`).
 - Completed: Plan G M1 Phase 2 high-risk output migration:
