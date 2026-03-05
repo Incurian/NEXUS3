@@ -134,6 +134,7 @@ parse_response(line: str) -> Response
 Ingress validation is strict at the protocol boundary:
 - `parse_request()` validates against `RpcRequestEnvelopeSchema` (`extra="forbid"`), rejects positional params, and rejects boolean `id` values.
 - `parse_response()` validates against `RpcResponseEnvelopeSchema` (`extra="forbid"`), rejects boolean `id` values, and requires exactly one of `result` or `error`.
+- `Dispatcher.dispatch()` and `GlobalDispatcher.dispatch()` also validate direct in-process `Request` envelopes before handler execution, so malformed `jsonrpc`/`method`/`id`/`params` shapes fail deterministically with `INVALID_PARAMS`.
 
 ---
 
@@ -222,7 +223,7 @@ Handles agent lifecycle management at the pool level.
 #### Authorization
 
 Authorization is kernel-authoritative in current lifecycle handlers:
-- `create_agent` authorization is enforced in `AgentPool.create(...)` via `AGENT_CREATE` checks (requester/parent binding, max depth, base ceiling, delta ceiling).
+- `create_agent` authorization is enforced in `AgentPool.create(...)` via `AGENT_CREATE` checks (lifecycle entry, requester/parent binding, max depth, base ceiling, delta ceiling).
 - `destroy_agent` authorization is enforced in `AgentPool.destroy(...)` via `AGENT_DESTROY` checks (self, parent-child, external/admin contexts).
 - `list_agents` and `shutdown_server` are authorized through kernel-backed checks in `GlobalDispatcher`.
 
@@ -262,6 +263,7 @@ Ingress schema behavior:
 - Method params are validated with strict Pydantic schemas (`strict=True`, `extra="forbid"`).
 - Unknown params and malformed field types return `INVALID_PARAMS` with method-specific compatibility messages.
 - No-arg methods (`shutdown`, `get_tokens`, `get_context`, `cancel_all`, `list_agents`, `shutdown_server`) reject extra params.
+- Direct in-process dispatch (`dispatch(Request(...))`) now applies strict request-envelope validation before method routing.
 
 Per-agent authorization is kernel-authoritative for `send`, `cancel`, `compact`, and `shutdown`. In particular, YOLO send gating (`no REPL connected`) is decided by kernel policy.
 

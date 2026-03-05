@@ -15,6 +15,14 @@ from nexus3.context.compaction import (
     select_messages_for_compaction,
 )
 from nexus3.context.git_context import should_refresh_git_context
+from nexus3.core.authorization_kernel import (
+    AdapterAuthorizationKernel,
+    AuthorizationAction,
+    AuthorizationDecision,
+    AuthorizationRequest,
+    AuthorizationResource,
+    AuthorizationResourceType,
+)
 from nexus3.core.errors import sanitize_error_for_agent
 from nexus3.core.interfaces import AsyncProvider
 from nexus3.core.permissions import AgentPermissions, ConfirmationResult
@@ -79,6 +87,34 @@ ToolActiveCallback = Callable[[str, str], None]  # (name, id) - tool starting ex
 BatchProgressCallback = Callable[[str, str, bool, str, str], None]
 BatchHaltCallback = Callable[[], None]  # Sequential batch halted due to error
 BatchCompleteCallback = Callable[[], None]  # All tools in batch finished
+
+
+class _McpLevelAuthorizationAdapter:
+    """Kernel adapter mirroring MCP level gating in session tool execution."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.TOOL_EXECUTE:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.TOOL:
+            return None
+
+        if bool(request.context.get("mcp_level_allowed", False)):
+            return AuthorizationDecision.allow(request, reason="mcp_level_allowed")
+        return AuthorizationDecision.deny(request, reason="mcp_level_denied")
+
+
+class _GitLabLevelAuthorizationAdapter:
+    """Kernel adapter mirroring GitLab level gating in session tool execution."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.TOOL_EXECUTE:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.TOOL:
+            return None
+
+        if bool(request.context.get("gitlab_level_allowed", False)):
+            return AuthorizationDecision.allow(request, reason="gitlab_level_allowed")
+        return AuthorizationDecision.deny(request, reason="gitlab_level_denied")
 
 
 class Session:
@@ -175,6 +211,14 @@ class Session:
         self._dispatcher = ToolDispatcher(registry=registry, services=services)
         self._enforcer = PermissionEnforcer(services=services)
         self._confirmation = ConfirmationController()
+        self._mcp_authorization_kernel = AdapterAuthorizationKernel(
+            adapters=(_McpLevelAuthorizationAdapter(),),
+            default_allow=False,
+        )
+        self._gitlab_authorization_kernel = AdapterAuthorizationKernel(
+            adapters=(_GitLabLevelAuthorizationAdapter(),),
+            default_allow=False,
+        )
 
         # Track cancelled tool calls to report on next send()
         self._pending_cancelled_tools: list[tuple[str, str]] = []  # [(tool_id, tool_name), ...]
@@ -930,8 +974,20 @@ class Session:
         from nexus3.core.permissions import PermissionLevel
         from nexus3.mcp.permissions import can_use_mcp
 
-        # Check MCP permission level
-        if not can_use_mcp(permissions):
+        mcp_level_allowed = can_use_mcp(permissions)
+        requester_id = self._services.get("agent_id") if self._services else None
+        principal_id = requester_id if isinstance(requester_id, str) and requester_id else "unknown"
+        kernel_request = AuthorizationRequest(
+            action=AuthorizationAction.TOOL_EXECUTE,
+            resource=AuthorizationResource(
+                resource_type=AuthorizationResourceType.TOOL,
+                identifier=tool_call.name,
+            ),
+            principal_id=principal_id,
+            context={"mcp_level_allowed": mcp_level_allowed},
+        )
+        kernel_decision = self._mcp_authorization_kernel.authorize(kernel_request)
+        if not kernel_decision.allowed:
             return ToolResult(error="MCP tools require TRUSTED or YOLO permission level")
 
         if not skill:
@@ -980,8 +1036,20 @@ class Session:
             requires_gitlab_confirmation,
         )
 
-        # Check GitLab permission level
-        if not can_use_gitlab(permissions):
+        gitlab_level_allowed = can_use_gitlab(permissions)
+        requester_id = self._services.get("agent_id") if self._services else None
+        principal_id = requester_id if isinstance(requester_id, str) and requester_id else "unknown"
+        kernel_request = AuthorizationRequest(
+            action=AuthorizationAction.TOOL_EXECUTE,
+            resource=AuthorizationResource(
+                resource_type=AuthorizationResourceType.TOOL,
+                identifier=tool_call.name,
+            ),
+            principal_id=principal_id,
+            context={"gitlab_level_allowed": gitlab_level_allowed},
+        )
+        kernel_decision = self._gitlab_authorization_kernel.authorize(kernel_request)
+        if not kernel_decision.allowed:
             return ToolResult(error="GitLab tools require TRUSTED or YOLO permission level")
 
         if not skill:

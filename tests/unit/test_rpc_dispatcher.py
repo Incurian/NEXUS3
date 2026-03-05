@@ -585,3 +585,72 @@ class TestInvalidParamsError:
         assert response is not None
         assert response.error is not None
         assert response.error["code"] == -32602  # INVALID_PARAMS
+
+
+class TestDirectIngressStrictness:
+    """Direct in-process dispatch envelope/shape validation regressions."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("params", "expected_message"),
+        [
+            (
+                ["hello"],
+                "Positional params (array) not supported, use named params (object)",
+            ),
+            (7, "params must be object or array, got: int"),
+        ],
+    )
+    async def test_dispatch_rejects_malformed_params_shape_before_handlers(
+        self,
+        params: object,
+        expected_message: str,
+    ) -> None:
+        dispatcher = Dispatcher(MockSession())
+        request = Request(
+            jsonrpc="2.0",
+            method="send",
+            params=params,  # type: ignore[arg-type]
+            id=1,
+        )
+
+        response = await dispatcher.dispatch(request)
+
+        assert response is not None
+        assert response.error is not None
+        assert response.error["code"] == -32602
+        assert response.error["message"] == expected_message
+
+    @pytest.mark.asyncio
+    async def test_dispatch_rejects_boolean_id_before_handlers(self) -> None:
+        dispatcher = Dispatcher(MockSession())
+        request = Request(
+            jsonrpc="2.0",
+            method="send",
+            params={"content": "hello"},
+            id=True,  # type: ignore[arg-type]
+        )
+
+        response = await dispatcher.dispatch(request)
+
+        assert response is not None
+        assert response.error is not None
+        assert response.error["code"] == -32602
+        assert response.error["message"] == "id must be string, number, or null, got: bool"
+
+    @pytest.mark.asyncio
+    async def test_dispatch_rejects_invalid_jsonrpc_before_handlers(self) -> None:
+        dispatcher = Dispatcher(MockSession())
+        request = Request(
+            jsonrpc="1.0",
+            method="send",
+            params={"content": "hello"},
+            id=1,
+        )
+
+        response = await dispatcher.dispatch(request)
+
+        assert response is not None
+        assert response.error is not None
+        assert response.error["code"] == -32602
+        assert response.error["message"] == "jsonrpc must be '2.0', got: '1.0'"

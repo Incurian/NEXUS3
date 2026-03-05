@@ -627,6 +627,7 @@ Permission checks (in order):
 4. Path gating via `PathDecisionEngine` (sandbox/per-tool/blocked paths), checking ALL extracted paths in the tool call
 
 The first three checks are authorization-kernel decisions; path access remains enforced by `PathDecisionEngine`.
+Session-level MCP/GitLab level gates in `Session` are also kernel-authoritative `TOOL_EXECUTE` decisions before confirmation/allowance handling.
 
 ### Target Validation
 
@@ -795,7 +796,7 @@ Methods:
    - Path allowed (sandbox, blocked)?
 4. **Confirmation**: If TRUSTED level, prompt for destructive actions
 5. **Skill resolution**: ToolDispatcher finds implementing skill
-6. **MCP/GitLab permissions**: Additional permission checks for MCP and GitLab tools
+6. **MCP/GitLab level authorization**: Kernel-authoritative level checks for MCP/GitLab tools, followed by confirmation/allowance handling
 7. **Malformed JSON check**: Reject truncated/malformed tool call arguments
 8. **Argument validation**: Validate against skill parameter schema
 9. **Execution**: Run skill with timeout

@@ -32,7 +32,6 @@ from nexus3.core.permissions import (
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
 from nexus3.rpc.http import _extract_agent_id
 from nexus3.rpc.pool import (
-    MAX_AGENT_DEPTH,
     AgentConfig,
     AgentPool,
     AuthorizationError,
@@ -215,6 +214,24 @@ class TestAgentPool:
             assert agent.agent_id in pool
 
     @pytest.mark.asyncio
+    async def test_create_root_runs_lifecycle_entry_kernel_check(self, tmp_path):
+        """Root create paths run lifecycle-entry kernel auth and remain allowed."""
+        shared = create_mock_shared_components(tmp_path)
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            original_authorize = pool._create_authorization_kernel.authorize
+            pool._create_authorization_kernel.authorize = MagicMock(side_effect=original_authorize)
+
+            agent = await pool.create(agent_id="root-lifecycle-entry")
+
+            assert agent.agent_id == "root-lifecycle-entry"
+            assert pool._create_authorization_kernel.authorize.call_count == 1
+            kernel_request = pool._create_authorization_kernel.authorize.call_args.args[0]
+            assert kernel_request.context["check_stage"] == "lifecycle_entry"
+            assert kernel_request.principal_id == "external"
+
+    @pytest.mark.asyncio
     async def test_create_with_duplicate_agent_id_raises(self, tmp_path):
         """create() with duplicate agent_id raises ValueError."""
         shared = create_mock_shared_components(tmp_path)
@@ -239,24 +256,16 @@ class TestAgentPool:
             parent_permissions = resolve_preset("trusted")
             parent_permissions.depth = 0
 
-            kernel_request = AuthorizationRequest(
-                action=AuthorizationAction.AGENT_CREATE,
-                resource=AuthorizationResource(
-                    resource_type=AuthorizationResourceType.AGENT,
-                    identifier="child-agent",
-                ),
-                principal_id="external",
-                context={
-                    "check_stage": "max_depth",
-                    "parent_depth": 0,
-                    "max_depth": MAX_AGENT_DEPTH,
-                },
-            )
+            def _authorize_for_test(request: AuthorizationRequest) -> AuthorizationDecision:
+                if request.context.get("check_stage") == "max_depth":
+                    return AuthorizationDecision.deny(
+                        request,
+                        reason="forced_deny_for_test",
+                    )
+                return AuthorizationDecision.allow(request, reason="forced_allow_for_test")
+
             pool._create_authorization_kernel.authorize = MagicMock(
-                return_value=AuthorizationDecision.deny(
-                    kernel_request,
-                    reason="forced_deny_for_test",
-                )
+                side_effect=_authorize_for_test,
             )
 
             with pytest.raises(PermissionError, match="max nesting depth"):

@@ -869,6 +869,30 @@ Compact checkpoint (2026-03-06, pre-compact handover 3):
   2. Plan A: evaluate whether create ceiling `can_grant` computations in `nexus3/rpc/pool.py::_create_unlocked` should be migrated fully into adapter-internal policy decisions or explicitly documented as accepted boundary.
   3. Docs sync: if behavior changes in either target, mirror into `nexus3/session/README.md`, `nexus3/rpc/README.md`, and both `AGENTS.md`/`CLAUDE.md`.
 
+Compact checkpoint (2026-03-06, architecture execution round 24):
+- Branch head at start of round: `70413db`; working tree now includes parallel Plan A + Plan H follow-up slices implemented via Codex subagents.
+- New slices completed this round:
+  1. Plan A added unconditional create lifecycle-entry kernel authorization in `nexus3/rpc/pool.py::_create_unlocked` (`check_stage="lifecycle_entry"`), ensuring root and nested create flows always traverse `AGENT_CREATE` kernel checks.
+  2. Plan A kernelized session-level MCP/GitLab permission gates in `nexus3/session/session.py` via dedicated `TOOL_EXECUTE` adapters while preserving existing deny wording and confirmation behavior.
+  3. Plan A removed the remaining pre-kernel unknown-target bypass in `nexus3/session/enforcer.py::_check_target_allowed` by routing unknown `allowed_targets` shapes through kernel evaluation with preserved fail-open behavior.
+  4. Plan H hardened in-process ingress boundaries: `nexus3/rpc/dispatcher.py::dispatch` and `nexus3/rpc/global_dispatcher.py::dispatch` now validate direct `Request` envelopes (`jsonrpc`/`method`/`id`/`params` shape) before handler routing and return deterministic `INVALID_PARAMS` responses for malformed envelopes.
+  5. Added focused coverage:
+     - `tests/unit/rpc/test_pool_create_auth_shadow.py`
+     - `tests/unit/test_pool.py`
+     - `tests/unit/session/test_enforcer.py`
+     - `tests/unit/session/test_session_permission_kernelization.py` (new)
+     - `tests/unit/rpc/test_schema_ingress_wiring.py`
+     - `tests/unit/test_rpc_dispatcher.py`
+     - `tests/unit/test_global_dispatcher.py` (new)
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/pool.py nexus3/session/enforcer.py nexus3/session/session.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_pool.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/pool.py nexus3/session/enforcer.py nexus3/session/session.py` passed.
+  - `.venv/bin/pytest -v tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_pool.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py` passed (`208 passed`).
+- Immediate resume targets:
+  1. Plan A: decide whether create ceiling `can_grant` computations in `rpc/pool.py::_create_unlocked` should move fully behind kernel adapter decisions or remain explicit with documented rationale.
+  2. Plan A: document/resolve remaining intentional non-kernel surfaces (notably path access checks and agent read methods) and either migrate or mark deferred with explicit scope notes.
+  3. Docs sync: keep `CLAUDE.md` aligned with new session-level MCP/GitLab kernelization and direct-dispatch strict-ingress behavior.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.

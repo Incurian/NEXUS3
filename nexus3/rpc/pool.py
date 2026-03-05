@@ -124,6 +124,9 @@ class _CreateAuthorizationAdapter:
             return None
 
         check_stage = request.context.get("check_stage")
+        if check_stage == "lifecycle_entry":
+            return AuthorizationDecision.allow(request, reason="create_lifecycle_entry")
+
         if check_stage == "max_depth":
             parent_depth = request.context.get("parent_depth")
             max_depth = request.context.get("max_depth")
@@ -642,6 +645,16 @@ class AgentPool:
 
         parent_permissions = effective_config.parent_permissions
         create_requester_id = requester_id or effective_config.parent_agent_id or "external"
+
+        self._enforce_create_authorization(
+            target_agent_id=effective_id,
+            requester_id=create_requester_id,
+            check_stage="lifecycle_entry",
+            parent_depth=parent_permissions.depth if parent_permissions is not None else 0,
+            denial_message=(
+                "Cannot create agent: requester is not authorized to create this agent"
+            ),
+        )
 
         if effective_config.parent_agent_id is not None:
             self._enforce_create_authorization(

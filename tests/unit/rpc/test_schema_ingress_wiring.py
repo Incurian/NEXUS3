@@ -936,3 +936,77 @@ async def test_global_list_agents_ingress_wiring_rejects_extra_params() -> None:
     assert list_agents_response.error is not None
     assert list_agents_response.error["code"] == -32602  # INVALID_PARAMS
     assert list_agents_response.error["message"] == "Invalid list_agents parameters"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("request_obj", "expected_message"),
+    [
+        (
+            Request(
+                jsonrpc="2.0",
+                method="send",
+                params=["hello"],  # type: ignore[arg-type]
+                id=1,
+            ),
+            "Positional params (array) not supported, use named params (object)",
+        ),
+        (
+            Request(
+                jsonrpc="2.0",
+                method="send",
+                params={"content": "hello"},
+                id=True,  # type: ignore[arg-type]
+            ),
+            "id must be string, number, or null, got: bool",
+        ),
+    ],
+)
+async def test_dispatcher_direct_ingress_wiring_rejects_malformed_request_envelope_or_shape(
+    request_obj: Request,
+    expected_message: str,
+) -> None:
+    dispatcher = Dispatcher(_StreamingStubSession(), context=None, agent_id="agent-1")
+    response = await dispatcher.dispatch(request_obj)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == expected_message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("request_obj", "expected_message"),
+    [
+        (
+            Request(
+                jsonrpc="2.0",
+                method="list_agents",
+                params=7,  # type: ignore[arg-type]
+                id=1,
+            ),
+            "params must be object or array, got: int",
+        ),
+        (
+            Request(
+                jsonrpc="2.0",
+                method=123,  # type: ignore[arg-type]
+                params={},
+                id=1,
+            ),
+            "method must be a string, got: int",
+        ),
+    ],
+)
+async def test_global_direct_ingress_wiring_rejects_malformed_request_envelope_or_shape(
+    request_obj: Request,
+    expected_message: str,
+) -> None:
+    dispatcher = GlobalDispatcher(_StubPool())
+    response = await dispatcher.dispatch(request_obj)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == expected_message

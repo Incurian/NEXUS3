@@ -52,7 +52,7 @@ Phases:
 
 - [x] Define RPC param schema models.
 - [x] Define strict `mcp.json` envelope model.
-- [ ] Wire schema validation into ingress paths.
+- [x] Wire schema validation into ingress paths.
   - [x] M1 Phase 2 slice: wired typed validation in `rpc/global_dispatcher.py::_handle_destroy_agent` and `rpc/dispatcher.py::_handle_get_messages` with compatibility-style `InvalidParamsError` mapping.
   - [x] M1 Phase 2 slice: wired typed validation in `rpc/dispatcher.py::_handle_cancel` and `rpc/dispatcher.py::_handle_compact` with compat-safe (`strict=False`) `InvalidParamsError` mapping.
   - [x] M1 Phase 2 slice: wired compat-safe typed ingress hooks for remaining low-risk no-arg methods in `rpc/dispatcher.py` (`shutdown`, `get_tokens`, `get_context`) and `rpc/global_dispatcher.py` (`list_agents`, `shutdown_server`) while preserving permissive extras behavior.
@@ -80,6 +80,7 @@ Phases:
   - [x] M1 Phase 2 protocol strictness flip: removed `parse_request` empty-method compatibility shim in `rpc/protocol.py`; empty string method is now rejected at ingress with explicit ParseError wording (`method must be a non-empty string`).
   - [x] Remaining M1 Phase 2 ingress coverage beyond low-risk methods completed.
     - Follow-up audit result (2026-03-06): behavior-sensitive method ingress (`send`, `cancel`, `compact`, `create_agent`) and request/response envelope parsing are now strict-default; no residual compatibility-only parameter projection paths remain in dispatcher/global-dispatcher/protocol ingress.
+  - [x] M1 Phase 2 in-process direct-dispatch strictness slice: `rpc/dispatcher.py::dispatch` and `rpc/global_dispatcher.py::dispatch` now validate direct `Request` envelopes via `RpcRequestEnvelopeSchema` before handler execution, rejecting malformed `jsonrpc`/`method`/`id`/`params` shapes with deterministic `INVALID_PARAMS` responses instead of internal errors.
 - [x] Remove silent malformed-entry skips.
   - [x] M1 Phase 3 slice: `context/loader.py::_merge_mcp_servers` now fail-fast rejects malformed MCP container/entry shapes (`mcpServers` non-object, `servers` non-array, non-object entries in `servers[]`) with actionable `MCPConfigError` context.
 - [x] Consolidate duplicate MCP config models.

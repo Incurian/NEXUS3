@@ -515,6 +515,38 @@ class TestCheckTargetAllowedEdgeCases:
         assert result_bad is not None
         assert "can only target parent agent" in result_bad.error
 
+    def test_unknown_allowed_targets_shape_is_fail_open_via_kernel_path(self):
+        """Malformed allowed_targets still allow, but only after kernel authorization."""
+        services = MagicMock()
+        services.get.return_value = "agent-1"
+        services.get_child_agent_ids.return_value = {"child-1"}
+        enforcer = PermissionEnforcer(services=services)
+        permissions = self._make_permissions()
+        permissions.tool_permissions["nexus_send"] = ToolPermission(
+            enabled=True,
+            allowed_targets={"unexpected": True},  # type: ignore[arg-type]
+        )
+        tool_call = ToolCall(
+            id="call-1",
+            name="nexus_send",
+            arguments={"agent_id": "random-agent", "content": "Hello"},
+        )
+
+        captured_requests = []
+        original_authorize = enforcer._target_authorization_kernel.authorize
+
+        def capture_and_delegate(request):
+            captured_requests.append(request)
+            return original_authorize(request)
+
+        enforcer._target_authorization_kernel.authorize = capture_and_delegate  # type: ignore[method-assign]
+
+        result = enforcer._check_target_allowed(tool_call, permissions)
+
+        assert result is None
+        assert len(captured_requests) == 1
+        assert captured_requests[0].context["allowed_targets_mode"] == "unknown"
+
 
 class TestCheckAllWithTargetValidation:
     """Test that check_all integrates target validation."""

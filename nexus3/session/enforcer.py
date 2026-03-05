@@ -295,27 +295,29 @@ class PermissionEnforcer:
         child_ids = self._services.get_child_agent_ids() if self._services else None
 
         # Handle special relationship-based restrictions
+        deny_error = f"Tool '{tool_call.name}' cannot target agent '{target_agent_id}'"
         if allowed == "parent":
             deny_error = (
                 f"Tool '{tool_call.name}' can only target parent agent "
                 f"('{permissions.parent_agent_id or 'none'}')"
             )
+            allowed_mode = "parent"
 
         elif allowed == "children":
             deny_error = f"Tool '{tool_call.name}' can only target child agents"
+            allowed_mode = "children"
 
         elif allowed == "family":
             deny_error = f"Tool '{tool_call.name}' can only target parent or child agents"
+            allowed_mode = "family"
 
         elif isinstance(allowed, list):
-            deny_error = f"Tool '{tool_call.name}' cannot target agent '{target_agent_id}'"
-
+            allowed_mode = "explicit"
         else:
-            return None  # Unknown restriction type, allow (fail-open for forward compat)
+            allowed_mode = "unknown"
 
         requester_id = self._services.get("agent_id") if self._services else None
         principal_id = requester_id if isinstance(requester_id, str) and requester_id else "unknown"
-        allowed_mode = allowed if isinstance(allowed, str) else "explicit"
         kernel_request = AuthorizationRequest(
             action=AuthorizationAction.AGENT_TARGET,
             resource=AuthorizationResource(

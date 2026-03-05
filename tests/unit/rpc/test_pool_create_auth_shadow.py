@@ -152,6 +152,29 @@ async def test_create_authoritative_fail_closed_on_kernel_deny(
 
 
 @pytest.mark.asyncio
+async def test_create_authoritative_lifecycle_entry_forced_deny(
+    tmp_path: Path,
+) -> None:
+    """Lifecycle-entry deny is authoritative with stable create deny wording."""
+    shared = _create_mock_shared_components(tmp_path)
+    pool = AgentPool(shared)
+    pool._create_authorization_kernel = _DenyCreateStageKernel("lifecycle_entry")
+
+    with pytest.raises(
+        PermissionError,
+        match="requester is not authorized to create this agent",
+    ):
+        await pool.create(
+            config=AgentConfig(
+                agent_id="root-lifecycle-entry-forced-deny",
+                preset="sandboxed",
+            )
+        )
+
+    assert "root-lifecycle-entry-forced-deny" not in pool
+
+
+@pytest.mark.asyncio
 async def test_create_authoritative_requester_parent_binding_match_allows(
     tmp_path: Path,
 ) -> None:
