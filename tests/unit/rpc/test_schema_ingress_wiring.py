@@ -471,9 +471,54 @@ def test_parse_request_rejects_malformed_object_id_shape() -> None:
         )
 
 
+def test_parse_request_rejects_non_object_payload_with_legacy_wording() -> None:
+    with pytest.raises(ParseError, match="Request must be a JSON object"):
+        parse_request('["not","an","object"]')
+
+
+def test_parse_request_schema_ingress_keeps_compat_for_benign_extra_fields() -> None:
+    request = parse_request(
+        '{"jsonrpc":"2.0","method":"send","params":{"content":"hi"},"id":1,"extra":"ignored"}'
+    )
+
+    assert request.jsonrpc == "2.0"
+    assert request.method == "send"
+    assert request.params == {"content": "hi"}
+    assert request.id == 1
+
+
+def test_parse_request_preserves_empty_method_compatibility() -> None:
+    request = parse_request('{"jsonrpc":"2.0","method":"","params":{"content":"hi"},"id":1}')
+    assert request.method == ""
+
+
 def test_parse_request_rejects_boolean_id() -> None:
     with pytest.raises(ParseError, match="id must be string, number, or null, got: bool"):
         parse_request('{"jsonrpc":"2.0","method":"send","params":{"content":"hi"},"id":true}')
+
+
+def test_parse_request_rejects_non_string_method_with_legacy_wording() -> None:
+    with pytest.raises(ParseError, match="method must be a string, got: int"):
+        parse_request('{"jsonrpc":"2.0","method":123,"params":{"content":"hi"}}')
+
+
+def test_parse_request_rejects_scalar_params_with_legacy_wording() -> None:
+    with pytest.raises(ParseError, match="params must be object or array, got: int"):
+        parse_request('{"jsonrpc":"2.0","method":"send","params":7}')
+
+
+def test_parse_request_rejects_array_params_with_legacy_wording() -> None:
+    expected = "Positional params \\(array\\) not supported, use named params \\(object\\)"
+    with pytest.raises(
+        ParseError,
+        match=expected,
+    ):
+        parse_request('{"jsonrpc":"2.0","method":"send","params":["hi"]}')
+
+
+def test_parse_request_rejects_invalid_jsonrpc_with_legacy_wording() -> None:
+    with pytest.raises(ParseError, match=r"jsonrpc must be '2.0', got: '1.0'"):
+        parse_request('{"jsonrpc":"1.0","method":"send","params":{"content":"hi"}}')
 
 
 def test_parse_response_rejects_malformed_error_shape() -> None:

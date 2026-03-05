@@ -6,7 +6,11 @@ from typing import Any
 from pydantic import ValidationError as PydanticValidationError
 
 from nexus3.core.errors import NexusError
-from nexus3.rpc.schemas import RpcResponseEnvelopeSchema
+from nexus3.rpc.schemas import (
+    RpcRequestEnvelopeSchema,
+    RpcResponseEnvelopeSchema,
+    project_known_schema_fields,
+)
 from nexus3.rpc.types import Request, Response
 
 
@@ -45,37 +49,57 @@ def parse_request(line: str) -> Request:
     if not isinstance(data, dict):
         raise ParseError("Request must be a JSON object")
 
-    # Validate jsonrpc version
-    jsonrpc = data.get("jsonrpc")
-    if jsonrpc != "2.0":
-        raise ParseError(f"jsonrpc must be '2.0', got: {jsonrpc!r}")
+    request_data = project_known_schema_fields(data, RpcRequestEnvelopeSchema)
 
-    # Validate method
-    method = data.get("method")
-    if not isinstance(method, str):
-        raise ParseError(f"method must be a string, got: {type(method).__name__}")
-
-    # Validate params (optional, must be object or array if present)
-    params = data.get("params")
-    if params is not None and not isinstance(params, (dict, list)):
-        raise ParseError(f"params must be object or array, got: {type(params).__name__}")
-
-    # Normalize params to dict (arrays not supported for now)
-    if isinstance(params, list):
+    # Preserve legacy behavior: explicitly reject positional params with dedicated message.
+    raw_params = data.get("params")
+    if isinstance(raw_params, list):
         raise ParseError("Positional params (array) not supported, use named params (object)")
 
-    # Get id (optional - None means notification)
-    request_id = data.get("id")
-    if request_id is not None and (
-        isinstance(request_id, bool) or not isinstance(request_id, (str, int))
-    ):
-        raise ParseError(f"id must be string, number, or null, got: {type(request_id).__name__}")
+    # Preserve legacy behavior: empty-string method is accepted (type-checked only).
+    raw_method = data.get("method")
+    if isinstance(raw_method, str) and raw_method == "":
+        request_data["method"] = " "
+
+    try:
+        validated = RpcRequestEnvelopeSchema.model_validate(request_data, strict=True)
+    except PydanticValidationError as e:
+        errors = e.errors()
+        if errors:
+            err = errors[0]
+            loc = err.get("loc", ())
+            field = loc[0] if loc else None
+
+            if field == "jsonrpc":
+                raise ParseError(f"jsonrpc must be '2.0', got: {data.get('jsonrpc')!r}") from e
+
+            if field == "method":
+                raise ParseError(
+                    f"method must be a string, got: {type(data.get('method')).__name__}"
+                ) from e
+
+            if field == "params":
+                params = data.get("params")
+                if isinstance(params, list):
+                    raise ParseError(
+                        "Positional params (array) not supported, use named params (object)"
+                    ) from e
+                raise ParseError(
+                    f"params must be object or array, got: {type(params).__name__}"
+                ) from e
+
+            if field == "id":
+                raise ParseError(
+                    f"id must be string, number, or null, got: {type(data.get('id')).__name__}"
+                ) from e
+
+        raise ParseError("Invalid JSON-RPC request") from e
 
     return Request(
-        jsonrpc=jsonrpc,
-        method=method,
-        params=params,
-        id=request_id,
+        jsonrpc=validated.jsonrpc,
+        method=raw_method if isinstance(raw_method, str) else validated.method,
+        params=validated.params,
+        id=validated.id,
     )
 
 
