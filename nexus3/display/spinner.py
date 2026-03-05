@@ -13,8 +13,8 @@ from rich.console import Console
 from rich.live import Live
 from rich.text import Text
 
-from nexus3.core.text_safety import strip_terminal_escapes
 from nexus3.display.console import get_console
+from nexus3.display.safe_sink import SafeSink
 from nexus3.display.theme import Activity, Theme, load_theme
 
 
@@ -165,7 +165,7 @@ class Spinner:
             chunk: Text chunk to print (will be sanitized).
         """
         import sys
-        sanitized = strip_terminal_escapes(chunk)
+        sanitized = SafeSink.sanitize_stream_content(chunk)
         if not sanitized:
             return
 

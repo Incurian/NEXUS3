@@ -266,9 +266,8 @@ async def test_dispatcher_send_content_validation_preserves_error_wording(
 
 
 @pytest.mark.asyncio
-async def test_dispatcher_send_ingress_wiring_keeps_compat_with_benign_extra_params() -> None:
-    session = _StreamingStubSession()
-    dispatcher = Dispatcher(session, context=None, agent_id="agent-1")
+async def test_dispatcher_send_ingress_wiring_rejects_unknown_extra_params() -> None:
+    dispatcher = Dispatcher(_StreamingStubSession(), context=None, agent_id="agent-1")
 
     request = Request(
         jsonrpc="2.0",
@@ -277,20 +276,16 @@ async def test_dispatcher_send_ingress_wiring_keeps_compat_with_benign_extra_par
             "content": "hello",
             "request_id": "req-1",
             "source": "rpc",
-            "trace_id": "benign-extra",
+            "trace_id": "unexpected-extra",
         },
         id=1,
     )
     response = await dispatcher.dispatch(request)
 
     assert response is not None
-    assert response.error is None
-    assert response.result == {
-        "content": "ok",
-        "request_id": "req-1",
-        "halted_at_iteration_limit": False,
-    }
-    assert session.calls[0]["content"] == "hello"
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert "extra inputs are not permitted" in response.error["message"].lower()
 
 
 @pytest.mark.asyncio
@@ -618,6 +613,23 @@ async def test_dispatcher_cancel_schema_validation_rejects_malformed_request_id_
 
 
 @pytest.mark.asyncio
+async def test_dispatcher_cancel_schema_validation_rejects_unknown_extra_params() -> None:
+    dispatcher = Dispatcher(_StubSession(), context=None, agent_id="agent-1")
+    request = Request(
+        jsonrpc="2.0",
+        method="cancel",
+        params={"request_id": "req-1", "unexpected": "value"},
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert "extra inputs are not permitted" in response.error["message"].lower()
+
+
+@pytest.mark.asyncio
 async def test_dispatcher_compact_schema_validation_rejects_invalid_force() -> None:
     dispatcher = Dispatcher(_StubSession(), context=None, agent_id="agent-1")
     request = Request(
@@ -632,6 +644,23 @@ async def test_dispatcher_compact_schema_validation_rejects_invalid_force() -> N
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
     assert "boolean" in response.error["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_compact_schema_validation_rejects_unknown_extra_params() -> None:
+    dispatcher = Dispatcher(_StubSession(), context=None, agent_id="agent-1")
+    request = Request(
+        jsonrpc="2.0",
+        method="compact",
+        params={"force": True, "unexpected": "value"},
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert "extra inputs are not permitted" in response.error["message"].lower()
 
 
 @pytest.mark.asyncio

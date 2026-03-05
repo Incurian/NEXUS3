@@ -551,6 +551,21 @@ Compact checkpoint (2026-03-06, architecture execution round 6):
   2. Plan G: continue remaining fragmented sanitizer consolidation in display/REPL residual call sites (`spinner.py`, `streaming.py`, and any remaining direct dynamic prints).
   3. Plan A: identify first safe duplicate authorization branch removal candidate after parity telemetry stabilization.
 
+Compact checkpoint (2026-03-06, architecture execution round 7):
+- Branch head at start of round: `256683b`; working tree now includes parallel Plan H and Plan G strictness/consolidation follow-ups.
+- New slices completed this round:
+  1. Plan H tightened dispatcher ingress for `send`/`cancel`/`compact` to reject unknown extra params while preserving legacy field-specific invalid-params wording.
+  2. Plan G consolidated display-layer sanitizer routing in `nexus3/display/spinner.py` and `nexus3/display/streaming.py` to shared `SafeSink` entrypoints.
+  3. Added focused regressions in `tests/unit/rpc/test_schema_ingress_wiring.py` and `tests/unit/display/test_escape_sanitization.py` for the new strictness/sanitizer paths.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/rpc/dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py nexus3/display/spinner.py nexus3/display/streaming.py tests/unit/display/test_escape_sanitization.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/dispatcher.py nexus3/display/spinner.py nexus3/display/streaming.py` passed.
+  - `.venv/bin/pytest -v tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/display/test_escape_sanitization.py tests/unit/display/test_safe_sink.py` passed (`96 passed`).
+- Immediate resume targets:
+  1. Plan H: decide on remaining compatibility-only protocol parse path (`empty method` rewrite) and whether to flip to strict reject.
+  2. Plan G: sweep residual direct dynamic `console.print` sites in `nexus3/cli/repl.py` and low-risk CLI consistency paths for final consolidation.
+  3. Plan A: plan/execute first safe duplicate-authorization-branch removal slice after shadow telemetry coverage.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.

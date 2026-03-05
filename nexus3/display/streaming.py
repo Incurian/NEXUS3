@@ -7,7 +7,7 @@ from enum import Enum
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from nexus3.core.text_safety import escape_rich_markup, strip_terminal_escapes
+from nexus3.display.safe_sink import SafeSink
 from nexus3.display.theme import Activity, Theme
 
 
@@ -177,7 +177,7 @@ class StreamingDisplay:
 
         # Error on next line (first 120 chars)
         if tool.state == ToolState.ERROR and tool.error:
-            error_preview = escape_rich_markup(
+            error_preview = SafeSink.sanitize_print_content(
                 tool.error[:120] + ("..." if len(tool.error) > 120 else "")
             )
             line.append(f"\n      {error_preview}", style="red dim")
@@ -244,7 +244,7 @@ class StreamingDisplay:
 
     def add_chunk(self, chunk: str) -> None:
         """Add a chunk to the response buffer (sanitized at source)."""
-        sanitized = strip_terminal_escapes(chunk)
+        sanitized = SafeSink.sanitize_stream_content(chunk)
         self.response += sanitized
         if self.activity == Activity.THINKING:
             self.activity = Activity.RESPONDING

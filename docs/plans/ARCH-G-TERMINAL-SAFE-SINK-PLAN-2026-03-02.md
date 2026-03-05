@@ -106,6 +106,10 @@ Phases:
 - Migrated `nexus3/mcp/skill_adapter.py` dynamic tool result sanitization from direct core helper usage to shared `SafeSink` sanitizer entrypoint to reduce fragmented boundary patterns.
 - Added focused adapter sanitization regressions in `tests/unit/mcp/test_skill_adapter.py` for success/error payload escaping (ANSI + Rich markup).
 - Validation: `.venv/bin/ruff check nexus3/mcp/skill_adapter.py tests/unit/mcp/test_skill_adapter.py`, `.venv/bin/mypy nexus3/mcp/skill_adapter.py`, and `.venv/bin/pytest -v tests/unit/mcp/test_skill_adapter.py` passed.
+- 2026-03-06: Phase 3 cleanup slice completed (display streaming/spinner sink consolidation).
+- Migrated `nexus3/display/spinner.py` and `nexus3/display/streaming.py` untrusted chunk/error-preview sanitization to shared `SafeSink` sanitizer entrypoints.
+- Added focused display regressions in `tests/unit/display/test_escape_sanitization.py` for spinner streaming chunk sanitization and streaming tool error preview sanitization.
+- Validation: `.venv/bin/ruff check nexus3/display/spinner.py nexus3/display/streaming.py tests/unit/display/test_escape_sanitization.py`, `.venv/bin/mypy nexus3/display/spinner.py nexus3/display/streaming.py`, and `.venv/bin/pytest -v tests/unit/display/test_escape_sanitization.py tests/unit/display/test_safe_sink.py` passed.
 
 ## Testing Strategy
 
@@ -129,7 +133,8 @@ Phases:
   - [x] Removed redundant ad hoc escaping in `nexus3/cli/confirmation_ui.py::confirm_tool_action` during SafeSink migration.
   - [x] Collapsed duplicate sanitize-wrapper branches in `nexus3/cli/serve.py` and `nexus3/mcp/error_formatter.py` onto shared `SafeSink.sanitize_print_value(...)`.
   - [x] Consolidated MCP skill adapter result sanitization in `nexus3/mcp/skill_adapter.py` to `SafeSink` shared sanitizer entrypoint.
-  - Resume target: continue collapsing any remaining fragmented formatter/sanitizer branches into shared SafeSink entrypoints.
+  - [x] Consolidated display streaming/spinner sanitizer branches in `nexus3/display/spinner.py` and `nexus3/display/streaming.py` to `SafeSink` shared sanitizer entrypoints.
+  - Resume target: continue collapsing any remaining fragmented formatter/sanitizer branches into shared SafeSink entrypoints (primarily residual direct dynamic REPL prints and minor CLI consistency paths).
 
 ## Documentation Updates
 

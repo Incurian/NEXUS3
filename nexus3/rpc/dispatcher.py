@@ -28,7 +28,6 @@ from nexus3.rpc.schemas import (
     EmptyParamsSchema,
     GetMessagesParamsSchema,
     SendParamsSchema,
-    project_known_schema_fields,
 )
 from nexus3.rpc.types import Request, Response
 from nexus3.session import Session
@@ -261,11 +260,8 @@ class Dispatcher:
         Raises:
             InvalidParamsError: If 'content' is missing.
         """
-        schema_candidate = project_known_schema_fields(params, SendParamsSchema)
         try:
-            # Compat-safe schema ingress wiring: validate only known send
-            # fields and keep extra params permissive.
-            validated = SendParamsSchema.model_validate(schema_candidate, strict=False)
+            validated = SendParamsSchema.model_validate(params, strict=False)
         except PydanticValidationError as exc:
             errors = exc.errors()
             if errors:
@@ -291,6 +287,10 @@ class Dispatcher:
                     raise InvalidParamsError(
                         "source_agent_id must be string or integer, "
                         f"got: {type(raw_value).__name__}"
+                    ) from exc
+                if error.get("type") == "extra_forbidden":
+                    raise InvalidParamsError(
+                        str(error.get("msg", "Invalid send parameters"))
                     ) from exc
             raise InvalidParamsError("Invalid send parameters") from exc
 
@@ -658,12 +658,9 @@ class Dispatcher:
         Raises:
             InvalidParamsError: If 'request_id' is missing.
         """
-        candidate: dict[str, Any] = {}
-        if "request_id" in params:
-            candidate["request_id"] = params["request_id"]
         try:
             validated = CancelParamsSchema.model_validate(
-                candidate,
+                params,
                 strict=False,
             )
         except PydanticValidationError as exc:
@@ -677,6 +674,10 @@ class Dispatcher:
                     if error.get("type") == "missing" or raw_value == "":
                         raise InvalidParamsError("Missing required parameter: request_id") from exc
                     raise InvalidParamsError("request_id must be string or integer") from exc
+                if error.get("type") == "extra_forbidden":
+                    raise InvalidParamsError(
+                        str(error.get("msg", "Invalid request_id"))
+                    ) from exc
             raise InvalidParamsError("Invalid request_id") from exc
 
         principal_id = (
@@ -737,12 +738,8 @@ class Dispatcher:
             OR
             - compacted: False, reason: why compaction didn't occur
         """
-        candidate: dict[str, Any] = {}
-        if "force" in params:
-            candidate["force"] = params["force"]
-
         try:
-            validated = CompactParamsSchema.model_validate(candidate, strict=False)
+            validated = CompactParamsSchema.model_validate(params, strict=False)
         except PydanticValidationError as exc:
             errors = exc.errors()
             if errors:

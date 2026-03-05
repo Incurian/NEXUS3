@@ -5,6 +5,7 @@ to prevent terminal injection from malicious/buggy LLM output.
 """
 
 import io
+import sys
 from collections.abc import Callable
 from unittest.mock import MagicMock
 
@@ -13,6 +14,8 @@ from rich.console import Console
 
 from nexus3.core.text_safety import ANSI_ESCAPE_PATTERN
 from nexus3.display.printer import InlinePrinter
+from nexus3.display.spinner import Spinner
+from nexus3.display.streaming import StreamingDisplay, ToolState, ToolStatus
 from nexus3.display.theme import Status, Theme
 
 
@@ -322,3 +325,42 @@ class TestInlinePrinterRichOutputSanitization:
 
         assert rendered.startswith("[cyan]●[/] ")
         assert "[bold]trusted[/bold]" in rendered
+
+
+class TestSpinnerStreamingSanitization:
+    """Focused sanitizer routing tests for Spinner streaming output."""
+
+    def test_print_streaming_sanitizes_untrusted_chunk(self, mock_stdout: MockStdout) -> None:
+        spinner = Spinner(console=MagicMock(spec=Console), theme=Theme())
+        original_stdout = sys.stdout
+        try:
+            sys.stdout = mock_stdout
+            spinner.print_streaming("safe \x1b[31mred\x1b[0m\n")
+        finally:
+            sys.stdout = original_stdout
+
+        assert mock_stdout.getvalue() == "safe red\n"
+
+
+class TestStreamingDisplaySanitization:
+    """Focused sanitizer routing tests for StreamingDisplay."""
+
+    def test_add_chunk_sanitizes_terminal_escapes(self) -> None:
+        display = StreamingDisplay(Theme())
+        display.add_chunk("safe \x1b[31mred\x1b[0m text")
+        assert display.response == "safe red text"
+
+    def test_render_tool_line_sanitizes_error_preview(self) -> None:
+        display = StreamingDisplay(Theme())
+        tool = ToolStatus(
+            name="run",
+            tool_id="t1",
+            state=ToolState.ERROR,
+            error="[red]bad[/red]\x1b[31m",
+        )
+
+        line = display._render_tool_line(tool)
+        plain = line.plain
+
+        assert r"\[red]bad\[/red]" in plain
+        assert "\x1b" not in plain
