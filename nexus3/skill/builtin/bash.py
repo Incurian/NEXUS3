@@ -26,6 +26,7 @@ import os
 import shlex
 import subprocess
 import sys
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from nexus3.core.permissions import PermissionLevel
@@ -53,6 +54,42 @@ def _check_permission_level(services: "ServiceContainer", skill_name: str) -> To
     return None
 
 
+async def _execute_with_process_factory(
+    skill: ExecutionSkill,
+    timeout: int,
+    cwd: str | None,
+    timeout_message: str,
+    process_factory: Callable[[str | None], Awaitable[asyncio.subprocess.Process]],
+) -> ToolResult:
+    """Execute a subprocess using per-request process arguments only."""
+    timeout = skill._enforce_timeout(timeout)
+
+    work_dir, error = skill._resolve_working_directory(cwd)
+    if error:
+        return ToolResult(error=error)
+
+    try:
+        process = await process_factory(work_dir)
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=timeout,
+            )
+        except TimeoutError:
+            from nexus3.core.process import terminate_process_tree
+            await terminate_process_tree(process)
+            return ToolResult(error=timeout_message.format(timeout=timeout))
+
+        output = skill._format_output(stdout, stderr, process.returncode)
+        return ToolResult(output=output)
+
+    except OSError as e:
+        return ToolResult(error=f"Failed to execute: {e}")
+    except Exception as e:
+        return ToolResult(error=f"Error during execution: {e}")
+
+
 class BashSafeSkill(ExecutionSkill):
     """Safe shell skill using subprocess_exec (no shell interpretation).
 
@@ -76,11 +113,6 @@ class BashSafeSkill(ExecutionSkill):
     - "echo hello > file.txt" (redirect)
     - "echo $HOME" (variable expansion)
     """
-
-    def __init__(self, services: "ServiceContainer") -> None:
-        """Initialize BashSafeSkill with ServiceContainer."""
-        super().__init__(services)
-        self._args: list[str] = []
 
     @property
     def name(self) -> str:
@@ -114,13 +146,14 @@ class BashSafeSkill(ExecutionSkill):
 
     async def _create_process(
         self,
-        work_dir: str | None
+        work_dir: str | None,
+        args: list[str],
     ) -> asyncio.subprocess.Process:
         """Create subprocess without shell."""
         # Platform-specific process group handling for clean timeout kills
         if sys.platform == "win32":
             return await asyncio.create_subprocess_exec(
-                *self._args,
+                *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=work_dir,
@@ -132,7 +165,7 @@ class BashSafeSkill(ExecutionSkill):
             )
         else:
             return await asyncio.create_subprocess_exec(
-                *self._args,
+                *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=work_dir,
@@ -170,18 +203,18 @@ class BashSafeSkill(ExecutionSkill):
                     arg[1:-1] if len(arg) >= 2 and arg[0] in "\"'" and arg[-1] == arg[0] else arg
                     for arg in args
                 ]
-
-            self._args = args
         except ValueError as e:
             return ToolResult(error=f"Invalid command syntax: {e}")
 
-        if not self._args:
+        if not args:
             return ToolResult(error="Empty command after parsing")
 
-        return await self._execute_subprocess(
+        return await _execute_with_process_factory(
+            skill=self,
             timeout=timeout,
             cwd=cwd,
-            timeout_message="Command timed out after {timeout}s"
+            timeout_message="Command timed out after {timeout}s",
+            process_factory=lambda work_dir: self._create_process(work_dir, args),
         )
 
 class ShellUnsafeSkill(ExecutionSkill):
@@ -203,11 +236,6 @@ class ShellUnsafeSkill(ExecutionSkill):
     The name "shell_UNSAFE" is intentionally alarming to prompt
     careful consideration before use.
     """
-
-    def __init__(self, services: "ServiceContainer") -> None:
-        """Initialize ShellUnsafeSkill with ServiceContainer."""
-        super().__init__(services)
-        self._command: str = ""
 
     @property
     def name(self) -> str:
@@ -247,7 +275,8 @@ class ShellUnsafeSkill(ExecutionSkill):
 
     async def _create_process(
         self,
-        work_dir: str | None
+        work_dir: str | None,
+        command: str,
     ) -> asyncio.subprocess.Process:
         """Create shell subprocess."""
         # Platform-specific process group handling for clean timeout kills.
@@ -256,7 +285,7 @@ class ShellUnsafeSkill(ExecutionSkill):
         if sys.platform == "win32":
             if os.environ.get("MSYSTEM"):
                 return await asyncio.create_subprocess_exec(
-                    "bash", "-lc", self._command,
+                    "bash", "-lc", command,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     cwd=work_dir,
@@ -269,7 +298,7 @@ class ShellUnsafeSkill(ExecutionSkill):
             if os.environ.get("PSModulePath"):
                 return await asyncio.create_subprocess_exec(
                     "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                    "-Command", self._command,
+                    "-Command", command,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     cwd=work_dir,
@@ -280,7 +309,7 @@ class ShellUnsafeSkill(ExecutionSkill):
                     ),
                 )
             return await asyncio.create_subprocess_shell(
-                self._command,
+                command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=work_dir,
@@ -292,7 +321,7 @@ class ShellUnsafeSkill(ExecutionSkill):
             )
         else:
             return await asyncio.create_subprocess_shell(
-                self._command,
+                command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=work_dir,
@@ -315,11 +344,12 @@ class ShellUnsafeSkill(ExecutionSkill):
         if not command:
             return ToolResult(error="Command is required")
 
-        self._command = command
-        return await self._execute_subprocess(
+        return await _execute_with_process_factory(
+            skill=self,
             timeout=timeout,
             cwd=cwd,
-            timeout_message="Command timed out after {timeout}s"
+            timeout_message="Command timed out after {timeout}s",
+            process_factory=lambda work_dir: self._create_process(work_dir, command),
         )
 
 

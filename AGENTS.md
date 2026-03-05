@@ -254,6 +254,11 @@ Progress snapshot:
   - compute both legacy and kernel decisions in `AgentPool.destroy`
   - continue enforcing legacy allow/deny behavior only
   - emit structured warning when legacy/kernel decisions diverge
+- Completed: M2 Plan C Phase 3 execution-skill request-safety slice:
+  - removed per-call mutable state from `bash_safe`, `shell_UNSAFE`, and `run_python`
+  - refactored subprocess creation helpers to pass command/code as local parameters
+  - updated Windows behavior tests to assert subprocess call args directly
+  - added focused concurrent `run_python` test for per-call payload isolation
 - Next gate: run expanded validation (broader suites pending) and continue M1 Plan H ingress wiring plus Plan G Phase 3 migration slices.
 
 Recovery note:

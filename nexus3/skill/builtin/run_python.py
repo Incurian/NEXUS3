@@ -7,15 +7,49 @@ level and refuses to execute in SANDBOXED mode, even if mistakenly registered.
 import asyncio
 import subprocess
 import sys
-from typing import TYPE_CHECKING, Any
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from nexus3.core.permissions import PermissionLevel
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import ExecutionSkill, execution_skill_factory
 from nexus3.skill.builtin.env import get_safe_env
 
-if TYPE_CHECKING:
-    from nexus3.skill.services import ServiceContainer
+
+async def _execute_with_process_factory(
+    skill: ExecutionSkill,
+    timeout: int,
+    cwd: str | None,
+    timeout_message: str,
+    process_factory: Callable[[str | None], Awaitable[asyncio.subprocess.Process]],
+) -> ToolResult:
+    """Execute a subprocess using per-request code payload only."""
+    timeout = skill._enforce_timeout(timeout)
+
+    work_dir, error = skill._resolve_working_directory(cwd)
+    if error:
+        return ToolResult(error=error)
+
+    try:
+        process = await process_factory(work_dir)
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=timeout,
+            )
+        except TimeoutError:
+            from nexus3.core.process import terminate_process_tree
+            await terminate_process_tree(process)
+            return ToolResult(error=timeout_message.format(timeout=timeout))
+
+        output = skill._format_output(stdout, stderr, process.returncode)
+        return ToolResult(output=output)
+
+    except OSError as e:
+        return ToolResult(error=f"Failed to execute: {e}")
+    except Exception as e:
+        return ToolResult(error=f"Error during execution: {e}")
 
 
 class RunPythonSkill(ExecutionSkill):
@@ -31,11 +65,6 @@ class RunPythonSkill(ExecutionSkill):
     The skill captures stdout and stderr, enforces timeout,
     and returns the output.
     """
-
-    def __init__(self, services: "ServiceContainer") -> None:
-        """Initialize RunPythonSkill with ServiceContainer."""
-        super().__init__(services)
-        self._code: str = ""
 
     @property
     def name(self) -> str:
@@ -69,13 +98,14 @@ class RunPythonSkill(ExecutionSkill):
 
     async def _create_process(
         self,
-        work_dir: str | None
+        work_dir: str | None,
+        code: str,
     ) -> asyncio.subprocess.Process:
         """Create a Python subprocess."""
         # Platform-specific process group handling for clean timeout kills
         if sys.platform == "win32":
             return await asyncio.create_subprocess_exec(
-                sys.executable, "-c", self._code,
+                sys.executable, "-c", code,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=work_dir,
@@ -87,7 +117,7 @@ class RunPythonSkill(ExecutionSkill):
             )
         else:
             return await asyncio.create_subprocess_exec(
-                sys.executable, "-c", self._code,
+                sys.executable, "-c", code,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=work_dir,
@@ -115,11 +145,12 @@ class RunPythonSkill(ExecutionSkill):
         if not code:
             return ToolResult(error="Code is required")
 
-        self._code = code
-        return await self._execute_subprocess(
+        return await _execute_with_process_factory(
+            skill=self,
             timeout=timeout,
             cwd=cwd,
-            timeout_message="Python execution timed out after {timeout}s"
+            timeout_message="Python execution timed out after {timeout}s",
+            process_factory=lambda work_dir: self._create_process(work_dir, code),
         )
 
 

@@ -1,5 +1,6 @@
 """Tests for Windows-specific behavior in execution shell skills."""
 
+import asyncio
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -9,6 +10,7 @@ import pytest
 from nexus3.core.permissions import PermissionLevel
 from nexus3.skill.builtin import bash as bash_mod
 from nexus3.skill.builtin.bash import BashSafeSkill, ShellUnsafeSkill
+from nexus3.skill.builtin.run_python import RunPythonSkill
 
 
 class MockServiceContainer:
@@ -46,7 +48,7 @@ class TestBashSafeWindowsBehavior:
         )
         skill = BashSafeSkill(services)
 
-        async def raise_missing(_: str | None) -> MagicMock:
+        async def raise_missing(_: str | None, __: list[str]) -> MagicMock:
             raise FileNotFoundError(2, "The system cannot find the file specified")
 
         skill._create_process = raise_missing  # type: ignore[method-assign]
@@ -67,7 +69,7 @@ class TestBashSafeWindowsBehavior:
         )
         skill = BashSafeSkill(services)
 
-        async def raise_missing(_: str | None) -> MagicMock:
+        async def raise_missing(_: str | None, __: list[str]) -> MagicMock:
             raise FileNotFoundError(2, "The system cannot find the file specified")
 
         with patch("nexus3.skill.builtin.bash.sys.platform", "win32"):
@@ -85,7 +87,7 @@ class TestShellUnsafeWindowsShellSelection:
     async def test_uses_git_bash_when_msystem_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         services = MockServiceContainer(permission_level=PermissionLevel.TRUSTED)
         skill = ShellUnsafeSkill(services)
-        skill._command = "source .venv/Scripts/activate && python -V"
+        command = "source .venv/Scripts/activate && python -V"
 
         monkeypatch.setattr("nexus3.skill.builtin.bash.sys.platform", "win32")
         monkeypatch.setenv("MSYSTEM", "MINGW64")
@@ -97,11 +99,11 @@ class TestShellUnsafeWindowsShellSelection:
             "nexus3.skill.builtin.bash.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=MagicMock()),
         ) as mock_exec:
-            await skill._create_process(work_dir=None)
+            await skill._create_process(work_dir=None, command=command)
 
         mock_exec.assert_awaited_once()
         args = mock_exec.await_args.args
-        assert args[:3] == ("bash", "-lc", skill._command)
+        assert args[:3] == ("bash", "-lc", command)
 
     @pytest.mark.asyncio
     async def test_uses_powershell_when_psmodulepath_set(
@@ -110,7 +112,7 @@ class TestShellUnsafeWindowsShellSelection:
     ) -> None:
         services = MockServiceContainer(permission_level=PermissionLevel.TRUSTED)
         skill = ShellUnsafeSkill(services)
-        skill._command = ". .\\.venv\\Scripts\\Activate.ps1; python --version"
+        command = ". .\\.venv\\Scripts\\Activate.ps1; python --version"
 
         monkeypatch.setattr("nexus3.skill.builtin.bash.sys.platform", "win32")
         monkeypatch.delenv("MSYSTEM", raising=False)
@@ -122,12 +124,12 @@ class TestShellUnsafeWindowsShellSelection:
             "nexus3.skill.builtin.bash.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=MagicMock()),
         ) as mock_exec:
-            await skill._create_process(work_dir=None)
+            await skill._create_process(work_dir=None, command=command)
 
         mock_exec.assert_awaited_once()
         args = mock_exec.await_args.args
         assert args[:5] == ("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command")
-        assert args[5] == skill._command
+        assert args[5] == command
 
     @pytest.mark.asyncio
     async def test_falls_back_to_cmd_shell_when_no_markers(
@@ -136,7 +138,7 @@ class TestShellUnsafeWindowsShellSelection:
     ) -> None:
         services = MockServiceContainer(permission_level=PermissionLevel.TRUSTED)
         skill = ShellUnsafeSkill(services)
-        skill._command = "echo hello"
+        command = "echo hello"
 
         monkeypatch.setattr("nexus3.skill.builtin.bash.sys.platform", "win32")
         monkeypatch.delenv("MSYSTEM", raising=False)
@@ -148,7 +150,43 @@ class TestShellUnsafeWindowsShellSelection:
             "nexus3.skill.builtin.bash.asyncio.create_subprocess_shell",
             new=AsyncMock(return_value=MagicMock()),
         ) as mock_shell:
-            await skill._create_process(work_dir=None)
+            await skill._create_process(work_dir=None, command=command)
 
         mock_shell.assert_awaited_once()
-        assert mock_shell.await_args.args[0] == "echo hello"
+        assert mock_shell.await_args.args[0] == command
+
+
+class TestRunPythonConcurrencySafety:
+    """run_python should preserve per-call code payloads under concurrency."""
+
+    @pytest.mark.asyncio
+    async def test_execute_passes_code_per_call_without_shared_state(self) -> None:
+        services = MockServiceContainer(permission_level=PermissionLevel.TRUSTED)
+        skill = RunPythonSkill(services)
+        seen_codes: list[str] = []
+
+        class _FakeProcess:
+            def __init__(self, code: str) -> None:
+                self.returncode = 0
+                self._code = code
+
+            async def communicate(self) -> tuple[bytes, bytes]:
+                await asyncio.sleep(0.01)
+                return (self._code.encode("utf-8"), b"")
+
+        async def fake_create_process(work_dir: str | None, code: str) -> _FakeProcess:
+            seen_codes.append(code)
+            await asyncio.sleep(0.01)
+            return _FakeProcess(code)
+
+        skill._create_process = fake_create_process  # type: ignore[method-assign]
+
+        first = "print('first')"
+        second = "print('second')"
+        results = await asyncio.gather(
+            skill.execute(code=first),
+            skill.execute(code=second),
+        )
+
+        assert sorted(seen_codes) == sorted([first, second])
+        assert sorted(result.output for result in results) == sorted([first, second])

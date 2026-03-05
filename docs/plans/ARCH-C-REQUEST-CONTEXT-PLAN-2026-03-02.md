@@ -53,7 +53,7 @@ Phases:
 
 - [x] Introduce request context model.
 - [x] Remove global mutable requester field.
-- [ ] Make selected built-in skills stateless per call.
+- [x] Make selected built-in skills stateless per call.
 - [x] Add concurrency tests and stress-style regressions.
 
 ### M2 Commit 1 Status (2026-03-04)
@@ -63,6 +63,17 @@ Phases:
 - Removed shared mutable requester field usage in global destroy flow.
 - Added focused unit coverage for `RequestContext` immutability/field shape and
   overlapping destroy dispatch requester isolation in `tests/unit/`.
+
+### M2 Commit 2 Status (2026-03-05)
+
+- Refactored `bash_safe`, `shell_UNSAFE`, and `run_python` to remove per-call
+  mutable instance state (`_args`, `_command`, `_code`).
+- Updated execution flow to pass parsed command args/code through local
+  process-factory parameters.
+- Updated Windows shell-selection tests to assert subprocess call arguments
+  directly.
+- Added focused concurrent `run_python` execution test proving per-call code
+  payload isolation on a shared skill instance.
 
 ## Documentation Updates
 
