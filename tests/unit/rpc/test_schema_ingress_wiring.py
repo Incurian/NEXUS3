@@ -613,6 +613,30 @@ def test_parse_response_rejects_non_object_error_shape() -> None:
         parse_response('{"jsonrpc":"2.0","id":1,"error":"boom"}')
 
 
+def test_parse_response_rejects_malformed_error_code_type() -> None:
+    with pytest.raises(ParseError, match="Invalid JSON-RPC response"):
+        parse_response('{"jsonrpc":"2.0","id":1,"error":{"code":"bad","message":"boom"}}')
+
+
+def test_parse_response_rejects_malformed_error_message_type() -> None:
+    with pytest.raises(ParseError, match="Invalid JSON-RPC response"):
+        parse_response('{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":7}}')
+
+
+def test_parse_response_rejects_error_extra_fields() -> None:
+    with pytest.raises(ParseError, match="Invalid JSON-RPC response"):
+        parse_response(
+            '{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"boom","extra":"x"}}'
+        )
+
+
+def test_parse_response_returns_error_payload_as_plain_dict_without_default_fields() -> None:
+    response = parse_response('{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"boom"}}')
+
+    assert response.error == {"code": -32000, "message": "boom"}
+    assert isinstance(response.error, dict)
+
+
 def test_parse_response_schema_ingress_rejects_unknown_top_level_fields() -> None:
     with pytest.raises(ParseError, match="Invalid JSON-RPC response"):
         parse_response('{"jsonrpc":"2.0","id":1,"result":null,"extra":"ignored"}')

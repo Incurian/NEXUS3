@@ -759,6 +759,22 @@ Compact checkpoint (2026-03-06, architecture execution round 19):
   2. Plan H: evaluate strict-value flip for `create_agent` ingress in `rpc/global_dispatcher.py` (higher-risk surface).
   3. Plan A: resume create-authorization duplicate-branch removal in `rpc/pool.py::_create_unlocked`.
 
+Compact checkpoint (2026-03-06, architecture execution round 20):
+- Branch head at start of round: `59ad445`; working tree now includes Plan H protocol response-envelope strictness follow-up.
+- New slice completed this round:
+  1. Plan H made `RpcResponseEnvelopeSchema.error` strictly typed (`RpcErrorObjectSchema | None`) in `nexus3/rpc/schemas.py`.
+  2. Plan H updated `nexus3/rpc/protocol.py::parse_response` to enforce nested error-object typing while preserving legacy wording for non-object and missing-required-field cases.
+  3. Plan H normalized parsed response errors back to plain dict payloads via `model_dump(exclude_none=True)` to avoid model leakage/default-field noise.
+  4. Added focused regressions in `tests/unit/rpc/test_schema_ingress_wiring.py` and `tests/unit/rpc/test_schemas.py` for malformed `error.code`/`error.message`, unknown `error` extras, and response error-dict shape.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/rpc/schemas.py nexus3/rpc/protocol.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/rpc/test_schemas.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/schemas.py nexus3/rpc/protocol.py` passed.
+  - `.venv/bin/pytest -v tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/rpc/test_schemas.py` passed (`84 passed`).
+- Immediate resume targets:
+  1. Plan H: evaluate strict-value flip for `create_agent` ingress in `rpc/global_dispatcher.py` (remaining higher-risk behavior-sensitive path).
+  2. Plan A: resume create-authorization duplicate-branch removal in `rpc/pool.py::_create_unlocked`.
+  3. Plan A: evaluate routing `_check_enabled` through authorization kernel to reduce remaining split policy surface in `session/enforcer.py`.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.

@@ -61,7 +61,7 @@ class RpcResponseEnvelopeSchema(StrictSchemaModel):
     jsonrpc: Literal["2.0"]
     id: JsonRpcId | None
     result: Any | None = None
-    error: dict[str, Any] | None = None
+    error: RpcErrorObjectSchema | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -86,7 +86,7 @@ class RpcResponseEnvelopeSchema(StrictSchemaModel):
 
     @field_validator("error", mode="before")
     @classmethod
-    def validate_error_shape(cls, value: Any) -> dict[str, Any] | None:
+    def validate_error_shape(cls, value: Any) -> Any:
         if value is None:
             return value
         if not isinstance(value, dict):

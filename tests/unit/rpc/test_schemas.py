@@ -98,6 +98,48 @@ def test_rpc_response_envelope_rejects_unknown_top_level_field() -> None:
         )
 
 
+def test_rpc_response_envelope_rejects_malformed_error_code_type() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        RpcResponseEnvelopeSchema.model_validate(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": "bad", "message": "boom"},
+            },
+            strict=True,
+        )
+
+    assert exc_info.value.errors()[0]["loc"] == ("error", "code")
+
+
+def test_rpc_response_envelope_rejects_malformed_error_message_type() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        RpcResponseEnvelopeSchema.model_validate(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32000, "message": 7},
+            },
+            strict=True,
+        )
+
+    assert exc_info.value.errors()[0]["loc"] == ("error", "message")
+
+
+def test_rpc_response_envelope_rejects_unknown_error_extra_field() -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        RpcResponseEnvelopeSchema.model_validate(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": -32000, "message": "boom", "extra": "x"},
+            },
+            strict=True,
+        )
+
+    assert exc_info.value.errors()[0]["loc"] == ("error", "extra")
+
+
 def test_send_params_reject_bool_request_id() -> None:
     with pytest.raises(ValidationError, match="request_id"):
         SendParamsSchema.model_validate({"content": "hello", "request_id": False})

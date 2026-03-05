@@ -246,7 +246,14 @@ def parse_response(line: str) -> Response:
                     raise ParseError(
                         f"error must be an object, got: {type(error).__name__}"
                     ) from e
-                raise ParseError("error must have 'code' and 'message' fields") from e
+                nested_field = loc[1] if len(loc) > 1 else None
+                error_type = str(err.get("type", ""))
+
+                if nested_field in {"code", "message"} and error_type == "missing":
+                    raise ParseError("error must have 'code' and 'message' fields") from e
+                if nested_field is None:
+                    raise ParseError("error must have 'code' and 'message' fields") from e
+                raise ParseError("Invalid JSON-RPC response") from e
 
             if "response cannot have both 'result' and 'error'" in message:
                 raise ParseError("Response cannot have both 'result' and 'error'") from e
@@ -259,5 +266,7 @@ def parse_response(line: str) -> Response:
         jsonrpc=validated.jsonrpc,
         id=validated.id,
         result=validated.result,
-        error=validated.error,
+        error=(
+            validated.error.model_dump(exclude_none=True) if validated.error is not None else None
+        ),
     )
