@@ -62,8 +62,9 @@ Phases:
   - [x] M1 Phase 2 protocol boundary hardening: `rpc/protocol.py` now rejects boolean JSON-RPC `id` values in both request/response parsing with focused tests.
   - [x] M1 Phase 2 protocol response-envelope ingress hardening: `rpc/protocol.py::parse_response` now validates via `RpcResponseEnvelopeSchema` with preserved legacy ParseError wording for malformed `error` object shapes and existing envelope invariants.
   - [x] M1 Phase 2 handler cleanup slice: removed ad hoc `cancel` request_id precheck in `rpc/dispatcher.py` and rely on `CancelParamsSchema` ingress validation with preserved legacy compat errors; removed duplicate post-create wait-flag parsing in `rpc/global_dispatcher.py` and reused already schema-validated field.
+  - [x] M1 Phase 2 projection cleanup slice: introduced shared schema-field projection helper (`project_known_schema_fields`) and used it in `rpc/dispatcher.py::_handle_send` and `rpc/global_dispatcher.py::_handle_create_agent` to reduce ad hoc field-selection branches while preserving compat-safe behavior and legacy error wording.
   - [ ] Remaining M1 Phase 2 ingress coverage beyond low-risk methods (including stricter/behavior-sensitive paths) still pending.
-    - Resume target: prioritize remaining method ingress paths still relying on ad hoc parsing branches (`send` and any residual `create_agent` guard logic), then tighten strict mode gates.
+    - Resume target: prioritize remaining residual handler guards in `send`/`create_agent`, then tighten strict mode gates where compat telemetry is already stable.
 - [x] Remove silent malformed-entry skips.
   - [x] M1 Phase 3 slice: `context/loader.py::_merge_mcp_servers` now fail-fast rejects malformed MCP container/entry shapes (`mcpServers` non-object, `servers` non-array, non-object entries in `servers[]`) with actionable `MCPConfigError` context.
 - [x] Consolidate duplicate MCP config models.

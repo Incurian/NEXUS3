@@ -74,6 +74,10 @@ Phases:
 - Preserved trusted markup wrappers (gumball/thinking formatting) while removing direct unsanitized interpolation in this path.
 - Added focused regressions in `tests/unit/display/test_escape_sanitization.py`.
 - Validation: `.venv/bin/ruff check nexus3/display/printer.py tests/unit/display/test_escape_sanitization.py` and `.venv/bin/pytest -v tests/unit/display/test_escape_sanitization.py tests/unit/display/test_safe_sink.py` passed.
+- 2026-03-05: Phase 3 incremental migration slice completed (`repl.py` tool trace lines).
+- Migrated dynamic spinner tool-trace output in `nexus3/cli/repl.py` (`on_tool_active`, `on_batch_progress`, `on_batch_halt`, and `nexus_send` response preview trace) to SafeSink-backed sanitization while preserving trusted Rich wrappers.
+- Added focused regressions in `tests/unit/cli/test_repl_safe_sink.py`.
+- Validation: `.venv/bin/ruff check nexus3/cli/repl.py tests/unit/cli/test_repl_safe_sink.py` and `.venv/bin/pytest -v tests/unit/cli/test_repl_safe_sink.py` passed.
 
 ## Testing Strategy
 
@@ -87,9 +91,10 @@ Phases:
 - [x] Migrate high-risk output paths.
 - [ ] Migrate all remaining print/stream paths.
   - [x] Migrated `InlinePrinter` dynamic render path to `SafeSink` sanitization.
+  - [x] Migrated `nexus3/cli/repl.py` tool-trace spinner output path to `SafeSink` sanitization.
 - [ ] Remove redundant/fragmented sanitization call sites.
   - [x] Removed redundant ad hoc escaping in `nexus3/cli/confirmation_ui.py::confirm_tool_action` during SafeSink migration.
-  - Resume target: prioritize remaining dynamic CLI/REPL output paths (notably `nexus3/cli/repl.py`), then collapse duplicate sanitization logic into `SafeSink` entrypoints.
+  - Resume target: prioritize remaining dynamic CLI/REPL output paths outside migrated trace surfaces in `nexus3/cli/repl.py`, then collapse duplicate sanitization logic into `SafeSink` entrypoints.
 
 ## Documentation Updates
 
