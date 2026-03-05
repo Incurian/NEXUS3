@@ -56,6 +56,7 @@ Phases:
 - Progress (2026-03-05): M2 Commit 3 completed for targeting authorization shadow parity in [session/enforcer.py](/home/inc/repos/NEXUS3/nexus3/session/enforcer.py) with legacy-enforced decisions + kernel shadow compare mismatch warning (`target_auth_shadow_mismatch`).
 - Progress (2026-03-05): M2 Commit 4 completed for tool-action authorization shadow parity in [session/enforcer.py](/home/inc/repos/NEXUS3/nexus3/session/enforcer.py) with legacy-enforced decisions + kernel shadow compare mismatch warning (`tool_action_auth_shadow_mismatch`).
 - Progress (2026-03-05): M2 Commit 5 completed for send-lifecycle authorization shadow parity in [rpc/dispatcher.py](/home/inc/repos/NEXUS3/nexus3/rpc/dispatcher.py) with legacy-enforced decisions + kernel shadow compare mismatch warning (`send_auth_shadow_mismatch`).
+- Progress (2026-03-05): M2 Commit 6 completed for create-lifecycle authorization shadow parity in [rpc/pool.py](/home/inc/repos/NEXUS3/nexus3/rpc/pool.py) at parent ceiling gates with legacy-enforced decisions + kernel shadow compare mismatch warning (`create_auth_shadow_mismatch`).
 - [ ] Remove duplicate authorization branches.
 
 ## Documentation Updates
