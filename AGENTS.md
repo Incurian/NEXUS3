@@ -775,6 +775,25 @@ Compact checkpoint (2026-03-06, architecture execution round 20):
   2. Plan A: resume create-authorization duplicate-branch removal in `rpc/pool.py::_create_unlocked`.
   3. Plan A: evaluate routing `_check_enabled` through authorization kernel to reduce remaining split policy surface in `session/enforcer.py`.
 
+Compact checkpoint (2026-03-06, pre-compact handover 2):
+- Current branch/head: `feat/arch-overhaul-execution` @ `358add2`.
+- Tracked working tree: clean.
+- Intentional untracked carry-over (do not touch): `docs/plans/DOUBLE-SPINNER-FIX-PLAN.md`, `editors/`, `err/`.
+- New commits landed in this execution segment (chronological):
+  1. `a388420` - Plan A/H: target authorization kernel-authoritative + strict `get_messages` ingress.
+  2. `e24a164` - Plan G closure: residual SafeSink boundaries across REPL/streaming/confirmation.
+  3. `e89fb4b` - Plan H: strict-value `cancel` ingress.
+  4. `cb7558b` - Plan H: strict-value `compact` ingress.
+  5. `59ad445` - Plan H: strict-value `send` ingress.
+  6. `358add2` - Plan H: strict typed RPC response `error` object enforcement.
+- Resume-first commands after compact:
+  1. `git status --short --branch`
+  2. `git log --oneline -n 8`
+  3. `rg -n \"architecture execution round|pre-compact handover\" AGENTS.md`
+- First implementation target after resume:
+  1. Plan H `create_agent` strict-value ingress evaluation in `nexus3/rpc/global_dispatcher.py` + focused ingress regressions.
+  2. Then return to Plan A `rpc/pool.py::_create_unlocked` duplicate-branch removal.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.
