@@ -250,6 +250,7 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `35206ec` docs: record plan b phase 2 execution status
 - `43773be` plan b phase 2: integrate capabilities into direct rpc path
 - `14bc820` plan b phase 1: add capability token primitives
 - `00c59ed` plan e phase 4: migrate compaction and truncation to graph pipeline
@@ -334,6 +335,16 @@ Progress snapshot:
   - added focused regressions in `tests/unit/test_agent_api.py`,
     `tests/unit/test_rpc_dispatcher.py`, `tests/unit/test_global_dispatcher.py`,
     `tests/unit/test_pool.py`, and `tests/unit/core/test_request_context.py`.
+- Validation snapshot (2026-03-05, Plan B Phase 2):
+  - `.venv/bin/ruff check nexus3/core/capabilities.py nexus3/core/request_context.py nexus3/core/__init__.py nexus3/rpc/dispatch_core.py nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/agent_api.py nexus3/rpc/pool.py nexus3/rpc/http.py tests/unit/core/test_request_context.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py tests/unit/test_pool.py` passed.
+  - `.venv/bin/mypy nexus3/core/capabilities.py nexus3/core/request_context.py nexus3/core/__init__.py nexus3/rpc/dispatch_core.py nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/agent_api.py nexus3/rpc/pool.py nexus3/rpc/http.py` passed.
+  - `.venv/bin/pytest -q tests/unit/core/test_request_context.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py tests/unit/test_pool.py tests/unit/test_initial_message.py` passed (`147 passed`, `1 warning`).
+  - `.venv/bin/pytest -q tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_nexus_skill_requester_propagation.py` passed (`75 passed`, `1 warning`).
+  - Live validation executed:
+    - `.venv/bin/python -m nexus3 --serve 9000` (server started)
+    - `.venv/bin/python -m nexus3 rpc create test-agent --port 9000` (success)
+    - `.venv/bin/python -m nexus3 rpc send test-agent "describe your permissions and what you can do" --port 9000` (success)
+    - `.venv/bin/python -m nexus3 rpc destroy test-agent --port 9000` (success)
 - Completed: Plan A M0 foundation interfaces (`nexus3/core/authorization_kernel.py`) + unit tests.
 - Completed: Plan H M0 schema inventory scaffold (`nexus3/rpc/schemas.py`) + unit tests.
 - Completed: Plan H M1 Phase 2 first compat-safe ingress slice (`destroy_agent`, `get_messages`) wired to typed schemas with existing-style RPC error mapping + focused unit tests.

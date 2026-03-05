@@ -103,6 +103,11 @@ Phases:
   - `.venv/bin/mypy nexus3/core/capabilities.py nexus3/core/request_context.py nexus3/core/__init__.py nexus3/rpc/dispatch_core.py nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/agent_api.py nexus3/rpc/pool.py nexus3/rpc/http.py` passed.
   - `.venv/bin/pytest -q tests/unit/core/test_request_context.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py tests/unit/test_pool.py tests/unit/test_initial_message.py` passed (`147 passed`).
   - `.venv/bin/pytest -q tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_nexus_skill_requester_propagation.py` passed (`75 passed`).
+  - Live validation executed on `2026-03-05`:
+    - `.venv/bin/python -m nexus3 --serve 9000`
+    - `.venv/bin/python -m nexus3 rpc create test-agent --port 9000`
+    - `.venv/bin/python -m nexus3 rpc send test-agent "describe your permissions and what you can do" --port 9000`
+    - `.venv/bin/python -m nexus3 rpc destroy test-agent --port 9000`
 
 ## Documentation Updates
 
