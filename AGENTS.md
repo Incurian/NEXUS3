@@ -231,6 +231,8 @@ Immediate tasks:
   - Plan C propagation beyond destroy path as needed by remaining auth/rpc routes
 
 Recent execution commits (latest first):
+- `78ef205` rpc/protocol: wire parse_request to request schema ingress
+- `022f461` repl: sanitize startup metadata output via SafeSink
 - `9e08fd2` repl: sanitize post-turn status and error lines
 - `4686fd5` rpc/dispatcher: add cancel_all empty-params ingress guard
 - `7522446` tests(rpc): cover create auth shadow parity at delta ceiling stage
@@ -297,6 +299,10 @@ Progress snapshot:
   - added compat-safe `EmptyParamsSchema` ingress guard for `rpc/dispatcher.py::_handle_cancel_all`.
   - preserved permissive extra-param compatibility behavior.
   - added focused wiring regression in `tests/unit/rpc/test_schema_ingress_wiring.py`.
+- Completed: Plan H M1 Phase 2 request-envelope ingress migration:
+  - migrated `rpc/protocol.py::parse_request` to typed schema ingress via `RpcRequestEnvelopeSchema`.
+  - preserved legacy ParseError wording and positional-params rejection behavior.
+  - added focused protocol ingress regressions in `tests/unit/rpc/test_schema_ingress_wiring.py`.
 - Completed: baseline E/F harness fixtures/tests under `tests/fixtures/arch_baseline/`, `tests/unit/context/test_compile_baseline.py`, and `tests/unit/patch/test_byte_roundtrip_baseline.py`.
 - Completed: Plan G M1 Phase 1 foundation safe sink API (`nexus3/display/safe_sink.py`) with minimal `InlinePrinter` integration and focused unit tests (`tests/unit/display/test_safe_sink.py`).
 - Completed: Plan G M1 Phase 2 high-risk output migration:
@@ -330,6 +336,10 @@ Progress snapshot:
   - extended focused regressions in `tests/unit/cli/test_repl_safe_sink.py`.
 - Completed: Plan G M1 Phase 3 incremental output migration slice (`repl.py` post-turn status/errors):
   - migrated dynamic post-turn lines in `nexus3/cli/repl.py` (`cancel_reason`, `turn_duration`, stream/autosave error text) to SafeSink-backed sanitization.
+  - preserved existing wrappers/wording behavior.
+  - extended focused regressions in `tests/unit/cli/test_repl_safe_sink.py`.
+- Completed: Plan G M1 Phase 3 incremental output migration slice (`repl.py` startup metadata/status):
+  - migrated startup/session metadata and embedded RPC status lines in `nexus3/cli/repl.py` to SafeSink-backed sanitization.
   - preserved existing wrappers/wording behavior.
   - extended focused regressions in `tests/unit/cli/test_repl_safe_sink.py`.
 - Completed: M1 Plan D grep migration slice routed fallback per-candidate authorization through `FilesystemAccessGateway` and added focused blocked/outside/symlink grep tests.
@@ -369,11 +379,11 @@ Progress snapshot:
   - updated Windows behavior tests to assert subprocess call args directly
   - added focused concurrent `run_python` test for per-call payload isolation
 - Validation snapshot (2026-03-05, post-merge slices):
-  - `.venv/bin/ruff check nexus3/rpc/dispatcher.py nexus3/cli/repl.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/cli/test_repl_safe_sink.py` passed.
-  - `.venv/bin/pytest -v tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/cli/test_repl_safe_sink.py` passed (`53 passed`).
+  - `.venv/bin/ruff check nexus3/rpc/protocol.py nexus3/cli/repl.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_client.py tests/unit/cli/test_repl_safe_sink.py` passed.
+  - `.venv/bin/pytest -v tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_client.py tests/unit/cli/test_repl_safe_sink.py` passed (`77 passed`).
 - Next gate:
-  - Finish next Plan H ingress slice (strict-mode tightening/removal of remaining compat-only branches where telemetry is stable).
-  - Finish next Plan G sink migration slice (remaining dynamic CLI/REPL outputs outside migrated `repl.py` trace + incoming-notification + post-turn surfaces) and continue redundant sanitization call-site cleanup.
+  - Finish next Plan H ingress slice (strict-mode tightening/removal of remaining compat-only branches where telemetry is stable; evaluate strict-default flips where safe).
+  - Finish next Plan G sink migration slice (remaining dynamic CLI/REPL outputs outside migrated `repl.py` trace + incoming-notification + post-turn + startup surfaces) and continue redundant sanitization call-site cleanup.
   - Continue M2 Plan A adapter rollout from shadow parity into additional lifecycle call sites beyond current enforcer/pool/dispatcher coverage.
 
 Resume-first checklist (post-compact):
