@@ -349,6 +349,52 @@ class TestAgentPool:
             assert "child-agent" not in pool
 
     @pytest.mark.asyncio
+    async def test_destroy_external_requester_uses_kernel_and_is_allowed(self, tmp_path):
+        """destroy() authorizes external requesters via kernel evaluation."""
+        shared = create_mock_shared_components(tmp_path)
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            await pool.create(agent_id="external-target")
+            original_authorize = pool._destroy_authorization_kernel.authorize
+            pool._destroy_authorization_kernel.authorize = MagicMock(side_effect=original_authorize)
+
+            result = await pool.destroy("external-target", requester_id=None)
+
+            assert result is True
+            assert "external-target" not in pool
+            assert pool._destroy_authorization_kernel.authorize.call_count == 1
+            kernel_request = pool._destroy_authorization_kernel.authorize.call_args.args[0]
+            assert isinstance(kernel_request, AuthorizationRequest)
+            assert kernel_request.principal_id == "external"
+            assert kernel_request.context["admin_override"] is False
+
+    @pytest.mark.asyncio
+    async def test_destroy_admin_override_uses_kernel_and_is_allowed(self, tmp_path):
+        """destroy() authorizes admin_override through kernel evaluation."""
+        shared = create_mock_shared_components(tmp_path)
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            await pool.create(agent_id="admin-target")
+            original_authorize = pool._destroy_authorization_kernel.authorize
+            pool._destroy_authorization_kernel.authorize = MagicMock(side_effect=original_authorize)
+
+            result = await pool.destroy(
+                "admin-target",
+                requester_id="other-agent",
+                admin_override=True,
+            )
+
+            assert result is True
+            assert "admin-target" not in pool
+            assert pool._destroy_authorization_kernel.authorize.call_count == 1
+            kernel_request = pool._destroy_authorization_kernel.authorize.call_args.args[0]
+            assert isinstance(kernel_request, AuthorizationRequest)
+            assert kernel_request.principal_id == "other-agent"
+            assert kernel_request.context["admin_override"] is True
+
+    @pytest.mark.asyncio
     async def test_destroy_unauthorized_requester_denied_fail_closed(self, tmp_path):
         """destroy() denies unrelated requesters and leaves target intact."""
         shared = create_mock_shared_components(tmp_path)
@@ -363,6 +409,70 @@ class TestAgentPool:
 
             assert "not authorized to destroy" in str(exc_info.value)
             assert "target-agent" in pool
+
+    @pytest.mark.asyncio
+    async def test_destroy_external_forced_kernel_deny_is_authoritative(self, tmp_path):
+        """destroy() fails closed when kernel denies an external requester."""
+        shared = create_mock_shared_components(tmp_path)
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            await pool.create(agent_id="external-agent")
+            kernel_request = AuthorizationRequest(
+                action=AuthorizationAction.AGENT_DESTROY,
+                resource=AuthorizationResource(
+                    resource_type=AuthorizationResourceType.AGENT,
+                    identifier="external-agent",
+                ),
+                principal_id="external",
+                context={"admin_override": False},
+            )
+            pool._destroy_authorization_kernel.authorize = MagicMock(
+                return_value=AuthorizationDecision.deny(
+                    kernel_request,
+                    reason="forced_deny_for_test",
+                )
+            )
+
+            with pytest.raises(AuthorizationError) as exc_info:
+                await pool.destroy("external-agent")
+
+            assert "not authorized to destroy" in str(exc_info.value)
+            assert "external-agent" in pool
+
+    @pytest.mark.asyncio
+    async def test_destroy_admin_override_forced_kernel_deny_is_authoritative(self, tmp_path):
+        """destroy() fails closed when kernel denies an admin_override request."""
+        shared = create_mock_shared_components(tmp_path)
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            await pool.create(agent_id="admin-agent")
+            kernel_request = AuthorizationRequest(
+                action=AuthorizationAction.AGENT_DESTROY,
+                resource=AuthorizationResource(
+                    resource_type=AuthorizationResourceType.AGENT,
+                    identifier="admin-agent",
+                ),
+                principal_id="other-agent",
+                context={"admin_override": True},
+            )
+            pool._destroy_authorization_kernel.authorize = MagicMock(
+                return_value=AuthorizationDecision.deny(
+                    kernel_request,
+                    reason="forced_deny_for_test",
+                )
+            )
+
+            with pytest.raises(AuthorizationError) as exc_info:
+                await pool.destroy(
+                    "admin-agent",
+                    requester_id="other-agent",
+                    admin_override=True,
+                )
+
+            assert "not authorized to destroy" in str(exc_info.value)
+            assert "admin-agent" in pool
 
     @pytest.mark.asyncio
     async def test_destroy_forced_kernel_deny_is_authoritative(self, tmp_path):

@@ -829,6 +829,29 @@ Compact checkpoint (2026-03-06, architecture execution round 22):
   2. Plan G: perform a final narrow audit for low-risk trusted-only formatting surfaces and either convert to explicit trusted helpers or document accepted trusted boundaries.
   3. Documentation consistency sweep: mirror any user-visible authorization/safe-sink boundary behavior updates into module README references if needed.
 
+Compact checkpoint (2026-03-06, architecture execution round 23):
+- Branch head at start of round: `586c423`; working tree now includes parallel Plan A + Plan G + docs consistency follow-up slices implemented via Codex subagents.
+- New slices completed this round:
+  1. Plan A removed the remaining non-kernel destroy bypass branch in `nexus3/rpc/pool.py::destroy(...)` by routing external requester (`requester_id=None`) and `admin_override=True` requests through kernel adapter evaluation.
+  2. Plan A preserved existing destroy semantics and wording (`self`/`parent` allow, external/admin allow, deny wording unchanged) while adding focused kernel-path coverage for external/admin allow + fail-closed deny behavior in `tests/unit/test_pool.py`.
+  3. Plan G applied low-risk trusted-boundary consistency cleanup in CLI flows:
+     - helper-level sanitize-by-value formatting for residual dynamic option/prompt lines in `nexus3/cli/connect_lobby.py` and `nexus3/cli/lobby.py`,
+     - explicit `SafeSink.print_trusted(...)` usage for YOLO warning output in `nexus3/cli/repl_commands.py`,
+     - explicit `spinner.print_trusted(...)` callsites for remaining trusted REPL trace output in `nexus3/cli/repl.py`.
+  4. Documentation consistency sweep completed across module READMEs:
+     - `nexus3/rpc/README.md` now documents strict ingress schema behavior and kernel-authoritative RPC authorization flow,
+     - `nexus3/display/README.md` now reflects explicit spinner trusted/untrusted API and SafeSink trust boundaries,
+     - `nexus3/cli/README.md` now reflects SafeSink trust-boundary semantics in security notes,
+     - `nexus3/session/README.md` now reflects kernel-authoritative enabled/action/target checks plus path gating.
+- Validation result for this round:
+  - `.venv/bin/ruff check docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md docs/plans/ARCH-G-TERMINAL-SAFE-SINK-PLAN-2026-03-02.md nexus3/rpc/pool.py nexus3/cli/connect_lobby.py nexus3/cli/lobby.py nexus3/cli/repl.py nexus3/cli/repl_commands.py nexus3/rpc/README.md nexus3/display/README.md nexus3/cli/README.md nexus3/session/README.md tests/unit/test_pool.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/test_lobby.py tests/unit/cli/test_repl_safe_sink.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/pool.py nexus3/cli/connect_lobby.py nexus3/cli/lobby.py nexus3/cli/repl.py nexus3/cli/repl_commands.py` passed.
+  - `.venv/bin/pytest -v tests/unit/test_pool.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/test_lobby.py tests/unit/cli/test_repl_safe_sink.py` passed (`137 passed`).
+- Immediate resume targets:
+  1. Plan A: evaluate next highest-value remaining split authorization surface (`session.py` MCP/GitLab gating and/or path-gating kernel strategy) and decide whether to migrate now or formally defer.
+  2. Plan G: only residual work is optional consistency/documentation polish; functional sanitization coverage is now complete for active CLI/display paths.
+  3. Keep `CLAUDE.md` and `AGENTS.md` aligned for any additional behavior-level changes in subsequent rounds.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.

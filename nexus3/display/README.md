@@ -6,9 +6,9 @@ Terminal display system for NEXUS3 providing animated spinners, inline printing 
 
 This module provides a unified terminal UI with several key responsibilities:
 
-- **Spinner** - Animated spinner pinned to bottom, with content printed above (primary interface)
+- **Spinner** - Animated spinner pinned to bottom with explicit trusted/untrusted print entrypoints
 - **Streaming display** - Rich.Live compatible display with tool batch tracking
-- **Inline printing** - Gumball status indicators and sanitized streaming output
+- **Inline printing** - Gumball status indicators with SafeSink trust-boundary sanitization
 - **Theming** - Customizable colors, styles, and gumball characters
 
 ---
@@ -50,7 +50,7 @@ from nexus3.display import (
 
 ### spinner.py - Primary Display Interface
 
-The primary display interface. Provides an animated spinner pinned to the bottom of the terminal using Rich.Live. All output during an agent turn goes through `spinner.print()`, which prints above the spinner.
+The primary display interface. Provides an animated spinner pinned to the bottom of the terminal using Rich.Live. Trust boundaries are explicit: use `print_trusted(...)` for static markup-controlled text and `print_untrusted(...)` for dynamic/user/model/tool text.
 
 | Class | Description |
 |-------|-------------|
@@ -72,7 +72,9 @@ Spinner(
 | `show(text, activity)` | Start showing spinner with text and activity state |
 | `hide()` | Stop spinner, flush stream buffer |
 | `update(text, activity)` | Update spinner text and/or activity |
-| `print(*args, **kwargs)` | Print above spinner (delegates to console.print) |
+| `print_trusted(*args, **kwargs)` | Print trusted text above spinner without sanitization |
+| `print_untrusted(content, style?, end?)` | Print untrusted text above spinner with SafeSink sanitization |
+| `print(*args, **kwargs)` | Backward-compatible alias to `print_trusted(...)` |
 | `print_streaming(chunk)` | Buffer streaming text, print complete lines |
 | `flush_stream()` | Flush remaining buffer content |
 
@@ -98,8 +100,9 @@ spinner = Spinner()
 spinner.show("Waiting for response...")
 
 # Print content above spinner
-spinner.print("Tool call: read_file")
-spinner.print("Result: 42 lines")
+spinner.print_trusted("[dim]Tool call:[/] ", end="")
+spinner.print_untrusted("read_file")
+spinner.print_untrusted("Result: 42 lines")
 
 # Stream text (buffered until newline)
 spinner.print_streaming("Hello ")
@@ -120,6 +123,7 @@ spinner.hide()
 - Single-line render with `no_wrap=True` and `overflow="crop"` to prevent wrapping issues
 - Shows elapsed time after 1 second
 - Shows "ESC cancel" hint by default (configurable via `show_cancel_hint`)
+- `print_untrusted()` and spinner status text sanitize through `SafeSink` at the display boundary
 - Streaming output is sanitized via `strip_terminal_escapes()`
 - Activity-specific text in `__rich__` render: "Waiting..." / "Thinking..." / "Responding..." / custom text or "Running tools..." for TOOL_CALLING
 
@@ -590,7 +594,7 @@ DisplayManager(
 ### Internal
 
 - `nexus3.core.cancel` - `CancellationToken` for coordinated cancellation
-- `nexus3.core.text_safety` - `strip_terminal_escapes()`, `escape_rich_markup()` for sanitizing output
+- `nexus3.core.text_safety` - `sanitize_for_display()`, `strip_terminal_escapes()` used by `SafeSink`
 - `nexus3.core.shell_detection` - `supports_ansi()` for Windows console detection
 
 ### External
@@ -646,7 +650,10 @@ The Spinner uses Rich.Live internally. Key behaviors:
 
 ### Output Sanitization
 
-All streaming output passes through `strip_terminal_escapes()` to prevent terminal injection attacks from malicious content in AI responses.
+Display sanitization is trust-boundary based:
+- `SafeSink.print_untrusted(...)` sanitizes Rich-rendered dynamic text (`sanitize_for_display`)
+- `SafeSink.write_untrusted(...)` / streaming paths sanitize raw chunks (`strip_terminal_escapes()`)
+- Trusted wrappers/markup stay in `print_trusted(...)` callsites
 
 ### Streaming Buffer
 

@@ -131,6 +131,10 @@ serialize_request(request: Request) -> str
 parse_response(line: str) -> Response
 ```
 
+Ingress validation is strict at the protocol boundary:
+- `parse_request()` validates against `RpcRequestEnvelopeSchema` (`extra="forbid"`), rejects positional params, and rejects boolean `id` values.
+- `parse_response()` validates against `RpcResponseEnvelopeSchema` (`extra="forbid"`), rejects boolean `id` values, and requires exactly one of `result` or `error`.
+
 ---
 
 ## HTTP Server (`http.py`)
@@ -217,10 +221,10 @@ Handles agent lifecycle management at the pool level.
 
 #### Authorization
 
-- `destroy_agent` checks authorization via `X-Nexus-Agent` header
-- Self-destruction is allowed
-- Parent can destroy children
-- External clients (no header) treated as admin
+Authorization is kernel-authoritative in current lifecycle handlers:
+- `create_agent` authorization is enforced in `AgentPool.create(...)` via `AGENT_CREATE` checks (requester/parent binding, max depth, base ceiling, delta ceiling).
+- `destroy_agent` authorization is enforced in `AgentPool.destroy(...)` via `AGENT_DESTROY` checks (self, parent-child, external/admin contexts).
+- `list_agents` and `shutdown_server` are authorized through kernel-backed checks in `GlobalDispatcher`.
 
 ### Dispatcher (`dispatcher.py`)
 
@@ -253,6 +257,13 @@ The `pool` parameter enables YOLO safety checks (blocking RPC sends when no REPL
 | `shutdown` | (none) | `{success}` |
 
 Note: `get_tokens`, `get_context`, and `get_messages` are only registered if `context` is provided.
+
+Ingress schema behavior:
+- Method params are validated with strict Pydantic schemas (`strict=True`, `extra="forbid"`).
+- Unknown params and malformed field types return `INVALID_PARAMS` with method-specific compatibility messages.
+- No-arg methods (`shutdown`, `get_tokens`, `get_context`, `cancel_all`, `list_agents`, `shutdown_server`) reject extra params.
+
+Per-agent authorization is kernel-authoritative for `send`, `cancel`, `compact`, and `shutdown`. In particular, YOLO send gating (`no REPL connected`) is decided by kernel policy.
 
 #### Additional Methods (not RPC-exposed)
 
@@ -353,7 +364,7 @@ Manager for multiple agents:
 
 ```python
 class AgentPool:
-    async def create(agent_id=None, config=None) -> Agent
+    async def create(agent_id=None, config=None, requester_id=None) -> Agent
     async def create_temp(config=None) -> Agent
     async def destroy(agent_id, requester_id=None, *, admin_override=False) -> bool
     async def get_or_restore(agent_id, session_manager=None) -> Agent | None

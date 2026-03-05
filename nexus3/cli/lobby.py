@@ -98,6 +98,47 @@ def format_time_ago(dt: datetime) -> str:
     return f"{years}y ago"
 
 
+def _format_lobby_option_line(index: object, label: str) -> str:
+    """Format lobby menu option line with SafeSink sanitization."""
+    safe_index = SafeSink.sanitize_print_value(index)
+    return f"  {safe_index}) {label}"
+
+
+def _format_lobby_invalid_choice_line(valid_choices: object) -> str:
+    """Format lobby invalid-input hint with SafeSink sanitization."""
+    safe_valid_choices = SafeSink.sanitize_print_value(valid_choices)
+    return f"[dim]Please enter {safe_valid_choices} or q[/]"
+
+
+def _format_saved_session_option_line(
+    index: object,
+    name: object,
+    time_ago: object,
+    message_count: object,
+) -> str:
+    """Format saved-session option line with SafeSink sanitization."""
+    safe_index = SafeSink.sanitize_print_value(index)
+    safe_name = SafeSink.sanitize_print_value(name)
+    safe_time_ago = SafeSink.sanitize_print_value(time_ago)
+    safe_msg_count = SafeSink.sanitize_print_value(message_count)
+    return (
+        f"  {safe_index}) [cyan]{safe_name}[/] "
+        f"[dim]({safe_time_ago}, {safe_msg_count} messages)[/]"
+    )
+
+
+def _format_saved_session_prompt(valid_range: object) -> str:
+    """Format saved-session input prompt with SafeSink sanitization."""
+    safe_valid_range = SafeSink.sanitize_print_value(valid_range)
+    return f"[{safe_valid_range}/b]ack: "
+
+
+def _format_saved_session_invalid_choice_line(valid_range: object) -> str:
+    """Format saved-session invalid-input hint with SafeSink sanitization."""
+    safe_valid_range = SafeSink.sanitize_print_value(valid_range)
+    return f"[dim]Please enter {safe_valid_range} or b to go back[/]"
+
+
 async def show_lobby(
     session_manager: SessionManager,
     console: Console,
@@ -156,7 +197,7 @@ async def show_lobby(
 
     # Display options
     for i, (label, _, _) in enumerate(options, 1):
-        sink.print_trusted(f"  {i}) {label}")
+        sink.print_trusted(_format_lobby_option_line(i, label))
 
     sink.print_trusted("")
 
@@ -196,7 +237,7 @@ async def show_lobby(
             pass
 
         # Invalid input
-        sink.print_trusted(f"[dim]Please enter {valid_choices} or q[/]")
+        sink.print_trusted(_format_lobby_invalid_choice_line(valid_choices))
 
 
 async def show_session_list(
@@ -228,11 +269,10 @@ async def show_session_list(
     # Display sessions
     for i, summary in enumerate(sessions, 1):
         time_ago = format_time_ago(summary.modified_at)
-        safe_name = sink.sanitize_print_content(summary.name)
-        safe_time_ago = sink.sanitize_print_content(time_ago)
-        safe_msg_count = sink.sanitize_print_content(str(summary.message_count))
         sink.print_trusted(
-            f"  {i}) [cyan]{safe_name}[/] [dim]({safe_time_ago}, {safe_msg_count} messages)[/]"
+            _format_saved_session_option_line(
+                i, summary.name, time_ago, summary.message_count
+            )
         )
 
     sink.print_trusted("")
@@ -242,7 +282,7 @@ async def show_session_list(
 
     while True:
         try:
-            choice_str = console.input(f"[{valid_range}/b]ack: ").strip().lower()
+            choice_str = console.input(_format_saved_session_prompt(valid_range)).strip().lower()
         except (EOFError, KeyboardInterrupt):
             return None
 
@@ -256,4 +296,4 @@ async def show_session_list(
         except ValueError:
             pass
 
-        sink.print_trusted(f"[dim]Please enter {valid_range} or b to go back[/]")
+        sink.print_trusted(_format_saved_session_invalid_choice_line(valid_range))

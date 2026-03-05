@@ -139,6 +139,71 @@ def _format_default_port_option_line(default_port: object) -> str:
     return f"  n) Start embedded server (port {safe_default_port})"
 
 
+def _format_replace_server_option_line(port: object) -> str:
+    """Format replace-server option line with SafeSink sanitization."""
+    safe_port = SafeSink.sanitize_print_value(port)
+    return f"  r) Replace server on port {safe_port} (shutdown and restart)"
+
+
+def _format_discovered_server_option_line(
+    index: object,
+    base_url: object,
+    auth_status: str,
+    agent_count: str,
+) -> str:
+    """Format discovered-server option line with SafeSink sanitization."""
+    safe_index = SafeSink.sanitize_print_value(index)
+    safe_base_url = SafeSink.sanitize_print_value(base_url)
+    parts = [f"  {safe_index}) {safe_base_url}", auth_status]
+    if agent_count:
+        parts.append(agent_count)
+    return "  ".join(parts)
+
+
+def _format_connect_lobby_invalid_choice_line(
+    server_count: object,
+    *,
+    include_default_port_option: bool,
+) -> str:
+    """Format connect-lobby invalid-input hint with SafeSink sanitization."""
+    safe_server_count = SafeSink.sanitize_print_value(server_count)
+    if include_default_port_option:
+        return f"[dim]Please enter 1-{safe_server_count}, n, p, s, u, or q[/]"
+    return f"[dim]Please enter 1-{safe_server_count}, p, s, u, or q[/]"
+
+
+def _format_agent_picker_option_line(
+    index: object,
+    agent_id: object,
+    message_count: object,
+    permission_level: object,
+    *,
+    is_temp: bool,
+) -> str:
+    """Format agent-picker option line with SafeSink sanitization."""
+    safe_index = SafeSink.sanitize_print_value(index)
+    safe_agent_id = SafeSink.sanitize_print_value(agent_id)
+    safe_msg_count = SafeSink.sanitize_print_value(message_count)
+    safe_permission_level = SafeSink.sanitize_print_value(permission_level)
+    temp_marker = "[dim](temp)[/] " if is_temp else ""
+    return (
+        f"  {safe_index}) [cyan]{safe_agent_id}[/] {temp_marker}"
+        f"[dim]({safe_msg_count} messages, {safe_permission_level})[/]"
+    )
+
+
+def _format_agent_picker_invalid_choice_line(agent_count: object) -> str:
+    """Format agent-picker invalid-input hint with SafeSink sanitization."""
+    safe_agent_count = SafeSink.sanitize_print_value(agent_count)
+    return f"[dim]Please enter 1-{safe_agent_count}, c, n, r, p, or b[/]"
+
+
+def _format_port_prompt_line(default_port: object) -> str:
+    """Format default-port prompt line with SafeSink sanitization."""
+    safe_default_port = SafeSink.sanitize_print_value(default_port)
+    return f"[dim]Enter port number (or press Enter for {safe_default_port}):[/]"
+
+
 async def _show_auth_recovery_menu(
     console: Console,
     server: DiscoveredServer,
@@ -163,8 +228,6 @@ async def _show_auth_recovery_menu(
 
     sink = SafeSink(console)
     safe_base_url = sink.sanitize_print_content(server.base_url)
-    safe_port = sink.sanitize_print_content(str(server.port))
-
     sink.print_trusted("")
     sink.print_trusted(f"[bold]Cannot connect to {safe_base_url}[/]")
 
@@ -186,7 +249,7 @@ async def _show_auth_recovery_menu(
     # Offer recovery options - prioritize actions that don't need keys
     sink.print_trusted("[dim]Options:[/]")
     sink.print_trusted("  p) Start a new server on different port (recommended)")
-    sink.print_trusted(f"  r) Replace server on port {safe_port} (shutdown and restart)")
+    sink.print_trusted(_format_replace_server_option_line(server.port))
     sink.print_trusted("  k) Enter API key manually (advanced)")
     sink.print_trusted("  b) Back")
     sink.print_trusted("")
@@ -285,11 +348,11 @@ async def show_connect_lobby(
         for i, server in enumerate(nexus_servers, 1):
             auth_status = _format_auth_status(server)
             agent_count = _format_agent_count(server)
-            safe_base_url = sink.sanitize_print_content(server.base_url)
-            parts = [f"  {i}) {safe_base_url}", auth_status]
-            if agent_count:
-                parts.append(agent_count)
-            sink.print_trusted("  ".join(parts))
+            sink.print_trusted(
+                _format_discovered_server_option_line(
+                    i, server.base_url, auth_status, agent_count
+                )
+            )
 
         sink.print_trusted("")
     else:
@@ -400,14 +463,12 @@ async def show_connect_lobby(
 
         # Invalid input
         if nexus_servers:
-            if default_port_in_use:
-                sink.print_trusted(
-                    f"[dim]Please enter 1-{len(nexus_servers)}, p, s, u, or q[/]"
+            sink.print_trusted(
+                _format_connect_lobby_invalid_choice_line(
+                    len(nexus_servers),
+                    include_default_port_option=not default_port_in_use,
                 )
-            else:
-                sink.print_trusted(
-                    f"[dim]Please enter 1-{len(nexus_servers)}, n, p, s, u, or q[/]"
-                )
+            )
         else:
             if default_port_in_use:
                 sink.print_trusted("[dim]Please enter p, s, u, or q[/]")
@@ -436,7 +497,6 @@ async def show_agent_picker(
     agents = server.agents or []
     sink = SafeSink(console)
     safe_base_url = sink.sanitize_print_content(server.base_url)
-    safe_port = sink.sanitize_print_content(str(server.port))
 
     sink.print_trusted("")
     sink.print_trusted(f"[bold]Agents on {safe_base_url}:[/]")
@@ -448,15 +508,14 @@ async def show_agent_picker(
             msg_count = agent_info.get("message_count", 0)
             permission_level = agent_info.get("permission_level", "unknown")
             is_temp = agent_info.get("is_temp", False)
-            safe_agent_id = sink.sanitize_print_content(str(agent_id))
-            safe_msg_count = sink.sanitize_print_content(str(msg_count))
-            safe_permission_level = sink.sanitize_print_content(str(permission_level))
-
-            # Format display
-            temp_marker = "[dim](temp)[/] " if is_temp else ""
             sink.print_trusted(
-                f"  {i}) [cyan]{safe_agent_id}[/] {temp_marker}"
-                f"[dim]({safe_msg_count} messages, {safe_permission_level})[/]"
+                _format_agent_picker_option_line(
+                    i,
+                    agent_id,
+                    msg_count,
+                    permission_level,
+                    is_temp=bool(is_temp),
+                )
             )
     else:
         sink.print_trusted("  [dim]No agents currently running[/]")
@@ -464,7 +523,7 @@ async def show_agent_picker(
     sink.print_trusted("")
     sink.print_trusted("  c) Enter agent ID manually")
     sink.print_trusted("  n) Create new agent")
-    sink.print_trusted(f"  r) Replace server on port {safe_port} (shutdown and restart)")
+    sink.print_trusted(_format_replace_server_option_line(server.port))
     sink.print_trusted("  p) Start another server on different port...")
     sink.print_trusted("  b) Back")
     sink.print_trusted("")
@@ -544,7 +603,7 @@ async def show_agent_picker(
 
         # Invalid input
         if agents:
-            sink.print_trusted(f"[dim]Please enter 1-{len(agents)}, c, n, r, p, or b[/]")
+            sink.print_trusted(_format_agent_picker_invalid_choice_line(len(agents)))
         else:
             sink.print_trusted("[dim]Please enter c, n, r, p, or b[/]")
 
@@ -599,7 +658,7 @@ def prompt_for_port(console: Console, default: int | None = None) -> int | None:
     """
     console.print()
     if default is not None:
-        console.print(f"[dim]Enter port number (or press Enter for {default}):[/]")
+        console.print(_format_port_prompt_line(default))
     else:
         console.print("[dim]Enter port number:[/]")
 

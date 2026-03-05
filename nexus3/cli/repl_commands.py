@@ -55,15 +55,16 @@ def print_yolo_warning(console: Any, on_switch: bool = False) -> None:
         console: Rich console for output
         on_switch: If True, show "Switching to" instead of current state
     """
-    console.print(f"[bold red]{YOLO_WARNING_LINE}[/]")
+    sink = SafeSink(console)
+    sink.print_trusted(f"[bold red]{YOLO_WARNING_LINE}[/]")
     if on_switch:
-        console.print("[bold red]⚠  Switching to YOLO MODE[/]")
+        sink.print_trusted("[bold red]⚠  Switching to YOLO MODE[/]")
     else:
-        console.print("[bold red]⚠  YOLO MODE[/] - All actions execute without confirmation")
-    console.print()
-    console.print(f"   {YOLO_WARNING_CAPABILITIES}")
-    console.print(f"   {YOLO_WARNING_ESCAPE}")
-    console.print(f"[bold red]{YOLO_WARNING_LINE}[/]")
+        sink.print_trusted("[bold red]⚠  YOLO MODE[/] - All actions execute without confirmation")
+    sink.print_trusted("")
+    sink.print_trusted(f"   {YOLO_WARNING_CAPABILITIES}")
+    sink.print_trusted(f"   {YOLO_WARNING_ESCAPE}")
+    sink.print_trusted(f"[bold red]{YOLO_WARNING_LINE}[/]")
 
 
 async def _refresh_agent_tools(

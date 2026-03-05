@@ -140,6 +140,12 @@ Phases:
 - Replaced `nexus3/cli/connect_lobby.py` default-port option interpolation with a SafeSink-backed formatter helper (`_format_default_port_option_line(...)`) using sanitize-by-value semantics.
 - Added focused regressions in `tests/unit/display/test_safe_sink.py`, `tests/unit/display/test_escape_sanitization.py`, and `tests/unit/cli/test_connect_lobby_safe_sink.py`.
 - Validation: `.venv/bin/ruff check nexus3/display/spinner.py nexus3/display/printer.py nexus3/cli/connect_lobby.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_connect_lobby_safe_sink.py docs/plans/ARCH-G-TERMINAL-SAFE-SINK-PLAN-2026-03-02.md`, `.venv/bin/mypy nexus3/display/spinner.py nexus3/display/printer.py nexus3/cli/connect_lobby.py`, and `.venv/bin/pytest -v tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_connect_lobby_safe_sink.py` passed.
+- 2026-03-05: Phase 3 consistency cleanup slice completed (connect/lobby residual helper boundaries + explicit trusted sinks).
+- Converted residual dynamic prompt/option rendering in `nexus3/cli/connect_lobby.py` and `nexus3/cli/lobby.py` to helper-level sanitize-by-value formatters (replace-server lines, numbered option lines, invalid-choice hints, and default-port prompt text).
+- Converted static YOLO warning output in `nexus3/cli/repl_commands.py` from direct `console.print(...)` calls to explicit `SafeSink.print_trusted(...)` boundaries.
+- Replaced remaining trusted-only spinner trace/error blank-line callsites in `nexus3/cli/repl.py` from compatibility `spinner.print(...)` to explicit `spinner.print_trusted(...)`.
+- Added focused regressions in `tests/unit/cli/test_connect_lobby_safe_sink.py`, `tests/unit/test_lobby.py`, and `tests/unit/cli/test_repl_safe_sink.py`.
+- Validation: `.venv/bin/ruff check nexus3/cli/connect_lobby.py nexus3/cli/lobby.py nexus3/cli/repl_commands.py nexus3/cli/repl.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/test_lobby.py tests/unit/cli/test_repl_safe_sink.py docs/plans/ARCH-G-TERMINAL-SAFE-SINK-PLAN-2026-03-02.md`, `.venv/bin/mypy nexus3/cli/connect_lobby.py nexus3/cli/lobby.py nexus3/cli/repl_commands.py nexus3/cli/repl.py`, and `.venv/bin/pytest -v tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/test_lobby.py tests/unit/cli/test_repl_safe_sink.py` passed.
 
 ## Testing Strategy
 
@@ -172,6 +178,8 @@ Phases:
   - [x] Made spinner print boundaries explicit with separate trusted/untrusted helpers and compatibility aliasing for legacy callsites.
   - [x] Hardened `InlinePrinter.print_gumball(...)` against unsafe direct usage; added explicit trusted helper for intentional markup.
   - [x] Replaced connect-lobby default-port option interpolation with helper-level SafeSink sanitize-by-value formatting.
+  - [x] Converted residual connect-lobby/lobby dynamic prompt and option strings to helper-level SafeSink sanitize-by-value formatting.
+  - [x] Converted REPL YOLO warning and trusted spinner trace callsites to explicit trusted sink helper usage.
 
 ## Documentation Updates
 

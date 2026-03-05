@@ -4,7 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from nexus3.cli.connect_lobby import ConnectAction, show_agent_picker, show_connect_lobby
+from nexus3.cli.connect_lobby import (
+    ConnectAction,
+    _format_agent_picker_invalid_choice_line,
+    _format_connect_lobby_invalid_choice_line,
+    _format_default_port_option_line,
+    _format_port_prompt_line,
+    _format_replace_server_option_line,
+    show_agent_picker,
+    show_connect_lobby,
+)
 from nexus3.rpc.detection import DetectionResult
 from nexus3.rpc.discovery import AuthStatus, DiscoveredServer
 
@@ -96,6 +105,43 @@ async def test_show_connect_lobby_sanitizes_default_port_option_line() -> None:
     all_lines = "\n".join(console.print_calls)
     assert r"n) Start embedded server (port \[bold]8765\[/bold]x)" in all_lines
     assert "\x1b" not in all_lines
+
+
+def test_connect_lobby_option_helpers_sanitize_dynamic_values() -> None:
+    class _MaliciousPort(int):
+        def __str__(self) -> str:
+            return "[bold]8765[/bold]\x1b]8;;https://example.com\x07x\x1b]8;;\x07"
+
+    assert _format_default_port_option_line(_MaliciousPort(8765)) == (
+        r"  n) Start embedded server (port \[bold]8765\[/bold]x)"
+    )
+    assert _format_replace_server_option_line(_MaliciousPort(8765)) == (
+        r"  r) Replace server on port \[bold]8765\[/bold]x (shutdown and restart)"
+    )
+    assert _format_port_prompt_line(_MaliciousPort(8765)) == (
+        r"[dim]Enter port number (or press Enter for \[bold]8765\[/bold]x):[/]"
+    )
+
+
+def test_connect_lobby_invalid_choice_helpers_sanitize_dynamic_values() -> None:
+    class _MaliciousCount(int):
+        def __str__(self) -> str:
+            return "2[/]\x1b]8;;https://example.com\x07x\x1b]8;;\x07"
+
+    with_default = _format_connect_lobby_invalid_choice_line(
+        _MaliciousCount(2), include_default_port_option=True
+    )
+    without_default = _format_connect_lobby_invalid_choice_line(
+        _MaliciousCount(2), include_default_port_option=False
+    )
+    picker = _format_agent_picker_invalid_choice_line(_MaliciousCount(2))
+
+    assert with_default == r"[dim]Please enter 1-2\[/]x, n, p, s, u, or q[/]"
+    assert without_default == r"[dim]Please enter 1-2\[/]x, p, s, u, or q[/]"
+    assert picker == r"[dim]Please enter 1-2\[/]x, c, n, r, p, or b[/]"
+    assert "\x1b" not in with_default
+    assert "\x1b" not in without_default
+    assert "\x1b" not in picker
 
 
 @pytest.mark.asyncio

@@ -51,11 +51,36 @@ from nexus3.cli.repl import (
     _format_whisper_return_line,
     _sanitize_prompt_html_text,
 )
+from nexus3.cli.repl_commands import print_yolo_warning
 from nexus3.display.safe_sink import SafeSink
 
 
 def _make_sink() -> SafeSink:
     return SafeSink(MagicMock(spec=Console))
+
+
+class _CaptureConsole:
+    def __init__(self) -> None:
+        self.print_calls: list[str] = []
+
+    def print(self, content: str = "", **_kwargs: object) -> None:
+        self.print_calls.append(content)
+
+
+def test_print_yolo_warning_keeps_expected_trusted_lines() -> None:
+    console = _CaptureConsole()
+
+    print_yolo_warning(console, on_switch=True)
+
+    assert console.print_calls[0].startswith("[bold red]")
+    assert console.print_calls[1] == "[bold red]⚠  Switching to YOLO MODE[/]"
+    assert console.print_calls[2] == ""
+    assert (
+        "Enabled: Shell execution, file writes anywhere, network access"
+        in console.print_calls[3]
+    )
+    assert "To switch: /permissions trusted" in console.print_calls[4]
+    assert console.print_calls[5].startswith("[bold red]")
 
 
 def test_tool_call_trace_line_sanitizes_untrusted_name_and_params() -> None:

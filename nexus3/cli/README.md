@@ -490,7 +490,7 @@ Allow MCP tool 'mcp_github_create_issue'?
 
 #### Security Features
 
-- All values escaped with `escape_rich_markup()` to prevent injection
+- Confirmation UI output uses `SafeSink` trust-boundary entrypoints (`print_trusted`/`print_untrusted`) instead of manual callsite escaping
 - Pauses Live display and KeyMonitor during prompts
 - Uses `asyncio.to_thread()` for blocking input
 - External editor popup for full tool details (`[p]` option)
@@ -767,7 +767,7 @@ nexus3 --init-global-force  # Overwrite existing
 
 4. **Symlink Attack Prevention**: Init commands use `_safe_write_text()` which refuses to follow symlinks
 
-5. **Rich Markup Escaping**: All user-controlled values in confirmation prompts are escaped with `escape_rich_markup()`
+5. **Output Trust Boundaries**: CLI surfaces route dynamic text through `SafeSink` untrusted entrypoints and keep static wrappers in trusted entrypoints
 
 6. **Idle Timeout**: Embedded server auto-shuts down after 30 minutes of no RPC activity (WSL-safe monotonic clock)
 

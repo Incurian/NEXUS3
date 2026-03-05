@@ -621,12 +621,12 @@ PATH_TOOLS = frozenset({
 ```
 
 Permission checks (in order):
-1. Tool enabled (not disabled by policy)
-2. Action allowed (by permission level; explicit `enabled=True` in tool_permissions bypasses policy-level restrictions)
-3. **Target allowed** (for nexus_* tools with `allowed_targets` restriction)
-4. Path allowed (sandbox, per-tool, blocked paths) -- checks ALL paths in tool call
+1. Tool enabled check via kernel-authoritative `TOOL_EXECUTE` decision (`_enabled_authorization_kernel`)
+2. Action-allowed check via kernel-authoritative `TOOL_EXECUTE` decision (`_action_authorization_kernel`)
+3. **Target allowed** via kernel-authoritative `AGENT_TARGET` decision for nexus_* tools with `allowed_targets`
+4. Path gating via `PathDecisionEngine` (sandbox/per-tool/blocked paths), checking ALL extracted paths in the tool call
 
-Uses `PathDecisionEngine` for consistent path validation across all checks.
+The first three checks are authorization-kernel decisions; path access remains enforced by `PathDecisionEngine`.
 
 ### Target Validation
 
@@ -876,7 +876,7 @@ If `compaction.model` is configured, a separate provider is used for summarizati
 | `storage.py` | `core.secure_io` (sqlite3 stdlib) |
 | `persistence.py` | `core.types`, `core.errors`, `clipboard.types` |
 | `session_manager.py` | `core.constants`, `core.errors`, `core.secure_io`, `core.validation`, `session.persistence` |
-| `enforcer.py` | `core.path_decision`, `core.presets`, `core.types`, `session.path_semantics` |
+| `enforcer.py` | `core.authorization_kernel`, `core.path_decision`, `core.presets`, `core.types`, `session.path_semantics` |
 | `confirmation.py` | `core.permissions` |
 | `dispatcher.py` | `skill.registry`, `mcp.registry` (TYPE_CHECKING only) |
 | `http_logging.py` | `session.logging` (TYPE_CHECKING only) |

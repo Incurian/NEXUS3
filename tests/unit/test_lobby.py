@@ -11,6 +11,11 @@ from rich.console import Console
 from nexus3.cli.lobby import (
     LobbyChoice,
     LobbyResult,
+    _format_lobby_invalid_choice_line,
+    _format_lobby_option_line,
+    _format_saved_session_invalid_choice_line,
+    _format_saved_session_option_line,
+    _format_saved_session_prompt,
     format_time_ago,
     show_lobby,
     show_session_list,
@@ -133,6 +138,51 @@ class TestFormatTimeAgo:
         """Future times show 'just now'."""
         future = datetime.now() + timedelta(hours=1)
         assert format_time_ago(future) == "just now"
+
+
+class TestSafeSinkFormattingHelpers:
+    """Focused tests for helper-level SafeSink formatting."""
+
+    def test_lobby_menu_and_invalid_choice_helpers_sanitize_dynamic_values(self):
+        """Menu/invalid-choice helper output escapes dynamic control content."""
+
+        class _MaliciousValue:
+            def __str__(self) -> str:
+                return "1[/]\x1b]8;;https://example.com\x07x\x1b]8;;\x07"
+
+        option_line = _format_lobby_option_line(_MaliciousValue(), "Fresh session")
+        invalid_line = _format_lobby_invalid_choice_line(_MaliciousValue())
+
+        assert option_line == r"  1\[/]x) Fresh session"
+        assert invalid_line == r"[dim]Please enter 1\[/]x or q[/]"
+        assert "\x1b" not in option_line
+        assert "\x1b" not in invalid_line
+
+    def test_saved_session_helpers_sanitize_dynamic_values(self):
+        """Saved-session option/prompt helpers sanitize dynamic values."""
+
+        class _MaliciousValue:
+            def __str__(self) -> str:
+                return "[cyan]x[/cyan]\x1b[31m"
+
+        option_line = _format_saved_session_option_line(
+            _MaliciousValue(),
+            _MaliciousValue(),
+            _MaliciousValue(),
+            _MaliciousValue(),
+        )
+        prompt_text = _format_saved_session_prompt(_MaliciousValue())
+        invalid_line = _format_saved_session_invalid_choice_line(_MaliciousValue())
+
+        assert option_line == (
+            r"  \[cyan]x\[/cyan]) [cyan]\[cyan]x\[/cyan][/] "
+            r"[dim](\[cyan]x\[/cyan], \[cyan]x\[/cyan] messages)[/]"
+        )
+        assert prompt_text == r"[\[cyan]x\[/cyan]/b]ack: "
+        assert invalid_line == r"[dim]Please enter \[cyan]x\[/cyan] or b to go back[/]"
+        assert "\x1b" not in option_line
+        assert "\x1b" not in prompt_text
+        assert "\x1b" not in invalid_line
 
 
 class TestShowLobby:

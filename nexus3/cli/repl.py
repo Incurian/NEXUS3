@@ -980,7 +980,7 @@ async def run_repl(
         if _thinking_total > 0:
             _thinking_printed = True
             display_duration = max(1, int(_thinking_total))
-            spinner.print(_format_thought_duration_line(safe_sink, display_duration))
+            spinner.print_trusted(_format_thought_duration_line(safe_sink, display_duration))
 
     # =============================================================
     # Session callbacks - print immediately to scrollback
@@ -1014,7 +1014,7 @@ async def run_repl(
         # If we've been streaming assistant text without a trailing newline,
         # make sure tool output starts on a fresh line.
         if _stream_line_open:
-            spinner.print("")
+            spinner.print_trusted("")
             _stream_line_open = False
 
         # Print any accumulated thinking BEFORE tool calls
@@ -1035,7 +1035,7 @@ async def run_repl(
         spinner.flush_stream()
 
         if _stream_line_open:
-            spinner.print("")
+            spinner.print_trusted("")
             _stream_line_open = False
 
         # Get params from pending (if available)
@@ -1044,7 +1044,7 @@ async def run_repl(
             _, params = _pending_tools[tool_id]
 
         # Print tool call line
-        spinner.print(_format_tool_call_trace_line(safe_sink, name, params))
+        spinner.print_trusted(_format_tool_call_trace_line(safe_sink, name, params))
 
         # Track start time and active state
         _tool_start_times[tool_id] = _time.monotonic()
@@ -1079,7 +1079,9 @@ async def run_repl(
         if success:
             # Success - show result summary
             result_preview = _summarize_tool_output(name, output)
-            spinner.print(_format_tool_result_trace_line(safe_sink, result_preview, duration_str))
+            spinner.print_trusted(
+                _format_tool_result_trace_line(safe_sink, result_preview, duration_str)
+            )
 
             # Special handling for nexus_send - show response content
             if name == "nexus_send" and output:
@@ -1089,7 +1091,7 @@ async def run_repl(
                     if content:
                         preview = " ".join(content.split())[:100]
                         ellipsis = "..." if len(content) > 100 else ""
-                        spinner.print(
+                        spinner.print_trusted(
                             _format_tool_response_trace_line(safe_sink, preview, ellipsis)
                         )
                 except (_json.JSONDecodeError, KeyError):
@@ -1097,12 +1099,12 @@ async def run_repl(
         else:
             _had_errors = True
             # Error - show error message
-            spinner.print(_format_tool_error_trace_line(safe_sink, error, duration_str))
+            spinner.print_trusted(_format_tool_error_trace_line(safe_sink, error, duration_str))
 
     def on_batch_halt() -> None:
         """Sequential batch halted - print halted for remaining pending tools."""
         for _tool_id, (name, params) in list(_pending_tools.items()):
-            spinner.print(_format_tool_halt_trace_line(safe_sink, name, params))
+            spinner.print_trusted(_format_tool_halt_trace_line(safe_sink, name, params))
         _pending_tools.clear()
 
     def on_batch_complete() -> None:
@@ -1927,16 +1929,16 @@ async def run_repl(
             except NexusError as e:
                 # Ensure the error prints on its own line if we were mid-stream.
                 if _stream_line_open:
-                    spinner.print("")
+                    spinner.print_trusted("")
                     _stream_line_open = False
-                spinner.print(_format_repl_error_line(safe_sink, e.message))
-                spinner.print("")
+                spinner.print_trusted(_format_repl_error_line(safe_sink, e.message))
+                spinner.print_trusted("")
                 _had_errors = True
             finally:
                 # Ensure the streamed response line is terminated before we
                 # stop the Live spinner (prevents messy wrapping / cursor state).
                 if _stream_line_open:
-                    spinner.print("")
+                    spinner.print_trusted("")
                     _stream_line_open = False
                 spinner.hide()
                 _current_live.reset(token)

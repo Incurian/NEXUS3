@@ -100,6 +100,12 @@ class _DestroyAuthorizationAdapter:
         requester_id = request.principal_id
         target_agent_id = request.resource.identifier
         target_parent_agent_id = request.context.get("target_parent_agent_id")
+        admin_override = request.context.get("admin_override")
+
+        if admin_override is True:
+            return AuthorizationDecision.allow(request, reason="admin_override")
+        if requester_id == "external":
+            return AuthorizationDecision.allow(request, reason="external_requester")
 
         if requester_id == target_agent_id:
             return AuthorizationDecision.allow(request, reason="self_destroy")
@@ -1244,7 +1250,7 @@ class AgentPool:
         """Destroy an agent and clean up its resources.
 
         This method:
-        1. Checks authorization (unless admin_override)
+        1. Checks authorization through the kernel adapter
         2. Removes the agent from the pool
         3. Cancels all in-progress requests
         4. Closes the agent's logger (flushes buffers, closes DB)
@@ -1256,7 +1262,7 @@ class AgentPool:
         - Self-destruction is always allowed (agent destroys itself)
         - Parent can destroy its children
         - External clients (requester_id=None) are treated as admin
-        - admin_override=True bypasses all checks (for shutdown, etc.)
+        - admin_override=True is allowed by kernel policy (for shutdown, etc.)
 
         Args:
             agent_id: The ID of the agent to destroy.
@@ -1275,30 +1281,30 @@ class AgentPool:
 
             agent = self._agents[agent_id]
 
-            # Authorization check (unless admin override or external client)
-            if not admin_override and requester_id is not None:
-                # Get the target agent's permissions to check parent_agent_id
-                target_permissions: AgentPermissions | None = agent.services.get("permissions")
-                kernel_request = AuthorizationRequest(
-                    action=AuthorizationAction.AGENT_DESTROY,
-                    resource=AuthorizationResource(
-                        resource_type=AuthorizationResourceType.AGENT,
-                        identifier=agent_id,
+            # Authorization check through kernel adapter for all requester contexts.
+            target_permissions: AgentPermissions | None = agent.services.get("permissions")
+            destroy_principal_id = requester_id or "external"
+            kernel_request = AuthorizationRequest(
+                action=AuthorizationAction.AGENT_DESTROY,
+                resource=AuthorizationResource(
+                    resource_type=AuthorizationResourceType.AGENT,
+                    identifier=agent_id,
+                ),
+                principal_id=destroy_principal_id,
+                context={
+                    "target_parent_agent_id": (
+                        target_permissions.parent_agent_id
+                        if target_permissions is not None
+                        else None
                     ),
-                    principal_id=requester_id,
-                    context={
-                        "target_parent_agent_id": (
-                            target_permissions.parent_agent_id
-                            if target_permissions is not None
-                            else None
-                        ),
-                    },
+                    "admin_override": admin_override,
+                },
+            )
+            kernel_decision = self._destroy_authorization_kernel.authorize(kernel_request)
+            if not kernel_decision.allowed:
+                raise AuthorizationError(
+                    f"Agent '{destroy_principal_id}' is not authorized to destroy '{agent_id}'"
                 )
-                kernel_decision = self._destroy_authorization_kernel.authorize(kernel_request)
-                if not kernel_decision.allowed:
-                    raise AuthorizationError(
-                        f"Agent '{requester_id}' is not authorized to destroy '{agent_id}'"
-                    )
 
             # Remove from pool
             self._agents.pop(agent_id)
