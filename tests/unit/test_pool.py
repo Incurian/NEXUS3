@@ -366,14 +366,17 @@ class MockAgentPool:
     def __init__(self):
         self._agents: dict[str, Any] = {}
         self._next_id = 1
+        self.last_create_requester_id: str | None = None
         self.last_destroy_requester_id: str | None = None
 
     async def create(
         self,
         agent_id: str | None = None,
         config: Any = None,
+        requester_id: str | None = None,
     ) -> Any:
         """Create mock agent and return Agent object."""
+        self.last_create_requester_id = requester_id
         effective_id = agent_id or f"auto-{self._next_id}"
         self._next_id += 1
 
@@ -461,6 +464,24 @@ class TestGlobalDispatcher:
         assert response.result is not None
         assert "agent_id" in response.result
         assert response.result["agent_id"].startswith("auto-")
+
+    @pytest.mark.asyncio
+    async def test_create_agent_propagates_requester_context(self):
+        """create_agent forwards requester_id from dispatch context."""
+        pool = MockAgentPool()
+        dispatcher = GlobalDispatcher(pool)
+
+        request = Request(
+            jsonrpc="2.0",
+            method="create_agent",
+            params={"agent_id": "created-by-requester"},
+            id=1,
+        )
+        response = await dispatcher.dispatch(request, requester_id="requester-1")
+
+        assert response is not None
+        assert response.error is None
+        assert pool.last_create_requester_id == "requester-1"
 
     @pytest.mark.asyncio
     async def test_destroy_agent_success(self):

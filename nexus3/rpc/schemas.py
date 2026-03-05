@@ -58,9 +58,6 @@ class RpcErrorObjectSchema(StrictSchemaModel):
 class RpcResponseEnvelopeSchema(StrictSchemaModel):
     """Strict JSON-RPC response envelope schema."""
 
-    # Keep response ingress compat-safe: unknown top-level fields are ignored.
-    model_config = ConfigDict(extra="ignore")
-
     jsonrpc: Literal["2.0"]
     id: JsonRpcId | None
     result: Any | None = None

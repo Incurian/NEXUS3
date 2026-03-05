@@ -219,6 +219,73 @@ def _format_repl_context_metadata_line(
     return f"Context: {safe_path} ({safe_layer_name})"
 
 
+def _format_created_agent_line(safe_sink: SafeSink, agent_id: str) -> str:
+    """Format created-agent status line while preserving trusted Rich wrapper markup."""
+    safe_agent_id = _sanitize_tool_trace_text(safe_sink, agent_id)
+    return f"[dim]Created agent: {safe_agent_id}[/]"
+
+
+def _format_shutdown_server_line(safe_sink: SafeSink, server_url: str) -> str:
+    """Format shutdown-start status line while preserving trusted Rich wrapper markup."""
+    safe_server_url = _sanitize_tool_trace_text(safe_sink, server_url)
+    return f"[dim]Shutting down server at {safe_server_url}...[/]"
+
+
+def _format_shutdown_warning_line(safe_sink: SafeSink, error: str) -> str:
+    """Format shutdown warning line while preserving trusted Rich wrapper markup."""
+    safe_error = _sanitize_tool_trace_text(safe_sink, error)
+    return f"[yellow]Warning: Server shutdown may have failed: {safe_error}[/]"
+
+
+def _format_invalid_port_spec_line(safe_sink: SafeSink, error: str) -> str:
+    """Format invalid-port-spec line while preserving trusted Rich wrapper markup."""
+    safe_error = _sanitize_tool_trace_text(safe_sink, error)
+    return f"[red]Invalid port specification:[/] {safe_error}"
+
+
+def _format_provider_initialization_failed_line(safe_sink: SafeSink, message: str) -> str:
+    """Format provider-init failure line while preserving trusted Rich wrapper markup."""
+    safe_message = _sanitize_tool_trace_text(safe_sink, message)
+    return f"[red]Provider initialization failed:[/]\n{safe_message}"
+
+
+def _format_warning_message_line(safe_sink: SafeSink, message: str) -> str:
+    """Format yellow message line while preserving trusted Rich wrapper markup."""
+    safe_message = _sanitize_tool_trace_text(safe_sink, message)
+    return f"[yellow]{safe_message}[/]"
+
+
+def _format_red_message_line(safe_sink: SafeSink, message: str) -> str:
+    """Format red message line while preserving trusted Rich wrapper markup."""
+    safe_message = _sanitize_tool_trace_text(safe_sink, message)
+    return f"[red]{safe_message}[/]"
+
+
+def _format_connecting_line(safe_sink: SafeSink, agent_url: str) -> str:
+    """Format connect-start line while preserving trusted text wrapper."""
+    safe_agent_url = _sanitize_tool_trace_text(safe_sink, agent_url)
+    return f"Connecting to {safe_agent_url}..."
+
+
+def _format_connected_tokens_line(safe_sink: SafeSink, total: object, available: object) -> str:
+    """Format connected-token status line while preserving trusted text wrapper."""
+    safe_total = _sanitize_tool_trace_text(safe_sink, str(total))
+    safe_available = _sanitize_tool_trace_text(safe_sink, str(available))
+    return f"Connected. Tokens: {safe_total}/{safe_available}"
+
+
+def _format_client_metadata_line(safe_sink: SafeSink, label: str, value: object) -> str:
+    """Format client metadata line while preserving trusted text wrapper."""
+    safe_value = _sanitize_tool_trace_text(safe_sink, str(value))
+    return f"{label}: {safe_value}"
+
+
+def _format_scanned_ports_line(safe_sink: SafeSink, ports: list[int]) -> str:
+    """Format scanned-ports line while preserving trusted Rich wrapper markup."""
+    safe_ports = _sanitize_tool_trace_text(safe_sink, str(ports))
+    return f"[dim]Scanned ports: {safe_ports}[/]"
+
+
 async def run_repl(
     verbose: bool = False,
     log_verbose: bool = False,
@@ -262,7 +329,7 @@ async def run_repl(
     try:
         config = load_config()
     except NexusError as e:
-        console.print(f"[red]Error:[/] {e.message}")
+        console.print(_format_repl_error_line(safe_sink, e.message))
         return
 
     # Use config port if not specified via CLI
@@ -304,9 +371,11 @@ async def run_repl(
                             client = NexusClient.with_auto_auth(url)
                         async with client:
                             await client.create_agent(result.agent_id)
-                        console.print(f"[dim]Created agent: {result.agent_id}[/]")
+                        console.print(_format_created_agent_line(safe_sink, result.agent_id))
                     except Exception as e:
-                        console.print(f"[red]Failed to create agent: {e}[/]")
+                        console.print(
+                            _format_repl_error_line(safe_sink, f"Failed to create agent: {e}")
+                        )
                         continue  # Go back to lobby
                 # Connect to selected server+agent
                 await run_repl_client(
@@ -333,7 +402,7 @@ async def run_repl(
             elif result.action == ConnectAction.SHUTDOWN_AND_REPLACE:
                 # Shutdown selected server, then start new one
                 if result.server_url:
-                    console.print(f"[dim]Shutting down server at {result.server_url}...[/]")
+                    console.print(_format_shutdown_server_line(safe_sink, result.server_url))
                     try:
                         shutdown_token_mgr = ServerTokenManager(port=result.port or effective_port)
                         shutdown_key = shutdown_token_mgr.load()
@@ -355,7 +424,7 @@ async def run_repl(
                         console.print("[dim]Server shutdown complete.[/]")
                     except Exception as e:
                         logger.debug("Server shutdown error: %s: %s", type(e).__name__, e)
-                        console.print(f"[yellow]Warning: Server shutdown may have failed: {e}[/]")
+                        console.print(_format_shutdown_warning_line(safe_sink, str(e)))
                 # Use the port from the shutdown server
                 if result.port:
                     effective_port = result.port
@@ -370,7 +439,7 @@ async def run_repl(
                         candidate_ports.update(new_ports)
                         console.print(f"[dim]Scanning {len(new_ports)} additional ports...[/]")
                     except ValueError as e:
-                        console.print(f"[red]Invalid port specification:[/] {e}")
+                        console.print(_format_invalid_port_spec_line(safe_sink, str(e)))
                 # Loop back to discover with expanded ports
                 continue
 
@@ -482,7 +551,7 @@ async def run_repl(
             agent_name = session_name
             startup_mode = "session"
         except SessionNotFoundError:
-            console.print(f"[red]Session not found: {session_name}[/]")
+            console.print(_format_repl_error_line(safe_sink, f"Session not found: {session_name}"))
             token_manager.delete()
             return
     else:
@@ -528,12 +597,14 @@ async def run_repl(
                     content = template.read_text(encoding="utf-8")
                     main_agent.context.set_system_prompt(content)
                 except OSError as e:
-                    console.print(f"[red]Error loading template: {e}[/]")
+                    console.print(
+                        _format_repl_error_line(safe_sink, f"Error loading template: {e}")
+                    )
                     token_manager.delete()
                     await pool.destroy(agent_name)
                     return
     except ProviderError as e:
-        console.print(f"[red]Provider initialization failed:[/]\n{e.message}")
+        console.print(_format_provider_initialization_failed_line(safe_sink, e.message))
         token_manager.delete()
         return
 
@@ -736,7 +807,7 @@ async def run_repl(
                 else "Embedded server exited during startup (no exception)"
             )
             server_logger.error(error_msg)
-            console.print(f"[red]Error:[/] {error_msg}")
+            console.print(_format_repl_error_line(safe_sink, error_msg))
             console.print("[dim]Check server.log for details.[/]")
             await pool.destroy(agent_name)
             if shared and shared.provider_registry:
@@ -1516,7 +1587,9 @@ async def run_repl(
                                     f"Switched to: {current_agent_id}", style="dim cyan"
                                 )
                         else:
-                            console.print(f"[red]Agent not found: {new_id}[/]")
+                            console.print(
+                                _format_repl_error_line(safe_sink, f"Agent not found: {new_id}")
+                            )
                     elif output.result == CmdResult.ENTER_WHISPER:
                         console.print(
                             f"[dim]\u250c\u2500\u2500 whisper mode: "
@@ -1531,7 +1604,9 @@ async def run_repl(
                             assert output.data is not None
                             # Restore saved session
                             if output.message:
-                                console.print(f"[yellow]{output.message}[/]")
+                                console.print(
+                                    _format_warning_message_line(safe_sink, output.message)
+                                )
                             try:
                                 confirm = console.input("[y/n]: ").strip().lower()
                             except (EOFError, KeyboardInterrupt):
@@ -1579,13 +1654,19 @@ async def run_repl(
                                             style="dim cyan",
                                         )
                                 except Exception as e:
-                                    console.print(f"[red]Failed to restore: {e}[/]")
+                                    console.print(
+                                        _format_repl_error_line(
+                                            safe_sink, f"Failed to restore: {e}"
+                                        )
+                                    )
 
                         elif action in ("prompt_create", "prompt_create_whisper"):
                             assert output.data is not None
                             # Create new agent
                             if output.message:
-                                console.print(f"[yellow]{output.message}[/]")
+                                console.print(
+                                    _format_warning_message_line(safe_sink, output.message)
+                                )
                             try:
                                 confirm = console.input("[y/n]: ").strip().lower()
                             except (EOFError, KeyboardInterrupt):
@@ -1639,10 +1720,14 @@ async def run_repl(
                                             f"/over to return \u2500\u2500\u2510[/]"
                                         )
                                 except Exception as e:
-                                    console.print(f"[red]Failed to create agent: {e}[/]")
+                                    console.print(
+                                        _format_repl_error_line(
+                                            safe_sink, f"Failed to create agent: {e}"
+                                        )
+                                    )
 
                         elif output.message:
-                            console.print(f"[red]{output.message}[/]")
+                            console.print(_format_red_message_line(safe_sink, output.message))
                     elif output.result == CmdResult.SUCCESS:
                         # Handle special actions
                         if output.data and output.data.get("action") == "clear":
@@ -1657,7 +1742,9 @@ async def run_repl(
                 assert target_id is not None  # guaranteed when whisper is active
                 target_agent = pool.get(target_id)
                 if target_agent is None:
-                    console.print(f"[red]Whisper target not found: {target_id}[/]")
+                    console.print(
+                        _format_repl_error_line(safe_sink, f"Whisper target not found: {target_id}")
+                    )
                     whisper.exit()
                     continue
                 active_session = target_agent.session
@@ -1849,12 +1936,13 @@ async def run_repl_client(url: str, agent_id: str, api_key: str | None = None) -
     from nexus3.client import ClientError, NexusClient
 
     console = get_console()
+    safe_sink = SafeSink(console)
 
     # Build agent URL
     agent_url = f"{url.rstrip('/')}/agent/{agent_id}"
 
     console.print("[bold]NEXUS3 Client[/]")
-    console.print(f"Connecting to {agent_url}...")
+    console.print(_format_connecting_line(safe_sink, agent_url))
 
     # Simple prompt session with styled input (no bottom toolbar for simplicity)
     lexer = SimpleLexer('class:input-field')
@@ -1874,7 +1962,7 @@ async def run_repl_client(url: str, agent_id: str, api_key: str | None = None) -
         else:
             client_ctx = NexusClient.with_auto_auth(agent_url, timeout=300.0)
     except ValueError as e:
-        console.print(f"[red]Invalid URL:[/] {e}")
+        console.print(_format_repl_error_line(safe_sink, f"Invalid URL: {e}"))
         return
 
     async with client_ctx as client:
@@ -1883,9 +1971,9 @@ async def run_repl_client(url: str, agent_id: str, api_key: str | None = None) -
             status = await client.get_tokens()
             total = status.get('total', 0)
             avail = status.get('available', status.get('budget', 0))
-            console.print(f"Connected. Tokens: {total}/{avail}")
+            console.print(_format_connected_tokens_line(safe_sink, total, avail))
         except ClientError as e:
-            console.print(f"[red]Connection failed:[/] {e}")
+            console.print(_format_repl_error_line(safe_sink, f"Connection failed: {e}"))
             return
 
         console.print("Commands: /quit | /status")
@@ -1909,10 +1997,10 @@ async def run_repl_client(url: str, agent_id: str, api_key: str | None = None) -
                     try:
                         tokens = await client.get_tokens()
                         context = await client.get_context()
-                        console.print(f"Tokens: {tokens}")
-                        console.print(f"Context: {context}")
+                        console.print(_format_client_metadata_line(safe_sink, "Tokens", tokens))
+                        console.print(_format_client_metadata_line(safe_sink, "Context", context))
                     except ClientError as e:
-                        console.print(f"[red]Error:[/] {e}")
+                        console.print(_format_repl_error_line(safe_sink, str(e)))
                     continue
 
                 # Send message to agent
@@ -1920,12 +2008,12 @@ async def run_repl_client(url: str, agent_id: str, api_key: str | None = None) -
                 try:
                     result = await client.send(user_input)
                     if "content" in result:
-                        console.print(result["content"])
+                        safe_sink.print_untrusted(str(result["content"]))
                     elif "cancelled" in result:
                         console.print("[yellow]Request was cancelled[/]")
                     console.print("")  # Visual separation
                 except ClientError as e:
-                    console.print(f"[red]Error:[/] {e}")
+                    console.print(_format_repl_error_line(safe_sink, str(e)))
                     console.print("")
 
             except KeyboardInterrupt:
@@ -1950,6 +2038,7 @@ async def _run_connect_with_discovery(args: argparse.Namespace) -> None:
     from nexus3.config.loader import load_config
 
     console = get_console()
+    safe_sink = SafeSink(console)
 
     # Load config to get default port
     try:
@@ -1965,7 +2054,7 @@ async def _run_connect_with_discovery(args: argparse.Namespace) -> None:
         try:
             candidate_ports.update(parse_port_spec(args.scan))
         except ValueError as e:
-            console.print(f"[red]Invalid port specification:[/] {e}")
+            console.print(_format_invalid_port_spec_line(safe_sink, str(e)))
             return
 
     # Discovery loop
@@ -1975,7 +2064,7 @@ async def _run_connect_with_discovery(args: argparse.Namespace) -> None:
 
         if not nexus_servers:
             console.print("[dim]No NEXUS3 servers found.[/]")
-            console.print(f"[dim]Scanned ports: {sorted(candidate_ports)}[/]")
+            console.print(_format_scanned_ports_line(safe_sink, sorted(candidate_ports)))
             return
 
         # Check if the default port already has a NEXUS server
@@ -1998,9 +2087,11 @@ async def _run_connect_with_discovery(args: argparse.Namespace) -> None:
                         client = NexusClient.with_auto_auth(url)
                     async with client:
                         await client.create_agent(result.agent_id)
-                    console.print(f"[dim]Created agent: {result.agent_id}[/]")
+                    console.print(_format_created_agent_line(safe_sink, result.agent_id))
                 except Exception as e:
-                    console.print(f"[red]Failed to create agent: {e}[/]")
+                    console.print(
+                        _format_repl_error_line(safe_sink, f"Failed to create agent: {e}")
+                    )
                     return  # In connect mode, just exit on failure
             await run_repl_client(
                 result.server_url or f"http://127.0.0.1:{effective_port}",
@@ -2016,7 +2107,7 @@ async def _run_connect_with_discovery(args: argparse.Namespace) -> None:
                     candidate_ports.update(new_ports)
                     console.print(f"[dim]Scanning {len(new_ports)} additional ports...[/]")
                 except ValueError as e:
-                    console.print(f"[red]Invalid port specification:[/] {e}")
+                    console.print(_format_invalid_port_spec_line(safe_sink, str(e)))
             continue
 
         elif result.action == ConnectAction.MANUAL_URL:

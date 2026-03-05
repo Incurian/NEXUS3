@@ -117,13 +117,21 @@ class GlobalDispatcher:
 
         handlers = dict(self._handlers)
 
+        async def handle_create_with_context(params: dict[str, Any]) -> dict[str, Any]:
+            return await self._handle_create_agent(params, request_context)
+
         async def handle_destroy_with_context(params: dict[str, Any]) -> dict[str, Any]:
             return await self._handle_destroy_agent(params, request_context)
 
+        handlers["create_agent"] = handle_create_with_context
         handlers["destroy_agent"] = handle_destroy_with_context
         return await dispatch_request(request, handlers, "global method")
 
-    async def _handle_create_agent(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def _handle_create_agent(
+        self,
+        params: dict[str, Any],
+        request_context: RequestContext | None = None,
+    ) -> dict[str, Any]:
         """Create a new agent.
 
         Creates a new agent instance in the pool. The agent will be assigned
@@ -458,7 +466,12 @@ class GlobalDispatcher:
             model=model,  # Model name/alias for this agent
         )
         try:
-            agent = await self._pool.create(agent_id=agent_id, config=config)
+            requester_id = None if request_context is None else request_context.requester_id
+            agent = await self._pool.create(
+                agent_id=agent_id,
+                config=config,
+                requester_id=requester_id,
+            )
         except ProviderError as e:
             # Provider initialization failed (e.g., missing API key)
             raise InvalidParamsError(f"Failed to initialize provider: {e.message}") from e

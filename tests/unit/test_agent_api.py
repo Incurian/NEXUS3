@@ -6,7 +6,6 @@ from nexus3.client import ClientError
 from nexus3.rpc.agent_api import AgentScopedAPI, ClientAdapter, DirectAgentAPI
 from nexus3.rpc.types import Request, Response
 
-
 # === Mock Classes ===
 
 
@@ -217,6 +216,19 @@ class TestDirectAgentAPI:
         assert call.method == "create_agent"
         assert call.params["agent_id"] == "new-agent"
         assert call.params["preset"] == "sandboxed"
+
+    async def test_create_agent_forwards_requester_id(self, pool, global_dispatcher):
+        """create_agent() forwards requester_id to GlobalDispatcher."""
+        api = DirectAgentAPI(pool, global_dispatcher, requester_id="requester-1")
+        global_dispatcher.response = Response(
+            jsonrpc="2.0",
+            id=1,
+            result={"agent_id": "new-agent", "url": "/agent/new-agent"},
+        )
+
+        await api.create_agent("new-agent", preset="sandboxed")
+
+        assert global_dispatcher.requester_ids == ["requester-1"]
 
     async def test_destroy_agent_calls_global_dispatcher(self, api, global_dispatcher):
         """Test that destroy_agent() calls the global dispatcher."""

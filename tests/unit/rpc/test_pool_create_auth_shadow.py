@@ -223,3 +223,73 @@ async def test_create_shadow_mismatch_delta_ceiling_warns_but_legacy_deny_remain
     assert mismatch.check_stage == "delta_ceiling"
     assert mismatch.legacy_allowed is False
     assert mismatch.kernel_allowed is True
+
+
+@pytest.mark.asyncio
+async def test_create_shadow_requester_parent_binding_parity_no_warning(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Matching requester/parent binding emits no mismatch warning."""
+    shared = _create_mock_shared_components(tmp_path)
+    pool = AgentPool(shared)
+
+    parent_permissions = resolve_preset("trusted")
+    parent_permissions.depth = MAX_AGENT_DEPTH
+
+    with caplog.at_level(logging.WARNING, logger="nexus3.rpc.pool"):
+        with pytest.raises(PermissionError, match="max nesting depth"):
+            await pool.create(
+                config=AgentConfig(
+                    agent_id="child-requester-binding-parity",
+                    preset="sandboxed",
+                    parent_permissions=parent_permissions,
+                    parent_agent_id="parent-agent",
+                ),
+                requester_id="parent-agent",
+            )
+
+    mismatch_records = [
+        record
+        for record in caplog.records
+        if getattr(record, "event", None) == "create_auth_shadow_mismatch"
+    ]
+    assert mismatch_records == []
+
+
+@pytest.mark.asyncio
+async def test_create_shadow_requester_parent_binding_mismatch_warns_only(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Requester/parent mismatch logs shadow warning while legacy behavior remains unchanged."""
+    shared = _create_mock_shared_components(tmp_path)
+    pool = AgentPool(shared)
+
+    parent_permissions = resolve_preset("trusted")
+    parent_permissions.depth = MAX_AGENT_DEPTH
+
+    with caplog.at_level(logging.WARNING, logger="nexus3.rpc.pool"):
+        with pytest.raises(PermissionError, match="max nesting depth"):
+            await pool.create(
+                config=AgentConfig(
+                    agent_id="child-requester-binding-mismatch",
+                    preset="sandboxed",
+                    parent_permissions=parent_permissions,
+                    parent_agent_id="parent-agent",
+                ),
+                requester_id="requester-agent",
+            )
+
+    mismatch_records = [
+        record
+        for record in caplog.records
+        if getattr(record, "event", None) == "create_auth_shadow_mismatch"
+    ]
+    assert len(mismatch_records) == 1
+    mismatch = mismatch_records[0]
+    assert mismatch.target_agent_id == "child-requester-binding-mismatch"
+    assert mismatch.requester_id == "requester-agent"
+    assert mismatch.check_stage == "requester_parent_binding"
+    assert mismatch.legacy_allowed is True
+    assert mismatch.kernel_allowed is False

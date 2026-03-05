@@ -54,6 +54,19 @@ def test_rpc_request_envelope_rejects_bool_id() -> None:
         )
 
 
+def test_rpc_request_envelope_rejects_unknown_top_level_field() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        RpcRequestEnvelopeSchema.model_validate(
+            {
+                "jsonrpc": "2.0",
+                "method": "send",
+                "params": {"content": "hi"},
+                "id": 1,
+                "extra": "ignored",
+            }
+        )
+
+
 def test_rpc_response_envelope_uses_result_error_key_presence() -> None:
     RpcResponseEnvelopeSchema.model_validate(
         {
@@ -69,6 +82,18 @@ def test_rpc_response_envelope_uses_result_error_key_presence() -> None:
                 "id": 1,
                 "result": {},
                 "error": {"code": -32000, "message": "boom"},
+            }
+        )
+
+
+def test_rpc_response_envelope_rejects_unknown_top_level_field() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        RpcResponseEnvelopeSchema.model_validate(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": None,
+                "extra": "ignored",
             }
         )
 

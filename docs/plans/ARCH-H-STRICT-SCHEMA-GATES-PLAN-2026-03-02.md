@@ -66,8 +66,9 @@ Phases:
   - [x] M1 Phase 2 create-agent cleanup slice: removed redundant post-schema `allowed_write_paths` type guards in `rpc/global_dispatcher.py` and preserved malformed-shape wording via schema error mapping; kept path/security containment checks unchanged.
   - [x] M1 Phase 2 no-arg ingress cleanup slice: added compat-safe `EmptyParamsSchema` ingress guard for `rpc/dispatcher.py::_handle_cancel_all` with permissive extra-param compatibility preserved.
   - [x] M1 Phase 2 request-envelope ingress migration: wired `rpc/protocol.py::parse_request` to `RpcRequestEnvelopeSchema` with preserved legacy ParseError wording and explicit positional-params rejection behavior.
+  - [x] M1 Phase 2 strict-envelope slice: tightened `rpc/protocol.py` request/response envelope ingress to reject unknown top-level fields (removed request projection and response extra-ignore compatibility), while preserving existing ParseError wording for malformed known fields and positional params rejection behavior.
   - [ ] Remaining M1 Phase 2 ingress coverage beyond low-risk methods (including stricter/behavior-sensitive paths) still pending.
-    - Resume target: prioritize strict mode tightening/removal of remaining compat-only branches where telemetry is already stable, then evaluate flipping strict ingress defaults where safe.
+    - Resume target: tighten remaining compat-only method-param ingress branches in dispatcher/global-dispatcher paths and evaluate strict-default flips where safe.
 - [x] Remove silent malformed-entry skips.
   - [x] M1 Phase 3 slice: `context/loader.py::_merge_mcp_servers` now fail-fast rejects malformed MCP container/entry shapes (`mcpServers` non-object, `servers` non-array, non-object entries in `servers[]`) with actionable `MCPConfigError` context.
 - [x] Consolidate duplicate MCP config models.

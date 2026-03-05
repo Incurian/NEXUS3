@@ -105,6 +105,13 @@ class TestParseResponse:
 
         assert str(exc_info.value) == "id must be string, number, or null, got: bool"
 
+    def test_parse_response_rejects_unknown_top_level_field(self):
+        """Response with unknown top-level field raises ParseError."""
+        with pytest.raises(ParseError) as exc_info:
+            parse_response('{"jsonrpc":"2.0","id":1,"result":"ok","extra":"ignored"}')
+
+        assert str(exc_info.value) == "Invalid JSON-RPC response"
+
 
 # === NexusClient tests ===
 

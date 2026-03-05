@@ -8,13 +8,23 @@ from rich.console import Console
 
 from nexus3.cli.repl import (
     _format_autosave_error_line,
+    _format_client_metadata_line,
+    _format_connected_tokens_line,
+    _format_connecting_line,
+    _format_created_agent_line,
     _format_embedded_rpc_listening_line,
     _format_incoming_response_sent_line,
     _format_incoming_started_line,
+    _format_invalid_port_spec_line,
+    _format_provider_initialization_failed_line,
+    _format_red_message_line,
     _format_repl_context_metadata_line,
     _format_repl_error_line,
     _format_repl_startup_metadata_line,
+    _format_scanned_ports_line,
     _format_server_log_line,
+    _format_shutdown_server_line,
+    _format_shutdown_warning_line,
     _format_tool_call_trace_line,
     _format_tool_error_trace_line,
     _format_tool_halt_trace_line,
@@ -22,6 +32,7 @@ from nexus3.cli.repl import (
     _format_tool_result_trace_line,
     _format_turn_cancelled_status_line,
     _format_turn_completed_status_line,
+    _format_warning_message_line,
 )
 from nexus3.display.safe_sink import SafeSink
 
@@ -237,3 +248,76 @@ def test_repl_context_metadata_line_sanitizes_path_and_layer() -> None:
 
     assert line == "Context: /tmp/\\[x] (\\[red]workspace\\[/red])"
     assert "\x1b" not in line
+
+
+def test_created_agent_and_shutdown_lines_sanitize_dynamic_fields() -> None:
+    sink = _make_sink()
+
+    created = _format_created_agent_line(
+        sink, "[cyan]agent-1[/cyan]\x1b]8;;https://evil\x07x\x1b]8;;\x07"
+    )
+    shutting_down = _format_shutdown_server_line(
+        sink, "http://127.0.0.1:8765/\x1b[31m[red]x[/red]"
+    )
+    warning = _format_shutdown_warning_line(
+        sink, "[yellow]warn[/yellow]\x1b[2J"
+    )
+
+    assert created == "[dim]Created agent: \\[cyan]agent-1\\[/cyan]x[/]"
+    assert shutting_down == "[dim]Shutting down server at http://127.0.0.1:8765/\\[red]x\\[/red]...[/]"
+    assert (
+        warning
+        == "[yellow]Warning: Server shutdown may have failed: \\[yellow]warn\\[/yellow][/]"
+    )
+
+
+def test_invalid_port_and_provider_failure_lines_sanitize_dynamic_fields() -> None:
+    sink = _make_sink()
+
+    invalid_port = _format_invalid_port_spec_line(
+        sink, "[red]bad[/red]\x1b]8;;https://evil\x07x\x1b]8;;\x07"
+    )
+    provider_failed = _format_provider_initialization_failed_line(
+        sink, "[magenta]boom[/magenta]\x1b[31m"
+    )
+
+    assert invalid_port == "[red]Invalid port specification:[/] \\[red]bad\\[/red]x"
+    assert provider_failed == "[red]Provider initialization failed:[/]\n\\[magenta]boom\\[/magenta]"
+
+
+def test_warning_and_red_message_lines_sanitize_dynamic_message() -> None:
+    sink = _make_sink()
+
+    yellow_line = _format_warning_message_line(
+        sink, "[yellow]heads up[/yellow]\x1b[31m"
+    )
+    red_line = _format_red_message_line(
+        sink, "[red]stop[/red]\x1b]8;;https://evil\x07x\x1b]8;;\x07"
+    )
+
+    assert yellow_line == "[yellow]\\[yellow]heads up\\[/yellow][/]"
+    assert red_line == "[red]\\[red]stop\\[/red]x[/]"
+
+
+def test_client_connect_and_metadata_lines_sanitize_dynamic_fields() -> None:
+    sink = _make_sink()
+
+    connecting = _format_connecting_line(
+        sink, "http://127.0.0.1:8765/agent/main\x1b[31m[red]x[/red]"
+    )
+    connected = _format_connected_tokens_line(
+        sink,
+        "[red]10[/red]\x1b[31m",
+        "[cyan]90[/cyan]\x1b]8;;https://evil\x07x\x1b]8;;\x07",
+    )
+    metadata = _format_client_metadata_line(
+        sink,
+        "Context",
+        {"k": "[bold]v[/bold]"},
+    )
+    scanned_ports = _format_scanned_ports_line(sink, [8765, 9000])
+
+    assert connecting == "Connecting to http://127.0.0.1:8765/agent/main\\[red]x\\[/red]..."
+    assert connected == "Connected. Tokens: \\[red]10\\[/red]/\\[cyan]90\\[/cyan]x"
+    assert metadata == "Context: {'k': '\\[bold]v\\[/bold]'}"
+    assert scanned_ports == "[dim]Scanned ports: [8765, 9000][/]"

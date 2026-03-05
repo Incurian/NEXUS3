@@ -303,6 +303,11 @@ Progress snapshot:
   - migrated `rpc/protocol.py::parse_request` to typed schema ingress via `RpcRequestEnvelopeSchema`.
   - preserved legacy ParseError wording and positional-params rejection behavior.
   - added focused protocol ingress regressions in `tests/unit/rpc/test_schema_ingress_wiring.py`.
+- Completed: Plan H M1 Phase 2 strict-envelope ingress slice:
+  - tightened protocol-envelope ingress in `nexus3/rpc/protocol.py` and `nexus3/rpc/schemas.py` to reject unknown top-level JSON-RPC request/response fields.
+  - removed request projection-based compatibility and response envelope `extra=\"ignore\"` compatibility override.
+  - preserved bool-id rejection and positional-params ParseError wording.
+  - added focused regressions in `tests/unit/rpc/test_schema_ingress_wiring.py`, `tests/unit/rpc/test_schemas.py`, and `tests/unit/test_client.py`.
 - Completed: baseline E/F harness fixtures/tests under `tests/fixtures/arch_baseline/`, `tests/unit/context/test_compile_baseline.py`, and `tests/unit/patch/test_byte_roundtrip_baseline.py`.
 - Completed: Plan G M1 Phase 1 foundation safe sink API (`nexus3/display/safe_sink.py`) with minimal `InlinePrinter` integration and focused unit tests (`tests/unit/display/test_safe_sink.py`).
 - Completed: Plan G M1 Phase 2 high-risk output migration:
@@ -342,6 +347,10 @@ Progress snapshot:
   - migrated startup/session metadata and embedded RPC status lines in `nexus3/cli/repl.py` to SafeSink-backed sanitization.
   - preserved existing wrappers/wording behavior.
   - extended focused regressions in `tests/unit/cli/test_repl_safe_sink.py`.
+- Completed: Plan G M1 Phase 3 incremental output migration slice (`repl.py` remaining client/discovery/status surfaces):
+  - migrated remaining dynamic `run_repl`/`run_repl_client`/`_run_connect_with_discovery` lines (created-agent notices, shutdown/connect/provider/invalid-port errors, client metadata/status lines, command output message lines) to SafeSink-backed sanitization helpers.
+  - preserved trusted static wrappers while sanitizing interpolated dynamic fields.
+  - extended focused regressions in `tests/unit/cli/test_repl_safe_sink.py`.
 - Completed: M1 Plan D grep migration slice routed fallback per-candidate authorization through `FilesystemAccessGateway` and added focused blocked/outside/symlink grep tests.
 - Completed: M1 Plan D tool migrations (`glob`, `outline`, `concat_files`, `grep`) to `FilesystemAccessGateway`; remaining Plan D work is consolidated regression/perf guard coverage.
 - Completed: M1 Plan D consolidated blocked-path/symlink regression coverage across migrated tool tests (`glob`, `outline`, `concat_files`, `grep`).
@@ -373,18 +382,23 @@ Progress snapshot:
 - Completed: M2 Plan A Phase 2+3 create-lifecycle delta-branch parity coverage slice:
   - added focused delta-ceiling parity + mismatch warning tests in `tests/unit/rpc/test_pool_create_auth_shadow.py`.
   - confirmed legacy deny path remains authoritative when kernel intentionally diverges.
+- Completed: M2 Plan A Phase 2+3 create-requester propagation + requester-binding parity slice:
+  - threaded `requester_id` through `nexus3/rpc/agent_api.py -> nexus3/rpc/global_dispatcher.py -> nexus3/rpc/pool.py` for create flow request context parity.
+  - added shadow-only requester/parent binding comparison stage (`requester_parent_binding`) in create authorization adapter path.
+  - preserved legacy create allow/deny behavior and error semantics as authoritative.
+  - added focused regressions in `tests/unit/test_agent_api.py`, `tests/unit/test_pool.py`, and `tests/unit/rpc/test_pool_create_auth_shadow.py`.
 - Completed: M2 Plan C Phase 3 execution-skill request-safety slice:
   - removed per-call mutable state from `bash_safe`, `shell_UNSAFE`, and `run_python`
   - refactored subprocess creation helpers to pass command/code as local parameters
   - updated Windows behavior tests to assert subprocess call args directly
   - added focused concurrent `run_python` test for per-call payload isolation
 - Validation snapshot (2026-03-05, post-merge slices):
-  - `.venv/bin/ruff check nexus3/rpc/protocol.py nexus3/cli/repl.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_client.py tests/unit/cli/test_repl_safe_sink.py` passed.
-  - `.venv/bin/pytest -v tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_client.py tests/unit/cli/test_repl_safe_sink.py` passed (`77 passed`).
+  - `.venv/bin/ruff check nexus3/cli/repl.py nexus3/rpc/agent_api.py nexus3/rpc/global_dispatcher.py nexus3/rpc/pool.py nexus3/rpc/protocol.py nexus3/rpc/schemas.py tests/unit/cli/test_repl_safe_sink.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/rpc/test_schemas.py tests/unit/test_agent_api.py tests/unit/test_client.py tests/unit/test_pool.py` passed.
+  - `.venv/bin/pytest -v tests/unit/cli/test_repl_safe_sink.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/rpc/test_schemas.py tests/unit/test_agent_api.py tests/unit/test_client.py tests/unit/test_pool.py` passed (`176 passed`, `9 warnings`).
 - Next gate:
-  - Finish next Plan H ingress slice (strict-mode tightening/removal of remaining compat-only branches where telemetry is stable; evaluate strict-default flips where safe).
-  - Finish next Plan G sink migration slice (remaining dynamic CLI/REPL outputs outside migrated `repl.py` trace + incoming-notification + post-turn + startup surfaces) and continue redundant sanitization call-site cleanup.
-  - Continue M2 Plan A adapter rollout from shadow parity into additional lifecycle call sites beyond current enforcer/pool/dispatcher coverage.
+  - Plan H: tighten remaining dispatcher/global-dispatcher method-param compatibility branches toward stricter ingress defaults where telemetry is stable.
+  - Plan G: finish residual dynamic output surfaces outside migrated REPL/client flows (`main`/`_run_with_reload`, `cli/serve.py`) and continue redundant sanitization-callsite cleanup.
+  - Plan A: continue adapter rollout into remaining lifecycle call sites and prepare duplicate authorization branch removal once shadow telemetry is stable.
 
 Resume-first checklist (post-compact):
 1. Confirm branch + cleanliness: `git status --short --branch` (ignore existing unrelated untracked: `docs/plans/DOUBLE-SPINNER-FIX-PLAN.md`, `editors/`, `err/`).
@@ -408,6 +422,19 @@ Compact checkpoint (2026-03-05, end of session):
   1. Plan H: evaluate strict-default ingress flips where compat behavior is now proven by tests (start with request/response envelope paths in `nexus3/rpc/protocol.py`).
   2. Plan G: migrate remaining dynamic `console.print`/`spinner.print` surfaces in `nexus3/cli/repl.py` not yet routed through SafeSink formatter helpers.
   3. Plan A: identify next lifecycle authorization callsite beyond current enforcer/pool/dispatcher coverage and add shadow parity + focused tests.
+
+Compact checkpoint (2026-03-05, architecture execution round):
+- Branch head at start of round: `5106528`; working tree now includes new Plan H/G/A execution slices plus docs/status updates.
+- New slices completed this round:
+  1. Plan H strict-envelope ingress slice (unknown top-level JSON-RPC request/response fields now rejected).
+  2. Plan G REPL/client/discovery dynamic output migration slice to SafeSink.
+  3. Plan A create requester-context propagation + requester/parent binding shadow parity slice.
+- Validation result for this round:
+  - Integrated targeted lint/test suites passed (`176 passed`, `9 warnings`).
+- Immediate resume targets:
+  1. Plan H: remaining method-param compatibility tightening in dispatcher/global-dispatcher handlers.
+  2. Plan G: residual top-level CLI output surfaces (`main`, `_run_with_reload`, `serve.py`) and redundant sanitizer cleanup.
+  3. Plan A: identify next lifecycle authorization adapter parity slice and sequence toward duplicate branch removal.
 
 ## Source of Truth
 

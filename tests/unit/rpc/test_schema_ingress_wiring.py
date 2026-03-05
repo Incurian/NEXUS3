@@ -53,7 +53,12 @@ class _StubPool:
     ) -> bool:
         return False
 
-    async def create(self, agent_id: str | None = None, config: Any = None) -> Any:
+    async def create(
+        self,
+        agent_id: str | None = None,
+        config: Any = None,
+        requester_id: str | None = None,
+    ) -> Any:
         raise AssertionError("create() should not be called in this test")
 
     def list(self) -> list[dict[str, Any]]:
@@ -72,7 +77,12 @@ class _CreateCapableStubPool(_StubPool):
     def __init__(self) -> None:
         self.last_create: dict[str, Any] | None = None
 
-    async def create(self, agent_id: str | None = None, config: Any = None) -> Any:
+    async def create(
+        self,
+        agent_id: str | None = None,
+        config: Any = None,
+        requester_id: str | None = None,
+    ) -> Any:
         effective_id = agent_id or "auto-1"
         self.last_create = {"agent_id": agent_id, "config": config, "effective_id": effective_id}
         return SimpleNamespace(agent_id=effective_id)
@@ -476,15 +486,11 @@ def test_parse_request_rejects_non_object_payload_with_legacy_wording() -> None:
         parse_request('["not","an","object"]')
 
 
-def test_parse_request_schema_ingress_keeps_compat_for_benign_extra_fields() -> None:
-    request = parse_request(
-        '{"jsonrpc":"2.0","method":"send","params":{"content":"hi"},"id":1,"extra":"ignored"}'
-    )
-
-    assert request.jsonrpc == "2.0"
-    assert request.method == "send"
-    assert request.params == {"content": "hi"}
-    assert request.id == 1
+def test_parse_request_schema_ingress_rejects_unknown_top_level_fields() -> None:
+    with pytest.raises(ParseError, match="Invalid JSON-RPC request"):
+        parse_request(
+            '{"jsonrpc":"2.0","method":"send","params":{"content":"hi"},"id":1,"extra":"ignored"}'
+        )
 
 
 def test_parse_request_preserves_empty_method_compatibility() -> None:
@@ -531,13 +537,9 @@ def test_parse_response_rejects_non_object_error_shape() -> None:
         parse_response('{"jsonrpc":"2.0","id":1,"error":"boom"}')
 
 
-def test_parse_response_schema_ingress_keeps_compat_for_null_result_and_extra_fields() -> None:
-    response = parse_response('{"jsonrpc":"2.0","id":1,"result":null,"extra":"ignored"}')
-
-    assert response.jsonrpc == "2.0"
-    assert response.id == 1
-    assert response.result is None
-    assert response.error is None
+def test_parse_response_schema_ingress_rejects_unknown_top_level_fields() -> None:
+    with pytest.raises(ParseError, match="Invalid JSON-RPC response"):
+        parse_response('{"jsonrpc":"2.0","id":1,"result":null,"extra":"ignored"}')
 
 
 @pytest.mark.asyncio

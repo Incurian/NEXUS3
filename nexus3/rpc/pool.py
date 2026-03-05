@@ -153,6 +153,28 @@ class _CreateAuthorizationAdapter:
                 reason="delta_exceeds_parent_ceiling",
             )
 
+        if check_stage == "requester_parent_binding":
+            parent_agent_id = request.context.get("parent_agent_id")
+            if not isinstance(parent_agent_id, str):
+                return AuthorizationDecision.allow(
+                    request,
+                    reason="no_parent_binding",
+                )
+            if request.principal_id == "external":
+                return AuthorizationDecision.allow(
+                    request,
+                    reason="external_requester",
+                )
+            if request.principal_id == parent_agent_id:
+                return AuthorizationDecision.allow(
+                    request,
+                    reason="requester_matches_parent",
+                )
+            return AuthorizationDecision.deny(
+                request,
+                reason="requester_parent_mismatch",
+            )
+
         return AuthorizationDecision.deny(request, reason="unknown_create_check_stage")
 
 
@@ -501,6 +523,7 @@ class AgentPool:
         self,
         agent_id: str | None = None,
         config: AgentConfig | None = None,
+        requester_id: str | None = None,
     ) -> Agent:
         """Create a new agent instance.
 
@@ -524,12 +547,17 @@ class AgentPool:
             ValueError: If an agent with the given ID already exists.
         """
         async with self._lock:
-            return await self._create_unlocked(agent_id=agent_id, config=config)
+            return await self._create_unlocked(
+                agent_id=agent_id,
+                config=config,
+                requester_id=requester_id,
+            )
 
     async def _create_unlocked(
         self,
         agent_id: str | None = None,
         config: AgentConfig | None = None,
+        requester_id: str | None = None,
     ) -> Agent:
         """Internal agent creation - caller MUST hold self._lock.
 
@@ -607,7 +635,19 @@ class AgentPool:
             )
 
         parent_permissions = effective_config.parent_permissions
-        parent_requester_id = effective_config.parent_agent_id or "external"
+        create_requester_id = requester_id or effective_config.parent_agent_id or "external"
+
+        if effective_config.parent_agent_id is not None:
+            self._compare_create_authorization_shadow(
+                target_agent_id=effective_id,
+                requester_id=create_requester_id,
+                check_stage="requester_parent_binding",
+                parent_depth=parent_permissions.depth if parent_permissions is not None else 0,
+                parent_can_grant=None,
+                legacy_allowed=True,
+                legacy_reason="requester_parent_binding_not_enforced_legacy",
+                parent_agent_id=effective_config.parent_agent_id,
+            )
 
         # SECURITY: Check ceiling BEFORE applying delta
         # This ensures the base preset is allowed, then we check the delta result
@@ -616,7 +656,7 @@ class AgentPool:
             depth_allowed = parent_permissions.depth < MAX_AGENT_DEPTH
             self._compare_create_authorization_shadow(
                 target_agent_id=effective_id,
-                requester_id=parent_requester_id,
+                requester_id=create_requester_id,
                 check_stage="max_depth",
                 parent_depth=parent_permissions.depth,
                 parent_can_grant=None,
@@ -633,7 +673,7 @@ class AgentPool:
             base_can_grant = parent_permissions.can_grant(permissions)
             self._compare_create_authorization_shadow(
                 target_agent_id=effective_id,
-                requester_id=parent_requester_id,
+                requester_id=create_requester_id,
                 check_stage="base_ceiling",
                 parent_depth=parent_permissions.depth,
                 parent_can_grant=base_can_grant,
@@ -657,7 +697,7 @@ class AgentPool:
                 delta_can_grant = parent_permissions.can_grant(permissions)
                 self._compare_create_authorization_shadow(
                     target_agent_id=effective_id,
-                    requester_id=parent_requester_id,
+                    requester_id=create_requester_id,
                     check_stage="delta_ceiling",
                     parent_depth=parent_permissions.depth,
                     parent_can_grant=delta_can_grant,
@@ -849,6 +889,7 @@ class AgentPool:
         parent_can_grant: bool | None,
         legacy_allowed: bool,
         legacy_reason: str,
+        parent_agent_id: str | None = None,
     ) -> None:
         """Compare legacy create-ceiling checks against kernel shadow decisions."""
         kernel_context: dict[str, str | int | bool] = {
@@ -858,6 +899,8 @@ class AgentPool:
         }
         if parent_can_grant is not None:
             kernel_context["parent_can_grant"] = parent_can_grant
+        if parent_agent_id is not None:
+            kernel_context["parent_agent_id"] = parent_agent_id
 
         kernel_request = AuthorizationRequest(
             action=AuthorizationAction.AGENT_CREATE,

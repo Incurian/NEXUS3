@@ -90,6 +90,10 @@ Phases:
 - Migrated startup/session metadata and embedded RPC status output in `nexus3/cli/repl.py` (agent/session/server/context metadata + embedded RPC listening/server-log lines) to SafeSink-backed sanitization while preserving existing wrappers/wording.
 - Extended focused regressions in `tests/unit/cli/test_repl_safe_sink.py`.
 - Validation: `.venv/bin/ruff check nexus3/cli/repl.py tests/unit/cli/test_repl_safe_sink.py` and `.venv/bin/pytest -v tests/unit/cli/test_repl_safe_sink.py` passed.
+- 2026-03-05: Phase 3 incremental migration slice completed (`repl.py` remaining dynamic client/discovery/status surfaces).
+- Migrated remaining high-value dynamic lines in `nexus3/cli/repl.py` across `run_repl`, `run_repl_client`, and `_run_connect_with_discovery` to SafeSink-backed sanitization (created-agent lines, shutdown warnings, invalid-port/spec errors, provider/init/connect errors, client metadata/status lines, and command output message rendering).
+- Extended focused regressions in `tests/unit/cli/test_repl_safe_sink.py` to cover the new formatter helpers and dynamic field sanitization behavior.
+- Validation: `.venv/bin/ruff check nexus3/cli/repl.py tests/unit/cli/test_repl_safe_sink.py` and `.venv/bin/pytest -v tests/unit/cli/test_repl_safe_sink.py` passed.
 
 ## Testing Strategy
 
@@ -107,9 +111,10 @@ Phases:
   - [x] Migrated `nexus3/cli/repl.py` incoming notification preview path to `SafeSink` sanitization.
   - [x] Migrated `nexus3/cli/repl.py` post-turn status/error dynamic lines to `SafeSink` sanitization.
   - [x] Migrated `nexus3/cli/repl.py` startup metadata/status dynamic lines to `SafeSink` sanitization.
+  - [x] Migrated `nexus3/cli/repl.py` remaining dynamic `run_repl`/`run_repl_client`/`_run_connect_with_discovery` status and error interpolation paths to SafeSink sanitization helpers.
 - [ ] Remove redundant/fragmented sanitization call sites.
   - [x] Removed redundant ad hoc escaping in `nexus3/cli/confirmation_ui.py::confirm_tool_action` during SafeSink migration.
-  - Resume target: prioritize remaining dynamic CLI/REPL output paths outside migrated `repl.py` trace/notification/post-turn/startup surfaces, then collapse duplicate sanitization logic into `SafeSink` entrypoints.
+  - Resume target: finish residual dynamic print surfaces outside migrated REPL/client flows (notably top-level `main`/`_run_with_reload` and `cli/serve.py`) and collapse duplicate ad hoc escaping helpers into `SafeSink` entrypoints.
 
 ## Documentation Updates
 

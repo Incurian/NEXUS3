@@ -287,7 +287,7 @@ class DirectAgentAPI:
             params=params,
             id=1,
         )
-        response = await self._global_dispatcher.dispatch(request)
+        response = await self._global_dispatcher.dispatch(request, self._requester_id)
         return _extract_result(response)
 
     async def destroy_agent(self, agent_id: str) -> dict[str, Any]:

@@ -9,7 +9,6 @@ from nexus3.core.errors import NexusError
 from nexus3.rpc.schemas import (
     RpcRequestEnvelopeSchema,
     RpcResponseEnvelopeSchema,
-    project_known_schema_fields,
 )
 from nexus3.rpc.types import Request, Response
 
@@ -49,7 +48,7 @@ def parse_request(line: str) -> Request:
     if not isinstance(data, dict):
         raise ParseError("Request must be a JSON object")
 
-    request_data = project_known_schema_fields(data, RpcRequestEnvelopeSchema)
+    request_data = dict(data)
 
     # Preserve legacy behavior: explicitly reject positional params with dedicated message.
     raw_params = data.get("params")
