@@ -52,7 +52,7 @@ Phases:
 - [x] Add AST v2 parser/projection foundation (raw-line/newline metadata, v2 parse hook, v2->v1 applier bridge).
 - [x] Implement byte-strict applier entrypoint (`apply_patch_byte_strict`) for AST-v2 patches (default path unchanged).
 - [x] Add legacy compatibility mode and migration flag (`fidelity_mode=legacy|byte_strict` in patch skill, default legacy).
-- [ ] Harden file target resolution.
+- [x] Harden file target resolution (exact-path preference, basename ambiguity fail-closed).
 - [ ] Add ambiguity fail-closed and byte-fidelity regression tests (EOF/non-UTF8/binary-adjacent).
 - [ ] Flip default and remove fragile legacy branches.
 
@@ -93,6 +93,22 @@ Status note (2026-03-05, M3 Plan F Phase 3):
   - `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py -k patch` -> `9 passed, 8 deselected`
   - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py nexus3/patch tests/unit/patch`
   - `.venv/bin/mypy nexus3/skill/builtin/patch.py nexus3/patch`
+
+Status note (2026-03-05, M3 Plan F Phase 4):
+- Hardened patch target selection in `nexus3/skill/builtin/patch.py`:
+  - exact-path match preferred (relative-to-cwd first, then absolute path candidate)
+  - basename fallback allowed only when unambiguous
+  - ambiguous basename matches now fail closed with explicit error details
+- Added/updated multi-file target-selection regressions in `tests/unit/skill/test_patch.py`:
+  - exact-path preference with same-basename candidates
+  - ambiguity fail-closed coverage
+  - unambiguous baseline behavior retained
+- Focused gates passed:
+  - `.venv/bin/pytest -q tests/unit/skill/test_patch.py -k multi_file_diff` -> `4 passed, 23 deselected`
+  - `.venv/bin/pytest -q tests/unit/skill/test_patch.py tests/unit/patch/test_byte_strict_apply_phase2.py tests/unit/patch/test_applier.py tests/unit/patch/test_parser.py tests/unit/patch/test_byte_roundtrip_baseline.py tests/unit/patch/test_validator.py` -> `93 passed`
+  - `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py -k patch` -> `9 passed, 8 deselected`
+  - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py`
+  - `.venv/bin/mypy nexus3/skill/builtin/patch.py`
 
 ## Documentation Updates
 

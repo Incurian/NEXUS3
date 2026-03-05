@@ -226,8 +226,9 @@ Current milestone:
 Immediate tasks:
 - Plan F Phase 1 is committed as `1079cd7` (`plan f phase 1: add ast v2 foundation and baseline fixtures`).
 - Plan F Phase 2 is committed as `4ded3fa` (`plan f phase 2: add byte-strict ast-v2 apply path`).
-- Plan F Phase 3 is complete in the working tree (`fidelity_mode=legacy|byte_strict` + migration tests); commit as standalone checkpoint before Phase 4.
-- Start main-plan execution at M3 Plan F Phase 4 (harden file-target resolution: exact-path preference + ambiguity fail-closed) before any follow-on deferred plan execution.
+- Plan F Phase 3 is committed as `4c10b0b` (`plan f phase 3: wire legacy vs byte_strict skill mode`).
+- Plan F Phase 4 is complete in the working tree (exact-path target preference + ambiguity fail-closed matching); commit as standalone checkpoint before remaining Phase 5/6 closeout work.
+- Start main-plan execution at M3 Plan F Phase 5 (remaining byte-fidelity regressions: non-UTF8/binary-adjacent and ambiguity coverage expansion) before Plan E.
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -1188,6 +1189,27 @@ Execution checkpoint (2026-03-05, architecture execution round 33):
 - Next gate:
   1. Commit Plan F Phase 3 code+tests+docs as standalone checkpoint.
   2. Start M3 Plan F Phase 4 target-resolution hardening (`_find_matching_patch` exact-path preference + ambiguity fail-closed behavior/tests).
+  3. Keep follow-on deferred plans in backlog mode until their M4/post-M4 dependency gates are met.
+
+Execution checkpoint (2026-03-05, architecture execution round 34):
+- Scope completed this round (M3 Plan F Phase 4 target-resolution hardening):
+  1. Hardened `nexus3/skill/builtin/patch.py::_find_matching_patch` to prefer exact-path matches (relative-to-cwd first, then absolute-path candidate).
+  2. Added fail-closed ambiguity behavior for basename fallback: multiple basename matches now return explicit ambiguity errors instead of selecting first match.
+  3. Added/updated multi-file selection regressions in `tests/unit/skill/test_patch.py`:
+     - exact-path preference with same-basename candidates
+     - ambiguity fail-closed behavior
+     - retained unambiguous baseline case.
+- Focused validation executed this round:
+  - `.venv/bin/pytest -q tests/unit/skill/test_patch.py -k multi_file_diff` -> `4 passed, 23 deselected`.
+  - `.venv/bin/pytest -q tests/unit/skill/test_patch.py tests/unit/patch/test_byte_strict_apply_phase2.py tests/unit/patch/test_applier.py tests/unit/patch/test_parser.py tests/unit/patch/test_byte_roundtrip_baseline.py tests/unit/patch/test_validator.py` -> `93 passed`.
+  - `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py -k patch` -> `9 passed, 8 deselected`.
+  - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py` -> passed.
+  - `.venv/bin/mypy nexus3/skill/builtin/patch.py` -> passed.
+- Next gate:
+  1. Commit Plan F Phase 4 code+tests+docs as standalone checkpoint.
+  2. Execute remaining Plan F closeout slices (Phase 5/6) before starting Plan E:
+     - expand byte-fidelity regressions (non-UTF8/binary-adjacent + remaining ambiguity matrices)
+     - evaluate/plan default-flip readiness criteria for byte_strict.
   3. Keep follow-on deferred plans in backlog mode until their M4/post-M4 dependency gates are met.
 
 ## Source of Truth

@@ -352,6 +352,54 @@ class TestMultiFileDiff(TestPatchSkill):
         assert target.read_text() == "new content\n"
 
     @pytest.mark.asyncio
+    async def test_multi_file_diff_prefers_exact_path_match(self, skill, tmp_path):
+        """Test exact-path match wins when basename matches multiple diff entries."""
+        target = tmp_path / "pkg" / "nested" / "shared.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("shared old\n")
+
+        diff = f"""--- a/other/shared.py
++++ b/other/shared.py
+@@ -1 +1 @@
+-shared old
++wrong match
+--- {target}
++++ {target}
+@@ -1 +1 @@
+-shared old
++exact match
+"""
+        result = await skill.execute(target=str(target), diff=diff)
+
+        assert result.success
+        assert target.read_text() == "exact match\n"
+
+    @pytest.mark.asyncio
+    async def test_multi_file_diff_ambiguous_basename_fails_closed(self, skill, tmp_path):
+        """Test ambiguity fails closed when basename matches multiple entries."""
+        target = tmp_path / "workspace" / "shared.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("shared old\n")
+
+        diff = """--- a/pkg_a/shared.py
++++ b/pkg_a/shared.py
+@@ -1 +1 @@
+-shared old
++pkg a update
+--- a/pkg_b/shared.py
++++ b/pkg_b/shared.py
+@@ -1 +1 @@
+-shared old
++pkg b update
+"""
+        result = await skill.execute(target=str(target), diff=diff)
+
+        assert not result.success
+        assert "ambig" in result.error.lower()
+        assert "shared.py" in result.error
+        assert target.read_text() == "shared old\n"
+
+    @pytest.mark.asyncio
     async def test_multi_file_diff_target_not_in_diff(self, skill, tmp_path):
         """Test error when target file is not in multi-file diff."""
         target = tmp_path / "notfound.py"

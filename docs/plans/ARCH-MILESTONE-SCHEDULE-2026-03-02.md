@@ -110,7 +110,10 @@ Status note (2026-03-05):
 - Plan F Phase 3 landed in working tree:
   - patch-skill migration flag `fidelity_mode=legacy|byte_strict` with default legacy behavior preserved
   - migration regressions for byte-strict no-EOL marker path and invalid flag fail-fast behavior
-- Next M3 target: Plan F Phase 4 (target resolution hardening: ambiguity fail-closed).
+- Plan F Phase 4 landed in working tree:
+  - patch target-resolution hardened to prefer exact path and fail closed on ambiguous basename matches
+  - multi-file diff regressions added for exact-match preference and ambiguity errors
+- Next M3 target: Plan F remaining closeout slices (Phase 5/6 byte-fidelity regression expansion + default-flip readiness).
 
 ### M4: Delegation and Strategic Evolution
 

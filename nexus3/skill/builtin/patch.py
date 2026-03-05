@@ -8,6 +8,7 @@ Supports inline diffs or reading from .diff/.patch files.
 import asyncio
 import os
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any, Literal, cast
 
 from nexus3.core.errors import PathSecurityError
@@ -220,9 +221,9 @@ class PatchSkill(FileSkill):
         if not patch_files:
             return ToolResult(error="No patch hunks found in diff")
 
-        # Find hunks matching the target file (by basename)
+        # Find hunks matching the target file.
         target_basename = target_path.name
-        matching_patch = self._find_matching_patch(patch_files, target_basename)
+        matching_patch, matching_error = self._find_matching_patch(patch_files, target_path)
 
         # Build warning message for multi-file diffs
         multi_file_warning = ""
@@ -231,6 +232,9 @@ class PatchSkill(FileSkill):
                 f"Diff contains {len(patch_files)} files, "
                 f"applying only hunks for {target_basename}\n"
             )
+
+        if matching_error is not None:
+            return ToolResult(error=matching_error)
 
         if matching_patch is None:
             file_list = ", ".join(pf.path for pf in patch_files)
@@ -334,26 +338,96 @@ class PatchSkill(FileSkill):
         )
 
     def _find_matching_patch(
-        self, patch_files: Sequence[PatchFileLike], target_basename: str
-    ) -> PatchFileLike | None:
-        """Find the patch file matching the target basename.
+        self,
+        patch_files: Sequence[PatchFileLike],
+        target_path: Path,
+    ) -> tuple[PatchFileLike | None, str | None]:
+        """Find the patch file matching target path.
 
         Args:
             patch_files: List of parsed patch files
-            target_basename: Basename of the target file to match
+            target_path: Resolved target file path
 
         Returns:
-            The matching PatchFile or None
+            Tuple of (matching patch file, error message).
+            Error message is set for ambiguity fail-closed behavior.
         """
-        for pf in patch_files:
-            # Check various path forms
-            if os.path.basename(pf.path) == target_basename:
-                return pf
-            if os.path.basename(pf.old_path) == target_basename:
-                return pf
-            if os.path.basename(pf.new_path) == target_basename:
-                return pf
-        return None
+        target_basename = target_path.name
+        target_display = str(target_path)
+        target_exact_candidates: list[str] = []
+
+        relative_target = self._target_path_relative_to_cwd(target_path)
+        if relative_target is not None:
+            normalized_relative = self._normalize_patch_path(relative_target)
+            if normalized_relative:
+                target_exact_candidates.append(normalized_relative)
+                target_display = normalized_relative
+
+        normalized_absolute = self._normalize_patch_path(str(target_path))
+        if normalized_absolute and normalized_absolute not in target_exact_candidates:
+            target_exact_candidates.append(normalized_absolute)
+
+        # First pass: exact path matches (prefer relative-to-cwd when available).
+        for exact_candidate in target_exact_candidates:
+            for patch_file in patch_files:
+                if exact_candidate in self._patch_path_candidates(patch_file):
+                    return patch_file, None
+
+        # Second pass: basename fallback with explicit ambiguity handling.
+        basename_matches: list[PatchFileLike] = []
+        for patch_file in patch_files:
+            if any(
+                os.path.basename(candidate) == target_basename
+                for candidate in self._patch_path_candidates(patch_file)
+            ):
+                basename_matches.append(patch_file)
+
+        if len(basename_matches) == 1:
+            return basename_matches[0], None
+
+        if len(basename_matches) > 1:
+            ambiguous_paths = ", ".join(
+                dict.fromkeys(
+                    self._normalize_patch_path(pf.path) or pf.path for pf in basename_matches
+                )
+            )
+            return (
+                None,
+                (
+                    f"Ambiguous patch target '{target_display}': no exact path match was found, "
+                    f"and basename '{target_basename}' matches multiple diff files: "
+                    f"{ambiguous_paths}. "
+                    "Use a target path that matches one diff file path exactly."
+                ),
+            )
+
+        return None, None
+
+    def _patch_path_candidates(self, patch_file: PatchFileLike) -> tuple[str, ...]:
+        """Get normalized unique path candidates for a patch file."""
+        normalized_paths: list[str] = []
+        for raw_path in (patch_file.path, patch_file.old_path, patch_file.new_path):
+            normalized = self._normalize_patch_path(raw_path)
+            if normalized and normalized not in normalized_paths:
+                normalized_paths.append(normalized)
+        return tuple(normalized_paths)
+
+    def _normalize_patch_path(self, patch_path: str) -> str:
+        """Normalize diff path for reliable comparisons across formats."""
+        normalized = os.path.normpath(patch_path.replace("\\", "/"))
+        if normalized == ".":
+            return ""
+        if normalized.startswith("./"):
+            return normalized[2:]
+        return normalized
+
+    def _target_path_relative_to_cwd(self, target_path: Path) -> str | None:
+        """Return target path relative to agent cwd when target is inside it."""
+        cwd_path = self._services.get_cwd().resolve()
+        try:
+            return target_path.relative_to(cwd_path).as_posix()
+        except ValueError:
+            return None
 
     def _convert_patch_v1_to_v2(self, patch_file: PatchFile) -> PatchFileV2:
         """Convert a legacy PatchFile to AST-v2 for byte_strict apply flow."""
