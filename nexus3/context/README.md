@@ -20,6 +20,8 @@ nexus3/context/
 ├── __init__.py        # Public exports
 ├── loader.py          # ContextLoader - layered config loading
 ├── manager.py         # ContextManager - runtime state and truncation
+├── compiler.py        # Compiler IR + invariant repair for provider-bound messages
+├── graph.py           # Compiler-backed context graph prototype
 ├── git_context.py     # Git repository detection and context formatting
 ├── token_counter.py   # TokenCounter - pluggable token counting
 ├── compaction.py      # Compaction utilities - LLM summarization
@@ -209,6 +211,22 @@ The manager handles three message roles:
 | USER | `add_user_message(content, meta?)` | User input, supports metadata (e.g., source attribution) |
 | ASSISTANT | `add_assistant_message(content, tool_calls?)` | LLM responses, with optional tool calls |
 | TOOL | `add_tool_result(tool_call_id, name, result, call_index?, arguments?)` | Tool execution results with optional correlation prefix |
+
+---
+
+### Compiler and Graph (`compiler.py`, `graph.py`)
+
+`compiler.py` provides invariant-enforcing message normalization for provider
+request shaping:
+- prune unpaired TOOL messages
+- synthesize missing tool results for assistant tool-call batches
+- append trailing assistant note when a conversation would end on TOOL messages
+
+`graph.py` (Plan E Phase 3 prototype) projects compiled messages into a typed
+graph model with:
+- sequential `NEXT` edges
+- assistant-to-tool `TOOL_RESULT` edges
+- atomic message groups for future graph-aware compaction/truncation work
 
 #### Tool Result Correlation
 

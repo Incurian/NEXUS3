@@ -24,6 +24,13 @@ from nexus3.context.compiler import (
     compile_message_sequence,
     validate_compiled_message_invariants,
 )
+from nexus3.context.graph import (
+    ContextGraph,
+    ContextGraphEdge,
+    ContextMessageGroup,
+    GraphEdgeKind,
+    build_context_graph,
+)
 from nexus3.context.loader import (
     ContextLayer,
     ContextLoader,
@@ -69,6 +76,12 @@ __all__ = [
     "compile_message_sequence",
     "compile_context_messages",
     "validate_compiled_message_invariants",
+    # Graph
+    "GraphEdgeKind",
+    "ContextGraphEdge",
+    "ContextMessageGroup",
+    "ContextGraph",
+    "build_context_graph",
     # Context loader
     "ContextLayer",
     "ContextLoader",
