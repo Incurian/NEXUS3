@@ -12,6 +12,8 @@ from nexus3.core.authorization_kernel import (
 )
 from nexus3.core.cancel import CancellationToken
 from nexus3.core.capabilities import (
+    DIRECT_RPC_ALL_SCOPES,
+    DIRECT_RPC_SCOPE_BY_METHOD,
     CapabilityClaims,
     CapabilityError,
     CapabilityExpiredError,
@@ -23,6 +25,7 @@ from nexus3.core.capabilities import (
     CapabilitySigner,
     InMemoryCapabilityReplayStore,
     InMemoryCapabilityRevocationStore,
+    direct_rpc_scope_for_method,
     generate_capability_secret,
 )
 from nexus3.core.encoding import ENCODING, ENCODING_ERRORS, configure_stdio
@@ -89,6 +92,9 @@ __all__ = [
     "CapabilityReplayError",
     "CapabilityClaims",
     "CapabilitySigner",
+    "DIRECT_RPC_SCOPE_BY_METHOD",
+    "DIRECT_RPC_ALL_SCOPES",
+    "direct_rpc_scope_for_method",
     "InMemoryCapabilityRevocationStore",
     "InMemoryCapabilityReplayStore",
     "generate_capability_secret",

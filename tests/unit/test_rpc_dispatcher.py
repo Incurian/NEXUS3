@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from nexus3.core.authorization_kernel import AuthorizationDecision
+from nexus3.core.capabilities import CapabilityClaims, CapabilitySignatureError
 from nexus3.core.permissions import PermissionLevel
 from nexus3.rpc.dispatcher import Dispatcher
 from nexus3.rpc.types import Request
@@ -63,6 +64,30 @@ class MockSession:
                 return
             yield ContentChunk(text=chunk)
         yield SessionCompleted(halted_at_limit=self._halted_at_iteration_limit)
+
+
+class _CapabilityVerifierPool:
+    def __init__(
+        self,
+        *,
+        claims: CapabilityClaims | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self._claims = claims
+        self._error = error
+        self.calls: list[tuple[str, str]] = []
+
+    def verify_direct_capability(
+        self,
+        token: str,
+        *,
+        required_scope: str,
+    ) -> CapabilityClaims:
+        self.calls.append((token, required_scope))
+        if self._error is not None:
+            raise self._error
+        assert self._claims is not None
+        return self._claims
 
 
 class TestCancelMethod:
@@ -343,6 +368,91 @@ class TestRequestContextPropagation:
         assert "request_id" in response1.result
         assert "request_id" in response2.result
         assert response1.result["request_id"] != response2.result["request_id"]
+
+    @pytest.mark.asyncio
+    async def test_capability_subject_populates_request_context(self) -> None:
+        """Verified capability claims set requester identity in request context."""
+        claims = CapabilityClaims(
+            token_id="tok-1",
+            issuer_id="caller-a",
+            subject_id="cap-subject",
+            scopes=("rpc:agent:get_tokens",),
+            issued_at=1,
+            expires_at=10,
+        )
+        pool = _CapabilityVerifierPool(claims=claims)
+        session = MockSession()
+        dispatcher = Dispatcher(session, pool=pool)
+        handler = AsyncMock(return_value={"ok": True})
+        dispatcher._handle_get_tokens = handler  # type: ignore[method-assign]
+        dispatcher._handlers["get_tokens"] = dispatcher._handle_get_tokens
+
+        request = Request(
+            jsonrpc="2.0",
+            method="get_tokens",
+            params=None,
+            id=1,
+        )
+        response = await dispatcher.dispatch(request, capability_token="cap-token")
+
+        assert response is not None
+        assert response.error is None
+        assert pool.calls == [("cap-token", "rpc:agent:get_tokens")]
+        forwarded_context = handler.await_args.args[1]
+        assert forwarded_context.requester_id == "cap-subject"
+        assert forwarded_context.capability_claims == claims
+
+    @pytest.mark.asyncio
+    async def test_capability_mismatch_rejected(self) -> None:
+        """Trusted requester_id must match verified capability subject when both are set."""
+        claims = CapabilityClaims(
+            token_id="tok-2",
+            issuer_id="caller-a",
+            subject_id="cap-subject",
+            scopes=("rpc:agent:send",),
+            issued_at=1,
+            expires_at=10,
+        )
+        pool = _CapabilityVerifierPool(claims=claims)
+        session = MockSession(chunks=["unused"])
+        dispatcher = Dispatcher(session, pool=pool)
+        request = Request(
+            jsonrpc="2.0",
+            method="send",
+            params={"content": "hello"},
+            id=1,
+        )
+
+        response = await dispatcher.dispatch(
+            request,
+            requester_id="other-subject",
+            capability_token="cap-token",
+        )
+
+        assert response is not None
+        assert response.error is not None
+        assert response.error["code"] == -32602
+        assert response.error["message"] == "requester_id does not match capability subject"
+
+    @pytest.mark.asyncio
+    async def test_invalid_capability_token_rejected(self) -> None:
+        """Capability verification failures map to invalid-params."""
+        pool = _CapabilityVerifierPool(error=CapabilitySignatureError("bad signature"))
+        session = MockSession(chunks=["unused"])
+        dispatcher = Dispatcher(session, pool=pool)
+        request = Request(
+            jsonrpc="2.0",
+            method="send",
+            params={"content": "hello"},
+            id=1,
+        )
+
+        response = await dispatcher.dispatch(request, capability_token="bad-token")
+
+        assert response is not None
+        assert response.error is not None
+        assert response.error["code"] == -32602
+        assert "Invalid capability token" in response.error["message"]
 
 
 class TestSendAuthorizationKernelAuthoritative:

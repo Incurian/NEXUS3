@@ -25,6 +25,7 @@ from nexus3.core.authorization_kernel import (
     AuthorizationResource,
     AuthorizationResourceType,
 )
+from nexus3.core.capabilities import CapabilityRevokedError
 from nexus3.core.permissions import (
     PermissionDelta,
     ToolPermission,
@@ -856,6 +857,53 @@ class TestAgentPool:
 
             await pool.destroy("agent-1")
             assert len(pool) == 1
+
+    @pytest.mark.asyncio
+    async def test_issue_and_verify_direct_capability(self, tmp_path):
+        """AgentPool issues and verifies direct RPC capability tokens."""
+        shared = create_mock_shared_components(tmp_path)
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            token = pool.issue_direct_capability(
+                issuer_id="agent-a",
+                subject_id="agent-a",
+                rpc_method="send",
+            )
+            claims = pool.verify_direct_capability(
+                token,
+                required_scope="rpc:agent:send",
+            )
+
+            assert claims.issuer_id == "agent-a"
+            assert claims.subject_id == "agent-a"
+            assert claims.scopes == ("rpc:agent:send",)
+
+    @pytest.mark.asyncio
+    async def test_destroy_revokes_issued_direct_capabilities(self, tmp_path):
+        """Destroying an agent revokes direct capabilities issued by/for it."""
+        shared = create_mock_shared_components(tmp_path)
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            await pool.create(agent_id="agent-a")
+            token = pool.issue_direct_capability(
+                issuer_id="agent-a",
+                subject_id="agent-a",
+                rpc_method="send",
+            )
+
+            # Sanity: token verifies before destroy.
+            pool.verify_direct_capability(token, required_scope="rpc:agent:send")
+
+            destroyed = await pool.destroy("agent-a")
+
+            assert destroyed is True
+            with pytest.raises(CapabilityRevokedError):
+                pool.verify_direct_capability(
+                    token,
+                    required_scope="rpc:agent:send",
+                )
 
     @pytest.mark.asyncio
     async def test_contains_checks_agent_id(self, tmp_path):

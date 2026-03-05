@@ -53,6 +53,13 @@ from nexus3.core.authorization_kernel import (
     AuthorizationResource,
     AuthorizationResourceType,
 )
+from nexus3.core.capabilities import (
+    CapabilityClaims,
+    CapabilitySigner,
+    InMemoryCapabilityRevocationStore,
+    direct_rpc_scope_for_method,
+    generate_capability_secret,
+)
 from nexus3.core.permissions import (
     AgentPermissions,
     PermissionDelta,
@@ -531,6 +538,11 @@ class AgentPool:
             adapters=(_GitLabVisibilityAuthorizationAdapter(),),
             default_allow=False,
         )
+        self._capability_signer = CapabilitySigner(generate_capability_secret())
+        self._capability_revocation_store = InMemoryCapabilityRevocationStore()
+        self._issued_capability_token_ids_by_subject: dict[str, set[str]] = {}
+        self._issued_capability_token_ids_by_issuer: dict[str, set[str]] = {}
+        self._direct_capability_ttl_seconds = 300
 
     def set_global_dispatcher(self, dispatcher: GlobalDispatcher) -> None:
         """Set the global dispatcher for in-process AgentAPI.
@@ -548,6 +560,83 @@ class AgentPool:
     def log_multiplexer(self) -> LogMultiplexer:
         """Get the log multiplexer for setting agent context in dispatchers."""
         return self._log_multiplexer
+
+    def issue_direct_capability(
+        self,
+        *,
+        issuer_id: str,
+        subject_id: str,
+        rpc_method: str,
+        ttl_seconds: int | None = None,
+    ) -> str:
+        """Issue a direct in-process capability token for one RPC method scope."""
+        required_scope = direct_rpc_scope_for_method(rpc_method)
+        if required_scope is None:
+            raise ValueError(f"Unsupported direct capability method: {rpc_method}")
+        if not issuer_id:
+            raise ValueError("issuer_id must be non-empty")
+        if not subject_id:
+            raise ValueError("subject_id must be non-empty")
+
+        token = self._capability_signer.issue(
+            issuer_id=issuer_id,
+            subject_id=subject_id,
+            scopes=(required_scope,),
+            ttl_seconds=ttl_seconds or self._direct_capability_ttl_seconds,
+        )
+        claims = self._capability_signer.verify(token)
+        self._track_issued_capability(claims)
+        return token
+
+    def verify_direct_capability(
+        self,
+        token: str,
+        *,
+        required_scope: str,
+    ) -> CapabilityClaims:
+        """Verify a direct in-process capability token with revocation checks."""
+        return self._capability_signer.verify(
+            token,
+            required_scopes=(required_scope,),
+            revocation_store=self._capability_revocation_store,
+        )
+
+    def _track_issued_capability(self, claims: CapabilityClaims) -> None:
+        self._issued_capability_token_ids_by_subject.setdefault(
+            claims.subject_id,
+            set(),
+        ).add(claims.token_id)
+        self._issued_capability_token_ids_by_issuer.setdefault(
+            claims.issuer_id,
+            set(),
+        ).add(claims.token_id)
+
+    def _revoke_capabilities_for_agent(self, agent_id: str) -> None:
+        token_ids: set[str] = set()
+        token_ids.update(
+            self._issued_capability_token_ids_by_subject.pop(agent_id, set())
+        )
+        token_ids.update(
+            self._issued_capability_token_ids_by_issuer.pop(agent_id, set())
+        )
+        if not token_ids:
+            return
+
+        for token_id in token_ids:
+            self._capability_revocation_store.revoke(token_id)
+
+        # Remove revoked token ids from all remaining issuer/subject indexes.
+        for mapping in (
+            self._issued_capability_token_ids_by_subject,
+            self._issued_capability_token_ids_by_issuer,
+        ):
+            stale_keys: list[str] = []
+            for principal_id, tracked in mapping.items():
+                tracked.difference_update(token_ids)
+                if not tracked:
+                    stale_keys.append(principal_id)
+            for principal_id in stale_keys:
+                mapping.pop(principal_id, None)
 
     @property
     def system_prompt_path(self) -> str | None:
@@ -834,8 +923,9 @@ class AgentPool:
         if gitlab_config:
             services.register("gitlab_config", gitlab_config)
 
-        # Register AgentAPI for in-process communication (bypasses HTTP)
-        # Pass effective_id as requester_id for authorization checks (H5 fix)
+        # Register AgentAPI for in-process communication (bypasses HTTP).
+        # requester_id is retained for compatibility while direct capabilities
+        # are issued per call by AgentAPI via pool.issue_direct_capability().
         if self._global_dispatcher is not None:
             from nexus3.rpc.agent_api import DirectAgentAPI
             agent_api = DirectAgentAPI(self, self._global_dispatcher, requester_id=effective_id)
@@ -1258,8 +1348,9 @@ class AgentPool:
         if gitlab_config:
             services.register("gitlab_config", gitlab_config)
 
-        # Register AgentAPI for in-process communication (bypasses HTTP)
-        # Pass agent_id as requester_id for authorization checks (H5 fix)
+        # Register AgentAPI for in-process communication (bypasses HTTP).
+        # requester_id is retained for compatibility while direct capabilities
+        # are issued per call by AgentAPI via pool.issue_direct_capability().
         if self._global_dispatcher is not None:
             from nexus3.rpc.agent_api import DirectAgentAPI
             agent_api = DirectAgentAPI(self, self._global_dispatcher, requester_id=agent_id)
@@ -1454,6 +1545,8 @@ class AgentPool:
                 raise AuthorizationError(
                     f"Agent '{destroy_principal_id}' is not authorized to destroy '{agent_id}'"
                 )
+
+            self._revoke_capabilities_for_agent(agent_id)
 
             # Remove from pool
             self._agents.pop(agent_id)

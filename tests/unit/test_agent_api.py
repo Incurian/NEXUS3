@@ -23,14 +23,20 @@ class MockDispatcher:
     def __init__(self):
         self.calls: list[Request] = []
         self.requester_ids: list[str | None] = []
+        self.capability_tokens: list[str | None] = []
         self.response: Response | None = None
 
     async def dispatch(
-        self, request: Request, requester_id: str | None = None
+        self,
+        request: Request,
+        requester_id: str | None = None,
+        *,
+        capability_token: str | None = None,
     ) -> Response | None:
         """Record the request and return the configured response."""
         self.calls.append(request)
         self.requester_ids.append(requester_id)
+        self.capability_tokens.append(capability_token)
         return self.response
 
 
@@ -39,9 +45,20 @@ class MockPool:
 
     def __init__(self):
         self.agents: dict[str, MockAgent] = {}
+        self.issued_capabilities: list[tuple[str, str, str]] = []
 
     def get(self, agent_id: str) -> MockAgent | None:
         return self.agents.get(agent_id)
+
+    def issue_direct_capability(
+        self,
+        *,
+        issuer_id: str,
+        subject_id: str,
+        rpc_method: str,
+    ) -> str:
+        self.issued_capabilities.append((issuer_id, subject_id, rpc_method))
+        return f"cap:{issuer_id}:{subject_id}:{rpc_method}"
 
 
 class MockGlobalDispatcher:
@@ -51,12 +68,18 @@ class MockGlobalDispatcher:
         self.calls: list[Request] = []
         self.response: Response | None = None
         self.requester_ids: list[str | None] = []  # Track requester_ids
+        self.capability_tokens: list[str | None] = []
 
     async def dispatch(
-        self, request: Request, requester_id: str | None = None
+        self,
+        request: Request,
+        requester_id: str | None = None,
+        *,
+        capability_token: str | None = None,
     ) -> Response | None:
         self.calls.append(request)
         self.requester_ids.append(requester_id)
+        self.capability_tokens.append(capability_token)
         return self.response
 
 
@@ -194,6 +217,9 @@ class TestAgentScopedAPI:
         await scoped_api.send("Hello")
 
         assert pool.agents["test-agent"].dispatcher.requester_ids == ["caller-1"]
+        assert pool.agents["test-agent"].dispatcher.capability_tokens == [
+            "cap:caller-1:caller-1:send"
+        ]
 
 
 # === DirectAgentAPI Tests ===
@@ -246,6 +272,9 @@ class TestDirectAgentAPI:
         await api.create_agent("new-agent", preset="sandboxed")
 
         assert global_dispatcher.requester_ids == ["requester-1"]
+        assert global_dispatcher.capability_tokens == [
+            "cap:requester-1:requester-1:create_agent"
+        ]
 
     async def test_destroy_agent_calls_global_dispatcher(self, api, global_dispatcher):
         """Test that destroy_agent() calls the global dispatcher."""
@@ -286,6 +315,9 @@ class TestDirectAgentAPI:
         await api.list_agents()
 
         assert global_dispatcher.requester_ids == ["requester-1"]
+        assert global_dispatcher.capability_tokens == [
+            "cap:requester-1:requester-1:list_agents"
+        ]
 
     async def test_shutdown_server_forwards_requester_id(self, pool, global_dispatcher):
         """shutdown_server() forwards requester_id to GlobalDispatcher."""
@@ -299,6 +331,9 @@ class TestDirectAgentAPI:
         await api.shutdown_server()
 
         assert global_dispatcher.requester_ids == ["requester-1"]
+        assert global_dispatcher.capability_tokens == [
+            "cap:requester-1:requester-1:shutdown_server"
+        ]
 
     async def test_for_agent_returns_scoped_api(self, api, pool):
         """Test that for_agent() returns an AgentScopedAPI."""

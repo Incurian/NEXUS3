@@ -55,14 +55,22 @@ if TYPE_CHECKING:
         """Protocol for dispatchers that handle JSON-RPC requests."""
 
         async def dispatch(
-            self, request: Request, requester_id: str | None = None,
+            self,
+            request: Request,
+            requester_id: str | None = None,
+            *,
+            capability_token: str | None = None,
         ) -> Response | None: ...
 
     class GlobalDispatcher(Protocol):
         """Protocol for the global dispatcher that manages agents."""
 
         async def dispatch(
-            self, request: Request, requester_id: str | None = None,
+            self,
+            request: Request,
+            requester_id: str | None = None,
+            *,
+            capability_token: str | None = None,
         ) -> Response | None: ...
 
         @property

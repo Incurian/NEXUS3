@@ -15,6 +15,7 @@ class TestRequestContext:
         field_names = [field.name for field in fields(RequestContext)]
         assert field_names == [
             "requester_id",
+            "capability_claims",
             "request_id",
             "trace_id",
             "policy_snapshot_id",
@@ -29,12 +30,14 @@ class TestRequestContext:
             policy_snapshot_id="policy-v3",
         )
         assert explicit.requester_id == "agent-7"
+        assert explicit.capability_claims is None
         assert explicit.request_id == "req-42"
         assert explicit.trace_id == "trace-99"
         assert explicit.policy_snapshot_id == "policy-v3"
 
         external = RequestContext(requester_id=None)
         assert external.requester_id is None
+        assert external.capability_claims is None
         assert external.request_id is None
         assert external.trace_id is None
         assert external.policy_snapshot_id is None

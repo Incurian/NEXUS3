@@ -24,6 +24,7 @@ from nexus3.core.request_context import RequestContext
 from nexus3.rpc.dispatch_core import (
     InvalidParamsError,
     dispatch_request,
+    resolve_dispatch_identity,
     validate_direct_request_envelope,
 )
 from nexus3.rpc.protocol import INVALID_PARAMS, make_error_response
@@ -192,12 +193,15 @@ class Dispatcher:
         self,
         request: Request,
         requester_id: str | None = None,
+        *,
+        capability_token: str | None = None,
     ) -> Response | None:
         """Dispatch a request to the appropriate handler.
 
         Args:
             request: The parsed JSON-RPC request.
             requester_id: Requesting agent identity when available.
+            capability_token: Optional direct in-process capability token.
 
         Returns:
             A Response object, or None for notifications (requests without id).
@@ -209,8 +213,21 @@ class Dispatcher:
                 return None
             return make_error_response(request.id, INVALID_PARAMS, str(exc))
 
+        try:
+            effective_requester_id, capability_claims = resolve_dispatch_identity(
+                method=request.method,
+                requester_id=requester_id,
+                capability_token=capability_token,
+                verifier=self._pool,
+            )
+        except InvalidParamsError as exc:
+            if request.id is None:
+                return None
+            return make_error_response(request.id, INVALID_PARAMS, str(exc))
+
         request_context = RequestContext(
-            requester_id=requester_id,
+            requester_id=effective_requester_id,
+            capability_claims=capability_claims,
             request_id=str(request.id) if request.id is not None else None,
         )
         handlers = dict(self._handlers)

@@ -16,6 +16,29 @@ _CAPABILITY_PREFIX = "n3cap"
 _CAPABILITY_VERSION = "v1"
 _MIN_SECRET_BYTES = 16
 
+# Direct in-process RPC capability scopes (Plan B Phase 2).
+DIRECT_RPC_SCOPE_BY_METHOD: dict[str, str] = {
+    "send": "rpc:agent:send",
+    "cancel": "rpc:agent:cancel",
+    "compact": "rpc:agent:compact",
+    "shutdown": "rpc:agent:shutdown",
+    "get_tokens": "rpc:agent:get_tokens",
+    "get_context": "rpc:agent:get_context",
+    "get_messages": "rpc:agent:get_messages",
+    "create_agent": "rpc:global:create_agent",
+    "destroy_agent": "rpc:global:destroy_agent",
+    "list_agents": "rpc:global:list_agents",
+    "shutdown_server": "rpc:global:shutdown_server",
+}
+DIRECT_RPC_ALL_SCOPES: tuple[str, ...] = tuple(
+    sorted(set(DIRECT_RPC_SCOPE_BY_METHOD.values()))
+)
+
+
+def direct_rpc_scope_for_method(method: str) -> str | None:
+    """Return required direct-RPC capability scope for a method."""
+    return DIRECT_RPC_SCOPE_BY_METHOD.get(method)
+
 
 class CapabilityError(ValueError):
     """Base exception for capability token failures."""
@@ -363,6 +386,8 @@ __all__ = [
     "CapabilityReplayStore",
     "InMemoryCapabilityRevocationStore",
     "InMemoryCapabilityReplayStore",
+    "DIRECT_RPC_SCOPE_BY_METHOD",
+    "DIRECT_RPC_ALL_SCOPES",
+    "direct_rpc_scope_for_method",
     "generate_capability_secret",
 ]
-

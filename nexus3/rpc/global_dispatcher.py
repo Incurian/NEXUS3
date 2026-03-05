@@ -37,6 +37,7 @@ from nexus3.core.request_context import RequestContext
 from nexus3.rpc.dispatch_core import (
     InvalidParamsError,
     dispatch_request,
+    resolve_dispatch_identity,
     validate_direct_request_envelope,
 )
 from nexus3.rpc.pool import Agent, AgentConfig, AuthorizationError
@@ -145,6 +146,8 @@ class GlobalDispatcher:
         self,
         request: Request,
         requester_id: str | None = None,
+        *,
+        capability_token: str | None = None,
     ) -> Response | None:
         """Dispatch a request to the appropriate handler.
 
@@ -152,6 +155,7 @@ class GlobalDispatcher:
             request: The parsed JSON-RPC request.
             requester_id: ID of the requesting agent (from X-Nexus-Agent header).
                          None for external clients (CLI, scripts).
+            capability_token: Optional direct in-process capability token.
 
         Returns:
             A Response object, or None for notifications (requests without id).
@@ -163,8 +167,21 @@ class GlobalDispatcher:
                 return None
             return make_error_response(request.id, INVALID_PARAMS, str(exc))
 
+        try:
+            effective_requester_id, capability_claims = resolve_dispatch_identity(
+                method=request.method,
+                requester_id=requester_id,
+                capability_token=capability_token,
+                verifier=self._pool,
+            )
+        except InvalidParamsError as exc:
+            if request.id is None:
+                return None
+            return make_error_response(request.id, INVALID_PARAMS, str(exc))
+
         request_context = RequestContext(
-            requester_id=requester_id,
+            requester_id=effective_requester_id,
+            capability_claims=capability_claims,
             request_id=str(request.id) if request.id is not None else None,
         )
 
@@ -552,6 +569,10 @@ class GlobalDispatcher:
             "url": f"/agent/{agent.agent_id}",
         }
         requester_id = None if request_context is None else request_context.requester_id
+        send_capability_token = self._issue_direct_capability(
+            requester_id,
+            rpc_method="send",
+        )
 
         # Handle initial_message if provided
         if initial_message is not None:
@@ -569,7 +590,11 @@ class GlobalDispatcher:
 
             if wait_for_initial_response:
                 try:
-                    response = await agent.dispatcher.dispatch(send_request, requester_id)
+                    response = await agent.dispatcher.dispatch(
+                        send_request,
+                        requester_id,
+                        capability_token=send_capability_token,
+                    )
                     if response and response.result:
                         result["response"] = response.result
                     elif response and response.error:
@@ -584,6 +609,7 @@ class GlobalDispatcher:
                         send_request,
                         request_id,
                         requester_id,
+                        send_capability_token,
                     )
                 )
 
@@ -778,10 +804,15 @@ class GlobalDispatcher:
         send_request: "Request",
         request_id: str,
         requester_id: str | None,
+        capability_token: str | None,
     ) -> None:
         """Fire-and-forget initial message dispatch."""
         try:
-            await agent.dispatcher.dispatch(send_request, requester_id)
+            await agent.dispatcher.dispatch(
+                send_request,
+                requester_id,
+                capability_token=capability_token,
+            )
             logger.info(
                 "Background initial_message completed for %s",
                 agent.agent_id,
@@ -791,3 +822,24 @@ class GlobalDispatcher:
                 "Background initial_message FAILED for %s/%s: %s",
                 agent.agent_id, request_id, e,
             )
+
+    def _issue_direct_capability(
+        self,
+        requester_id: str | None,
+        *,
+        rpc_method: str,
+    ) -> str | None:
+        if requester_id is None:
+            return None
+        issue_capability = getattr(self._pool, "issue_direct_capability", None)
+        if not callable(issue_capability):
+            return None
+
+        token = issue_capability(
+            issuer_id=requester_id,
+            subject_id=requester_id,
+            rpc_method=rpc_method,
+        )
+        if not isinstance(token, str) or token == "":
+            return None
+        return token

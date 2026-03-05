@@ -33,6 +33,29 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _issue_direct_capability(
+    pool: Any,
+    *,
+    requester_id: str | None,
+    method: str,
+) -> str | None:
+    """Issue per-call capability token when pool supports Plan B direct path."""
+    if requester_id is None:
+        return None
+    issue_capability = getattr(pool, "issue_direct_capability", None)
+    if not callable(issue_capability):
+        return None
+
+    token = issue_capability(
+        issuer_id=requester_id,
+        subject_id=requester_id,
+        rpc_method=method,
+    )
+    if not isinstance(token, str) or token == "":
+        return None
+    return token
+
+
 def _extract_result(response: Any) -> dict[str, Any]:
     """Extract result from Response, raising ClientError on error.
 
@@ -131,7 +154,16 @@ class AgentScopedAPI:
             params=params,
             id=1,
         )
-        response = await dispatcher.dispatch(request, self._requester_id)
+        capability_token = _issue_direct_capability(
+            self._pool,
+            requester_id=self._requester_id,
+            method=request.method,
+        )
+        response = await dispatcher.dispatch(
+            request,
+            self._requester_id,
+            capability_token=capability_token,
+        )
         return _extract_result(response)
 
     async def cancel(self, request_id: str | int | None = None) -> dict[str, Any]:
@@ -151,7 +183,16 @@ class AgentScopedAPI:
             params=params,
             id=1,
         )
-        response = await dispatcher.dispatch(request, self._requester_id)
+        capability_token = _issue_direct_capability(
+            self._pool,
+            requester_id=self._requester_id,
+            method=request.method,
+        )
+        response = await dispatcher.dispatch(
+            request,
+            self._requester_id,
+            capability_token=capability_token,
+        )
         return _extract_result(response)
 
     async def get_tokens(self) -> dict[str, Any]:
@@ -167,7 +208,16 @@ class AgentScopedAPI:
             params=None,
             id=1,
         )
-        response = await dispatcher.dispatch(request, self._requester_id)
+        capability_token = _issue_direct_capability(
+            self._pool,
+            requester_id=self._requester_id,
+            method=request.method,
+        )
+        response = await dispatcher.dispatch(
+            request,
+            self._requester_id,
+            capability_token=capability_token,
+        )
         return _extract_result(response)
 
     async def get_context(self) -> dict[str, Any]:
@@ -183,7 +233,16 @@ class AgentScopedAPI:
             params=None,
             id=1,
         )
-        response = await dispatcher.dispatch(request, self._requester_id)
+        capability_token = _issue_direct_capability(
+            self._pool,
+            requester_id=self._requester_id,
+            method=request.method,
+        )
+        response = await dispatcher.dispatch(
+            request,
+            self._requester_id,
+            capability_token=capability_token,
+        )
         return _extract_result(response)
 
     async def shutdown(self) -> dict[str, Any]:
@@ -199,7 +258,16 @@ class AgentScopedAPI:
             params=None,
             id=1,
         )
-        response = await dispatcher.dispatch(request, self._requester_id)
+        capability_token = _issue_direct_capability(
+            self._pool,
+            requester_id=self._requester_id,
+            method=request.method,
+        )
+        response = await dispatcher.dispatch(
+            request,
+            self._requester_id,
+            capability_token=capability_token,
+        )
         return _extract_result(response)
 
 
@@ -294,7 +362,16 @@ class DirectAgentAPI:
             params=params,
             id=1,
         )
-        response = await self._global_dispatcher.dispatch(request, self._requester_id)
+        capability_token = _issue_direct_capability(
+            self._pool,
+            requester_id=self._requester_id,
+            method=request.method,
+        )
+        response = await self._global_dispatcher.dispatch(
+            request,
+            self._requester_id,
+            capability_token=capability_token,
+        )
         return _extract_result(response)
 
     async def destroy_agent(self, agent_id: str) -> dict[str, Any]:
@@ -315,7 +392,16 @@ class DirectAgentAPI:
             params={"agent_id": agent_id},
             id=1,
         )
-        response = await self._global_dispatcher.dispatch(request, self._requester_id)
+        capability_token = _issue_direct_capability(
+            self._pool,
+            requester_id=self._requester_id,
+            method=request.method,
+        )
+        response = await self._global_dispatcher.dispatch(
+            request,
+            self._requester_id,
+            capability_token=capability_token,
+        )
         return _extract_result(response)
 
     async def list_agents(self) -> list[str]:
@@ -330,7 +416,16 @@ class DirectAgentAPI:
             params=None,
             id=1,
         )
-        response = await self._global_dispatcher.dispatch(request, self._requester_id)
+        capability_token = _issue_direct_capability(
+            self._pool,
+            requester_id=self._requester_id,
+            method=request.method,
+        )
+        response = await self._global_dispatcher.dispatch(
+            request,
+            self._requester_id,
+            capability_token=capability_token,
+        )
         result = _extract_result(response)
         # GlobalDispatcher returns {"agents": [...]}
         agents: list[str] = result.get("agents", [])
@@ -348,7 +443,16 @@ class DirectAgentAPI:
             params=None,
             id=1,
         )
-        response = await self._global_dispatcher.dispatch(request, self._requester_id)
+        capability_token = _issue_direct_capability(
+            self._pool,
+            requester_id=self._requester_id,
+            method=request.method,
+        )
+        response = await self._global_dispatcher.dispatch(
+            request,
+            self._requester_id,
+            capability_token=capability_token,
+        )
         return _extract_result(response)
 
 

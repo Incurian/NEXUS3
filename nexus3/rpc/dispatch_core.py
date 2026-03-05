@@ -16,10 +16,15 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Coroutine
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import ValidationError as PydanticValidationError
 
+from nexus3.core.capabilities import (
+    CapabilityClaims,
+    CapabilityError,
+    direct_rpc_scope_for_method,
+)
 from nexus3.core.errors import NexusError
 from nexus3.rpc.protocol import (
     INTERNAL_ERROR,
@@ -39,6 +44,55 @@ Handler = Callable[[dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
 
 class InvalidParamsError(NexusError):
     """Raised when method parameters are invalid."""
+
+
+class DirectCapabilityVerifier(Protocol):
+    """Capability verification contract used by dispatchers."""
+
+    def verify_direct_capability(
+        self,
+        token: str,
+        *,
+        required_scope: str,
+    ) -> CapabilityClaims:
+        """Verify token and enforce required scope."""
+
+
+def resolve_dispatch_identity(
+    *,
+    method: str,
+    requester_id: str | None,
+    capability_token: str | None,
+    verifier: DirectCapabilityVerifier | None,
+) -> tuple[str | None, CapabilityClaims | None]:
+    """Resolve effective requester identity for a dispatch call.
+
+    When a capability token is supplied for a known RPC method, this verifies
+    scope and returns the subject identity from verified claims.
+    """
+    if capability_token is None:
+        return requester_id, None
+
+    required_scope = direct_rpc_scope_for_method(method)
+    if required_scope is None:
+        # Preserve existing unknown-method behavior (method-not-found).
+        return requester_id, None
+
+    if verifier is None:
+        raise InvalidParamsError("Capability verification unavailable for this dispatcher")
+
+    try:
+        claims = verifier.verify_direct_capability(
+            capability_token,
+            required_scope=required_scope,
+        )
+    except CapabilityError as exc:
+        raise InvalidParamsError(f"Invalid capability token: {exc}") from exc
+
+    if requester_id is not None and requester_id != claims.subject_id:
+        raise InvalidParamsError("requester_id does not match capability subject")
+
+    return claims.subject_id, claims
 
 
 def validate_direct_request_envelope(request: Request) -> None:

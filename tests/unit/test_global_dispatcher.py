@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from nexus3.core.authorization_kernel import AuthorizationDecision
+from nexus3.core.capabilities import CapabilityClaims, CapabilitySignatureError
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
 from nexus3.rpc.types import Request
 
@@ -22,6 +24,33 @@ class _GuardPool:
 
     def get(self, agent_id: str):
         raise AssertionError("get() should not be called")
+
+
+class _CapabilityPool(_GuardPool):
+    def __init__(
+        self,
+        *,
+        claims: CapabilityClaims | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self._claims = claims
+        self._error = error
+        self.verify_calls: list[tuple[str, str]] = []
+
+    def list(self):  # type: ignore[no-untyped-def]
+        return []
+
+    def verify_direct_capability(
+        self,
+        token: str,
+        *,
+        required_scope: str,
+    ) -> CapabilityClaims:
+        self.verify_calls.append((token, required_scope))
+        if self._error is not None:
+            raise self._error
+        assert self._claims is not None
+        return self._claims
 
 
 @pytest.mark.asyncio
@@ -107,3 +136,58 @@ async def test_global_dispatch_rejects_non_string_method_before_handlers() -> No
     assert response.error is not None
     assert response.error["code"] == -32602
     assert response.error["message"] == "method must be a string, got: int"
+
+
+@pytest.mark.asyncio
+async def test_global_dispatch_rejects_invalid_capability_token() -> None:
+    pool = _CapabilityPool(error=CapabilitySignatureError("bad signature"))
+    dispatcher = GlobalDispatcher(pool)
+    request = Request(
+        jsonrpc="2.0",
+        method="list_agents",
+        params={},
+        id=1,
+    )
+
+    response = await dispatcher.dispatch(request, capability_token="bad-token")
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602
+    assert "Invalid capability token" in response.error["message"]
+
+
+@pytest.mark.asyncio
+async def test_global_dispatch_uses_capability_subject_identity() -> None:
+    claims = CapabilityClaims(
+        token_id="tok-1",
+        issuer_id="issuer-1",
+        subject_id="subject-7",
+        scopes=("rpc:global:list_agents",),
+        issued_at=1,
+        expires_at=10,
+    )
+    pool = _CapabilityPool(claims=claims)
+    dispatcher = GlobalDispatcher(pool)
+
+    captured_principals: list[str] = []
+
+    def _allow_and_capture(request):  # type: ignore[no-untyped-def]
+        captured_principals.append(str(request.principal_id))
+        return AuthorizationDecision.allow(request, reason="ok")
+
+    dispatcher._list_agents_authorization_kernel.authorize = _allow_and_capture
+    request = Request(
+        jsonrpc="2.0",
+        method="list_agents",
+        params={},
+        id=1,
+    )
+
+    response = await dispatcher.dispatch(request, capability_token="cap-token")
+
+    assert response is not None
+    assert response.error is None
+    assert response.result == {"agents": []}
+    assert pool.verify_calls == [("cap-token", "rpc:global:list_agents")]
+    assert captured_principals == ["subject-7"]
