@@ -27,9 +27,12 @@ from nexus3.cli.repl import (
     _format_repl_error_line,
     _format_repl_startup_metadata_line,
     _format_scanned_ports_line,
+    _format_scanning_additional_ports_line,
+    _format_server_failed_to_start_line,
     _format_server_log_line,
     _format_shutdown_server_line,
     _format_shutdown_warning_line,
+    _format_thought_duration_line,
     _format_tool_call_trace_line,
     _format_tool_error_trace_line,
     _format_tool_halt_trace_line,
@@ -185,6 +188,18 @@ def test_turn_completed_status_line_formats_duration_with_wrapper_parity() -> No
     assert line == "[dim]Turn completed in 1.3s[/]"
 
 
+def test_thought_duration_line_sanitizes_dynamic_duration() -> None:
+    sink = _make_sink()
+
+    line = _format_thought_duration_line(
+        sink,
+        duration_seconds="[red]3[/red]\x1b[31m",
+    )
+
+    assert line == "  [dim cyan]●[/] [dim]Thought for \\[red]3\\[/red]s[/]"
+    assert "\x1b" not in line
+
+
 def test_repl_error_line_sanitizes_dynamic_message() -> None:
     sink = _make_sink()
 
@@ -289,6 +304,24 @@ def test_invalid_port_and_provider_failure_lines_sanitize_dynamic_fields() -> No
 
     assert invalid_port == "[red]Invalid port specification:[/] \\[red]bad\\[/red]x"
     assert provider_failed == "[red]Provider initialization failed:[/]\n\\[magenta]boom\\[/magenta]"
+
+
+def test_scanning_additional_ports_and_failed_start_lines_sanitize_dynamic_fields() -> None:
+    sink = _make_sink()
+
+    scanning_line = _format_scanning_additional_ports_line(
+        sink,
+        count="[red]2[/red]\x1b[31m",
+    )
+    failed_start_line = _format_server_failed_to_start_line(
+        sink,
+        port="[red]8765[/red]\x1b[2J",
+    )
+
+    assert scanning_line == "[dim]Scanning \\[red]2\\[/red] additional ports...[/]"
+    assert failed_start_line == "[red]Error:[/] Server failed to start on port \\[red]8765\\[/red]"
+    assert "\x1b" not in scanning_line
+    assert "\x1b" not in failed_start_line
 
 
 def test_warning_and_red_message_lines_sanitize_dynamic_message() -> None:

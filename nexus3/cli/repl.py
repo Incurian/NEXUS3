@@ -180,10 +180,22 @@ def _format_turn_completed_status_line(safe_sink: SafeSink, turn_duration: float
     return f"[dim]Turn completed in {safe_duration}[/]"
 
 
+def _format_thought_duration_line(safe_sink: SafeSink, duration_seconds: object) -> str:
+    """Format reasoning-duration trace line while preserving trusted Rich wrapper markup."""
+    safe_duration = _sanitize_tool_trace_text(safe_sink, str(duration_seconds))
+    return f"  [dim cyan]●[/] [dim]Thought for {safe_duration}s[/]"
+
+
 def _format_repl_error_line(safe_sink: SafeSink, message: str) -> str:
     """Format REPL error line while preserving trusted Rich wrapper markup."""
     safe_message = _sanitize_tool_trace_text(safe_sink, message)
     return f"[red]Error:[/] {safe_message}"
+
+
+def _format_server_failed_to_start_line(safe_sink: SafeSink, port: object) -> str:
+    """Format startup-timeout line while preserving trusted Rich wrapper markup."""
+    safe_port = _sanitize_tool_trace_text(safe_sink, str(port))
+    return f"[red]Error:[/] Server failed to start on port {safe_port}"
 
 
 def _format_autosave_error_line(safe_sink: SafeSink, error: str) -> str:
@@ -289,6 +301,12 @@ def _format_scanned_ports_line(safe_sink: SafeSink, ports: list[int]) -> str:
     """Format scanned-ports line while preserving trusted Rich wrapper markup."""
     safe_ports = _sanitize_tool_trace_text(safe_sink, str(ports))
     return f"[dim]Scanned ports: {safe_ports}[/]"
+
+
+def _format_scanning_additional_ports_line(safe_sink: SafeSink, count: object) -> str:
+    """Format add-ports scan status line while preserving trusted Rich wrapper markup."""
+    safe_count = _sanitize_tool_trace_text(safe_sink, str(count))
+    return f"[dim]Scanning {safe_count} additional ports...[/]"
 
 
 def _format_unknown_rpc_command_line(safe_sink: SafeSink, rpc_cmd: object) -> str:
@@ -466,7 +484,9 @@ async def run_repl(
                     try:
                         new_ports = parse_port_spec(result.scan_spec)
                         candidate_ports.update(new_ports)
-                        console.print(f"[dim]Scanning {len(new_ports)} additional ports...[/]")
+                        console.print(
+                            _format_scanning_additional_ports_line(safe_sink, len(new_ports))
+                        )
                     except ValueError as e:
                         console.print(_format_invalid_port_spec_line(safe_sink, str(e)))
                 # Loop back to discover with expanded ports
@@ -850,7 +870,7 @@ async def run_repl(
             except asyncio.CancelledError:
                 pass
             server_logger.error("Server failed to start on port %s (timeout)", effective_port)
-            console.print(f"[red]Error:[/] Server failed to start on port {effective_port}")
+            console.print(_format_server_failed_to_start_line(safe_sink, effective_port))
             console.print("[dim]The port may be in use by another process.[/]")
             await pool.destroy(agent_name)
             if shared and shared.provider_registry:
@@ -908,7 +928,7 @@ async def run_repl(
         if _thinking_total > 0:
             _thinking_printed = True
             display_duration = max(1, int(_thinking_total))
-            spinner.print(f"  [dim cyan]●[/] [dim]Thought for {display_duration}s[/]")
+            spinner.print(_format_thought_duration_line(safe_sink, display_duration))
 
     # =============================================================
     # Session callbacks - print immediately to scrollback
@@ -2134,7 +2154,9 @@ async def _run_connect_with_discovery(args: argparse.Namespace) -> None:
                 try:
                     new_ports = parse_port_spec(result.scan_spec)
                     candidate_ports.update(new_ports)
-                    console.print(f"[dim]Scanning {len(new_ports)} additional ports...[/]")
+                    console.print(
+                        _format_scanning_additional_ports_line(safe_sink, len(new_ports))
+                    )
                 except ValueError as e:
                     console.print(_format_invalid_port_spec_line(safe_sink, str(e)))
             continue

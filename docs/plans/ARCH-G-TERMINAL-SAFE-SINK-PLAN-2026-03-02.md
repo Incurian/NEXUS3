@@ -114,6 +114,10 @@ Phases:
 - Replaced direct unsanitized plain command-output rendering in `nexus3/cli/repl.py` (`console.print(output.message)`) with `SafeSink`-backed formatting helper.
 - Added focused regression in `tests/unit/cli/test_repl_safe_sink.py` for plain-message sanitization behavior.
 - Validation: `.venv/bin/ruff check nexus3/cli/repl.py tests/unit/cli/test_repl_safe_sink.py`, `.venv/bin/mypy nexus3/cli/repl.py`, and `.venv/bin/pytest -v tests/unit/cli/test_repl_safe_sink.py` passed.
+- 2026-03-06: Phase 3 cleanup slice completed (REPL dynamic f-string print consistency).
+- Replaced remaining dynamic direct f-string prints in `nexus3/cli/repl.py` for scanning-additional-ports, startup-timeout port output, and thought-duration spinner output with SafeSink-backed helper formatters.
+- Added focused regressions in `tests/unit/cli/test_repl_safe_sink.py` for the new formatter helpers.
+- Validation: `.venv/bin/ruff check nexus3/cli/repl.py tests/unit/cli/test_repl_safe_sink.py`, `.venv/bin/mypy nexus3/cli/repl.py`, and `.venv/bin/pytest -v tests/unit/cli/test_repl_safe_sink.py` passed.
 
 ## Testing Strategy
 
@@ -139,6 +143,7 @@ Phases:
   - [x] Consolidated MCP skill adapter result sanitization in `nexus3/mcp/skill_adapter.py` to `SafeSink` shared sanitizer entrypoint.
   - [x] Consolidated display streaming/spinner sanitizer branches in `nexus3/display/spinner.py` and `nexus3/display/streaming.py` to `SafeSink` shared sanitizer entrypoints.
   - [x] Removed remaining unsanitized plain command-output render path in `nexus3/cli/repl.py` by routing through SafeSink helper formatting.
+  - [x] Replaced remaining dynamic direct f-string prints in `nexus3/cli/repl.py` with SafeSink-backed helper formatters for consistency.
   - Resume target: continue collapsing any remaining fragmented formatter/sanitizer branches into shared SafeSink entrypoints (primarily residual direct dynamic REPL prints and minor CLI consistency paths).
 
 ## Documentation Updates

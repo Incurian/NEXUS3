@@ -639,6 +639,20 @@ Compact checkpoint (2026-03-06, architecture execution round 12):
   2. Plan G: continue residual dynamic REPL print sweep and minor CLI consistency consolidation.
   3. Plan H: audit for any remaining compatibility-only protocol/schema behaviors and either retire or document them.
 
+Compact checkpoint (2026-03-06, architecture execution round 13):
+- Branch head at start of round: `35c5914`; working tree now includes Plan G REPL consistency cleanup.
+- New slice completed this round:
+  1. Plan G replaced remaining dynamic direct f-string prints in `nexus3/cli/repl.py` (additional-port scanning lines, startup-timeout port line, thought-duration spinner line) with SafeSink-backed helper formatters.
+  2. Added focused helper coverage in `tests/unit/cli/test_repl_safe_sink.py` for the new formatter paths.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/cli/repl.py tests/unit/cli/test_repl_safe_sink.py` passed.
+  - `.venv/bin/mypy nexus3/cli/repl.py` passed.
+  - `.venv/bin/pytest -v tests/unit/cli/test_repl_safe_sink.py` passed (`25 passed`).
+- Immediate resume targets:
+  1. Plan A: evaluate remaining duplicate authorization branches in session enforcer policy checks for next safe kernel-authoritative flip.
+  2. Plan G: sweep any final minor CLI consistency paths (`repl_commands` sharing prompt path) and verify no remaining fragmented sanitizer usage.
+  3. Plan H: audit for any remaining compatibility-only protocol/schema behaviors and either retire or document them.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.
