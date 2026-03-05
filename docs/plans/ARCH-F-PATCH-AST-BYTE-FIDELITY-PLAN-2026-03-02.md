@@ -54,7 +54,7 @@ Phases:
 - [x] Add legacy compatibility mode and migration flag (`fidelity_mode=legacy|byte_strict` in patch skill, default legacy).
 - [x] Harden file target resolution (exact-path preference, basename ambiguity fail-closed).
 - [x] Add ambiguity fail-closed and byte-fidelity regression tests (EOF/non-UTF8/binary-adjacent).
-- [ ] Flip default and remove fragile legacy branches.
+- [ ] Flip default and remove fragile legacy branches (default flipped to byte_strict; legacy-branch retirement still pending).
 
 Status note (2026-03-05, M3 Plan F Phase 1):
 - Added `nexus3/patch/ast_v2.py` with typed v2 AST models carrying raw bytes and newline metadata.
@@ -123,6 +123,20 @@ Status note (2026-03-05, M3 Plan F Phase 5):
   - `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py -k patch` -> `9 passed, 8 deselected`
   - `.venv/bin/ruff check nexus3/patch/applier.py tests/unit/patch/test_byte_strict_apply_phase2.py`
   - `.venv/bin/mypy nexus3/patch/applier.py`
+
+Status note (2026-03-05, M3 Plan F Phase 6):
+- Flipped patch-skill default fidelity mode to `byte_strict` in `nexus3/skill/builtin/patch.py` while preserving explicit `fidelity_mode=\"legacy\"` fallback path.
+- Added migration assertions in `tests/unit/skill/test_patch.py`:
+  - default execution now follows byte-strict mixed-newline behavior
+  - explicit legacy mode remains available and preserves legacy-normalized behavior
+- Focused gates passed:
+  - `.venv/bin/pytest -q tests/unit/skill/test_patch.py` -> `28 passed`
+  - `.venv/bin/pytest -q tests/unit/patch/test_byte_strict_apply_phase2.py tests/unit/patch/test_applier.py tests/unit/patch/test_parser.py tests/unit/patch/test_byte_roundtrip_baseline.py tests/unit/patch/test_validator.py` -> `68 passed`
+  - `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py -k patch` -> `9 passed, 8 deselected`
+  - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py`
+  - `.venv/bin/mypy nexus3/skill/builtin/patch.py`
+- Remaining closeout in this checklist item:
+  - retire or justify remaining legacy-only branches in patch skill flow after soak window.
 
 ## Documentation Updates
 

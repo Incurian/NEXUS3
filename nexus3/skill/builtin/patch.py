@@ -108,11 +108,11 @@ class PatchSkill(FileSkill):
                 "fidelity_mode": {
                     "type": "string",
                     "enum": ["legacy", "byte_strict"],
-                    "default": "legacy",
+                    "default": "byte_strict",
                     "description": (
                         "Patch fidelity engine: "
-                        "legacy=existing parser/applier flow, "
-                        "byte_strict=AST-v2 parser with byte-fidelity apply path"
+                        "byte_strict=AST-v2 parser with byte-fidelity apply path (default), "
+                        "legacy=existing parser/applier flow"
                     ),
                 },
                 "fuzzy_threshold": {
@@ -137,7 +137,7 @@ class PatchSkill(FileSkill):
         diff: str | None = None,
         diff_file: str | None = None,
         mode: str = "strict",
-        fidelity_mode: str = "legacy",
+        fidelity_mode: str = "byte_strict",
         fuzzy_threshold: float = 0.8,
         dry_run: bool = False,
         **kwargs: Any,

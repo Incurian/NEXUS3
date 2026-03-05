@@ -228,8 +228,9 @@ Immediate tasks:
 - Plan F Phase 2 is committed as `4ded3fa` (`plan f phase 2: add byte-strict ast-v2 apply path`).
 - Plan F Phase 3 is committed as `4c10b0b` (`plan f phase 3: wire legacy vs byte_strict skill mode`).
 - Plan F Phase 4 is committed as `a342401` (`plan f phase 4: fail closed on ambiguous patch targets`).
-- Plan F Phase 5 is complete in the working tree (non-UTF8/binary-adjacent byte-fidelity regressions + byte-input hardening in `apply_patch_byte_strict`); commit as standalone checkpoint before Phase 6.
-- Start main-plan execution at M3 Plan F Phase 6 (default-flip readiness decision + legacy branch retirement plan) before Plan E.
+- Plan F Phase 5 is committed as `87c5df1` (`plan f phase 5: add non-utf8 byte-strict fidelity regressions`).
+- Plan F Phase 6 default-flip slice is complete in the working tree (`byte_strict` now default for patch skill, explicit `legacy` fallback retained); commit as standalone checkpoint.
+- Next target before Plan E: close the remaining Plan F legacy-branch retirement/judgment item, then begin M3 Plan E Phase 1 compiler/invariant work.
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -1230,6 +1231,25 @@ Execution checkpoint (2026-03-05, architecture execution round 35):
   1. Commit Plan F Phase 5 code+tests+docs as standalone checkpoint.
   2. Execute Plan F Phase 6 closeout: default-flip readiness decision and legacy-branch retirement plan.
   3. Keep follow-on deferred plans in backlog mode until their M4/post-M4 dependency gates are met.
+
+Execution checkpoint (2026-03-05, architecture execution round 36):
+- Scope completed this round (M3 Plan F Phase 6 default flip):
+  1. Flipped patch-skill `fidelity_mode` default to `byte_strict` in `nexus3/skill/builtin/patch.py`.
+  2. Retained explicit `fidelity_mode=\"legacy\"` compatibility path for controlled fallback during soak.
+  3. Updated migration assertions in `tests/unit/skill/test_patch.py` to verify:
+     - default follows byte-strict newline semantics
+     - explicit legacy remains available and behaviorally distinct where expected.
+  4. Updated plan/schedule/docs notes (`docs/plans/ARCH-F-...`, `docs/plans/ARCH-MILESTONE-SCHEDULE-...`, `nexus3/skill/README.md`) for default-mode transition state.
+- Focused validation executed this round:
+  - `.venv/bin/pytest -q tests/unit/skill/test_patch.py` -> `28 passed`.
+  - `.venv/bin/pytest -q tests/unit/patch/test_byte_strict_apply_phase2.py tests/unit/patch/test_applier.py tests/unit/patch/test_parser.py tests/unit/patch/test_byte_roundtrip_baseline.py tests/unit/patch/test_validator.py` -> `68 passed`.
+  - `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py -k patch` -> `9 passed, 8 deselected`.
+  - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py` -> passed.
+  - `.venv/bin/mypy nexus3/skill/builtin/patch.py` -> passed.
+- Next gate:
+  1. Commit Plan F Phase 6 code+tests+docs as standalone checkpoint.
+  2. Decide whether to retire remaining legacy-only branches now or explicitly defer retirement with rationale and target window.
+  3. Begin M3 Plan E Phase 1 compiler/invariant implementation after Plan F closeout note is finalized.
 
 ## Source of Truth
 

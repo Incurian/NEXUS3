@@ -116,7 +116,10 @@ Status note (2026-03-05):
 - Plan F Phase 5 landed in working tree:
   - byte-strict non-UTF8/binary-adjacent regression coverage added
   - `apply_patch_byte_strict` byte-input support hardened with reversible `surrogateescape` decoding
-- Next M3 target: Plan F Phase 6 default-flip readiness decision and remaining legacy-branch retirement plan.
+- Plan F Phase 6 landed in working tree:
+  - patch skill default fidelity flipped to `byte_strict`
+  - explicit `legacy` mode retained for compatibility fallback during soak
+- Next M3 target: finish remaining Plan F legacy-branch retirement follow-up, then move to Plan E Phase 1 compiler/invariants.
 
 ### M4: Delegation and Strategic Evolution
 

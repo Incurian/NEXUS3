@@ -509,8 +509,8 @@ class TestFidelityModeMigration(TestPatchSkill):
         assert "byte_strict" in result.error
 
     @pytest.mark.asyncio
-    async def test_fidelity_mode_default_stays_legacy_compatible(self, skill, tmp_path):
-        """Default path should remain legacy newline-normalizing behavior."""
+    async def test_fidelity_mode_default_is_byte_strict(self, skill, tmp_path):
+        """Default path should use byte_strict fidelity semantics."""
         target_file = tmp_path / "target.txt"
         target_file.write_bytes(b"alpha\r\nbeta\ngamma\r\n")
         diff_content = (_FIXTURE_DIR / "patch_mixed_newline_update.diff").read_text(
@@ -518,6 +518,19 @@ class TestFidelityModeMigration(TestPatchSkill):
         )
 
         await skill.execute(target=str(target_file), diff=diff_content)
+
+        assert target_file.read_bytes() == b"alpha\r\nBETA\ngamma\r\n"
+
+    @pytest.mark.asyncio
+    async def test_fidelity_mode_explicit_legacy_remains_available(self, skill, tmp_path):
+        """Legacy mode remains available for compatibility during migration."""
+        target_file = tmp_path / "target.txt"
+        target_file.write_bytes(b"alpha\r\nbeta\ngamma\r\n")
+        diff_content = (_FIXTURE_DIR / "patch_mixed_newline_update.diff").read_text(
+            encoding="utf-8"
+        )
+
+        await skill.execute(target=str(target_file), diff=diff_content, fidelity_mode="legacy")
 
         assert target_file.read_bytes() == b"alpha\r\nBETA\r\ngamma\r\n"
 
