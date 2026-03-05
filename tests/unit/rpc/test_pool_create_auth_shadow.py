@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from nexus3.core.authorization_kernel import AuthorizationDecision
-from nexus3.core.permissions import resolve_preset
+from nexus3.core.permissions import PermissionDelta, ToolPermission, resolve_preset
 from nexus3.rpc.pool import (
     MAX_AGENT_DEPTH,
     AgentConfig,
@@ -148,5 +148,78 @@ async def test_create_shadow_mismatch_base_ceiling_warns_but_legacy_deny_remains
     assert mismatch.target_agent_id == "child-base-ceiling-mismatch"
     assert mismatch.requester_id == "parent-agent"
     assert mismatch.check_stage == "base_ceiling"
+    assert mismatch.legacy_allowed is False
+    assert mismatch.kernel_allowed is True
+
+
+@pytest.mark.asyncio
+async def test_create_shadow_parity_delta_ceiling_denial_no_warning(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Default adapter parity emits no mismatch warning for delta ceiling deny."""
+    shared = _create_mock_shared_components(tmp_path)
+    pool = AgentPool(shared)
+
+    parent_permissions = resolve_preset("trusted")
+    parent_permissions.depth = 0
+    parent_permissions.tool_permissions["bash_safe"] = ToolPermission(enabled=False)
+
+    with caplog.at_level(logging.WARNING, logger="nexus3.rpc.pool"):
+        with pytest.raises(PermissionError, match="Permission delta would exceed parent ceiling"):
+            await pool.create(
+                config=AgentConfig(
+                    agent_id="child-delta-ceiling-parity",
+                    preset="sandboxed",
+                    delta=PermissionDelta(enable_tools=["bash_safe"]),
+                    parent_permissions=parent_permissions,
+                    parent_agent_id="parent-agent",
+                )
+            )
+
+    mismatch_records = [
+        record
+        for record in caplog.records
+        if getattr(record, "event", None) == "create_auth_shadow_mismatch"
+    ]
+    assert mismatch_records == []
+
+
+@pytest.mark.asyncio
+async def test_create_shadow_mismatch_delta_ceiling_warns_but_legacy_deny_remains(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Kernel mismatch at delta can_grant emits warning while legacy deny remains authoritative."""
+    shared = _create_mock_shared_components(tmp_path)
+    pool = AgentPool(shared)
+    pool._create_authorization_kernel = _ForceAllowCreateKernel()
+
+    parent_permissions = resolve_preset("trusted")
+    parent_permissions.depth = 0
+    parent_permissions.tool_permissions["bash_safe"] = ToolPermission(enabled=False)
+
+    with caplog.at_level(logging.WARNING, logger="nexus3.rpc.pool"):
+        with pytest.raises(PermissionError, match="Permission delta would exceed parent ceiling"):
+            await pool.create(
+                config=AgentConfig(
+                    agent_id="child-delta-ceiling-mismatch",
+                    preset="sandboxed",
+                    delta=PermissionDelta(enable_tools=["bash_safe"]),
+                    parent_permissions=parent_permissions,
+                    parent_agent_id="parent-agent",
+                )
+            )
+
+    mismatch_records = [
+        record
+        for record in caplog.records
+        if getattr(record, "event", None) == "create_auth_shadow_mismatch"
+    ]
+    assert len(mismatch_records) == 1
+    mismatch = mismatch_records[0]
+    assert mismatch.target_agent_id == "child-delta-ceiling-mismatch"
+    assert mismatch.requester_id == "parent-agent"
+    assert mismatch.check_stage == "delta_ceiling"
     assert mismatch.legacy_allowed is False
     assert mismatch.kernel_allowed is True
