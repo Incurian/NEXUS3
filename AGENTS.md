@@ -220,7 +220,7 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `M3` active execution: Data Integrity Wave (Plan F closeout + Plan E Phase 1 committed; Plan E Phase 2 in execution).
+- `M3` active execution: Data Integrity Wave (Plan F closeout + Plan E Phases 1-2 committed; M3 closeout review/checkpointing in progress).
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
