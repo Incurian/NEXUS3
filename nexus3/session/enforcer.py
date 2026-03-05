@@ -117,6 +117,21 @@ class _ToolActionAuthorizationAdapter:
         return AuthorizationDecision.deny(request, reason="policy_denied")
 
 
+class _ToolEnabledAuthorizationAdapter:
+    """Kernel adapter mirroring legacy per-tool enabled/disabled checks."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.TOOL_EXECUTE:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.TOOL:
+            return None
+
+        if bool(request.context.get("tool_explicitly_disabled", False)):
+            return AuthorizationDecision.deny(request, reason="explicitly_disabled")
+
+        return AuthorizationDecision.allow(request, reason="not_explicitly_disabled")
+
+
 class PermissionEnforcer:
     """Enforces permission policies for tool execution.
 
@@ -131,6 +146,10 @@ class PermissionEnforcer:
         self._services = services
         self._action_authorization_kernel = AdapterAuthorizationKernel(
             adapters=(_ToolActionAuthorizationAdapter(),),
+            default_allow=False,
+        )
+        self._enabled_authorization_kernel = AdapterAuthorizationKernel(
+            adapters=(_ToolEnabledAuthorizationAdapter(),),
             default_allow=False,
         )
         self._target_authorization_kernel = AdapterAuthorizationKernel(
@@ -185,9 +204,24 @@ class PermissionEnforcer:
     ) -> ToolResult | None:
         """Check if tool is enabled."""
         tool_perm = permissions.tool_permissions.get(tool_name)
-        if tool_perm and not tool_perm.enabled:
-            return ToolResult(error=f"Tool '{tool_name}' is disabled by permission policy")
-        return None
+        tool_explicitly_disabled = bool(tool_perm is not None and not tool_perm.enabled)
+        legacy_error = f"Tool '{tool_name}' is disabled by permission policy"
+
+        requester_id = self._services.get("agent_id") if self._services else None
+        principal_id = requester_id if isinstance(requester_id, str) and requester_id else "unknown"
+        kernel_request = AuthorizationRequest(
+            action=AuthorizationAction.TOOL_EXECUTE,
+            resource=AuthorizationResource(
+                resource_type=AuthorizationResourceType.TOOL,
+                identifier=tool_name,
+            ),
+            principal_id=principal_id,
+            context={"tool_explicitly_disabled": tool_explicitly_disabled},
+        )
+        kernel_decision = self._enabled_authorization_kernel.authorize(kernel_request)
+        if kernel_decision.allowed:
+            return None
+        return ToolResult(error=legacy_error)
 
     def _check_action_allowed(
         self,

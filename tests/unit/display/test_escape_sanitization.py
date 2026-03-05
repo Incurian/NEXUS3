@@ -317,8 +317,18 @@ class TestInlinePrinterRichOutputSanitization:
         assert third.kwargs["style"] == printer.theme.thinking
         assert "\x1b" not in second.args[0]
 
-    def test_print_gumball_preserves_trusted_markup(self, printer: InlinePrinter) -> None:
-        printer.print_gumball(Status.ACTIVE, "[bold]trusted[/bold]")
+    def test_print_gumball_sanitizes_dynamic_message(self, printer: InlinePrinter) -> None:
+        printer.print_gumball(Status.ACTIVE, "[bold]unsafe[/bold]\x1b[31m")
+
+        printer.console.print.assert_called_once()
+        rendered = printer.console.print.call_args.args[0]
+
+        assert rendered.startswith("[cyan]●[/] ")
+        assert r"\[bold]unsafe\[/bold]" in rendered
+        assert "\x1b" not in rendered
+
+    def test_print_gumball_trusted_preserves_markup(self, printer: InlinePrinter) -> None:
+        printer.print_gumball_trusted(Status.ACTIVE, "[bold]trusted[/bold]")
 
         printer.console.print.assert_called_once()
         rendered = printer.console.print.call_args.args[0]

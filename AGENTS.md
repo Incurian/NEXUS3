@@ -288,9 +288,10 @@ Progress snapshot:
   - removed duplicate `wait_for_initial_response` post-create manual parsing in `rpc/global_dispatcher.py` and reused schema-validated field.
   - added focused regressions in `tests/unit/rpc/test_schema_ingress_wiring.py`.
 - Completed: Plan H M1 Phase 2 projection cleanup slice:
-  - added shared schema projection helper `project_known_schema_fields` in `nexus3/rpc/schemas.py`.
+  - introduced shared schema projection helper `project_known_schema_fields` in `nexus3/rpc/schemas.py` for interim migration cleanup.
   - migrated `rpc/dispatcher.py::_handle_send` and `rpc/global_dispatcher.py::_handle_create_agent` field projection to helper-backed schema ingress flow.
   - preserved legacy-style invalid-param wording and compat-safe extra-param behavior.
+  - later retired in architecture execution round 22 after strict full-param ingress became universal.
 - Completed: Plan H M1 Phase 2 create-agent cleanup slice:
   - removed redundant post-schema `allowed_write_paths` type guards in `rpc/global_dispatcher.py`.
   - preserved malformed-shape `InvalidParamsError` wording via ingress schema error mapping.
@@ -810,6 +811,23 @@ Compact checkpoint (2026-03-06, architecture execution round 21):
   1. Plan A: evaluate remaining duplicate authorization surfaces (notably whether `_check_enabled` can be routed through kernel-authoritative decisions in `session/enforcer.py`) and sequence final duplicate-branch cleanup.
   2. Plan H: optional cleanup pass to remove now-unused compatibility projection helper `project_known_schema_fields(...)` in `nexus3/rpc/schemas.py` (audit confirms no active callsites).
   3. Plan G: perform a final low-risk audit pass for any residual dynamic print interpolation outside SafeSink helper patterns and either close or explicitly document accepted trusted-only exceptions.
+
+Compact checkpoint (2026-03-06, architecture execution round 22):
+- Branch head at start of round: `57e7697`; working tree now includes parallel Plan A + Plan H + Plan G follow-up slices implemented via Codex subagents.
+- New slices completed this round:
+  1. Plan A migrated `session/enforcer.py::_check_enabled` to kernel-authoritative enforcement via `_ToolEnabledAuthorizationAdapter` and `_enabled_authorization_kernel`.
+  2. Plan A preserved exact disabled-tool deny wording (`Tool '<tool>' is disabled by permission policy`) and explicit `check_all` ordering behavior (enabled-check short-circuit before action-check deny).
+  3. Plan H removed dead RPC schema helper `project_known_schema_fields(...)` from `nexus3/rpc/schemas.py` and updated stale projection-helper wording in the Plan H document.
+  4. Plan G hardened output boundaries by introducing explicit spinner trust APIs (`print_trusted(...)`, `print_untrusted(...)`, trusted compatibility alias), sanitizing `InlinePrinter.print_gumball(...)` by default with explicit trusted variant, and routing connect-lobby default-port interpolation through a SafeSink-backed helper.
+  5. Updated focused regressions in `tests/unit/session/test_enforcer.py`, `tests/unit/display/test_safe_sink.py`, `tests/unit/display/test_escape_sanitization.py`, and `tests/unit/cli/test_connect_lobby_safe_sink.py`.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/session/enforcer.py nexus3/rpc/schemas.py nexus3/display/spinner.py nexus3/display/printer.py nexus3/cli/connect_lobby.py tests/unit/session/test_enforcer.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_connect_lobby_safe_sink.py docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md docs/plans/ARCH-G-TERMINAL-SAFE-SINK-PLAN-2026-03-02.md docs/plans/ARCH-H-STRICT-SCHEMA-GATES-PLAN-2026-03-02.md` passed.
+  - `.venv/bin/mypy nexus3/session/enforcer.py nexus3/rpc/schemas.py nexus3/display/spinner.py nexus3/display/printer.py nexus3/cli/connect_lobby.py` passed.
+  - `.venv/bin/pytest -v tests/unit/session/test_enforcer.py tests/unit/rpc/test_schemas.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_client.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_connect_lobby_safe_sink.py` passed (`195 passed`; expected SSL CA warning noise in `tests/unit/test_client.py` remains unchanged).
+- Immediate resume targets:
+  1. Plan A: assess whether any remaining authorization checks outside kernel adapters still exist in session/rpc flows and sequence final duplicate-branch cleanup if found.
+  2. Plan G: perform a final narrow audit for low-risk trusted-only formatting surfaces and either convert to explicit trusted helpers or document accepted trusted boundaries.
+  3. Documentation consistency sweep: mirror any user-visible authorization/safe-sink boundary behavior updates into module README references if needed.
 
 ## Source of Truth
 

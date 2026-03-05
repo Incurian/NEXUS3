@@ -37,6 +37,11 @@ class InlinePrinter:
             message: Text after the gumball
             indent: Number of spaces to indent
         """
+        safe_message = self.safe_sink.sanitize_print_content(message)
+        self.print_gumball_trusted(status=status, message=safe_message, indent=indent)
+
+    def print_gumball_trusted(self, status: Status, message: str, indent: int = 0) -> None:
+        """Print a gumball with a trusted message payload."""
         prefix = " " * indent
         gumball = self.theme.gumball(status)
         self.safe_sink.print_trusted(f"{prefix}{gumball} {message}")
@@ -64,9 +69,7 @@ class InlinePrinter:
             label: Task details
             indent: Indentation level
         """
-        safe_task_type = self.safe_sink.sanitize_print_content(task_type)
-        safe_label = self.safe_sink.sanitize_print_content(label)
-        self.print_gumball(Status.ACTIVE, f"{safe_task_type}: {safe_label}", indent=indent)
+        self.print_gumball(Status.ACTIVE, f"{task_type}: {label}", indent=indent)
 
     def print_task_end(self, task_type: str, success: bool, indent: int = 2) -> None:
         """Print task completion.
@@ -78,18 +81,15 @@ class InlinePrinter:
         """
         status = Status.COMPLETE if success else Status.ERROR
         result = "complete" if success else "failed"
-        safe_task_type = self.safe_sink.sanitize_print_content(task_type)
-        self.print_gumball(status, f"{safe_task_type}: {result}", indent=indent)
+        self.print_gumball(status, f"{task_type}: {result}", indent=indent)
 
     def print_error(self, message: str) -> None:
         """Print error message."""
-        safe_message = self.safe_sink.sanitize_print_content(message)
-        self.print_gumball(Status.ERROR, safe_message)
+        self.print_gumball(Status.ERROR, message)
 
     def print_cancelled(self, message: str = "Cancelled") -> None:
         """Print cancellation message."""
-        safe_message = self.safe_sink.sanitize_print_content(message)
-        self.print_gumball(Status.CANCELLED, safe_message)
+        self.print_gumball(Status.CANCELLED, message)
 
     def print_streaming_chunk(self, chunk: str) -> None:
         """Print a streaming chunk without newline.

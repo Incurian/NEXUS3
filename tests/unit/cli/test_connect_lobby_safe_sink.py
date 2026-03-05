@@ -52,6 +52,19 @@ async def _show_connect_lobby(console: _FakeConsole, servers: list[DiscoveredSer
     )
 
 
+async def _show_connect_lobby_with_port(
+    console: _FakeConsole,
+    servers: list[DiscoveredServer],
+    default_port: int,
+):
+    return await show_connect_lobby(
+        console=console,
+        servers=servers,
+        default_port=default_port,
+        default_port_in_use=False,
+    )
+
+
 async def _show_agent_picker(console: _FakeConsole, server: DiscoveredServer):
     return await show_agent_picker(console=console, server=server, occupied_ports={8765})
 
@@ -67,6 +80,21 @@ async def test_show_connect_lobby_sanitizes_discovered_server_base_url() -> None
     all_lines = "\n".join(console.print_calls)
     assert "  1) \\[bold]srv\\[/bold]x" in all_lines
     assert "[dim]Discovered servers:[/]" in all_lines
+    assert "\x1b" not in all_lines
+
+
+@pytest.mark.asyncio
+async def test_show_connect_lobby_sanitizes_default_port_option_line() -> None:
+    class _MaliciousPort(int):
+        def __str__(self) -> str:
+            return "[bold]8765[/bold]\x1b]8;;https://example.com\x07x\x1b]8;;\x07"
+
+    console = _FakeConsole(responses=["q"])
+    result = await _show_connect_lobby_with_port(console, [], _MaliciousPort(8765))
+
+    assert result.action == ConnectAction.QUIT
+    all_lines = "\n".join(console.print_calls)
+    assert r"n) Start embedded server (port \[bold]8765\[/bold]x)" in all_lines
     assert "\x1b" not in all_lines
 
 

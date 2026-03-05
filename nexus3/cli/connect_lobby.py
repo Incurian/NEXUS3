@@ -133,6 +133,12 @@ def _get_nexus_servers(servers: list[DiscoveredServer]) -> list[DiscoveredServer
     return [s for s in servers if s.detection == DetectionResult.NEXUS_SERVER]
 
 
+def _format_default_port_option_line(default_port: object) -> str:
+    """Format start-server option line with SafeSink sanitization."""
+    safe_default_port = SafeSink.sanitize_print_value(default_port)
+    return f"  n) Start embedded server (port {safe_default_port})"
+
+
 async def _show_auth_recovery_menu(
     console: Console,
     server: DiscoveredServer,
@@ -293,10 +299,7 @@ async def show_connect_lobby(
     # Build menu options
     sink.print_trusted("[dim]Options:[/]")
     if not default_port_in_use:
-        safe_default_port = sink.sanitize_print_content(str(default_port))
-        sink.print_trusted(
-            f"  n) Start embedded server (port {safe_default_port})"
-        )
+        sink.print_trusted(_format_default_port_option_line(default_port))
     sink.print_trusted("  p) Start embedded server on different port...")
     sink.print_trusted("  s) Scan additional ports...")
     sink.print_trusted("  u) Connect to URL manually...")

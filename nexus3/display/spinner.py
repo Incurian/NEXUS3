@@ -21,16 +21,16 @@ from nexus3.display.theme import Activity, Theme, load_theme
 class Spinner:
     """Animated spinner with text, pinned to bottom of terminal.
 
-    All output during an agent turn should go through spinner.print() which
-    delegates to the Live console, ensuring text appears above the spinner.
+    All output during an agent turn should go through spinner.print_*() helpers
+    so trust boundaries are explicit while ensuring text appears above the spinner.
 
     Usage:
         spinner = Spinner()
         spinner.show("Waiting...")
 
         # Print content above spinner
-        spinner.print("Some output")
-        spinner.print("More output", end="")  # streaming
+        spinner.print_untrusted("Some output")
+        spinner.print_trusted("[dim]Debug[/]", end="")
 
         # Update spinner text
         spinner.update("Processing...")
@@ -53,6 +53,7 @@ class Spinner:
             theme: Theme for styling. Defaults to default theme.
         """
         self.console = console or get_console()
+        self.safe_sink = SafeSink(self.console)
         self.theme = theme or load_theme()
         self.text = ""
         self.activity = Activity.IDLE
@@ -139,21 +140,33 @@ class Spinner:
             return time.monotonic() - self._start_time
         return 0.0
 
-    def print(self, *args: Any, **kwargs: Any) -> None:
-        """Print above the spinner.
-
-        When Live is active, this delegates to live.console.print() so the
-        output appears above the spinner. When Live is not active, prints
-        directly to the console.
-
-        Args:
-            *args: Positional arguments passed to console.print().
-            **kwargs: Keyword arguments passed to console.print().
-        """
+    def _print(self, *args: Any, **kwargs: Any) -> None:
+        """Print above spinner through active Live console when present."""
         if self._live:
             self._live.console.print(*args, **kwargs)
         else:
             self.console.print(*args, **kwargs)
+
+    def print_trusted(self, *args: Any, **kwargs: Any) -> None:
+        """Print trusted content above the spinner without sanitization."""
+        self._print(*args, **kwargs)
+
+    def print_untrusted(
+        self,
+        content: str,
+        *,
+        style: str | None = None,
+        end: str = "\n",
+    ) -> None:
+        """Print untrusted content above the spinner after sanitization."""
+        self._print(self.safe_sink.sanitize_print_content(content), style=style, end=end)
+
+    def print(self, *args: Any, **kwargs: Any) -> None:
+        """Backward-compatible trusted print alias.
+
+        Prefer explicit `print_trusted(...)` or `print_untrusted(...)`.
+        """
+        self.print_trusted(*args, **kwargs)
 
     def print_streaming(self, chunk: str) -> None:
         """Print a streaming chunk (no newline, sanitized).

@@ -678,3 +678,76 @@ class TestActionAuthorizationKernelEnforcement:
         result = enforcer._check_action_allowed("nexus_send", permissions)
 
         assert result is None
+
+
+class TestEnabledAuthorizationKernelEnforcement:
+    """Tests for kernel-authoritative tool enabled/disabled behavior."""
+
+    def _make_permissions(self) -> AgentPermissions:
+        return AgentPermissions(
+            base_preset="sandboxed",
+            effective_policy=PermissionPolicy(
+                level=PermissionLevel.SANDBOXED,
+                allowed_paths=[Path("/sandbox")],
+                blocked_paths=[],
+                cwd=Path("/sandbox"),
+            ),
+            tool_permissions={},
+        )
+
+    def test_adapter_path_preserves_legacy_deny_wording(self) -> None:
+        enforcer = PermissionEnforcer()
+        permissions = self._make_permissions()
+        permissions.tool_permissions["nexus_send"] = ToolPermission(enabled=False)
+
+        result = enforcer._check_enabled("nexus_send", permissions)
+
+        assert result is not None
+        assert result.error == "Tool 'nexus_send' is disabled by permission policy"
+
+    def test_forced_kernel_deny_is_authoritative_with_stable_wording(self) -> None:
+        enforcer = PermissionEnforcer()
+        permissions = self._make_permissions()
+        permissions.tool_permissions["nexus_send"] = ToolPermission(enabled=True)
+
+        def deny_request(request):
+            return AuthorizationDecision.deny(request, reason="forced_deny")
+
+        enforcer._enabled_authorization_kernel.authorize = deny_request  # type: ignore[method-assign]
+
+        result = enforcer._check_enabled("nexus_send", permissions)
+
+        assert result is not None
+        assert result.error == "Tool 'nexus_send' is disabled by permission policy"
+
+
+class TestCheckAllOrderingWithEnabledChecks:
+    """Tests for check_all ordering between enabled and action checks."""
+
+    def test_disabled_message_precedes_action_denial(self) -> None:
+        enforcer = PermissionEnforcer()
+        permissions = AgentPermissions(
+            base_preset="sandboxed",
+            effective_policy=PermissionPolicy(
+                level=PermissionLevel.SANDBOXED,
+                allowed_paths=[Path("/sandbox")],
+                blocked_paths=[],
+                cwd=Path("/sandbox"),
+            ),
+            tool_permissions={"nexus_send": ToolPermission(enabled=False)},
+        )
+        tool_call = ToolCall(
+            id="call-1",
+            name="nexus_send",
+            arguments={"agent_id": "agent-2", "content": "hello"},
+        )
+
+        def fail_if_called(_request):
+            pytest.fail("action authorization should not run after enabled-check deny")
+
+        enforcer._action_authorization_kernel.authorize = fail_if_called  # type: ignore[method-assign]
+
+        result = enforcer.check_all(tool_call, permissions)
+
+        assert result is not None
+        assert result.error == "Tool 'nexus_send' is disabled by permission policy"

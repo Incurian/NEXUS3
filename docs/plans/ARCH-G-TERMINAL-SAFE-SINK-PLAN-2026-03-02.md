@@ -134,6 +134,12 @@ Phases:
 - Replaced residual direct dynamic `console.print` paths in `nexus3/cli/repl.py` for "port in use by another service" and Windows console codepage warnings with SafeSink-backed formatter helpers.
 - Added focused regressions in `tests/unit/display/test_escape_sanitization.py` and `tests/unit/cli/test_repl_safe_sink.py`.
 - Validation: `.venv/bin/ruff check nexus3/display/spinner.py nexus3/cli/repl.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py docs/plans/ARCH-G-TERMINAL-SAFE-SINK-PLAN-2026-03-02.md`, `.venv/bin/mypy nexus3/display/spinner.py nexus3/cli/repl.py`, and `.venv/bin/pytest -v tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py` passed.
+- 2026-03-05: Phase 3 cleanup slice completed (explicit spinner print boundary + gumball/connect-lobby hardening).
+- Added explicit spinner sink boundary helpers in `nexus3/display/spinner.py` (`print_trusted(...)`, `print_untrusted(...)`) and retained `print(...)` as a trusted compatibility alias to remove ambiguous raw passthrough usage patterns.
+- Hardened `nexus3/display/printer.py::print_gumball` to sanitize dynamic message payloads by default and added explicit `print_gumball_trusted(...)` for intentional trusted markup rendering.
+- Replaced `nexus3/cli/connect_lobby.py` default-port option interpolation with a SafeSink-backed formatter helper (`_format_default_port_option_line(...)`) using sanitize-by-value semantics.
+- Added focused regressions in `tests/unit/display/test_safe_sink.py`, `tests/unit/display/test_escape_sanitization.py`, and `tests/unit/cli/test_connect_lobby_safe_sink.py`.
+- Validation: `.venv/bin/ruff check nexus3/display/spinner.py nexus3/display/printer.py nexus3/cli/connect_lobby.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_connect_lobby_safe_sink.py docs/plans/ARCH-G-TERMINAL-SAFE-SINK-PLAN-2026-03-02.md`, `.venv/bin/mypy nexus3/display/spinner.py nexus3/display/printer.py nexus3/cli/connect_lobby.py`, and `.venv/bin/pytest -v tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_connect_lobby_safe_sink.py` passed.
 
 ## Testing Strategy
 
@@ -163,6 +169,9 @@ Phases:
   - [x] Replaced remaining dynamic direct f-string prints in `nexus3/cli/repl.py` with SafeSink-backed helper formatters for consistency.
   - [x] Hardened prompt-toolkit toolbar/prompt HTML dynamic interpolation in `nexus3/cli/repl.py` via `_sanitize_prompt_html_text(...)`.
   - [x] Sanitized confirmation full-details viewer content/title in `nexus3/cli/confirmation_ui.py` before pager/editor display.
+  - [x] Made spinner print boundaries explicit with separate trusted/untrusted helpers and compatibility aliasing for legacy callsites.
+  - [x] Hardened `InlinePrinter.print_gumball(...)` against unsafe direct usage; added explicit trusted helper for intentional markup.
+  - [x] Replaced connect-lobby default-port option interpolation with helper-level SafeSink sanitize-by-value formatting.
 
 ## Documentation Updates
 
