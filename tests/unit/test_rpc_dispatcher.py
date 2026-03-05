@@ -292,6 +292,7 @@ class TestRequestContextPropagation:
         dispatcher = Dispatcher(session)
         handler = AsyncMock(return_value={"ok": True})
         setattr(dispatcher, f"_handle_{method}", handler)
+        dispatcher._handlers[method] = getattr(dispatcher, f"_handle_{method}")
 
         request = Request(
             jsonrpc="2.0",
@@ -534,6 +535,28 @@ class TestAgentLifecycleAuthorization:
 
 class TestNoContextManagerErrors:
     """Tests for get_tokens/get_context without context manager."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["get_tokens", "get_context", "get_messages"])
+    async def test_read_methods_not_exposed_without_context(self, method: str):
+        """Read-only context methods are method-not-found when context is absent."""
+        session = MockSession()
+        dispatcher = Dispatcher(session, context=None)
+
+        params = {"offset": 0, "limit": 1} if method == "get_messages" else None
+        request = Request(
+            jsonrpc="2.0",
+            method=method,
+            params=params,
+            id=1,
+        )
+        response = await dispatcher.dispatch(request)
+
+        assert response is not None
+        assert response.error is not None
+        assert response.error["code"] == -32601  # METHOD_NOT_FOUND
+        assert response.error["message"] == f"Method not found: {method}"
+        assert response.result is None
 
     @pytest.mark.asyncio
     async def test_get_tokens_no_context_returns_error_response(self):

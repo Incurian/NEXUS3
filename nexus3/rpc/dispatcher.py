@@ -227,22 +227,28 @@ class Dispatcher:
         async def handle_compact_with_context(params: dict[str, Any]) -> dict[str, Any]:
             return await self._handle_compact(params, request_context)
 
-        async def handle_get_tokens_with_context(params: dict[str, Any]) -> dict[str, Any]:
-            return await self._handle_get_tokens(params, request_context)
-
-        async def handle_get_context_with_context(params: dict[str, Any]) -> dict[str, Any]:
-            return await self._handle_get_context(params, request_context)
-
-        async def handle_get_messages_with_context(params: dict[str, Any]) -> dict[str, Any]:
-            return await self._handle_get_messages(params, request_context)
-
         handlers["send"] = handle_send_with_context
         handlers["shutdown"] = handle_shutdown_with_context
         handlers["cancel"] = handle_cancel_with_context
         handlers["compact"] = handle_compact_with_context
-        handlers["get_tokens"] = handle_get_tokens_with_context
-        handlers["get_context"] = handle_get_context_with_context
-        handlers["get_messages"] = handle_get_messages_with_context
+
+        if "get_tokens" in handlers:
+            async def handle_get_tokens_with_context(params: dict[str, Any]) -> dict[str, Any]:
+                return await self._handle_get_tokens(params, request_context)
+
+            handlers["get_tokens"] = handle_get_tokens_with_context
+
+        if "get_context" in handlers:
+            async def handle_get_context_with_context(params: dict[str, Any]) -> dict[str, Any]:
+                return await self._handle_get_context(params, request_context)
+
+            handlers["get_context"] = handle_get_context_with_context
+
+        if "get_messages" in handlers:
+            async def handle_get_messages_with_context(params: dict[str, Any]) -> dict[str, Any]:
+                return await self._handle_get_messages(params, request_context)
+
+            handlers["get_messages"] = handle_get_messages_with_context
 
         return await dispatch_request(request, handlers, "method")
 
