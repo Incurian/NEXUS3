@@ -64,6 +64,16 @@ Phases:
 - Migrated high-volume dynamic CLI rendering in `nexus3/cli/connect_lobby.py` and `nexus3/cli/lobby.py` to sanitize untrusted interpolated fields through `SafeSink` while preserving trusted static Rich markup.
 - Added focused regressions in `tests/unit/cli/test_connect_lobby_safe_sink.py` and `tests/unit/cli/test_lobby_safe_sink.py`.
 - Validation: `.venv/bin/ruff check nexus3/cli/connect_lobby.py nexus3/cli/lobby.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/cli/test_lobby_safe_sink.py` and `.venv/bin/pytest -v tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/cli/test_lobby_safe_sink.py tests/unit/test_lobby.py` passed.
+- 2026-03-05: Phase 3 incremental migration slice completed (confirmation UI prompts).
+- Migrated `nexus3/cli/confirmation_ui.py::confirm_tool_action` dynamic fields to `SafeSink` sanitization for MCP/exec/nexus/general tool prompts while preserving trusted Rich markup labels.
+- Removed redundant ad hoc per-branch escaping variables in this path in favor of the sink boundary contract.
+- Added focused regressions in `tests/unit/cli/test_confirmation_ui_safe_sink.py`.
+- Validation: `.venv/bin/ruff check nexus3/cli/confirmation_ui.py tests/unit/cli/test_confirmation_ui_safe_sink.py` and `.venv/bin/pytest -v tests/unit/cli/test_confirmation_ui_safe_sink.py` passed.
+- 2026-03-05: Phase 3 incremental migration slice completed (InlinePrinter dynamic rendering).
+- Migrated high-frequency dynamic output paths in `nexus3/display/printer.py` (`print_task_start`, `print_task_end`, `print_error`, `print_cancelled`, expanded `print_thinking`) to sanitize untrusted fields via `SafeSink`.
+- Preserved trusted markup wrappers (gumball/thinking formatting) while removing direct unsanitized interpolation in this path.
+- Added focused regressions in `tests/unit/display/test_escape_sanitization.py`.
+- Validation: `.venv/bin/ruff check nexus3/display/printer.py tests/unit/display/test_escape_sanitization.py` and `.venv/bin/pytest -v tests/unit/display/test_escape_sanitization.py tests/unit/display/test_safe_sink.py` passed.
 
 ## Testing Strategy
 
@@ -76,7 +86,10 @@ Phases:
 - [x] Add safe sink abstraction.
 - [x] Migrate high-risk output paths.
 - [ ] Migrate all remaining print/stream paths.
+  - [x] Migrated `InlinePrinter` dynamic render path to `SafeSink` sanitization.
 - [ ] Remove redundant/fragmented sanitization call sites.
+  - [x] Removed redundant ad hoc escaping in `nexus3/cli/confirmation_ui.py::confirm_tool_action` during SafeSink migration.
+  - Resume target: prioritize remaining dynamic CLI/REPL output paths (notably `nexus3/cli/repl.py`), then collapse duplicate sanitization logic into `SafeSink` entrypoints.
 
 ## Documentation Updates
 

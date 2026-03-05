@@ -214,7 +214,7 @@ Suggested next hardening if failure persists:
   - optionally collapse illegal trailing TOOL blocks into a synthetic assistant note
   - emit one structured warning event with before/after diff summary.
 
-## Architecture Overhaul Running Status (2026-03-04)
+## Architecture Overhaul Running Status (2026-03-05)
 
 Branch:
 - `feat/arch-overhaul-execution`
@@ -224,11 +224,23 @@ Current milestone:
 
 Immediate tasks:
 - Continue M1 implementation slices:
-  - Plan H Phase 2 ingress schema wiring (remaining non-low-risk paths; compatibility mode where required)
-  - Plan G Phase 3 remaining output-path migration after high-risk slice completion
+  - Plan H remaining method-ingress coverage after current compat-safe slices
+  - Plan G Phase 3/4 remaining output-path migration + sanitization cleanup
 - Continue M2 implementation slices:
   - Plan A Phase 2+3 expansion beyond destroy-path shadow parity
   - Plan C propagation beyond destroy path as needed by remaining auth/rpc routes
+
+Recent execution commits (latest first):
+- `ef5ffaa` Expand auth kernel shadow parity for tool action checks
+- `cd7f3f9` display: sanitize inline printer dynamic output via SafeSink
+- `9f29400` harden rpc ingress for cancel and create-agent wait flag
+- `6671064` harden protocol response ingress with typed schema validation
+- `bdb676e` expand plan A: add target auth kernel shadow parity in enforcer
+- `ce3d263` migrate confirmation ui prompts to SafeSink
+- `c5eb670` advance plan h: reject boolean json-rpc ids at protocol boundary
+- `f6ee537` advance m1: harden send ingress params and migrate lobby outputs to safe sink
+- `a53c7dd` advance plan h: fail-fast mcp boundary validation and unify mcp config model
+- `1b455b5` advance m1: extend schema ingress create_agent and migrate repl mcp consent to safe sink
 
 Progress snapshot:
 - Completed: architecture plan sanity corrections merged locally (schedule + plans A-H scope/gates/checklist alignment).
@@ -257,6 +269,14 @@ Progress snapshot:
 - Completed: Plan H M1 Phase 2 protocol-boundary hardening:
   - `nexus3/rpc/protocol.py` request/response parsing now explicitly rejects boolean JSON-RPC `id` values (bool no longer accepted via int subclass behavior)
   - added focused parse tests in `tests/unit/rpc/test_schema_ingress_wiring.py` and `tests/unit/test_client.py`
+- Completed: Plan H M1 Phase 2 response-envelope ingress hardening:
+  - `nexus3/rpc/protocol.py::parse_response` now validates through `RpcResponseEnvelopeSchema`
+  - preserved legacy-style ParseError wording for malformed `error` object shapes and existing envelope invariants
+  - added focused regressions in `tests/unit/rpc/test_schema_ingress_wiring.py` and `tests/unit/rpc/test_schemas.py`
+- Completed: Plan H M1 Phase 2 handler cleanup slice:
+  - removed ad hoc `cancel` request-id guard in `rpc/dispatcher.py` and rely on `CancelParamsSchema` compat-safe ingress validation.
+  - removed duplicate `wait_for_initial_response` post-create manual parsing in `rpc/global_dispatcher.py` and reused schema-validated field.
+  - added focused regressions in `tests/unit/rpc/test_schema_ingress_wiring.py`.
 - Completed: baseline E/F harness fixtures/tests under `tests/fixtures/arch_baseline/`, `tests/unit/context/test_compile_baseline.py`, and `tests/unit/patch/test_byte_roundtrip_baseline.py`.
 - Completed: Plan G M1 Phase 1 foundation safe sink API (`nexus3/display/safe_sink.py`) with minimal `InlinePrinter` integration and focused unit tests (`tests/unit/display/test_safe_sink.py`).
 - Completed: Plan G M1 Phase 2 high-risk output migration:
@@ -272,6 +292,14 @@ Progress snapshot:
   - `nexus3/cli/connect_lobby.py` and `nexus3/cli/lobby.py` now sanitize dynamic/untrusted interpolated CLI values through `SafeSink` while preserving trusted static Rich markup.
   - Added focused sanitization+parity regressions in `tests/unit/cli/test_connect_lobby_safe_sink.py` and `tests/unit/cli/test_lobby_safe_sink.py`.
   - Focused validation passed via `.venv/bin/ruff check nexus3/cli/connect_lobby.py nexus3/cli/lobby.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/cli/test_lobby_safe_sink.py` and `.venv/bin/pytest -v tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/cli/test_lobby_safe_sink.py tests/unit/test_lobby.py`.
+- Completed: Plan G M1 Phase 3 incremental output migration slice (confirmation UI prompts):
+  - `nexus3/cli/confirmation_ui.py::confirm_tool_action` now sanitizes dynamic fields through `SafeSink` across MCP/exec/nexus/general tool prompts while preserving trusted markup.
+  - removed redundant ad hoc escaping variables in this path in favor of sink-boundary sanitization.
+  - added focused sanitization/parity regressions in `tests/unit/cli/test_confirmation_ui_safe_sink.py`.
+- Completed: Plan G M1 Phase 3 incremental output migration slice (InlinePrinter):
+  - `nexus3/display/printer.py` dynamic render methods now sanitize untrusted fields through `SafeSink` (`print_task_start`, `print_task_end`, `print_error`, `print_cancelled`, expanded `print_thinking`).
+  - preserved trusted gumball/thinking markup wrappers.
+  - added focused sanitization/parity regressions in `tests/unit/display/test_escape_sanitization.py`.
 - Completed: M1 Plan D grep migration slice routed fallback per-candidate authorization through `FilesystemAccessGateway` and added focused blocked/outside/symlink grep tests.
 - Completed: M1 Plan D tool migrations (`glob`, `outline`, `concat_files`, `grep`) to `FilesystemAccessGateway`; remaining Plan D work is consolidated regression/perf guard coverage.
 - Completed: M1 Plan D consolidated blocked-path/symlink regression coverage across migrated tool tests (`glob`, `outline`, `concat_files`, `grep`).
@@ -284,12 +312,38 @@ Progress snapshot:
   - compute both legacy and kernel decisions in `AgentPool.destroy`
   - continue enforcing legacy allow/deny behavior only
   - emit structured warning when legacy/kernel decisions diverge
+- Completed: M2 Plan A Phase 2+3 target-authorization shadow parity slice in `nexus3/session/enforcer.py`:
+  - added adapter-backed shadow decision comparison in `_check_target_allowed`
+  - kept legacy target restriction enforcement authoritative
+  - added structured mismatch warning (`target_auth_shadow_mismatch`) and focused parity tests
+- Completed: M2 Plan A Phase 2+3 tool-action authorization shadow parity slice in `nexus3/session/enforcer.py`:
+  - added adapter-backed shadow decision comparison in `_check_action_allowed`
+  - kept legacy action restriction enforcement authoritative
+  - added structured mismatch warning (`tool_action_auth_shadow_mismatch`) and focused parity tests
 - Completed: M2 Plan C Phase 3 execution-skill request-safety slice:
   - removed per-call mutable state from `bash_safe`, `shell_UNSAFE`, and `run_python`
   - refactored subprocess creation helpers to pass command/code as local parameters
   - updated Windows behavior tests to assert subprocess call args directly
   - added focused concurrent `run_python` test for per-call payload isolation
-- Next gate: run expanded validation (broader suites pending) and continue M1 Plan H ingress wiring plus Plan G Phase 3 migration slices.
+- Validation snapshot (2026-03-05, post-merge slices):
+  - `.venv/bin/ruff check nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/display/printer.py nexus3/session/enforcer.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/display/test_escape_sanitization.py tests/unit/session/test_enforcer.py` passed.
+  - `.venv/bin/pytest -v tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_rpc_dispatcher.py tests/unit/test_initial_message.py tests/unit/display/test_escape_sanitization.py tests/unit/display/test_safe_sink.py tests/unit/session/test_enforcer.py` passed (`120 passed`).
+- Next gate:
+  - Finish next Plan H ingress slice (prioritize remaining handler-level ad hoc parsing branches in `send` and residual `create_agent` validation paths while keeping compat-safe error mapping).
+  - Finish next Plan G sink migration slice (remaining dynamic CLI/REPL outputs, especially `nexus3/cli/repl.py`) and continue redundant sanitization call-site cleanup.
+  - Continue M2 Plan A adapter rollout from shadow parity into additional lifecycle call sites (beyond enforcer + destroy pool path).
+
+Resume-first checklist (post-compact):
+1. Confirm branch + cleanliness: `git status --short --branch` (ignore existing unrelated untracked: `docs/plans/DOUBLE-SPINNER-FIX-PLAN.md`, `editors/`, `err/`).
+2. Re-open plan checklists:
+   - `docs/plans/ARCH-H-STRICT-SCHEMA-GATES-PLAN-2026-03-02.md`
+   - `docs/plans/ARCH-G-TERMINAL-SAFE-SINK-PLAN-2026-03-02.md`
+   - `docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md`
+3. Dispatch Codex subagents with no-escalation instruction and scoped ownership.
+4. After each accepted slice:
+   - run focused `.venv/bin/ruff`, `.venv/bin/mypy` (where typed modules changed), and targeted `.venv/bin/pytest`
+   - update both the relevant plan checklist and this `AGENTS.md` status block in the same session
+   - commit in a single logical unit.
 
 Recovery note:
 - If interrupted, restart from this section and `docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md`, then continue checklist-driven execution.

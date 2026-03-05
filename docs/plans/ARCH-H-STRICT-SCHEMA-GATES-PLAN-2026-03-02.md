@@ -60,7 +60,10 @@ Phases:
   - [x] M1 Phase 2 behavior-sensitive extension: validated `parent_agent_id` and conditional `wait_for_initial_response` in `rpc/global_dispatcher.py::_handle_create_agent` with preserved legacy `InvalidParamsError` wording and focused ingress wiring tests.
   - [x] M1 Phase 2 behavior-sensitive extension: expanded `rpc/dispatcher.py::_handle_send` compat-safe ingress validation to include optional `request_id`/`source`/`source_agent_id` with legacy-style `InvalidParamsError` mappings and focused malformed-parameter regressions.
   - [x] M1 Phase 2 protocol boundary hardening: `rpc/protocol.py` now rejects boolean JSON-RPC `id` values in both request/response parsing with focused tests.
+  - [x] M1 Phase 2 protocol response-envelope ingress hardening: `rpc/protocol.py::parse_response` now validates via `RpcResponseEnvelopeSchema` with preserved legacy ParseError wording for malformed `error` object shapes and existing envelope invariants.
+  - [x] M1 Phase 2 handler cleanup slice: removed ad hoc `cancel` request_id precheck in `rpc/dispatcher.py` and rely on `CancelParamsSchema` ingress validation with preserved legacy compat errors; removed duplicate post-create wait-flag parsing in `rpc/global_dispatcher.py` and reused already schema-validated field.
   - [ ] Remaining M1 Phase 2 ingress coverage beyond low-risk methods (including stricter/behavior-sensitive paths) still pending.
+    - Resume target: prioritize remaining method ingress paths still relying on ad hoc parsing branches (`send` and any residual `create_agent` guard logic), then tighten strict mode gates.
 - [x] Remove silent malformed-entry skips.
   - [x] M1 Phase 3 slice: `context/loader.py::_merge_mcp_servers` now fail-fast rejects malformed MCP container/entry shapes (`mcpServers` non-object, `servers` non-array, non-object entries in `servers[]`) with actionable `MCPConfigError` context.
 - [x] Consolidate duplicate MCP config models.
