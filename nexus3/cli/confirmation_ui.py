@@ -22,6 +22,7 @@ from nexus3.core.permissions import ConfirmationResult
 from nexus3.core.text_safety import escape_rich_markup
 from nexus3.core.types import ToolCall
 from nexus3.display import get_console
+from nexus3.display.safe_sink import SafeSink
 
 
 def smart_truncate(value: str, max_length: int, preserve_ends: bool = False) -> str:
@@ -270,6 +271,7 @@ async def confirm_tool_action(
         ConfirmationResult indicating user's decision.
     """
     console = get_console()
+    sink = SafeSink(console)
     tool_name = tool_call.name
 
     # Determine tool type for appropriate prompting
@@ -297,48 +299,53 @@ async def confirm_tool_action(
         # Track lines printed so we can clear the prompt after selection
         lines_printed = 0
 
-        # Escape tool name for Rich markup safety (MCP tools can have crafted names)
-        safe_tool_name = escape_rich_markup(tool_name)
-
         # Build description based on tool type
         if is_mcp_tool:
             # Extract server name from mcp_{server}_{tool} format
             parts = tool_name.split("_", 2)
             server_name = parts[1] if len(parts) > 1 else "unknown"
-            safe_server_name = escape_rich_markup(server_name)
             args_preview = str(tool_call.arguments)[:120]
             if len(str(tool_call.arguments)) > 120:
                 args_preview += "..."
-            safe_args_preview = escape_rich_markup(args_preview)
-            console.print(f"\n[yellow]Allow MCP tool '{safe_tool_name}'?[/]")
-            console.print(f"  [dim]Server:[/] {safe_server_name}")
-            console.print(f"  [dim]Arguments:[/] {safe_args_preview}")
+            sink.print_trusted("\n[yellow]Allow MCP tool '", end="")
+            sink.print_untrusted(tool_name, end="")
+            sink.print_trusted("'?[/]")
+            sink.print_trusted("  [dim]Server:[/] ", end="")
+            sink.print_untrusted(server_name)
+            sink.print_trusted("  [dim]Arguments:[/] ", end="")
+            sink.print_untrusted(args_preview)
             lines_printed += 4  # empty + header + server + args
         elif is_exec_tool:
             # Use agent's cwd as default, not process cwd
             cwd = tool_call.arguments.get("cwd", str(agent_cwd))
-            safe_cwd = escape_rich_markup(str(cwd))
             command = tool_call.arguments.get("command", tool_call.arguments.get("code", ""))
             preview = command[:100] + "..." if len(command) > 100 else command
-            safe_preview = escape_rich_markup(preview)
-            console.print(f"\n[yellow]Execute {safe_tool_name}?[/]")
-            console.print(f"  [dim]Command:[/] {safe_preview}")
-            console.print(f"  [dim]Directory:[/] {safe_cwd}")
+            sink.print_trusted("\n[yellow]Execute ", end="")
+            sink.print_untrusted(tool_name, end="")
+            sink.print_trusted("?[/]")
+            sink.print_trusted("  [dim]Command:[/] ", end="")
+            sink.print_untrusted(preview)
+            sink.print_trusted("  [dim]Directory:[/] ", end="")
+            sink.print_untrusted(str(cwd))
             lines_printed += 4  # empty + header + command + dir
         elif is_nexus_tool:
             # Nexus tools use agent_id instead of path
             agent_id = tool_call.arguments.get("agent_id", "unknown")
-            safe_agent_id = escape_rich_markup(str(agent_id))
-            console.print(f"\n[yellow]Allow {safe_tool_name}?[/]")
-            console.print(f"  [dim]Agent:[/] {safe_agent_id}")
+            sink.print_trusted("\n[yellow]Allow ", end="")
+            sink.print_untrusted(tool_name, end="")
+            sink.print_trusted("?[/]")
+            sink.print_trusted("  [dim]Agent:[/] ", end="")
+            sink.print_untrusted(str(agent_id))
             lines_printed += 3  # empty + header + agent
         else:
             path_str = str(target_path) if target_path else tool_call.arguments.get(
                 "path", "unknown"
             )
-            safe_path_str = escape_rich_markup(str(path_str))
-            console.print(f"\n[yellow]Allow {safe_tool_name}?[/]")
-            console.print(f"  [dim]Path:[/] {safe_path_str}")
+            sink.print_trusted("\n[yellow]Allow ", end="")
+            sink.print_untrusted(tool_name, end="")
+            sink.print_trusted("?[/]")
+            sink.print_trusted("  [dim]Path:[/] ", end="")
+            sink.print_untrusted(str(path_str))
             lines_printed += 3  # empty + header + path
 
             # Add content preview for write/edit operations
@@ -347,15 +354,17 @@ async def confirm_tool_action(
                 content_preview = content[:150].replace("\n", "\\n")
                 if len(content) > 150:
                     content_preview += "..."
-                safe_preview = escape_rich_markup(content_preview)
-                console.print(f"  [dim]Content:[/] {safe_preview}")
+                sink.print_trusted("  [dim]Content:[/] ", end="")
+                sink.print_untrusted(content_preview)
                 lines_printed += 1
             elif tool_name == "edit_file" and "old_string" in tool_call.arguments:
                 old = str(tool_call.arguments.get("old_string", ""))[:80].replace("\n", "\\n")
                 new = str(tool_call.arguments.get("new_string", ""))[:80].replace("\n", "\\n")
-                safe_old = escape_rich_markup(old)
-                safe_new = escape_rich_markup(new)
-                console.print(f'  [dim]Replace:[/] "{safe_old}" -> "{safe_new}"')
+                sink.print_trusted('  [dim]Replace:[/] "', end="")
+                sink.print_untrusted(old, end="")
+                sink.print_trusted('" -> "', end="")
+                sink.print_untrusted(new, end="")
+                sink.print_trusted('"')
                 lines_printed += 1
 
         # Show options based on tool type
