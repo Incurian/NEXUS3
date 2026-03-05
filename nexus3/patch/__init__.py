@@ -7,7 +7,7 @@ Main components:
 - Types: Hunk, PatchFile, PatchSet - structured representation of diffs
 - Parser: parse_unified_diff() and parse_unified_diff_v2() - convert diff text to objects
 - Validator: validate_patch() - verify patches against file content
-- Applier: apply_patch() - apply patches with configurable strictness (legacy/v2 inputs)
+- Applier: apply_patch() plus apply_patch_byte_strict() for AST-v2 byte fidelity
 
 Example usage:
     >>> from nexus3.patch import parse_unified_diff, validate_patch, apply_patch
@@ -30,7 +30,12 @@ Example usage:
     True
 """
 
-from nexus3.patch.applier import ApplyMode, ApplyResult, apply_patch
+from nexus3.patch.applier import (
+    ApplyMode,
+    ApplyResult,
+    apply_patch,
+    apply_patch_byte_strict,
+)
 from nexus3.patch.ast_v2 import (
     HunkLineV2,
     HunkV2,
@@ -65,4 +70,5 @@ __all__ = [
     "ApplyMode",
     "ApplyResult",
     "apply_patch",
+    "apply_patch_byte_strict",
 ]

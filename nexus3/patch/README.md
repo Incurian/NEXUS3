@@ -89,6 +89,8 @@ Current phase guarantees:
 - `parse_unified_diff(...)` output/behavior is unchanged.
 - `apply_patch(...)` strict/tolerant/fuzzy semantics are unchanged.
 - AST v2 currently projects into legacy apply logic (no default `byte_strict` flip yet).
+- Use `apply_patch_byte_strict(content, patch_v2, ...)` for explicit AST-v2 apply
+  with stricter newline/EOF preservation without changing default call paths.
 
 ## Validation Features
 

@@ -101,10 +101,13 @@ Exit gates:
   - `nexus3 rpc destroy test-agent`
 
 Status note (2026-03-05):
-- Plan F Phase 1 foundation landed in working tree:
+- Plan F Phase 1 foundation committed as `1079cd7`:
   - AST v2 models + parser hook + applier bridge (no default behavior flip)
   - Expanded fixture-driven patch byte roundtrip baselines (explicit no-EOL marker + whitespace-sensitive payload)
-- Next M3 target: Plan F Phase 2 (`byte_strict` parse/apply path + fidelity regressions).
+- Plan F Phase 2 landed in working tree:
+  - explicit `apply_patch_byte_strict(...)` entrypoint for AST-v2 patches
+  - focused newline/EOF fidelity regressions including mixed-newline preservation
+- Next M3 target: Plan F Phase 3 (explicit mode flag wiring + migration tests).
 
 ### M4: Delegation and Strategic Evolution
 

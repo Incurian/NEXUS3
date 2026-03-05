@@ -224,13 +224,9 @@ Current milestone:
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
-- Checkpoint and commit the current uncommitted dispatcher/docs/plan updates so
-  M3 starts from a clean state.
-- M3 Plan F Phase 1 foundation is now complete in the working tree (AST v2 +
-  parser/applier bridge + expanded baseline fixtures); commit this as its own
-  checkpoint before starting the next phase.
-- Start main-plan execution at M3 Plan F Phase 2 (`byte_strict` parse/apply
-  path + fidelity regressions) before any follow-on deferred plan execution.
+- Plan F Phase 1 is committed as `1079cd7` (`plan f phase 1: add ast v2 foundation and baseline fixtures`).
+- Plan F Phase 2 is complete in the working tree (`apply_patch_byte_strict` + Phase 2 regressions); commit as standalone checkpoint before Phase 3.
+- Start main-plan execution at M3 Plan F Phase 3 (explicit mode-flag wiring + migration tests) before any follow-on deferred plan execution.
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -1155,6 +1151,21 @@ Execution checkpoint (2026-03-05, architecture execution round 31):
 - Next gate:
   1. Commit current Plan F Phase 1 code+fixture+doc checkpoint as a standalone logical unit.
   2. Start M3 Plan F Phase 2 (`byte_strict` parse/apply path) with newline/EOF-fidelity regressions.
+  3. Keep follow-on deferred plans in backlog mode until their M4/post-M4 dependency gates are met.
+
+Execution checkpoint (2026-03-05, architecture execution round 32):
+- Scope completed this round (M3 Plan F Phase 2 byte-strict path):
+  1. Added explicit byte-strict entrypoint `nexus3/patch/applier.py::apply_patch_byte_strict(...)` for AST-v2 patches with newline-token/EOF-marker aware replacement semantics.
+  2. Preserved legacy default behavior: `apply_patch(...)` strict/tolerant/fuzzy flow remains unchanged for existing callers.
+  3. Added Phase 2 regressions in `tests/unit/patch/test_byte_strict_apply_phase2.py` and mixed-newline fixture `tests/fixtures/arch_baseline/patch_mixed_newline_update.diff`.
+  4. Updated patch API docs/exports in `nexus3/patch/__init__.py` and `nexus3/patch/README.md`.
+- Focused validation executed this round:
+  - `.venv/bin/pytest -q tests/unit/patch/test_byte_strict_apply_phase2.py tests/unit/patch/test_applier.py tests/unit/patch/test_parser.py tests/unit/patch/test_byte_roundtrip_baseline.py tests/unit/patch/test_validator.py` -> `66 passed`.
+  - `.venv/bin/ruff check nexus3/patch tests/unit/patch` -> passed.
+  - `.venv/bin/mypy nexus3/patch` -> passed.
+- Next gate:
+  1. Commit Plan F Phase 2 code+tests+docs as standalone checkpoint.
+  2. Start M3 Plan F Phase 3 (add explicit mode flag wiring and migration tests between legacy/byte_strict paths).
   3. Keep follow-on deferred plans in backlog mode until their M4/post-M4 dependency gates are met.
 
 ## Source of Truth

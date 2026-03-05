@@ -50,7 +50,7 @@ Phases:
 ## Implementation Checklist
 
 - [x] Add AST v2 parser/projection foundation (raw-line/newline metadata, v2 parse hook, v2->v1 applier bridge).
-- [ ] Implement byte-strict applier.
+- [x] Implement byte-strict applier entrypoint (`apply_patch_byte_strict`) for AST-v2 patches (default path unchanged).
 - [ ] Add legacy compatibility mode and migration flag.
 - [ ] Harden file target resolution.
 - [ ] Add ambiguity fail-closed and byte-fidelity regression tests (EOF/non-UTF8/binary-adjacent).
@@ -63,6 +63,19 @@ Status note (2026-03-05, M3 Plan F Phase 1):
 - Expanded fixture-driven patch byte roundtrip baselines for explicit no-EOL marker and whitespace-sensitive payload cases.
 - Focused gates passed:
   - `.venv/bin/pytest -q tests/unit/patch/test_parser.py tests/unit/patch/test_applier.py tests/unit/patch/test_byte_roundtrip_baseline.py`
+  - `.venv/bin/ruff check nexus3/patch tests/unit/patch`
+  - `.venv/bin/mypy nexus3/patch`
+
+Status note (2026-03-05, M3 Plan F Phase 2):
+- Added explicit byte-strict apply entrypoint in `nexus3/patch/applier.py`:
+  - `apply_patch_byte_strict(content: str, patch: PatchFileV2, ...) -> ApplyResult`
+  - preserves newline/EOF semantics via per-line newline tokens and `\ No newline at end of file` marker enforcement.
+  - keeps existing `apply_patch(...)` strict/tolerant/fuzzy semantics unchanged.
+- Added focused Phase 2 regressions in:
+  - `tests/unit/patch/test_byte_strict_apply_phase2.py`
+  - `tests/fixtures/arch_baseline/patch_mixed_newline_update.diff`
+- Focused gates passed:
+  - `.venv/bin/pytest -q tests/unit/patch/test_byte_strict_apply_phase2.py tests/unit/patch/test_applier.py tests/unit/patch/test_parser.py tests/unit/patch/test_byte_roundtrip_baseline.py tests/unit/patch/test_validator.py`
   - `.venv/bin/ruff check nexus3/patch tests/unit/patch`
   - `.venv/bin/mypy nexus3/patch`
 
