@@ -220,7 +220,7 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `M3` kickoff target: Data Integrity Wave (Plan F first, then Plan E).
+- `M3` active execution: Data Integrity Wave (Plan F closeout completed in working tree; Plan E Phase 1 in progress).
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
@@ -230,7 +230,8 @@ Immediate tasks:
 - Plan F Phase 4 is committed as `a342401` (`plan f phase 4: fail closed on ambiguous patch targets`).
 - Plan F Phase 5 is committed as `87c5df1` (`plan f phase 5: add non-utf8 byte-strict fidelity regressions`).
 - Plan F Phase 6 is committed as `195ab86` (`plan f phase 6: default patch skill to byte_strict`).
-- Next target before Plan E: close the remaining Plan F legacy-branch retirement/judgment item, then begin M3 Plan E Phase 1 compiler/invariant work.
+- Plan F Phase 7 closeout and Plan E Phase 1 compiler scaffold are implemented in working tree (pending commit).
+- Next target: commit this checkpoint, then start M3 Plan E Phase 2 provider/session integration over compiler output.
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -1273,6 +1274,33 @@ Pre-compact checkpoint (2026-03-05, post-round36 commit):
 - Next implementation targets after compact:
   1. Resolve Plan F legacy-branch retirement/defer decision and sync checklist/docs.
   2. Start M3 Plan E Phase 1 (`nexus3/context/compiler.py` IR + invariant checker scaffold + focused tests).
+
+Execution checkpoint (2026-03-05, architecture execution round 37):
+- Scope completed this round:
+  1. Plan F Phase 7 closeout:
+     - retired runtime legacy patch-skill apply branch in `nexus3/skill/builtin/patch.py`
+     - patch execution now always uses AST-v2 parsing + `apply_patch_byte_strict(...)`
+     - kept explicit fail-fast guidance for `fidelity_mode="legacy"` requests
+     - updated migration docs/tests in `tests/unit/skill/test_patch.py`, `nexus3/skill/README.md`, and Plan F/schedule notes.
+  2. Plan E Phase 1 foundation:
+     - added `nexus3/context/compiler.py` with typed compiler IR + invariant report models
+     - added deterministic repair/invariant entrypoints:
+       `compile_context_messages(...)`, `compile_message_sequence(...)`,
+       `check_context_invariants(...)`, `validate_compiled_message_invariants(...)`
+     - exported compiler interfaces via `nexus3/context/__init__.py`
+     - added focused regressions in `tests/unit/context/test_compiler.py`.
+- Focused validation executed this round:
+  - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py nexus3/context/compiler.py nexus3/context/__init__.py tests/unit/context/test_compiler.py` -> passed.
+  - `.venv/bin/mypy nexus3/skill/builtin/patch.py nexus3/context/compiler.py nexus3/context/__init__.py` -> passed.
+  - `.venv/bin/pytest -q tests/unit/context/test_compiler.py tests/unit/context/test_compile_baseline.py` -> `8 passed`.
+  - `.venv/bin/pytest -q tests/unit/skill/test_patch.py tests/integration/test_file_editing_skills.py -k patch` -> `37 passed, 8 deselected`.
+  - `.venv/bin/pytest -q tests/unit/patch/test_byte_strict_apply_phase2.py tests/unit/patch/test_applier.py tests/unit/patch/test_parser.py tests/unit/patch/test_byte_roundtrip_baseline.py tests/unit/patch/test_validator.py` -> `68 passed`.
+- Next gate:
+  1. Commit round-37 Plan F+Plan E Phase 1 checkpoint as logical units.
+  2. Start M3 Plan E Phase 2 integration:
+     - route session preflight repair pipeline through compiler output
+     - add provider parity coverage for compiler-based message shaping.
+  3. Keep follow-on deferred plans in backlog mode until their M4/post-M4 dependency gates are met.
 
 ## Source of Truth
 

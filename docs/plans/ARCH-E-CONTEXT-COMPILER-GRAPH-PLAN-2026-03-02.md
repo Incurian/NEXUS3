@@ -50,11 +50,31 @@ Phases:
 
 ## Implementation Checklist
 
-- [ ] Add compiler IR and invariant checker.
+- [x] Add compiler IR and invariant checker.
 - [ ] Integrate with provider adapters.
 - [ ] Migrate session preflight pipeline to compiler-backed invariants.
 - [ ] Add graph model prototype.
 - [ ] Migrate compaction/truncation through compiler pipeline.
+
+Status note (2026-03-05, M3 Plan E Phase 1):
+- Added `nexus3/context/compiler.py` with typed compiler IR and invariant
+  checker:
+  - `CompiledContextIR`, `ToolBatchIR`, `CompileDiagnostics`,
+    `InvariantReport`, and `InvariantViolation` models
+  - deterministic repair pipeline entrypoint
+    `compile_context_messages(...)` (with compatibility alias
+    `compile_message_sequence(...)`)
+  - centralized invariant check helpers
+    `check_context_invariants(...)` and
+    `validate_compiled_message_invariants(...)`
+- Exported compiler interfaces from `nexus3/context/__init__.py`.
+- Added focused compiler regressions in
+  `tests/unit/context/test_compiler.py` (fixture parity + diagnostics +
+  invariant reporting + repairs-disabled behavior).
+- Focused validation passed:
+  - `.venv/bin/pytest -q tests/unit/context/test_compiler.py tests/unit/context/test_compile_baseline.py` -> `8 passed`
+  - `.venv/bin/ruff check nexus3/context/compiler.py nexus3/context/__init__.py tests/unit/context/test_compiler.py`
+  - `.venv/bin/mypy nexus3/context/compiler.py nexus3/context/__init__.py`
 
 ## Documentation Updates
 

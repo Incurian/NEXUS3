@@ -104,22 +104,29 @@ Status note (2026-03-05):
 - Plan F Phase 1 foundation committed as `1079cd7`:
   - AST v2 models + parser hook + applier bridge (no default behavior flip)
   - Expanded fixture-driven patch byte roundtrip baselines (explicit no-EOL marker + whitespace-sensitive payload)
-- Plan F Phase 2 landed in working tree:
+- Plan F Phase 2 committed as `4ded3fa`:
   - explicit `apply_patch_byte_strict(...)` entrypoint for AST-v2 patches
   - focused newline/EOF fidelity regressions including mixed-newline preservation
-- Plan F Phase 3 landed in working tree:
+- Plan F Phase 3 committed as `4c10b0b`:
   - patch-skill migration flag `fidelity_mode=legacy|byte_strict` with default legacy behavior preserved
   - migration regressions for byte-strict no-EOL marker path and invalid flag fail-fast behavior
-- Plan F Phase 4 landed in working tree:
+- Plan F Phase 4 committed as `a342401`:
   - patch target-resolution hardened to prefer exact path and fail closed on ambiguous basename matches
   - multi-file diff regressions added for exact-match preference and ambiguity errors
-- Plan F Phase 5 landed in working tree:
+- Plan F Phase 5 committed as `87c5df1`:
   - byte-strict non-UTF8/binary-adjacent regression coverage added
   - `apply_patch_byte_strict` byte-input support hardened with reversible `surrogateescape` decoding
-- Plan F Phase 6 landed in working tree:
+- Plan F Phase 6 committed as `195ab86`:
   - patch skill default fidelity flipped to `byte_strict`
   - explicit `legacy` mode retained for compatibility fallback during soak
-- Next M3 target: finish remaining Plan F legacy-branch retirement follow-up, then move to Plan E Phase 1 compiler/invariants.
+- Plan F Phase 7 closeout (current working tree):
+  - runtime legacy patch-skill apply path retired; patch now always executes via AST-v2 + byte-strict applier
+  - `fidelity_mode=legacy` now fails fast with explicit migration guidance
+- Plan E Phase 1 (current working tree):
+  - added `nexus3/context/compiler.py` typed compiler IR + invariant checker
+  - added `tests/unit/context/test_compiler.py` for fixture parity, diagnostics, and invariant-report regressions
+  - exported compiler interfaces in `nexus3/context/__init__.py`
+- Next M3 target: Plan E Phase 2 provider/session integration against compiler output.
 
 ### M4: Delegation and Strategic Evolution
 

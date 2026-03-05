@@ -12,6 +12,18 @@ from nexus3.context.compaction import (
     create_summary_message,
     select_messages_for_compaction,
 )
+from nexus3.context.compiler import (
+    CompiledContextIR,
+    CompileDiagnostics,
+    InvariantCode,
+    InvariantReport,
+    InvariantViolation,
+    ToolBatchIR,
+    check_context_invariants,
+    compile_context_messages,
+    compile_message_sequence,
+    validate_compiled_message_invariants,
+)
 from nexus3.context.loader import (
     ContextLayer,
     ContextLoader,
@@ -46,6 +58,17 @@ __all__ = [
     "build_summarize_prompt",
     "create_summary_message",
     "select_messages_for_compaction",
+    # Compiler
+    "InvariantCode",
+    "InvariantViolation",
+    "InvariantReport",
+    "ToolBatchIR",
+    "CompileDiagnostics",
+    "CompiledContextIR",
+    "check_context_invariants",
+    "compile_message_sequence",
+    "compile_context_messages",
+    "validate_compiled_message_invariants",
     # Context loader
     "ContextLayer",
     "ContextLoader",
