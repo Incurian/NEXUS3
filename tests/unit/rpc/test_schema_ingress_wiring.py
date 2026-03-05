@@ -389,7 +389,27 @@ async def test_global_create_agent_parent_id_wiring_rejects_invalid_type_pre_loo
 
 
 @pytest.mark.asyncio
-async def test_global_create_agent_wait_flag_ignored_without_initial_message() -> None:
+async def test_global_create_agent_wait_flag_rejected_without_initial_message() -> None:
+    dispatcher = GlobalDispatcher(_StubPool())
+    request = Request(
+        jsonrpc="2.0",
+        method="create_agent",
+        params={
+            "agent_id": "worker-1",
+            "wait_for_initial_response": {"bad": True},
+        },
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == "wait_for_initial_response must be boolean"
+
+
+@pytest.mark.asyncio
+async def test_global_create_agent_wait_flag_accepts_valid_bool_without_initial_message() -> None:
     pool = _CreateCapableStubPool()
     dispatcher = GlobalDispatcher(pool)
     request = Request(
@@ -397,7 +417,7 @@ async def test_global_create_agent_wait_flag_ignored_without_initial_message() -
         method="create_agent",
         params={
             "agent_id": "worker-1",
-            "wait_for_initial_response": {"bad": True},
+            "wait_for_initial_response": True,
         },
         id=1,
     )
@@ -466,7 +486,7 @@ async def test_global_create_agent_allowed_write_paths_wiring_accepts_valid_list
 
 
 @pytest.mark.asyncio
-async def test_global_create_agent_ingress_wiring_keeps_compat_with_benign_extra_params() -> None:
+async def test_global_create_agent_ingress_wiring_rejects_unknown_extra_params() -> None:
     pool = _CreateCapableStubPool()
     dispatcher = GlobalDispatcher(pool)
 
@@ -484,11 +504,9 @@ async def test_global_create_agent_ingress_wiring_keeps_compat_with_benign_extra
     response = await dispatcher.dispatch(request)
 
     assert response is not None
-    assert response.error is None
-    assert response.result == {
-        "agent_id": "worker-1",
-        "url": "/agent/worker-1",
-    }
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert "extra inputs are not permitted" in response.error["message"].lower()
 
 
 def test_parse_request_rejects_malformed_object_id_shape() -> None:

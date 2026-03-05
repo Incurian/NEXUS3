@@ -40,7 +40,6 @@ from nexus3.rpc.schemas import (
     CreateAgentParamsSchema,
     DestroyAgentParamsSchema,
     EmptyParamsSchema,
-    project_known_schema_fields,
 )
 from nexus3.rpc.types import Request, Response
 
@@ -213,17 +212,9 @@ class GlobalDispatcher:
                 or if parameter types are invalid, or if requested permissions
                 exceed parent ceiling.
         """
-        # Compat-safe schema ingress wiring: validate only fields with stable
-        # legacy semantics in this method (extra params remain permissive).
-        schema_candidate = project_known_schema_fields(params, CreateAgentParamsSchema)
-        # Keep compat behavior: only validate wait_for_initial_response when
-        # initial_message is actively provided.
-        if params.get("initial_message") is None:
-            schema_candidate.pop("wait_for_initial_response", None)
-
         try:
             validated = CreateAgentParamsSchema.model_validate(
-                schema_candidate,
+                dict(params),
                 strict=False,
             )
         except PydanticValidationError as exc:
@@ -234,6 +225,10 @@ class GlobalDispatcher:
                 field = str(loc[0]) if loc else None
                 raw_value = params.get(field) if field else None
                 message = str(error.get("msg", "Invalid create_agent parameters"))
+                error_type = str(error.get("type", ""))
+
+                if error_type == "extra_forbidden":
+                    raise InvalidParamsError(message) from exc
 
                 if field == "agent_id":
                     if not isinstance(raw_value, str):

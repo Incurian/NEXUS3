@@ -523,6 +523,19 @@ Compact checkpoint (2026-03-05, pre-compact handover):
 - SOP reminder:
   - Continue checklist-driven execution and update both relevant plan docs and this `AGENTS.md` status/checkpoint block in the same session before each commit.
 
+Compact checkpoint (2026-03-06, architecture execution round 5):
+- Branch head at start of round: `8bd8783`; working tree now includes a Plan H behavior-sensitive strict ingress follow-up.
+- New slice completed this round:
+  1. Plan H strict `create_agent` ingress hardening (`nexus3/rpc/global_dispatcher.py`) now validates full params object and rejects unknown extra params.
+  2. Plan H removed legacy conditional bypass that ignored malformed `wait_for_initial_response` when `initial_message` was absent.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/rpc/global_dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py` passed.
+  - `.venv/bin/pytest -v tests/unit/rpc/test_schema_ingress_wiring.py` passed (`47 passed`).
+- Immediate resume targets:
+  1. Plan H: tighten remaining behavior-sensitive compat branches (`send`, `cancel`, `compact`) where safe.
+  2. Plan G: continue sanitization/formatter consolidation from remaining REPL and display fragmented call sites.
+  3. Plan A: add next agent-scoped lifecycle shadow parity slice (`shutdown`/`cancel`/`compact`) with requester-context hardening.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.
