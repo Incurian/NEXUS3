@@ -653,6 +653,34 @@ Compact checkpoint (2026-03-06, architecture execution round 13):
   2. Plan G: sweep any final minor CLI consistency paths (`repl_commands` sharing prompt path) and verify no remaining fragmented sanitizer usage.
   3. Plan H: audit for any remaining compatibility-only protocol/schema behaviors and either retire or document them.
 
+Compact checkpoint (2026-03-06, architecture execution round 14):
+- Branch head at start of round: `1bc1800`; working tree now includes Plan A session-action authorization cleanup.
+- New slice completed this round:
+  1. Plan A converted `session/enforcer.py::_check_action_allowed` to kernel-authoritative enforcement.
+  2. Removed tool-action shadow-mismatch warning branch for this method while preserving deny wording (`Tool '<tool>' is not allowed at current permission level`).
+  3. Updated action-authorization coverage in `tests/unit/session/test_enforcer.py` for authoritative behavior.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/session/enforcer.py tests/unit/session/test_enforcer.py` passed.
+  - `.venv/bin/mypy nexus3/session/enforcer.py` passed.
+  - `.venv/bin/pytest -v tests/unit/session/test_enforcer.py` passed (`31 passed`).
+- Immediate resume targets:
+  1. Plan A: evaluate whether `session/enforcer.py::_check_target_allowed` can be safely flipped to kernel-authoritative (currently still shadow parity).
+  2. Plan G: sweep final minor CLI consistency paths (`repl_commands` sharing prompt path) and verify no fragmented sanitizer usage remains.
+  3. Plan H: audit for any remaining compatibility-only protocol/schema behaviors and either retire or document them.
+
+Compact checkpoint (2026-03-06, pre-compact handover):
+- Tracked working tree currently includes the round-14 Plan A session-action slice plus docs/status updates.
+- Ready-to-commit files:
+  - `nexus3/session/enforcer.py`
+  - `tests/unit/session/test_enforcer.py`
+  - `docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md`
+  - `AGENTS.md`
+- Validation already completed and green for this slice (ruff + mypy + pytest as listed above).
+- Existing unrelated untracked paths remain intentionally untouched: `docs/plans/DOUBLE-SPINNER-FIX-PLAN.md`, `editors/`, `err/`.
+- Resume-first command after compact:
+  - `git status --short --branch`
+  - then continue from this section and Plan A checklist.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.

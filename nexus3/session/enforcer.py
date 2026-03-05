@@ -208,16 +208,6 @@ class PermissionEnforcer:
         tool_perm = permissions.tool_permissions.get(tool_name)
         tool_explicitly_enabled = bool(tool_perm is not None and tool_perm.enabled)
         policy_allows_action = bool(permissions.effective_policy.allows_action(tool_name))
-
-        if tool_explicitly_enabled:
-            legacy_allowed = True
-            legacy_reason = "explicit_enabled"
-        elif policy_allows_action:
-            legacy_allowed = True
-            legacy_reason = "policy_allowed"
-        else:
-            legacy_allowed = False
-            legacy_reason = "policy_denied"
         legacy_error = (
             f"Tool '{tool_name}' is not allowed at current permission level"
         )
@@ -238,23 +228,7 @@ class PermissionEnforcer:
             },
         )
         kernel_decision = self._action_authorization_kernel.authorize(kernel_request)
-        if kernel_decision.allowed != legacy_allowed:
-            logger.warning(
-                "Tool action authorization shadow mismatch for tool=%s requester=%s",
-                tool_name,
-                principal_id,
-                extra={
-                    "event": "tool_action_auth_shadow_mismatch",
-                    "tool_name": tool_name,
-                    "requester_id": principal_id,
-                    "legacy_allowed": legacy_allowed,
-                    "legacy_reason": legacy_reason,
-                    "kernel_allowed": kernel_decision.allowed,
-                    "kernel_reason": kernel_decision.reason,
-                },
-            )
-
-        if legacy_allowed:
+        if kernel_decision.allowed:
             return None
         return ToolResult(error=legacy_error)
 
@@ -286,7 +260,8 @@ class PermissionEnforcer:
         if not target_agent_id:
             return None  # Will fail later with "no agent_id provided"
 
-        allowed = tool_perm.allowed_targets
+        # Keep fail-open handling for malformed runtime shapes from untyped config sources.
+        allowed: object = tool_perm.allowed_targets
         child_ids = self._services.get_child_agent_ids() if self._services else None
 
         # Handle special relationship-based restrictions
