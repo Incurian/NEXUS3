@@ -220,7 +220,7 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `M3` active execution: Data Integrity Wave (Plan F closeout completed in working tree; Plan E Phase 1 in progress).
+- `M3` active execution: Data Integrity Wave (Plan F closeout + Plan E Phase 1 committed; Plan E Phase 2 next).
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
@@ -230,8 +230,9 @@ Immediate tasks:
 - Plan F Phase 4 is committed as `a342401` (`plan f phase 4: fail closed on ambiguous patch targets`).
 - Plan F Phase 5 is committed as `87c5df1` (`plan f phase 5: add non-utf8 byte-strict fidelity regressions`).
 - Plan F Phase 6 is committed as `195ab86` (`plan f phase 6: default patch skill to byte_strict`).
-- Plan F Phase 7 closeout and Plan E Phase 1 compiler scaffold are implemented in working tree (pending commit).
-- Next target: commit this checkpoint, then start M3 Plan E Phase 2 provider/session integration over compiler output.
+- Plan F Phase 7 is committed as `6e946cf` (`plan f phase 7: retire patch legacy runtime path`).
+- Plan E Phase 1 is committed as `e9d6c3e` (`plan e phase 1: add context compiler ir foundation`).
+- Next target: start M3 Plan E Phase 2 provider/session integration over compiler output.
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -239,6 +240,8 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `e9d6c3e` plan e phase 1: add context compiler ir foundation
+- `6e946cf` plan f phase 7: retire patch legacy runtime path
 - `78ef205` rpc/protocol: wire parse_request to request schema ingress
 - `022f461` repl: sanitize startup metadata output via SafeSink
 - `9e08fd2` repl: sanitize post-turn status and error lines
@@ -1296,11 +1299,29 @@ Execution checkpoint (2026-03-05, architecture execution round 37):
   - `.venv/bin/pytest -q tests/unit/skill/test_patch.py tests/integration/test_file_editing_skills.py -k patch` -> `37 passed, 8 deselected`.
   - `.venv/bin/pytest -q tests/unit/patch/test_byte_strict_apply_phase2.py tests/unit/patch/test_applier.py tests/unit/patch/test_parser.py tests/unit/patch/test_byte_roundtrip_baseline.py tests/unit/patch/test_validator.py` -> `68 passed`.
 - Next gate:
-  1. Commit round-37 Plan F+Plan E Phase 1 checkpoint as logical units.
-  2. Start M3 Plan E Phase 2 integration:
+  1. Start M3 Plan E Phase 2 integration:
      - route session preflight repair pipeline through compiler output
      - add provider parity coverage for compiler-based message shaping.
-  3. Keep follow-on deferred plans in backlog mode until their M4/post-M4 dependency gates are met.
+  2. Keep follow-on deferred plans in backlog mode until their M4/post-M4 dependency gates are met.
+
+Pre-compact checkpoint (2026-03-05, post-round37 commits):
+- Branch/head:
+  - `feat/arch-overhaul-execution`
+  - `e9d6c3e` (`plan e phase 1: add context compiler ir foundation`)
+- Architecture execution commits this round:
+  1. `6e946cf` Plan F Phase 7 (retire patch legacy runtime path).
+  2. `e9d6c3e` Plan E Phase 1 (context compiler IR + invariants foundation).
+- Current local working state:
+  1. Only non-architecture local artifacts remain dirty/untracked (`CLAUDE.md`, `editors/`, `err/`, `package-lock.json`).
+- Resume-first commands after compact:
+  1. `git status --short --branch`
+  2. `git log --oneline -n 8`
+  3. `sed -n '217,260p' AGENTS.md`
+  4. `sed -n '1,260p' docs/plans/ARCH-E-CONTEXT-COMPILER-GRAPH-PLAN-2026-03-02.md`
+- Next implementation targets after compact:
+  1. Plan E Phase 2: integrate compiler output into session preflight repair path.
+  2. Add provider/session parity tests proving compiler-shaped messages preserve current behavior.
+  3. Keep follow-on deferred plans backlog-gated until M4/post-M4 windows.
 
 ## Source of Truth
 

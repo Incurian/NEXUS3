@@ -119,10 +119,10 @@ Status note (2026-03-05):
 - Plan F Phase 6 committed as `195ab86`:
   - patch skill default fidelity flipped to `byte_strict`
   - explicit `legacy` mode retained for compatibility fallback during soak
-- Plan F Phase 7 closeout (current working tree):
+- Plan F Phase 7 committed as `6e946cf`:
   - runtime legacy patch-skill apply path retired; patch now always executes via AST-v2 + byte-strict applier
   - `fidelity_mode=legacy` now fails fast with explicit migration guidance
-- Plan E Phase 1 (current working tree):
+- Plan E Phase 1 committed as `e9d6c3e`:
   - added `nexus3/context/compiler.py` typed compiler IR + invariant checker
   - added `tests/unit/context/test_compiler.py` for fixture parity, diagnostics, and invariant-report regressions
   - exported compiler interfaces in `nexus3/context/__init__.py`
