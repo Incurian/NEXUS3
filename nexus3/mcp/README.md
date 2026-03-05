@@ -101,7 +101,7 @@ from nexus3.mcp import (
 
     # Registry
     MCPServerRegistry,      # Multi-server connection manager
-    MCPServerConfig,        # Server configuration dataclass
+    MCPServerConfig,        # Server configuration model
     ConnectedServer,        # Active server connection with skills
 
     # Skill integration

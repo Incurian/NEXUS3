@@ -531,7 +531,8 @@ class MCPServerConfig(BaseModel):
             {
                 "name": "postgres",
                 "command": ["npx", "-y", "@anthropic/mcp-server-postgres"],
-                "env": {"DATABASE_URL": "postgresql://localhost/mydb"}
+                "env": {"DATABASE_URL": "postgresql://localhost/mydb"},
+                "fail_if_no_tools": true
             }
         ]
     """
@@ -562,6 +563,9 @@ class MCPServerConfig(BaseModel):
 
     enabled: bool = True
     """Whether this server is enabled."""
+
+    fail_if_no_tools: bool = False
+    """If True, fail connection when tool listing fails after transport connect."""
 
     def get_command_list(self) -> list[str]:
         """Return command as list, merging command + args if needed.

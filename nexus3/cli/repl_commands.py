@@ -1714,7 +1714,6 @@ async def cmd_mcp(
     """
     from nexus3.core.permissions import PermissionLevel
     from nexus3.mcp.permissions import can_use_mcp
-    from nexus3.mcp.registry import MCPServerConfig
 
     # Get current agent info
     current_agent_id = ctx.current_agent_id or "main"
@@ -1822,17 +1821,6 @@ async def cmd_mcp(
                     f"(owner: {existing.owner_agent_id})"
                 )
 
-        # Convert config schema to registry config
-        reg_cfg = MCPServerConfig(
-            name=srv_cfg.name,
-            command=srv_cfg.command,
-            url=srv_cfg.url,
-            env=srv_cfg.env,
-            env_passthrough=srv_cfg.env_passthrough,
-            cwd=srv_cfg.cwd,
-            enabled=srv_cfg.enabled,
-        )
-
         # Check if YOLO (skip all prompts)
         is_yolo = (
             perms is not None and
@@ -1842,7 +1830,7 @@ async def cmd_mcp(
         try:
             # Connect initially to get tool list
             server = await registry.connect(
-                reg_cfg,
+                srv_cfg,
                 owner_agent_id=current_agent_id,
                 shared=False,  # Will update after prompts
             )

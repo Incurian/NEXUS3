@@ -364,6 +364,7 @@ Configuration for an MCP (Model Context Protocol) server.
 | `env_passthrough` | `list[str] \| None` | `None` | Host env vars to pass through |
 | `cwd` | `str \| None` | `None` | Working directory for server subprocess |
 | `enabled` | `bool` | `True` | Whether server is enabled |
+| `fail_if_no_tools` | `bool` | `False` | Fail connection if tool listing fails after connect |
 
 **Command formats:** Two formats are supported for the `command` field:
 

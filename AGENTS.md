@@ -242,6 +242,14 @@ Progress snapshot:
   - added compat-safe ingress validation coverage for `parent_agent_id` and conditional `wait_for_initial_response` in `rpc/global_dispatcher.py::_handle_create_agent`
   - preserved legacy-style `InvalidParamsError` message mappings (`Parent agent not found: ...`, `wait_for_initial_response must be boolean`)
   - added focused wiring regressions in `tests/unit/rpc/test_schema_ingress_wiring.py`
+- Completed: Plan H M1 Phase 3 MCP config consolidation slice:
+  - unified `MCPServerConfig` into `nexus3/config/schema.py` as canonical source of truth
+  - removed duplicate `MCPServerConfig` dataclass from `nexus3/mcp/registry.py` and kept registry import path compatibility
+  - updated `/mcp connect` path to pass canonical MCP config directly to registry (including `args` and `fail_if_no_tools`)
+- Completed: Plan H M1 Phase 3 fail-fast malformed-entry slice:
+  - removed silent malformed `mcp.json` container/entry skips in `nexus3/context/loader.py::_merge_mcp_servers`
+  - malformed `mcpServers`/`servers` container types and non-object list entries now raise `MCPConfigError` with contextual source metadata
+  - added focused regressions in `tests/unit/context/test_loader_mcp_fail_fast.py`, including compatibility fallback when `mcpServers` is empty and `servers` is present
 - Completed: baseline E/F harness fixtures/tests under `tests/fixtures/arch_baseline/`, `tests/unit/context/test_compile_baseline.py`, and `tests/unit/patch/test_byte_roundtrip_baseline.py`.
 - Completed: Plan G M1 Phase 1 foundation safe sink API (`nexus3/display/safe_sink.py`) with minimal `InlinePrinter` integration and focused unit tests (`tests/unit/display/test_safe_sink.py`).
 - Completed: Plan G M1 Phase 2 high-risk output migration:
