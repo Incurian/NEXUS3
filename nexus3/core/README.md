@@ -177,6 +177,9 @@ Signed opaque capability tokens for delegated operations.
 | `CapabilitySigner` | `issue(...)`, `serialize(...)`, and `verify(...)` for `n3cap.v1` tokens |
 | `InMemoryCapabilityRevocationStore` | Revocation tracking by token id |
 | `InMemoryCapabilityReplayStore` | Replay detection by token id |
+| `DIRECT_RPC_SCOPE_BY_METHOD` | Canonical direct in-process RPC method→scope registry |
+| `DIRECT_RPC_ALL_SCOPES` | Tuple of all supported direct in-process RPC scopes |
+| `direct_rpc_scope_for_method()` | Resolve required direct scope for an RPC method |
 | `generate_capability_secret()` | URL-safe random secret generation |
 
 `CapabilitySigner.verify(...)` supports required-scope checks, revocation store checks, and replay-store checks.

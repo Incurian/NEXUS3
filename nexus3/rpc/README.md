@@ -218,8 +218,12 @@ Handles agent lifecycle management at the pool level.
 
 - `shutdown_requested` property: checked by HTTP server loop for graceful shutdown
 - `handles(method)`: check if a method is handled by this dispatcher
-- `dispatch(request, requester_id=None)`: sets immutable requester context for
-  authorization and preserves it across agent-scoped handlers
+- `dispatch(request, requester_id=None, capability_token=None)`: sets immutable
+  requester context for authorization and preserves it across agent-scoped
+  handlers
+- For direct in-process calls, `capability_token` (when present) is verified
+  against per-method capability scope requirements and the verified capability
+  subject becomes the effective requester identity for this request.
 - `create_agent` follow-up `initial_message` dispatch reuses the same requester
   context so the first send turn matches normal requester-aware authorization
   and telemetry.
@@ -264,9 +268,11 @@ The `pool` parameter enables YOLO safety checks (blocking RPC sends when no REPL
 | `compact` | `force?` | `{compacted, tokens_before?, tokens_after?, tokens_saved?}` or `{compacted: false, reason}` |
 | `shutdown` | (none) | `{success}` |
 
-Agent-scoped dispatch also accepts `requester_id` and uses it for requester-aware
-authorization. Over HTTP, the server derives this from the trusted
-`X-Nexus-Agent` header and now preserves it on both global and `/agent/{id}`
+Agent-scoped dispatch accepts `requester_id` and optional `capability_token`.
+For direct in-process calls, verified capability claims are stored in
+`RequestContext` and capability subject identity is used as the effective
+requester. Over HTTP, the server continues to derive requester context from the
+trusted `X-Nexus-Agent` header and preserves it on both global and `/agent/{id}`
 routes. The same request context is threaded through agent-scoped read handlers
 (`get_tokens`, `get_context`, `get_messages`) so those paths no longer drop
 caller identity at the dispatcher boundary.
@@ -383,6 +389,10 @@ class AgentPool:
     async def create(agent_id=None, config=None, requester_id=None) -> Agent
     async def create_temp(config=None) -> Agent
     async def destroy(agent_id, requester_id=None, *, admin_override=False) -> bool
+    def issue_direct_capability(
+        *, issuer_id: str, subject_id: str, rpc_method: str, ttl_seconds: int | None = None
+    ) -> str
+    def verify_direct_capability(token: str, *, required_scope: str) -> CapabilityClaims
     async def get_or_restore(agent_id, session_manager=None) -> Agent | None
     async def restore_from_saved(saved: SavedSession) -> Agent
     def get(agent_id) -> Agent | None
@@ -401,6 +411,9 @@ class AgentPool:
     def __len__(self) -> int
     def __contains__(self, agent_id: str) -> bool
 ```
+
+Direct in-process capability tokens issued by `AgentPool` are revoked for an
+agent during `destroy(...)` (both subject and issuer ownership indexes).
 
 #### `list()` Return Fields
 

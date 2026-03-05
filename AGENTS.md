@@ -220,7 +220,7 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `M4` early execution active: Plan E Phases 1-4 and Plan B Phase 1 are committed on this branch.
+- `M4` early execution active: Plan E Phases 1-4 and Plan B Phases 1-2 are committed on this branch.
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
@@ -240,7 +240,9 @@ Immediate tasks:
   (`plan e phase 4: migrate compaction and truncation to graph pipeline`).
 - Plan B Phase 1 is committed as `14bc820`
   (`plan b phase 1: add capability token primitives`).
-- Next target: Plan B Phase 2 integration into direct API dispatch paths.
+- Plan B Phase 2 is committed as `43773be`
+  (`plan b phase 2: integrate capabilities into direct rpc path`).
+- Next target: Plan B Phase 3 optional HTTP capability transport.
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -248,6 +250,7 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `43773be` plan b phase 2: integrate capabilities into direct rpc path
 - `14bc820` plan b phase 1: add capability token primitives
 - `00c59ed` plan e phase 4: migrate compaction and truncation to graph pipeline
 - `6829838` docs: record plan e phase 3 execution status
@@ -317,6 +320,20 @@ Progress snapshot:
   - exported capability APIs in `nexus3/core/__init__.py`.
   - added focused regressions in `tests/unit/core/test_capabilities.py`.
   - updated `nexus3/core/README.md` capability API/module documentation.
+- Completed (2026-03-05): Plan B Phase 2 direct in-process capability integration (`43773be`):
+  - added direct-RPC capability scope registry in `nexus3/core/capabilities.py`
+    and shared capability ingress identity resolution in
+    `nexus3/rpc/dispatch_core.py`.
+  - updated `Dispatcher.dispatch(...)` and `GlobalDispatcher.dispatch(...)` to
+    accept optional capability tokens and derive requester context from verified
+    capability claims.
+  - updated `nexus3/rpc/agent_api.py` direct calls to mint/attach per-call
+    capability tokens via `AgentPool.issue_direct_capability(...)`.
+  - added pool-owned direct capability verification + destroy-time revocation
+    lifecycle in `nexus3/rpc/pool.py`.
+  - added focused regressions in `tests/unit/test_agent_api.py`,
+    `tests/unit/test_rpc_dispatcher.py`, `tests/unit/test_global_dispatcher.py`,
+    `tests/unit/test_pool.py`, and `tests/unit/core/test_request_context.py`.
 - Completed: Plan A M0 foundation interfaces (`nexus3/core/authorization_kernel.py`) + unit tests.
 - Completed: Plan H M0 schema inventory scaffold (`nexus3/rpc/schemas.py`) + unit tests.
 - Completed: Plan H M1 Phase 2 first compat-safe ingress slice (`destroy_agent`, `get_messages`) wired to typed schemas with existing-style RPC error mapping + focused unit tests.

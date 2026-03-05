@@ -153,7 +153,18 @@ Status note (2026-03-05):
     issue/verify + revocation/replay primitives)
   - exported capability APIs in `nexus3/core/__init__.py`
   - added focused capability regressions in `tests/unit/core/test_capabilities.py`
-- Next target: Plan B Phase 2 integration into direct API dispatch paths.
+- Plan B Phase 2 committed as `43773be`:
+  - integrated capability verification into direct in-process dispatch
+    boundaries in `nexus3/rpc/dispatcher.py` and
+    `nexus3/rpc/global_dispatcher.py`
+  - added pool-owned direct capability issue/verify/revoke lifecycle in
+    `nexus3/rpc/pool.py`
+  - migrated `nexus3/rpc/agent_api.py` direct calls to attach per-call
+    capability tokens (compat requester_id retained)
+  - added focused regressions in `tests/unit/test_agent_api.py`,
+    `tests/unit/test_rpc_dispatcher.py`, `tests/unit/test_global_dispatcher.py`,
+    `tests/unit/test_pool.py`, and `tests/unit/core/test_request_context.py`
+- Next target: Plan B Phase 3 optional HTTP capability transport.
 
 ### M4: Delegation and Strategic Evolution
 

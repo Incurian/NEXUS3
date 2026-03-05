@@ -50,7 +50,7 @@ Phases:
 ## Implementation Checklist
 
 - [x] Define capability schema and signer/verifier.
-- [ ] Integrate into direct API path.
+- [x] Integrate into direct API path.
 - [ ] Integrate optional HTTP transport.
 - [ ] Remove legacy identity-only authorization path.
 
@@ -77,6 +77,32 @@ Phases:
   - `.venv/bin/ruff check nexus3/core/capabilities.py nexus3/core/__init__.py nexus3/core/README.md tests/unit/core/test_capabilities.py` passed.
   - `.venv/bin/mypy nexus3/core/capabilities.py nexus3/core/__init__.py` passed.
   - `.venv/bin/pytest -q tests/unit/core/test_capabilities.py` passed (`11 passed`).
+- 2026-03-05: Phase 2 completed and committed as `43773be`.
+- Added direct-path capability scope registry in `nexus3/core/capabilities.py`
+  (`DIRECT_RPC_SCOPE_BY_METHOD`, `DIRECT_RPC_ALL_SCOPES`,
+  `direct_rpc_scope_for_method`).
+- Added shared capability-ingress identity resolution in
+  `nexus3/rpc/dispatch_core.py::resolve_dispatch_identity(...)`.
+- Updated direct dispatchers to accept optional capability tokens and build
+  `RequestContext` from verified claims:
+  - `nexus3/rpc/dispatcher.py::Dispatcher.dispatch(...)`
+  - `nexus3/rpc/global_dispatcher.py::GlobalDispatcher.dispatch(...)`
+- Updated direct in-process API path to mint and attach per-call capability
+  tokens via pool-owned issuance:
+  - `nexus3/rpc/agent_api.py`
+  - `nexus3/rpc/pool.py` (`issue_direct_capability`, `verify_direct_capability`,
+    destroy-time revocation of tracked issued tokens)
+- Added focused capability-path regressions:
+  - `tests/unit/test_agent_api.py`
+  - `tests/unit/test_rpc_dispatcher.py`
+  - `tests/unit/test_global_dispatcher.py`
+  - `tests/unit/test_pool.py`
+  - `tests/unit/core/test_request_context.py`
+- Validation:
+  - `.venv/bin/ruff check nexus3/core/capabilities.py nexus3/core/request_context.py nexus3/core/__init__.py nexus3/rpc/dispatch_core.py nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/agent_api.py nexus3/rpc/pool.py nexus3/rpc/http.py tests/unit/core/test_request_context.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py tests/unit/test_pool.py` passed.
+  - `.venv/bin/mypy nexus3/core/capabilities.py nexus3/core/request_context.py nexus3/core/__init__.py nexus3/rpc/dispatch_core.py nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/agent_api.py nexus3/rpc/pool.py nexus3/rpc/http.py` passed.
+  - `.venv/bin/pytest -q tests/unit/core/test_request_context.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py tests/unit/test_pool.py tests/unit/test_initial_message.py` passed (`147 passed`).
+  - `.venv/bin/pytest -q tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_nexus_skill_requester_propagation.py` passed (`75 passed`).
 
 ## Documentation Updates
 
