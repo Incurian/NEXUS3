@@ -225,8 +225,9 @@ Current milestone:
 
 Immediate tasks:
 - Plan F Phase 1 is committed as `1079cd7` (`plan f phase 1: add ast v2 foundation and baseline fixtures`).
-- Plan F Phase 2 is complete in the working tree (`apply_patch_byte_strict` + Phase 2 regressions); commit as standalone checkpoint before Phase 3.
-- Start main-plan execution at M3 Plan F Phase 3 (explicit mode-flag wiring + migration tests) before any follow-on deferred plan execution.
+- Plan F Phase 2 is committed as `4ded3fa` (`plan f phase 2: add byte-strict ast-v2 apply path`).
+- Plan F Phase 3 is complete in the working tree (`fidelity_mode=legacy|byte_strict` + migration tests); commit as standalone checkpoint before Phase 4.
+- Start main-plan execution at M3 Plan F Phase 4 (harden file-target resolution: exact-path preference + ambiguity fail-closed) before any follow-on deferred plan execution.
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -1166,6 +1167,27 @@ Execution checkpoint (2026-03-05, architecture execution round 32):
 - Next gate:
   1. Commit Plan F Phase 2 code+tests+docs as standalone checkpoint.
   2. Start M3 Plan F Phase 3 (add explicit mode flag wiring and migration tests between legacy/byte_strict paths).
+  3. Keep follow-on deferred plans in backlog mode until their M4/post-M4 dependency gates are met.
+
+Execution checkpoint (2026-03-05, architecture execution round 33):
+- Scope completed this round (M3 Plan F Phase 3 mode-flag wiring):
+  1. Added patch-skill migration flag in `nexus3/skill/builtin/patch.py`: `fidelity_mode` with `legacy` (default) and `byte_strict`.
+  2. Wired explicit fidelity paths:
+     - `legacy`: `parse_unified_diff(...)` + `apply_patch(...)`
+     - `byte_strict`: `parse_unified_diff_v2(...)` + `apply_patch_byte_strict(...)`
+  3. Added migration regressions in `tests/unit/skill/test_patch.py`:
+     - byte-strict no-final-newline marker preservation
+     - invalid `fidelity_mode` fail-fast validation
+     - default legacy-path compatibility assertion
+  4. Synced skill API reference in `nexus3/skill/README.md` for new patch parameter and patch-module symbols.
+- Focused validation executed this round:
+  - `.venv/bin/pytest -q tests/unit/skill/test_patch.py tests/unit/patch/test_byte_strict_apply_phase2.py tests/unit/patch/test_applier.py tests/unit/patch/test_parser.py tests/unit/patch/test_byte_roundtrip_baseline.py tests/unit/patch/test_validator.py` -> `91 passed`.
+  - `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py -k patch` -> `9 passed, 8 deselected`.
+  - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py nexus3/patch tests/unit/patch` -> passed.
+  - `.venv/bin/mypy nexus3/skill/builtin/patch.py nexus3/patch` -> passed.
+- Next gate:
+  1. Commit Plan F Phase 3 code+tests+docs as standalone checkpoint.
+  2. Start M3 Plan F Phase 4 target-resolution hardening (`_find_matching_patch` exact-path preference + ambiguity fail-closed behavior/tests).
   3. Keep follow-on deferred plans in backlog mode until their M4/post-M4 dependency gates are met.
 
 ## Source of Truth

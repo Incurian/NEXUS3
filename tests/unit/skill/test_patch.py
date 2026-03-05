@@ -1,9 +1,13 @@
 """Tests for patch skill."""
 
+from pathlib import Path
+
 import pytest
 
 from nexus3.skill.builtin.patch import patch_factory
 from nexus3.skill.services import ServiceContainer
+
+_FIXTURE_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "arch_baseline"
 
 
 class TestPatchSkill:
@@ -410,6 +414,64 @@ class TestLineEndingPreservation(TestPatchSkill):
         # Should have only LF, no CRLF
         assert b"\r\n" not in content
         assert content.count(b"\n") == 3
+
+
+class TestFidelityModeMigration(TestPatchSkill):
+    """Migration tests for fidelity_mode wiring."""
+
+    @pytest.mark.asyncio
+    async def test_fidelity_mode_byte_strict_preserves_missing_trailing_newline(
+        self, skill, tmp_path
+    ):
+        """byte_strict mode must honor explicit no-final-newline marker semantics."""
+        target_file = tmp_path / "target.txt"
+        target_file.write_bytes(b"alpha\nbeta")
+        diff_content = (_FIXTURE_DIR / "patch_noeol_marker_update.diff").read_text(
+            encoding="utf-8"
+        )
+
+        result = await skill.execute(
+            target=str(target_file),
+            diff=diff_content,
+            fidelity_mode="byte_strict",
+        )
+
+        assert result.success
+        assert target_file.read_bytes() == b"alpha\nBETA"
+        assert not target_file.read_bytes().endswith(b"\n")
+
+    @pytest.mark.asyncio
+    async def test_fidelity_mode_invalid_value_returns_clear_error(self, skill, tmp_path):
+        """Invalid fidelity mode should fail with actionable parameter guidance."""
+        target_file = tmp_path / "target.txt"
+        target_file.write_bytes(b"alpha\nbeta")
+        diff_content = (_FIXTURE_DIR / "patch_noeol_marker_update.diff").read_text(
+            encoding="utf-8"
+        )
+
+        result = await skill.execute(
+            target=str(target_file),
+            diff=diff_content,
+            fidelity_mode="not_a_mode",
+        )
+
+        assert not result.success
+        assert "fidelity_mode" in result.error
+        assert "legacy" in result.error
+        assert "byte_strict" in result.error
+
+    @pytest.mark.asyncio
+    async def test_fidelity_mode_default_stays_legacy_compatible(self, skill, tmp_path):
+        """Default path should remain legacy newline-normalizing behavior."""
+        target_file = tmp_path / "target.txt"
+        target_file.write_bytes(b"alpha\r\nbeta\ngamma\r\n")
+        diff_content = (_FIXTURE_DIR / "patch_mixed_newline_update.diff").read_text(
+            encoding="utf-8"
+        )
+
+        await skill.execute(target=str(target_file), diff=diff_content)
+
+        assert target_file.read_bytes() == b"alpha\r\nBETA\r\ngamma\r\n"
 
 
 class TestPatchValidation(TestPatchSkill):

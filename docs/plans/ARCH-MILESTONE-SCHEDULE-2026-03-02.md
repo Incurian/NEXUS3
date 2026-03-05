@@ -107,7 +107,10 @@ Status note (2026-03-05):
 - Plan F Phase 2 landed in working tree:
   - explicit `apply_patch_byte_strict(...)` entrypoint for AST-v2 patches
   - focused newline/EOF fidelity regressions including mixed-newline preservation
-- Next M3 target: Plan F Phase 3 (explicit mode flag wiring + migration tests).
+- Plan F Phase 3 landed in working tree:
+  - patch-skill migration flag `fidelity_mode=legacy|byte_strict` with default legacy behavior preserved
+  - migration regressions for byte-strict no-EOL marker path and invalid flag fail-fast behavior
+- Next M3 target: Plan F Phase 4 (target resolution hardening: ambiguity fail-closed).
 
 ### M4: Delegation and Strategic Evolution
 

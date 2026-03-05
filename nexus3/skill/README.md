@@ -622,7 +622,7 @@ NEXUS3 includes 40 core built-in skills plus 21 GitLab skills (when configured),
 | `edit_lines` | Line-based replacement (preserves line endings) | `path`, `start_line`, `end_line?`, `new_content` |
 | `append_file` | Append to file with true append mode (preserves line endings) | `path`, `content`, `newline?` |
 | `regex_replace` | Pattern-based replace (preserves line endings) | `path`, `pattern`, `replacement`, `count?`, `ignore_case?`, `multiline?`, `dotall?` |
-| `patch` | Apply unified diffs with validation | `target`, `diff?`, `diff_file?`, `mode?`, `fuzzy_threshold?`, `dry_run?` |
+| `patch` | Apply unified diffs with validation | `target`, `diff?`, `diff_file?`, `mode?`, `fidelity_mode?`, `fuzzy_threshold?`, `dry_run?` |
 | `copy_file` | Copy file with metadata | `source`, `destination`, `overwrite?` |
 | `mkdir` | Create directory (and parents) | `path` |
 | `rename` | Rename/move file or directory | `source`, `destination`, `overwrite?` |
@@ -989,7 +989,7 @@ __all__ = [
 | `nexus3.rpc.auth` | `discover_rpc_token()` |
 | `nexus3.rpc.agent_api` | `DirectAgentAPI`, `ClientAdapter` |
 | `nexus3.clipboard` | `ClipboardManager`, `ClipboardScope`, `InsertionMode` |
-| `nexus3.patch` | `parse_unified_diff()`, `apply_patch()`, `validate_patch()`, `ApplyMode` |
+| `nexus3.patch` | `parse_unified_diff()`, `parse_unified_diff_v2()`, `apply_patch()`, `apply_patch_byte_strict()`, `validate_patch()`, `ApplyMode` |
 
 ### External Dependencies
 

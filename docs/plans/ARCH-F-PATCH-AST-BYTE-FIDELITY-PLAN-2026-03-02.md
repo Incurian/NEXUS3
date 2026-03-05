@@ -51,7 +51,7 @@ Phases:
 
 - [x] Add AST v2 parser/projection foundation (raw-line/newline metadata, v2 parse hook, v2->v1 applier bridge).
 - [x] Implement byte-strict applier entrypoint (`apply_patch_byte_strict`) for AST-v2 patches (default path unchanged).
-- [ ] Add legacy compatibility mode and migration flag.
+- [x] Add legacy compatibility mode and migration flag (`fidelity_mode=legacy|byte_strict` in patch skill, default legacy).
 - [ ] Harden file target resolution.
 - [ ] Add ambiguity fail-closed and byte-fidelity regression tests (EOF/non-UTF8/binary-adjacent).
 - [ ] Flip default and remove fragile legacy branches.
@@ -78,6 +78,21 @@ Status note (2026-03-05, M3 Plan F Phase 2):
   - `.venv/bin/pytest -q tests/unit/patch/test_byte_strict_apply_phase2.py tests/unit/patch/test_applier.py tests/unit/patch/test_parser.py tests/unit/patch/test_byte_roundtrip_baseline.py tests/unit/patch/test_validator.py`
   - `.venv/bin/ruff check nexus3/patch tests/unit/patch`
   - `.venv/bin/mypy nexus3/patch`
+
+Status note (2026-03-05, M3 Plan F Phase 3):
+- Added migration flag wiring in patch skill:
+  - `nexus3/skill/builtin/patch.py` now accepts `fidelity_mode` with `legacy` (default) and `byte_strict`.
+  - `legacy` path: `parse_unified_diff(...)` + `apply_patch(...)`
+  - `byte_strict` path: `parse_unified_diff_v2(...)` + `apply_patch_byte_strict(...)`
+- Added migration tests in `tests/unit/skill/test_patch.py`:
+  - byte-strict no-final-newline marker preservation
+  - invalid `fidelity_mode` fail-fast validation
+  - default legacy-path compatibility assertion
+- Focused gates passed:
+  - `.venv/bin/pytest -q tests/unit/skill/test_patch.py tests/unit/patch/test_byte_strict_apply_phase2.py tests/unit/patch/test_applier.py tests/unit/patch/test_parser.py tests/unit/patch/test_byte_roundtrip_baseline.py tests/unit/patch/test_validator.py` -> `91 passed`
+  - `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py -k patch` -> `9 passed, 8 deselected`
+  - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py nexus3/patch tests/unit/patch`
+  - `.venv/bin/mypy nexus3/skill/builtin/patch.py nexus3/patch`
 
 ## Documentation Updates
 
