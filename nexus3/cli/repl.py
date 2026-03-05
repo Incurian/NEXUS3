@@ -261,6 +261,11 @@ def _format_red_message_line(safe_sink: SafeSink, message: str) -> str:
     return f"[red]{safe_message}[/]"
 
 
+def _format_plain_message_line(safe_sink: SafeSink, message: str) -> str:
+    """Format plain message line with SafeSink sanitization."""
+    return _sanitize_tool_trace_text(safe_sink, message)
+
+
 def _format_connecting_line(safe_sink: SafeSink, agent_url: str) -> str:
     """Format connect-start line while preserving trusted text wrapper."""
     safe_agent_url = _sanitize_tool_trace_text(safe_sink, agent_url)
@@ -1757,7 +1762,7 @@ async def run_repl(
                         if output.data and output.data.get("action") == "clear":
                             console.clear()
                         elif output.message:
-                            console.print(output.message)
+                            console.print(_format_plain_message_line(safe_sink, output.message))
                 continue
 
             # Determine target session (whisper mode may redirect)

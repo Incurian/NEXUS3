@@ -580,6 +580,21 @@ Compact checkpoint (2026-03-06, architecture execution round 8):
   2. Plan H: decide on remaining compatibility-only protocol parse path (`empty method` rewrite) and whether to flip to strict reject.
   3. Plan G: sweep residual direct dynamic `console.print` sites in `nexus3/cli/repl.py` and low-risk CLI consistency paths for final consolidation.
 
+Compact checkpoint (2026-03-06, architecture execution round 9):
+- Branch head at start of round: `049cba6`; working tree now includes parallel Plan A + Plan G follow-up slices.
+- New slices completed this round:
+  1. Plan A converted agent-scoped lifecycle authorization in `nexus3/rpc/dispatcher.py` (`shutdown`/`cancel`/`compact`) from shadow parity to kernel-authoritative enforcement with a shared lifecycle auth gate.
+  2. Plan G removed remaining unsanitized plain command output rendering in `nexus3/cli/repl.py` by routing through a SafeSink-backed plain formatter helper.
+  3. Updated focused regressions in `tests/unit/test_rpc_dispatcher.py` and `tests/unit/cli/test_repl_safe_sink.py`.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/rpc/dispatcher.py tests/unit/test_rpc_dispatcher.py nexus3/cli/repl.py tests/unit/cli/test_repl_safe_sink.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/dispatcher.py nexus3/cli/repl.py` passed.
+  - `.venv/bin/pytest -v tests/unit/test_rpc_dispatcher.py tests/unit/cli/test_repl_safe_sink.py` passed (`40 passed`).
+- Immediate resume targets:
+  1. Plan A: evaluate remaining duplicate authorization branches (`send` path parity branch and pool/session branches) for next safe kernel-authoritative flip.
+  2. Plan H: decide on remaining compatibility-only protocol parse path (`empty method` rewrite) and whether to flip to strict reject.
+  3. Plan G: continue residual dynamic REPL print sweep and minor CLI consistency consolidation.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.

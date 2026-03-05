@@ -439,15 +439,12 @@ class TestSendAuthorizationShadowParity:
         assert record.requester_id == "trusted-caller"
 
 
-class TestAgentLifecycleAuthorizationShadowParity:
-    """Tests for shutdown/cancel/compact auth shadow parity."""
+class TestAgentLifecycleAuthorization:
+    """Tests for kernel-authoritative shutdown/cancel/compact authorization."""
 
     @pytest.mark.asyncio
-    async def test_shutdown_auth_shadow_mismatch_warns_but_legacy_path_stays_authoritative(
-        self,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """Mismatch warning is emitted while legacy shutdown success remains authoritative."""
+    async def test_shutdown_denied_by_kernel_fails_closed(self) -> None:
+        """Kernel deny for shutdown returns invalid-params and does not toggle shutdown."""
         session = MockSession(chunks=["unused"])
         dispatcher = Dispatcher(session, agent_id="target-agent")
 
@@ -458,29 +455,18 @@ class TestAgentLifecycleAuthorizationShadowParity:
         dispatcher._shutdown_authorization_kernel = _ForceDenyKernel()
 
         request = Request(jsonrpc="2.0", method="shutdown", params={}, id=1)
-        with caplog.at_level(logging.WARNING, logger="nexus3.rpc.dispatcher"):
-            response = await dispatcher.dispatch(request, requester_id="caller-1")
+        response = await dispatcher.dispatch(request, requester_id="caller-1")
 
         assert response is not None
-        assert response.error is None
-        assert response.result == {"success": True}
-        assert dispatcher.should_shutdown is True
-
-        records = [
-            rec for rec in caplog.records
-            if getattr(rec, "event", None) == "shutdown_auth_shadow_mismatch"
-        ]
-        assert len(records) == 1
-        assert records[0].requester_id == "caller-1"
-        assert records[0].legacy_allowed is True
-        assert records[0].kernel_allowed is False
+        assert response.error is not None
+        assert response.error["code"] == -32602
+        assert response.error["message"] == "shutdown denied: forced_deny"
+        assert response.result is None
+        assert dispatcher.should_shutdown is False
 
     @pytest.mark.asyncio
-    async def test_cancel_auth_shadow_mismatch_warns_but_legacy_path_stays_authoritative(
-        self,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """Mismatch warning is emitted while legacy cancel result remains authoritative."""
+    async def test_cancel_denied_by_kernel_fails_closed(self) -> None:
+        """Kernel deny for cancel returns invalid-params and does not execute cancel path."""
         session = MockSession(chunks=["unused"])
         dispatcher = Dispatcher(session, agent_id="target-agent")
 
@@ -496,30 +482,17 @@ class TestAgentLifecycleAuthorizationShadowParity:
             params={"request_id": "does-not-exist"},
             id=1,
         )
-        with caplog.at_level(logging.WARNING, logger="nexus3.rpc.dispatcher"):
-            response = await dispatcher.dispatch(request, requester_id="caller-2")
+        response = await dispatcher.dispatch(request, requester_id="caller-2")
 
         assert response is not None
-        assert response.error is None
-        assert response.result is not None
-        assert response.result["cancelled"] is False
-        assert response.result["reason"] == "not_found_or_completed"
-
-        records = [
-            rec for rec in caplog.records
-            if getattr(rec, "event", None) == "cancel_auth_shadow_mismatch"
-        ]
-        assert len(records) == 1
-        assert records[0].requester_id == "caller-2"
-        assert records[0].legacy_allowed is True
-        assert records[0].kernel_allowed is False
+        assert response.error is not None
+        assert response.error["code"] == -32602
+        assert response.error["message"] == "cancel denied: forced_deny"
+        assert response.result is None
 
     @pytest.mark.asyncio
-    async def test_compact_auth_shadow_mismatch_warns_but_legacy_path_stays_authoritative(
-        self,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """Mismatch warning is emitted while legacy compact path remains authoritative."""
+    async def test_compact_denied_by_kernel_fails_closed(self) -> None:
+        """Kernel deny for compact returns invalid-params and does not execute compaction."""
 
         class CompactSession(MockSession):
             async def compact(self, force: bool = True) -> Any:
@@ -539,26 +512,13 @@ class TestAgentLifecycleAuthorizationShadowParity:
         dispatcher._compact_authorization_kernel = _ForceDenyKernel()
 
         request = Request(jsonrpc="2.0", method="compact", params={"force": True}, id=1)
-        with caplog.at_level(logging.WARNING, logger="nexus3.rpc.dispatcher"):
-            response = await dispatcher.dispatch(request, requester_id="caller-3")
+        response = await dispatcher.dispatch(request, requester_id="caller-3")
 
         assert response is not None
-        assert response.error is None
-        assert response.result == {
-            "compacted": True,
-            "tokens_before": 20,
-            "tokens_after": 8,
-            "tokens_saved": 12,
-        }
-
-        records = [
-            rec for rec in caplog.records
-            if getattr(rec, "event", None) == "compact_auth_shadow_mismatch"
-        ]
-        assert len(records) == 1
-        assert records[0].requester_id == "caller-3"
-        assert records[0].legacy_allowed is True
-        assert records[0].kernel_allowed is False
+        assert response.error is not None
+        assert response.error["code"] == -32602
+        assert response.error["message"] == "compact denied: forced_deny"
+        assert response.result is None
 
 
 class TestNoContextManagerErrors:

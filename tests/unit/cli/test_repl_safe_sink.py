@@ -17,6 +17,7 @@ from nexus3.cli.repl import (
     _format_incoming_response_sent_line,
     _format_incoming_started_line,
     _format_invalid_port_spec_line,
+    _format_plain_message_line,
     _format_provider_initialization_failed_line,
     _format_red_message_line,
     _format_reload_detected_changes_line,
@@ -302,6 +303,17 @@ def test_warning_and_red_message_lines_sanitize_dynamic_message() -> None:
 
     assert yellow_line == "[yellow]\\[yellow]heads up\\[/yellow][/]"
     assert red_line == "[red]\\[red]stop\\[/red]x[/]"
+
+
+def test_plain_message_line_sanitizes_dynamic_message() -> None:
+    sink = _make_sink()
+
+    line = _format_plain_message_line(
+        sink, "[red]notice[/red]\x1b]8;;https://evil\x07x\x1b]8;;\x07"
+    )
+
+    assert line == "\\[red]notice\\[/red]x"
+    assert "\x1b" not in line
 
 
 def test_client_connect_and_metadata_lines_sanitize_dynamic_fields() -> None:

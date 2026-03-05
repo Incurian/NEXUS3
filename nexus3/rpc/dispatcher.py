@@ -478,39 +478,38 @@ class Dispatcher:
         except PydanticValidationError as exc:
             raise InvalidParamsError("Invalid shutdown parameters") from exc
 
+        self._enforce_lifecycle_authorization("shutdown", request_context)
+
+        self._should_shutdown = True
+        return {"success": True}
+
+    def _enforce_lifecycle_authorization(
+        self,
+        method: str,
+        request_context: RequestContext | None,
+    ) -> None:
         principal_id = (
             request_context.requester_id
             if request_context is not None and request_context.requester_id is not None
             else "rpc"
         )
-        legacy_allowed = True
         kernel_request = AuthorizationRequest(
             action=AuthorizationAction.SESSION_WRITE,
             resource=AuthorizationResource(
                 resource_type=AuthorizationResourceType.RPC,
-                identifier="shutdown",
+                identifier=method,
             ),
             principal_id=principal_id,
         )
-        kernel_decision = self._shutdown_authorization_kernel.authorize(kernel_request)
-        if kernel_decision.allowed != legacy_allowed:
-            logger.warning(
-                "Shutdown authorization shadow mismatch for target=%s requester=%s",
-                self._agent_id,
-                principal_id,
-                extra={
-                    "event": "shutdown_auth_shadow_mismatch",
-                    "target_agent_id": self._agent_id,
-                    "requester_id": principal_id,
-                    "legacy_allowed": legacy_allowed,
-                    "legacy_reason": "shutdown_allowed",
-                    "kernel_allowed": kernel_decision.allowed,
-                    "kernel_reason": kernel_decision.reason,
-                },
-            )
-
-        self._should_shutdown = True
-        return {"success": True}
+        kernel = {
+            "shutdown": self._shutdown_authorization_kernel,
+            "cancel": self._cancel_authorization_kernel,
+            "compact": self._compact_authorization_kernel,
+        }[method]
+        kernel_decision = kernel.authorize(kernel_request)
+        if not kernel_decision.allowed:
+            reason = kernel_decision.reason or "authorization policy denied request"
+            raise InvalidParamsError(f"{method} denied: {reason}")
 
     async def _handle_get_tokens(self, params: dict[str, Any]) -> dict[str, Any]:
         """Handle the 'get_tokens' method.
@@ -680,36 +679,7 @@ class Dispatcher:
                     ) from exc
             raise InvalidParamsError("Invalid request_id") from exc
 
-        principal_id = (
-            request_context.requester_id
-            if request_context is not None and request_context.requester_id is not None
-            else "rpc"
-        )
-        legacy_allowed = True
-        kernel_request = AuthorizationRequest(
-            action=AuthorizationAction.SESSION_WRITE,
-            resource=AuthorizationResource(
-                resource_type=AuthorizationResourceType.RPC,
-                identifier="cancel",
-            ),
-            principal_id=principal_id,
-        )
-        kernel_decision = self._cancel_authorization_kernel.authorize(kernel_request)
-        if kernel_decision.allowed != legacy_allowed:
-            logger.warning(
-                "Cancel authorization shadow mismatch for target=%s requester=%s",
-                self._agent_id,
-                principal_id,
-                extra={
-                    "event": "cancel_auth_shadow_mismatch",
-                    "target_agent_id": self._agent_id,
-                    "requester_id": principal_id,
-                    "legacy_allowed": legacy_allowed,
-                    "legacy_reason": "cancel_allowed",
-                    "kernel_allowed": kernel_decision.allowed,
-                    "kernel_reason": kernel_decision.reason,
-                },
-            )
+        self._enforce_lifecycle_authorization("cancel", request_context)
 
         request_id = validated.request_id
         token = self._active_requests.get(request_id)
@@ -746,36 +716,7 @@ class Dispatcher:
                 raise InvalidParamsError(str(errors[0].get("msg", "Invalid force value"))) from exc
             raise InvalidParamsError("Invalid compact parameters") from exc
 
-        principal_id = (
-            request_context.requester_id
-            if request_context is not None and request_context.requester_id is not None
-            else "rpc"
-        )
-        legacy_allowed = True
-        kernel_request = AuthorizationRequest(
-            action=AuthorizationAction.SESSION_WRITE,
-            resource=AuthorizationResource(
-                resource_type=AuthorizationResourceType.RPC,
-                identifier="compact",
-            ),
-            principal_id=principal_id,
-        )
-        kernel_decision = self._compact_authorization_kernel.authorize(kernel_request)
-        if kernel_decision.allowed != legacy_allowed:
-            logger.warning(
-                "Compact authorization shadow mismatch for target=%s requester=%s",
-                self._agent_id,
-                principal_id,
-                extra={
-                    "event": "compact_auth_shadow_mismatch",
-                    "target_agent_id": self._agent_id,
-                    "requester_id": principal_id,
-                    "legacy_allowed": legacy_allowed,
-                    "legacy_reason": "compact_allowed",
-                    "kernel_allowed": kernel_decision.allowed,
-                    "kernel_reason": kernel_decision.reason,
-                },
-            )
+        self._enforce_lifecycle_authorization("compact", request_context)
 
         force = validated.force
 
