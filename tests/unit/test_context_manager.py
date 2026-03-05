@@ -1,9 +1,7 @@
 """Tests for ContextManager."""
 
-import pytest
-
 from nexus3.context.manager import ContextConfig, ContextManager
-from nexus3.core.types import Message, Role, ToolCall
+from nexus3.core.types import Role, ToolCall
 
 
 class TestContextManagerBasics:
@@ -203,6 +201,23 @@ class TestContextManagerTruncation:
         assert any("9" in c for c in contents), "Newest message should be kept"
         # Message 0 (oldest) should be gone
         assert not any("number 0 " in c for c in contents), "Oldest message should be removed"
+
+    def test_truncation_normalizes_unpaired_tool_messages(self):
+        """Truncation path should use compiler/graph normalization before grouping."""
+        from nexus3.core.types import ToolResult
+
+        config = ContextConfig(max_tokens=80, reserve_tokens=60)
+        ctx = ContextManager(config=config)
+        ctx.add_user_message("Old message " * 50)  # Force over-budget path
+        ctx.add_tool_result("orphan-tool-id", "read_file", ToolResult(output="stale"))
+        ctx.add_user_message("Recent message")
+
+        _ = ctx.build_messages()
+
+        assert all(
+            not (msg.role == Role.TOOL and msg.tool_call_id == "orphan-tool-id")
+            for msg in ctx.messages
+        )
 
 
 class TestContextManagerTokenTracking:

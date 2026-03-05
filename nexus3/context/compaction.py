@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 
+from nexus3.context.graph import build_context_graph
 from nexus3.context.token_counter import TokenCounter
 from nexus3.core.redaction import redact_dict, redact_secrets
 from nexus3.core.types import Message, Role
@@ -133,8 +134,9 @@ def select_messages_for_compaction(
 ) -> tuple[list[Message], list[Message]]:
     """Select which messages to summarize vs preserve.
 
-    Walks from newest to oldest, keeping recent messages until we hit
-    the preserve budget. Everything older gets summarized.
+    Walks from newest to oldest by atomic message groups (compiler/graph-backed),
+    keeping recent groups until preserve budget is reached. Everything older
+    gets summarized.
 
     Args:
         messages: All current messages
@@ -145,22 +147,40 @@ def select_messages_for_compaction(
     Returns:
         Tuple of (messages_to_summarize, messages_to_preserve)
     """
+    if not messages:
+        return [], []
+
+    graph = build_context_graph(messages)
+    normalized_messages = list(graph.messages)
+
+    if not normalized_messages:
+        return [], []
+
+    groups: list[list[Message]] = [
+        [normalized_messages[i] for i in group.message_indices]
+        for group in graph.groups
+    ]
+
     preserve_budget = int(available_budget * recent_preserve_ratio)
 
-    preserved: list[Message] = []
+    preserved_groups: list[list[Message]] = []
     tokens = 0
 
-    # Walk backwards, keep recent messages
-    for msg in reversed(messages):
-        msg_tokens = token_counter.count_messages([msg])
-        if tokens + msg_tokens > preserve_budget and preserved:
+    # Walk backwards, keep recent atomic groups.
+    for group in reversed(groups):
+        group_tokens = token_counter.count_messages(group)
+        if tokens + group_tokens > preserve_budget and preserved_groups:
             # Over budget and we have at least one message
             break
-        preserved.insert(0, msg)
-        tokens += msg_tokens
+        preserved_groups.insert(0, group)
+        tokens += group_tokens
+
+    preserved: list[Message] = []
+    for group in preserved_groups:
+        preserved.extend(group)
 
     # Everything before preserved gets summarized
-    summarize_count = len(messages) - len(preserved)
-    to_summarize = messages[:summarize_count]
+    summarize_count = len(normalized_messages) - len(preserved)
+    to_summarize = normalized_messages[:summarize_count]
 
     return to_summarize, preserved

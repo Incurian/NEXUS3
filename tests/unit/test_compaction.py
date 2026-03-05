@@ -1,13 +1,9 @@
 """Tests for nexus3.context.compaction module."""
 
-import pytest
-
 from nexus3.context.compaction import (
-    SUMMARIZE_PROMPT,
     build_summarize_prompt,
     create_summary_message,
     format_messages_for_summary,
-    get_summary_prefix,
     select_messages_for_compaction,
 )
 from nexus3.core.types import Message, Role, ToolCall
@@ -307,6 +303,77 @@ class TestSelectMessagesForCompaction:
         # Summarized should be the oldest
         assert to_summarize[0].content == "Old message 1"
         assert to_summarize[1].content == "Old message 2"
+
+    def test_preserves_tool_batch_atomically(self):
+        """Tool-call assistant messages and their results are preserved as one group."""
+        messages = [
+            Message(role=Role.USER, content="Old"),
+            Message(
+                role=Role.ASSISTANT,
+                content="Using tools",
+                tool_calls=(
+                    ToolCall(id="tc1", name="read_file", arguments={"path": "a.txt"}),
+                    ToolCall(id="tc2", name="read_file", arguments={"path": "b.txt"}),
+                ),
+            ),
+            Message(role=Role.TOOL, content="a", tool_call_id="tc1"),
+            Message(role=Role.TOOL, content="b", tool_call_id="tc2"),
+            Message(role=Role.ASSISTANT, content="Recent"),
+        ]
+        counter = MockTokenCounter(tokens_per_message=10)
+
+        # Preserve budget = 40 tokens. Group-aware selection should keep
+        # [assistant+tool batch] + [recent], and summarize only the oldest user.
+        to_summarize, preserved = select_messages_for_compaction(
+            messages=messages,
+            token_counter=counter,
+            available_budget=50,
+            recent_preserve_ratio=0.8,
+        )
+
+        assert [m.role for m in preserved] == [
+            Role.ASSISTANT, Role.TOOL, Role.TOOL, Role.ASSISTANT
+        ]
+        assert [m.tool_call_id for m in preserved if m.role == Role.TOOL] == ["tc1", "tc2"]
+        assert [m.content for m in to_summarize] == ["Old"]
+
+    def test_compiler_repairs_missing_tool_results_before_selection(self):
+        """Compaction selection runs on compiler-repaired message sequences."""
+        messages = [
+            Message(role=Role.USER, content="Old"),
+            Message(
+                role=Role.ASSISTANT,
+                content="Using tools",
+                tool_calls=(
+                    ToolCall(id="tc1", name="read_file", arguments={"path": "a.txt"}),
+                    ToolCall(id="tc2", name="read_file", arguments={"path": "b.txt"}),
+                ),
+            ),
+            Message(role=Role.TOOL, content="a", tool_call_id="tc1"),
+            Message(role=Role.ASSISTANT, content="Recent"),
+        ]
+        counter = MockTokenCounter(tokens_per_message=10)
+
+        to_summarize, preserved = select_messages_for_compaction(
+            messages=messages,
+            token_counter=counter,
+            available_budget=100,
+            recent_preserve_ratio=0.4,
+        )
+
+        # Preserve budget = 40 tokens. Should keep [assistant+tool batch] + [recent].
+        assert [m.content for m in to_summarize] == ["Old"]
+        assert preserved[-1].content == "Recent"
+        preserved_tool_ids = {
+            m.tool_call_id for m in preserved if m.role == Role.TOOL
+        }
+        assert preserved_tool_ids == {"tc1", "tc2"}
+        assert any(
+            m.role == Role.TOOL
+            and m.tool_call_id == "tc2"
+            and "Cancelled by user" in m.content
+            for m in preserved
+        )
 
     def test_older_messages_selected_for_summarization(self):
         """Older messages should be selected for summarization."""

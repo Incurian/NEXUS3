@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from nexus3.clipboard import format_clipboard_context
 from nexus3.config.schema import ClipboardConfig
 from nexus3.context.git_context import get_git_context
+from nexus3.context.graph import build_context_graph
 from nexus3.context.token_counter import TokenCounter, get_token_counter
 from nexus3.core.types import Message, Role, ToolCall, ToolResult
 
@@ -751,30 +752,18 @@ class ContextManager:
         Returns:
             List of message groups. Each group must be kept or removed together.
         """
+        graph = build_context_graph(self._messages)
+        normalized_messages = list(graph.messages)
+
+        # Persist normalization so truncation operates on repaired context.
+        if normalized_messages != self._messages:
+            self._messages = normalized_messages.copy()
+
         groups: list[list[Message]] = []
-        i = 0
-
-        while i < len(self._messages):
-            msg = self._messages[i]
-
-            if msg.role == Role.ASSISTANT and msg.tool_calls:
-                # Tool call group: assistant + matching results
-                group = [msg]
-                expected_ids = {tc.id for tc in msg.tool_calls}
-                j = i + 1
-                while j < len(self._messages) and self._messages[j].role == Role.TOOL:
-                    tool_msg = self._messages[j]
-                    if tool_msg.tool_call_id in expected_ids:
-                        group.append(tool_msg)
-                        j += 1
-                    else:
-                        break
-                groups.append(group)
-                i = j
-            else:
-                # Standalone message
-                groups.append([msg])
-                i += 1
+        for group in graph.groups:
+            groups.append(
+                [normalized_messages[i] for i in group.message_indices]
+            )
 
         return groups
 
