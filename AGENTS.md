@@ -220,7 +220,7 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `M3` active execution: Data Integrity Wave (Plan F closeout + Plan E Phase 1 committed; Plan E Phase 2 next).
+- `M3` active execution: Data Integrity Wave (Plan F closeout + Plan E Phase 1 committed; Plan E Phase 2 in execution).
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
@@ -232,7 +232,10 @@ Immediate tasks:
 - Plan F Phase 6 is committed as `195ab86` (`plan f phase 6: default patch skill to byte_strict`).
 - Plan F Phase 7 is committed as `6e946cf` (`plan f phase 7: retire patch legacy runtime path`).
 - Plan E Phase 1 is committed as `e9d6c3e` (`plan e phase 1: add context compiler ir foundation`).
-- Next target: start M3 Plan E Phase 2 provider/session integration over compiler output.
+- Plan E Phase 2 provider/session integration is implemented in working tree
+  (pending commit in current execution round).
+- Next target after Phase 2 commit: carry remaining Plan E graph/compaction
+  slices into M4 backlog window (Phases 3-4).
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -270,6 +273,17 @@ Progress snapshot:
   - added [ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md)
   - updated [ARCH-MILESTONE-SCHEDULE-2026-03-02.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md) with explicit backlog dependency/exit gates
   - updated [docs/plans/README.md](/home/inc/repos/NEXUS3/docs/plans/README.md) follow-on index section
+- Completed (working tree, 2026-03-05): Plan E Phase 2 provider/session integration:
+  - migrated `Session.send()`/`Session.run_turn()` pre-user preflight repair
+    path to compiler-backed normalization (`compile_context_messages(...)`)
+    with persisted repaired history via `ContextManager.replace_messages(...)`.
+  - routed `OpenAICompatProvider` and `AnthropicProvider` request shaping
+    through compiler output before provider-specific conversion/injection.
+  - retired Anthropic-local orphan `tool_result` synthesis in
+    `_convert_messages`; synthesis now occurs in shared compiler repair.
+  - added focused coverage in
+    `tests/unit/session/test_session_cancellation.py` and
+    `tests/unit/provider/test_compiler_integration.py`.
 - Completed: Plan A M0 foundation interfaces (`nexus3/core/authorization_kernel.py`) + unit tests.
 - Completed: Plan H M0 schema inventory scaffold (`nexus3/rpc/schemas.py`) + unit tests.
 - Completed: Plan H M1 Phase 2 first compat-safe ingress slice (`destroy_agent`, `get_messages`) wired to typed schemas with existing-style RPC error mapping + focused unit tests.
@@ -1322,6 +1336,37 @@ Pre-compact checkpoint (2026-03-05, post-round37 commits):
   1. Plan E Phase 2: integrate compiler output into session preflight repair path.
   2. Add provider/session parity tests proving compiler-shaped messages preserve current behavior.
   3. Keep follow-on deferred plans backlog-gated until M4/post-M4 windows.
+
+Execution checkpoint (2026-03-05, architecture execution round 38):
+- Scope completed this round (M3 Plan E Phase 2 provider/session integration):
+  1. Migrated session preflight repair pipeline to compiler-backed normalization:
+     - `nexus3/session/session.py` now normalizes context via
+       `compile_context_messages(...)` before appending new user turns in
+       both `send()` and `run_turn()`.
+     - `nexus3/context/manager.py` now exposes `replace_messages(...)` to
+       persist repaired history without replay-logging old turns.
+  2. Routed providers through compiler output:
+     - `nexus3/provider/openai_compat.py::_build_request_body(...)` now
+       compiles message sequences before OpenAI-format conversion.
+     - `nexus3/provider/anthropic.py::_build_request_body(...)` now compiles
+       message sequences before Anthropic conversion.
+  3. Retired provider-local orphan synthesis in Anthropic conversion:
+     - removed orphan `tool_result` synthesis from
+       `nexus3/provider/anthropic.py::_convert_messages(...)`.
+     - synthesis now occurs in shared compiler repair path before conversion.
+  4. Added focused regressions:
+     - `tests/unit/session/test_session_cancellation.py`
+       (`TestCompilerBackedPreflightNormalization` + updated provider
+       integration expectations).
+     - `tests/unit/provider/test_compiler_integration.py` (new).
+- Focused validation executed this round:
+  - `.venv/bin/ruff check nexus3/session/session.py nexus3/context/manager.py nexus3/provider/anthropic.py nexus3/provider/openai_compat.py tests/unit/session/test_session_cancellation.py tests/unit/provider/test_compiler_integration.py` -> passed.
+  - `.venv/bin/mypy nexus3/session/session.py nexus3/context/manager.py nexus3/provider/anthropic.py nexus3/provider/openai_compat.py` -> passed.
+  - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/unit/provider/test_compiler_integration.py tests/unit/provider/test_prompt_caching.py` -> `36 passed`.
+- Next gate:
+  1. Commit Plan E Phase 2 code+tests+docs as a standalone checkpoint.
+  2. Update milestone/plan status to mark Phase 2 committed.
+  3. Keep Plan E Phases 3-4 queued for M4 window unless milestone scope shifts.
 
 ## Source of Truth
 

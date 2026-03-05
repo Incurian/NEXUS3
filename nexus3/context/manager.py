@@ -593,6 +593,14 @@ class ContextManager:
         """Clear all messages (keeps system prompt and tools)."""
         self._messages.clear()
 
+    def replace_messages(self, messages: list[Message]) -> None:
+        """Replace in-memory conversation history without re-logging messages.
+
+        This is used by preflight normalization paths that repair context state
+        before appending the next user turn.
+        """
+        self._messages = messages.copy()
+
     def apply_compaction(
         self,
         summary_message: Message,

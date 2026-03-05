@@ -350,13 +350,16 @@ Cache: created=1500, read=0 tokens
 ```
 
 **Orphaned Tool Use Handling:**
-The provider synthesizes missing `tool_result` blocks for orphaned `tool_use` blocks (e.g., from cancellation or crash):
+Providers compile message sequences through the shared context compiler before
+request shaping. Missing tool results are synthesized during compile-time
+repair (e.g., interrupted/cancelled tool batches), and Anthropic conversion
+then maps those repaired TOOL messages into `tool_result` blocks:
 ```python
-# Automatically synthesized for tool calls without results
+# Synthesized during compiler repair before provider conversion
 {
     "type": "tool_result",
-    "tool_use_id": "<orphaned_id>",
-    "content": "[Tool execution was interrupted]"
+    "tool_use_id": "<missing_id>",
+    "content": "Cancelled by user: tool execution was interrupted"
 }
 ```
 

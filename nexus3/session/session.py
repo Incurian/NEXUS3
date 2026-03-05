@@ -14,6 +14,7 @@ from nexus3.context.compaction import (
     create_summary_message,
     select_messages_for_compaction,
 )
+from nexus3.context.compiler import compile_context_messages
 from nexus3.context.git_context import should_refresh_git_context
 from nexus3.core.authorization_kernel import (
     AdapterAuthorizationKernel,
@@ -313,6 +314,55 @@ class Session:
 
         self._pending_cancelled_tools.clear()
 
+    def _normalize_context_preflight(self, *, path: str) -> None:
+        """Repair context history through compiler invariants before new user turns."""
+        if not self.context:
+            return
+
+        compiled = compile_context_messages(
+            self.context.messages,
+            system_prompt=None,
+        )
+        self.context.replace_messages(list(compiled.messages))
+
+        diagnostics = compiled.diagnostics
+        changed = (
+            diagnostics.pruned_tool_results > 0
+            or diagnostics.synthesized_tool_results > 0
+            or diagnostics.appended_assistant_after_tool_results
+        )
+        if changed:
+            logger.warning(
+                "Compiler preflight repaired context "
+                "(path=%s, pruned=%d, synthesized=%d, appended=%s)",
+                path,
+                diagnostics.pruned_tool_results,
+                diagnostics.synthesized_tool_results,
+                diagnostics.appended_assistant_after_tool_results,
+            )
+
+        if diagnostics.invariant_errors:
+            logger.warning(
+                "Compiler preflight left invariant violations (path=%s): %s",
+                path,
+                list(diagnostics.invariant_errors),
+            )
+
+        if self.logger:
+            payload = {
+                "path": path,
+                "pruned_tool_results": diagnostics.pruned_tool_results,
+                "synthesized_tool_results": diagnostics.synthesized_tool_results,
+                "appended_assistant_after_tool_results": (
+                    diagnostics.appended_assistant_after_tool_results
+                ),
+                "invariant_error_count": len(diagnostics.invariant_errors),
+            }
+            self.logger.log_http_debug(
+                "session.compiler_preflight",
+                json.dumps(payload),
+            )
+
     @property
     def halted_at_iteration_limit(self) -> bool:
         """Whether the last send() halted due to max tool iterations."""
@@ -358,14 +408,9 @@ class Session:
             if self.context:
                 # Flush any cancelled tool results from previous turn
                 self._flush_cancelled_tools()
-                # Remove any dangling tool results that could break provider
-                # role sequencing on the next request.
-                self.context.prune_unpaired_tool_results()
-                # Safety net: synthesize results for any orphaned tool_use
-                # blocks (e.g., from double-ESC destroying the generator)
-                self.context.fix_orphaned_tool_calls()
-                # Some providers reject USER directly after TOOL messages.
-                self.context.ensure_assistant_after_tool_results()
+                # Normalize context through compiler-backed invariants before
+                # appending the next user turn.
+                self._normalize_context_preflight(path="send.pre_user")
 
                 # Reset iteration state for this send()
                 self._halted_at_iteration_limit = False
@@ -466,13 +511,9 @@ class Session:
         try:
             # Flush any cancelled tool results from previous turn
             self._flush_cancelled_tools()
-            # Remove dangling/unpaired tool results before building messages.
-            self.context.prune_unpaired_tool_results()
-            # Safety net: synthesize results for any orphaned tool_use
-            # blocks (e.g., from double-ESC destroying the generator)
-            self.context.fix_orphaned_tool_calls()
-            # Some providers reject USER directly after TOOL messages.
-            self.context.ensure_assistant_after_tool_results()
+            # Normalize context through compiler-backed invariants before
+            # appending the next user turn.
+            self._normalize_context_preflight(path="run_turn.pre_user")
 
             # Reset iteration state for this turn
             self._halted_at_iteration_limit = False

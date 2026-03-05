@@ -126,7 +126,17 @@ Status note (2026-03-05):
   - added `nexus3/context/compiler.py` typed compiler IR + invariant checker
   - added `tests/unit/context/test_compiler.py` for fixture parity, diagnostics, and invariant-report regressions
   - exported compiler interfaces in `nexus3/context/__init__.py`
-- Next M3 target: Plan E Phase 2 provider/session integration against compiler output.
+- Plan E Phase 2 implemented in working tree (pending commit):
+  - migrated session preflight repair to compiler-backed normalization with
+    persisted repaired history update in `nexus3/session/session.py` /
+    `nexus3/context/manager.py`
+  - routed Anthropic/OpenAI request shaping through compiler output
+    (`nexus3/provider/anthropic.py`, `nexus3/provider/openai_compat.py`)
+  - retired Anthropic-local orphan synthesis in `_convert_messages(...)`
+  - added focused regressions in
+    `tests/unit/session/test_session_cancellation.py` and
+    `tests/unit/provider/test_compiler_integration.py`
+- Next M3 target: commit Plan E Phase 2 checkpoint and close M3 scope.
 
 ### M4: Delegation and Strategic Evolution
 

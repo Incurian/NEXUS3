@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from nexus3.context.compiler import compile_context_messages
 from nexus3.core.types import (
     ContentDelta,
     Message,
@@ -135,12 +136,14 @@ class AnthropicProvider(BaseProvider):
         Returns:
             Request body dict in Anthropic format.
         """
+        compiled = compile_context_messages(messages)
+
         # Extract system message if present (first message with SYSTEM role)
         system: str | None = None
-        conversation = messages
-        if messages and messages[0].role == Role.SYSTEM:
-            system = messages[0].content
-            conversation = messages[1:]
+        conversation = list(compiled.messages)
+        if conversation and conversation[0].role == Role.SYSTEM:
+            system = conversation[0].content
+            conversation = conversation[1:]
 
         # Convert messages to Anthropic format
         anthropic_messages = self._convert_messages(conversation)
@@ -256,9 +259,6 @@ class AnthropicProvider(BaseProvider):
         Tool results must be in user messages with tool_result blocks.
         Assistant tool calls become tool_use blocks.
 
-        Ensures every tool_use block has a matching tool_result by synthesizing
-        missing results for orphaned tool calls (e.g., from cancellation or crash).
-
         Args:
             messages: List of NEXUS3 Messages.
 
@@ -268,35 +268,8 @@ class AnthropicProvider(BaseProvider):
         result: list[dict[str, Any]] = []
         pending_tool_results: list[dict[str, Any]] = []
 
-        # Phase 1: Collect all tool_call IDs and tool_result IDs
-        tool_call_ids: set[str] = set()
-        tool_result_ids: set[str] = set()
-
-        for msg in messages:
-            if msg.role == Role.ASSISTANT:
-                for tc in msg.tool_calls:
-                    tool_call_ids.add(tc.id)
-            elif msg.role == Role.TOOL and msg.tool_call_id:
-                tool_result_ids.add(msg.tool_call_id)
-
-        # Phase 2: Detect orphaned tool_use blocks and prepare synthetic results
-        orphaned_ids = tool_call_ids - tool_result_ids
-        synthetic_results: list[dict[str, Any]] = []
-        if orphaned_ids:
-            logger.warning(
-                "Synthesizing %d missing tool_result(s) for orphaned tool_use "
-                "blocks: %s",
-                len(orphaned_ids),
-                list(orphaned_ids),
-            )
-            for tid in orphaned_ids:
-                synthetic_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tid,
-                    "content": "[Tool execution was interrupted]",
-                })
-
-        # Phase 3: Convert messages
+        # Convert messages in sequence, buffering tool results into the next user
+        # message as required by Anthropic's role/content model.
         for msg in messages:
             if msg.role == Role.TOOL:
                 # Collect tool results to add to next user message
@@ -327,10 +300,9 @@ class AnthropicProvider(BaseProvider):
                     })
                 result.append({"role": "assistant", "content": content})
 
-        # Remaining tool results + synthetic results for orphaned tool_use blocks
-        all_pending = pending_tool_results + synthetic_results
-        if all_pending:
-            result.append({"role": "user", "content": all_pending})
+        # Remaining tool results are emitted as a terminal user message.
+        if pending_tool_results:
+            result.append({"role": "user", "content": pending_tool_results})
 
         return result
 

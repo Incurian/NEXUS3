@@ -51,8 +51,8 @@ Phases:
 ## Implementation Checklist
 
 - [x] Add compiler IR and invariant checker.
-- [ ] Integrate with provider adapters.
-- [ ] Migrate session preflight pipeline to compiler-backed invariants.
+- [x] Integrate with provider adapters.
+- [x] Migrate session preflight pipeline to compiler-backed invariants.
 - [ ] Add graph model prototype.
 - [ ] Migrate compaction/truncation through compiler pipeline.
 
@@ -75,6 +75,26 @@ Status note (2026-03-05, M3 Plan E Phase 1):
   - `.venv/bin/pytest -q tests/unit/context/test_compiler.py tests/unit/context/test_compile_baseline.py` -> `8 passed`
   - `.venv/bin/ruff check nexus3/context/compiler.py nexus3/context/__init__.py tests/unit/context/test_compiler.py`
   - `.venv/bin/mypy nexus3/context/compiler.py nexus3/context/__init__.py`
+
+Status note (2026-03-05, M3 Plan E Phase 2, working tree):
+- Session preflight repair is now compiler-backed:
+  - `nexus3/session/session.py` normalizes persisted context through
+    `compile_context_messages(...)` before appending each new user turn.
+  - `nexus3/context/manager.py` adds `replace_messages(...)` for exact
+    replacement of repaired history.
+- Provider request shaping now compiles message sequences first:
+  - `nexus3/provider/openai_compat.py::_build_request_body(...)`
+  - `nexus3/provider/anthropic.py::_build_request_body(...)`
+- Anthropic-local orphan synthesis was retired:
+  - `_convert_messages(...)` no longer synthesizes missing tool results.
+  - shared compiler repair now owns missing-result synthesis.
+- Focused regression coverage added/updated:
+  - `tests/unit/session/test_session_cancellation.py`
+  - `tests/unit/provider/test_compiler_integration.py`
+- Focused validation passed:
+  - `.venv/bin/ruff check nexus3/session/session.py nexus3/context/manager.py nexus3/provider/anthropic.py nexus3/provider/openai_compat.py tests/unit/session/test_session_cancellation.py tests/unit/provider/test_compiler_integration.py`
+  - `.venv/bin/mypy nexus3/session/session.py nexus3/context/manager.py nexus3/provider/anthropic.py nexus3/provider/openai_compat.py`
+  - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/unit/provider/test_compiler_integration.py tests/unit/provider/test_prompt_caching.py` -> `36 passed`
 
 ## Documentation Updates
 

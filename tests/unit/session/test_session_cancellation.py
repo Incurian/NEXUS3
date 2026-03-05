@@ -3,7 +3,7 @@
 These tests verify:
 1. Session-level cancellation handling (prevents orphans by early exit)
 2. Session adds results for remaining tools when cancelled mid-execution
-3. Provider-level synthesis handles any orphans that slip through
+3. Compiler-backed preflight normalization preserves role-sequence invariants
 """
 
 import asyncio
@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from nexus3.context import ContextConfig, ContextManager
+from nexus3.context.compiler import validate_compiled_message_invariants
 from nexus3.core.cancel import CancellationToken
 from nexus3.core.permissions import resolve_preset
 from nexus3.core.types import (
@@ -99,6 +100,25 @@ class MockProviderRejectToolThenUser:
                 raise AssertionError("Unexpected role 'user' after role 'tool'")
         yield StreamComplete(
             message=Message(role=Role.ASSISTANT, content="ok", tool_calls=())
+        )
+
+
+class MockProviderCapturePreflight:
+    """Provider that captures request messages for invariant assertions."""
+
+    def __init__(self, response_text: str = "ok") -> None:
+        self.response_text = response_text
+        self.captured_messages: list[list[Message]] = []
+
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+        dynamic_context: str | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        self.captured_messages.append(list(messages))
+        yield StreamComplete(
+            message=Message(role=Role.ASSISTANT, content=self.response_text, tool_calls=())
         )
 
 
@@ -365,20 +385,12 @@ class TestToolResultCompleteness:
         )
 
 
-class TestProviderSynthesizesMissingResults:
-    """Test that Anthropic provider synthesizes missing tool_results."""
+class TestProviderCompilerIntegration:
+    """Anthropic request shaping now relies on compiler-driven repair."""
 
-    def test_provider_synthesizes_orphaned_tool_use_blocks(self):
-        """Provider synthesizes results for orphaned tool_use blocks."""
+    def test_convert_messages_does_not_synthesize_orphaned_tool_use_blocks(self):
+        """Local Anthropic conversion should not synthesize missing tool results."""
         from nexus3.provider.anthropic import AnthropicProvider
-        from nexus3.config.schema import ProviderConfig
-
-        # Create a minimal provider config
-        config = ProviderConfig(
-            type="anthropic",
-            base_url="https://api.anthropic.com",
-            api_key_env="ANTHROPIC_API_KEY",
-        )
 
         # We can't fully instantiate without API key, so test the method directly
         # by creating a mock instance
@@ -406,7 +418,7 @@ class TestProviderSynthesizesMissingResults:
         # Should have: user message, assistant message, user message with tool_results
         assert len(result) == 3
 
-        # The last user message should have all 3 tool_results
+        # The last user message should contain only existing tool_results.
         last_user = result[-1]
         assert last_user["role"] == "user"
 
@@ -416,13 +428,7 @@ class TestProviderSynthesizesMissingResults:
             if block["type"] == "tool_result"
         }
 
-        # All 3 tool_use blocks should have results
-        assert tool_result_ids == {"tc1", "tc2", "tc3"}
-
-        # The synthetic results should indicate interruption
-        for block in last_user["content"]:
-            if block["type"] == "tool_result" and block["tool_use_id"] in {"tc2", "tc3"}:
-                assert "interrupted" in block["content"].lower()
+        assert tool_result_ids == {"tc1"}
 
     def test_provider_no_synthesis_when_all_results_present(self):
         """Provider doesn't synthesize when all tool_results are present."""
@@ -460,6 +466,45 @@ class TestProviderSynthesizesMissingResults:
         # No synthetic "interrupted" messages
         for block in tool_results:
             assert "interrupted" not in block["content"].lower()
+
+    def test_build_request_body_synthesizes_missing_results_via_compiler(self):
+        """Compiler integration should synthesize missing tool results before conversion."""
+        from nexus3.config.schema import ProviderConfig
+        from nexus3.provider.anthropic import AnthropicProvider
+
+        provider = object.__new__(AnthropicProvider)
+        provider._config = ProviderConfig(
+            type="anthropic",
+            api_key_env="ANTHROPIC_API_KEY",
+            prompt_caching=False,
+        )
+        provider._model = "claude-haiku-4-5"
+
+        messages = [
+            Message(role=Role.USER, content="Read some files"),
+            Message(
+                role=Role.ASSISTANT,
+                content="",
+                tool_calls=(
+                    ToolCall(id="tc1", name="read_file", arguments={"path": "a.txt"}),
+                    ToolCall(id="tc2", name="read_file", arguments={"path": "b.txt"}),
+                ),
+            ),
+            Message(role=Role.TOOL, content="contents of a.txt", tool_call_id="tc1"),
+        ]
+
+        body = provider._build_request_body(messages, tools=None, stream=False)
+        trailing_user = body["messages"][-1]
+        tool_results = [
+            block for block in trailing_user["content"] if block["type"] == "tool_result"
+        ]
+        tool_ids = {block["tool_use_id"] for block in tool_results}
+
+        assert tool_ids == {"tc1", "tc2"}
+        assert any(
+            block["tool_use_id"] == "tc2" and "interrupted" in block["content"].lower()
+            for block in tool_results
+        )
 
 
 class TestCancelledToolFlushSafety:
@@ -529,3 +574,86 @@ class TestCancelledToolFlushSafety:
         # so validate persisted assistant message instead.
         assert context.messages[-1].role == Role.ASSISTANT
         assert context.messages[-1].content == "ok"
+
+
+class TestCompilerBackedPreflightNormalization:
+    """Session preflight should normalize context through compiler invariants."""
+
+    @pytest.mark.asyncio
+    async def test_preflight_repairs_orphaned_tool_batch_before_user_turn(self) -> None:
+        provider = MockProviderCapturePreflight()
+        context = ContextManager(config=ContextConfig(max_tokens=10000))
+        context.set_system_prompt("System prompt")
+
+        context.add_assistant_message(
+            "",
+            tool_calls=[
+                ToolCall(id="tc1", name="read_file", arguments={"path": "a.txt"}),
+                ToolCall(id="tc2", name="read_file", arguments={"path": "b.txt"}),
+            ],
+        )
+        context.add_tool_result("tc1", "read_file", ToolResult(output="a contents"))
+
+        services = create_services_with_permissions()
+        session = Session(
+            provider=provider,
+            context=context,
+            registry=None,
+            services=services,
+        )
+
+        async for _ in session.send("next"):
+            pass
+
+        assert provider.captured_messages
+        request_messages = provider.captured_messages[-1]
+        assert validate_compiled_message_invariants(request_messages) == []
+
+        for i in range(len(request_messages) - 1):
+            assert not (
+                request_messages[i].role == Role.TOOL
+                and request_messages[i + 1].role == Role.USER
+            )
+
+        tool_result_ids = {
+            msg.tool_call_id
+            for msg in request_messages
+            if msg.role == Role.TOOL and msg.tool_call_id is not None
+        }
+        assert tool_result_ids == {"tc1", "tc2"}
+        assert any(
+            msg.role == Role.ASSISTANT
+            and msg.content == "Previous turn was cancelled after tool execution."
+            for msg in request_messages
+        )
+
+    @pytest.mark.asyncio
+    async def test_preflight_prunes_stale_tool_results_before_user_turn(self) -> None:
+        provider = MockProviderCapturePreflight()
+        context = ContextManager(config=ContextConfig(max_tokens=10000))
+        context.set_system_prompt("System prompt")
+        context.add_user_message("hello")
+        context.add_tool_result("stale-tool-id", "read_file", ToolResult(output="stale"))
+
+        services = create_services_with_permissions()
+        session = Session(
+            provider=provider,
+            context=context,
+            registry=None,
+            services=services,
+        )
+
+        async for _ in session.send("next"):
+            pass
+
+        assert provider.captured_messages
+        request_messages = provider.captured_messages[-1]
+        assert validate_compiled_message_invariants(request_messages) == []
+        assert all(
+            not (msg.role == Role.TOOL and msg.tool_call_id == "stale-tool-id")
+            for msg in request_messages
+        )
+        assert all(
+            not (msg.role == Role.TOOL and msg.tool_call_id == "stale-tool-id")
+            for msg in context.messages
+        )

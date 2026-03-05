@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from nexus3.context.compiler import compile_context_messages
 from nexus3.core.types import (
     ContentDelta,
     Message,
@@ -113,9 +114,11 @@ class OpenAICompatProvider(BaseProvider):
         Returns:
             Request body dict in OpenAI format.
         """
+        compiled = compile_context_messages(messages)
+
         body: dict[str, Any] = {
             "model": self._model,
-            "messages": [self._message_to_dict(m) for m in messages],
+            "messages": [self._message_to_dict(m) for m in compiled.messages],
             "stream": stream,
         }
 
