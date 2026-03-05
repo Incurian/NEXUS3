@@ -697,6 +697,23 @@ Compact checkpoint (2026-03-06, architecture execution round 15):
   2. Plan H: evaluate strict-value (not just extra-key) flips for behavior-sensitive handlers still using `strict=False` (`send`, `cancel`, `compact`, `create_agent`) and protocol `error` object strict typing.
   3. Plan G: finish residual sink-boundary cleanup in `display/streaming.py` tool metadata rendering and remaining dynamic REPL command-result print paths.
 
+Compact checkpoint (2026-03-06, architecture execution round 16):
+- Branch head at start of round: `a388420`; working tree now includes Plan G closure slices.
+- New slices completed this round:
+  1. Plan G hardened dynamic render boundaries in `nexus3/display/streaming.py` (tool name/params + batch active tool name) to sanitize at sink boundary.
+  2. Plan G replaced remaining dynamic REPL command-result lines in `nexus3/cli/repl.py` with SafeSink-backed formatters (switch/whisper/create/restore outputs).
+  3. Plan G consolidated confirmation parameter formatting in `nexus3/cli/confirmation_ui.py` onto `SafeSink.sanitize_print_value(...)`.
+  4. Plan G hardened prompt-toolkit HTML toolbar/prompt interpolation in `nexus3/cli/repl.py` via `_sanitize_prompt_html_text(...)` and sanitized confirmation full-details pager/editor content in `nexus3/cli/confirmation_ui.py`.
+  5. Plan G checklist top-level items are now marked complete in `docs/plans/ARCH-G-TERMINAL-SAFE-SINK-PLAN-2026-03-02.md` after re-audit.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/display/streaming.py nexus3/cli/repl.py nexus3/cli/confirmation_ui.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py tests/unit/cli/test_confirmation_ui_safe_sink.py` passed.
+  - `.venv/bin/mypy nexus3/display/streaming.py nexus3/cli/repl.py nexus3/cli/confirmation_ui.py` passed.
+  - `.venv/bin/pytest -v tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py tests/unit/cli/test_confirmation_ui_safe_sink.py` passed (`74 passed`).
+- Immediate resume targets:
+  1. Plan A: evaluate kernel-authoritative create authorization flip in `rpc/pool.py::_create_unlocked` (highest remaining duplicate-branch security surface).
+  2. Plan H: evaluate strict-value flips for behavior-sensitive handlers still using `strict=False` (`send`, `cancel`, `compact`, `create_agent`) while preserving legacy error wording.
+  3. Plan H: decide whether to enforce strict typed `error` object shape in `rpc/protocol.py::parse_response` using `RpcErrorObjectSchema`.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.

@@ -120,3 +120,41 @@ async def test_confirm_tool_action_exec_choice_parity_with_sanitized_preview(mon
     assert "echo \\[red]hi\\[/red]" in rendered
     assert "/tmp/\\[bold]work\\[/bold]" in rendered
     assert "\x1b" not in rendered
+
+
+def test_format_tool_params_sanitizes_markup_and_terminal_escapes() -> None:
+    rendered = confirmation_ui.format_tool_params(
+        {
+            "path": "/tmp/[bold]x.py[/bold]\x1b[31m",
+            "content": "[red]boom[/red]\x1b]8;;https://evil\x07x\x1b]8;;\x07",
+        },
+        max_length=200,
+    )
+
+    assert "path=/tmp/\\[bold]x.py\\[/bold]" in rendered
+    assert "content=\\[red]boom\\[/red]x" in rendered
+    assert "\x1b" not in rendered
+
+
+def test_format_full_tool_details_sanitizes_untrusted_values() -> None:
+    tool_call = ToolCall(
+        id="call_\x1b[31m1",
+        name="bash_[bold]safe[/bold]\x1b]8;;https://evil\x07x\x1b]8;;\x07",
+        arguments={
+            "command": "echo [red]x[/red]\x1b[2J",
+            "path": "/tmp/\x1b[31mbad",
+        },
+    )
+    rendered = confirmation_ui._format_full_tool_details(
+        tool_call=tool_call,
+        target_path=Path("/tmp/[bold]target[/bold]\x1b[31m"),
+        agent_cwd=Path("/repo/\x1b[31mwork"),
+    )
+
+    assert "Tool: bash_[bold]safe[/bold]x" in rendered
+    assert "Call ID: call_1" in rendered
+    assert "Target Path: /tmp/[bold]target[/bold]" in rendered
+    assert "Working Directory: /repo/work" in rendered
+    assert "command: echo [red]x[/red]" in rendered
+    assert "path: /tmp/bad" in rendered
+    assert "\x1b" not in rendered

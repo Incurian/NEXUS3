@@ -19,10 +19,14 @@ from typing import Any
 
 from nexus3.cli.live_state import _current_live
 from nexus3.core.permissions import ConfirmationResult
-from nexus3.core.text_safety import escape_rich_markup
 from nexus3.core.types import ToolCall
 from nexus3.display import get_console
 from nexus3.display.safe_sink import SafeSink
+
+
+def _sanitize_details_text(value: object) -> str:
+    """Sanitize untrusted detail text for plain editor/pager rendering."""
+    return SafeSink.sanitize_stream_content(str(value))
 
 
 def smart_truncate(value: str, max_length: int, preserve_ends: bool = False) -> str:
@@ -71,19 +75,18 @@ def format_tool_params(arguments: dict[str, Any], max_length: int = 140) -> str:
     # Add priority arguments first (full value, escaped for Rich markup)
     for key in priority_keys:
         if key in arguments and arguments[key]:
-            value = str(arguments[key])
+            value = SafeSink.sanitize_print_value(arguments[key])
             # Use middle truncation for path-like values if very long
             if key in ("path", "file", "file_path", "directory", "dir", "cwd") and len(value) > 60:
                 value = smart_truncate(value, max_length=60, preserve_ends=True)
-            value = escape_rich_markup(value)
-            safe_key = escape_rich_markup(str(key))
+            safe_key = SafeSink.sanitize_print_value(key)
             parts.append(f"{safe_key}={value}")
 
     # Add remaining arguments (truncated if needed, escaped for Rich markup)
     for key, value in arguments.items():
         if key in priority_keys or value is None:
             continue
-        str_val = str(value)
+        str_val = SafeSink.sanitize_print_value(value)
         # Truncate long non-priority values
         if len(str_val) > 30:
             str_val = str_val[:27] + "..."
@@ -91,8 +94,8 @@ def format_tool_params(arguments: dict[str, Any], max_length: int = 140) -> str:
         if isinstance(value, str) and " " in str_val:
             str_val = f'"{str_val}"'
         # Escape both key and value for Rich markup safety
-        safe_key = escape_rich_markup(str(key))
-        safe_val = escape_rich_markup(str_val)
+        safe_key = SafeSink.sanitize_print_value(key)
+        safe_val = str_val
         parts.append(f"{safe_key}={safe_val}")
 
     result = ", ".join(parts)
@@ -201,26 +204,27 @@ def _format_full_tool_details(
     """
     lines = []
 
-    lines.append(f"Tool: {tool_call.name}")
-    lines.append(f"Call ID: {tool_call.id}")
+    lines.append(f"Tool: {_sanitize_details_text(tool_call.name)}")
+    lines.append(f"Call ID: {_sanitize_details_text(tool_call.id)}")
     lines.append("")
 
     if target_path:
-        lines.append(f"Target Path: {target_path}")
-    lines.append(f"Working Directory: {agent_cwd}")
+        lines.append(f"Target Path: {_sanitize_details_text(target_path)}")
+    lines.append(f"Working Directory: {_sanitize_details_text(agent_cwd)}")
     lines.append("")
     lines.append("Parameters:")
     lines.append("-" * 40)
 
     for key, value in tool_call.arguments.items():
-        value_str = str(value)
+        safe_key = _sanitize_details_text(key)
+        value_str = _sanitize_details_text(value)
         if len(value_str) > 200 or "\n" in value_str:
-            lines.append(f"\n{key}:")
+            lines.append(f"\n{safe_key}:")
             lines.append("-" * 20)
             lines.append(value_str)
             lines.append("-" * 20)
         else:
-            lines.append(f"{key}: {value_str}")
+            lines.append(f"{safe_key}: {value_str}")
 
     return "\n".join(lines)
 
@@ -232,7 +236,7 @@ def _show_tool_details(tool_call: ToolCall, target_path: Path | None, agent_cwd:
         True if viewer opened successfully, False otherwise.
     """
     content = _format_full_tool_details(tool_call, target_path, agent_cwd)
-    title = f"Tool: {tool_call.name}"
+    title = f"Tool: {_sanitize_details_text(tool_call.name)}"
     return _open_in_editor(content, title)
 
 

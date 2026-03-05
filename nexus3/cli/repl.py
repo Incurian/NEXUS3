@@ -32,6 +32,7 @@ import asyncio
 import logging
 import os
 import sys
+from html import escape as html_escape
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,7 @@ from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError, ProviderError
 from nexus3.core.paths import display_path
 from nexus3.core.permissions import ConfirmationResult, PermissionLevel
+from nexus3.core.text_safety import strip_terminal_escapes
 from nexus3.core.types import ToolCall
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.display import Activity, Spinner, get_console
@@ -100,6 +102,11 @@ def _sanitize_tool_trace_text(
     if markup_already_escaped:
         return safe_sink.sanitize_stream_content(value)
     return safe_sink.sanitize_print_content(value)
+
+
+def _sanitize_prompt_html_text(value: object) -> str:
+    """Sanitize untrusted text before interpolation into prompt-toolkit HTML."""
+    return html_escape(strip_terminal_escapes(str(value)), quote=False)
 
 
 def _format_tool_call_trace_line(safe_sink: SafeSink, name: str, params: str) -> str:
@@ -235,6 +242,39 @@ def _format_created_agent_line(safe_sink: SafeSink, agent_id: str) -> str:
     """Format created-agent status line while preserving trusted Rich wrapper markup."""
     safe_agent_id = _sanitize_tool_trace_text(safe_sink, agent_id)
     return f"[dim]Created agent: {safe_agent_id}[/]"
+
+
+def _format_created_agent_success_line(safe_sink: SafeSink, agent_id: object) -> str:
+    """Format created-agent success line for command-result handling."""
+    safe_agent_id = _sanitize_tool_trace_text(safe_sink, str(agent_id))
+    return f"Created agent: {safe_agent_id}"
+
+
+def _format_switched_agent_line(safe_sink: SafeSink, agent_id: object) -> str:
+    """Format switch-agent status line for command-result handling."""
+    safe_agent_id = _sanitize_tool_trace_text(safe_sink, str(agent_id))
+    return f"Switched to: {safe_agent_id}"
+
+
+def _format_restored_session_line(
+    safe_sink: SafeSink, agent_id: object, message_count: object
+) -> str:
+    """Format restored-session status line for command-result handling."""
+    safe_agent_id = _sanitize_tool_trace_text(safe_sink, str(agent_id))
+    safe_message_count = _sanitize_tool_trace_text(safe_sink, str(message_count))
+    return f"Restored session: {safe_agent_id} ({safe_message_count} messages)"
+
+
+def _format_whisper_mode_line(safe_sink: SafeSink, agent_id: object) -> str:
+    """Format whisper-mode entry line while preserving trusted Rich wrapper markup."""
+    safe_agent_id = _sanitize_tool_trace_text(safe_sink, str(agent_id))
+    return f"[dim]┌── whisper mode: {safe_agent_id} ── /over to return ──┐[/]"
+
+
+def _format_whisper_return_line(safe_sink: SafeSink, agent_id: object) -> str:
+    """Format whisper-mode exit line while preserving trusted Rich wrapper markup."""
+    safe_agent_id = _sanitize_tool_trace_text(safe_sink, str(agent_id))
+    return f"[dim]└── returned to {safe_agent_id} ────────────────────────────────┘[/]"
 
 
 def _format_shutdown_server_line(safe_sink: SafeSink, server_url: str) -> str:
@@ -1305,7 +1345,8 @@ async def run_repl(
         # 2. Agent ID (truncated if > 15 chars)
         agent_display = (current_agent_id[:12] + "..." if len(current_agent_id) > 15
                          else current_agent_id)
-        sections.append(f'<style fg="ansicyan">{agent_display}</style>')
+        safe_agent_display = _sanitize_prompt_html_text(agent_display)
+        sections.append(f'<style fg="ansicyan">{safe_agent_display}</style>')
 
         # Get current agent for model and cwd
         agent = pool.get(current_agent_id)
@@ -1316,9 +1357,11 @@ async def run_repl(
             if model:
                 model_display = model.alias or model.model_id
                 reasoning_indicator = " [R]" if model.reasoning else ""
+                safe_model_display = _sanitize_prompt_html_text(model_display)
+                safe_provider_name = _sanitize_prompt_html_text(model.provider_name)
                 sections.append(
-                    f'<style fg="ansibrightblack">{model_display}{reasoning_indicator} '
-                    f'({model.provider_name})</style>'
+                    f'<style fg="ansibrightblack">{safe_model_display}{reasoning_indicator} '
+                    f'({safe_provider_name})</style>'
                 )
 
         # 4. Working directory (use tilde path, skip if just ".")
@@ -1326,7 +1369,8 @@ async def run_repl(
             cwd = agent.services.get_cwd()
             cwd_display = display_path(cwd)
             if cwd_display != ".":
-                sections.append(f'<style fg="ansibrightblack">{cwd_display}</style>')
+                safe_cwd_display = _sanitize_prompt_html_text(cwd_display)
+                sections.append(f'<style fg="ansibrightblack">{safe_cwd_display}</style>')
 
         # 5. Token usage (use agent.context for current model's budget)
         if agent and agent.context:
@@ -1576,9 +1620,9 @@ async def run_repl(
 
             # Dynamic prompt based on whisper mode
             if whisper.is_active():
-                prompt_text = f"{whisper.target_agent_id}> "
+                prompt_text = _sanitize_prompt_html_text(f"{whisper.target_agent_id}> ")
             else:
-                prompt_text = "> "
+                prompt_text = _sanitize_prompt_html_text("> ")
             user_input = await prompt_session.prompt_async(
                 HTML(f"<style class='prompt'>{prompt_text}</style>")
             )
@@ -1609,11 +1653,7 @@ async def run_repl(
                         # Check if exiting whisper mode
                         if was_whisper:
                             console.print(
-                                f"[dim]\u2514\u2500\u2500 returned to "
-                                f"{output.new_agent_id} "
-                                f"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
-                                f"\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
-                                f"\u2500\u2500\u2500\u2500\u2500\u2500\u2518[/]"
+                                _format_whisper_return_line(safe_sink, output.new_agent_id)
                             )
                         # Switch to new agent
                         new_id = output.new_agent_id
@@ -1633,7 +1673,8 @@ async def run_repl(
                             save_as_last_session(current_agent_id)
                             if not was_whisper:
                                 console.print(
-                                    f"Switched to: {current_agent_id}", style="dim cyan"
+                                    _format_switched_agent_line(safe_sink, current_agent_id),
+                                    style="dim cyan",
                                 )
                         else:
                             console.print(
@@ -1641,9 +1682,7 @@ async def run_repl(
                             )
                     elif output.result == CmdResult.ENTER_WHISPER:
                         console.print(
-                            f"[dim]\u250c\u2500\u2500 whisper mode: "
-                            f"{output.whisper_target} \u2500\u2500 "
-                            f"/over to return \u2500\u2500\u2510[/]"
+                            _format_whisper_mode_line(safe_sink, output.whisper_target)
                         )
                     elif output.result == CmdResult.ERROR:
                         # Check for prompt actions that need user confirmation
@@ -1682,8 +1721,11 @@ async def run_repl(
                                         for msg in restored_msgs:
                                             new_agent.context._messages.append(msg)
                                         console.print(
-                                            f"Restored session: {agent_name_to_restore} "
-                                            f"({len(restored_msgs)} messages)",
+                                            _format_restored_session_line(
+                                                safe_sink,
+                                                agent_name_to_restore,
+                                                len(restored_msgs),
+                                            ),
                                             style="dim green",
                                         )
                                         # Switch to restored agent
@@ -1699,7 +1741,9 @@ async def run_repl(
                                         # Update last session on restore
                                         save_as_last_session(current_agent_id)
                                         console.print(
-                                            f"Switched to: {agent_name_to_restore}",
+                                            _format_switched_agent_line(
+                                                safe_sink, agent_name_to_restore
+                                            ),
                                             style="dim cyan",
                                         )
                                 except Exception as e:
@@ -1738,7 +1782,9 @@ async def run_repl(
                                     # Wire up confirmation callback
                                     new_agent.session.on_confirm = confirm_with_pause
                                     console.print(
-                                        f"Created agent: {agent_name_to_create}",
+                                        _format_created_agent_success_line(
+                                            safe_sink, agent_name_to_create
+                                        ),
                                         style="dim green",
                                     )
 
@@ -1756,7 +1802,9 @@ async def run_repl(
                                         # Update last session on create+switch
                                         save_as_last_session(current_agent_id)
                                         console.print(
-                                            f"Switched to: {agent_name_to_create}",
+                                            _format_switched_agent_line(
+                                                safe_sink, agent_name_to_create
+                                            ),
                                             style="dim cyan",
                                         )
                                     else:  # prompt_create_whisper
@@ -1764,9 +1812,9 @@ async def run_repl(
                                             agent_name_to_create, current_agent_id
                                         )
                                         console.print(
-                                            f"[dim]\u250c\u2500\u2500 whisper mode: "
-                                            f"{agent_name_to_create} \u2500\u2500 "
-                                            f"/over to return \u2500\u2500\u2510[/]"
+                                            _format_whisper_mode_line(
+                                                safe_sink, agent_name_to_create
+                                            )
                                         )
                                 except Exception as e:
                                     console.print(

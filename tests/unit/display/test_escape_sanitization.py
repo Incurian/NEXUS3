@@ -364,3 +364,38 @@ class TestStreamingDisplaySanitization:
 
         assert r"\[red]bad\[/red]" in plain
         assert "\x1b" not in plain
+
+    def test_render_tool_line_sanitizes_tool_name_and_params(self) -> None:
+        display = StreamingDisplay(Theme())
+        tool = ToolStatus(
+            name="[red]run[/red]\x1b[31m",
+            tool_id="t1",
+            state=ToolState.ACTIVE,
+            params="arg=\\[bold]x\\[/bold]\x1b]8;;https://evil\x07y\x1b]8;;\x07",
+        )
+
+        line = display._render_tool_line(tool)
+        plain = line.plain
+
+        assert r"\[red]run\[/red]" in plain
+        assert r"arg=\\\[bold]x\\\[/bold]y" in plain
+        assert "\x1b" not in plain
+
+    def test_render_batch_status_sanitizes_active_tool_name(self) -> None:
+        display = StreamingDisplay(Theme())
+        display.start_batch(
+            [
+                (
+                    "[red]active[/red]\x1b]8;;https://evil\x07x\x1b]8;;\x07",
+                    "t1",
+                    "",
+                ),
+                ("other", "t2", ""),
+            ]
+        )
+        display.set_tool_active("t1")
+
+        status = display._render_batch_status()
+
+        assert status.startswith(r"Running: \[red]active\[/red]x")
+        assert "\x1b" not in status

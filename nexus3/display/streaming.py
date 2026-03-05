@@ -143,6 +143,8 @@ class StreamingDisplay:
     def _render_tool_line(self, tool: ToolStatus) -> Text:
         """Render a single tool line with gumball and path."""
         line = Text()
+        safe_name = SafeSink.sanitize_print_content(tool.name)
+        safe_params = SafeSink.sanitize_print_content(tool.params) if tool.params else ""
 
         # Gumball based on state
         if tool.state == ToolState.PENDING:
@@ -159,9 +161,9 @@ class StreamingDisplay:
             line.append("  ● ", style="bright_yellow")
 
         # Tool name and params
-        line.append(tool.name, style="bold" if tool.state == ToolState.ACTIVE else "")
-        if tool.params:
-            line.append(f": {tool.params}", style="dim")
+        line.append(safe_name, style="bold" if tool.state == ToolState.ACTIVE else "")
+        if safe_params:
+            line.append(f": {safe_params}", style="dim")
 
         # Duration for active tools > 3s
         if tool.state == ToolState.ACTIVE and tool.start_time > 0:
@@ -196,7 +198,8 @@ class StreamingDisplay:
 
         parts = []
         if active:
-            parts.append(f"Running: {active[0].name}")
+            safe_active_name = SafeSink.sanitize_print_content(active[0].name)
+            parts.append(f"Running: {safe_active_name}")
         else:
             parts.append("Executing tools")
 
@@ -243,7 +246,7 @@ class StreamingDisplay:
         return 0.0
 
     def add_chunk(self, chunk: str) -> None:
-        """Add a chunk to the response buffer (sanitized at source)."""
+        """Add a chunk to the response buffer with sink-boundary sanitization."""
         sanitized = SafeSink.sanitize_stream_content(chunk)
         self.response += sanitized
         if self.activity == Activity.THINKING:

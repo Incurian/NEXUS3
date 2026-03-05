@@ -13,6 +13,7 @@ from nexus3.cli.repl import (
     _format_connected_tokens_line,
     _format_connecting_line,
     _format_created_agent_line,
+    _format_created_agent_success_line,
     _format_embedded_rpc_listening_line,
     _format_incoming_response_sent_line,
     _format_incoming_started_line,
@@ -26,12 +27,14 @@ from nexus3.cli.repl import (
     _format_repl_context_metadata_line,
     _format_repl_error_line,
     _format_repl_startup_metadata_line,
+    _format_restored_session_line,
     _format_scanned_ports_line,
     _format_scanning_additional_ports_line,
     _format_server_failed_to_start_line,
     _format_server_log_line,
     _format_shutdown_server_line,
     _format_shutdown_warning_line,
+    _format_switched_agent_line,
     _format_thought_duration_line,
     _format_tool_call_trace_line,
     _format_tool_error_trace_line,
@@ -42,6 +45,9 @@ from nexus3.cli.repl import (
     _format_turn_completed_status_line,
     _format_unknown_rpc_command_line,
     _format_warning_message_line,
+    _format_whisper_mode_line,
+    _format_whisper_return_line,
+    _sanitize_prompt_html_text,
 )
 from nexus3.display.safe_sink import SafeSink
 
@@ -61,6 +67,13 @@ def test_tool_call_trace_line_sanitizes_untrusted_name_and_params() -> None:
 
     assert line == "  [cyan]●[/] \\[red]exec\\[/red]: path=\\[bold]/tmp/x\\[/bold]x"
     assert "\x1b" not in line
+
+
+def test_sanitize_prompt_html_text_strips_terminal_escapes_and_escapes_html() -> None:
+    sanitized = _sanitize_prompt_html_text("</style><b>x</b>&\x1b[31m")
+
+    assert sanitized == "&lt;/style&gt;&lt;b&gt;x&lt;/b&gt;&amp;"
+    assert "\x1b" not in sanitized
 
 
 def test_tool_result_trace_line_sanitizes_preview_and_preserves_done_fallback() -> None:
@@ -289,6 +302,38 @@ def test_created_agent_and_shutdown_lines_sanitize_dynamic_fields() -> None:
     assert (
         warning
         == "[yellow]Warning: Server shutdown may have failed: \\[yellow]warn\\[/yellow][/]"
+    )
+
+
+def test_command_result_agent_lines_sanitize_dynamic_fields() -> None:
+    sink = _make_sink()
+
+    switched = _format_switched_agent_line(
+        sink, "[cyan]agent-2[/cyan]\x1b]8;;https://evil\x07x\x1b]8;;\x07"
+    )
+    restored = _format_restored_session_line(
+        sink,
+        "[green]sess[/green]\x1b[31m",
+        "[red]3[/red]\x1b[2J",
+    )
+    created = _format_created_agent_success_line(
+        sink, "[magenta]new[/magenta]\x1b[31m"
+    )
+    whisper_mode = _format_whisper_mode_line(
+        sink, "[yellow]target[/yellow]\x1b]8;;https://evil\x07x\x1b]8;;\x07"
+    )
+    whisper_return = _format_whisper_return_line(
+        sink, "[blue]main[/blue]\x1b[31m"
+    )
+
+    assert switched == "Switched to: \\[cyan]agent-2\\[/cyan]x"
+    assert restored == "Restored session: \\[green]sess\\[/green] (\\[red]3\\[/red] messages)"
+    assert created == "Created agent: \\[magenta]new\\[/magenta]"
+    assert whisper_mode == (
+        "[dim]┌── whisper mode: \\[yellow]target\\[/yellow]x ── /over to return ──┐[/]"
+    )
+    assert whisper_return == (
+        "[dim]└── returned to \\[blue]main\\[/blue] ────────────────────────────────┘[/]"
     )
 
 
