@@ -76,7 +76,7 @@ Status note (2026-03-05, M3 Plan E Phase 1):
   - `.venv/bin/ruff check nexus3/context/compiler.py nexus3/context/__init__.py tests/unit/context/test_compiler.py`
   - `.venv/bin/mypy nexus3/context/compiler.py nexus3/context/__init__.py`
 
-Status note (2026-03-05, M3 Plan E Phase 2, working tree):
+Status note (2026-03-05, M3 Plan E Phase 2, committed as `e3cd304`):
 - Session preflight repair is now compiler-backed:
   - `nexus3/session/session.py` normalizes persisted context through
     `compile_context_messages(...)` before appending each new user turn.

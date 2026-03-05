@@ -126,7 +126,7 @@ Status note (2026-03-05):
   - added `nexus3/context/compiler.py` typed compiler IR + invariant checker
   - added `tests/unit/context/test_compiler.py` for fixture parity, diagnostics, and invariant-report regressions
   - exported compiler interfaces in `nexus3/context/__init__.py`
-- Plan E Phase 2 implemented in working tree (pending commit):
+- Plan E Phase 2 committed as `e3cd304`:
   - migrated session preflight repair to compiler-backed normalization with
     persisted repaired history update in `nexus3/session/session.py` /
     `nexus3/context/manager.py`
@@ -136,7 +136,7 @@ Status note (2026-03-05):
   - added focused regressions in
     `tests/unit/session/test_session_cancellation.py` and
     `tests/unit/provider/test_compiler_integration.py`
-- Next M3 target: commit Plan E Phase 2 checkpoint and close M3 scope.
+- Next M3 target: close M3 scope review and keep Plan E Phases 3-4 queued for M4.
 
 ### M4: Delegation and Strategic Evolution
 
