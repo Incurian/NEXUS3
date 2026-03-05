@@ -134,7 +134,7 @@ parse_response(line: str) -> Response
 Ingress validation is strict at the protocol boundary:
 - `parse_request()` validates against `RpcRequestEnvelopeSchema` (`extra="forbid"`), rejects positional params, and rejects boolean `id` values.
 - `parse_response()` validates against `RpcResponseEnvelopeSchema` (`extra="forbid"`), rejects boolean `id` values, and requires exactly one of `result` or `error`.
-- `Dispatcher.dispatch()` and `GlobalDispatcher.dispatch()` also validate direct in-process `Request` envelopes before handler execution, so malformed `jsonrpc`/`method`/`id`/`params` shapes fail deterministically with `INVALID_PARAMS`.
+- `Dispatcher.dispatch()` and `GlobalDispatcher.dispatch()` also validate direct in-process `Request` envelopes before handler execution, so malformed `jsonrpc`/`method`/`id`/`params` shapes fail deterministically before business logic. For non-notification requests this returns `INVALID_PARAMS`; malformed notifications still return no response.
 
 ---
 
@@ -232,6 +232,7 @@ Authorization is kernel-authoritative in current lifecycle handlers:
 - `destroy_agent` authorization is enforced in `AgentPool.destroy(...)` via `AGENT_DESTROY` checks (self, parent-child, external/admin contexts).
 - `list_agents` and `shutdown_server` are authorized through kernel-backed checks in `GlobalDispatcher`.
 - MCP tool visibility during pool create/restore is routed through a pool-local kernel gate (`TOOL_EXECUTE`) with preserved level semantics (TRUSTED/YOLO allow, SANDBOXED deny).
+- GitLab tool visibility during pool create/restore is also routed through a pool-local kernel gate (`TOOL_EXECUTE`) with preserved level semantics (TRUSTED/YOLO allow, SANDBOXED deny).
 
 ### Dispatcher (`dispatcher.py`)
 
@@ -276,7 +277,7 @@ Ingress schema behavior:
 - Method params are validated with strict Pydantic schemas (`strict=True`, `extra="forbid"`).
 - Unknown params and malformed field types return `INVALID_PARAMS` with method-specific compatibility messages.
 - No-arg methods (`shutdown`, `get_tokens`, `get_context`, `cancel_all`, `list_agents`, `shutdown_server`) reject extra params.
-- Direct in-process dispatch (`dispatch(Request(...))`) now applies strict request-envelope validation before method routing.
+- Direct in-process dispatch (`dispatch(Request(...))`) now applies the same strict request-envelope validation before method routing, including explicit rejection of non-string `params` keys.
 
 Per-agent authorization is kernel-authoritative for `send`, `cancel`, `compact`, and `shutdown`. In particular, YOLO send gating (`no REPL connected`) is decided by kernel policy.
 

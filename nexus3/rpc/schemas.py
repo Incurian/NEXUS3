@@ -1,7 +1,7 @@
 """Typed schema inventory for RPC and MCP boundary payloads.
 
-This module is intentionally behavior-preserving scaffold for Plan H Phase 1.
-Schemas are not wired into dispatch paths yet.
+These schemas are the canonical strict-ingress models used by JSON-RPC protocol
+parsing, direct dispatcher ingress validation, and MCP boundary loading.
 """
 
 from __future__ import annotations

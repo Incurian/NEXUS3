@@ -2466,6 +2466,17 @@ def _gitlab_toggle(ctx: CommandContext, enable: bool) -> CommandOutput:
     if not gitlab_tools:
         return CommandOutput.error("No GitLab tools registered (check GitLab configuration)")
 
+    if enable:
+        for tool_name in gitlab_tools:
+            permission_error = _authorize_permission_mutation(
+                agent,
+                perms,
+                mutation_kind="enable_tool",
+                tool_name=tool_name,
+            )
+            if permission_error is not None:
+                return permission_error
+
     # Toggle each tool
     count = 0
     for tool_name in gitlab_tools:

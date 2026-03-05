@@ -21,14 +21,17 @@ from nexus3.core.authorization_kernel import (
 from nexus3.core.cancel import CancellationToken
 from nexus3.core.permissions import PermissionLevel
 from nexus3.core.request_context import RequestContext
-from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
+from nexus3.rpc.dispatch_core import (
+    InvalidParamsError,
+    dispatch_request,
+    validate_direct_request_envelope,
+)
 from nexus3.rpc.protocol import INVALID_PARAMS, make_error_response
 from nexus3.rpc.schemas import (
     CancelParamsSchema,
     CompactParamsSchema,
     EmptyParamsSchema,
     GetMessagesParamsSchema,
-    RpcRequestEnvelopeSchema,
     SendParamsSchema,
 )
 from nexus3.rpc.types import Request, Response
@@ -244,58 +247,7 @@ class Dispatcher:
         return await dispatch_request(request, handlers, "method")
 
     def _validate_direct_request_envelope(self, request: Request) -> None:
-        request_data: dict[str, Any] = {
-            "jsonrpc": request.jsonrpc,
-            "method": request.method,
-            "id": request.id,
-        }
-        if request.params is not None:
-            request_data["params"] = request.params
-
-        if isinstance(request.params, list):
-            raise InvalidParamsError(
-                "Positional params (array) not supported, use named params (object)"
-            )
-        if isinstance(request.method, str) and request.method == "":
-            raise InvalidParamsError("method must be a non-empty string")
-
-        try:
-            RpcRequestEnvelopeSchema.model_validate(request_data, strict=True)
-        except PydanticValidationError as exc:
-            errors = exc.errors()
-            if errors:
-                error = errors[0]
-                loc = error.get("loc", ())
-                field = loc[0] if loc else None
-
-                if field == "jsonrpc":
-                    raise InvalidParamsError(
-                        f"jsonrpc must be '2.0', got: {request.jsonrpc!r}"
-                    ) from exc
-
-                if field == "method":
-                    raise InvalidParamsError(
-                        f"method must be a string, got: {type(request.method).__name__}"
-                    ) from exc
-
-                if field == "params":
-                    if isinstance(request.params, list):
-                        raise InvalidParamsError(
-                            "Positional params (array) not supported, "
-                            "use named params (object)"
-                        ) from exc
-                    raise InvalidParamsError(
-                        "params must be object or array, "
-                        f"got: {type(request.params).__name__}"
-                    ) from exc
-
-                if field == "id":
-                    raise InvalidParamsError(
-                        "id must be string, number, or null, "
-                        f"got: {type(request.id).__name__}"
-                    ) from exc
-
-            raise InvalidParamsError("Invalid JSON-RPC request") from exc
+        validate_direct_request_envelope(request)
 
     async def _notify_incoming(self, payload: dict[str, Any]) -> None:
         """Notify the REPL about an incoming turn (non-REPL source).

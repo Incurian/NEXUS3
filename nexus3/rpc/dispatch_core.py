@@ -18,6 +18,8 @@ import logging
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from pydantic import ValidationError as PydanticValidationError
+
 from nexus3.core.errors import NexusError
 from nexus3.rpc.protocol import (
     INTERNAL_ERROR,
@@ -26,6 +28,7 @@ from nexus3.rpc.protocol import (
     make_error_response,
     make_success_response,
 )
+from nexus3.rpc.schemas import RpcRequestEnvelopeSchema
 from nexus3.rpc.types import Request, Response
 
 logger = logging.getLogger(__name__)
@@ -36,6 +39,74 @@ Handler = Callable[[dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
 
 class InvalidParamsError(NexusError):
     """Raised when method parameters are invalid."""
+
+
+def validate_direct_request_envelope(request: Request) -> None:
+    """Validate an in-process Request object with JSON-RPC ingress rules.
+
+    Direct dispatcher callers bypass `parse_request()`, so this reproduces the
+    same strict envelope checks and compatibility-preserving error wording.
+    """
+    request_data: dict[str, Any] = {
+        "jsonrpc": request.jsonrpc,
+        "method": request.method,
+        "id": request.id,
+    }
+    if request.params is not None:
+        request_data["params"] = request.params
+
+    if isinstance(request.params, list):
+        raise InvalidParamsError(
+            "Positional params (array) not supported, use named params (object)"
+        )
+    if isinstance(request.method, str) and request.method == "":
+        raise InvalidParamsError("method must be a non-empty string")
+
+    try:
+        RpcRequestEnvelopeSchema.model_validate(request_data, strict=True)
+    except PydanticValidationError as exc:
+        errors = exc.errors()
+        if errors:
+            error = errors[0]
+            loc = error.get("loc", ())
+            field = loc[0] if loc else None
+
+            if field == "jsonrpc":
+                raise InvalidParamsError(
+                    f"jsonrpc must be '2.0', got: {request.jsonrpc!r}"
+                ) from exc
+
+            if field == "method":
+                raise InvalidParamsError(
+                    f"method must be a string, got: {type(request.method).__name__}"
+                ) from exc
+
+            if field == "params":
+                if isinstance(request.params, list):
+                    raise InvalidParamsError(
+                        "Positional params (array) not supported, "
+                        "use named params (object)"
+                    ) from exc
+                if (
+                    len(loc) > 2
+                    and loc[2] == "[key]"
+                    and isinstance(loc[1], (str, int, float, bool))
+                ):
+                    raise InvalidParamsError(
+                        f"params keys must be strings, got: {type(loc[1]).__name__}"
+                    ) from exc
+                raise InvalidParamsError(
+                    "params must be object or array, "
+                    f"got: {type(request.params).__name__}"
+                ) from exc
+
+            if field == "id":
+                raise InvalidParamsError(
+                    "id must be string, number, or null, "
+                    f"got: {type(request.id).__name__}"
+                ) from exc
+
+        raise InvalidParamsError("Invalid JSON-RPC request") from exc
 
 
 async def dispatch_request(

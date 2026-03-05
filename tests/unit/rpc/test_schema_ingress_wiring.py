@@ -1,4 +1,4 @@
-"""Focused tests for Plan H Phase 2 compat-safe schema ingress wiring."""
+"""Focused tests for Plan H strict schema ingress wiring."""
 
 from __future__ import annotations
 
@@ -1010,3 +1010,41 @@ async def test_global_direct_ingress_wiring_rejects_malformed_request_envelope_o
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
     assert response.error["message"] == expected_message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["send", "list_agents"])
+async def test_direct_dispatch_rejects_non_string_params_keys(method: str) -> None:
+    request_obj = Request(
+        jsonrpc="2.0",
+        method=method,
+        params={1: "bad"},  # type: ignore[arg-type]
+        id=1,
+    )
+
+    if method == "send":
+        dispatcher = Dispatcher(_StreamingStubSession(), context=None, agent_id="agent-1")
+    else:
+        dispatcher = GlobalDispatcher(_StubPool())
+
+    response = await dispatcher.dispatch(request_obj)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == "params keys must be strings, got: int"
+
+
+@pytest.mark.asyncio
+async def test_direct_dispatch_drops_malformed_notification_response() -> None:
+    dispatcher = Dispatcher(_StreamingStubSession(), context=None, agent_id="agent-1")
+    response = await dispatcher.dispatch(
+        Request(
+            jsonrpc="2.0",
+            method="send",
+            params={1: "bad"},  # type: ignore[arg-type]
+            id=None,
+        )
+    )
+
+    assert response is None

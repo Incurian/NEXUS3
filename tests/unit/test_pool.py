@@ -444,6 +444,110 @@ class TestAgentPool:
             shared.mcp_registry.get_all_skills.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_create_passes_gitlab_visibility_into_vcs_registration(self, tmp_path):
+        """create path computes GitLab visibility through the pool-local kernel."""
+        shared = create_mock_shared_components(tmp_path)
+        shared.config.gitlab.instances = {
+            "default": MagicMock(
+                url="https://gitlab.com",
+                token="fake",
+                token_env=None,
+                username="tester",
+                email=None,
+                user_id=None,
+            ),
+        }
+        shared.config.gitlab.default_instance = "default"
+
+        with (
+            patch("nexus3.skill.builtin.register_builtin_skills"),
+            patch("nexus3.rpc.pool.register_vcs_skills") as mock_register_vcs_skills,
+        ):
+            pool = AgentPool(shared)
+            original_authorize = pool._gitlab_visibility_authorization_kernel.authorize
+            pool._gitlab_visibility_authorization_kernel.authorize = MagicMock(
+                side_effect=original_authorize
+            )
+
+            agent = await pool.create(
+                agent_id="gitlab-create-visible",
+                config=AgentConfig(preset="trusted"),
+            )
+
+            assert agent.agent_id == "gitlab-create-visible"
+            assert pool._gitlab_visibility_authorization_kernel.authorize.call_count == 1
+            kernel_request = (
+                pool._gitlab_visibility_authorization_kernel.authorize.call_args.args[0]
+            )
+            assert isinstance(kernel_request, AuthorizationRequest)
+            assert kernel_request.action == AuthorizationAction.TOOL_EXECUTE
+            assert kernel_request.resource.resource_type == AuthorizationResourceType.TOOL
+            assert kernel_request.principal_id == "gitlab-create-visible"
+            assert kernel_request.context["gitlab_level_allowed"] is True
+            assert kernel_request.context["check_stage"] == "create"
+            assert mock_register_vcs_skills.call_args.kwargs["gitlab_visible"] is True
+
+    @pytest.mark.asyncio
+    async def test_restore_passes_gitlab_visibility_into_vcs_registration(self, tmp_path):
+        """restore path computes GitLab visibility through the pool-local kernel."""
+        shared = create_mock_shared_components(tmp_path)
+        shared.config.gitlab.instances = {
+            "default": MagicMock(
+                url="https://gitlab.com",
+                token="fake",
+                token_env=None,
+                username="tester",
+                email=None,
+                user_id=None,
+            ),
+        }
+        shared.config.gitlab.default_instance = "default"
+        saved = SavedSession(
+            agent_id="restore-gitlab-hidden",
+            created_at=datetime.now(),
+            modified_at=datetime.now(),
+            messages=[],
+            system_prompt="You are a test assistant.",
+            system_prompt_path=None,
+            working_directory=str(tmp_path),
+            permission_level="sandboxed",
+            token_usage={},
+            provenance="user",
+            permission_preset="sandboxed",
+        )
+        session_manager = MagicMock()
+        session_manager.session_exists.return_value = True
+        session_manager.load_session.return_value = saved
+
+        with (
+            patch("nexus3.skill.builtin.register_builtin_skills"),
+            patch("nexus3.rpc.pool.register_vcs_skills") as mock_register_vcs_skills,
+        ):
+            pool = AgentPool(shared)
+            original_authorize = pool._gitlab_visibility_authorization_kernel.authorize
+            pool._gitlab_visibility_authorization_kernel.authorize = MagicMock(
+                side_effect=original_authorize
+            )
+
+            agent = await pool.get_or_restore(
+                "restore-gitlab-hidden",
+                session_manager=session_manager,
+            )
+
+            assert agent is not None
+            assert pool._gitlab_visibility_authorization_kernel.authorize.call_count == 1
+            kernel_request = (
+                pool._gitlab_visibility_authorization_kernel.authorize.call_args.args[0]
+            )
+            assert isinstance(kernel_request, AuthorizationRequest)
+            assert kernel_request.action == AuthorizationAction.TOOL_EXECUTE
+            assert kernel_request.resource.resource_type == AuthorizationResourceType.TOOL
+            assert kernel_request.principal_id == "restore-gitlab-hidden"
+            assert kernel_request.context["gitlab_level_allowed"] is False
+            assert kernel_request.context["check_stage"] == "restore"
+            assert mock_register_vcs_skills.call_args.kwargs["gitlab_visible"] is False
+
+    @pytest.mark.asyncio
     async def test_get_returns_agent(self, tmp_path):
         """get() returns the agent if it exists."""
         shared = create_mock_shared_components(tmp_path)

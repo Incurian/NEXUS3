@@ -20,6 +20,7 @@ from nexus3.core.permissions import (
     PermissionLevel,
     PermissionPolicy,
     ToolPermission,
+    resolve_preset,
 )
 
 # ---------------------------------------------------------------------------
@@ -245,6 +246,25 @@ class TestGitlabToggle:
 
         # Verify resync was called
         agent.context.set_tool_definitions.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_toggle_on_denied_by_parent_ceiling(self) -> None:
+        agent = _make_agent(gitlab_enabled=False)
+        perms: AgentPermissions = agent.services.get("permissions")
+        perms.ceiling = resolve_preset("yolo")
+        perms.ceiling.tool_permissions["gitlab_repo"] = ToolPermission(enabled=False)
+
+        ctx = _make_ctx(agent)
+        result = await cmd_gitlab(ctx, "on")
+
+        assert result.result == CommandResult.ERROR
+        assert result.message == "Cannot enable 'gitlab_repo': disabled by parent ceiling"
+
+        for name in agent.registry._specs:
+            if name.startswith("gitlab_"):
+                assert perms.tool_permissions[name].enabled is False
+
+        agent.context.set_tool_definitions.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_toggle_off(self) -> None:

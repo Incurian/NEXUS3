@@ -14,6 +14,8 @@ def register_vcs_skills(
     registry: SkillRegistry,
     services: ServiceContainer,
     permissions: AgentPermissions | None,
+    *,
+    gitlab_visible: bool | None = None,
 ) -> int:
     """
     Register VCS skills based on configuration and permissions.
@@ -29,7 +31,12 @@ def register_vcs_skills(
     gitlab_config = services.get_gitlab_config()
     if gitlab_config and gitlab_config.instances:
         from nexus3.skill.vcs.gitlab import register_gitlab_skills
-        count += register_gitlab_skills(registry, services, permissions)
+        count += register_gitlab_skills(
+            registry,
+            services,
+            permissions,
+            visible=gitlab_visible,
+        )
 
     # GitHub skills (future)
     # github_config = services.get_github_config()

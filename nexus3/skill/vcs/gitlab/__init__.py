@@ -20,6 +20,8 @@ def register_gitlab_skills(
     registry: SkillRegistry,
     services: ServiceContainer,
     permissions: AgentPermissions | None,
+    *,
+    visible: bool | None = None,
 ) -> int:
     """
     Register GitLab skills if configured and permitted.
@@ -29,7 +31,8 @@ def register_gitlab_skills(
     - No GitLab instances configured
     """
     # Check permission level first (defense in depth)
-    if not can_use_gitlab(permissions):
+    is_visible = can_use_gitlab(permissions) if visible is None else visible
+    if not is_visible:
         return 0  # SANDBOXED or no permissions
 
     # Check configuration

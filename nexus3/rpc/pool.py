@@ -200,6 +200,19 @@ class _McpVisibilityAuthorizationAdapter:
         return AuthorizationDecision.deny(request, reason="mcp_level_denied")
 
 
+class _GitLabVisibilityAuthorizationAdapter:
+    """Kernel adapter for AgentPool GitLab tool visibility checks."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.TOOL_EXECUTE:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.TOOL:
+            return None
+        if request.context.get("gitlab_level_allowed") is True:
+            return AuthorizationDecision.allow(request, reason="gitlab_level_allowed")
+        return AuthorizationDecision.deny(request, reason="gitlab_level_denied")
+
+
 def _convert_gitlab_config(config: Config) -> VCSGitLabConfig | None:
     """Convert schema GitLabConfig to VCS GitLabConfig.
 
@@ -512,6 +525,10 @@ class AgentPool:
         )
         self._mcp_visibility_authorization_kernel = AdapterAuthorizationKernel(
             adapters=(_McpVisibilityAuthorizationAdapter(),),
+            default_allow=False,
+        )
+        self._gitlab_visibility_authorization_kernel = AdapterAuthorizationKernel(
+            adapters=(_GitLabVisibilityAuthorizationAdapter(),),
             default_allow=False,
         )
 
@@ -828,7 +845,16 @@ class AgentPool:
         register_builtin_skills(registry)
 
         # Register VCS skills (GitLab, GitHub) if configured
-        register_vcs_skills(registry, services, permissions)
+        register_vcs_skills(
+            registry,
+            services,
+            permissions,
+            gitlab_visible=self._is_gitlab_visible_for_agent(
+                agent_id=effective_id,
+                permissions=permissions,
+                check_stage="create",
+            ),
+        )
 
         # Default gitlab skills to disabled (user enables via /gitlab on)
         # Guard: skip tools already in tool_permissions (e.g. restored sessions)
@@ -976,6 +1002,33 @@ class AgentPool:
             },
         )
         kernel_decision = self._mcp_visibility_authorization_kernel.authorize(kernel_request)
+        return kernel_decision.allowed
+
+    def _is_gitlab_visible_for_agent(
+        self,
+        *,
+        agent_id: str,
+        permissions: AgentPermissions,
+        check_stage: str,
+    ) -> bool:
+        """Evaluate GitLab visibility via pool-local authorization kernel."""
+        from nexus3.skill.vcs.gitlab.permissions import can_use_gitlab
+
+        kernel_request = AuthorizationRequest(
+            action=AuthorizationAction.TOOL_EXECUTE,
+            resource=AuthorizationResource(
+                resource_type=AuthorizationResourceType.TOOL,
+                identifier="gitlab_visibility",
+            ),
+            principal_id=agent_id,
+            context={
+                "gitlab_level_allowed": can_use_gitlab(permissions),
+                "check_stage": check_stage,
+            },
+        )
+        kernel_decision = self._gitlab_visibility_authorization_kernel.authorize(
+            kernel_request
+        )
         return kernel_decision.allowed
 
     async def create_temp(self, config: AgentConfig | None = None) -> Agent:
@@ -1216,7 +1269,16 @@ class AgentPool:
         register_builtin_skills(registry)
 
         # Register VCS skills (GitLab, GitHub) if configured
-        register_vcs_skills(registry, services, permissions)
+        register_vcs_skills(
+            registry,
+            services,
+            permissions,
+            gitlab_visible=self._is_gitlab_visible_for_agent(
+                agent_id=agent_id,
+                permissions=permissions,
+                check_stage="restore",
+            ),
+        )
 
         # Default gitlab skills to disabled (user enables via /gitlab on)
         # Guard: skip tools already in tool_permissions (e.g. restored sessions)

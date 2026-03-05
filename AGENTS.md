@@ -225,8 +225,8 @@ Current milestone:
 
 Immediate tasks:
 - Continue M2 implementation slices:
-  - Plan A closeout documentation after REPL permission-mutation kernelization
-  - Select the next post-M2 execution slice after Plan A/Plan C closeout sync
+  - Record the final Plan A GitLab residual slice and validation in plan/docs status
+  - Then pause at this checkpoint; next resume target is either commit this slice or take the optional Plan G consistency polish pass
 
 Recent execution commits (latest first):
 - `78ef205` rpc/protocol: wire parse_request to request schema ingress
@@ -416,6 +416,11 @@ Progress snapshot:
   - refactored subprocess creation helpers to pass command/code as local parameters
   - updated Windows behavior tests to assert subprocess call args directly
   - added focused concurrent `run_python` test for per-call payload isolation
+- Completed: Plan H strict-ingress closeout audit slice:
+  - centralized direct in-process `Request` envelope validation in `nexus3/rpc/dispatch_core.py`
+  - preserved strict boundary behavior while improving malformed `params` key diagnostics for direct dispatch
+  - added focused regressions for non-string `params` keys and malformed notification no-response behavior
+  - synchronized stale Plan H/rpc docs and status text with the now-strict-default ingress posture
 - Completed: Plan C closeout slice in `nexus3/rpc/dispatcher.py`:
   - threaded immutable `RequestContext` into agent-scoped read handlers (`get_tokens`, `get_context`, `get_messages`)
   - removed the last known dispatcher boundary where agent-scoped requester identity was dropped after `dispatch()`
@@ -425,6 +430,11 @@ Progress snapshot:
   - preserved existing parent-ceiling deny wording while removing ad hoc branch-specific checks from command handlers
   - fixed preset-switch state retention by preserving `depth`, `session_allowances`, and sandbox `cwd`
   - added focused regressions in `tests/unit/test_repl_commands.py`
+- Completed: Plan A final GitLab residual slice:
+  - routed `/gitlab on|off` enable checks through the shared kernel-backed permission-mutation helper in `nexus3/cli/repl_commands.py`
+  - added pool-local GitLab visibility authorization for create/restore registration in `nexus3/rpc/pool.py`
+  - threaded explicit GitLab visibility into VCS registration in `nexus3/skill/vcs/__init__.py` and `nexus3/skill/vcs/gitlab/__init__.py`
+  - added focused coverage in `tests/unit/test_gitlab_toggle.py` and `tests/unit/test_pool.py`
 - Validation snapshot (2026-03-05, post-merge slices):
   - `.venv/bin/ruff check nexus3/cli/repl.py nexus3/rpc/agent_api.py nexus3/rpc/global_dispatcher.py nexus3/rpc/pool.py nexus3/rpc/protocol.py nexus3/rpc/schemas.py tests/unit/cli/test_repl_safe_sink.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/rpc/test_schemas.py tests/unit/test_agent_api.py tests/unit/test_client.py tests/unit/test_pool.py` passed.
   - `.venv/bin/pytest -v tests/unit/cli/test_repl_safe_sink.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/rpc/test_schemas.py tests/unit/test_agent_api.py tests/unit/test_client.py tests/unit/test_pool.py` passed (`176 passed`, `9 warnings`).
@@ -439,10 +449,19 @@ Progress snapshot:
   - `.venv/bin/ruff check nexus3/cli/serve.py nexus3/display/safe_sink.py nexus3/mcp/error_formatter.py nexus3/rpc/agent_api.py nexus3/rpc/global_dispatcher.py tests/unit/display/test_safe_sink.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_agent_api.py tests/unit/test_pool.py` passed.
   - `.venv/bin/mypy nexus3/rpc/agent_api.py nexus3/rpc/global_dispatcher.py nexus3/display/safe_sink.py nexus3/mcp/error_formatter.py` passed.
   - `.venv/bin/pytest -v tests/unit/display/test_safe_sink.py tests/unit/cli/test_serve_safe_sink.py tests/unit/mcp/test_error_formatter.py tests/unit/test_pool.py tests/unit/test_agent_api.py tests/unit/rpc/test_schema_ingress_wiring.py` passed (`178 passed`).
+- Validation snapshot (2026-03-05, Plan H closeout round):
+  - `.venv/bin/ruff check nexus3/rpc/dispatch_core.py nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/schemas.py tests/unit/rpc/test_schema_ingress_wiring.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/dispatch_core.py nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py` passed.
+  - `.venv/bin/pytest -q tests/unit/rpc/test_schema_ingress_wiring.py` passed (`74 passed`).
+- Validation snapshot (2026-03-05, Plan A GitLab residual round):
+  - `.venv/bin/ruff check nexus3/cli/repl_commands.py nexus3/rpc/pool.py nexus3/skill/vcs/__init__.py nexus3/skill/vcs/gitlab/__init__.py tests/unit/test_gitlab_toggle.py tests/unit/test_pool.py` passed.
+  - `.venv/bin/mypy nexus3/cli/repl_commands.py nexus3/rpc/pool.py nexus3/skill/vcs/__init__.py nexus3/skill/vcs/gitlab/__init__.py` passed.
+  - `.venv/bin/pytest -q tests/unit/test_gitlab_toggle.py tests/unit/test_pool.py` passed (`83 passed`).
 - Next gate:
-  - Plan A: reconcile docs/closeout criteria now that the last known REPL permission-mutation surface is kernelized.
-  - Plan H: target remaining behavior-sensitive compat branches and finalize strict-default ingress posture where safe.
-  - Plan G: continue redundant sanitization-callsite cleanup by identifying any remaining fragmented formatter/sanitizer branches for SafeSink consolidation.
+  - Plan H: strict-ingress work is effectively complete on this branch; only routine doc drift cleanup should remain if new ingress surfaces land later.
+  - Plan A: kernel rollout is effectively complete for this branch scope; only the explicitly deferred `parent_can_grant` request-model boundary remains for future redesign work.
+  - Plan G: optional consistency-only polish remains in a few sanitize-then-trusted-print callsites; not security-critical.
+  - Operational next step: either commit this validated GitLab residual + Plan H closeout checkpoint, or pause and resume from this status block later.
 
 Resume-first checklist (post-compact):
 1. Confirm branch + cleanliness: `git status --short --branch` (ignore existing unrelated untracked: `docs/plans/DOUBLE-SPINNER-FIX-PLAN.md`, `editors/`, `err/`).
@@ -1032,6 +1051,11 @@ Compact checkpoint (2026-03-05, post-commit handover):
   1. Re-open `docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md` and inspect `nexus3/cli/repl_commands.py::_change_preset` as the last obvious duplicate authorization surface.
   2. If `_change_preset` is outside Plan A’s intended kernel boundary, document that explicitly and close out the remaining Plan A checklist item.
   3. Otherwise, implement the smallest safe cleanup/kernelization slice, then update plan/docs/AGENTS in the same session.
+
+Post-commit note (2026-03-05):
+- Round 30 is committed as `b238485` (`close out plan a/c auth and request context gaps`).
+- Branch remains `feat/arch-overhaul-execution`.
+- Recommended next execution slice after compact: Plan H strict-ingress closeout audit/implementation, since Plan A and Plan C closeout items are now landed and synchronized.
 
 Compact checkpoint (2026-03-05, architecture execution round 30):
 - Branch head at start of round: `999b49d`; current working tree includes uncommitted Plan A and Plan C closeout slices plus synchronized docs.

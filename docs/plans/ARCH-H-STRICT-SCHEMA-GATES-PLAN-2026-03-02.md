@@ -4,6 +4,10 @@
 
 Enforce strict typed validation at config, MCP, and JSON-RPC ingress boundaries before business logic executes.
 
+Status (2026-03-05):
+- Strict-default ingress is now complete across JSON-RPC protocol parsing, dispatcher/global-dispatcher method params, direct in-process `Request` dispatch, and MCP config loading.
+- The remaining work for this plan is closeout-level: keep diagnostics/docs aligned with the now-strict boundary behavior.
+
 ## Scope
 
 Included:
@@ -13,7 +17,7 @@ Included:
 - Unify duplicated MCP server config model usage.
 
 Deferred:
-- Permanent removal of compatibility mode until migration completes.
+- Any future simplification of legacy error-text compatibility shims after the strict boundary rollout has fully settled.
 
 Excluded:
 - New schema framework adoption.
@@ -23,6 +27,7 @@ Excluded:
 1. Parse and validate once at ingress, then operate on typed objects.
 2. Reject malformed boundary payloads with explicit actionable diagnostics.
 3. Use a compatibility phase with warnings for RPC method params only; existing strict MCP entry validation remains fail-fast.
+   - Result: that migration phase is complete on this branch; strict ingress is now the default posture.
 
 ## Implementation Details
 
@@ -81,6 +86,7 @@ Phases:
   - [x] Remaining M1 Phase 2 ingress coverage beyond low-risk methods completed.
     - Follow-up audit result (2026-03-06): behavior-sensitive method ingress (`send`, `cancel`, `compact`, `create_agent`) and request/response envelope parsing are now strict-default; no residual compatibility-only parameter projection paths remain in dispatcher/global-dispatcher/protocol ingress.
   - [x] M1 Phase 2 in-process direct-dispatch strictness slice: `rpc/dispatcher.py::dispatch` and `rpc/global_dispatcher.py::dispatch` now validate direct `Request` envelopes via `RpcRequestEnvelopeSchema` before handler execution, rejecting malformed `jsonrpc`/`method`/`id`/`params` shapes with deterministic `INVALID_PARAMS` responses instead of internal errors.
+  - [x] M1 Phase 2 direct-dispatch diagnostic closeout slice: centralized shared direct-request envelope validation in `rpc/dispatch_core.py`, preserved strict behavior for in-process dispatch, and improved malformed `params` key diagnostics (for example non-string dict keys) with focused regressions for request/notification behavior.
 - [x] Remove silent malformed-entry skips.
   - [x] M1 Phase 3 slice: `context/loader.py::_merge_mcp_servers` now fail-fast rejects malformed MCP container/entry shapes (`mcpServers` non-object, `servers` non-array, non-object entries in `servers[]`) with actionable `MCPConfigError` context.
 - [x] Consolidate duplicate MCP config models.
@@ -88,8 +94,8 @@ Phases:
 
 ## Documentation Updates
 
-- Update config/RPC/MCP docs with strict boundary behavior and compatibility-window notes.
-- Update CLI/RPC error-message examples for new validation outputs.
+- Update config/RPC/MCP docs with strict boundary behavior and note that the earlier compatibility rollout phase is complete.
+- Update CLI/RPC error-message examples for new validation outputs, including direct in-process dispatch diagnostics.
 
 ## Related Documents
 
