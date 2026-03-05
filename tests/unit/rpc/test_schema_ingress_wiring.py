@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from nexus3.core.cancel import CancellationToken
 from nexus3.rpc.dispatcher import Dispatcher
 from nexus3.rpc.global_dispatcher import GlobalDispatcher
 from nexus3.rpc.protocol import ParseError, parse_request, parse_response
@@ -549,6 +550,21 @@ async def test_dispatcher_compact_schema_validation_rejects_invalid_force() -> N
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
     assert "boolean" in response.error["message"].lower()
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_cancel_all_noarg_ingress_wiring_keeps_compat_with_extra_params() -> None:
+    dispatcher = Dispatcher(_StubSession(), context=None, agent_id="agent-1")
+    request_a = CancellationToken()
+    request_b = CancellationToken()
+    dispatcher._active_requests["req-a"] = request_a
+    dispatcher._active_requests[7] = request_b
+
+    cancelled = await dispatcher._handle_cancel_all({"unexpected": "value"})
+
+    assert cancelled == {"req-a": True, 7: True}
+    assert request_a.is_cancelled is True
+    assert request_b.is_cancelled is True
 
 
 @pytest.mark.asyncio

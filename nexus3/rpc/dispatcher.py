@@ -604,6 +604,26 @@ class Dispatcher:
             "tokens_saved": result.original_token_count - result.new_token_count,
         }
 
+    async def _handle_cancel_all(self, params: dict[str, Any]) -> dict[str | int, bool]:
+        """Handle cooperative cancellation for all active requests.
+
+        Args:
+            params: Ignored.
+
+        Returns:
+            Dict mapping request_id -> True for all cancelled requests.
+        """
+        try:
+            EmptyParamsSchema.model_validate({}, strict=False)
+        except PydanticValidationError as exc:
+            raise InvalidParamsError("Invalid cancel_all parameters") from exc
+
+        cancelled: dict[str | int, bool] = {}
+        for request_id, token in list(self._active_requests.items()):
+            token.cancel()
+            cancelled[request_id] = True
+        return cancelled
+
     async def cancel_all_requests(self) -> dict[str | int, bool]:
         """Cancel all in-progress requests.
 
@@ -613,8 +633,4 @@ class Dispatcher:
         Returns:
             Dict mapping request_id -> True for all cancelled requests.
         """
-        cancelled = {}
-        for request_id, token in list(self._active_requests.items()):
-            token.cancel()
-            cancelled[request_id] = True
-        return cancelled
+        return await self._handle_cancel_all({})
