@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from nexus3.core.authorization_kernel import AuthorizationDecision
+from nexus3.core.path_decision import PathDecisionEngine
 from nexus3.core.permissions import AgentPermissions
 from nexus3.core.policy import PermissionLevel, PermissionPolicy
 from nexus3.core.presets import ToolPermission
@@ -751,6 +752,82 @@ class TestEnabledAuthorizationKernelEnforcement:
 
         assert result is not None
         assert result.error == "Tool 'nexus_send' is disabled by permission policy"
+
+
+class TestPathAuthorizationKernelEnforcement:
+    """Tests for kernel-authoritative tool path authorization behavior."""
+
+    def _make_permissions(self) -> AgentPermissions:
+        return AgentPermissions(
+            base_preset="sandboxed",
+            effective_policy=PermissionPolicy(
+                level=PermissionLevel.SANDBOXED,
+                allowed_paths=[Path("/sandbox")],
+                blocked_paths=[],
+                cwd=Path("/sandbox"),
+            ),
+            tool_permissions={},
+        )
+
+    def test_allowed_path_returns_none(self) -> None:
+        services = MagicMock()
+        services.get.return_value = "agent-1"
+        services.get_tool_allowed_paths.return_value = [Path("/sandbox")]
+        services.get_blocked_paths.return_value = []
+        services.get_cwd.return_value = Path("/sandbox")
+        enforcer = PermissionEnforcer(services=services)
+        permissions = self._make_permissions()
+
+        captured_requests = []
+        original_authorize = enforcer._path_authorization_kernel.authorize
+
+        def capture_and_delegate(request):
+            captured_requests.append(request)
+            return original_authorize(request)
+
+        enforcer._path_authorization_kernel.authorize = capture_and_delegate  # type: ignore[method-assign]
+
+        result = enforcer._check_path_allowed("read_file", Path("/sandbox/ok.txt"), permissions)
+
+        assert result is None
+        assert len(captured_requests) == 1
+        assert captured_requests[0].principal_id == "agent-1"
+        assert captured_requests[0].context["path_allowed"] is True
+
+    def test_denied_path_preserves_legacy_wording(self) -> None:
+        enforcer = PermissionEnforcer()
+        permissions = self._make_permissions()
+
+        result = enforcer._check_path_allowed("read_file", Path("/outside/file.txt"), permissions)
+
+        assert result is not None
+        assert result.error is not None
+
+        expected_detail = PathDecisionEngine(
+            allowed_paths=[Path("/sandbox")],
+            blocked_paths=[],
+        ).check_access("/outside/file.txt").reason_detail
+        assert result.error == (
+            "Tool 'read_file' cannot access path '/outside/file.txt': "
+            f"{expected_detail}"
+        )
+
+    def test_forced_kernel_deny_is_authoritative_with_stable_fallback_wording(self) -> None:
+        enforcer = PermissionEnforcer()
+        permissions = self._make_permissions()
+
+        def deny_request(request):
+            return AuthorizationDecision.deny(request, reason="forced_deny")
+
+        enforcer._path_authorization_kernel.authorize = deny_request  # type: ignore[method-assign]
+
+        result = enforcer._check_path_allowed("read_file", Path("/sandbox/ok.txt"), permissions)
+
+        assert result is not None
+        assert result.error == (
+            "Tool 'read_file' cannot access path '/sandbox/ok.txt': "
+            "Access denied by permission policy"
+        )
 
 
 class TestCheckAllOrderingWithEnabledChecks:

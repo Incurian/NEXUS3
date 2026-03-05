@@ -599,6 +599,7 @@ class GlobalDispatcher:
             "agent_id": agent.agent_id,
             "url": f"/agent/{agent.agent_id}",
         }
+        requester_id = None if request_context is None else request_context.requester_id
 
         # Handle initial_message if provided
         if initial_message is not None:
@@ -616,7 +617,7 @@ class GlobalDispatcher:
 
             if wait_for_initial_response:
                 try:
-                    response = await agent.dispatcher.dispatch(send_request)
+                    response = await agent.dispatcher.dispatch(send_request, requester_id)
                     if response and response.result:
                         result["response"] = response.result
                     elif response and response.error:
@@ -626,7 +627,12 @@ class GlobalDispatcher:
                     result["response"] = {"error": {"message": str(e)}}
             else:
                 task = asyncio.create_task(
-                    self._send_initial_background(agent, send_request, request_id)
+                    self._send_initial_background(
+                        agent,
+                        send_request,
+                        request_id,
+                        requester_id,
+                    )
                 )
 
                 def done_callback(t: asyncio.Task[None]) -> None:
@@ -815,11 +821,15 @@ class GlobalDispatcher:
 
 
     async def _send_initial_background(
-        self, agent: "Agent", send_request: "Request", request_id: str,
+        self,
+        agent: "Agent",
+        send_request: "Request",
+        request_id: str,
+        requester_id: str | None,
     ) -> None:
         """Fire-and-forget initial message dispatch."""
         try:
-            await agent.dispatcher.dispatch(send_request)
+            await agent.dispatcher.dispatch(send_request, requester_id)
             logger.info(
                 "Background initial_message completed for %s",
                 agent.agent_id,

@@ -220,15 +220,13 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `M1` (Boundary Enforcement Wave) and `M2` (Authorization/Concurrency Wave) in progress.
+- `M2` (Authorization/Concurrency Wave) late-stage execution in progress.
+- `M1` boundary work for active Plan G/Plan H scope is complete on this branch.
 
 Immediate tasks:
-- Continue M1 implementation slices:
-  - Plan H remaining method-ingress strictness cleanup after current compat-safe slices
-  - Plan G Phase 3/4 remaining output-path migration + sanitization cleanup
 - Continue M2 implementation slices:
-  - Plan A Phase 2+3 expansion beyond destroy-path shadow parity
-  - Plan C propagation beyond destroy path as needed by remaining auth/rpc routes
+  - Plan A final duplicate-branch cleanup and remaining intentional non-kernel surface triage/documentation
+  - Plan C closeout audit after requester propagation on agent HTTP routes, create initial-message dispatch, and NexusSkill HTTP fallback
 
 Recent execution commits (latest first):
 - `78ef205` rpc/protocol: wire parse_request to request schema ingress
@@ -905,6 +903,109 @@ Compact checkpoint (2026-03-06, post-round-24 pause handover):
   1. `git status --short --branch`
   2. `git log --oneline -n 8`
   3. `rg -n "architecture execution round 24|post-round-24 pause handover" AGENTS.md`
+
+Compact checkpoint (2026-03-05, architecture execution round 25):
+- Branch head at start of round: `5d9029a`; working tree now includes a focused Plan A create-hardening slice implemented via Codex worker subagent.
+- New slices completed this round:
+  1. Plan A hardened `nexus3/rpc/pool.py::_create_unlocked` so parented creates resolve permissions from live parent agent services (`self._agents[parent_agent_id].services["permissions"]`) instead of trusting caller-supplied `config.parent_permissions`.
+  2. Plan A now fail-closes parented create when `parent_agent_id` is missing or does not expose valid permissions service.
+  3. Plan A ignores forged/mismatched caller `parent_permissions` for parented create and emits warning telemetry (`Parent permissions mismatch for create(...)`), while keeping existing lifecycle/max-depth/base-ceiling/delta-ceiling/requester-binding deny wording unchanged.
+  4. Added/updated focused parented-create coverage in `tests/unit/rpc/test_pool_create_auth_shadow.py`:
+     - live-parent ceiling enforcement when forged config `parent_permissions` is passed,
+     - live-parent ceiling enforcement when `parent_permissions` is omitted,
+     - fail-closed behavior when parent agent is missing.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/rpc/pool.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_pool.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/pool.py` passed.
+  - `.venv/bin/pytest -q tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_pool.py` passed (`75 passed`).
+- Docs/status sync completed this round:
+  1. Updated `docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md` checklist/progress for adapter completion + live-parent create hardening slice.
+  2. Updated `nexus3/rpc/README.md` authorization notes to document live parent-permission resolution for parented creates.
+  3. Updated `CLAUDE.md` RPC YOLO note to reflect enforcement path wording (RPC create validation + kernel-authoritative create auth).
+- Immediate resume targets:
+  1. Plan A: evaluate migration of remaining precomputed `parent_can_grant` booleans in create stages into adapter-first policy evaluation (or explicitly document as accepted boundary if deferred).
+  2. Plan A: decide next non-kernel surface slice: MCP tool-visibility gating in `rpc/pool.py` create/restore paths vs path-gating consolidation in `session/enforcer.py`.
+  3. Keep `AGENTS.md`/`CLAUDE.md`/plan docs checkpointed per major slice before compact.
+
+Compact checkpoint (2026-03-05, architecture execution round 26):
+- Branch head at start of round: `5d9029a`; working tree now includes a focused Plan A MCP-visibility kernelization slice implemented via Codex worker subagent.
+- New slices completed this round:
+  1. Plan A added pool-local MCP visibility authorization adapter/kernel in `nexus3/rpc/pool.py` (`TOOL_EXECUTE` + `mcp_level_allowed` context) to route MCP tool-surface visibility through kernel evaluation.
+  2. Plan A replaced direct `can_use_mcp(...)` visibility branching in both create and restore flows with shared helper-backed kernel evaluation (`check_stage="create"` / `"restore"`), preserving existing level semantics and disabled-tool filtering behavior.
+  3. Added focused MCP visibility kernel coverage in `tests/unit/test_pool.py` for:
+     - create-path kernel routing + allow-path MCP fetch,
+     - forced-kernel-deny create behavior (create succeeds, MCP fetch skipped),
+     - restore-path kernel routing + level-denied MCP fetch skip.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/rpc/pool.py tests/unit/test_pool.py tests/unit/rpc/test_pool_create_auth_shadow.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/pool.py` passed.
+  - `.venv/bin/pytest -q tests/unit/test_pool.py tests/unit/rpc/test_pool_create_auth_shadow.py` passed (`78 passed`).
+- Docs/status sync completed this round:
+  1. Updated `docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md` with MCP-visibility kernelization progress.
+  2. Updated `nexus3/rpc/README.md` authorization notes to include kernel-backed MCP visibility in create/restore paths.
+- Immediate resume targets:
+  1. Plan A: evaluate remaining high-value non-kernel surface (`session/enforcer.py` path decision gating) for migration vs defer.
+  2. Plan A: keep `parent_can_grant` adapter migration deferred until authorization-request model redesign (`Authorization request model v2` style slice).
+  3. Keep AGENTS/CLAUDE/plan checkpoints synchronized on each major implementation slice.
+
+Compact checkpoint (2026-03-05, architecture execution round 27):
+- Branch head at start of round: `5d9029a`; working tree now includes a focused Plan A decision/guardrail follow-up after round 26.
+- New slices completed this round:
+  1. Added regression guardrail in `tests/unit/test_pool.py` asserting stable parented-create authorization stage order when delta is present:
+     - `lifecycle_entry -> requester_parent_binding -> max_depth -> base_ceiling -> delta_ceiling`.
+  2. Completed feasibility investigation for migrating create `parent_can_grant` computation into adapter internals and explicitly deferred that migration as an intentional boundary (current model: pool computes stage booleans, adapter adjudicates).
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/rpc/pool.py tests/unit/test_pool.py tests/unit/rpc/test_pool_create_auth_shadow.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/pool.py` passed.
+  - `.venv/bin/pytest -q tests/unit/test_pool.py tests/unit/rpc/test_pool_create_auth_shadow.py` passed (`79 passed`).
+- Docs/status sync completed this round:
+  1. Updated `docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md` with explicit defer rationale for `parent_can_grant` adapter migration and stage-order guardrail note.
+  2. Updated running targets in this file to keep the defer decision sticky across compaction/resume.
+- Immediate resume targets:
+  1. Plan A: investigate/execute next high-value non-kernel surface (`session/enforcer.py` path decision gating) or document defer boundary.
+  2. Plan A: if no low-risk migration remains, mark residual boundaries explicitly and prepare Plan A closeout criteria for this branch.
+  3. Keep docs/checklists/AGENTS checkpoints updated per major slice before compact.
+
+Compact checkpoint (2026-03-05, architecture execution round 28):
+- Branch head at start of round: `5d9029a`; working tree now includes a focused Plan A `PermissionEnforcer` path-authorization kernelization slice implemented via Codex worker subagent.
+- New slices completed this round:
+  1. Plan A added `TOOL_EXECUTE`/`PATH` authorization adapter + kernel in `nexus3/session/enforcer.py` and routed `_check_path_allowed(...)` through kernel-authoritative decisions.
+  2. Preserved existing `PathDecisionEngine` semantics and legacy path-deny wording; added deterministic fallback wording for forced kernel deny on legacy-allow path (`Access denied by permission policy`).
+  3. Added focused path-authorization kernel coverage in `tests/unit/session/test_enforcer.py` (allowed-path pass, legacy-deny wording preservation, forced-kernel-deny authoritative behavior).
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/session/enforcer.py tests/unit/session/test_enforcer.py nexus3/rpc/pool.py tests/unit/test_pool.py tests/unit/rpc/test_pool_create_auth_shadow.py` passed.
+  - `.venv/bin/mypy nexus3/session/enforcer.py nexus3/rpc/pool.py` passed.
+  - `.venv/bin/pytest -q tests/unit/session/test_enforcer.py tests/unit/test_pool.py tests/unit/rpc/test_pool_create_auth_shadow.py` passed (`117 passed`).
+- Docs/status sync completed this round:
+  1. Updated `docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md` with path-authorization kernelization progress.
+  2. Updated `nexus3/session/README.md` permission-check ordering notes to reflect kernel-authoritative path allow/deny enforcement.
+- Immediate resume targets:
+  1. Plan A: determine if any meaningful duplicate authorization branches remain beyond documented intentional boundary (`parent_can_grant` precompute consumed by adapter).
+  2. Plan A: if remaining surfaces are accepted boundaries, write explicit Plan A closeout criteria and mark deferred redesign dependency (`Authorization request model v2` style work).
+  3. Keep AGENTS/plan/README checkpoints aligned before compact.
+
+Compact checkpoint (2026-03-05, architecture execution round 29):
+- Branch head at start of round: `5d9029a`; working tree now includes new Plan A and Plan C cleanup slices implemented via Codex worker subagents.
+- New slices completed this round:
+  1. Plan C requester-propagation hardening:
+     - preserved `requester_id` on agent-scoped HTTP routes in `nexus3/rpc/http.py`
+     - propagated requester context into `create_agent` follow-up `initial_message` dispatch in `nexus3/rpc/global_dispatcher.py` for both waiting and queued paths
+     - forwarded requester identity through NexusSkill HTTP fallback in `nexus3/skill/base.py` and `nexus3/client.py`
+  2. Plan A duplicate-branch cleanup:
+     - removed the local parent-ceiling precheck from `nexus3/skill/builtin/nexus_create.py`, leaving create authorization authoritative in RPC/pool kernel flow while preserving downstream error text
+- Validation result for this round:
+  - Worker validation:
+    - `./.venv/bin/ruff check nexus3/client.py nexus3/skill/base.py nexus3/rpc/http.py nexus3/rpc/global_dispatcher.py tests/unit/test_client.py tests/unit/test_http_pipeline_layers.py tests/unit/test_initial_message.py tests/unit/test_nexus_skill_requester_propagation.py` passed.
+    - `./.venv/bin/pytest -v tests/unit/test_client.py tests/unit/test_http_pipeline_layers.py tests/unit/test_initial_message.py tests/unit/test_nexus_skill_requester_propagation.py` passed (`50 passed`).
+    - `./.venv/bin/ruff check nexus3/skill/builtin/nexus_create.py tests/unit/skill/test_nexus_create.py docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md` passed.
+    - `./.venv/bin/pytest -q tests/unit/skill/test_nexus_create.py` passed (`2 passed`).
+- Docs/status sync completed this round:
+  1. Updated `docs/plans/ARCH-C-REQUEST-CONTEXT-PLAN-2026-03-02.md` with requester-propagation status.
+  2. Updated `nexus3/rpc/README.md`, `nexus3/skill/README.md`, and `CLAUDE.md` to describe requester propagation across HTTP and initial-message dispatch.
+- Immediate resume targets:
+  1. Plan A: evaluate the remaining duplicate authorization surface in `nexus3/cli/repl_commands.py::_change_preset` and decide whether to kernelize, relocate, or explicitly defer it.
+  2. Plan A: if `repl_commands._change_preset` is intentionally left outside Plan A scope, write explicit closeout criteria and mark `Remove duplicate authorization branches` complete/incomplete accordingly.
+  3. Plan C: confirm no further requester-propagation gaps remain beyond documented deferred service-container immutability work.
 
 ## Source of Truth
 

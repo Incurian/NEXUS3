@@ -1,10 +1,13 @@
 """Tests for initial_message feature in agent creation."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
-from nexus3.rpc.global_dispatcher import GlobalDispatcher
+import pytest
+
 from nexus3.rpc.dispatcher import InvalidParamsError
+from nexus3.rpc.global_dispatcher import GlobalDispatcher
+from nexus3.rpc.types import Request
 
 
 class TestInitialMessageValidation:
@@ -141,6 +144,68 @@ class TestInitialMessageDispatch:
         assert call_args.params["content"] == "Please do something"
 
     @pytest.mark.asyncio
+    async def test_initial_message_waiting_dispatch_propagates_requester_id(
+        self, dispatcher, mock_pool,
+    ):
+        """Waiting initial_message dispatch preserves requester identity."""
+        mock_agent = MagicMock()
+        mock_agent.agent_id = "worker-1"
+        mock_agent.dispatcher = MagicMock()
+        mock_agent.dispatcher.dispatch = AsyncMock(
+            return_value=MagicMock(result={"content": "Done!", "request_id": "abc"}, error=None)
+        )
+        mock_pool.create = AsyncMock(return_value=mock_agent)
+
+        request = Request(
+            jsonrpc="2.0",
+            method="create_agent",
+            params={
+                "agent_id": "worker-1",
+                "initial_message": "Please do something",
+                "wait_for_initial_response": True,
+            },
+            id=1,
+        )
+
+        response = await dispatcher.dispatch(request, requester_id="caller-agent")
+
+        assert response is not None
+        assert response.error is None
+        _, forwarded_requester_id = mock_agent.dispatcher.dispatch.await_args.args
+        assert forwarded_requester_id == "caller-agent"
+
+    @pytest.mark.asyncio
+    async def test_initial_message_background_dispatch_propagates_requester_id(
+        self, dispatcher, mock_pool,
+    ):
+        """Queued initial_message dispatch preserves requester identity."""
+        mock_agent = MagicMock()
+        mock_agent.agent_id = "worker-1"
+        mock_agent.dispatcher = MagicMock()
+        mock_agent.dispatcher.dispatch = AsyncMock(
+            return_value=MagicMock(result={"content": "Done!", "request_id": "abc"}, error=None)
+        )
+        mock_pool.create = AsyncMock(return_value=mock_agent)
+
+        request = Request(
+            jsonrpc="2.0",
+            method="create_agent",
+            params={
+                "agent_id": "worker-1",
+                "initial_message": "Please do something",
+            },
+            id=1,
+        )
+
+        response = await dispatcher.dispatch(request, requester_id="caller-agent")
+        await asyncio.sleep(0)
+
+        assert response is not None
+        assert response.error is None
+        _, forwarded_requester_id = mock_agent.dispatcher.dispatch.await_args.args
+        assert forwarded_requester_id == "caller-agent"
+
+    @pytest.mark.asyncio
     async def test_initial_message_error_included(self, dispatcher, mock_pool):
         """Error from initial_message dispatch is included in result when waiting."""
         mock_agent = MagicMock()
@@ -195,9 +260,9 @@ class TestNexusCreateSkill:
 
     def test_initial_message_in_execute_signature(self):
         """initial_message is in execute method signature."""
-        from nexus3.skill.builtin.nexus_create import NexusCreateSkill
-
         import inspect
+
+        from nexus3.skill.builtin.nexus_create import NexusCreateSkill
         sig = inspect.signature(NexusCreateSkill.execute)
         params = list(sig.parameters.keys())
         assert "initial_message" in params

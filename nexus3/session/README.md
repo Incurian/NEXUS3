@@ -624,9 +624,9 @@ Permission checks (in order):
 1. Tool enabled check via kernel-authoritative `TOOL_EXECUTE` decision (`_enabled_authorization_kernel`)
 2. Action-allowed check via kernel-authoritative `TOOL_EXECUTE` decision (`_action_authorization_kernel`)
 3. **Target allowed** via kernel-authoritative `AGENT_TARGET` decision for nexus_* tools with `allowed_targets`
-4. Path gating via `PathDecisionEngine` (sandbox/per-tool/blocked paths), checking ALL extracted paths in the tool call
+4. Path gating decision via `PathDecisionEngine` + kernel-authoritative `TOOL_EXECUTE`/`PATH` decision (`_path_authorization_kernel`), checking ALL extracted paths in the tool call
 
-The first three checks are authorization-kernel decisions; path access remains enforced by `PathDecisionEngine`.
+Path semantics are still determined by `PathDecisionEngine` (including blocked paths and per-tool path resolution), while final allow/deny is enforced through authorization-kernel evaluation.
 Session-level MCP/GitLab level gates in `Session` are also kernel-authoritative `TOOL_EXECUTE` decisions before confirmation/allowance handling.
 
 ### Target Validation

@@ -177,6 +177,10 @@ nexus3 --serve
 {"method": "shutdown"}
 ```
 
+Trusted caller identity propagates through `requester_id` / `X-Nexus-Agent`
+across both global and `/agent/{id}` RPC routes. `create_agent` follow-up
+`initial_message` dispatch inherits that same requester context.
+
 #### Component Sharing
 
 | Shared (SharedComponents) | Per-Agent |
@@ -734,7 +738,7 @@ This is used by `nexus_send`, `nexus_status`, `nexus_cancel`, and `nexus_destroy
 
 5. **Trusted agents in RPC mode**: Can read anywhere, but destructive operations follow the same confirmation logic (which auto-allows within CWD in non-interactive mode).
 
-6. **YOLO is REPL-only**: You CANNOT create a yolo agent via RPC (blocked in global_dispatcher). YOLO agents can only be created in the interactive REPL. Additionally, RPC `send` to YOLO agents is blocked unless the REPL is actively connected to that agent. If a user creates a YOLO agent in REPL, switches to another agent, then tries `nexus3 rpc send` to the YOLO agent, it fails with "Cannot send to YOLO agent - no REPL connected". This ensures YOLO operations always have active user supervision.
+6. **YOLO is REPL-only**: You CANNOT create a yolo agent via RPC (enforced by RPC create validation and kernel-authoritative create authorization). YOLO agents can only be created in the interactive REPL. Additionally, RPC `send` to YOLO agents is blocked unless the REPL is actively connected to that agent. If a user creates a YOLO agent in REPL, switches to another agent, then tries `nexus3 rpc send` to the YOLO agent, it fails with "Cannot send to YOLO agent - no REPL connected". This ensures YOLO operations always have active user supervision.
 
 7. **Trusted agents can only create sandboxed subagents**: A trusted agent cannot spawn another trusted agent - all subagents are sandboxed (ceiling enforcement).
 

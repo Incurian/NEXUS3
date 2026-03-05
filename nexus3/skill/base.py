@@ -691,6 +691,13 @@ class NexusSkill(ABC):
             return f"{base}/agent/{agent_id}"
         return base
 
+    def _get_requester_id(self) -> str | None:
+        """Get the current agent identity for outbound requester propagation."""
+        requester_id = self._services.get("agent_id")
+        if isinstance(requester_id, str) and requester_id:
+            return requester_id
+        return None
+
     def _can_use_direct_api(self, port: int | None) -> bool:
         """Check if we can use DirectAgentAPI for in-process communication.
 
@@ -777,6 +784,7 @@ class NexusSkill(ABC):
         actual_port = self._get_port(port)
         url = self._build_url(actual_port, agent_id)
         api_key = self._get_api_key(actual_port)
+        requester_id = self._get_requester_id()
 
         try:
             validated_url = validate_url(url, allow_localhost=True)
@@ -785,7 +793,10 @@ class NexusSkill(ABC):
 
         try:
             async with NexusClient(
-                validated_url, api_key=api_key, timeout=self.DEFAULT_TIMEOUT
+                validated_url,
+                api_key=api_key,
+                timeout=self.DEFAULT_TIMEOUT,
+                requester_id=requester_id,
             ) as client:
                 result = await operation(client)
                 return ToolResult(output=json.dumps(result))

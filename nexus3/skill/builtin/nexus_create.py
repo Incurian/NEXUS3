@@ -1,13 +1,7 @@
 """Nexus create skill for creating new agents on the server."""
 
-from pathlib import Path
 from typing import Any
 
-from nexus3.core.permissions import (
-    AgentPermissions,
-    get_builtin_presets,
-    resolve_preset,
-)
 from nexus3.core.types import ToolResult
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.skill.base import NexusSkill, nexus_skill_factory
@@ -133,29 +127,6 @@ class NexusCreateSkill(NexusSkill):
             # Disallow suspicious patterns (path traversal, null bytes)
             if "\x00" in model or ".." in model:
                 return ToolResult(error="Invalid model name")
-
-        # Get parent permissions to enforce ceiling (local validation for early feedback)
-        parent_perms: AgentPermissions | None = self._services.get("permissions")
-
-        # Validate ceiling if parent has permissions and preset is specified
-        # Note: Server also validates, this provides early feedback to user
-        if parent_perms and preset:
-            builtin = get_builtin_presets()
-            if preset in builtin:
-                try:
-                    # Resolve cwd for ceiling validation, matching server-side logic:
-                    # - If cwd provided: use it
-                    # - If not: inherit from parent (server does this too)
-                    if cwd:
-                        cwd_path: Path | None = Path(cwd)
-                    else:
-                        cwd_path = self._services.get("cwd")  # Inherit parent's cwd
-                    requested = resolve_preset(preset, cwd=cwd_path)
-                    if not parent_perms.can_grant(requested):
-                        msg = f"Cannot create agent with '{preset}': exceeds ceiling"
-                        return ToolResult(error=msg)
-                except ValueError as e:
-                    return ToolResult(error=f"Invalid preset: {e}")
 
         # Get parent agent ID for server-side ceiling enforcement lookup
         parent_agent_id: str | None = self._services.get("agent_id")

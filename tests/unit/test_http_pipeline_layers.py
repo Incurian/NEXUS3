@@ -4,8 +4,27 @@ Sprint 5 D2: Tests for the extracted authentication, routing, and restore layers
 in the HTTP pipeline.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+
+class _FakeWriter:
+    def __init__(self) -> None:
+        self.buffer: list[bytes] = []
+        self.closed = False
+
+    def write(self, data: bytes) -> None:
+        self.buffer.append(data)
+
+    async def drain(self) -> None:
+        return None
+
+    def close(self) -> None:
+        self.closed = True
+
+    async def wait_closed(self) -> None:
+        return None
 
 
 class TestAuthenticateRequest:
@@ -13,7 +32,7 @@ class TestAuthenticateRequest:
 
     def test_no_auth_configured_succeeds(self) -> None:
         """When api_key is None, auth always succeeds."""
-        from nexus3.rpc.http import _authenticate_request, HttpRequest
+        from nexus3.rpc.http import HttpRequest, _authenticate_request
 
         http_request = HttpRequest(
             method="POST",
@@ -29,7 +48,7 @@ class TestAuthenticateRequest:
 
     def test_missing_auth_header_fails(self) -> None:
         """When api_key is set but no auth header, returns 401."""
-        from nexus3.rpc.http import _authenticate_request, HttpRequest
+        from nexus3.rpc.http import HttpRequest, _authenticate_request
 
         http_request = HttpRequest(
             method="POST",
@@ -46,7 +65,7 @@ class TestAuthenticateRequest:
 
     def test_invalid_api_key_fails(self) -> None:
         """When api_key doesn't match provided token, returns 403."""
-        from nexus3.rpc.http import _authenticate_request, HttpRequest
+        from nexus3.rpc.http import HttpRequest, _authenticate_request
 
         http_request = HttpRequest(
             method="POST",
@@ -63,7 +82,7 @@ class TestAuthenticateRequest:
 
     def test_valid_api_key_succeeds(self) -> None:
         """When api_key matches provided token, auth succeeds."""
-        from nexus3.rpc.http import _authenticate_request, HttpRequest
+        from nexus3.rpc.http import HttpRequest, _authenticate_request
 
         http_request = HttpRequest(
             method="POST",
@@ -273,7 +292,7 @@ class TestPipelineLayerIntegration:
 
     def test_auth_error_codes_are_correct(self) -> None:
         """Auth layer uses correct JSON-RPC error codes."""
-        from nexus3.rpc.http import _authenticate_request, HttpRequest
+        from nexus3.rpc.http import HttpRequest, _authenticate_request
         from nexus3.rpc.protocol import INVALID_REQUEST
 
         # Missing auth header
@@ -304,7 +323,7 @@ class TestPipelineLayerIntegration:
     async def test_restore_error_codes_are_correct(self) -> None:
         """Restore layer uses correct JSON-RPC error codes."""
         from nexus3.rpc.http import _restore_agent_if_needed
-        from nexus3.rpc.protocol import INVALID_PARAMS, INTERNAL_ERROR
+        from nexus3.rpc.protocol import INTERNAL_ERROR, INVALID_PARAMS
 
         mock_pool = MagicMock()
         # get_or_restore returns None when agent not found
@@ -327,3 +346,44 @@ class TestPipelineLayerIntegration:
             "test", mock_pool, mock_session_manager
         )
         assert error.error["code"] == INTERNAL_ERROR
+
+    @pytest.mark.asyncio
+    async def test_handle_connection_forwards_requester_id_to_agent_dispatcher(self) -> None:
+        """Agent-scoped HTTP dispatch preserves X-Nexus-Agent requester identity."""
+        from nexus3.rpc.http import HttpRequest, handle_connection
+        from nexus3.rpc.protocol import make_success_response
+
+        mock_agent_dispatcher = MagicMock()
+        mock_agent_dispatcher.dispatch = AsyncMock(
+            return_value=make_success_response(1, {"ok": True})
+        )
+        mock_agent = MagicMock()
+        mock_agent.dispatcher = mock_agent_dispatcher
+
+        mock_pool = MagicMock()
+        mock_pool.get.return_value = mock_agent
+        mock_global = MagicMock()
+        writer = _FakeWriter()
+
+        http_request = HttpRequest(
+            method="POST",
+            path="/agent/worker-1",
+            headers={"x-nexus-agent": "caller-agent"},
+            body='{"jsonrpc":"2.0","method":"get_tokens","params":{},"id":1}',
+        )
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "nexus3.rpc.http.read_http_request",
+                AsyncMock(return_value=http_request),
+            )
+            await handle_connection(
+                reader=MagicMock(),
+                writer=writer,
+                pool=mock_pool,
+                global_dispatcher=mock_global,
+            )
+
+        dispatched_request, requester_id = mock_agent_dispatcher.dispatch.await_args.args
+        assert dispatched_request.method == "get_tokens"
+        assert requester_id == "caller-agent"

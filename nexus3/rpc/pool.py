@@ -187,6 +187,19 @@ class _CreateAuthorizationAdapter:
         return AuthorizationDecision.deny(request, reason="unknown_create_check_stage")
 
 
+class _McpVisibilityAuthorizationAdapter:
+    """Kernel adapter for AgentPool MCP tool visibility checks."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.TOOL_EXECUTE:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.TOOL:
+            return None
+        if request.context.get("mcp_level_allowed") is True:
+            return AuthorizationDecision.allow(request, reason="mcp_level_allowed")
+        return AuthorizationDecision.deny(request, reason="mcp_level_denied")
+
+
 def _convert_gitlab_config(config: Config) -> VCSGitLabConfig | None:
     """Convert schema GitLabConfig to VCS GitLabConfig.
 
@@ -497,6 +510,10 @@ class AgentPool:
             adapters=(_CreateAuthorizationAdapter(),),
             default_allow=False,
         )
+        self._mcp_visibility_authorization_kernel = AdapterAuthorizationKernel(
+            adapters=(_McpVisibilityAuthorizationAdapter(),),
+            default_allow=False,
+        )
 
     def set_global_dispatcher(self, dispatcher: GlobalDispatcher) -> None:
         """Set the global dispatcher for in-process AgentAPI.
@@ -644,6 +661,32 @@ class AgentPool:
             )
 
         parent_permissions = effective_config.parent_permissions
+        if effective_config.parent_agent_id is not None:
+            parent_agent = self._agents.get(effective_config.parent_agent_id)
+            if parent_agent is None:
+                raise PermissionError(
+                    "Cannot create agent: parent agent not found: "
+                    f"{effective_config.parent_agent_id}"
+                )
+
+            live_parent_permissions = parent_agent.services.get("permissions")
+            if not isinstance(live_parent_permissions, AgentPermissions):
+                raise PermissionError(
+                    "Cannot create agent: parent agent has no permissions service"
+                )
+
+            if (
+                parent_permissions is not None
+                and parent_permissions is not live_parent_permissions
+            ):
+                logging.getLogger(__name__).warning(
+                    "Parent permissions mismatch for create(%s): ignoring provided "
+                    "parent_permissions and using live parent permissions from %s",
+                    effective_id,
+                    effective_config.parent_agent_id,
+                )
+            parent_permissions = live_parent_permissions
+
         create_requester_id = requester_id or effective_config.parent_agent_id or "external"
 
         self._enforce_create_authorization(
@@ -799,8 +842,11 @@ class AgentPool:
 
         # Add MCP tools if agent has MCP permission (TRUSTED/YOLO only)
         # Only include tools from MCP servers visible to this agent
-        from nexus3.mcp.permissions import can_use_mcp
-        if can_use_mcp(permissions):
+        if self._is_mcp_visible_for_agent(
+            agent_id=effective_id,
+            permissions=permissions,
+            check_stage="create",
+        ):
             for mcp_skill in await self._shared.mcp_registry.get_all_skills(agent_id=effective_id):
                 # Check if MCP tool is disabled in permissions
                 tool_perm = permissions.tool_permissions.get(mcp_skill.name)
@@ -906,6 +952,31 @@ class AgentPool:
         kernel_decision = self._create_authorization_kernel.authorize(kernel_request)
         if not kernel_decision.allowed:
             raise PermissionError(denial_message)
+
+    def _is_mcp_visible_for_agent(
+        self,
+        *,
+        agent_id: str,
+        permissions: AgentPermissions,
+        check_stage: str,
+    ) -> bool:
+        """Evaluate MCP visibility via pool-local authorization kernel."""
+        from nexus3.mcp.permissions import can_use_mcp
+
+        kernel_request = AuthorizationRequest(
+            action=AuthorizationAction.TOOL_EXECUTE,
+            resource=AuthorizationResource(
+                resource_type=AuthorizationResourceType.TOOL,
+                identifier="mcp_visibility",
+            ),
+            principal_id=agent_id,
+            context={
+                "mcp_level_allowed": can_use_mcp(permissions),
+                "check_stage": check_stage,
+            },
+        )
+        kernel_decision = self._mcp_visibility_authorization_kernel.authorize(kernel_request)
+        return kernel_decision.allowed
 
     async def create_temp(self, config: AgentConfig | None = None) -> Agent:
         """Create a new temp agent with auto-generated ID.
@@ -1159,8 +1230,11 @@ class AgentPool:
 
         # Add MCP tools if agent has MCP permission (TRUSTED/YOLO only)
         # Only include tools from MCP servers visible to this agent
-        from nexus3.mcp.permissions import can_use_mcp
-        if can_use_mcp(permissions):
+        if self._is_mcp_visible_for_agent(
+            agent_id=agent_id,
+            permissions=permissions,
+            check_stage="restore",
+        ):
             for mcp_skill in await self._shared.mcp_registry.get_all_skills(agent_id=agent_id):
                 # Check if MCP tool is disabled in permissions
                 tool_perm = permissions.tool_permissions.get(mcp_skill.name)

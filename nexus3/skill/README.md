@@ -321,6 +321,9 @@ my_nexus_skill_factory = nexus_skill_factory(MyNexusSkill)
 
 **Key features:**
 - `_execute_with_client()` - Handles HTTP vs DirectAgentAPI routing
+- `_execute_with_client()` preserves requester identity across both the
+  in-process API path and HTTP fallback when the skill is running inside an
+  agent context
 - `_validate_agent_id()` - Common agent_id validation
 - `_get_port()` / `_get_api_key()` - Port and auth discovery
 - `_build_url()` - URL construction

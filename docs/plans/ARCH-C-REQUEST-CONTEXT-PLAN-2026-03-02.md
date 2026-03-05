@@ -75,6 +75,22 @@ Phases:
 - Added focused concurrent `run_python` execution test proving per-call code
   payload isolation on a shared skill instance.
 
+### M2 Commit 3 Status (2026-03-05)
+
+- Propagated immutable requester context through agent-scoped HTTP dispatch in
+  `nexus3/rpc/http.py`, so `/agent/{id}` routes no longer drop `X-Nexus-Agent`
+  before reaching `Dispatcher.dispatch(..., requester_id=...)`.
+- Propagated requester context through `create_agent` follow-up initial-message
+  dispatch in `nexus3/rpc/global_dispatcher.py` for both waiting and queued
+  paths.
+- Extended `NexusSkill` HTTP fallback in `nexus3/skill/base.py` and
+  `nexus3/client.py` to forward requester identity when operating from agent
+  context, preserving requester-aware authorization outside the in-process
+  `DirectAgentAPI` path.
+- Added focused regressions in `tests/unit/test_http_pipeline_layers.py`,
+  `tests/unit/test_initial_message.py`, `tests/unit/test_client.py`, and
+  `tests/unit/test_nexus_skill_requester_propagation.py`.
+
 ## Documentation Updates
 
 - Update RPC/session docs for request context propagation.

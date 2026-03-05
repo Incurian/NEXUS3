@@ -298,3 +298,23 @@ class TestNexusClient:
 
         # No params when request_id is None
         assert received_params == [None]
+
+    @pytest.mark.asyncio
+    async def test_client_sends_requester_header_when_present(self):
+        """Client forwards requester identity via X-Nexus-Agent header."""
+        received_headers: list[httpx.Headers] = []
+
+        def mock_handler(request: httpx.Request) -> httpx.Response:
+            received_headers.append(request.headers)
+            return httpx.Response(
+                200,
+                json={"jsonrpc": "2.0", "id": 1, "result": {"content": "ok"}},
+            )
+
+        transport = httpx.MockTransport(mock_handler)
+
+        async with NexusClient(requester_id="caller-agent") as client:
+            client._client = httpx.AsyncClient(transport=transport)
+            await client.send("hello")
+
+        assert received_headers[0].get("x-nexus-agent") == "caller-agent"

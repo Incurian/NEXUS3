@@ -14,7 +14,7 @@ from dataclasses import FrozenInstanceError, fields
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -26,6 +26,7 @@ from nexus3.core.authorization_kernel import (
     AuthorizationResourceType,
 )
 from nexus3.core.permissions import (
+    PermissionDelta,
     ToolPermission,
     resolve_preset,
 )
@@ -38,6 +39,7 @@ from nexus3.rpc.pool import (
     SharedComponents,
 )
 from nexus3.rpc.types import Request
+from nexus3.session.persistence import SavedSession
 
 # -----------------------------------------------------------------------------
 # SharedComponents Tests
@@ -278,6 +280,168 @@ class TestAgentPool:
                 )
 
             assert "child-agent" not in pool
+
+    @pytest.mark.asyncio
+    async def test_create_parented_with_delta_keeps_authorization_stage_order_stable(
+        self,
+        tmp_path,
+    ):
+        """Parented create with delta preserves AGENT_CREATE check stage ordering."""
+        shared = create_mock_shared_components(tmp_path)
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            await pool.create(
+                config=AgentConfig(
+                    agent_id="parent-stage-order",
+                    preset="trusted",
+                )
+            )
+
+            original_authorize = pool._create_authorization_kernel.authorize
+            pool._create_authorization_kernel.authorize = MagicMock(side_effect=original_authorize)
+
+            child_agent = await pool.create(
+                config=AgentConfig(
+                    agent_id="child-stage-order",
+                    preset="sandboxed",
+                    parent_agent_id="parent-stage-order",
+                    delta=PermissionDelta(disable_tools=["read_file"]),
+                ),
+                requester_id="parent-stage-order",
+            )
+
+            assert child_agent.agent_id == "child-stage-order"
+            observed_stages = [
+                call.args[0].context["check_stage"]
+                for call in pool._create_authorization_kernel.authorize.call_args_list
+            ]
+            assert observed_stages == [
+                "lifecycle_entry",
+                "requester_parent_binding",
+                "max_depth",
+                "base_ceiling",
+                "delta_ceiling",
+            ]
+
+    @pytest.mark.asyncio
+    async def test_create_mcp_visibility_uses_kernel_and_fetches_when_allowed(self, tmp_path):
+        """create() uses MCP visibility kernel and fetches tools when allowed by level."""
+        shared = create_mock_shared_components(tmp_path)
+        mcp_skill = MagicMock()
+        mcp_skill.name = "mcp_lookup"
+        mcp_skill.description = "Lookup"
+        mcp_skill.parameters = {"type": "object", "properties": {}}
+        shared.mcp_registry.get_all_skills = AsyncMock(return_value=[mcp_skill])
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            original_authorize = pool._mcp_visibility_authorization_kernel.authorize
+            pool._mcp_visibility_authorization_kernel.authorize = MagicMock(
+                side_effect=original_authorize
+            )
+
+            agent = await pool.create(
+                config=AgentConfig(agent_id="mcp-visible-create", preset="trusted")
+            )
+
+            assert agent.agent_id == "mcp-visible-create"
+            assert pool._mcp_visibility_authorization_kernel.authorize.call_count == 1
+            kernel_request = pool._mcp_visibility_authorization_kernel.authorize.call_args.args[0]
+            assert isinstance(kernel_request, AuthorizationRequest)
+            assert kernel_request.action == AuthorizationAction.TOOL_EXECUTE
+            assert kernel_request.resource.resource_type == AuthorizationResourceType.TOOL
+            assert kernel_request.principal_id == "mcp-visible-create"
+            assert kernel_request.context["mcp_level_allowed"] is True
+            assert kernel_request.context["check_stage"] == "create"
+            shared.mcp_registry.get_all_skills.assert_awaited_once_with(
+                agent_id="mcp-visible-create"
+            )
+
+    @pytest.mark.asyncio
+    async def test_create_forced_mcp_kernel_deny_skips_fetch_and_still_succeeds(self, tmp_path):
+        """Forced kernel deny skips MCP fetch while preserving create success."""
+        shared = create_mock_shared_components(tmp_path)
+        mcp_skill = MagicMock()
+        mcp_skill.name = "mcp_lookup"
+        mcp_skill.description = "Lookup"
+        mcp_skill.parameters = {"type": "object", "properties": {}}
+        shared.mcp_registry.get_all_skills = AsyncMock(return_value=[mcp_skill])
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+
+            def _deny_all(request: AuthorizationRequest) -> AuthorizationDecision:
+                return AuthorizationDecision.deny(
+                    request,
+                    reason="forced_deny_for_test",
+                )
+
+            pool._mcp_visibility_authorization_kernel.authorize = MagicMock(
+                side_effect=_deny_all,
+            )
+
+            agent = await pool.create(
+                config=AgentConfig(agent_id="mcp-deny-create", preset="trusted")
+            )
+
+            assert agent.agent_id == "mcp-deny-create"
+            assert "mcp-deny-create" in pool
+            assert pool._mcp_visibility_authorization_kernel.authorize.call_count == 1
+            kernel_request = pool._mcp_visibility_authorization_kernel.authorize.call_args.args[0]
+            assert isinstance(kernel_request, AuthorizationRequest)
+            assert kernel_request.context["mcp_level_allowed"] is True
+            assert kernel_request.context["check_stage"] == "create"
+            shared.mcp_registry.get_all_skills.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_restore_mcp_visibility_uses_kernel_and_skips_fetch_when_level_denied(
+        self,
+        tmp_path,
+    ):
+        """restore path uses MCP visibility kernel and preserves deny-by-level behavior."""
+        shared = create_mock_shared_components(tmp_path)
+        shared.mcp_registry.get_all_skills = AsyncMock(return_value=[])
+        saved = SavedSession(
+            agent_id="restore-mcp-denied",
+            created_at=datetime.now(),
+            modified_at=datetime.now(),
+            messages=[],
+            system_prompt="You are a test assistant.",
+            system_prompt_path=None,
+            working_directory=str(tmp_path),
+            permission_level="sandboxed",
+            token_usage={},
+            provenance="user",
+            permission_preset="sandboxed",
+        )
+        session_manager = MagicMock()
+        session_manager.session_exists.return_value = True
+        session_manager.load_session.return_value = saved
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            original_authorize = pool._mcp_visibility_authorization_kernel.authorize
+            pool._mcp_visibility_authorization_kernel.authorize = MagicMock(
+                side_effect=original_authorize
+            )
+
+            agent = await pool.get_or_restore(
+                "restore-mcp-denied",
+                session_manager=session_manager,
+            )
+
+            assert agent is not None
+            assert agent.agent_id == "restore-mcp-denied"
+            assert pool._mcp_visibility_authorization_kernel.authorize.call_count == 1
+            kernel_request = pool._mcp_visibility_authorization_kernel.authorize.call_args.args[0]
+            assert isinstance(kernel_request, AuthorizationRequest)
+            assert kernel_request.action == AuthorizationAction.TOOL_EXECUTE
+            assert kernel_request.resource.resource_type == AuthorizationResourceType.TOOL
+            assert kernel_request.principal_id == "restore-mcp-denied"
+            assert kernel_request.context["mcp_level_allowed"] is False
+            assert kernel_request.context["check_stage"] == "restore"
+            shared.mcp_registry.get_all_skills.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_get_returns_agent(self, tmp_path):

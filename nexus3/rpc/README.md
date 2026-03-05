@@ -219,13 +219,18 @@ Handles agent lifecycle management at the pool level.
 - `shutdown_requested` property: checked by HTTP server loop for graceful shutdown
 - `handles(method)`: check if a method is handled by this dispatcher
 - `dispatch(request, requester_id=None)`: sets requester context for authorization
+- `create_agent` follow-up `initial_message` dispatch reuses the same requester
+  context so the first send turn matches normal requester-aware authorization
+  and telemetry.
 
 #### Authorization
 
 Authorization is kernel-authoritative in current lifecycle handlers:
 - `create_agent` authorization is enforced in `AgentPool.create(...)` via `AGENT_CREATE` checks (lifecycle entry, requester/parent binding, max depth, base ceiling, delta ceiling).
+  - For parented creates, `AgentPool` resolves parent permissions from the live parent agent service state; mismatched caller-supplied `parent_permissions` are ignored.
 - `destroy_agent` authorization is enforced in `AgentPool.destroy(...)` via `AGENT_DESTROY` checks (self, parent-child, external/admin contexts).
 - `list_agents` and `shutdown_server` are authorized through kernel-backed checks in `GlobalDispatcher`.
+- MCP tool visibility during pool create/restore is routed through a pool-local kernel gate (`TOOL_EXECUTE`) with preserved level semantics (TRUSTED/YOLO allow, SANDBOXED deny).
 
 ### Dispatcher (`dispatcher.py`)
 
@@ -256,6 +261,11 @@ The `pool` parameter enables YOLO safety checks (blocking RPC sends when no REPL
 | `get_messages` | `offset?`, `limit?` | `{agent_id, total, offset, limit, messages}` |
 | `compact` | `force?` | `{compacted, tokens_before?, tokens_after?, tokens_saved?}` or `{compacted: false, reason}` |
 | `shutdown` | (none) | `{success}` |
+
+Agent-scoped dispatch also accepts `requester_id` and uses it for requester-aware
+authorization. Over HTTP, the server derives this from the trusted
+`X-Nexus-Agent` header and now preserves it on both global and `/agent/{id}`
+routes.
 
 Note: `get_tokens`, `get_context`, and `get_messages` are only registered if `context` is provided.
 

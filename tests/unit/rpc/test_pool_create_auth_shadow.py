@@ -49,6 +49,21 @@ def _create_mock_shared_components(tmp_path: Path) -> SharedComponents:
     )
 
 
+async def _create_parent_agent(
+    pool: AgentPool,
+    *,
+    parent_agent_id: str = "parent-agent",
+    preset: str = "trusted",
+) -> Any:
+    with patch("nexus3.skill.builtin.register_builtin_skills"):
+        return await pool.create(
+            config=AgentConfig(
+                agent_id=parent_agent_id,
+                preset=preset,
+            )
+        )
+
+
 class _DenyCreateStageKernel:
     def __init__(self, check_stage: str) -> None:
         self._check_stage = check_stage
@@ -67,7 +82,9 @@ async def test_create_authoritative_max_depth_denial_preserves_wording(
     shared = _create_mock_shared_components(tmp_path)
     pool = AgentPool(shared)
 
-    parent_permissions = resolve_preset("trusted")
+    parent = await _create_parent_agent(pool, preset="trusted")
+    parent_permissions = parent.services.get("permissions")
+    assert parent_permissions is not None
     parent_permissions.depth = MAX_AGENT_DEPTH
 
     with pytest.raises(PermissionError, match="max nesting depth"):
@@ -75,7 +92,6 @@ async def test_create_authoritative_max_depth_denial_preserves_wording(
             config=AgentConfig(
                 agent_id="child-max-depth-deny",
                 preset="sandboxed",
-                parent_permissions=parent_permissions,
                 parent_agent_id="parent-agent",
             )
         )
@@ -89,15 +105,13 @@ async def test_create_authoritative_base_ceiling_denial_preserves_wording(
     shared = _create_mock_shared_components(tmp_path)
     pool = AgentPool(shared)
 
-    parent_permissions = resolve_preset("sandboxed")
-    parent_permissions.depth = 0
+    await _create_parent_agent(pool, preset="sandboxed")
 
     with pytest.raises(PermissionError, match="exceeds parent ceiling"):
         await pool.create(
             config=AgentConfig(
                 agent_id="child-base-ceiling-deny",
                 preset="yolo",
-                parent_permissions=parent_permissions,
                 parent_agent_id="parent-agent",
             )
         )
@@ -111,7 +125,9 @@ async def test_create_authoritative_delta_ceiling_denial_preserves_wording(
     shared = _create_mock_shared_components(tmp_path)
     pool = AgentPool(shared)
 
-    parent_permissions = resolve_preset("trusted")
+    parent = await _create_parent_agent(pool, preset="trusted")
+    parent_permissions = parent.services.get("permissions")
+    assert parent_permissions is not None
     parent_permissions.depth = 0
     parent_permissions.tool_permissions["bash_safe"] = ToolPermission(enabled=False)
 
@@ -121,7 +137,6 @@ async def test_create_authoritative_delta_ceiling_denial_preserves_wording(
                 agent_id="child-delta-ceiling-deny",
                 preset="sandboxed",
                 delta=PermissionDelta(enable_tools=["bash_safe"]),
-                parent_permissions=parent_permissions,
                 parent_agent_id="parent-agent",
             )
         )
@@ -182,15 +197,13 @@ async def test_create_authoritative_requester_parent_binding_match_allows(
     shared = _create_mock_shared_components(tmp_path)
     pool = AgentPool(shared)
 
-    parent_permissions = resolve_preset("trusted")
-    parent_permissions.depth = 0
+    await _create_parent_agent(pool, preset="trusted")
 
     with patch("nexus3.skill.builtin.register_builtin_skills"):
         agent = await pool.create(
             config=AgentConfig(
                 agent_id="child-requester-binding-match",
                 preset="sandboxed",
-                parent_permissions=parent_permissions,
                 parent_agent_id="parent-agent",
             ),
             requester_id="parent-agent",
@@ -208,8 +221,7 @@ async def test_create_authoritative_requester_parent_binding_mismatch_denied(
     shared = _create_mock_shared_components(tmp_path)
     pool = AgentPool(shared)
 
-    parent_permissions = resolve_preset("trusted")
-    parent_permissions.depth = 0
+    await _create_parent_agent(pool, preset="trusted")
 
     with pytest.raises(
         PermissionError,
@@ -219,10 +231,78 @@ async def test_create_authoritative_requester_parent_binding_mismatch_denied(
             config=AgentConfig(
                 agent_id="child-requester-binding-mismatch",
                 preset="sandboxed",
-                parent_permissions=parent_permissions,
                 parent_agent_id="parent-agent",
             ),
             requester_id="requester-agent",
         )
 
     assert "child-requester-binding-mismatch" not in pool
+
+
+@pytest.mark.asyncio
+async def test_parented_create_enforces_live_parent_permissions_over_forged_config(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Create uses live parent permissions when config passes a forged object."""
+    shared = _create_mock_shared_components(tmp_path)
+    pool = AgentPool(shared)
+
+    await _create_parent_agent(pool, preset="sandboxed")
+    forged_parent_permissions = resolve_preset("trusted")
+
+    with caplog.at_level("WARNING"):
+        with pytest.raises(PermissionError, match="exceeds parent ceiling"):
+            await pool.create(
+                config=AgentConfig(
+                    agent_id="child-forged-parent-perms",
+                    preset="trusted",
+                    parent_permissions=forged_parent_permissions,
+                    parent_agent_id="parent-agent",
+                )
+            )
+
+    assert "child-forged-parent-perms" not in pool
+    assert "Parent permissions mismatch for create(child-forged-parent-perms)" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_parented_create_uses_live_parent_ceiling_when_parent_permissions_omitted(
+    tmp_path: Path,
+) -> None:
+    """Create enforces live parent ceiling even if parent_permissions is omitted."""
+    shared = _create_mock_shared_components(tmp_path)
+    pool = AgentPool(shared)
+
+    await _create_parent_agent(pool, preset="sandboxed")
+
+    with pytest.raises(PermissionError, match="exceeds parent ceiling"):
+        await pool.create(
+            config=AgentConfig(
+                agent_id="child-omitted-parent-perms",
+                preset="trusted",
+                parent_agent_id="parent-agent",
+            )
+        )
+
+    assert "child-omitted-parent-perms" not in pool
+
+
+@pytest.mark.asyncio
+async def test_parented_create_fails_closed_when_parent_agent_missing(
+    tmp_path: Path,
+) -> None:
+    """Create fails closed when parent_agent_id does not resolve to a live parent."""
+    shared = _create_mock_shared_components(tmp_path)
+    pool = AgentPool(shared)
+
+    with pytest.raises(PermissionError, match="parent agent not found"):
+        await pool.create(
+            config=AgentConfig(
+                agent_id="child-missing-parent",
+                preset="sandboxed",
+                parent_agent_id="missing-parent",
+            )
+        )
+
+    assert "child-missing-parent" not in pool

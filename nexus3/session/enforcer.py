@@ -132,6 +132,20 @@ class _ToolEnabledAuthorizationAdapter:
         return AuthorizationDecision.allow(request, reason="not_explicitly_disabled")
 
 
+class _ToolPathAuthorizationAdapter:
+    """Kernel adapter mirroring legacy path-access checks."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.TOOL_EXECUTE:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.PATH:
+            return None
+
+        if bool(request.context.get("path_allowed", False)):
+            return AuthorizationDecision.allow(request, reason="path_allowed")
+        return AuthorizationDecision.deny(request, reason="path_denied")
+
+
 class PermissionEnforcer:
     """Enforces permission policies for tool execution.
 
@@ -154,6 +168,10 @@ class PermissionEnforcer:
         )
         self._target_authorization_kernel = AdapterAuthorizationKernel(
             adapters=(_AgentTargetAuthorizationAdapter(),),
+            default_allow=False,
+        )
+        self._path_authorization_kernel = AdapterAuthorizationKernel(
+            adapters=(_ToolPathAuthorizationAdapter(),),
             default_allow=False,
         )
 
@@ -368,14 +386,33 @@ class PermissionEnforcer:
             )
 
         decision = engine.check_access(str(target_path))
+        legacy_deny_error = (
+            f"Tool '{tool_name}' cannot access path"
+            f" '{target_path}': {decision.reason_detail}"
+        )
+        forced_kernel_deny_error = (
+            f"Tool '{tool_name}' cannot access path"
+            f" '{target_path}': Access denied by permission policy"
+        )
+
+        requester_id = self._services.get("agent_id") if self._services else None
+        principal_id = requester_id if isinstance(requester_id, str) and requester_id else "unknown"
+        kernel_request = AuthorizationRequest(
+            action=AuthorizationAction.TOOL_EXECUTE,
+            resource=AuthorizationResource(
+                resource_type=AuthorizationResourceType.PATH,
+                identifier=str(target_path),
+            ),
+            principal_id=principal_id,
+            context={"path_allowed": decision.allowed},
+        )
+        kernel_decision = self._path_authorization_kernel.authorize(kernel_request)
+        if kernel_decision.allowed:
+            return None
 
         if not decision.allowed:
-            return ToolResult(
-                error=f"Tool '{tool_name}' cannot access path"
-                f" '{target_path}': {decision.reason_detail}"
-            )
-
-        return None
+            return ToolResult(error=legacy_deny_error)
+        return ToolResult(error=forced_kernel_deny_error)
 
     def extract_target_paths(self, tool_call: ToolCall) -> list[Path]:
         """Extract ALL target paths from tool call arguments.

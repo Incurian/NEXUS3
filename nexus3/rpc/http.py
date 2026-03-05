@@ -54,7 +54,9 @@ if TYPE_CHECKING:
     class Dispatcher(Protocol):
         """Protocol for dispatchers that handle JSON-RPC requests."""
 
-        async def dispatch(self, request: Request) -> Response | None: ...
+        async def dispatch(
+            self, request: Request, requester_id: str | None = None,
+        ) -> Response | None: ...
 
     class GlobalDispatcher(Protocol):
         """Protocol for the global dispatcher that manages agents."""
@@ -570,14 +572,7 @@ async def handle_connection(
         requester_id = http_request.headers.get("x-nexus-agent")
 
         try:
-            # Global dispatcher needs requester_id for authorization checks
-            # Agent dispatchers don't need it (they use their own agent context)
-            if agent_id is None:
-                # Global route (/ or /rpc) - pass requester_id
-                rpc_response = await global_dispatcher.dispatch(rpc_request, requester_id)
-            else:
-                # Agent route - use standard dispatch
-                rpc_response = await dispatcher.dispatch(rpc_request)
+            rpc_response = await dispatcher.dispatch(rpc_request, requester_id)
         except Exception as e:
             # Unexpected error during dispatch
             error_response = make_error_response(
