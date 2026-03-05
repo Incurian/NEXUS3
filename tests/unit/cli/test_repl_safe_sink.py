@@ -8,9 +8,13 @@ from rich.console import Console
 
 from nexus3.cli.repl import (
     _format_autosave_error_line,
+    _format_embedded_rpc_listening_line,
     _format_incoming_response_sent_line,
     _format_incoming_started_line,
+    _format_repl_context_metadata_line,
     _format_repl_error_line,
+    _format_repl_startup_metadata_line,
+    _format_server_log_line,
     _format_tool_call_trace_line,
     _format_tool_error_trace_line,
     _format_tool_halt_trace_line,
@@ -182,4 +186,54 @@ def test_autosave_error_line_sanitizes_dynamic_error_text() -> None:
     )
 
     assert line == "[dim red]Auto-save failed: \\[magenta]disk full\\[/magenta][/]"
+    assert "\x1b" not in line
+
+
+def test_embedded_rpc_listening_line_sanitizes_dynamic_url() -> None:
+    sink = _make_sink()
+
+    line = _format_embedded_rpc_listening_line(
+        sink,
+        server_url="http://127.0.0.1:8765/\x1b]8;;https://evil\x07x\x1b]8;;\x07[red]x[/red]",
+    )
+
+    assert line == "[dim]Embedded RPC listening: http://127.0.0.1:8765/x\\[red]x\\[/red][/]"
+    assert "\x1b" not in line
+
+
+def test_server_log_line_sanitizes_dynamic_path() -> None:
+    sink = _make_sink()
+
+    line = _format_server_log_line(
+        sink,
+        server_log_path="/tmp/[bold]server.log[/bold]\x1b[2J",
+    )
+
+    assert line == "[dim]Server log: /tmp/\\[bold]server.log\\[/bold][/]"
+    assert "\x1b" not in line
+
+
+def test_repl_startup_metadata_line_sanitizes_dynamic_value() -> None:
+    sink = _make_sink()
+
+    line = _format_repl_startup_metadata_line(
+        sink,
+        label="Agent",
+        value="[cyan]main[/cyan]\x1b[31m",
+    )
+
+    assert line == "Agent: \\[cyan]main\\[/cyan]"
+    assert "\x1b" not in line
+
+
+def test_repl_context_metadata_line_sanitizes_path_and_layer() -> None:
+    sink = _make_sink()
+
+    line = _format_repl_context_metadata_line(
+        sink,
+        context_path="/tmp/[x]\x1b[31m",
+        layer_name="[red]workspace[/red]\x1b[2J",
+    )
+
+    assert line == "Context: /tmp/\\[x] (\\[red]workspace\\[/red])"
     assert "\x1b" not in line

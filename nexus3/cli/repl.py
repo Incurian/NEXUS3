@@ -192,6 +192,33 @@ def _format_autosave_error_line(safe_sink: SafeSink, error: str) -> str:
     return f"[dim red]Auto-save failed: {safe_error}[/]"
 
 
+def _format_embedded_rpc_listening_line(safe_sink: SafeSink, server_url: str) -> str:
+    """Format embedded RPC listening startup line with SafeSink sanitization."""
+    safe_server_url = _sanitize_tool_trace_text(safe_sink, server_url)
+    return f"[dim]Embedded RPC listening: {safe_server_url}[/]"
+
+
+def _format_server_log_line(safe_sink: SafeSink, server_log_path: str) -> str:
+    """Format server-log startup line with SafeSink sanitization."""
+    safe_server_log_path = _sanitize_tool_trace_text(safe_sink, server_log_path)
+    return f"[dim]Server log: {safe_server_log_path}[/]"
+
+
+def _format_repl_startup_metadata_line(safe_sink: SafeSink, label: str, value: str) -> str:
+    """Format startup metadata label/value line with SafeSink sanitization."""
+    safe_value = _sanitize_tool_trace_text(safe_sink, value)
+    return f"{label}: {safe_value}"
+
+
+def _format_repl_context_metadata_line(
+    safe_sink: SafeSink, context_path: str, layer_name: str
+) -> str:
+    """Format startup context metadata line with SafeSink sanitization."""
+    safe_path = _sanitize_tool_trace_text(safe_sink, context_path)
+    safe_layer_name = _sanitize_tool_trace_text(safe_sink, layer_name)
+    return f"Context: {safe_path} ({safe_layer_name})"
+
+
 async def run_repl(
     verbose: bool = False,
     log_verbose: bool = False,
@@ -228,6 +255,7 @@ async def run_repl(
         model: Model name/alias to use (from config.models or full model ID).
     """
     console = get_console()
+    safe_sink = SafeSink(console)
     theme = load_theme()
 
     # Load configuration early to get default port
@@ -693,8 +721,12 @@ async def run_repl(
                 "Embedded RPC server listening: http://127.0.0.1:%s/",
                 effective_port,
             )
-            console.print(f"[dim]Embedded RPC listening: http://127.0.0.1:{effective_port}/[/]")
-            console.print(f"[dim]Server log: {server_log_file}[/]")
+            console.print(
+                _format_embedded_rpc_listening_line(
+                    safe_sink, f"http://127.0.0.1:{effective_port}/"
+                )
+            )
+            console.print(_format_server_log_line(safe_sink, str(server_log_file)))
         elif http_task in done:
             # Server task exited before setting started_event - get the real exception
             exc = http_task.exception() if not http_task.cancelled() else None
@@ -738,7 +770,6 @@ async def run_repl(
 
     # Spinner for streaming phases
     spinner = Spinner(console, theme)
-    safe_sink = SafeSink(console)
 
     # =============================================================
     # Turn state tracking
@@ -1074,12 +1105,30 @@ async def run_repl(
 
     # Print welcome message
     console.print("[bold]NEXUS3 v0.1.0[/bold]")
-    console.print(f"Agent: {current_agent_id}", style="dim")
-    console.print(f"Session: {session_logger.session_dir}", style="dim")
-    console.print(f"Server: http://127.0.0.1:{effective_port}", style="dim")
+    console.print(
+        _format_repl_startup_metadata_line(safe_sink, "Agent", current_agent_id),
+        style="dim",
+    )
+    console.print(
+        _format_repl_startup_metadata_line(
+            safe_sink, "Session", str(session_logger.session_dir)
+        ),
+        style="dim",
+    )
+    console.print(
+        _format_repl_startup_metadata_line(
+            safe_sink, "Server", f"http://127.0.0.1:{effective_port}"
+        ),
+        style="dim",
+    )
     # Show prompt sources (from ContextLoader)
     for source in shared.base_context.sources.prompt_sources:
-        console.print(f"Context: {source.path} ({source.layer_name})", style="dim")
+        console.print(
+            _format_repl_context_metadata_line(
+                safe_sink, str(source.path), source.layer_name
+            ),
+            style="dim",
+        )
     console.print("Commands: /help | ESC to cancel", style="dim")
     console.print("")
 
