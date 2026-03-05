@@ -54,7 +54,7 @@ Phases:
 - [x] Add legacy compatibility mode and migration flag (`fidelity_mode=legacy|byte_strict` in patch skill, default legacy).
 - [x] Harden file target resolution (exact-path preference, basename ambiguity fail-closed).
 - [x] Add ambiguity fail-closed and byte-fidelity regression tests (EOF/non-UTF8/binary-adjacent).
-- [ ] Flip default and remove fragile legacy branches (default flipped to byte_strict; legacy-branch retirement still pending).
+- [x] Flip default and remove fragile legacy branches (default flipped to byte_strict; runtime legacy apply path retired with explicit fail-fast guidance for `fidelity_mode=legacy`).
 
 Status note (2026-03-05, M3 Plan F Phase 1):
 - Added `nexus3/patch/ast_v2.py` with typed v2 AST models carrying raw bytes and newline metadata.
@@ -137,6 +137,20 @@ Status note (2026-03-05, M3 Plan F Phase 6):
   - `.venv/bin/mypy nexus3/skill/builtin/patch.py`
 - Remaining closeout in this checklist item:
   - retire or justify remaining legacy-only branches in patch skill flow after soak window.
+
+Status note (2026-03-05, M3 Plan F Phase 7 closeout):
+- Retired runtime legacy patch-skill apply flow in `nexus3/skill/builtin/patch.py`:
+  - patch execution now always uses AST-v2 parsing + `apply_patch_byte_strict(...)`
+  - removed legacy parser/applier branching and legacy line-ending rewrite behavior
+  - retained explicit fail-fast error when callers pass `fidelity_mode=\"legacy\"`
+- Updated migration coverage in `tests/unit/skill/test_patch.py`:
+  - `legacy` mode is now asserted to fail fast with clear guidance
+  - invalid fidelity value guidance is byte-strict-only
+- Focused gates passed:
+  - `.venv/bin/pytest -q tests/unit/skill/test_patch.py` -> `28 passed`
+  - `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py -k patch` -> `9 passed, 8 deselected`
+  - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py`
+  - `.venv/bin/mypy nexus3/skill/builtin/patch.py`
 
 ## Documentation Updates
 

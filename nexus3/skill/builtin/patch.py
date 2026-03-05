@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from nexus3.core.errors import PathSecurityError
-from nexus3.core.paths import atomic_write_bytes, detect_line_ending
+from nexus3.core.paths import atomic_write_bytes
 from nexus3.core.types import ToolResult
 from nexus3.patch import (
     ApplyMode,
@@ -21,17 +21,13 @@ from nexus3.patch import (
     PatchFile,
     PatchFileV2,
     RawLineV2,
-    apply_patch,
     apply_patch_byte_strict,
-    parse_unified_diff,
     parse_unified_diff_v2,
     project_patch_file_v2_to_v1,
     validate_patch,
 )
 from nexus3.skill.base import FileSkill, file_skill_factory
 
-PatchFileLike = PatchFile | PatchFileV2
-FidelityMode = Literal["legacy", "byte_strict"]
 HunkLinePrefix = Literal[" ", "-", "+"]
 
 
@@ -111,8 +107,8 @@ class PatchSkill(FileSkill):
                     "default": "byte_strict",
                     "description": (
                         "Patch fidelity engine: "
-                        "byte_strict=AST-v2 parser with byte-fidelity apply path (default), "
-                        "legacy=existing parser/applier flow"
+                        "byte_strict=AST-v2 parser with byte-fidelity apply path (default). "
+                        "legacy is retired and rejected."
                     ),
                 },
                 "fuzzy_threshold": {
@@ -149,22 +145,28 @@ class PatchSkill(FileSkill):
             diff: Inline unified diff content
             diff_file: Path to a .diff/.patch file to read
             mode: Matching strictness (strict, tolerant, fuzzy)
-            fidelity_mode: Patch engine fidelity (legacy, byte_strict)
+            fidelity_mode: Patch engine fidelity (byte_strict only; legacy rejected)
             fuzzy_threshold: Similarity threshold for fuzzy mode (0.5-1.0)
             dry_run: If True, validate without applying changes
 
         Returns:
             ToolResult with success message or error
         """
-        # Validate fidelity mode before any filesystem work
-        if fidelity_mode not in ("legacy", "byte_strict"):
+        # Keep explicit legacy rejection for callers using old migration flags.
+        if fidelity_mode == "legacy":
+            return ToolResult(
+                error=(
+                    "fidelity_mode='legacy' is no longer supported. "
+                    "Use fidelity_mode='byte_strict' or omit the parameter."
+                )
+            )
+        if fidelity_mode != "byte_strict":
             return ToolResult(
                 error=(
                     f"Invalid fidelity_mode '{fidelity_mode}'. "
-                    "Use: legacy, byte_strict"
+                    "Use: byte_strict"
                 )
             )
-        selected_fidelity = cast(FidelityMode, fidelity_mode)
 
         # Validate target path
         try:
@@ -208,13 +210,10 @@ class PatchSkill(FileSkill):
         if not target_path.exists():
             return ToolResult(error=f"Target file not found: {target}")
 
-        # Parse the diff
-        patch_files: Sequence[PatchFileLike]
+        # Parse the diff with byte-strict AST-v2 only.
+        patch_files: Sequence[PatchFileV2]
         try:
-            if selected_fidelity == "byte_strict":
-                patch_files = parse_unified_diff_v2(diff_content)
-            else:
-                patch_files = parse_unified_diff(diff_content)
+            patch_files = parse_unified_diff_v2(diff_content)
         except Exception as e:
             return ToolResult(error=f"Error parsing diff: {e}")
 
@@ -246,12 +245,9 @@ class PatchSkill(FileSkill):
         # Read target file content (binary to detect line endings)
         try:
             raw_bytes = await asyncio.to_thread(target_path.read_bytes)
-            target_content = raw_bytes.decode("utf-8", errors="replace")
+            target_content = raw_bytes.decode("utf-8", errors="surrogateescape")
         except OSError as e:
             return ToolResult(error=f"Error reading target file: {e}")
-
-        # Detect original line ending
-        original_line_ending = detect_line_ending(target_content)
 
         # Convert mode string to ApplyMode enum early (needed for validation decision)
         try:
@@ -260,21 +256,12 @@ class PatchSkill(FileSkill):
             return ToolResult(error=f"Invalid mode '{mode}'. Use: strict, tolerant, fuzzy")
 
         # Validate the patch against target content
-        validation_patch = (
-            project_patch_file_v2_to_v1(matching_patch)
-            if isinstance(matching_patch, PatchFileV2)
-            else matching_patch
-        )
+        validation_patch = project_patch_file_v2_to_v1(matching_patch)
         validation_result = validate_patch(validation_patch, target_content)
 
-        patch_to_apply_v2: PatchFileV2 | None = None
-        if selected_fidelity == "byte_strict":
-            if not isinstance(matching_patch, PatchFileV2):
-                return ToolResult(error="Internal error: expected AST-v2 patch in byte_strict mode")
-            patch_to_apply_v2 = matching_patch
-            if validation_result.fixed_patch is not None:
-                patch_to_apply_v2 = self._convert_patch_v1_to_v2(validation_result.fixed_patch)
-        patch_to_apply_v1 = validation_result.fixed_patch or validation_patch
+        patch_to_apply_v2 = matching_patch
+        if validation_result.fixed_patch is not None:
+            patch_to_apply_v2 = self._convert_patch_v1_to_v2(validation_result.fixed_patch)
 
         # For dry_run, return validation result
         if dry_run:
@@ -284,48 +271,28 @@ class PatchSkill(FileSkill):
                 multi_file_warning,
             )
 
-        # If validation failed and no auto-fix in STRICT mode, report errors
-        # For tolerant/fuzzy modes, skip validation failure and let apply_patch() handle it
+        # If validation failed and no auto-fix in STRICT mode, report errors.
+        # For tolerant/fuzzy modes, proceed to byte-strict applier matching logic.
         if not validation_result.valid and validation_result.fixed_patch is None:
             if apply_mode == ApplyMode.STRICT:
                 return self._format_validation_failure(validation_result, matching_patch)
-            # For tolerant/fuzzy, proceed to apply_patch() which has its own matching logic
+            # Tolerant/fuzzy proceeds to applier-level matching.
 
         # Apply the patch
-        if selected_fidelity == "byte_strict":
-            if patch_to_apply_v2 is None:
-                return ToolResult(error="Internal error: missing AST-v2 patch for byte_strict mode")
-            apply_result = apply_patch_byte_strict(
-                target_content,
-                patch_to_apply_v2,
-                mode=apply_mode,
-                fuzzy_threshold=fuzzy_threshold,
-            )
-        else:
-            apply_result = apply_patch(
-                target_content,
-                patch_to_apply_v1,
-                mode=apply_mode,
-                fuzzy_threshold=fuzzy_threshold,
-            )
+        apply_result = apply_patch_byte_strict(
+            raw_bytes,
+            patch_to_apply_v2,
+            mode=apply_mode,
+            fuzzy_threshold=fuzzy_threshold,
+        )
 
         if not apply_result.success:
             return self._format_apply_failure(apply_result, matching_patch)
 
-        # Convert back to original line endings and write atomically
-        new_content = apply_result.new_content
-        if selected_fidelity == "legacy":
-            if original_line_ending == "\r\n" and "\r\n" not in new_content:
-                # Convert LF to CRLF
-                new_content = new_content.replace("\n", "\r\n")
-            elif original_line_ending == "\r" and "\r" not in new_content:
-                # Convert LF to CR (legacy)
-                new_content = new_content.replace("\n", "\r")
-
         # Write the patched content atomically
         try:
             await asyncio.to_thread(target_path.parent.mkdir, parents=True, exist_ok=True)
-            new_bytes = new_content.encode("utf-8")
+            new_bytes = apply_result.new_content.encode("utf-8", errors="surrogateescape")
             await asyncio.to_thread(atomic_write_bytes, target_path, new_bytes)
         except OSError as e:
             return ToolResult(error=f"Error writing patched file: {e}")
@@ -339,9 +306,9 @@ class PatchSkill(FileSkill):
 
     def _find_matching_patch(
         self,
-        patch_files: Sequence[PatchFileLike],
+        patch_files: Sequence[PatchFileV2],
         target_path: Path,
-    ) -> tuple[PatchFileLike | None, str | None]:
+    ) -> tuple[PatchFileV2 | None, str | None]:
         """Find the patch file matching target path.
 
         Args:
@@ -374,7 +341,7 @@ class PatchSkill(FileSkill):
                     return patch_file, None
 
         # Second pass: basename fallback with explicit ambiguity handling.
-        basename_matches: list[PatchFileLike] = []
+        basename_matches: list[PatchFileV2] = []
         for patch_file in patch_files:
             if any(
                 os.path.basename(candidate) == target_basename
@@ -403,7 +370,7 @@ class PatchSkill(FileSkill):
 
         return None, None
 
-    def _patch_path_candidates(self, patch_file: PatchFileLike) -> tuple[str, ...]:
+    def _patch_path_candidates(self, patch_file: PatchFileV2) -> tuple[str, ...]:
         """Get normalized unique path candidates for a patch file."""
         normalized_paths: list[str] = []
         for raw_path in (patch_file.path, patch_file.old_path, patch_file.new_path):
@@ -466,7 +433,7 @@ class PatchSkill(FileSkill):
     def _format_dry_run_result(
         self,
         validation_result: Any,
-        patch_file: PatchFileLike,
+        patch_file: PatchFileV2,
         warning_prefix: str,
     ) -> ToolResult:
         """Format the dry run result message."""
@@ -494,7 +461,7 @@ class PatchSkill(FileSkill):
     def _format_validation_failure(
         self,
         validation_result: Any,
-        patch_file: PatchFileLike,
+        patch_file: PatchFileV2,
     ) -> ToolResult:
         """Format a validation failure message."""
         error = f"Patch validation failed on {patch_file.path}:\n"
@@ -506,7 +473,7 @@ class PatchSkill(FileSkill):
     def _format_apply_failure(
         self,
         apply_result: Any,
-        patch_file: PatchFileLike,
+        patch_file: PatchFileV2,
     ) -> ToolResult:
         """Format an application failure message."""
         error = f"Patch failed on {patch_file.path}:\n"
@@ -524,7 +491,7 @@ class PatchSkill(FileSkill):
     def _format_success(
         self,
         apply_result: Any,
-        patch_file: PatchFileLike,
+        patch_file: PatchFileV2,
         warning_prefix: str,
     ) -> ToolResult:
         """Format a success message."""

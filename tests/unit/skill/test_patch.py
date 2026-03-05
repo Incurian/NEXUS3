@@ -505,7 +505,6 @@ class TestFidelityModeMigration(TestPatchSkill):
 
         assert not result.success
         assert "fidelity_mode" in result.error
-        assert "legacy" in result.error
         assert "byte_strict" in result.error
 
     @pytest.mark.asyncio
@@ -522,17 +521,24 @@ class TestFidelityModeMigration(TestPatchSkill):
         assert target_file.read_bytes() == b"alpha\r\nBETA\ngamma\r\n"
 
     @pytest.mark.asyncio
-    async def test_fidelity_mode_explicit_legacy_remains_available(self, skill, tmp_path):
-        """Legacy mode remains available for compatibility during migration."""
+    async def test_fidelity_mode_explicit_legacy_is_rejected(self, skill, tmp_path):
+        """Legacy mode is retired and must fail fast with clear guidance."""
         target_file = tmp_path / "target.txt"
         target_file.write_bytes(b"alpha\r\nbeta\ngamma\r\n")
         diff_content = (_FIXTURE_DIR / "patch_mixed_newline_update.diff").read_text(
             encoding="utf-8"
         )
 
-        await skill.execute(target=str(target_file), diff=diff_content, fidelity_mode="legacy")
+        result = await skill.execute(
+            target=str(target_file),
+            diff=diff_content,
+            fidelity_mode="legacy",
+        )
 
-        assert target_file.read_bytes() == b"alpha\r\nBETA\r\ngamma\r\n"
+        assert not result.success
+        assert "no longer supported" in result.error
+        assert "byte_strict" in result.error
+        assert target_file.read_bytes() == b"alpha\r\nbeta\ngamma\r\n"
 
 
 class TestPatchValidation(TestPatchSkill):
