@@ -1007,6 +1007,23 @@ Compact checkpoint (2026-03-05, architecture execution round 29):
   2. Plan A: if `repl_commands._change_preset` is intentionally left outside Plan A scope, write explicit closeout criteria and mark `Remove duplicate authorization branches` complete/incomplete accordingly.
   3. Plan C: confirm no further requester-propagation gaps remain beyond documented deferred service-container immutability work.
 
+Compact checkpoint (2026-03-05, post-commit handover):
+- Current branch head: `6d89fe4` (`auth/context: harden kernel and requester propagation`).
+- Commit contents:
+  1. Plan A path authorization kernelization in `nexus3/session/enforcer.py` plus focused coverage.
+  2. Plan A duplicate-branch cleanup in `nexus3/skill/builtin/nexus_create.py` plus focused coverage.
+  3. Plan C requester propagation through agent-scoped HTTP dispatch, create follow-up initial-message dispatch, and NexusSkill HTTP fallback transport.
+  4. Plan/doc updates in `AGENTS.md`, `CLAUDE.md`, `docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md`, `docs/plans/ARCH-C-REQUEST-CONTEXT-PLAN-2026-03-02.md`, `nexus3/rpc/README.md`, and `nexus3/skill/README.md`.
+- Validation already completed before commit:
+  - `.venv/bin/ruff check nexus3/client.py nexus3/skill/base.py nexus3/rpc/http.py nexus3/rpc/global_dispatcher.py nexus3/skill/builtin/nexus_create.py tests/unit/test_client.py tests/unit/test_http_pipeline_layers.py tests/unit/test_initial_message.py tests/unit/test_nexus_skill_requester_propagation.py tests/unit/skill/test_nexus_create.py`
+  - `.venv/bin/mypy nexus3/client.py nexus3/skill/base.py nexus3/rpc/http.py nexus3/rpc/global_dispatcher.py nexus3/skill/builtin/nexus_create.py`
+  - `.venv/bin/pytest -q tests/unit/test_client.py tests/unit/test_http_pipeline_layers.py tests/unit/test_initial_message.py tests/unit/test_nexus_skill_requester_propagation.py tests/unit/skill/test_nexus_create.py`
+  - Result: `52 passed` (existing SSL CA warnings only).
+- Resume-first target after compact:
+  1. Re-open `docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md` and inspect `nexus3/cli/repl_commands.py::_change_preset` as the last obvious duplicate authorization surface.
+  2. If `_change_preset` is outside Plan A’s intended kernel boundary, document that explicitly and close out the remaining Plan A checklist item.
+  3. Otherwise, implement the smallest safe cleanup/kernelization slice, then update plan/docs/AGENTS in the same session.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.
