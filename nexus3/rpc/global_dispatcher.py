@@ -347,16 +347,8 @@ class GlobalDispatcher:
         # Validate allowed_write_paths if provided
         write_paths: list[Path] | None = None
         if allowed_write_paths is not None:
-            if not isinstance(allowed_write_paths, list):
-                raise InvalidParamsError(
-                    f"allowed_write_paths must be array, got: {type(allowed_write_paths).__name__}"
-                )
             write_paths = []
-            for i, wp in enumerate(allowed_write_paths):
-                if not isinstance(wp, str):
-                    raise InvalidParamsError(
-                        f"allowed_write_paths[{i}] must be string, got: {type(wp).__name__}"
-                    )
+            for wp in allowed_write_paths:
                 # Resolve relative paths against agent's effective cwd
                 wp_path = Path(wp)
                 if not wp_path.is_absolute():

@@ -384,6 +384,60 @@ async def test_global_create_agent_wait_flag_ignored_without_initial_message() -
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("allowed_write_paths", "expected_message"),
+    [
+        ("not-a-list", "allowed_write_paths must be array, got: str"),
+        ([1], "allowed_write_paths[0] must be string, got: int"),
+    ],
+)
+async def test_global_create_agent_allowed_write_paths_wiring_rejects_malformed_type_shape(
+    allowed_write_paths: object,
+    expected_message: str,
+) -> None:
+    dispatcher = GlobalDispatcher(_StubPool())
+    request = Request(
+        jsonrpc="2.0",
+        method="create_agent",
+        params={
+            "agent_id": "worker-1",
+            "allowed_write_paths": allowed_write_paths,
+        },
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == expected_message
+
+
+@pytest.mark.asyncio
+async def test_global_create_agent_allowed_write_paths_wiring_accepts_valid_list() -> None:
+    pool = _CreateCapableStubPool()
+    dispatcher = GlobalDispatcher(pool)
+    request = Request(
+        jsonrpc="2.0",
+        method="create_agent",
+        params={
+            "agent_id": "worker-1",
+            "preset": "sandboxed",
+            "allowed_write_paths": ["tmp-out"],
+        },
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is None
+    assert response.result == {
+        "agent_id": "worker-1",
+        "url": "/agent/worker-1",
+    }
+
+
+@pytest.mark.asyncio
 async def test_global_create_agent_ingress_wiring_keeps_compat_with_benign_extra_params() -> None:
     pool = _CreateCapableStubPool()
     dispatcher = GlobalDispatcher(pool)
