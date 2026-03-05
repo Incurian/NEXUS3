@@ -523,9 +523,9 @@ def test_parse_request_schema_ingress_rejects_unknown_top_level_fields() -> None
         )
 
 
-def test_parse_request_preserves_empty_method_compatibility() -> None:
-    request = parse_request('{"jsonrpc":"2.0","method":"","params":{"content":"hi"},"id":1}')
-    assert request.method == ""
+def test_parse_request_rejects_empty_method_with_clear_wording() -> None:
+    with pytest.raises(ParseError, match="method must be a non-empty string"):
+        parse_request('{"jsonrpc":"2.0","method":"","params":{"content":"hi"},"id":1}')
 
 
 def test_parse_request_rejects_boolean_id() -> None:

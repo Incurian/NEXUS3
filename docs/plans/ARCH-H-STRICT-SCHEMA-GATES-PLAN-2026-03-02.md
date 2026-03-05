@@ -71,8 +71,9 @@ Phases:
   - [x] M1 Phase 2 strict no-arg flip slice: tightened remaining no-arg ingress handlers in `rpc/dispatcher.py` (`shutdown`, `get_tokens`, `get_context`, `cancel_all`) and `rpc/global_dispatcher.py` (`list_agents`, `shutdown_server`) to reject unknown extra params via strict `EmptyParamsSchema` validation, with focused ingress regression updates.
   - [x] M1 Phase 2 create-agent strict ingress slice: tightened `rpc/global_dispatcher.py::_handle_create_agent` to validate full params object (unknown extra params now rejected) and removed legacy conditional bypass that ignored malformed `wait_for_initial_response` when `initial_message` was absent, while preserving established `InvalidParamsError` wording for known malformed fields.
   - [x] M1 Phase 2 dispatcher behavior-sensitive strict ingress slice: tightened `rpc/dispatcher.py` `send`/`cancel`/`compact` ingress to validate full params object (unknown extra params now rejected) while preserving legacy field-specific `InvalidParamsError` wording for known malformed fields.
+  - [x] M1 Phase 2 protocol strictness flip: removed `parse_request` empty-method compatibility shim in `rpc/protocol.py`; empty string method is now rejected at ingress with explicit ParseError wording (`method must be a non-empty string`).
   - [ ] Remaining M1 Phase 2 ingress coverage beyond low-risk methods (including stricter/behavior-sensitive paths) still pending.
-    - Resume target: evaluate any residual compatibility-only ingress paths (for example request-method empty-string compatibility in protocol parsing) and determine whether strict-default flips are safe.
+    - Resume target: evaluate any residual compatibility-only ingress paths and determine whether strict-default flips are safe.
 - [x] Remove silent malformed-entry skips.
   - [x] M1 Phase 3 slice: `context/loader.py::_merge_mcp_servers` now fail-fast rejects malformed MCP container/entry shapes (`mcpServers` non-object, `servers` non-array, non-object entries in `servers[]`) with actionable `MCPConfigError` context.
 - [x] Consolidate duplicate MCP config models.

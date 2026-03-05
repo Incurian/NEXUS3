@@ -55,10 +55,10 @@ def parse_request(line: str) -> Request:
     if isinstance(raw_params, list):
         raise ParseError("Positional params (array) not supported, use named params (object)")
 
-    # Preserve legacy behavior: empty-string method is accepted (type-checked only).
+    # Reject empty-string method explicitly with clear compatibility-preserving wording.
     raw_method = data.get("method")
     if isinstance(raw_method, str) and raw_method == "":
-        request_data["method"] = " "
+        raise ParseError("method must be a non-empty string")
 
     try:
         validated = RpcRequestEnvelopeSchema.model_validate(request_data, strict=True)

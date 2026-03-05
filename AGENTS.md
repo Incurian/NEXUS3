@@ -595,6 +595,20 @@ Compact checkpoint (2026-03-06, architecture execution round 9):
   2. Plan H: decide on remaining compatibility-only protocol parse path (`empty method` rewrite) and whether to flip to strict reject.
   3. Plan G: continue residual dynamic REPL print sweep and minor CLI consistency consolidation.
 
+Compact checkpoint (2026-03-06, architecture execution round 10):
+- Branch head at start of round: `f0836e0`; working tree now includes Plan H protocol strictness follow-up.
+- New slice completed this round:
+  1. Plan H removed `parse_request` empty-string method compatibility shim in `nexus3/rpc/protocol.py` and now rejects empty method values with explicit ParseError wording (`method must be a non-empty string`).
+  2. Updated focused ingress regression in `tests/unit/rpc/test_schema_ingress_wiring.py` to assert strict reject behavior.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/rpc/protocol.py tests/unit/rpc/test_schema_ingress_wiring.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/protocol.py` passed.
+  - `.venv/bin/pytest -v tests/unit/rpc/test_schema_ingress_wiring.py` passed (`49 passed`).
+- Immediate resume targets:
+  1. Plan A: evaluate remaining duplicate authorization branches (`send` path parity branch and pool/session branches) for next safe kernel-authoritative flip.
+  2. Plan G: continue residual dynamic REPL print sweep and minor CLI consistency consolidation.
+  3. Plan H: audit for any remaining compatibility-only protocol/schema behaviors and either retire or document them.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.
