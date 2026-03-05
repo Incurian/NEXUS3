@@ -609,6 +609,21 @@ Compact checkpoint (2026-03-06, architecture execution round 10):
   2. Plan G: continue residual dynamic REPL print sweep and minor CLI consistency consolidation.
   3. Plan H: audit for any remaining compatibility-only protocol/schema behaviors and either retire or document them.
 
+Compact checkpoint (2026-03-06, architecture execution round 11):
+- Branch head at start of round: `515237e`; working tree now includes Plan A send-authorization duplicate-branch removal.
+- New slice completed this round:
+  1. Plan A converted `send` authorization in `nexus3/rpc/dispatcher.py` from shadow parity to kernel-authoritative enforcement.
+  2. Preserved trusted requester precedence and kept legacy YOLO/no-REPL deny wording (`Cannot send to YOLO agent - no REPL connected`) via explicit kernel-reason mapping.
+  3. Updated send authorization unit coverage in `tests/unit/test_rpc_dispatcher.py` for authoritative allow/deny behavior.
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/rpc/dispatcher.py tests/unit/test_rpc_dispatcher.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/dispatcher.py` passed.
+  - `.venv/bin/pytest -v tests/unit/test_rpc_dispatcher.py` passed (`17 passed`).
+- Immediate resume targets:
+  1. Plan A: evaluate remaining duplicate authorization branches in pool/session enforcement paths for next safe kernel-authoritative flip.
+  2. Plan G: continue residual dynamic REPL print sweep and minor CLI consistency consolidation.
+  3. Plan H: audit for any remaining compatibility-only protocol/schema behaviors and either retire or document them.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.

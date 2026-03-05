@@ -304,12 +304,6 @@ class Dispatcher:
                 permissions and permissions.effective_policy.level == PermissionLevel.YOLO
             )
             repl_connected = bool(self._pool.is_repl_connected(self._agent_id))
-            legacy_allowed = (not is_yolo_agent) or repl_connected
-            legacy_reason = (
-                "not_yolo_agent"
-                if not is_yolo_agent
-                else ("repl_connected" if repl_connected else "no_repl_for_yolo")
-            )
             principal_id = (
                 request_context.requester_id
                 if request_context is not None and request_context.requester_id is not None
@@ -332,26 +326,13 @@ class Dispatcher:
                 },
             )
             kernel_decision = self._send_authorization_kernel.authorize(kernel_request)
-            if kernel_decision.allowed != legacy_allowed:
-                logger.warning(
-                    "Send authorization shadow mismatch for target=%s requester=%s",
-                    self._agent_id,
-                    principal_id,
-                    extra={
-                        "event": "send_auth_shadow_mismatch",
-                        "target_agent_id": self._agent_id,
-                        "requester_id": principal_id,
-                        "legacy_allowed": legacy_allowed,
-                        "legacy_reason": legacy_reason,
-                        "kernel_allowed": kernel_decision.allowed,
-                        "kernel_reason": kernel_decision.reason,
-                    },
-                )
-
-            if not legacy_allowed:
-                raise InvalidParamsError(
-                    "Cannot send to YOLO agent - no REPL connected"
-                )
+            if not kernel_decision.allowed:
+                reason = kernel_decision.reason or "authorization policy denied request"
+                if reason == "no_repl_for_yolo":
+                    raise InvalidParamsError(
+                        "Cannot send to YOLO agent - no REPL connected"
+                    )
+                raise InvalidParamsError(f"send denied: {reason}")
 
         content = validated.content
 

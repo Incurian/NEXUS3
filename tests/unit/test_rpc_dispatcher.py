@@ -1,7 +1,6 @@
 """Unit tests for the RPC Dispatcher cancel method and send request_id tracking."""
 
 import asyncio
-import logging
 from collections.abc import AsyncIterator
 from typing import Any
 from unittest.mock import MagicMock
@@ -305,15 +304,12 @@ class TestDispatcherBasics:
         assert response1.result["request_id"] != response2.result["request_id"]
 
 
-class TestSendAuthorizationShadowParity:
-    """Tests for send authorization shadow parity and mismatch warnings."""
+class TestSendAuthorizationKernelAuthoritative:
+    """Tests for kernel-authoritative send authorization enforcement."""
 
     @pytest.mark.asyncio
-    async def test_send_yolo_without_repl_denied_with_parity_no_warning(
-        self,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """Legacy deny remains enforced and no mismatch warning is emitted on parity."""
+    async def test_send_yolo_without_repl_denied_with_legacy_message(self) -> None:
+        """YOLO target without REPL keeps the existing user-facing deny message."""
         session = MockSession(chunks=["unused"])
         permissions = MagicMock()
         permissions.effective_policy.level = PermissionLevel.YOLO
@@ -332,25 +328,17 @@ class TestSendAuthorizationShadowParity:
             params={"content": "hello"},
             id=1,
         )
-        with caplog.at_level(logging.WARNING, logger="nexus3.rpc.dispatcher"):
-            response = await dispatcher.dispatch(request)
+        response = await dispatcher.dispatch(request)
 
         assert response is not None
         assert response.error is not None
         assert response.error["code"] == -32602
         assert response.error["message"] == "Cannot send to YOLO agent - no REPL connected"
-        assert not [
-            rec for rec in caplog.records
-            if getattr(rec, "event", None) == "send_auth_shadow_mismatch"
-        ]
 
     @pytest.mark.asyncio
-    async def test_send_auth_shadow_mismatch_warns_but_legacy_path_stays_authoritative(
-        self,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """Mismatch warning is emitted while legacy deny remains authoritative."""
-        session = MockSession(chunks=["unused"])
+    async def test_send_kernel_allow_is_authoritative_over_legacy_yolo_gate(self) -> None:
+        """Kernel allow remains authoritative even when the legacy path would deny."""
+        session = MockSession(chunks=["allowed"])
         permissions = MagicMock()
         permissions.effective_policy.level = PermissionLevel.YOLO
         services = MagicMock()
@@ -374,31 +362,16 @@ class TestSendAuthorizationShadowParity:
             params={"content": "hello", "source_agent_id": "caller-1"},
             id=1,
         )
-        with caplog.at_level(logging.WARNING, logger="nexus3.rpc.dispatcher"):
-            response = await dispatcher.dispatch(request)
+        response = await dispatcher.dispatch(request)
 
         assert response is not None
-        assert response.error is not None
-        assert response.error["code"] == -32602
-        assert response.error["message"] == "Cannot send to YOLO agent - no REPL connected"
-
-        records = [
-            rec for rec in caplog.records
-            if getattr(rec, "event", None) == "send_auth_shadow_mismatch"
-        ]
-        assert len(records) == 1
-        record = records[0]
-        assert record.target_agent_id == "target-agent"
-        assert record.requester_id == "caller-1"
-        assert record.legacy_allowed is False
-        assert record.kernel_allowed is True
+        assert response.error is None
+        assert response.result is not None
+        assert response.result["content"] == "allowed"
 
     @pytest.mark.asyncio
-    async def test_send_shadow_uses_trusted_requester_context_for_principal(
-        self,
-        caplog: pytest.LogCaptureFixture,
-    ) -> None:
-        """Trusted requester context takes precedence over payload source_agent_id."""
+    async def test_send_deny_maps_reason_and_uses_trusted_requester_precedence(self) -> None:
+        """Kernel deny maps to generic send message and uses trusted requester_id precedence."""
         session = MockSession(chunks=["unused"])
         permissions = MagicMock()
         permissions.effective_policy.level = PermissionLevel.YOLO
@@ -411,11 +384,16 @@ class TestSendAuthorizationShadowParity:
         pool.is_repl_connected.return_value = False
         dispatcher = Dispatcher(session, agent_id="target-agent", pool=pool)
 
-        class _ForceAllowKernel:
-            def authorize(self, request: Any) -> AuthorizationDecision:
-                return AuthorizationDecision.allow(request, reason="forced_allow")
+        class _CaptureDenyKernel:
+            def __init__(self) -> None:
+                self.principals: list[str] = []
 
-        dispatcher._send_authorization_kernel = _ForceAllowKernel()
+            def authorize(self, request: Any) -> AuthorizationDecision:
+                self.principals.append(str(request.principal_id))
+                return AuthorizationDecision.deny(request, reason="forced_deny")
+
+        kernel = _CaptureDenyKernel()
+        dispatcher._send_authorization_kernel = kernel
 
         request = Request(
             jsonrpc="2.0",
@@ -423,20 +401,13 @@ class TestSendAuthorizationShadowParity:
             params={"content": "hello", "source_agent_id": "spoofed-caller"},
             id=1,
         )
-        with caplog.at_level(logging.WARNING, logger="nexus3.rpc.dispatcher"):
-            response = await dispatcher.dispatch(request, requester_id="trusted-caller")
+        response = await dispatcher.dispatch(request, requester_id="trusted-caller")
 
         assert response is not None
         assert response.error is not None
-        assert response.error["message"] == "Cannot send to YOLO agent - no REPL connected"
-
-        records = [
-            rec for rec in caplog.records
-            if getattr(rec, "event", None) == "send_auth_shadow_mismatch"
-        ]
-        assert len(records) == 1
-        record = records[0]
-        assert record.requester_id == "trusted-caller"
+        assert response.error["code"] == -32602
+        assert response.error["message"] == "send denied: forced_deny"
+        assert kernel.principals == ["trusted-caller"]
 
 
 class TestAgentLifecycleAuthorization:
