@@ -10,6 +10,14 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError as PydanticValidationError
 
+from nexus3.core.authorization_kernel import (
+    AdapterAuthorizationKernel,
+    AuthorizationAction,
+    AuthorizationDecision,
+    AuthorizationRequest,
+    AuthorizationResource,
+    AuthorizationResourceType,
+)
 from nexus3.core.cancel import CancellationToken
 from nexus3.core.permissions import PermissionLevel
 from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
@@ -19,6 +27,7 @@ from nexus3.rpc.schemas import (
     EmptyParamsSchema,
     GetMessagesParamsSchema,
     SendParamsSchema,
+    project_known_schema_fields,
 )
 from nexus3.rpc.types import Request, Response
 from nexus3.session import Session
@@ -32,6 +41,25 @@ if TYPE_CHECKING:
 
 # Type alias for handler functions
 Handler = Callable[[dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
+
+
+class _SendAuthorizationAdapter:
+    """Kernel adapter mirroring legacy YOLO/REPL send authorization checks."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.AGENT_SEND:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.AGENT:
+            return None
+
+        is_yolo_agent = bool(request.context.get("is_yolo_agent"))
+        repl_connected = bool(request.context.get("repl_connected"))
+
+        if not is_yolo_agent:
+            return AuthorizationDecision.allow(request, reason="not_yolo_agent")
+        if repl_connected:
+            return AuthorizationDecision.allow(request, reason="repl_connected")
+        return AuthorizationDecision.deny(request, reason="no_repl_for_yolo")
 
 
 class Dispatcher:
@@ -69,6 +97,10 @@ class Dispatcher:
         self._should_shutdown = False
         self._active_requests: dict[str | int, CancellationToken] = {}
         self._turn_lock = asyncio.Lock()
+        self._send_authorization_kernel = AdapterAuthorizationKernel(
+            adapters=(_SendAuthorizationAdapter(),),
+            default_allow=False,
+        )
 
         # REPL hook: called when a non-REPL send triggers a turn
         self.on_incoming_turn: (
@@ -145,17 +177,7 @@ class Dispatcher:
         Raises:
             InvalidParamsError: If 'content' is missing.
         """
-        content = params.get("content")
-        if content is None:
-            raise InvalidParamsError("Missing required parameter: content")
-        if not isinstance(content, str):
-            raise InvalidParamsError(
-                f"content must be string, got: {type(content).__name__}"
-            )
-        schema_candidate: dict[str, Any] = {"content": content}
-        for key in ("request_id", "source", "source_agent_id"):
-            if key in params:
-                schema_candidate[key] = params[key]
+        schema_candidate = project_known_schema_fields(params, SendParamsSchema)
         try:
             # Compat-safe schema ingress wiring: validate only known send
             # fields and keep extra params permissive.
@@ -168,8 +190,10 @@ class Dispatcher:
                 field = str(loc[0]) if loc else None
                 raw_value = params.get(field) if field else None
                 if field == "content":
+                    if error.get("type") == "missing" or raw_value is None:
+                        raise InvalidParamsError("Missing required parameter: content") from exc
                     raise InvalidParamsError(
-                        f"content must be string, got: {type(content).__name__}"
+                        f"content must be string, got: {type(raw_value).__name__}"
                     ) from exc
                 if field == "request_id":
                     if raw_value == "":
@@ -192,11 +216,56 @@ class Dispatcher:
                 self._session._services.get("permissions")
                 if self._session._services else None
             )
-            if permissions and permissions.effective_policy.level == PermissionLevel.YOLO:
-                if not self._pool.is_repl_connected(self._agent_id):
-                    raise InvalidParamsError(
-                        "Cannot send to YOLO agent - no REPL connected"
-                    )
+            is_yolo_agent = bool(
+                permissions and permissions.effective_policy.level == PermissionLevel.YOLO
+            )
+            repl_connected = bool(self._pool.is_repl_connected(self._agent_id))
+            legacy_allowed = (not is_yolo_agent) or repl_connected
+            legacy_reason = (
+                "not_yolo_agent"
+                if not is_yolo_agent
+                else ("repl_connected" if repl_connected else "no_repl_for_yolo")
+            )
+            principal_id = (
+                str(validated.source_agent_id)
+                if validated.source_agent_id is not None
+                else (validated.source or "rpc")
+            )
+            kernel_request = AuthorizationRequest(
+                action=AuthorizationAction.AGENT_SEND,
+                resource=AuthorizationResource(
+                    resource_type=AuthorizationResourceType.AGENT,
+                    identifier=self._agent_id,
+                ),
+                principal_id=principal_id,
+                context={
+                    "is_yolo_agent": is_yolo_agent,
+                    "repl_connected": repl_connected,
+                },
+            )
+            kernel_decision = self._send_authorization_kernel.authorize(kernel_request)
+            if kernel_decision.allowed != legacy_allowed:
+                logger.warning(
+                    "Send authorization shadow mismatch for target=%s requester=%s",
+                    self._agent_id,
+                    principal_id,
+                    extra={
+                        "event": "send_auth_shadow_mismatch",
+                        "target_agent_id": self._agent_id,
+                        "requester_id": principal_id,
+                        "legacy_allowed": legacy_allowed,
+                        "legacy_reason": legacy_reason,
+                        "kernel_allowed": kernel_decision.allowed,
+                        "kernel_reason": kernel_decision.reason,
+                    },
+                )
+
+            if not legacy_allowed:
+                raise InvalidParamsError(
+                    "Cannot send to YOLO agent - no REPL connected"
+                )
+
+        content = validated.content
 
         # Source attribution (stored in Message.meta)
         # Default missing source to "rpc" to ensure external sends have attribution

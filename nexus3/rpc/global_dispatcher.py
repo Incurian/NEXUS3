@@ -28,7 +28,12 @@ from nexus3.core.policy import PermissionLevel
 from nexus3.core.request_context import RequestContext
 from nexus3.rpc.dispatch_core import InvalidParamsError, dispatch_request
 from nexus3.rpc.pool import Agent, AgentConfig, AuthorizationError
-from nexus3.rpc.schemas import CreateAgentParamsSchema, DestroyAgentParamsSchema, EmptyParamsSchema
+from nexus3.rpc.schemas import (
+    CreateAgentParamsSchema,
+    DestroyAgentParamsSchema,
+    EmptyParamsSchema,
+    project_known_schema_fields,
+)
 from nexus3.rpc.types import Request, Response
 
 if TYPE_CHECKING:
@@ -150,24 +155,11 @@ class GlobalDispatcher:
         """
         # Compat-safe schema ingress wiring: validate only fields with stable
         # legacy semantics in this method (extra params remain permissive).
-        schema_candidate: dict[str, Any] = {}
-        for key in (
-            "agent_id",
-            "system_prompt",
-            "preset",
-            "disable_tools",
-            "parent_agent_id",
-            "cwd",
-            "allowed_write_paths",
-            "model",
-            "initial_message",
-        ):
-            if key in params:
-                schema_candidate[key] = params[key]
+        schema_candidate = project_known_schema_fields(params, CreateAgentParamsSchema)
         # Keep compat behavior: only validate wait_for_initial_response when
         # initial_message is actively provided.
-        if params.get("initial_message") is not None and "wait_for_initial_response" in params:
-            schema_candidate["wait_for_initial_response"] = params["wait_for_initial_response"]
+        if params.get("initial_message") is None:
+            schema_candidate.pop("wait_for_initial_response", None)
 
         try:
             validated = CreateAgentParamsSchema.model_validate(
@@ -281,7 +273,7 @@ class GlobalDispatcher:
         system_prompt = validated.system_prompt
         preset = validated.preset
         disable_tools = validated.disable_tools
-        parent_agent_id = params.get("parent_agent_id")
+        parent_agent_id = validated.parent_agent_id
         cwd_param = validated.cwd
         allowed_write_paths = validated.allowed_write_paths
         model = validated.model
@@ -294,10 +286,6 @@ class GlobalDispatcher:
         parent_permissions: AgentPermissions | None = None
         parent_cwd: Path | None = None
         if parent_agent_id is not None:
-            if not isinstance(parent_agent_id, str):
-                raise InvalidParamsError(
-                    f"parent_agent_id must be string, got: {type(parent_agent_id).__name__}"
-                )
             parent_agent = self._pool.get(parent_agent_id)
             if parent_agent is None:
                 raise InvalidParamsError(f"Parent agent not found: {parent_agent_id}")
@@ -312,10 +300,6 @@ class GlobalDispatcher:
         # Validate cwd if provided
         cwd_path: Path | None = None
         if cwd_param is not None:
-            if not isinstance(cwd_param, str):
-                raise InvalidParamsError(
-                    f"cwd must be string, got: {type(cwd_param).__name__}"
-                )
             # Resolve relative cwd against parent's cwd (not server's cwd)
             cwd_input = Path(cwd_param)
             if not cwd_input.is_absolute() and parent_cwd is not None:

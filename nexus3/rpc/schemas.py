@@ -22,6 +22,15 @@ class StrictSchemaModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def project_known_schema_fields(
+    params: dict[str, Any],
+    schema: type[StrictSchemaModel],
+) -> dict[str, Any]:
+    """Keep only schema-defined params (compat-safe extra field handling)."""
+    schema_fields = schema.model_fields
+    return {key: value for key, value in params.items() if key in schema_fields}
+
+
 class RpcRequestEnvelopeSchema(StrictSchemaModel):
     """Strict JSON-RPC request envelope schema."""
 

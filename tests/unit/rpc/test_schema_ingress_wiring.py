@@ -210,6 +210,34 @@ async def test_dispatcher_send_missing_content_preserves_error_style() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("content", "expected_message"),
+    [
+        (None, "Missing required parameter: content"),
+        (123, "content must be string, got: int"),
+        (False, "content must be string, got: bool"),
+    ],
+)
+async def test_dispatcher_send_content_validation_preserves_error_wording(
+    content: object,
+    expected_message: str,
+) -> None:
+    dispatcher = Dispatcher(_StreamingStubSession(), context=None, agent_id="agent-1")
+    request = Request(
+        jsonrpc="2.0",
+        method="send",
+        params={"content": content},
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == expected_message
+
+
+@pytest.mark.asyncio
 async def test_dispatcher_send_ingress_wiring_keeps_compat_with_benign_extra_params() -> None:
     session = _StreamingStubSession()
     dispatcher = Dispatcher(session, context=None, agent_id="agent-1")
@@ -310,6 +338,49 @@ async def test_global_create_agent_wait_flag_wiring_rejects_invalid_type_pre_cre
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
     assert response.error["message"] == "wait_for_initial_response must be boolean"
+
+
+@pytest.mark.asyncio
+async def test_global_create_agent_parent_id_wiring_rejects_invalid_type_pre_lookup() -> None:
+    dispatcher = GlobalDispatcher(_NoParentLookupPool())
+    request = Request(
+        jsonrpc="2.0",
+        method="create_agent",
+        params={
+            "agent_id": "worker-1",
+            "parent_agent_id": 7,
+        },
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == "parent_agent_id must be string, got: int"
+
+
+@pytest.mark.asyncio
+async def test_global_create_agent_wait_flag_ignored_without_initial_message() -> None:
+    pool = _CreateCapableStubPool()
+    dispatcher = GlobalDispatcher(pool)
+    request = Request(
+        jsonrpc="2.0",
+        method="create_agent",
+        params={
+            "agent_id": "worker-1",
+            "wait_for_initial_response": {"bad": True},
+        },
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is None
+    assert response.result == {
+        "agent_id": "worker-1",
+        "url": "/agent/worker-1",
+    }
 
 
 @pytest.mark.asyncio

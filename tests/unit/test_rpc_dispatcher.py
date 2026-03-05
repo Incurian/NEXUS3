@@ -1,13 +1,16 @@
 """Unit tests for the RPC Dispatcher cancel method and send request_id tracking."""
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
-from nexus3.rpc.dispatcher import Dispatcher, InvalidParamsError
+from nexus3.core.authorization_kernel import AuthorizationDecision
+from nexus3.core.permissions import PermissionLevel
+from nexus3.rpc.dispatcher import Dispatcher
 from nexus3.rpc.types import Request
 from nexus3.session.events import ContentChunk, SessionCompleted, SessionEvent
 
@@ -300,6 +303,95 @@ class TestDispatcherBasics:
         assert "request_id" in response1.result
         assert "request_id" in response2.result
         assert response1.result["request_id"] != response2.result["request_id"]
+
+
+class TestSendAuthorizationShadowParity:
+    """Tests for send authorization shadow parity and mismatch warnings."""
+
+    @pytest.mark.asyncio
+    async def test_send_yolo_without_repl_denied_with_parity_no_warning(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Legacy deny remains enforced and no mismatch warning is emitted on parity."""
+        session = MockSession(chunks=["unused"])
+        permissions = MagicMock()
+        permissions.effective_policy.level = PermissionLevel.YOLO
+        services = MagicMock()
+        services.get.side_effect = lambda key, default=None: (
+            permissions if key == "permissions" else default
+        )
+        session._services = services  # Dispatcher reads permissions via session services
+        pool = MagicMock()
+        pool.is_repl_connected.return_value = False
+        dispatcher = Dispatcher(session, agent_id="target-agent", pool=pool)
+
+        request = Request(
+            jsonrpc="2.0",
+            method="send",
+            params={"content": "hello"},
+            id=1,
+        )
+        with caplog.at_level(logging.WARNING, logger="nexus3.rpc.dispatcher"):
+            response = await dispatcher.dispatch(request)
+
+        assert response is not None
+        assert response.error is not None
+        assert response.error["code"] == -32602
+        assert response.error["message"] == "Cannot send to YOLO agent - no REPL connected"
+        assert not [
+            rec for rec in caplog.records
+            if getattr(rec, "event", None) == "send_auth_shadow_mismatch"
+        ]
+
+    @pytest.mark.asyncio
+    async def test_send_auth_shadow_mismatch_warns_but_legacy_path_stays_authoritative(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Mismatch warning is emitted while legacy deny remains authoritative."""
+        session = MockSession(chunks=["unused"])
+        permissions = MagicMock()
+        permissions.effective_policy.level = PermissionLevel.YOLO
+        services = MagicMock()
+        services.get.side_effect = lambda key, default=None: (
+            permissions if key == "permissions" else default
+        )
+        session._services = services
+        pool = MagicMock()
+        pool.is_repl_connected.return_value = False
+        dispatcher = Dispatcher(session, agent_id="target-agent", pool=pool)
+
+        class _ForceAllowKernel:
+            def authorize(self, request: Any) -> AuthorizationDecision:
+                return AuthorizationDecision.allow(request, reason="forced_allow")
+
+        dispatcher._send_authorization_kernel = _ForceAllowKernel()
+
+        request = Request(
+            jsonrpc="2.0",
+            method="send",
+            params={"content": "hello", "source_agent_id": "caller-1"},
+            id=1,
+        )
+        with caplog.at_level(logging.WARNING, logger="nexus3.rpc.dispatcher"):
+            response = await dispatcher.dispatch(request)
+
+        assert response is not None
+        assert response.error is not None
+        assert response.error["code"] == -32602
+        assert response.error["message"] == "Cannot send to YOLO agent - no REPL connected"
+
+        records = [
+            rec for rec in caplog.records
+            if getattr(rec, "event", None) == "send_auth_shadow_mismatch"
+        ]
+        assert len(records) == 1
+        record = records[0]
+        assert record.target_agent_id == "target-agent"
+        assert record.requester_id == "caller-1"
+        assert record.legacy_allowed is False
+        assert record.kernel_allowed is True
 
 
 class TestNoContextManagerErrors:
