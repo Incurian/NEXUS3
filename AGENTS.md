@@ -227,8 +227,9 @@ Immediate tasks:
 - Plan F Phase 1 is committed as `1079cd7` (`plan f phase 1: add ast v2 foundation and baseline fixtures`).
 - Plan F Phase 2 is committed as `4ded3fa` (`plan f phase 2: add byte-strict ast-v2 apply path`).
 - Plan F Phase 3 is committed as `4c10b0b` (`plan f phase 3: wire legacy vs byte_strict skill mode`).
-- Plan F Phase 4 is complete in the working tree (exact-path target preference + ambiguity fail-closed matching); commit as standalone checkpoint before remaining Phase 5/6 closeout work.
-- Start main-plan execution at M3 Plan F Phase 5 (remaining byte-fidelity regressions: non-UTF8/binary-adjacent and ambiguity coverage expansion) before Plan E.
+- Plan F Phase 4 is committed as `a342401` (`plan f phase 4: fail closed on ambiguous patch targets`).
+- Plan F Phase 5 is complete in the working tree (non-UTF8/binary-adjacent byte-fidelity regressions + byte-input hardening in `apply_patch_byte_strict`); commit as standalone checkpoint before Phase 6.
+- Start main-plan execution at M3 Plan F Phase 6 (default-flip readiness decision + legacy branch retirement plan) before Plan E.
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -1210,6 +1211,24 @@ Execution checkpoint (2026-03-05, architecture execution round 34):
   2. Execute remaining Plan F closeout slices (Phase 5/6) before starting Plan E:
      - expand byte-fidelity regressions (non-UTF8/binary-adjacent + remaining ambiguity matrices)
      - evaluate/plan default-flip readiness criteria for byte_strict.
+  3. Keep follow-on deferred plans in backlog mode until their M4/post-M4 dependency gates are met.
+
+Execution checkpoint (2026-03-05, architecture execution round 35):
+- Scope completed this round (M3 Plan F Phase 5 byte-fidelity regression expansion):
+  1. Hardened byte-strict entrypoint `nexus3/patch/applier.py::apply_patch_byte_strict(...)` to accept `str | bytes` input with reversible `utf-8` + `surrogateescape` decoding for non-UTF8 roundtrip safety.
+  2. Expanded byte-strict regressions in `tests/unit/patch/test_byte_strict_apply_phase2.py`:
+     - invalid UTF-8 adjacent-byte preservation
+     - binary-adjacent payload (NUL/control bytes) preservation while nearby text changes
+  3. Synced byte-input contract note in `nexus3/patch/README.md`.
+- Focused validation executed this round:
+  - `.venv/bin/pytest -q tests/unit/patch/test_byte_strict_apply_phase2.py tests/unit/patch/test_applier.py tests/unit/patch/test_parser.py tests/unit/patch/test_byte_roundtrip_baseline.py tests/unit/patch/test_validator.py` -> `68 passed`.
+  - `.venv/bin/pytest -q tests/unit/skill/test_patch.py` -> `27 passed`.
+  - `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py -k patch` -> `9 passed, 8 deselected`.
+  - `.venv/bin/ruff check nexus3/patch/applier.py tests/unit/patch/test_byte_strict_apply_phase2.py` -> passed.
+  - `.venv/bin/mypy nexus3/patch/applier.py` -> passed.
+- Next gate:
+  1. Commit Plan F Phase 5 code+tests+docs as standalone checkpoint.
+  2. Execute Plan F Phase 6 closeout: default-flip readiness decision and legacy-branch retirement plan.
   3. Keep follow-on deferred plans in backlog mode until their M4/post-M4 dependency gates are met.
 
 ## Source of Truth

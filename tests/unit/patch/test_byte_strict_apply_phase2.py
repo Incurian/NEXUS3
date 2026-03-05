@@ -7,17 +7,21 @@ from nexus3.patch import apply_patch_byte_strict, parse_unified_diff_v2
 from nexus3.patch.ast_v2 import HunkLineV2
 
 _FIXTURE_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "arch_baseline"
-def _apply_byte_strict_to_bytes(source_bytes: bytes, diff_text: str) -> bytes:
-    """Parse v2 diff and apply via byte-strict entrypoint, returning utf-8 bytes."""
+
+
+def _apply_byte_strict_to_bytes(
+    source_bytes: bytes,
+    diff_text: str,
+    *,
+    codec_errors: str = "surrogateescape",
+) -> bytes:
+    """Parse/apply via byte-strict entrypoint with a reversible UTF-8 error mode."""
     parsed_files = parse_unified_diff_v2(diff_text)
     assert len(parsed_files) == 1
     patch = parsed_files[0]
-    result = apply_patch_byte_strict(
-        source_bytes.decode("utf-8", errors="surrogatepass"),
-        patch,
-    )
+    result = apply_patch_byte_strict(source_bytes, patch)
     assert result.success, result.failed_hunks
-    return result.new_content.encode("utf-8", errors="surrogatepass")
+    return result.new_content.encode("utf-8", errors=codec_errors)
 
 
 def test_byte_strict_apply_handles_explicit_no_final_newline_marker() -> None:
@@ -57,3 +61,41 @@ def test_byte_strict_apply_preserves_mixed_newline_styles() -> None:
         b"BETA\n",
         b"gamma\r\n",
     ]
+
+
+def test_byte_strict_apply_preserves_adjacent_invalid_utf8_bytes() -> None:
+    """Unchanged adjacent invalid UTF-8 bytes must survive byte-strict patching."""
+    source_bytes = b"\x80prefix\xff\nalpha\nsuffix\n"
+    diff_text = (
+        "--- a/sample.bin\n"
+        "+++ b/sample.bin\n"
+        "@@ -2,1 +2,1 @@\n"
+        "-alpha\n"
+        "+ALPHA\n"
+    )
+
+    patched_bytes = _apply_byte_strict_to_bytes(
+        source_bytes,
+        diff_text,
+        codec_errors="surrogateescape",
+    )
+
+    assert patched_bytes == b"\x80prefix\xff\nALPHA\nsuffix\n"
+    assert patched_bytes.splitlines(keepends=True)[0] == b"\x80prefix\xff\n"
+
+
+def test_byte_strict_apply_preserves_binary_adjacent_payload_bytes() -> None:
+    """NUL/control bytes on nearby unchanged lines must remain byte-identical."""
+    source_bytes = b"blob:\x00\x01\x02\x1f\x7fEND\nstatus=old\ntail\n"
+    diff_text = (
+        "--- a/sample.bin\n"
+        "+++ b/sample.bin\n"
+        "@@ -2,1 +2,1 @@\n"
+        "-status=old\n"
+        "+status=new\n"
+    )
+
+    patched_bytes = _apply_byte_strict_to_bytes(source_bytes, diff_text)
+
+    assert patched_bytes == b"blob:\x00\x01\x02\x1f\x7fEND\nstatus=new\ntail\n"
+    assert patched_bytes.splitlines(keepends=True)[0] == b"blob:\x00\x01\x02\x1f\x7fEND\n"

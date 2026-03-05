@@ -18,6 +18,7 @@ from nexus3.patch.ast_v2 import (
 from nexus3.patch.types import Hunk, PatchFile
 
 PatchInput = PatchFile | PatchFileV2
+ByteStrictContent = str | bytes
 
 
 class ApplyMode(Enum):
@@ -64,6 +65,13 @@ def _split_line_newline_token(line_with_newline: str) -> tuple[str, NewlineToken
     if line_with_newline.endswith("\r"):
         return line_with_newline[:-1], "\r"
     return line_with_newline, ""
+
+
+def _decode_content_byte_strict(content: ByteStrictContent) -> str:
+    """Decode byte content for byte-strict processing with reversible semantics."""
+    if isinstance(content, bytes):
+        return content.decode("utf-8", errors="surrogateescape")
+    return content
 
 
 def _split_content_lines_byte_strict(content: str) -> list[_ContentLine]:
@@ -545,22 +553,30 @@ def _apply_hunk_byte_strict(
 
 
 def apply_patch_byte_strict(
-    content: str,
+    content: ByteStrictContent,
     patch: PatchFileV2,
     mode: ApplyMode = ApplyMode.STRICT,
     fuzzy_threshold: float = 0.8,
 ) -> ApplyResult:
-    """Apply an AST-v2 patch while preserving newline/EOF semantics."""
+    """Apply an AST-v2 patch while preserving newline/EOF semantics.
+
+    When `content` is bytes, this path decodes with `utf-8` and
+    `errors="surrogateescape"` so non-UTF8 bytes can roundtrip if unchanged.
+    Callers that pass bytes can recover output bytes via:
+    `result.new_content.encode("utf-8", errors="surrogateescape")`.
+    """
+    decoded_content = _decode_content_byte_strict(content)
+
     if not patch.hunks:
         return ApplyResult(
             success=True,
-            new_content=content,
+            new_content=decoded_content,
             applied_hunks=[],
             failed_hunks=[],
             warnings=[],
         )
 
-    current_lines = _split_content_lines_byte_strict(content)
+    current_lines = _split_content_lines_byte_strict(decoded_content)
     applied_hunks: list[int] = []
     failed_hunks: list[tuple[int, str]] = []
     warnings: list[str] = []
@@ -575,7 +591,7 @@ def apply_patch_byte_strict(
             failed_hunks.append((i, error))
             return ApplyResult(
                 success=False,
-                new_content=content,
+                new_content=decoded_content,
                 applied_hunks=applied_hunks,
                 failed_hunks=failed_hunks,
                 warnings=warnings,

@@ -91,6 +91,9 @@ Current phase guarantees:
 - AST v2 currently projects into legacy apply logic (no default `byte_strict` flip yet).
 - Use `apply_patch_byte_strict(content, patch_v2, ...)` for explicit AST-v2 apply
   with stricter newline/EOF preservation without changing default call paths.
+- `apply_patch_byte_strict(...)` accepts `str` or `bytes` content. For byte input,
+  non-UTF8 bytes are decoded with `utf-8` + `surrogateescape` so unchanged regions
+  can roundtrip via `result.new_content.encode("utf-8", errors="surrogateescape")`.
 
 ## Validation Features
 

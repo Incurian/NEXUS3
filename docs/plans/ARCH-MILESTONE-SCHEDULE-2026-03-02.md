@@ -113,7 +113,10 @@ Status note (2026-03-05):
 - Plan F Phase 4 landed in working tree:
   - patch target-resolution hardened to prefer exact path and fail closed on ambiguous basename matches
   - multi-file diff regressions added for exact-match preference and ambiguity errors
-- Next M3 target: Plan F remaining closeout slices (Phase 5/6 byte-fidelity regression expansion + default-flip readiness).
+- Plan F Phase 5 landed in working tree:
+  - byte-strict non-UTF8/binary-adjacent regression coverage added
+  - `apply_patch_byte_strict` byte-input support hardened with reversible `surrogateescape` decoding
+- Next M3 target: Plan F Phase 6 default-flip readiness decision and remaining legacy-branch retirement plan.
 
 ### M4: Delegation and Strategic Evolution
 
