@@ -1,4 +1,4 @@
-"""Security tests for destroy-agent authorization (H5 fix).
+"""Security tests for destroy-agent authorization.
 
 Tests that only authorized agents can destroy other agents:
 - Self-destruction is allowed (agent destroys itself)
@@ -6,10 +6,20 @@ Tests that only authorized agents can destroy other agents:
 - Sibling destroying sibling is denied
 - External clients (requester_id=None) are treated as admin
 - admin_override=True bypasses all checks
+- Shadow parity warning is emitted on kernel/legacy mismatch
 """
+
+import logging
 
 import pytest
 
+from nexus3.core.authorization_kernel import (
+    AdapterAuthorizationKernel,
+    AuthorizationAction,
+    AuthorizationDecision,
+    AuthorizationRequest,
+    AuthorizationResourceType,
+)
 from nexus3.core.permissions import AgentPermissions, PermissionLevel
 from nexus3.core.policy import PermissionPolicy
 from nexus3.rpc.pool import AgentPool, AuthorizationError
@@ -84,6 +94,26 @@ class MockLogMultiplexer:
         pass
 
 
+class TestDestroyAuthorizationAdapter:
+    """Mirror current legacy destroy authorization logic for test parity."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.AGENT_DESTROY:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.AGENT:
+            return None
+
+        requester_id = request.principal_id
+        target_agent_id = request.resource.identifier
+        target_parent_agent_id = request.context.get("target_parent_agent_id")
+
+        if requester_id == target_agent_id:
+            return AuthorizationDecision.allow(request, reason="self_destroy")
+        if isinstance(target_parent_agent_id, str) and target_parent_agent_id == requester_id:
+            return AuthorizationDecision.allow(request, reason="parent_destroy")
+        return AuthorizationDecision.deny(request, reason="not_parent_or_self")
+
+
 @pytest.fixture
 def mock_pool():
     """Create a pool with mock components for testing destroy authorization."""
@@ -94,10 +124,100 @@ def mock_pool():
             self._agents = {}
             self._lock = None  # Will create in test
             self._log_multiplexer = MockLogMultiplexer()
+            self._destroy_authorization_kernel = AdapterAuthorizationKernel(
+                adapters=(TestDestroyAuthorizationAdapter(),),
+                default_allow=False,
+            )
 
     pool = TestPool()
     # Create lock in async context
     return pool
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("case", "target_id", "requester_id", "admin_override", "expect_success"),
+    [
+        ("self", "self-agent", "self-agent", False, True),
+        ("parent", "child-agent", "parent-agent", False, True),
+        ("sibling", "sibling-b", "sibling-a", False, False),
+        ("external", "external-target", None, False, True),
+        ("admin_override", "override-target", "unrelated-agent", True, True),
+    ],
+)
+async def test_destroy_authorization_parity_matrix(
+    mock_pool,
+    case: str,
+    target_id: str,
+    requester_id: str | None,
+    admin_override: bool,
+    expect_success: bool,
+):
+    """Verify destroy authorization parity matrix stays stable across key relationships."""
+    import asyncio
+
+    mock_pool._lock = asyncio.Lock()
+
+    if case == "self":
+        mock_pool._agents[target_id] = MockAgent(target_id)
+    elif case == "parent":
+        mock_pool._agents["parent-agent"] = MockAgent("parent-agent", child_ids={"child-agent"})
+        mock_pool._agents[target_id] = MockAgent(target_id, parent_agent_id="parent-agent")
+    elif case == "sibling":
+        mock_pool._agents["sibling-a"] = MockAgent("sibling-a", parent_agent_id="parent-root")
+        mock_pool._agents[target_id] = MockAgent(target_id, parent_agent_id="parent-root")
+    else:
+        mock_pool._agents[target_id] = MockAgent(target_id)
+        if case == "admin_override":
+            mock_pool._agents["unrelated-agent"] = MockAgent("unrelated-agent")
+
+    if expect_success:
+        result = await mock_pool.destroy(
+            target_id,
+            requester_id=requester_id,
+            admin_override=admin_override,
+        )
+        assert result is True
+        assert target_id not in mock_pool._agents
+    else:
+        with pytest.raises(AuthorizationError):
+            await mock_pool.destroy(
+                target_id,
+                requester_id=requester_id,
+                admin_override=admin_override,
+            )
+        assert target_id in mock_pool._agents
+
+
+@pytest.mark.asyncio
+async def test_destroy_shadow_mismatch_emits_warning(mock_pool, caplog: pytest.LogCaptureFixture):
+    """Destroy auth shadow mode emits warning when kernel/legacy decisions diverge."""
+    import asyncio
+
+    class DenyAllDestroyKernel:
+        def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision:
+            return AuthorizationDecision.deny(request, reason="forced_mismatch")
+
+    mock_pool._lock = asyncio.Lock()
+    mock_pool._agents["worker-1"] = MockAgent("worker-1")
+    mock_pool._destroy_authorization_kernel = DenyAllDestroyKernel()
+
+    caplog.set_level(logging.WARNING, logger="nexus3.rpc.pool")
+
+    result = await mock_pool.destroy("worker-1", requester_id="worker-1")
+
+    assert result is True
+    mismatch_records = [
+        record
+        for record in caplog.records
+        if getattr(record, "event", None) == "destroy_auth_shadow_mismatch"
+    ]
+    assert mismatch_records
+    mismatch = mismatch_records[0]
+    assert mismatch.target_agent_id == "worker-1"
+    assert mismatch.requester_id == "worker-1"
+    assert mismatch.legacy_allowed is True
+    assert mismatch.kernel_allowed is False
 
 
 @pytest.mark.asyncio

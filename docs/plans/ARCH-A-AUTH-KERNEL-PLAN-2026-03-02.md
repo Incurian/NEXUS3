@@ -51,7 +51,8 @@ Phases:
 
 - [x] Define `AuthorizationKernel` API and decision schema. (M0 Slice A foundation)
 - [ ] Implement adapters for session and RPC call sites.
-- [ ] Add parity logging/assertions under test flag.
+- [x] Add parity logging/assertions under test flag. (M2 Commit 2 testing slice: destroy parity matrix + shadow mismatch warning assertion)
+- Progress (2026-03-05): M2 Commit 2 completed for destroy authorization shadow parity in [rpc/pool.py](/home/inc/repos/NEXUS3/nexus3/rpc/pool.py) with legacy-enforced decisions + kernel shadow compare mismatch warning.
 - [ ] Remove duplicate authorization branches.
 
 ## Documentation Updates

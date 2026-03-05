@@ -249,6 +249,11 @@ Progress snapshot:
   - added immutable `RequestContext` model (`nexus3/core/request_context.py`)
   - removed global mutable requester field in `GlobalDispatcher`
   - propagated request context through global dispatcher destroy flow into pool authorization call
+- Completed: M2 Plan A Phase 2 destroy-path shadow parity slice in `nexus3/rpc/pool.py`:
+  - added destroy authorization kernel adapter in pool-local shadow mode
+  - compute both legacy and kernel decisions in `AgentPool.destroy`
+  - continue enforcing legacy allow/deny behavior only
+  - emit structured warning when legacy/kernel decisions diverge
 - Next gate: run expanded validation (broader suites pending) and continue M1 Plan H ingress wiring plus Plan G Phase 3 migration slices.
 
 Recovery note:

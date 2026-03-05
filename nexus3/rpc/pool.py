@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -44,6 +45,14 @@ from uuid import uuid4
 
 from nexus3.clipboard import CLIPBOARD_PRESETS, ClipboardManager
 from nexus3.context import ContextConfig, ContextLoader, ContextManager, LoadedContext
+from nexus3.core.authorization_kernel import (
+    AdapterAuthorizationKernel,
+    AuthorizationAction,
+    AuthorizationDecision,
+    AuthorizationRequest,
+    AuthorizationResource,
+    AuthorizationResourceType,
+)
 from nexus3.core.permissions import (
     AgentPermissions,
     PermissionDelta,
@@ -76,6 +85,27 @@ if TYPE_CHECKING:
 # Maximum nesting depth for agent creation
 # 0 = root, 1 = child, 2 = grandchild, etc.
 MAX_AGENT_DEPTH = 5
+logger = logging.getLogger(__name__)
+
+
+class _DestroyAuthorizationAdapter:
+    """Kernel adapter mirroring legacy AgentPool.destroy authorization checks."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.AGENT_DESTROY:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.AGENT:
+            return None
+
+        requester_id = request.principal_id
+        target_agent_id = request.resource.identifier
+        target_parent_agent_id = request.context.get("target_parent_agent_id")
+
+        if requester_id == target_agent_id:
+            return AuthorizationDecision.allow(request, reason="self_destroy")
+        if isinstance(target_parent_agent_id, str) and target_parent_agent_id == requester_id:
+            return AuthorizationDecision.allow(request, reason="parent_destroy")
+        return AuthorizationDecision.deny(request, reason="not_parent_or_self")
 
 
 def _convert_gitlab_config(config: Config) -> VCSGitLabConfig | None:
@@ -380,6 +410,10 @@ class AgentPool:
         # Global dispatcher reference for in-process AgentAPI
         # Set via set_global_dispatcher() after GlobalDispatcher is created
         self._global_dispatcher: GlobalDispatcher | None = None
+        self._destroy_authorization_kernel = AdapterAuthorizationKernel(
+            adapters=(_DestroyAuthorizationAdapter(),),
+            default_allow=False,
+        )
 
     def set_global_dispatcher(self, dispatcher: GlobalDispatcher) -> None:
         """Set the global dispatcher for in-process AgentAPI.
@@ -1102,16 +1136,57 @@ class AgentPool:
                 # Get the target agent's permissions to check parent_agent_id
                 target_permissions: AgentPermissions | None = agent.services.get("permissions")
 
-                # Self-destruction is allowed
-                if requester_id == agent_id:
-                    pass  # Allowed
-                # Parent can destroy children
-                elif (
-                    target_permissions is not None
-                    and target_permissions.parent_agent_id == requester_id
-                ):
-                    pass  # Allowed
-                else:
+                # Legacy decision (enforced): self-destroy or direct parent destroy.
+                legacy_allowed = (
+                    requester_id == agent_id
+                    or (
+                        target_permissions is not None
+                        and target_permissions.parent_agent_id == requester_id
+                    )
+                )
+                legacy_reason = "self_destroy" if requester_id == agent_id else (
+                    "parent_destroy"
+                    if (
+                        target_permissions is not None
+                        and target_permissions.parent_agent_id == requester_id
+                    )
+                    else "not_parent_or_self"
+                )
+
+                # Kernel decision (shadow only): compare parity, do not enforce yet.
+                kernel_request = AuthorizationRequest(
+                    action=AuthorizationAction.AGENT_DESTROY,
+                    resource=AuthorizationResource(
+                        resource_type=AuthorizationResourceType.AGENT,
+                        identifier=agent_id,
+                    ),
+                    principal_id=requester_id,
+                    context={
+                        "target_parent_agent_id": (
+                            target_permissions.parent_agent_id
+                            if target_permissions is not None
+                            else None
+                        ),
+                    },
+                )
+                kernel_decision = self._destroy_authorization_kernel.authorize(kernel_request)
+                if kernel_decision.allowed != legacy_allowed:
+                    logger.warning(
+                        "Destroy authorization shadow mismatch for target=%s requester=%s",
+                        agent_id,
+                        requester_id,
+                        extra={
+                            "event": "destroy_auth_shadow_mismatch",
+                            "target_agent_id": agent_id,
+                            "requester_id": requester_id,
+                            "legacy_allowed": legacy_allowed,
+                            "legacy_reason": legacy_reason,
+                            "kernel_allowed": kernel_decision.allowed,
+                            "kernel_reason": kernel_decision.reason,
+                        },
+                    )
+
+                if not legacy_allowed:
                     raise AuthorizationError(
                         f"Agent '{requester_id}' is not authorized to destroy '{agent_id}'"
                     )
