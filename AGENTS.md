@@ -312,6 +312,10 @@ Progress snapshot:
   - tightened `nexus3/rpc/global_dispatcher.py::_handle_destroy_agent` to validate full param objects and reject unknown extra params.
   - preserved legacy missing/type/malformed `agent_id` wording and requester propagation behavior.
   - added focused ingress regression in `tests/unit/rpc/test_schema_ingress_wiring.py`.
+- Completed: Plan H M1 Phase 2 strict no-arg flip slice:
+  - tightened no-arg ingress handlers in `nexus3/rpc/dispatcher.py` (`shutdown`, `get_tokens`, `get_context`, `cancel_all`) and `nexus3/rpc/global_dispatcher.py` (`list_agents`, `shutdown_server`) to reject unknown extra params via strict `EmptyParamsSchema` validation.
+  - preserved existing success payloads and method-specific invalid-params wording.
+  - updated ingress regressions in `tests/unit/rpc/test_schema_ingress_wiring.py`.
 - Completed: baseline E/F harness fixtures/tests under `tests/fixtures/arch_baseline/`, `tests/unit/context/test_compile_baseline.py`, and `tests/unit/patch/test_byte_roundtrip_baseline.py`.
 - Completed: Plan G M1 Phase 1 foundation safe sink API (`nexus3/display/safe_sink.py`) with minimal `InlinePrinter` integration and focused unit tests (`tests/unit/display/test_safe_sink.py`).
 - Completed: Plan G M1 Phase 2 high-risk output migration:
@@ -410,8 +414,12 @@ Progress snapshot:
 - Validation snapshot (2026-03-05, next execution round):
   - `.venv/bin/ruff check nexus3/rpc/global_dispatcher.py nexus3/cli/repl.py nexus3/cli/serve.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_pool.py tests/unit/cli/test_repl_safe_sink.py tests/unit/cli/test_serve_safe_sink.py` passed.
   - `.venv/bin/pytest -v tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_pool.py tests/unit/cli/test_repl_safe_sink.py tests/unit/cli/test_serve_safe_sink.py` passed (`123 passed`).
+- Validation snapshot (2026-03-05, strict-noarg follow-up round):
+  - `.venv/bin/ruff check nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_pool.py tests/unit/test_rpc_dispatcher.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py` passed.
+  - `.venv/bin/pytest -v tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_pool.py tests/unit/test_rpc_dispatcher.py` passed (`112 passed`).
 - Next gate:
-  - Plan H: tighten remaining dispatcher/global-dispatcher compatibility branches (notably no-arg handlers currently allowing extra params) toward stricter ingress defaults where telemetry is stable.
+  - Plan H: target remaining behavior-sensitive compat branches and finalize strict-default ingress posture where safe.
   - Plan G: continue redundant sanitization-callsite cleanup by consolidating duplicate formatter/escaping helpers into shared SafeSink entrypoints.
   - Plan A: continue adapter rollout into remaining lifecycle call sites and sequence duplicate authorization branch removal once shadow telemetry is stable.
 
@@ -462,6 +470,17 @@ Compact checkpoint (2026-03-05, architecture execution round 2):
 - Immediate resume targets:
   1. Plan H: strictness tightening for remaining compat-only no-arg/extra-param handlers.
   2. Plan G: remove fragmented duplicate formatter/sanitization helper branches.
+  3. Plan A: next lifecycle adapter parity slice before duplicate branch removal.
+
+Compact checkpoint (2026-03-05, architecture execution round 3):
+- Branch head at start of round: `c26ef61`; working tree now includes a follow-up Plan H strict-noarg ingress slice.
+- New slice completed this round:
+  1. Plan H strict no-arg handler flip (`shutdown`, `get_tokens`, `get_context`, `cancel_all`, `list_agents`, `shutdown_server`) now rejects extra params.
+- Validation result for this round:
+  - targeted lint + mypy + pytest suites passed (`112 passed`).
+- Immediate resume targets:
+  1. Plan H: remaining behavior-sensitive compat branches.
+  2. Plan G: formatter/sanitization dedup cleanup.
   3. Plan A: next lifecycle adapter parity slice before duplicate branch removal.
 
 ## Source of Truth

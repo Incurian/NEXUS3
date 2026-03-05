@@ -617,22 +617,33 @@ async def test_dispatcher_compact_schema_validation_rejects_invalid_force() -> N
 
 
 @pytest.mark.asyncio
-async def test_dispatcher_cancel_all_noarg_ingress_wiring_keeps_compat_with_extra_params() -> None:
+async def test_dispatcher_cancel_all_noarg_ingress_wiring_rejects_extra_params() -> None:
     dispatcher = Dispatcher(_StubSession(), context=None, agent_id="agent-1")
     request_a = CancellationToken()
     request_b = CancellationToken()
     dispatcher._active_requests["req-a"] = request_a
     dispatcher._active_requests[7] = request_b
+    dispatcher._handlers["cancel_all"] = dispatcher._handle_cancel_all
 
-    cancelled = await dispatcher._handle_cancel_all({"unexpected": "value"})
+    response = await dispatcher.dispatch(
+        Request(
+            jsonrpc="2.0",
+            method="cancel_all",
+            params={"unexpected": "value"},
+            id=1,
+        )
+    )
 
-    assert cancelled == {"req-a": True, 7: True}
-    assert request_a.is_cancelled is True
-    assert request_b.is_cancelled is True
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == "Invalid cancel_all parameters"
+    assert request_a.is_cancelled is False
+    assert request_b.is_cancelled is False
 
 
 @pytest.mark.asyncio
-async def test_dispatcher_noarg_ingress_wiring_keeps_compat_with_extra_params() -> None:
+async def test_dispatcher_noarg_ingress_wiring_rejects_extra_params() -> None:
     dispatcher = Dispatcher(_StubSession(), context=_StubContext(), agent_id="agent-1")
 
     shutdown_response = await dispatcher.dispatch(
@@ -661,30 +672,23 @@ async def test_dispatcher_noarg_ingress_wiring_keeps_compat_with_extra_params() 
     )
 
     assert shutdown_response is not None
-    assert shutdown_response.error is None
-    assert shutdown_response.result == {"success": True}
+    assert shutdown_response.error is not None
+    assert shutdown_response.error["code"] == -32602  # INVALID_PARAMS
+    assert shutdown_response.error["message"] == "Invalid shutdown parameters"
 
     assert get_tokens_response is not None
-    assert get_tokens_response.error is None
-    assert get_tokens_response.result == {
-        "input_tokens": 3,
-        "output_tokens": 4,
-        "total_tokens": 7,
-    }
+    assert get_tokens_response.error is not None
+    assert get_tokens_response.error["code"] == -32602  # INVALID_PARAMS
+    assert get_tokens_response.error["message"] == "Invalid get_tokens parameters"
 
     assert get_context_response is not None
-    assert get_context_response.error is None
-    assert get_context_response.result == {
-        "message_count": 0,
-        "system_prompt": False,
-        "halted_at_iteration_limit": False,
-        "last_iteration_count": 0,
-        "max_tool_iterations": 10,
-    }
+    assert get_context_response.error is not None
+    assert get_context_response.error["code"] == -32602  # INVALID_PARAMS
+    assert get_context_response.error["message"] == "Invalid get_context parameters"
 
 
 @pytest.mark.asyncio
-async def test_global_noarg_ingress_wiring_keeps_compat_with_extra_params() -> None:
+async def test_global_noarg_ingress_wiring_rejects_extra_params() -> None:
     dispatcher = GlobalDispatcher(_StubPool())
 
     list_agents_response = await dispatcher.dispatch(
@@ -705,19 +709,18 @@ async def test_global_noarg_ingress_wiring_keeps_compat_with_extra_params() -> N
     )
 
     assert list_agents_response is not None
-    assert list_agents_response.error is None
-    assert list_agents_response.result == {"agents": []}
+    assert list_agents_response.error is not None
+    assert list_agents_response.error["code"] == -32602  # INVALID_PARAMS
+    assert list_agents_response.error["message"] == "Invalid list_agents parameters"
 
     assert shutdown_server_response is not None
-    assert shutdown_server_response.error is None
-    assert shutdown_server_response.result == {
-        "success": True,
-        "message": "Server shutting down",
-    }
+    assert shutdown_server_response.error is not None
+    assert shutdown_server_response.error["code"] == -32602  # INVALID_PARAMS
+    assert shutdown_server_response.error["message"] == "Invalid shutdown_server parameters"
 
 
 @pytest.mark.asyncio
-async def test_global_shutdown_server_ingress_wiring_keeps_compat_with_extra_params() -> None:
+async def test_global_shutdown_server_ingress_wiring_rejects_extra_params() -> None:
     dispatcher = GlobalDispatcher(_StubPool())
 
     shutdown_server_response = await dispatcher.dispatch(
@@ -730,8 +733,6 @@ async def test_global_shutdown_server_ingress_wiring_keeps_compat_with_extra_par
     )
 
     assert shutdown_server_response is not None
-    assert shutdown_server_response.error is None
-    assert shutdown_server_response.result == {
-        "success": True,
-        "message": "Server shutting down",
-    }
+    assert shutdown_server_response.error is not None
+    assert shutdown_server_response.error["code"] == -32602  # INVALID_PARAMS
+    assert shutdown_server_response.error["message"] == "Invalid shutdown_server parameters"

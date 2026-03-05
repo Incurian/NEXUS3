@@ -68,8 +68,9 @@ Phases:
   - [x] M1 Phase 2 request-envelope ingress migration: wired `rpc/protocol.py::parse_request` to `RpcRequestEnvelopeSchema` with preserved legacy ParseError wording and explicit positional-params rejection behavior.
   - [x] M1 Phase 2 strict-envelope slice: tightened `rpc/protocol.py` request/response envelope ingress to reject unknown top-level fields (removed request projection and response extra-ignore compatibility), while preserving existing ParseError wording for malformed known fields and positional params rejection behavior.
   - [x] M1 Phase 2 destroy-ingress strictness slice: tightened `rpc/global_dispatcher.py::_handle_destroy_agent` schema validation to reject unknown extra params (full param-object validation) while preserving legacy missing/type/malformed `agent_id` error wording and requester propagation behavior.
+  - [x] M1 Phase 2 strict no-arg flip slice: tightened remaining no-arg ingress handlers in `rpc/dispatcher.py` (`shutdown`, `get_tokens`, `get_context`, `cancel_all`) and `rpc/global_dispatcher.py` (`list_agents`, `shutdown_server`) to reject unknown extra params via strict `EmptyParamsSchema` validation, with focused ingress regression updates.
   - [ ] Remaining M1 Phase 2 ingress coverage beyond low-risk methods (including stricter/behavior-sensitive paths) still pending.
-    - Resume target: tighten remaining compat-only method-param ingress branches (notably no-arg compat paths currently permitting extras) in dispatcher/global-dispatcher and evaluate strict-default flips where safe.
+    - Resume target: tighten remaining behavior-sensitive compat branches (for example extra-param permissiveness where intentionally retained) and evaluate strict-default flips where safe.
 - [x] Remove silent malformed-entry skips.
   - [x] M1 Phase 3 slice: `context/loader.py::_merge_mcp_servers` now fail-fast rejects malformed MCP container/entry shapes (`mcpServers` non-object, `servers` non-array, non-object entries in `servers[]`) with actionable `MCPConfigError` context.
 - [x] Consolidate duplicate MCP config models.

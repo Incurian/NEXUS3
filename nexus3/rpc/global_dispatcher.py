@@ -385,25 +385,26 @@ class GlobalDispatcher:
         write_paths: list[Path] | None = None
         if allowed_write_paths is not None:
             write_paths = []
-            for wp in allowed_write_paths:
+            for raw_write_path in allowed_write_paths:
                 # Resolve relative paths against agent's effective cwd
-                wp_path = Path(wp)
-                if not wp_path.is_absolute():
+                resolved_write_path = Path(raw_write_path)
+                if not resolved_write_path.is_absolute():
                     base = cwd_path if cwd_path is not None else Path.cwd()
-                    wp_path = base / wp_path
-                write_paths.append(wp_path.resolve())
+                    resolved_write_path = base / resolved_write_path
+                write_paths.append(resolved_write_path.resolve())
 
         # SECURITY: Validate write paths are within cwd (sandbox root)
         # Applies to ALL sandboxed agents, not just subagents
         effective_preset = preset or "sandboxed"
         if effective_preset == "sandboxed" and write_paths:
             sandbox_root = cwd_path if cwd_path is not None else Path.cwd()
-            for wp in write_paths:
+            for write_path in write_paths:
                 try:
-                    wp.relative_to(sandbox_root)
+                    write_path.relative_to(sandbox_root)
                 except ValueError as e:
                     raise InvalidParamsError(
-                        f"allowed_write_path '{wp}' is outside sandbox root '{sandbox_root}'"
+                        "allowed_write_path "
+                        f"'{write_path}' is outside sandbox root '{sandbox_root}'"
                     ) from e
 
         # SECURITY: For SANDBOXED parent subagents, validate write paths within parent's cwd.
@@ -416,12 +417,12 @@ class GlobalDispatcher:
             and isinstance(parent_cwd, Path)
         ):
             parent_cwd_resolved = parent_cwd.resolve()
-            for wp in write_paths:
+            for write_path in write_paths:
                 try:
-                    wp.relative_to(parent_cwd_resolved)
+                    write_path.relative_to(parent_cwd_resolved)
                 except ValueError as e:
                     raise InvalidParamsError(
-                        f"allowed_write_path '{wp}' is outside parent's cwd '{parent_cwd}'"
+                        f"allowed_write_path '{write_path}' is outside parent's cwd '{parent_cwd}'"
                     ) from e
 
         # Build delta from parameters (disable_tools and write permissions)
@@ -649,7 +650,7 @@ class GlobalDispatcher:
                     - message_count: int - Number of messages in context
         """
         try:
-            EmptyParamsSchema.model_validate({}, strict=False)
+            EmptyParamsSchema.model_validate(params, strict=True)
         except PydanticValidationError as exc:
             raise InvalidParamsError("Invalid list_agents parameters") from exc
 
@@ -677,7 +678,7 @@ class GlobalDispatcher:
                 - message: str - Confirmation message
         """
         try:
-            EmptyParamsSchema.model_validate({}, strict=False)
+            EmptyParamsSchema.model_validate(params, strict=True)
         except PydanticValidationError as exc:
             raise InvalidParamsError("Invalid shutdown_server parameters") from exc
 

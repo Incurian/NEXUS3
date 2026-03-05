@@ -382,7 +382,7 @@ class Dispatcher:
             Dict with 'success' key set to True.
         """
         try:
-            EmptyParamsSchema.model_validate({}, strict=False)
+            EmptyParamsSchema.model_validate(params, strict=True)
         except PydanticValidationError as exc:
             raise InvalidParamsError("Invalid shutdown parameters") from exc
 
@@ -404,7 +404,7 @@ class Dispatcher:
             InvalidParamsError: If no context manager is configured.
         """
         try:
-            EmptyParamsSchema.model_validate({}, strict=False)
+            EmptyParamsSchema.model_validate(params, strict=True)
         except PydanticValidationError as exc:
             raise InvalidParamsError("Invalid get_tokens parameters") from exc
 
@@ -432,7 +432,7 @@ class Dispatcher:
             InvalidParamsError: If no context manager is configured.
         """
         try:
-            EmptyParamsSchema.model_validate({}, strict=False)
+            EmptyParamsSchema.model_validate(params, strict=True)
         except PydanticValidationError as exc:
             raise InvalidParamsError("Invalid get_context parameters") from exc
 
@@ -614,7 +614,7 @@ class Dispatcher:
             Dict mapping request_id -> True for all cancelled requests.
         """
         try:
-            EmptyParamsSchema.model_validate({}, strict=False)
+            EmptyParamsSchema.model_validate(params, strict=True)
         except PydanticValidationError as exc:
             raise InvalidParamsError("Invalid cancel_all parameters") from exc
 
