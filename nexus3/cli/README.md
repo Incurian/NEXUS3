@@ -681,7 +681,7 @@ worker-1> do some work
 worker-1> /over            # Return to original agent
 
 # Configuration
-> /permissions sandboxed
+> /permissions sandboxed         # Uses the agent's current cwd as sandbox root
 > /permissions --disable write_file
 > /model claude-3-5-sonnet
 > /cwd /path/to/project

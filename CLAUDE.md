@@ -773,7 +773,7 @@ nexus3 rpc create coordinator --preset trusted
 
 ```bash
 /permissions              # Show current permissions
-/permissions trusted      # Change preset (within ceiling)
+/permissions trusted      # Change preset (within ceiling; preserves inherited session state)
 /permissions --disable write_file   # Disable a tool
 /permissions --list-tools           # List tool status
 ```

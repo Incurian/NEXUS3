@@ -225,8 +225,8 @@ Current milestone:
 
 Immediate tasks:
 - Continue M2 implementation slices:
-  - Plan A final duplicate-branch cleanup and remaining intentional non-kernel surface triage/documentation
-  - Plan C closeout audit after requester propagation on agent HTTP routes, create initial-message dispatch, and NexusSkill HTTP fallback
+  - Plan A closeout documentation after REPL permission-mutation kernelization
+  - Select the next post-M2 execution slice after Plan A/Plan C closeout sync
 
 Recent execution commits (latest first):
 - `78ef205` rpc/protocol: wire parse_request to request schema ingress
@@ -416,6 +416,15 @@ Progress snapshot:
   - refactored subprocess creation helpers to pass command/code as local parameters
   - updated Windows behavior tests to assert subprocess call args directly
   - added focused concurrent `run_python` test for per-call payload isolation
+- Completed: Plan C closeout slice in `nexus3/rpc/dispatcher.py`:
+  - threaded immutable `RequestContext` into agent-scoped read handlers (`get_tokens`, `get_context`, `get_messages`)
+  - removed the last known dispatcher boundary where agent-scoped requester identity was dropped after `dispatch()`
+  - added focused propagation regressions in `tests/unit/test_rpc_dispatcher.py`
+- Completed: Plan A closeout slice in `nexus3/cli/repl_commands.py`:
+  - kernelized live REPL permission mutations for preset changes and tool enable/disable checks through a local `SESSION_WRITE`/`AGENT` authorization adapter
+  - preserved existing parent-ceiling deny wording while removing ad hoc branch-specific checks from command handlers
+  - fixed preset-switch state retention by preserving `depth`, `session_allowances`, and sandbox `cwd`
+  - added focused regressions in `tests/unit/test_repl_commands.py`
 - Validation snapshot (2026-03-05, post-merge slices):
   - `.venv/bin/ruff check nexus3/cli/repl.py nexus3/rpc/agent_api.py nexus3/rpc/global_dispatcher.py nexus3/rpc/pool.py nexus3/rpc/protocol.py nexus3/rpc/schemas.py tests/unit/cli/test_repl_safe_sink.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/rpc/test_schemas.py tests/unit/test_agent_api.py tests/unit/test_client.py tests/unit/test_pool.py` passed.
   - `.venv/bin/pytest -v tests/unit/cli/test_repl_safe_sink.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/rpc/test_schemas.py tests/unit/test_agent_api.py tests/unit/test_client.py tests/unit/test_pool.py` passed (`176 passed`, `9 warnings`).
@@ -431,9 +440,9 @@ Progress snapshot:
   - `.venv/bin/mypy nexus3/rpc/agent_api.py nexus3/rpc/global_dispatcher.py nexus3/display/safe_sink.py nexus3/mcp/error_formatter.py` passed.
   - `.venv/bin/pytest -v tests/unit/display/test_safe_sink.py tests/unit/cli/test_serve_safe_sink.py tests/unit/mcp/test_error_formatter.py tests/unit/test_pool.py tests/unit/test_agent_api.py tests/unit/rpc/test_schema_ingress_wiring.py` passed (`178 passed`).
 - Next gate:
+  - Plan A: reconcile docs/closeout criteria now that the last known REPL permission-mutation surface is kernelized.
   - Plan H: target remaining behavior-sensitive compat branches and finalize strict-default ingress posture where safe.
   - Plan G: continue redundant sanitization-callsite cleanup by identifying any remaining fragmented formatter/sanitizer branches for SafeSink consolidation.
-  - Plan A: continue adapter rollout into remaining lifecycle call sites and sequence duplicate authorization branch removal once shadow telemetry is stable.
 
 Resume-first checklist (post-compact):
 1. Confirm branch + cleanliness: `git status --short --branch` (ignore existing unrelated untracked: `docs/plans/DOUBLE-SPINNER-FIX-PLAN.md`, `editors/`, `err/`).
@@ -1023,6 +1032,29 @@ Compact checkpoint (2026-03-05, post-commit handover):
   1. Re-open `docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md` and inspect `nexus3/cli/repl_commands.py::_change_preset` as the last obvious duplicate authorization surface.
   2. If `_change_preset` is outside Plan A’s intended kernel boundary, document that explicitly and close out the remaining Plan A checklist item.
   3. Otherwise, implement the smallest safe cleanup/kernelization slice, then update plan/docs/AGENTS in the same session.
+
+Compact checkpoint (2026-03-05, architecture execution round 30):
+- Branch head at start of round: `999b49d`; current working tree includes uncommitted Plan A and Plan C closeout slices plus synchronized docs.
+- New slices completed this round:
+  1. Plan C dispatcher closeout:
+     - threaded immutable `RequestContext` through agent-scoped read handlers in `nexus3/rpc/dispatcher.py` (`get_tokens`, `get_context`, `get_messages`)
+     - added focused propagation coverage in `tests/unit/test_rpc_dispatcher.py`
+  2. Plan A REPL permission-mutation kernelization:
+     - added a kernel-backed REPL permission-mutation adapter in `nexus3/cli/repl_commands.py` for preset changes and tool enable/disable gates
+     - preserved existing ceiling-deny wording while fixing preset-switch state retention (`depth`, `session_allowances`, sandbox `cwd`)
+     - added focused coverage in `tests/unit/test_repl_commands.py`
+- Validation completed for this round:
+  - `.venv/bin/ruff check nexus3/cli/repl_commands.py nexus3/rpc/dispatcher.py tests/unit/test_repl_commands.py tests/unit/test_rpc_dispatcher.py`
+  - `.venv/bin/mypy nexus3/cli/repl_commands.py nexus3/rpc/dispatcher.py`
+  - `.venv/bin/pytest -q tests/unit/test_repl_commands.py tests/unit/test_rpc_dispatcher.py`
+  - Result: `91 passed`
+- Docs/status sync completed this round:
+  1. Updated `docs/plans/ARCH-A-AUTH-KERNEL-PLAN-2026-03-02.md` and `docs/plans/ARCH-C-REQUEST-CONTEXT-PLAN-2026-03-02.md`.
+  2. Updated `nexus3/rpc/README.md`, `nexus3/cli/README.md`, and `CLAUDE.md` to reflect the new request-context and `/permissions` behavior.
+- Immediate resume targets:
+  1. Decide whether to commit this closeout round as its own checkpoint before starting the next architecture slice.
+  2. Re-open the milestone schedule and pick the next highest-value post-M2 slice (likely Plan H strict-ingress closeout or Plan G cleanup).
+  3. Keep AGENTS/plan checklists synchronized before compact or handoff.
 
 ## Source of Truth
 

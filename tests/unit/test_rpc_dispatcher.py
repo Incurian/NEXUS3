@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -269,6 +269,46 @@ class TestDispatcherBasics:
 
         assert cancel_response.result["cancelled"] is False
         assert cancel_response.result["reason"] == "not_found_or_completed"
+
+
+class TestRequestContextPropagation:
+    """Dispatcher should preserve request context for all agent-scoped handlers."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("method", "params"),
+        [
+            ("get_tokens", None),
+            ("get_context", None),
+            ("get_messages", {"offset": 0, "limit": 1}),
+        ],
+    )
+    async def test_read_handlers_receive_request_context(
+        self,
+        method: str,
+        params: dict[str, int] | None,
+    ) -> None:
+        session = MockSession()
+        dispatcher = Dispatcher(session)
+        handler = AsyncMock(return_value={"ok": True})
+        setattr(dispatcher, f"_handle_{method}", handler)
+
+        request = Request(
+            jsonrpc="2.0",
+            method=method,
+            params=params,
+            id=1,
+        )
+
+        response = await dispatcher.dispatch(request, requester_id="caller-ctx")
+
+        assert response is not None
+        assert response.error is None
+        assert response.result == {"ok": True}
+        assert handler.await_count == 1
+        forwarded_context = handler.await_args.args[1]
+        assert forwarded_context.requester_id == "caller-ctx"
+        assert forwarded_context.request_id == "1"
 
     @pytest.mark.asyncio
     async def test_multiple_concurrent_requests_have_different_ids(self):

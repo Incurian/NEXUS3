@@ -224,10 +224,22 @@ class Dispatcher:
         async def handle_compact_with_context(params: dict[str, Any]) -> dict[str, Any]:
             return await self._handle_compact(params, request_context)
 
+        async def handle_get_tokens_with_context(params: dict[str, Any]) -> dict[str, Any]:
+            return await self._handle_get_tokens(params, request_context)
+
+        async def handle_get_context_with_context(params: dict[str, Any]) -> dict[str, Any]:
+            return await self._handle_get_context(params, request_context)
+
+        async def handle_get_messages_with_context(params: dict[str, Any]) -> dict[str, Any]:
+            return await self._handle_get_messages(params, request_context)
+
         handlers["send"] = handle_send_with_context
         handlers["shutdown"] = handle_shutdown_with_context
         handlers["cancel"] = handle_cancel_with_context
         handlers["compact"] = handle_compact_with_context
+        handlers["get_tokens"] = handle_get_tokens_with_context
+        handlers["get_context"] = handle_get_context_with_context
+        handlers["get_messages"] = handle_get_messages_with_context
 
         return await dispatch_request(request, handlers, "method")
 
@@ -555,7 +567,11 @@ class Dispatcher:
             reason = kernel_decision.reason or "authorization policy denied request"
             raise InvalidParamsError(f"{method} denied: {reason}")
 
-    async def _handle_get_tokens(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def _handle_get_tokens(
+        self,
+        params: dict[str, Any],
+        request_context: RequestContext | None = None,
+    ) -> dict[str, Any]:
         """Handle the 'get_tokens' method.
 
         Returns token usage information from the context manager.
@@ -569,6 +585,7 @@ class Dispatcher:
         Raises:
             InvalidParamsError: If no context manager is configured.
         """
+        _ = request_context
         try:
             EmptyParamsSchema.model_validate(params, strict=True)
         except PydanticValidationError as exc:
@@ -578,7 +595,11 @@ class Dispatcher:
             raise InvalidParamsError("No context manager configured")
         return self._context.get_token_usage()
 
-    async def _handle_get_context(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def _handle_get_context(
+        self,
+        params: dict[str, Any],
+        request_context: RequestContext | None = None,
+    ) -> dict[str, Any]:
         """Handle the 'get_context' method.
 
         Returns context information (message count, system prompt status, iteration state).
@@ -597,6 +618,7 @@ class Dispatcher:
         Raises:
             InvalidParamsError: If no context manager is configured.
         """
+        _ = request_context
         try:
             EmptyParamsSchema.model_validate(params, strict=True)
         except PydanticValidationError as exc:
@@ -613,7 +635,11 @@ class Dispatcher:
             "max_tool_iterations": self._session.max_tool_iterations,
         }
 
-    async def _handle_get_messages(self, params: dict[str, Any]) -> dict[str, Any]:
+    async def _handle_get_messages(
+        self,
+        params: dict[str, Any],
+        request_context: RequestContext | None = None,
+    ) -> dict[str, Any]:
         """Get recent message history for transcript sync.
 
         Args:
@@ -627,6 +653,7 @@ class Dispatcher:
         Raises:
             InvalidParamsError: If offset/limit are invalid.
         """
+        _ = request_context
         try:
             validated = GetMessagesParamsSchema.model_validate(params, strict=True)
         except PydanticValidationError as exc:

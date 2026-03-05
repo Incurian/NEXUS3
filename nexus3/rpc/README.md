@@ -218,7 +218,8 @@ Handles agent lifecycle management at the pool level.
 
 - `shutdown_requested` property: checked by HTTP server loop for graceful shutdown
 - `handles(method)`: check if a method is handled by this dispatcher
-- `dispatch(request, requester_id=None)`: sets requester context for authorization
+- `dispatch(request, requester_id=None)`: sets immutable requester context for
+  authorization and preserves it across agent-scoped handlers
 - `create_agent` follow-up `initial_message` dispatch reuses the same requester
   context so the first send turn matches normal requester-aware authorization
   and telemetry.
@@ -265,7 +266,9 @@ The `pool` parameter enables YOLO safety checks (blocking RPC sends when no REPL
 Agent-scoped dispatch also accepts `requester_id` and uses it for requester-aware
 authorization. Over HTTP, the server derives this from the trusted
 `X-Nexus-Agent` header and now preserves it on both global and `/agent/{id}`
-routes.
+routes. The same request context is threaded through agent-scoped read handlers
+(`get_tokens`, `get_context`, `get_messages`) so those paths no longer drop
+caller identity at the dispatcher boundary.
 
 Note: `get_tokens`, `get_context`, and `get_messages` are only registered if `context` is provided.
 

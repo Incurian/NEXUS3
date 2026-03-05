@@ -91,6 +91,16 @@ Phases:
   `tests/unit/test_initial_message.py`, `tests/unit/test_client.py`, and
   `tests/unit/test_nexus_skill_requester_propagation.py`.
 
+### M2 Commit 4 Status (2026-03-05)
+
+- Threaded immutable `RequestContext` through the remaining agent-scoped
+  read-only dispatcher handlers in `nexus3/rpc/dispatcher.py`
+  (`get_tokens`, `get_context`, `get_messages`), so agent-scoped caller
+  identity is no longer dropped at the handler boundary.
+- Added focused propagation coverage in `tests/unit/test_rpc_dispatcher.py`
+  proving those handlers receive the caller's `requester_id` and derived
+  `request_id`.
+
 ## Documentation Updates
 
 - Update RPC/session docs for request context propagation.

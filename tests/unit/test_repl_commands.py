@@ -11,7 +11,6 @@ Tests for REPL-specific command handlers:
 - cmd_quit: REPL exit
 """
 
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -34,7 +33,7 @@ from nexus3.cli.repl_commands import (
 )
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands.protocol import CommandContext, CommandResult
-
+from nexus3.core.permissions import ToolPermission, resolve_preset
 
 # -----------------------------------------------------------------------------
 # Test Fixtures and Helpers
@@ -179,7 +178,10 @@ def ctx(mock_pool: MockAgentPool, mock_session_manager: MockSessionManager) -> C
 
 
 @pytest.fixture
-def ctx_with_agent(mock_pool: MockAgentPool, mock_session_manager: MockSessionManager) -> CommandContext:
+def ctx_with_agent(
+    mock_pool: MockAgentPool,
+    mock_session_manager: MockSessionManager,
+) -> CommandContext:
     """Create a command context with a current agent."""
     mock_pool.add_agent("main")
     return CommandContext(
@@ -650,8 +652,6 @@ class TestCmdPermissions:
         self, mock_pool: MockAgentPool, mock_session_manager: MockSessionManager
     ):
         """Can enable a tool."""
-        from nexus3.core.permissions import ToolPermission, resolve_preset
-
         agent = mock_pool.add_agent("main")
         perms = resolve_preset("trusted")
         perms.tool_permissions["write_file"] = ToolPermission(enabled=False)
@@ -671,12 +671,35 @@ class TestCmdPermissions:
         assert output.data["enabled"] is True
 
     @pytest.mark.asyncio
+    async def test_enable_tool_denied_by_parent_ceiling(
+        self, mock_pool: MockAgentPool, mock_session_manager: MockSessionManager
+    ):
+        """Cannot enable a tool disabled by the parent ceiling."""
+        agent = mock_pool.add_agent("main")
+        perms = resolve_preset("trusted")
+        perms.tool_permissions["write_file"] = ToolPermission(enabled=False)
+        perms.ceiling = resolve_preset("yolo")
+        perms.ceiling.tool_permissions["write_file"] = ToolPermission(enabled=False)
+        agent.services.register("permissions", perms)
+
+        ctx = CommandContext(
+            pool=mock_pool,
+            session_manager=mock_session_manager,
+            current_agent_id="main",
+            is_repl=True,
+        )
+        output = await cmd_permissions(ctx, args="--enable write_file")
+
+        assert output.result == CommandResult.ERROR
+        assert "disabled by parent ceiling" in output.message
+        assert perms.tool_permissions["write_file"].enabled is False
+        agent.context.set_tool_definitions.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_list_tools(
         self, mock_pool: MockAgentPool, mock_session_manager: MockSessionManager
     ):
         """Can list tool permissions."""
-        from nexus3.core.permissions import ToolPermission, resolve_preset
-
         agent = mock_pool.add_agent("main")
         perms = resolve_preset("sandboxed")  # Has some disabled tools by default
         agent.services.register("permissions", perms)
@@ -715,6 +738,81 @@ class TestCmdPermissions:
 
         assert output.result == CommandResult.ERROR
         assert "Unknown flag" in output.message
+
+    @pytest.mark.asyncio
+    async def test_change_preset_denied_by_parent_ceiling(
+        self, mock_pool: MockAgentPool, mock_session_manager: MockSessionManager
+    ):
+        """Cannot switch to a preset above the inherited ceiling."""
+        agent = mock_pool.add_agent("main")
+        perms = resolve_preset("sandboxed")
+        perms.ceiling = resolve_preset("trusted")
+        perms.parent_agent_id = "parent-agent"
+        perms.depth = 1
+        agent.services.register("permissions", perms)
+
+        ctx = CommandContext(
+            pool=mock_pool,
+            session_manager=mock_session_manager,
+            current_agent_id="main",
+            is_repl=True,
+        )
+        output = await cmd_permissions(ctx, args="yolo")
+
+        assert output.result == CommandResult.ERROR
+        assert "exceeds ceiling" in output.message
+        live_perms = agent.services.get("permissions")
+        assert live_perms is perms
+        assert live_perms.base_preset == "sandboxed"
+        agent.context.set_tool_definitions.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_change_preset_preserves_depth_allowances_and_cwd(
+        self,
+        mock_pool: MockAgentPool,
+        mock_session_manager: MockSessionManager,
+        tmp_path: Path,
+    ):
+        """Preset switching keeps inherited state and uses current cwd for sandboxing."""
+        agent = mock_pool.add_agent("main")
+        agent_cwd = tmp_path / "agent-cwd"
+        agent_cwd.mkdir()
+        agent.services.register("cwd", agent_cwd)
+        perms = resolve_preset("trusted")
+        perms.ceiling = resolve_preset("yolo")
+        perms.parent_agent_id = "parent-agent"
+        perms.depth = 2
+        allowed_file = agent_cwd / "allowed.txt"
+        allowed_file.write_text("ok")
+        perms.session_allowances.add_write_file(allowed_file)
+        perms.session_allowances.add_exec_directory("run_python", agent_cwd)
+        perms.session_allowances.add_mcp_tool("mcp_demo")
+        agent.services.register("permissions", perms)
+
+        ctx = CommandContext(
+            pool=mock_pool,
+            session_manager=mock_session_manager,
+            current_agent_id="main",
+            is_repl=True,
+        )
+        output = await cmd_permissions(ctx, args="sandboxed")
+
+        assert output.result == CommandResult.SUCCESS
+        live_perms = agent.services.get("permissions")
+        assert live_perms is not None
+        assert live_perms.base_preset == "sandboxed"
+        assert live_perms.parent_agent_id == "parent-agent"
+        assert live_perms.depth == 2
+        assert live_perms.ceiling is perms.ceiling
+        assert live_perms.session_allowances is not perms.session_allowances
+        assert live_perms.session_allowances.is_write_allowed(allowed_file) is True
+        assert live_perms.session_allowances.is_exec_directory_allowed(
+            "run_python", agent_cwd
+        )
+        assert live_perms.session_allowances.is_mcp_tool_allowed("mcp_demo") is True
+        assert live_perms.effective_policy.cwd == agent_cwd
+        assert live_perms.effective_policy.allowed_paths == [agent_cwd]
+        assert agent.services.get("allowed_paths") == [agent_cwd]
 
 
 # -----------------------------------------------------------------------------

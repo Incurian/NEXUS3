@@ -20,11 +20,21 @@ Commands:
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands.protocol import CommandContext, CommandOutput, CommandResult
+from nexus3.core.authorization_kernel import (
+    AdapterAuthorizationKernel,
+    AuthorizationAction,
+    AuthorizationDecision,
+    AuthorizationRequest,
+    AuthorizationResource,
+    AuthorizationResourceType,
+    AuthorizationScalar,
+)
 from nexus3.core.errors import ProviderError
 from nexus3.core.permissions import (
     AgentPermissions,
@@ -46,6 +56,50 @@ if TYPE_CHECKING:
 YOLO_WARNING_LINE = "━" * 70
 YOLO_WARNING_CAPABILITIES = "Enabled: Shell execution, file writes anywhere, network access"
 YOLO_WARNING_ESCAPE = "To switch: /permissions trusted"
+
+
+class _PermissionMutationAuthorizationAdapter:
+    """Kernel adapter for REPL permission mutation checks."""
+
+    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
+        if request.action != AuthorizationAction.SESSION_WRITE:
+            return None
+        if request.resource.resource_type != AuthorizationResourceType.AGENT:
+            return None
+        if request.context.get("permission_mutation") is not True:
+            return None
+
+        if request.context.get("has_ceiling") is not True:
+            return AuthorizationDecision.allow(request, reason="no_parent_ceiling")
+
+        mutation_kind = request.context.get("mutation_kind")
+        if mutation_kind == "disable_tool":
+            return AuthorizationDecision.allow(request, reason="disable_tool_allowed")
+        if mutation_kind == "enable_tool":
+            if request.context.get("ceiling_disables_tool") is True:
+                return AuthorizationDecision.deny(
+                    request,
+                    reason="tool_disabled_by_parent_ceiling",
+                )
+            return AuthorizationDecision.allow(request, reason="tool_within_parent_ceiling")
+        if mutation_kind == "change_preset":
+            if request.context.get("ceiling_allows_permissions") is True:
+                return AuthorizationDecision.allow(
+                    request,
+                    reason="preset_within_parent_ceiling",
+                )
+            return AuthorizationDecision.deny(
+                request,
+                reason="preset_exceeds_parent_ceiling",
+            )
+
+        return AuthorizationDecision.deny(request, reason="unknown_permission_mutation")
+
+
+_PERMISSION_MUTATION_AUTHORIZATION_KERNEL = AdapterAuthorizationKernel(
+    adapters=(_PermissionMutationAuthorizationAdapter(),),
+    default_allow=False,
+)
 
 
 def print_yolo_warning(console: Any, on_switch: bool = False) -> None:
@@ -1114,8 +1168,14 @@ async def _disable_tool(
     if perms is None:
         return CommandOutput.error("Cannot modify permissions: no policy set")
 
-    # Check ceiling - can always disable (more restrictive than ceiling)
-    # No check needed here, disabling is always allowed
+    permission_error = _authorize_permission_mutation(
+        agent,
+        perms,
+        mutation_kind="disable_tool",
+        tool_name=tool_name,
+    )
+    if permission_error is not None:
+        return permission_error
 
     # Apply change
     if tool_name in perms.tool_permissions:
@@ -1143,13 +1203,14 @@ async def _enable_tool(
     if perms is None:
         return CommandOutput.error("Cannot modify permissions: no policy set")
 
-    # Check ceiling - can't enable if ceiling disabled it
-    if perms.ceiling:
-        ceiling_perm = perms.ceiling.tool_permissions.get(tool_name)
-        if ceiling_perm and not ceiling_perm.enabled:
-            return CommandOutput.error(
-                f"Cannot enable '{tool_name}': disabled by parent ceiling"
-            )
+    permission_error = _authorize_permission_mutation(
+        agent,
+        perms,
+        mutation_kind="enable_tool",
+        tool_name=tool_name,
+    )
+    if permission_error is not None:
+        return permission_error
 
     # Apply change
     if tool_name in perms.tool_permissions:
@@ -1187,17 +1248,24 @@ async def _change_preset(
             f"Unknown preset: {preset_name}. Valid: {valid}"
         )
 
-    # Check ceiling
-    if perms and perms.ceiling:
-        try:
-            new_perms = resolve_preset(preset_name, custom_presets)
-            if not perms.ceiling.can_grant(new_perms):
-                return CommandOutput.error(
-                    f"Cannot change to '{preset_name}': exceeds ceiling "
-                    f"(parent: {perms.ceiling.base_preset})"
-                )
-        except ValueError as e:
-            return CommandOutput.error(str(e))
+    try:
+        new_perms = resolve_preset(
+            preset_name,
+            custom_presets,
+            cwd=agent.services.get_cwd(),
+        )
+    except ValueError as e:
+        return CommandOutput.error(str(e))
+
+    permission_error = _authorize_permission_mutation(
+        agent,
+        perms,
+        mutation_kind="change_preset",
+        preset_name=preset_name,
+        requested_permissions=new_perms,
+    )
+    if permission_error is not None:
+        return permission_error
 
     # Show warning when switching to YOLO
     if preset_name == "yolo":
@@ -1205,26 +1273,75 @@ async def _change_preset(
         print_yolo_warning(console, on_switch=True)
 
     # Apply change
-    try:
-        new_perms = resolve_preset(preset_name, custom_presets)
-        if perms:
-            new_perms.ceiling = perms.ceiling
-            new_perms.parent_agent_id = perms.parent_agent_id
+    if perms:
+        new_perms.ceiling = perms.ceiling
+        new_perms.parent_agent_id = perms.parent_agent_id
+        new_perms.depth = perms.depth
+        new_perms.session_allowances = copy.deepcopy(perms.session_allowances)
 
-        agent.services.register("permissions", new_perms)
-        agent.services.register("allowed_paths", new_perms.effective_policy.allowed_paths)
+    agent.services.register("permissions", new_perms)
+    agent.services.register("allowed_paths", new_perms.effective_policy.allowed_paths)
 
-        # Resync tool definitions for new preset's permissions
-        agent.context.set_tool_definitions(
-            agent.registry.get_definitions_for_permissions(new_perms)
+    # Resync tool definitions for new preset's permissions
+    agent.context.set_tool_definitions(
+        agent.registry.get_definitions_for_permissions(new_perms)
+    )
+
+    return CommandOutput.success(
+        message=f"Changed to preset: {preset_name}",
+        data={"preset": preset_name},
+    )
+
+
+def _authorize_permission_mutation(
+    agent: Agent,
+    perms: AgentPermissions | None,
+    mutation_kind: str,
+    *,
+    preset_name: str | None = None,
+    requested_permissions: AgentPermissions | None = None,
+    tool_name: str | None = None,
+) -> CommandOutput | None:
+    """Authorize live REPL permission mutations through the shared kernel pattern."""
+    ceiling = perms.ceiling if perms is not None else None
+    has_ceiling = ceiling is not None
+    context: dict[str, AuthorizationScalar] = {
+        "permission_mutation": True,
+        "mutation_kind": mutation_kind,
+        "has_ceiling": has_ceiling,
+    }
+    if (
+        ceiling is not None
+        and mutation_kind == "change_preset"
+        and requested_permissions is not None
+    ):
+        context["ceiling_allows_permissions"] = ceiling.can_grant(requested_permissions)
+    if ceiling is not None and mutation_kind == "enable_tool" and tool_name is not None:
+        ceiling_perm = ceiling.tool_permissions.get(tool_name)
+        context["ceiling_disables_tool"] = bool(ceiling_perm and not ceiling_perm.enabled)
+
+    kernel_request = AuthorizationRequest(
+        action=AuthorizationAction.SESSION_WRITE,
+        resource=AuthorizationResource(
+            resource_type=AuthorizationResourceType.AGENT,
+            identifier=agent.agent_id,
+        ),
+        principal_id=agent.agent_id,
+        context=context,
+    )
+    decision = _PERMISSION_MUTATION_AUTHORIZATION_KERNEL.authorize(kernel_request)
+    if decision.allowed:
+        return None
+    if decision.reason == "preset_exceeds_parent_ceiling" and ceiling is not None:
+        return CommandOutput.error(
+            f"Cannot change to '{preset_name}': exceeds ceiling "
+            f"(parent: {ceiling.base_preset})"
         )
-
-        return CommandOutput.success(
-            message=f"Changed to preset: {preset_name}",
-            data={"preset": preset_name},
+    if decision.reason == "tool_disabled_by_parent_ceiling" and tool_name is not None:
+        return CommandOutput.error(
+            f"Cannot enable '{tool_name}': disabled by parent ceiling"
         )
-    except ValueError as e:
-        return CommandOutput.error(str(e))
+    return CommandOutput.error(f"Permission mutation denied: {decision.reason}")
 
 
 async def cmd_prompt(
