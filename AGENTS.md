@@ -729,6 +729,21 @@ Compact checkpoint (2026-03-06, architecture execution round 17):
   2. Plan H: assess `rpc/protocol.py::parse_response` strict typed `error` object enforcement via `RpcErrorObjectSchema`.
   3. Plan A: continue duplicate-authorization-branch removal in `rpc/pool.py::_create_unlocked` (create authorization still legacy-authoritative).
 
+Compact checkpoint (2026-03-06, architecture execution round 18):
+- Branch head at start of round: `e89fb4b`; working tree now includes a second focused Plan H strict-value ingress follow-up.
+- New slice completed this round:
+  1. Plan H tightened `rpc/dispatcher.py::_handle_compact` from compat-style value coercion (`strict=False`) to strict-value schema validation (`strict=True`).
+  2. Preserved existing invalid-params wording behavior while adding strictness regressions for coercible non-bool `force` values.
+  3. Extended focused ingress coverage in `tests/unit/rpc/test_schema_ingress_wiring.py` (`force='true'` and `force=1` now rejected; existing invalid-force/extra-param assertions retained).
+- Validation result for this round:
+  - `.venv/bin/ruff check nexus3/rpc/dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/dispatcher.py` passed.
+  - `.venv/bin/pytest -v tests/unit/rpc/test_schema_ingress_wiring.py` passed (`58 passed`).
+- Immediate resume targets:
+  1. Plan H: evaluate strict-value flip for `_handle_send` while preserving established field-specific invalid-params wording.
+  2. Plan H: assess strict typed `error` object enforcement in `rpc/protocol.py::parse_response` using `RpcErrorObjectSchema`.
+  3. Plan A: resume create-authorization duplicate-branch removal in `rpc/pool.py::_create_unlocked`.
+
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.

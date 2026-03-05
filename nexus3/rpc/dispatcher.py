@@ -684,7 +684,7 @@ class Dispatcher:
             - compacted: False, reason: why compaction didn't occur
         """
         try:
-            validated = CompactParamsSchema.model_validate(params, strict=False)
+            validated = CompactParamsSchema.model_validate(params, strict=True)
         except PydanticValidationError as exc:
             errors = exc.errors()
             if errors:

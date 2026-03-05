@@ -704,6 +704,26 @@ async def test_dispatcher_compact_schema_validation_rejects_invalid_force() -> N
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("force_value", ["true", 1])
+async def test_dispatcher_compact_schema_validation_rejects_coercible_force_values(
+    force_value: object,
+) -> None:
+    dispatcher = Dispatcher(_StubSession(), context=None, agent_id="agent-1")
+    request = Request(
+        jsonrpc="2.0",
+        method="compact",
+        params={"force": force_value},
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert "boolean" in response.error["message"].lower()
+
+
+@pytest.mark.asyncio
 async def test_dispatcher_compact_schema_validation_rejects_unknown_extra_params() -> None:
     dispatcher = Dispatcher(_StubSession(), context=None, agent_id="agent-1")
     request = Request(
