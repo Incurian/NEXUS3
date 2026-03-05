@@ -9,6 +9,7 @@ The core module serves as the foundation for NEXUS3, providing:
 - **Immutable message types** - Frozen dataclasses for conversation messages, tool calls, and results
 - **Streaming event types** - Typed events for real-time LLM response streaming
 - **Provider protocol** - Async-first interface for LLM providers
+- **Capability tokens** - Signed delegation capabilities with scope/expiry/revocation/replay guards
 - **Permission system** - Multi-level access control (YOLO/TRUSTED/SANDBOXED) with per-tool overrides
 - **Path security** - Sandboxing, symlink defense, and authoritative path decision engine
 - **URL validation** - SSRF protection with blocked IP ranges
@@ -39,6 +40,16 @@ from nexus3.core import (
 
     # === Provider Protocol ===
     AsyncProvider,     # Protocol for async LLM providers
+
+    # === Capability Tokens ===
+    CapabilityClaims,  # Typed capability claim set
+    CapabilitySigner,  # Issue/verify signed capability tokens
+    InMemoryCapabilityRevocationStore,  # In-memory revocation set
+    InMemoryCapabilityReplayStore,      # In-memory replay detector
+    generate_capability_secret,         # URL-safe signing secret generator
+    CapabilityError, CapabilityFormatError, CapabilitySignatureError,
+    CapabilityExpiredError, CapabilityScopeError,
+    CapabilityRevokedError, CapabilityReplayError,
 
     # === Errors ===
     NexusError,        # Base exception for all NEXUS3 errors
@@ -153,6 +164,22 @@ class MyProvider(AsyncProvider):
         yield ContentDelta("Hello")
         yield StreamComplete(Message(role=Role.ASSISTANT, content="Hello"))
 ```
+
+---
+
+### capabilities.py - Delegation Capability Tokens
+
+Signed opaque capability tokens for delegated operations.
+
+| Export | Description |
+|--------|-------------|
+| `CapabilityClaims` | Typed claim payload (`tid`, `iss`, `sub`, `scp`, `iat`, `exp`, `pid`, `non`) |
+| `CapabilitySigner` | `issue(...)`, `serialize(...)`, and `verify(...)` for `n3cap.v1` tokens |
+| `InMemoryCapabilityRevocationStore` | Revocation tracking by token id |
+| `InMemoryCapabilityReplayStore` | Replay detection by token id |
+| `generate_capability_secret()` | URL-safe random secret generation |
+
+`CapabilitySigner.verify(...)` supports required-scope checks, revocation store checks, and replay-store checks.
 
 ---
 

@@ -11,6 +11,20 @@ from nexus3.core.authorization_kernel import (
     AuthorizationResourceType,
 )
 from nexus3.core.cancel import CancellationToken
+from nexus3.core.capabilities import (
+    CapabilityClaims,
+    CapabilityError,
+    CapabilityExpiredError,
+    CapabilityFormatError,
+    CapabilityReplayError,
+    CapabilityRevokedError,
+    CapabilityScopeError,
+    CapabilitySignatureError,
+    CapabilitySigner,
+    InMemoryCapabilityReplayStore,
+    InMemoryCapabilityRevocationStore,
+    generate_capability_secret,
+)
 from nexus3.core.encoding import ENCODING, ENCODING_ERRORS, configure_stdio
 from nexus3.core.errors import ConfigError, NexusError, PathSecurityError, ProviderError
 from nexus3.core.interfaces import AsyncProvider
@@ -66,6 +80,18 @@ __all__ = [
     "AuthorizationAdapter",
     "AuthorizationKernel",
     "AdapterAuthorizationKernel",
+    "CapabilityError",
+    "CapabilityFormatError",
+    "CapabilitySignatureError",
+    "CapabilityExpiredError",
+    "CapabilityScopeError",
+    "CapabilityRevokedError",
+    "CapabilityReplayError",
+    "CapabilityClaims",
+    "CapabilitySigner",
+    "InMemoryCapabilityRevocationStore",
+    "InMemoryCapabilityReplayStore",
+    "generate_capability_secret",
     "UrlSecurityError",
     "AsyncProvider",
     "Message",
