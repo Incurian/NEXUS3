@@ -39,7 +39,7 @@ class InlinePrinter:
         """
         prefix = " " * indent
         gumball = self.theme.gumball(status)
-        self.console.print(f"{prefix}{gumball} {message}")
+        self.safe_sink.print_trusted(f"{prefix}{gumball} {message}")
 
     def print_thinking(self, content: str, collapsed: bool = True) -> None:
         """Print thinking trace inline.
@@ -52,9 +52,9 @@ class InlinePrinter:
             self.print_gumball(Status.ACTIVE, "Thinking...")
         else:
             gumball = self.theme.gumball(Status.ACTIVE)
-            self.console.print(f"{gumball} <thinking>", style=self.theme.thinking)
-            self.console.print(content, style=self.theme.thinking)
-            self.console.print("</thinking>", style=self.theme.thinking)
+            self.safe_sink.print_trusted(f"{gumball} <thinking>", style=self.theme.thinking)
+            self.safe_sink.print_untrusted(content, style=self.theme.thinking)
+            self.safe_sink.print_trusted("</thinking>", style=self.theme.thinking)
 
     def print_task_start(self, task_type: str, label: str, indent: int = 2) -> None:
         """Print task starting (e.g., '  [cyan]●[/] read_file: src/main.py').
@@ -64,7 +64,9 @@ class InlinePrinter:
             label: Task details
             indent: Indentation level
         """
-        self.print_gumball(Status.ACTIVE, f"{task_type}: {label}", indent=indent)
+        safe_task_type = self.safe_sink.sanitize_print_content(task_type)
+        safe_label = self.safe_sink.sanitize_print_content(label)
+        self.print_gumball(Status.ACTIVE, f"{safe_task_type}: {safe_label}", indent=indent)
 
     def print_task_end(self, task_type: str, success: bool, indent: int = 2) -> None:
         """Print task completion.
@@ -76,15 +78,18 @@ class InlinePrinter:
         """
         status = Status.COMPLETE if success else Status.ERROR
         result = "complete" if success else "failed"
-        self.print_gumball(status, f"{task_type}: {result}", indent=indent)
+        safe_task_type = self.safe_sink.sanitize_print_content(task_type)
+        self.print_gumball(status, f"{safe_task_type}: {result}", indent=indent)
 
     def print_error(self, message: str) -> None:
         """Print error message."""
-        self.print_gumball(Status.ERROR, message)
+        safe_message = self.safe_sink.sanitize_print_content(message)
+        self.print_gumball(Status.ERROR, safe_message)
 
     def print_cancelled(self, message: str = "Cancelled") -> None:
         """Print cancellation message."""
-        self.print_gumball(Status.CANCELLED, message)
+        safe_message = self.safe_sink.sanitize_print_content(message)
+        self.print_gumball(Status.CANCELLED, safe_message)
 
     def print_streaming_chunk(self, chunk: str) -> None:
         """Print a streaming chunk without newline.

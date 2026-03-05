@@ -13,7 +13,7 @@ from rich.console import Console
 
 from nexus3.core.text_safety import ANSI_ESCAPE_PATTERN
 from nexus3.display.printer import InlinePrinter
-from nexus3.display.theme import Theme
+from nexus3.display.theme import Status, Theme
 
 
 class MockStdout:
@@ -277,3 +277,48 @@ class TestEdgeCases:
         result = print_chunk('alerttext')
         # Without the \x1b] prefix, bell is not stripped
         assert result == 'alerttext'
+
+
+class TestInlinePrinterRichOutputSanitization:
+    """Focused sanitization tests for Rich-rendered printer output paths."""
+
+    def test_print_task_start_sanitizes_untrusted_tool_and_label(
+        self, printer: InlinePrinter
+    ) -> None:
+        printer.print_task_start(
+            "[red]read_file[/red]\x1b[31m",
+            "src/[bold]main.py[/bold]\x1b]8;;https://example.com\x07x\x1b]8;;\x07",
+        )
+
+        printer.console.print.assert_called_once()
+        rendered = printer.console.print.call_args.args[0]
+
+        assert rendered.startswith("  [cyan]●[/] ")
+        assert r"\[red]read_file\[/red]" in rendered
+        assert r"src/\[bold]main.py\[/bold]x" in rendered
+        assert "\x1b" not in rendered
+
+    def test_print_thinking_expanded_sanitizes_content(self, printer: InlinePrinter) -> None:
+        printer.print_thinking("[red]trace[/red]\x1b[31m", collapsed=False)
+
+        assert printer.console.print.call_count == 3
+        first = printer.console.print.call_args_list[0]
+        second = printer.console.print.call_args_list[1]
+        third = printer.console.print.call_args_list[2]
+
+        assert first.args[0].endswith(" <thinking>")
+        assert first.kwargs["style"] == printer.theme.thinking
+        assert second.args[0] == r"\[red]trace\[/red]"
+        assert second.kwargs["style"] == printer.theme.thinking
+        assert third.args[0] == "</thinking>"
+        assert third.kwargs["style"] == printer.theme.thinking
+        assert "\x1b" not in second.args[0]
+
+    def test_print_gumball_preserves_trusted_markup(self, printer: InlinePrinter) -> None:
+        printer.print_gumball(Status.ACTIVE, "[bold]trusted[/bold]")
+
+        printer.console.print.assert_called_once()
+        rendered = printer.console.print.call_args.args[0]
+
+        assert rendered.startswith("[cyan]●[/] ")
+        assert "[bold]trusted[/bold]" in rendered
