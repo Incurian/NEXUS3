@@ -186,9 +186,9 @@ Status note (2026-03-05):
   - `.venv/bin/pytest tests/ -v` passed (`4102 passed`, `3 skipped`).
   - `.venv/bin/pytest tests/integration/ -v` passed (`211 passed`, `2 skipped`).
   - live RPC create/send/destroy validation on `:9000` passed.
-- Next target: begin post-M4 validation campaign Phase 1
-  (runbook/artifact framework bootstrap in
-  `POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md`).
+- Next target: execute first post-M4 campaign runs and archive evidence under
+  `docs/validation/<run-id>/` (soak/perf, race/lifecycle, terminal matrix +
+  emulator follow-up, and Windows-native checklist on real host).
 
 ### M4: Delegation and Strategic Evolution
 
@@ -324,6 +324,19 @@ Still required after implementation waves:
 3. Windows-native validation on actual Windows hosts.
 4. Timing-sensitive TOCTOU/lifecycle race validation under high concurrency.
 5. Real terminal red-team validation across emulator variants.
+
+Status note (2026-03-06):
+- Post-M4 validation campaign bootstrap is completed:
+  - added canonical runbook:
+    `docs/testing/POST-M4-VALIDATION-RUNBOOK.md`
+  - added artifact schema/index:
+    `docs/validation/README.md`
+  - added campaign harness scripts:
+    `scripts/validation/soak_workload.py`,
+    `scripts/validation/race_harness.py`,
+    `scripts/validation/terminal_payload_matrix.py`
+- Next deferred-validation gate is execution of the first soak/race/terminal
+  campaign runs and archival of evidence under `docs/validation/<run-id>/`.
 
 ## Related Documents
 

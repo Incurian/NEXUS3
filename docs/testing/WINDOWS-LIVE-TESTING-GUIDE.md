@@ -2,6 +2,11 @@
 
 Manual testing procedures to validate Windows-native compatibility features including process termination, ESC key detection, line ending preservation, file attributes, error sanitization, and subprocess handling.
 
+This guide is the Windows-specific track execution procedure for the post-M4
+campaign runbook:
+- [POST-M4-VALIDATION-RUNBOOK.md](/home/inc/repos/NEXUS3/docs/testing/POST-M4-VALIDATION-RUNBOOK.md)
+- Artifact contract: [docs/validation/README.md](/home/inc/repos/NEXUS3/docs/validation/README.md)
+
 **Branch:** `feature/windows-native-compat`
 **Date:** 2026-01-28
 

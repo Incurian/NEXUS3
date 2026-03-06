@@ -35,11 +35,11 @@ Excluded:
 
 Primary files to change:
 - [ARCH-MILESTONE-SCHEDULE-2026-03-02.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md)
-- New: `docs/testing/POST-M4-VALIDATION-RUNBOOK.md`
-- New: `docs/validation/README.md`
-- New: `scripts/validation/soak_workload.py`
-- New: `scripts/validation/race_harness.py`
-- New: `scripts/validation/terminal_payload_matrix.py`
+- `docs/testing/POST-M4-VALIDATION-RUNBOOK.md`
+- `docs/validation/README.md`
+- `scripts/validation/soak_workload.py`
+- `scripts/validation/race_harness.py`
+- `scripts/validation/terminal_payload_matrix.py`
 - [WINDOWS-LIVE-TESTING-GUIDE.md](/home/inc/repos/NEXUS3/docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md)
 
 Campaign tracks:
@@ -62,6 +62,25 @@ Artifact contract:
 - Failures must include reproduction command, environment details, and mapped
   owner target.
 
+## Execution Status
+
+- 2026-03-06: Phase 1/2 bootstrap completed.
+- Added canonical runbook:
+  [POST-M4-VALIDATION-RUNBOOK.md](/home/inc/repos/NEXUS3/docs/testing/POST-M4-VALIDATION-RUNBOOK.md)
+- Added validation artifact contract/index:
+  [docs/validation/README.md](/home/inc/repos/NEXUS3/docs/validation/README.md)
+- Added campaign harness scripts:
+  - `scripts/validation/soak_workload.py`
+  - `scripts/validation/race_harness.py`
+  - `scripts/validation/terminal_payload_matrix.py`
+- Updated Windows track guide with runbook/artifact cross-reference.
+- Validation snapshot (2026-03-06, bootstrap):
+  - `.venv/bin/ruff check scripts/validation docs/testing/POST-M4-VALIDATION-RUNBOOK.md docs/validation/README.md` passed.
+  - `.venv/bin/mypy scripts/validation` passed.
+  - `.venv/bin/python scripts/validation/soak_workload.py --dry-run --iterations 2 --artifact-root /tmp/nexus3-validation --run-id postm4-dryrun-20260306z10` passed.
+  - `.venv/bin/python scripts/validation/race_harness.py --dry-run --workers 2 --rounds 2 --shared-agent-pool-size 2 --artifact-root /tmp/nexus3-validation --run-id postm4-dryrun-20260306z10` passed.
+  - `.venv/bin/python scripts/validation/terminal_payload_matrix.py --artifact-root /tmp/nexus3-validation --run-id postm4-dryrun-20260306z10` passed.
+
 ## Testing Strategy
 
 - Gate each track with explicit thresholds:
@@ -79,8 +98,8 @@ Artifact contract:
 
 ## Implementation Checklist
 
-- [ ] Create runbook + artifact format for post-M4 validation tracks.
-- [ ] Implement or wire campaign scripts for soak/race/terminal tracks.
+- [x] Create runbook + artifact format for post-M4 validation tracks.
+- [x] Implement or wire campaign scripts for soak/race/terminal tracks.
 - [ ] Execute soak/perf campaign and archive artifacts.
 - [ ] Execute Windows-native campaign on real Windows host(s) and archive
       artifacts.

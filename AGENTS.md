@@ -220,7 +220,10 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `M4` implementation closeout active: Plan E Phases 1-4 and Plan B Phases 1-4 are committed on this branch, and Plan G sink-boundary closure is complete.
+- `Post-M4` validation campaign active: Phase 1/2 bootstrap
+  (runbook + artifact schema + harness scripts) is complete, and first live
+  campaign runs are pending.
+- `M4` implementation closeout complete: Plan E Phases 1-4 and Plan B Phases 1-4 are committed on this branch, and Plan G sink-boundary closure is complete.
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
@@ -273,14 +276,28 @@ Immediate tasks:
   - focused regressions in `tests/unit/test_http_pipeline_layers.py` enforce:
     requester-only rejection, capability-present forwarding, invalid-capability
     behavior parity.
-- Next target: start post-M4 validation campaign Phase 1 execution
-  (`docs/testing/POST-M4-VALIDATION-RUNBOOK.md` + artifact schema/layout).
-- Validation target (M4 closeout, 2026-03-06):
-  - `.venv/bin/ruff check nexus3/`
-  - `.venv/bin/mypy nexus3/`
-  - `.venv/bin/pytest tests/ -v`
-  - `.venv/bin/pytest tests/integration/ -v`
-  - Live RPC validation on local server (`create`/`send`/`destroy`) via `.venv/bin/python -m nexus3 rpc ... -p 9000`
+- Completed (2026-03-06, local pending commit): post-M4 validation campaign
+  Phase 1/2 bootstrap:
+  - added canonical runbook:
+    `docs/testing/POST-M4-VALIDATION-RUNBOOK.md`
+  - added artifact schema/index:
+    `docs/validation/README.md`
+  - added campaign harness scripts:
+    `scripts/validation/soak_workload.py`,
+    `scripts/validation/race_harness.py`,
+    `scripts/validation/terminal_payload_matrix.py`
+- Next target: execute first post-M4 campaign runs and archive evidence under
+  `docs/validation/<run-id>/`:
+  - soak/perf (live)
+  - race/lifecycle (live)
+  - terminal matrix (script + emulator follow-up)
+  - windows-native checklist on real Windows host
+- Validation target (Phase 1/2 bootstrap, 2026-03-06):
+  - `.venv/bin/ruff check scripts/validation docs/testing/POST-M4-VALIDATION-RUNBOOK.md docs/validation/README.md`
+  - `.venv/bin/mypy scripts/validation`
+  - `.venv/bin/python scripts/validation/soak_workload.py --dry-run --iterations 2 --artifact-root /tmp/nexus3-validation --run-id postm4-dryrun-20260306z10`
+  - `.venv/bin/python scripts/validation/race_harness.py --dry-run --workers 2 --rounds 2 --shared-agent-pool-size 2 --artifact-root /tmp/nexus3-validation --run-id postm4-dryrun-20260306z10`
+  - `.venv/bin/python scripts/validation/terminal_payload_matrix.py --artifact-root /tmp/nexus3-validation --run-id postm4-dryrun-20260306z10`
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -288,6 +305,7 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `a1e445e` m4 closeout: remediate gate regressions and sync status docs
 - `ffb8b87` plan b phase 4b: enforce capability-first http requester identity
 - `2cb4817` plan b phase 4a: add legacy requester fallback telemetry
 - `6b65b17` plan b phase 3a: add http capability transport wiring
@@ -321,7 +339,8 @@ Recent execution commits (latest first):
 - `ce3d263` migrate confirmation ui prompts to SafeSink
 - `c5eb670` advance plan h: reject boolean json-rpc ids at protocol boundary
 - Local working-tree slice (pending commit):
-  - M4 closeout gate remediation: destroy-auth security parity tests, MCP integration expectation alignment + explicit MCPServerConfig export source, grep ripgrep fast-path size-limit/context-marker parity hardening, and full-gate typing/lint drift fixes.
+  - Post-M4 validation campaign Phase 1/2 bootstrap:
+    runbook + artifact schema + campaign script scaffolds + milestone/plan/status sync.
 - `f6ee537` advance m1: harden send ingress params and migrate lobby outputs to safe sink
 - `a53c7dd` advance plan h: fail-fast mcp boundary validation and unify mcp config model
 - `1b455b5` advance m1: extend schema ingress create_agent and migrate repl mcp consent to safe sink
@@ -333,6 +352,15 @@ Progress snapshot:
   - added [ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md)
   - updated [ARCH-MILESTONE-SCHEDULE-2026-03-02.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md) with explicit backlog dependency/exit gates
   - updated [docs/plans/README.md](/home/inc/repos/NEXUS3/docs/plans/README.md) follow-on index section
+- Completed (2026-03-06, local pending commit): Post-M4 validation campaign
+  Phase 1/2 bootstrap:
+  - added [POST-M4-VALIDATION-RUNBOOK.md](/home/inc/repos/NEXUS3/docs/testing/POST-M4-VALIDATION-RUNBOOK.md)
+  - added [docs/validation/README.md](/home/inc/repos/NEXUS3/docs/validation/README.md)
+  - added `scripts/validation/soak_workload.py`,
+    `scripts/validation/race_harness.py`,
+    `scripts/validation/terminal_payload_matrix.py`
+  - updated [WINDOWS-LIVE-TESTING-GUIDE.md](/home/inc/repos/NEXUS3/docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md)
+    with post-M4 runbook/artifact references
 - Completed (2026-03-05): Plan E Phase 2 provider/session integration (`e3cd304`):
   - migrated `Session.send()`/`Session.run_turn()` pre-user preflight repair
     path to compiler-backed normalization (`compile_context_messages(...)`)
