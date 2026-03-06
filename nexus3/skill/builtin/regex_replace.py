@@ -35,7 +35,8 @@ class RegexReplaceSkill(FileSkill):
     def description(self) -> str:
         return (
             "Replace text in a file using a regular expression pattern. "
-            "Use for pattern-driven edits and broad renames where exact string replacement is insufficient. "
+            "Use for pattern-driven edits and broad renames where exact string "
+            "replacement is insufficient. "
             "IMPORTANT: Use specific patterns to avoid unintended matches; "
             "use edit_file for simple literal replacements."
         )

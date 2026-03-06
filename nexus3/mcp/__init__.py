@@ -12,6 +12,7 @@ Usage:
         result = await client.call_tool("echo", {"message": "hello"})
 """
 
+from nexus3.config.schema import MCPServerConfig
 from nexus3.mcp.client import MCPClient, MCPError
 from nexus3.mcp.protocol import (
     MCPPrompt,
@@ -24,7 +25,7 @@ from nexus3.mcp.protocol import (
     MCPTool,
     MCPToolResult,
 )
-from nexus3.mcp.registry import ConnectedServer, MCPServerConfig, MCPServerRegistry
+from nexus3.mcp.registry import ConnectedServer, MCPServerRegistry
 from nexus3.mcp.skill_adapter import MCPSkillAdapter
 from nexus3.mcp.transport import HTTPTransport, MCPTransport, StdioTransport
 

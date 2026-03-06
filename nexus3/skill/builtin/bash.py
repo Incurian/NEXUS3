@@ -147,9 +147,12 @@ class BashSafeSkill(ExecutionSkill):
     async def _create_process(
         self,
         work_dir: str | None,
-        args: list[str],
+        args: list[str] | None = None,
     ) -> asyncio.subprocess.Process:
         """Create subprocess without shell."""
+        if args is None:
+            raise ValueError("Command arguments are required")
+
         # Platform-specific process group handling for clean timeout kills
         if sys.platform == "win32":
             return await asyncio.create_subprocess_exec(
@@ -276,9 +279,12 @@ class ShellUnsafeSkill(ExecutionSkill):
     async def _create_process(
         self,
         work_dir: str | None,
-        command: str,
+        command: str = "",
     ) -> asyncio.subprocess.Process:
         """Create shell subprocess."""
+        if not command:
+            raise ValueError("Command is required")
+
         # Platform-specific process group handling for clean timeout kills.
         # On Windows, route through the active shell family when detectable.
         # This prevents cmd.exe fallback from breaking Git Bash / PowerShell syntax.

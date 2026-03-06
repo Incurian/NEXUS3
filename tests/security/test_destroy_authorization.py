@@ -6,10 +6,8 @@ Tests that only authorized agents can destroy other agents:
 - Sibling destroying sibling is denied
 - External clients (requester_id=None) are treated as admin
 - admin_override=True bypasses all checks
-- Shadow parity warning is emitted on kernel/legacy mismatch
+- Destroy remains kernel-authoritative when the kernel denies
 """
-
-import logging
 
 import pytest
 
@@ -20,6 +18,7 @@ from nexus3.core.authorization_kernel import (
     AuthorizationRequest,
     AuthorizationResourceType,
 )
+from nexus3.core.capabilities import InMemoryCapabilityRevocationStore
 from nexus3.core.permissions import AgentPermissions, PermissionLevel
 from nexus3.core.policy import PermissionPolicy
 from nexus3.rpc.pool import AgentPool, AuthorizationError
@@ -106,6 +105,12 @@ class TestDestroyAuthorizationAdapter:
         requester_id = request.principal_id
         target_agent_id = request.resource.identifier
         target_parent_agent_id = request.context.get("target_parent_agent_id")
+        admin_override = request.context.get("admin_override")
+
+        if admin_override is True:
+            return AuthorizationDecision.allow(request, reason="admin_override")
+        if requester_id == "external":
+            return AuthorizationDecision.allow(request, reason="external_requester")
 
         if requester_id == target_agent_id:
             return AuthorizationDecision.allow(request, reason="self_destroy")
@@ -128,6 +133,9 @@ def mock_pool():
                 adapters=(TestDestroyAuthorizationAdapter(),),
                 default_allow=False,
             )
+            self._capability_revocation_store = InMemoryCapabilityRevocationStore()
+            self._issued_capability_token_ids_by_subject: dict[str, set[str]] = {}
+            self._issued_capability_token_ids_by_issuer: dict[str, set[str]] = {}
 
     pool = TestPool()
     # Create lock in async context
@@ -190,8 +198,8 @@ async def test_destroy_authorization_parity_matrix(
 
 
 @pytest.mark.asyncio
-async def test_destroy_shadow_mismatch_emits_warning(mock_pool, caplog: pytest.LogCaptureFixture):
-    """Destroy auth shadow mode emits warning when kernel/legacy decisions diverge."""
+async def test_destroy_denied_when_kernel_denies(mock_pool):
+    """Destroy is kernel-authoritative: explicit kernel denies block destroy."""
     import asyncio
 
     class DenyAllDestroyKernel:
@@ -202,22 +210,10 @@ async def test_destroy_shadow_mismatch_emits_warning(mock_pool, caplog: pytest.L
     mock_pool._agents["worker-1"] = MockAgent("worker-1")
     mock_pool._destroy_authorization_kernel = DenyAllDestroyKernel()
 
-    caplog.set_level(logging.WARNING, logger="nexus3.rpc.pool")
-
-    result = await mock_pool.destroy("worker-1", requester_id="worker-1")
-
-    assert result is True
-    mismatch_records = [
-        record
-        for record in caplog.records
-        if getattr(record, "event", None) == "destroy_auth_shadow_mismatch"
-    ]
-    assert mismatch_records
-    mismatch = mismatch_records[0]
-    assert mismatch.target_agent_id == "worker-1"
-    assert mismatch.requester_id == "worker-1"
-    assert mismatch.legacy_allowed is True
-    assert mismatch.kernel_allowed is False
+    with pytest.raises(AuthorizationError) as exc_info:
+        await mock_pool.destroy("worker-1", requester_id="worker-1")
+    assert "not authorized" in str(exc_info.value)
+    assert "worker-1" in mock_pool._agents
 
 
 @pytest.mark.asyncio

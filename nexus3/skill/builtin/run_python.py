@@ -99,9 +99,12 @@ class RunPythonSkill(ExecutionSkill):
     async def _create_process(
         self,
         work_dir: str | None,
-        code: str,
+        code: str = "",
     ) -> asyncio.subprocess.Process:
         """Create a Python subprocess."""
+        if not code:
+            raise ValueError("Code payload is required")
+
         # Platform-specific process group handling for clean timeout kills
         if sys.platform == "win32":
             return await asyncio.create_subprocess_exec(

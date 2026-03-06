@@ -3,16 +3,17 @@
 import sys
 
 import pytest
+from pydantic import ValidationError
 
 from nexus3.mcp import MCPServerConfig, MCPServerRegistry
-from nexus3.mcp.transport import StdioTransport, MCPTransportError
-from nexus3.mcp.errors import MCPErrorContext
 from nexus3.mcp.error_formatter import (
     format_command_not_found,
-    format_server_crash,
     format_json_error,
+    format_server_crash,
     format_timeout_error,
 )
+from nexus3.mcp.errors import MCPErrorContext
+from nexus3.mcp.transport import MCPTransportError, StdioTransport
 
 
 class TestErrorFormatterOutput:
@@ -83,10 +84,9 @@ class TestRichMarkupEscaping:
 
         output = format_command_not_found(context, "cmd")
 
-        # The brackets should be in the output (for user info)
-        # but shouldn't cause Rich to interpret them as markup
-        # This is a basic check - actual Rich escaping would use \\[
-        assert "server[with]brackets" in output or "server\\[with\\]brackets" in output
+        # Rich escapes opening brackets to prevent markup injection.
+        assert "server\\[with]brackets" in output
+        assert "server[with]brackets" not in output
 
     def test_stderr_with_ansi_codes(self) -> None:
         """Test stderr containing ANSI codes doesn't break output."""
@@ -226,23 +226,17 @@ class TestRegistryErrorHandling:
 
         assert "disabled" in str(exc_info.value).lower()
 
-    @pytest.mark.asyncio
-    async def test_registry_no_command_or_url_error(self) -> None:
-        """Test registry provides clear error when neither command nor url is set."""
-        from nexus3.core.errors import MCPConfigError
-
-        registry = MCPServerRegistry()
-
-        config = MCPServerConfig(
-            name="empty-config-server",
-            # No command or url
-        )
-
-        with pytest.raises(MCPConfigError) as exc_info:
-            await registry.connect(config)
+    def test_registry_no_command_or_url_error(self) -> None:
+        """Test config validation fails fast when neither command nor url is set."""
+        with pytest.raises(ValidationError) as exc_info:
+            MCPServerConfig(
+                name="empty-config-server",
+                # No command or url
+            )
 
         error_str = str(exc_info.value).lower()
-        assert "command" in error_str or "url" in error_str
+        assert "must specify either 'command' or 'url'" in error_str
+        assert "command" in error_str and "url" in error_str
 
 
 class TestErrorContextPreservation:

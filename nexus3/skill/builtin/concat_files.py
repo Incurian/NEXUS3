@@ -524,7 +524,7 @@ class ConcatFilesSkill(FileSkill):
             # Check for errors
             if proc_tracked.returncode != 0 or proc_untracked.returncode != 0:
                 # Fall back to glob
-                return await self._find_files_glob(base_path, extensions, exclude)
+                return await self._find_files_glob(base_path, fs_gateway, extensions, exclude)
 
             # Combine and deduplicate
             all_files: set[str] = set()
@@ -562,7 +562,7 @@ class ConcatFilesSkill(FileSkill):
 
         except (OSError, TimeoutError):
             # Fall back to glob on any git failure
-            return await self._find_files_glob(base_path, extensions, exclude)
+            return await self._find_files_glob(base_path, fs_gateway, extensions, exclude)
 
     # =========================================================================
     # Phase 1: File Discovery (Glob-based)

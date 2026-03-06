@@ -173,8 +173,22 @@ Status note (2026-03-05):
   - HTTP ingress enforces capability-first requester identity semantics
   - `X-Nexus-Capability` is required whenever `X-Nexus-Agent` is sent
   - requester-only `X-Nexus-Agent` is rejected with deterministic `INVALID_PARAMS`
-- Next target: Plan B is complete; continue remaining M4 scope (Plan G Phase 4
-  sink migration cleanup and milestone closeout validation).
+- Plan G Phase 4 closeout completed (2026-03-06, local pending commit):
+  - no residual SafeSink bypasses found in final display/CLI audit for scoped
+    surfaces.
+  - grep ripgrep fast path now enforces size-limit parity with secure
+    expectations and preserves context match markers for consistent output.
+  - MCP/test expectation drift and destroy-authorization security parity tests
+    aligned with current kernel-authoritative behavior.
+- M4 quality and live gates are green (2026-03-06 local snapshot):
+  - `.venv/bin/ruff check nexus3/` passed.
+  - `.venv/bin/mypy nexus3/` passed.
+  - `.venv/bin/pytest tests/ -v` passed (`4102 passed`, `3 skipped`).
+  - `.venv/bin/pytest tests/integration/ -v` passed (`211 passed`, `2 skipped`).
+  - live RPC create/send/destroy validation on `:9000` passed.
+- Next target: begin post-M4 validation campaign Phase 1
+  (runbook/artifact framework bootstrap in
+  `POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md`).
 
 ### M4: Delegation and Strategic Evolution
 

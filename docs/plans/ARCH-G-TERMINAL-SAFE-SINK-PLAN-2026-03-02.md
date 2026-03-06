@@ -146,6 +146,14 @@ Phases:
 - Replaced remaining trusted-only spinner trace/error blank-line callsites in `nexus3/cli/repl.py` from compatibility `spinner.print(...)` to explicit `spinner.print_trusted(...)`.
 - Added focused regressions in `tests/unit/cli/test_connect_lobby_safe_sink.py`, `tests/unit/test_lobby.py`, and `tests/unit/cli/test_repl_safe_sink.py`.
 - Validation: `.venv/bin/ruff check nexus3/cli/connect_lobby.py nexus3/cli/lobby.py nexus3/cli/repl_commands.py nexus3/cli/repl.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/test_lobby.py tests/unit/cli/test_repl_safe_sink.py docs/plans/ARCH-G-TERMINAL-SAFE-SINK-PLAN-2026-03-02.md`, `.venv/bin/mypy nexus3/cli/connect_lobby.py nexus3/cli/lobby.py nexus3/cli/repl_commands.py nexus3/cli/repl.py`, and `.venv/bin/pytest -v tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/test_lobby.py tests/unit/cli/test_repl_safe_sink.py` passed.
+- 2026-03-06: Phase 4 validation closeout completed (M4 closeout local snapshot).
+- Final residual audit across `repl.py`, `spinner.py`, `streaming.py`, `printer.py`, and `repl_commands.py` found no remaining SafeSink bypasses in scoped dynamic output boundaries.
+- Closeout validation passed:
+  - `.venv/bin/ruff check nexus3/`
+  - `.venv/bin/mypy nexus3/`
+  - `.venv/bin/pytest tests/ -v` (`4102 passed`, `3 skipped`)
+  - `.venv/bin/pytest tests/integration/ -v` (`211 passed`, `2 skipped`)
+- Live RPC create/send/destroy validation was executed successfully on local server `:9000`.
 
 ## Testing Strategy
 
@@ -183,7 +191,9 @@ Phases:
 
 ## Documentation Updates
 
-- Update display/CLI docs describing trusted vs untrusted output contract.
+- [x] Updated display/CLI docs describing trusted vs untrusted output contract in:
+  - `nexus3/display/README.md`
+  - `nexus3/cli/README.md`
 
 ## Related Documents
 

@@ -36,6 +36,62 @@ EXCLUDED_DIRS = frozenset({
 MAX_CONCURRENT_SEARCHES = 10
 
 
+def _expand_include_patterns(include: str) -> list[str]:
+    """Expand include patterns, including simple brace expansion."""
+    if "{" in include and "}" in include:
+        prefix, rest = include.split("{", 1)
+        options, suffix = rest.split("}", 1)
+        return [prefix + opt + suffix for opt in options.split(",")]
+    return [include]
+
+
+def _matches_include_pattern(file_path: Path, include: str | None) -> bool:
+    """Return True when file_path matches include pattern (if provided)."""
+    if include is None:
+        return True
+
+    patterns = _expand_include_patterns(include)
+    return any(fnmatch.fnmatch(file_path.name, pattern) for pattern in patterns)
+
+
+def _count_large_files_for_search(
+    search_path: Path,
+    recursive: bool,
+    include: str | None,
+) -> int:
+    """Count files that exceed MAX_GREP_FILE_SIZE for the requested search scope."""
+    if search_path.is_file():
+        if not _matches_include_pattern(search_path, include):
+            return 0
+        try:
+            return 1 if search_path.stat().st_size > MAX_GREP_FILE_SIZE else 0
+        except OSError:
+            return 0
+
+    if not search_path.is_dir():
+        return 0
+
+    if recursive:
+        files_to_check = _rglob_with_exclusions(search_path)
+    else:
+        try:
+            files_to_check = [entry for entry in search_path.iterdir() if entry.is_file()]
+        except OSError:
+            return 0
+
+    skipped = 0
+    for file_path in files_to_check:
+        if not _matches_include_pattern(file_path, include):
+            continue
+        try:
+            if file_path.stat().st_size > MAX_GREP_FILE_SIZE:
+                skipped += 1
+        except OSError:
+            continue
+
+    return skipped
+
+
 def _check_path_type(p: Path) -> tuple[bool, bool]:
     """Check if path is file and/or directory in a single call.
 
@@ -183,7 +239,7 @@ async def _search_with_ripgrep(
     max_matches: int = 100,
     include: str | None = None,
     context: int = 0,
-) -> tuple[list[str], int, int]:
+) -> tuple[list[str], int, int, int]:
     """Search using ripgrep for significantly faster results.
 
     Args:
@@ -196,8 +252,15 @@ async def _search_with_ripgrep(
         context: Lines of context before/after each match.
 
     Returns:
-        (matches, files_with_matches, files_searched)
+        (matches, files_with_matches, files_searched, files_skipped_size)
     """
+    files_skipped_size = await asyncio.to_thread(
+        _count_large_files_for_search,
+        search_path,
+        recursive,
+        include,
+    )
+
     # Build ripgrep command
     cmd = ["rg", "--json"]
 
@@ -208,6 +271,8 @@ async def _search_with_ripgrep(
         cmd.extend(["-m", str(max_matches)])
     if context > 0:
         cmd.extend(["-C", str(context)])
+    # SECURITY/PARITY: enforce grep size limit in fast path.
+    cmd.extend(["--max-filesize", str(MAX_GREP_FILE_SIZE)])
     if not recursive:
         cmd.extend(["--max-depth", "1"])
 
@@ -271,8 +336,9 @@ async def _search_with_ripgrep(
 
             if file_path:
                 files_with_matches.add(file_path)
-                # Format: path:line: content
-                matches.append(f"{file_path}:{line_num}: {text}")
+                # Keep output markers aligned with Python fallback formatting.
+                line_prefix = ">" if context > 0 else " "
+                matches.append(f"{file_path}:{line_num}:{line_prefix} {text}")
 
         elif msg_type == "context":
             # Context lines around matches
@@ -290,7 +356,12 @@ async def _search_with_ripgrep(
             stats = data.get("data", {}).get("stats", {})
             files_searched = stats.get("searches", 0)
 
-    return matches[:max_matches], len(files_with_matches), files_searched
+    return (
+        matches[:max_matches],
+        len(files_with_matches),
+        files_searched,
+        files_skipped_size,
+    )
 
 
 def _should_exclude_dir(dir_name: str) -> bool:
@@ -450,10 +521,11 @@ class GrepSkill(FileSkill):
     ) -> ToolResult:
         """Search using ripgrep (fast path)."""
         try:
-            matches, files_with_matches, files_searched = await _search_with_ripgrep(
+            rg_result = await _search_with_ripgrep(
                 search_path, pattern, recursive, ignore_case,
                 max_matches, include, context
             )
+            matches, files_with_matches, files_searched, files_skipped_size = rg_result
         except Exception:
             # Fall back to Python on any ripgrep error
             return await self._search_with_python(
@@ -462,10 +534,14 @@ class GrepSkill(FileSkill):
             )
 
         if not matches:
-            return ToolResult(output=f"No matches for '{pattern}' in {search_path}")
+            skip_note = ""
+            if files_skipped_size > 0:
+                skip_note = f" ({files_skipped_size} large files skipped)"
+            return ToolResult(output=f"No matches for '{pattern}' in {search_path}{skip_note}")
 
         result = "\n".join(matches)
-        stats = f"{files_with_matches} files, {files_searched} files searched"
+        skip = f", {files_skipped_size} skipped" if files_skipped_size > 0 else ""
+        stats = f"{files_with_matches} files, {files_searched} files searched{skip}"
         summary = f"\n\n({len(matches)} matches in {stats})"
         if len(matches) >= max_matches:
             summary = f"\n\n(Limited to {max_matches}, {files_with_matches}+ matched, {stats})"
@@ -512,21 +588,10 @@ class GrepSkill(FileSkill):
 
         # Filter by include pattern if specified
         if include and len(files_to_search) > 1:
-            # Handle brace expansion like '*.{js,ts}'
-            if '{' in include and '}' in include:
-                # Extract patterns from braces
-                prefix, rest = include.split('{', 1)
-                options, suffix = rest.split('}', 1)
-                patterns = [prefix + opt + suffix for opt in options.split(',')]
-                files_to_search = [
-                    f for f in files_to_search
-                    if any(fnmatch.fnmatch(f.name, p) for p in patterns)
-                ]
-            else:
-                files_to_search = [
-                    f for f in files_to_search
-                    if fnmatch.fnmatch(f.name, include)
-                ]
+            files_to_search = [
+                f for f in files_to_search
+                if _matches_include_pattern(f, include)
+            ]
 
         # Issue 6: Pre-filter files before parallel search
         # This moves validation/size checks out of the hot loop

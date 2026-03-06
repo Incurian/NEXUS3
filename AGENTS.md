@@ -220,7 +220,7 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `M4` early execution active: Plan E Phases 1-4 and Plan B Phases 1-4 are committed on this branch.
+- `M4` implementation closeout active: Plan E Phases 1-4 and Plan B Phases 1-4 are committed on this branch, and Plan G sink-boundary closure is complete.
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
@@ -273,12 +273,14 @@ Immediate tasks:
   - focused regressions in `tests/unit/test_http_pipeline_layers.py` enforce:
     requester-only rejection, capability-present forwarding, invalid-capability
     behavior parity.
-- Next target: proceed to remaining M4 scope
-  (Plan G Phase 4 cleanup + milestone closeout validation).
-- Focused validation target (Phase 4B):
-  - `.venv/bin/ruff check nexus3/rpc/http.py tests/unit/test_http_pipeline_layers.py nexus3/rpc/README.md docs/plans/ARCH-B-CAPABILITY-TOKENS-PLAN-2026-03-02.md docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md`
-  - `.venv/bin/mypy nexus3/rpc/http.py`
-  - `.venv/bin/pytest -q tests/unit/test_http_pipeline_layers.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/test_rpc_dispatcher.py tests/unit/test_nexus_skill_requester_propagation.py`
+- Next target: start post-M4 validation campaign Phase 1 execution
+  (`docs/testing/POST-M4-VALIDATION-RUNBOOK.md` + artifact schema/layout).
+- Validation target (M4 closeout, 2026-03-06):
+  - `.venv/bin/ruff check nexus3/`
+  - `.venv/bin/mypy nexus3/`
+  - `.venv/bin/pytest tests/ -v`
+  - `.venv/bin/pytest tests/integration/ -v`
+  - Live RPC validation on local server (`create`/`send`/`destroy`) via `.venv/bin/python -m nexus3 rpc ... -p 9000`
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -318,6 +320,8 @@ Recent execution commits (latest first):
 - `bdb676e` expand plan A: add target auth kernel shadow parity in enforcer
 - `ce3d263` migrate confirmation ui prompts to SafeSink
 - `c5eb670` advance plan h: reject boolean json-rpc ids at protocol boundary
+- Local working-tree slice (pending commit):
+  - M4 closeout gate remediation: destroy-auth security parity tests, MCP integration expectation alignment + explicit MCPServerConfig export source, grep ripgrep fast-path size-limit/context-marker parity hardening, and full-gate typing/lint drift fixes.
 - `f6ee537` advance m1: harden send ingress params and migrate lobby outputs to safe sink
 - `a53c7dd` advance plan h: fail-fast mcp boundary validation and unify mcp config model
 - `1b455b5` advance m1: extend schema ingress create_agent and migrate repl mcp consent to safe sink
@@ -407,6 +411,24 @@ Progress snapshot:
     semantics.
   - updated focused regressions in `tests/unit/test_http_pipeline_layers.py`
     for requester-only rejection behavior.
+- Completed (2026-03-06, local pending commit): M4 closeout remediation slice:
+  - aligned destroy authorization security tests with current kernel-authoritative semantics in `tests/security/test_destroy_authorization.py` (including explicit capability-state fixture initialization for capability-revocation fields used by `AgentPool.destroy`).
+  - aligned MCP integration expectations in `tests/integration/test_mcp_errors.py` for current bracket escaping and fail-fast `MCPServerConfig` validation timing.
+  - imported `MCPServerConfig` in `nexus3/mcp/__init__.py` from canonical `nexus3.config.schema` source to satisfy explicit-export typing.
+  - hardened grep ripgrep fast path in `nexus3/skill/builtin/grep.py` with `--max-filesize` enforcement plus context match-marker parity for `context > 0`.
+  - resolved full-gate static drift in `nexus3/skill/builtin/{run_python.py,bash.py,concat_files.py,regex_replace.py}` and updated resilient provider-cap assertions in `tests/security/test_p2_provider_error_caps.py`.
+- Validation snapshot (2026-03-06, M4 closeout gates):
+  - `.venv/bin/ruff check nexus3/` passed.
+  - `.venv/bin/mypy nexus3/` passed (`Success: no issues found in 201 source files`).
+  - `.venv/bin/pytest tests/ -v` passed (`4102 passed`, `3 skipped`, `21 warnings`).
+  - `.venv/bin/pytest tests/integration/ -v` passed (`211 passed`, `2 skipped`).
+  - Focused regression confirmation passed:
+    `.venv/bin/pytest -q tests/security/test_destroy_authorization.py tests/integration/test_mcp_errors.py tests/security/test_p2_file_size_limits.py::TestGrepSizeLimits::test_grep_skips_large_files tests/unit/test_skill_enhancements.py::TestGrepIncludeContext::test_context_marks_match_lines tests/security/test_p2_provider_error_caps.py::TestProviderErrorHandlingCodePaths::test_non_streaming_uses_content_slice` (`39 passed`).
+  - Live validation executed:
+    - `.venv/bin/python -m nexus3 --serve 9000` (server started)
+    - `.venv/bin/python -m nexus3 rpc create m4-closeout-3 --port 9000` (success)
+    - `.venv/bin/python -m nexus3 rpc send m4-closeout-3 "describe your permissions and what you can do" --port 9000` (success)
+    - `.venv/bin/python -m nexus3 rpc destroy m4-closeout-3 --port 9000` (success)
 - Validation snapshot (2026-03-05, Plan B Phase 2):
   - `.venv/bin/ruff check nexus3/core/capabilities.py nexus3/core/request_context.py nexus3/core/__init__.py nexus3/rpc/dispatch_core.py nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/agent_api.py nexus3/rpc/pool.py nexus3/rpc/http.py tests/unit/core/test_request_context.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py tests/unit/test_pool.py` passed.
   - `.venv/bin/mypy nexus3/core/capabilities.py nexus3/core/request_context.py nexus3/core/__init__.py nexus3/rpc/dispatch_core.py nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/agent_api.py nexus3/rpc/pool.py nexus3/rpc/http.py` passed.

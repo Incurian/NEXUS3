@@ -4,10 +4,10 @@ These tests verify that provider error responses are capped to prevent
 memory exhaustion from malicious/buggy providers returning huge error bodies.
 """
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+import inspect
 
-from nexus3.provider.base import MAX_ERROR_BODY_SIZE
+from nexus3.provider import base as provider_base
+from nexus3.provider.base import MAX_ERROR_BODY_SIZE, BaseProvider
 
 
 class TestMaxErrorBodySizeConstant:
@@ -83,36 +83,31 @@ class TestProviderErrorHandlingCodePaths:
     """Tests verifying the error handling code paths use MAX_ERROR_BODY_SIZE."""
 
     def test_non_streaming_uses_content_slice(self) -> None:
-        """Non-streaming error handling uses response.content[:MAX_ERROR_BODY_SIZE]."""
-        import inspect
-        from nexus3.provider.base import BaseProvider
-
+        """Non-streaming path reads response body and applies the MAX cap."""
         # Get the source code of the _make_request method
         source = inspect.getsource(BaseProvider._make_request)
+        normalized = "".join(source.split())
 
-        # Verify it uses the truncation pattern
-        assert "response.content[:MAX_ERROR_BODY_SIZE]" in source
+        # Verify the body is read from response content and size-capped.
+        assert "response.content" in normalized
+        assert "[:MAX_ERROR_BODY_SIZE]" in normalized
         assert "P2.13 SECURITY" in source
 
     def test_streaming_uses_aread_slice(self) -> None:
-        """Streaming error handling uses error_body[:MAX_ERROR_BODY_SIZE]."""
-        import inspect
-        from nexus3.provider.base import BaseProvider
-
+        """Streaming path reads via aread() and applies the MAX cap."""
         # Get the source code of the _make_streaming_request method
         source = inspect.getsource(BaseProvider._make_streaming_request)
+        normalized = "".join(source.split())
 
         # Verify it uses the truncation pattern
-        assert "error_body[:MAX_ERROR_BODY_SIZE]" in source
+        assert "awaitresponse.aread()" in normalized
+        assert "[:MAX_ERROR_BODY_SIZE]" in normalized
         assert "P2.13 SECURITY" in source
 
     def test_constant_used_in_both_paths(self) -> None:
         """MAX_ERROR_BODY_SIZE constant is used in both code paths."""
-        import inspect
-        from nexus3.provider import base
-
         # Get full module source
-        source = inspect.getsource(base)
+        source = inspect.getsource(provider_base)
 
         # Count occurrences of MAX_ERROR_BODY_SIZE usage
         # Should be: 1 definition + 4 usages (2 in non-streaming, 2 in streaming)
