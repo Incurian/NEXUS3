@@ -164,7 +164,13 @@ Status note (2026-03-05):
   - added focused regressions in `tests/unit/test_agent_api.py`,
     `tests/unit/test_rpc_dispatcher.py`, `tests/unit/test_global_dispatcher.py`,
     `tests/unit/test_pool.py`, and `tests/unit/core/test_request_context.py`
-- Next target: Plan B Phase 3 optional HTTP capability transport.
+- Plan B Phase 3A implemented in local execution state (commit pending):
+  - HTTP ingress now forwards optional `X-Nexus-Capability` as dispatch
+    `capability_token` on global and `/agent/{id}` routes
+  - client supports explicit optional `X-Nexus-Capability` emission
+  - focused HTTP/client capability transport regressions are green
+- Next target: Plan B Phase 4 legacy identity-path retirement sequencing behind
+  migration/compatibility gates.
 
 ### M4: Delegation and Strategic Evolution
 

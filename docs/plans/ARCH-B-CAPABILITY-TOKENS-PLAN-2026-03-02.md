@@ -51,7 +51,7 @@ Phases:
 
 - [x] Define capability schema and signer/verifier.
 - [x] Integrate into direct API path.
-- [ ] Integrate optional HTTP transport.
+- [x] Integrate optional HTTP transport (Phase 3A ingress/client compatibility path).
 - [ ] Remove legacy identity-only authorization path.
 
 ## Execution Status
@@ -108,6 +108,29 @@ Phases:
     - `.venv/bin/python -m nexus3 rpc create test-agent --port 9000`
     - `.venv/bin/python -m nexus3 rpc send test-agent "describe your permissions and what you can do" --port 9000`
     - `.venv/bin/python -m nexus3 rpc destroy test-agent --port 9000`
+- 2026-03-05: Phase 3A completed (local branch state, commit pending).
+- Added HTTP capability transport wiring:
+  - `nexus3/rpc/http.py` now extracts optional `X-Nexus-Capability` and passes
+    it through dispatch as `capability_token` on both global and agent routes.
+  - `nexus3/client.py` now supports explicit optional
+    `capability_token` configuration and emits `X-Nexus-Capability` only when
+    set (default caller behavior unchanged).
+  - `nexus3/rpc/README.md` documents HTTP capability precedence/fallback:
+    valid capability subject overrides requester identity; requester-header
+    fallback applies only when capability header is absent; invalid capability
+    fails with deterministic `INVALID_PARAMS`.
+- Added focused regressions:
+  - `tests/unit/test_http_pipeline_layers.py`
+  - `tests/unit/test_client.py`
+- Validation:
+  - `.venv/bin/ruff check nexus3/rpc/http.py nexus3/client.py nexus3/rpc/README.md tests/unit/test_http_pipeline_layers.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/test_rpc_dispatcher.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/http.py nexus3/client.py` passed.
+  - `.venv/bin/pytest -q tests/unit/test_http_pipeline_layers.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/test_rpc_dispatcher.py` passed (`79 passed`, `12 warnings`).
+  - Live validation executed on `2026-03-05`:
+    - `.venv/bin/python -m nexus3 --serve 9000`
+    - `.venv/bin/python -m nexus3 rpc create arch-b-http-cap --port 9000`
+    - `.venv/bin/python -m nexus3 rpc send arch-b-http-cap "describe your permissions and what you can do" --port 9000`
+    - `.venv/bin/python -m nexus3 rpc destroy arch-b-http-cap --port 9000`
 
 ## Documentation Updates
 

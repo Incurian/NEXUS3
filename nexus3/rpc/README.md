@@ -271,11 +271,21 @@ The `pool` parameter enables YOLO safety checks (blocking RPC sends when no REPL
 Agent-scoped dispatch accepts `requester_id` and optional `capability_token`.
 For direct in-process calls, verified capability claims are stored in
 `RequestContext` and capability subject identity is used as the effective
-requester. Over HTTP, the server continues to derive requester context from the
-trusted `X-Nexus-Agent` header and preserves it on both global and `/agent/{id}`
-routes. The same request context is threaded through agent-scoped read handlers
-(`get_tokens`, `get_context`, `get_messages`) so those paths no longer drop
-caller identity at the dispatcher boundary.
+requester.
+
+Over HTTP, requester context is accepted from:
+- `X-Nexus-Capability`: optional capability token header (Plan B Phase 3A path).
+- `X-Nexus-Agent`: legacy requester header (still supported for compatibility).
+
+HTTP requester precedence/fallback is:
+- If `X-Nexus-Capability` is present and valid, the capability subject is the effective requester identity.
+- If `X-Nexus-Capability` is absent, requester identity falls back to `X-Nexus-Agent` behavior.
+- If `X-Nexus-Capability` is present but invalid, dispatch fails deterministically with `INVALID_PARAMS` (no legacy-header fallback for that request).
+
+The resolved request context is preserved on both global and `/agent/{id}`
+routes and threaded through agent-scoped read handlers (`get_tokens`,
+`get_context`, `get_messages`) so those paths no longer drop caller identity at
+the dispatcher boundary.
 
 Note: `get_tokens`, `get_context`, and `get_messages` are only registered if `context` is provided.
 

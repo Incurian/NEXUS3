@@ -49,6 +49,7 @@ class NexusClient:
         api_key: str | None = None,
         skip_url_validation: bool = False,
         requester_id: str | None = None,
+        capability_token: str | None = None,
     ) -> None:
         """Initialize the client.
 
@@ -62,6 +63,9 @@ class NexusClient:
                      validation blocks legitimate URLs.
             requester_id: Optional agent identity to forward via trusted
                      `X-Nexus-Agent` header when operating from agent context.
+            capability_token: Optional capability token to forward via
+                     `X-Nexus-Capability` header for explicit capability-scoped
+                     calls.
 
         Raises:
             ValueError: If URL fails security validation (and skip_url_validation=False).
@@ -80,6 +84,7 @@ class NexusClient:
         self._timeout = timeout
         self._api_key = api_key
         self._requester_id = requester_id
+        self._capability_token = capability_token
         self._client: httpx.AsyncClient | None = None
         self._request_id = 0
         logger.debug("NexusClient initialized: url=%s, timeout=%s", url, timeout)
@@ -100,6 +105,7 @@ class NexusClient:
         url: str | None = None,
         timeout: float = 60.0,
         requester_id: str | None = None,
+        capability_token: str | None = None,
     ) -> "NexusClient":
         """Create a client with auto-discovered API key.
 
@@ -117,6 +123,9 @@ class NexusClient:
             timeout: Request timeout in seconds.
             requester_id: Optional agent identity to forward via trusted
                 `X-Nexus-Agent` header when operating from agent context.
+            capability_token: Optional capability token to forward via
+                `X-Nexus-Capability` header for explicit capability-scoped
+                calls.
 
         Returns:
             NexusClient configured with discovered API key (or None if not found
@@ -149,6 +158,7 @@ class NexusClient:
             timeout=timeout,
             api_key=api_key,
             requester_id=requester_id,
+            capability_token=capability_token,
         )
 
     async def __aenter__(self) -> "NexusClient":
@@ -196,6 +206,8 @@ class NexusClient:
             headers["Authorization"] = f"Bearer {self._api_key}"
         if self._requester_id is not None:
             headers["X-Nexus-Agent"] = self._requester_id
+        if self._capability_token is not None:
+            headers["X-Nexus-Capability"] = self._capability_token
 
         logger.debug("RPC call: method=%s, id=%s", method, request.id)
         try:

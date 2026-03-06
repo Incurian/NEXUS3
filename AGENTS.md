@@ -220,7 +220,7 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `M4` early execution active: Plan E Phases 1-4 and Plan B Phases 1-2 are committed on this branch.
+- `M4` early execution active: Plan E Phases 1-4 and Plan B Phases 1-2 are committed on this branch, with Plan B Phase 3A now implemented locally.
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
@@ -242,7 +242,20 @@ Immediate tasks:
   (`plan b phase 1: add capability token primitives`).
 - Plan B Phase 2 is committed as `43773be`
   (`plan b phase 2: integrate capabilities into direct rpc path`).
-- Next target: Plan B Phase 3 optional HTTP capability transport.
+- Plan B Phase 3A (HTTP ingress-first capability transport) is implemented locally and ready to commit:
+  - `nexus3/rpc/http.py`: optional `X-Nexus-Capability` header extraction and
+    `capability_token` pass-through on global + agent dispatch routes.
+  - `nexus3/client.py`: optional explicit `capability_token` client plumbing
+    that emits `X-Nexus-Capability` only when configured.
+  - `nexus3/rpc/README.md`: HTTP capability semantics + fallback precedence docs.
+  - tests: focused HTTP/client wiring regressions for capability-present,
+    capability-invalid (`INVALID_PARAMS`), and requester-only fallback flows.
+- Next target: commit Plan B Phase 3A and then sequence the Plan B Phase 4
+  legacy identity-path retirement slice behind migration/compatibility gates.
+- Focused validation target (Phase 3A):
+  - `.venv/bin/ruff check nexus3/rpc/http.py nexus3/client.py nexus3/rpc/README.md tests/unit/test_http_pipeline_layers.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/test_rpc_dispatcher.py`
+  - `.venv/bin/mypy nexus3/rpc/http.py nexus3/client.py`
+  - `.venv/bin/pytest -q tests/unit/test_http_pipeline_layers.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/test_rpc_dispatcher.py`
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -335,6 +348,17 @@ Progress snapshot:
   - added focused regressions in `tests/unit/test_agent_api.py`,
     `tests/unit/test_rpc_dispatcher.py`, `tests/unit/test_global_dispatcher.py`,
     `tests/unit/test_pool.py`, and `tests/unit/core/test_request_context.py`.
+- Completed (2026-03-05, local): Plan B Phase 3A HTTP ingress-first capability transport:
+  - updated `nexus3/rpc/http.py` to forward optional
+    `X-Nexus-Capability` as `capability_token` through global and
+    `/agent/{id}` dispatch paths.
+  - updated `nexus3/client.py` with explicit optional capability-token plumbing
+    that emits `X-Nexus-Capability` only when configured.
+  - updated `nexus3/rpc/README.md` with HTTP capability precedence/fallback docs
+    (`capability` first, `X-Nexus-Agent` fallback only when capability absent).
+  - added focused regressions in `tests/unit/test_http_pipeline_layers.py` and
+    `tests/unit/test_client.py` for capability forwarding, invalid-capability
+    `INVALID_PARAMS` surfacing, and requester-only fallback behavior.
 - Validation snapshot (2026-03-05, Plan B Phase 2):
   - `.venv/bin/ruff check nexus3/core/capabilities.py nexus3/core/request_context.py nexus3/core/__init__.py nexus3/rpc/dispatch_core.py nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/agent_api.py nexus3/rpc/pool.py nexus3/rpc/http.py tests/unit/core/test_request_context.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py tests/unit/test_pool.py` passed.
   - `.venv/bin/mypy nexus3/core/capabilities.py nexus3/core/request_context.py nexus3/core/__init__.py nexus3/rpc/dispatch_core.py nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/agent_api.py nexus3/rpc/pool.py nexus3/rpc/http.py` passed.
@@ -345,6 +369,15 @@ Progress snapshot:
     - `.venv/bin/python -m nexus3 rpc create test-agent --port 9000` (success)
     - `.venv/bin/python -m nexus3 rpc send test-agent "describe your permissions and what you can do" --port 9000` (success)
     - `.venv/bin/python -m nexus3 rpc destroy test-agent --port 9000` (success)
+- Validation snapshot (2026-03-05, Plan B Phase 3A local):
+  - `.venv/bin/ruff check nexus3/rpc/http.py nexus3/client.py nexus3/rpc/README.md tests/unit/test_http_pipeline_layers.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/test_rpc_dispatcher.py` passed.
+  - `.venv/bin/mypy nexus3/rpc/http.py nexus3/client.py` passed.
+  - `.venv/bin/pytest -q tests/unit/test_http_pipeline_layers.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/test_rpc_dispatcher.py` passed (`79 passed`, `12 warnings`).
+  - Live validation executed:
+    - `.venv/bin/python -m nexus3 --serve 9000` (server started)
+    - `.venv/bin/python -m nexus3 rpc create arch-b-http-cap --port 9000` (success)
+    - `.venv/bin/python -m nexus3 rpc send arch-b-http-cap "describe your permissions and what you can do" --port 9000` (success)
+    - `.venv/bin/python -m nexus3 rpc destroy arch-b-http-cap --port 9000` (success)
 - Completed: Plan A M0 foundation interfaces (`nexus3/core/authorization_kernel.py`) + unit tests.
 - Completed: Plan H M0 schema inventory scaffold (`nexus3/rpc/schemas.py`) + unit tests.
 - Completed: Plan H M1 Phase 2 first compat-safe ingress slice (`destroy_agent`, `get_messages`) wired to typed schemas with existing-style RPC error mapping + focused unit tests.

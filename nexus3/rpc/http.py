@@ -576,11 +576,16 @@ async def handle_connection(
             return
 
         # Layer 7: Dispatch to handler
-        # Extract requester_id from X-Nexus-Agent header (for authorization)
+        # Extract requester/capability identity headers for authorization.
         requester_id = http_request.headers.get("x-nexus-agent")
+        capability_token = http_request.headers.get("x-nexus-capability")
 
         try:
-            rpc_response = await dispatcher.dispatch(rpc_request, requester_id)
+            rpc_response = await dispatcher.dispatch(
+                rpc_request,
+                requester_id,
+                capability_token=capability_token,
+            )
         except Exception as e:
             # Unexpected error during dispatch
             error_response = make_error_response(

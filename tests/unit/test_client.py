@@ -318,3 +318,43 @@ class TestNexusClient:
             await client.send("hello")
 
         assert received_headers[0].get("x-nexus-agent") == "caller-agent"
+
+    @pytest.mark.asyncio
+    async def test_client_omits_capability_header_by_default(self):
+        """Client does not send X-Nexus-Capability header unless configured."""
+        received_headers: list[httpx.Headers] = []
+
+        def mock_handler(request: httpx.Request) -> httpx.Response:
+            received_headers.append(request.headers)
+            return httpx.Response(
+                200,
+                json={"jsonrpc": "2.0", "id": 1, "result": {"content": "ok"}},
+            )
+
+        transport = httpx.MockTransport(mock_handler)
+
+        async with NexusClient() as client:
+            client._client = httpx.AsyncClient(transport=transport)
+            await client.send("hello")
+
+        assert received_headers[0].get("x-nexus-capability") is None
+
+    @pytest.mark.asyncio
+    async def test_client_sends_capability_header_when_present(self):
+        """Client forwards capability token via X-Nexus-Capability header."""
+        received_headers: list[httpx.Headers] = []
+
+        def mock_handler(request: httpx.Request) -> httpx.Response:
+            received_headers.append(request.headers)
+            return httpx.Response(
+                200,
+                json={"jsonrpc": "2.0", "id": 1, "result": {"content": "ok"}},
+            )
+
+        transport = httpx.MockTransport(mock_handler)
+
+        async with NexusClient(capability_token="cap-token") as client:
+            client._client = httpx.AsyncClient(transport=transport)
+            await client.send("hello")
+
+        assert received_headers[0].get("x-nexus-capability") == "cap-token"

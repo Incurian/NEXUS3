@@ -4,6 +4,7 @@ Sprint 5 D2: Tests for the extracted authentication, routing, and restore layers
 in the HTTP pipeline.
 """
 
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -25,6 +26,13 @@ class _FakeWriter:
 
     async def wait_closed(self) -> None:
         return None
+
+
+def _parse_http_response(writer: _FakeWriter) -> tuple[str, str]:
+    raw_response = b"".join(writer.buffer)
+    header_bytes, _, body_bytes = raw_response.partition(b"\r\n\r\n")
+    status_line = header_bytes.decode("utf-8").split("\r\n", 1)[0]
+    return status_line, body_bytes.decode("utf-8")
 
 
 class TestAuthenticateRequest:
@@ -348,6 +356,103 @@ class TestPipelineLayerIntegration:
         assert error.error["code"] == INTERNAL_ERROR
 
     @pytest.mark.asyncio
+    async def test_handle_connection_forwards_capability_header_to_global_dispatcher(
+        self,
+    ) -> None:
+        """Global HTTP dispatch forwards X-Nexus-Capability as capability_token."""
+        from nexus3.rpc.http import HttpRequest, handle_connection
+        from nexus3.rpc.protocol import make_success_response
+
+        mock_global = MagicMock()
+        mock_global.dispatch = AsyncMock(
+            return_value=make_success_response(1, {"ok": True})
+        )
+        mock_pool = MagicMock()
+        writer = _FakeWriter()
+
+        http_request = HttpRequest(
+            method="POST",
+            path="/",
+            headers={"x-nexus-capability": "cap-token-1"},
+            body='{"jsonrpc":"2.0","method":"list_agents","params":{},"id":1}',
+        )
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "nexus3.rpc.http.read_http_request",
+                AsyncMock(return_value=http_request),
+            )
+            await handle_connection(
+                reader=MagicMock(),
+                writer=writer,
+                pool=mock_pool,
+                global_dispatcher=mock_global,
+            )
+
+        dispatched_request, requester_id = mock_global.dispatch.await_args.args
+        assert dispatched_request.method == "list_agents"
+        assert requester_id is None
+        assert (
+            mock_global.dispatch.await_args.kwargs["capability_token"]
+            == "cap-token-1"
+        )
+
+    @pytest.mark.asyncio
+    async def test_handle_connection_invalid_capability_surfaces_invalid_params_error(
+        self,
+    ) -> None:
+        """INVALID_PARAMS errors from invalid capabilities propagate over HTTP."""
+        from nexus3.rpc.http import HttpRequest, handle_connection
+        from nexus3.rpc.protocol import INVALID_PARAMS, make_error_response
+
+        mock_agent_dispatcher = MagicMock()
+        mock_agent_dispatcher.dispatch = AsyncMock(
+            return_value=make_error_response(
+                1, INVALID_PARAMS, "Invalid capability token"
+            )
+        )
+        mock_agent = MagicMock()
+        mock_agent.dispatcher = mock_agent_dispatcher
+
+        mock_pool = MagicMock()
+        mock_pool.get.return_value = mock_agent
+        mock_global = MagicMock()
+        writer = _FakeWriter()
+
+        http_request = HttpRequest(
+            method="POST",
+            path="/agent/worker-1",
+            headers={"x-nexus-capability": "bad-capability"},
+            body='{"jsonrpc":"2.0","method":"get_tokens","params":{},"id":1}',
+        )
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "nexus3.rpc.http.read_http_request",
+                AsyncMock(return_value=http_request),
+            )
+            await handle_connection(
+                reader=MagicMock(),
+                writer=writer,
+                pool=mock_pool,
+                global_dispatcher=mock_global,
+            )
+
+        dispatched_request, requester_id = mock_agent_dispatcher.dispatch.await_args.args
+        assert dispatched_request.method == "get_tokens"
+        assert requester_id is None
+        assert (
+            mock_agent_dispatcher.dispatch.await_args.kwargs["capability_token"]
+            == "bad-capability"
+        )
+
+        status_line, response_body = _parse_http_response(writer)
+        assert status_line == "HTTP/1.1 200 OK"
+        payload = json.loads(response_body)
+        assert payload["error"]["code"] == INVALID_PARAMS
+        assert "Invalid capability token" in payload["error"]["message"]
+
+    @pytest.mark.asyncio
     async def test_handle_connection_forwards_requester_id_to_agent_dispatcher(self) -> None:
         """Agent-scoped HTTP dispatch preserves X-Nexus-Agent requester identity."""
         from nexus3.rpc.http import HttpRequest, handle_connection
@@ -387,3 +492,4 @@ class TestPipelineLayerIntegration:
         dispatched_request, requester_id = mock_agent_dispatcher.dispatch.await_args.args
         assert dispatched_request.method == "get_tokens"
         assert requester_id == "caller-agent"
+        assert mock_agent_dispatcher.dispatch.await_args.kwargs["capability_token"] is None
