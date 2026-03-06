@@ -253,7 +253,7 @@ Immediate tasks:
       adapter-ceiling checks.
     - blocked: broader `tmp_path`-using pytest coverage in this host due
       `WinError 5` ACL denials on pytest temp-root paths (`pytest-of-inc`).
-- Completed (2026-03-06, local working tree): Plan H shim-retirement kickoff
+- Completed (2026-03-06, committed `f22de38`): Plan H shim-retirement kickoff
   slice:
   - retired compatibility-only `create_agent.parent_agent_id` malformed-ID
     wording remap in `nexus3/rpc/global_dispatcher.py`
@@ -437,6 +437,9 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `f22de38` plan h shim retirement phase 1: remove parent id wording remap
+- `19e659e` docs(status): record plan a v2 phase 2 commit in AGENTS
+- `0a4f99f` plan a v2 phase 2: compute create ceiling grants in adapter
 - `5c9c0e2` plan a v2 phase 1: add typed create auth context model
 - `8630f8f` post-m4 closeout: archive windows host evidence and pass gate
 - `6bbb2f1` post-m4 campaign: add manual closeout prep scaffolding
@@ -887,6 +890,8 @@ Progress snapshot:
 Compact checkpoint (2026-03-06, post-M4 closeout + Plan A v2 phase2/3 execution):
 - Branch: `feat/arch-overhaul-execution`.
 - Most recent commits:
+  - `f22de38` plan h shim retirement phase 1: remove parent id wording remap
+  - `19e659e` docs(status): record plan a v2 phase 2 commit in AGENTS
   - `0a4f99f` plan a v2 phase 2: compute create ceiling grants in adapter
   - `5c9c0e2` plan a v2 phase 1: add typed create auth context model
   - `8630f8f` post-m4 closeout: archive windows host evidence and pass gate
@@ -895,6 +900,10 @@ Compact checkpoint (2026-03-06, post-M4 closeout + Plan A v2 phase2/3 execution)
     payloads and removal of pool-side `parent_can_grant` precompute.
   - Added focused adapter-authoritative regressions and updated create-stage
     context assertions (`test_pool_create_auth_shadow.py`, `test_pool.py`).
+- Plan H shim-retirement status:
+  - Phase 1 completed (`f22de38`): retired compatibility-only malformed
+    `create_agent.parent_agent_id` wording remap and switched to canonical
+    validation diagnostics.
 - Validation snapshot (local phase2/3 changes):
   - passed: focused `ruff` and `mypy` checks for auth-kernel/pool/tests.
   - passed: focused non-`tmp_path` pytest set for typed context + create
