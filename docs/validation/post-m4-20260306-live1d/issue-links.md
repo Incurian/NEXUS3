@@ -9,6 +9,7 @@
 
 ## Follow-Up Ticket Mapping
 
-- Terminal carriage-return multi-emulator verification: `TBD-POSTM4-TERM-001`
+- Terminal carriage-return multi-emulator verification:
+  [POSTM4-FU-TERM-001](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md#postm4-fu-term-001) (`open`)
 - Windows real-host campaign execution (still open in baseline run):
-  `TBD-POSTM4-WIN-001`
+  [POSTM4-FU-WIN-001](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md#postm4-fu-win-001) (`open`)

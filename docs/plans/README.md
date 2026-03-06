@@ -26,6 +26,7 @@ This index covers the architecture plans created during today's review/planning 
 - [PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md)
 - [STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md)
 - [POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md)
+- [POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md)
 
 ## Related Review Docs
 

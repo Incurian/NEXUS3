@@ -223,8 +223,7 @@ Current milestone:
 - `Post-M4` validation campaign active: bootstrap + automated tracks are
   complete with follow-up artifacts through `post-m4-20260306-live1d`;
   remaining closeout gates are Windows real-host evidence, live
-  multi-emulator carriage-return verification, and canonical tracker mapping
-  for open findings.
+  multi-emulator carriage-return verification.
 - `M4` implementation closeout complete: Plan E Phases 1-4 and Plan B Phases 1-4 are committed on this branch, and Plan G sink-boundary closure is complete.
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
@@ -338,6 +337,16 @@ Immediate tasks:
   - terminal strict checks remain green (`strict_failures=0`) while
     manual follow-up remains open (`manual_follow_up_cases=1`) for
     carriage-return multi-emulator behavior.
+- Completed (2026-03-06): follow-up tracker mapping slice:
+  - added canonical follow-up map
+    `docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md`
+    with stable IDs for race/terminal/windows follow-ups.
+  - replaced `TBD-*` placeholders in
+    `docs/validation/post-m4-20260306-live1b/issue-links.md`,
+    `docs/validation/post-m4-20260306-live1c/issue-links.md`, and
+    `docs/validation/post-m4-20260306-live1d/issue-links.md`.
+  - updated `docs/validation/post-m4-20260306-live1b/findings.md` with
+    explicit owner roles + target windows aligned to tracker entries.
 - Validation target (post-M4 campaign continuation, 2026-03-06):
   - real-host Windows run per
     `docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md` with artifacts under
@@ -351,9 +360,7 @@ Immediate tasks:
      `docs/validation/<next-run-id>/windows/{metadata.json,checklist.md,summary.json,notes.md}`.
   2. Execute live multi-emulator carriage-return verification and append
      evidence in `docs/validation/<next-run-id>/terminal/summary.md`.
-  3. Replace remaining `TBD-*` follow-up mappings with canonical
-     tracker references and explicit owners/target windows in findings docs.
-  4. Update `POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md`,
+  3. Update `POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md`,
      `ARCH-MILESTONE-SCHEDULE-2026-03-02.md`, and this running status; then
      check off remaining campaign checklist items that are truly complete.
 - Keep follow-on deferred plans queued behind their dependency gates

@@ -363,7 +363,8 @@ Status note (2026-03-06, latest):
 - Current deferred-validation closeout remains open on:
   - Windows real-host track execution + artifact evidence.
   - Live multi-emulator carriage-return verification evidence.
-  - Replacement of remaining `TBD-*` follow-up mappings with canonical tracker references.
+- Canonical follow-up mapping is now tracked in
+  [POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md).
 
 ## Related Documents
 

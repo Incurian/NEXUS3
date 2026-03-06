@@ -7,11 +7,14 @@
 
 ## Follow-Up Tickets
 
-- Race failure-rate triage under concurrent lifecycle churn: `TBD-POSTM4-RACE-001`
-- Terminal carriage-return emulator matrix follow-up: `TBD-POSTM4-TERM-001`
-- Windows real-host campaign execution: `TBD-POSTM4-WIN-001`
+- Race failure-rate triage under concurrent lifecycle churn:
+  [POSTM4-FU-RACE-001](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md#postm4-fu-race-001) (`validation-closed`)
+- Terminal carriage-return emulator matrix follow-up:
+  [POSTM4-FU-TERM-001](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md#postm4-fu-term-001) (`open`)
+- Windows real-host campaign execution:
+  [POSTM4-FU-WIN-001](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md#postm4-fu-win-001) (`open`)
 
 ## Notes
 
-- Ticket IDs are placeholders until tracker issues are filed.
-- Replace placeholders with canonical links during next campaign update.
+- Canonical follow-up source:
+  [POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md)

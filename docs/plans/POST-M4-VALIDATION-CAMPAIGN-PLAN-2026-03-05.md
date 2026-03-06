@@ -117,7 +117,11 @@ Artifact contract:
 - Open campaign gates after `live1d`:
   - Windows-native real-host validation still pending.
   - Live multi-emulator carriage-return verification still pending.
-  - Follow-up tracker IDs/owners still need canonical non-`TBD` mapping.
+- 2026-03-06: canonical follow-up mapping established:
+  - added
+    [POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md)
+  - replaced `TBD-*` placeholders in `live1b`/`live1c`/`live1d` issue-link docs.
+  - updated `live1b` findings with explicit owner roles + target windows.
 
 ## Testing Strategy
 
@@ -144,8 +148,7 @@ Artifact contract:
 - [x] Execute high-concurrency TOCTOU/lifecycle race campaign and archive
       artifacts.
 - [x] Execute terminal red-team matrix and archive artifacts.
-- [ ] Convert findings into issues/plan updates with owners and target windows
-      (replace current `TBD` placeholders with canonical mappings).
+- [x] Convert findings into issues/plan updates with owners and target windows.
 - [ ] Mark milestone deferred-validation items closed with evidence links.
 
 ## Documentation Updates
