@@ -134,7 +134,7 @@ Phases:
     - `.venv/bin/python -m nexus3 rpc send arch-b-http-cap "describe your permissions and what you can do" --port 9000`
     - `.venv/bin/python -m nexus3 rpc destroy arch-b-http-cap --port 9000`
 - 2026-03-06: Phase 4A migration-prep telemetry slice documented (compatibility mode retained).
-- 2026-03-06: Phase 4B enforcement completed for HTTP delegation ingress.
+- 2026-03-06: Phase 4B enforcement completed and committed as `ffb8b87`.
 - `X-Nexus-Capability` is required whenever `X-Nexus-Agent` is present.
 - Requester-only `X-Nexus-Agent` is rejected with deterministic `INVALID_PARAMS`.
 

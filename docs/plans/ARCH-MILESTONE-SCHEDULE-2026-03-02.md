@@ -169,7 +169,7 @@ Status note (2026-03-05):
     `capability_token` on global and `/agent/{id}` routes
   - client supports explicit optional `X-Nexus-Capability` emission
   - focused HTTP/client capability transport regressions are green
-- Plan B Phase 4B completed:
+- Plan B Phase 4B completed as `ffb8b87`:
   - HTTP ingress enforces capability-first requester identity semantics
   - `X-Nexus-Capability` is required whenever `X-Nexus-Agent` is sent
   - requester-only `X-Nexus-Agent` is rejected with deterministic `INVALID_PARAMS`
