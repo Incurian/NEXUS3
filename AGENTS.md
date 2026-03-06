@@ -308,10 +308,15 @@ Immediate tasks:
   - note: initial sandboxed harness runs (`post-m4-20260306-live1`) produced
     false "No NEXUS3 server running" negatives due nested subprocess sandbox
     constraints; live soak/race reruns used unsandboxed execution.
+- Completed (2026-03-06, committed `fa1c66a`): retained artifact docs committed
+  for compact continuity:
+  - `docs/validation/post-m4-bootstrap-dryrun/`
+  - `docs/validation/post-m4-20260306-live1/`
+  - `docs/validation/post-m4-20260306-live2/`
 - Next target: close remaining post-M4 validation gaps:
   - execute Windows-native checklist on real Windows host and archive evidence.
   - complete terminal emulator follow-up for carriage-return payload class.
-- Completed (2026-03-06, local pending commit): race follow-up slice
+- Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with
     `--exclude-expected-contention-errors` to gate on unexpected failures
@@ -328,6 +333,17 @@ Immediate tasks:
     `docs/validation/<next-run-id>/windows/`
   - emulator matrix/manual verification notes appended to
     `docs/validation/<next-run-id>/terminal/summary.md`
+- Compact handoff (next slice, execute in order):
+  1. Run Windows-native validation on real host per
+     `docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md`; populate
+     `docs/validation/<next-run-id>/windows/{metadata.json,checklist.md,summary.json,notes.md}`.
+  2. Execute terminal emulator follow-up for carriage-return handling and append
+     evidence in `docs/validation/<next-run-id>/terminal/summary.md`.
+  3. Create/update top-level findings + issue links for the new run-id and
+     replace `TBD-*` placeholders with real tracker IDs.
+  4. Update `POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md`,
+     `ARCH-MILESTONE-SCHEDULE-2026-03-02.md`, and this running status; then
+     check off remaining campaign checklist items that are truly complete.
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -335,6 +351,8 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `abef28a` post-m4 campaign: add contention-aware race follow-up
+- `fa1c66a` docs(validation): add retained dry-run and initial live artifacts
 - `59dab71` post-m4 campaign: run first live validation slice
 - `34c2f67` post-m4 campaign: add runbook and validation harness bootstrap
 - `a1e445e` m4 closeout: remediate gate regressions and sync status docs
@@ -370,10 +388,6 @@ Recent execution commits (latest first):
 - `bdb676e` expand plan A: add target auth kernel shadow parity in enforcer
 - `ce3d263` migrate confirmation ui prompts to SafeSink
 - `c5eb670` advance plan h: reject boolean json-rpc ids at protocol boundary
-- Local working-tree slice (pending commit):
-  - Post-M4 validation campaign race follow-up slice:
-    contention-aware race gating in harness + follow-up run artifacts +
-    milestone/plan/status docs sync.
 - `f6ee537` advance m1: harden send ingress params and migrate lobby outputs to safe sink
 - `a53c7dd` advance plan h: fail-fast mcp boundary validation and unify mcp config model
 - `1b455b5` advance m1: extend schema ingress create_agent and migrate repl mcp consent to safe sink
@@ -402,7 +416,12 @@ Progress snapshot:
     `docs/validation/post-m4-20260306-live1b/findings.md` and
     `docs/validation/post-m4-20260306-live1b/issue-links.md`
   - preflight + live validation commands captured in campaign plan/status docs
-- Completed (2026-03-06, local pending commit): Post-M4 race follow-up slice
+- Completed (2026-03-06, committed `fa1c66a`): retained validation artifacts
+  committed for continuity:
+  - `docs/validation/post-m4-bootstrap-dryrun/`
+  - `docs/validation/post-m4-20260306-live1/`
+  - `docs/validation/post-m4-20260306-live2/`
+- Completed (2026-03-06, committed `abef28a`): Post-M4 race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with contention-aware
     failure-rate gating option (`--exclude-expected-contention-errors`)
