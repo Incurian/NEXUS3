@@ -318,8 +318,9 @@ class GlobalDispatcher:
                     if isinstance(raw_value, str) and message.startswith(
                         "Value error, parent_agent_id invalid: "
                     ):
-                        # Preserve legacy style for malformed parent IDs.
-                        raise InvalidParamsError(f"Parent agent not found: {raw_value}") from exc
+                        raise InvalidParamsError(
+                            message.removeprefix("Value error, parent_agent_id invalid: ")
+                        ) from exc
 
                 if field == "cwd" and raw_value is not None:
                     raise InvalidParamsError(

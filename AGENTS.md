@@ -253,6 +253,23 @@ Immediate tasks:
       adapter-ceiling checks.
     - blocked: broader `tmp_path`-using pytest coverage in this host due
       `WinError 5` ACL denials on pytest temp-root paths (`pytest-of-inc`).
+- Completed (2026-03-06, local working tree): Plan H shim-retirement kickoff
+  slice:
+  - retired compatibility-only `create_agent.parent_agent_id` malformed-ID
+    wording remap in `nexus3/rpc/global_dispatcher.py`
+    (`Parent agent not found: <raw>` -> canonical validation detail).
+  - updated focused ingress regression expectation in
+    `tests/unit/rpc/test_schema_ingress_wiring.py`.
+  - documented shim inventory + canonical diagnostics policy and first
+    retirement slice execution in
+    `docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md`.
+  - updated deferred backlog status and RPC diagnostics notes in
+    `docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md` and
+    `nexus3/rpc/README.md`.
+  - focused validation:
+    - `.venv/Scripts/ruff.exe check nexus3/rpc/global_dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py` passed.
+    - `.venv/Scripts/mypy.exe nexus3/rpc/global_dispatcher.py` passed.
+    - `.venv/Scripts/pytest.exe -q -p no:cacheprovider tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py tests/unit/test_client.py` passed.
 - Plan F Phase 1 is committed as `1079cd7` (`plan f phase 1: add ast v2 foundation and baseline fixtures`).
 - Plan F Phase 2 is committed as `4ded3fa` (`plan f phase 2: add byte-strict ast-v2 apply path`).
 - Plan F Phase 3 is committed as `4c10b0b` (`plan f phase 3: wire legacy vs byte_strict skill mode`).

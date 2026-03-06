@@ -51,6 +51,34 @@ Planned slices:
 3. Remove compatibility-only mappings in smallest safe groups and update tests.
 4. Update RPC docs with post-shim canonical diagnostics examples.
 
+## Execution Status
+
+- 2026-03-06: started execution with shim inventory + first retirement slice.
+  - Inventory (current state):
+    - `parse_request()` (`nexus3/rpc/protocol.py`): explicit positional-param
+      and empty-method diagnostics are retained as required invariants.
+    - `validate_direct_request_envelope()` (`nexus3/rpc/dispatch_core.py`):
+      strict-envelope diagnostics retained as required invariants.
+    - `GlobalDispatcher._handle_create_agent(...)`
+      (`nexus3/rpc/global_dispatcher.py`) malformed `parent_agent_id` remap
+      (`"Parent agent not found: <raw>"`) classified as compatibility-only.
+  - Canonical policy for retirement slices:
+    - Preserve JSON-RPC codes and notification behavior unchanged.
+    - Prefer schema/validator-derived diagnostics over legacy remapped wording.
+    - Keep deterministic field-level type errors where they are already
+      canonical and non-ambiguous.
+  - Implemented removal slice:
+    - retired compatibility-only remap for malformed
+      `create_agent.parent_agent_id`; invalid IDs now return canonical
+      validation detail rather than synthetic not-found wording.
+    - updated focused ingress regression in
+      `tests/unit/rpc/test_schema_ingress_wiring.py`.
+  - validation snapshot:
+    - `.venv/Scripts/ruff.exe check nexus3/rpc/global_dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py` passed.
+    - `.venv/Scripts/mypy.exe nexus3/rpc/global_dispatcher.py` passed.
+    - `.venv/Scripts/pytest.exe -q -p no:cacheprovider tests/unit/rpc/test_schema_ingress_wiring.py` passed (`74 passed`).
+    - `.venv/Scripts/pytest.exe -q -p no:cacheprovider tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py tests/unit/test_client.py` passed (`59 passed`).
+
 ## Testing Strategy
 
 - Keep strict ingress negative-path coverage green while updating expected error
@@ -67,8 +95,8 @@ Planned slices:
 
 ## Implementation Checklist
 
-- [ ] Create and document RPC shim inventory with removal priority tiers.
-- [ ] Define canonical post-shim diagnostics policy for malformed RPC inputs.
+- [x] Create and document RPC shim inventory with removal priority tiers.
+- [x] Define canonical post-shim diagnostics policy for malformed RPC inputs.
 - [ ] Remove compatibility-only shim branches in protocol/dispatch layers.
 - [ ] Update focused regression expectations and ensure no behavior drift in
       codes/notification semantics.

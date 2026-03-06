@@ -291,7 +291,8 @@ Note: `get_tokens`, `get_context`, and `get_messages` are only registered if `co
 
 Ingress schema behavior:
 - Method params are validated with strict Pydantic schemas (`strict=True`, `extra="forbid"`).
-- Unknown params and malformed field types return `INVALID_PARAMS` with method-specific compatibility messages.
+- Unknown params and malformed field types return `INVALID_PARAMS` with deterministic method-specific diagnostics.
+- `create_agent.parent_agent_id` malformed IDs now return canonical validation detail (invalid ID format) rather than synthetic parent-not-found wording.
 - No-arg methods (`shutdown`, `get_tokens`, `get_context`, `cancel_all`, `list_agents`, `shutdown_server`) reject extra params.
 - Direct in-process dispatch (`dispatch(Request(...))`) now applies the same strict request-envelope validation before method routing, including explicit rejection of non-string `params` keys.
 

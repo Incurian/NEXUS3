@@ -369,7 +369,8 @@ async def test_global_create_agent_rejects_blank_initial_message() -> None:
 
 
 @pytest.mark.asyncio
-async def test_global_create_agent_parent_id_wiring_blocks_lookup_for_malformed_id() -> None:
+async def test_global_create_agent_parent_id_wiring_rejects_malformed_id_with_validation_detail(
+) -> None:
     dispatcher = GlobalDispatcher(_NoParentLookupPool())
     request = Request(
         jsonrpc="2.0",
@@ -385,7 +386,10 @@ async def test_global_create_agent_parent_id_wiring_blocks_lookup_for_malformed_
     assert response is not None
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
-    assert response.error["message"] == "Parent agent not found: ../../escape"
+    assert response.error["message"] == (
+        "Invalid agent ID '../../escape': must be 1-63 chars, "
+        "alphanumeric/dot/underscore/hyphen, start with alphanumeric or dot"
+    )
 
 
 @pytest.mark.asyncio

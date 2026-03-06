@@ -237,6 +237,10 @@ Exit gates:
 2. Plan H follow-on shim retirement:
    - [ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md)
    - Target window: post-M4 cleanup after strict ingress has soaked in production-like use.
+   - Status note (2026-03-06): kickoff slice landed:
+     - shim inventory and canonical diagnostics policy recorded.
+     - first compatibility-only remap retired for malformed
+       `create_agent.parent_agent_id` wording.
    - Dependency gates:
      - Strict ingress default remains stable across protocol + direct dispatch + method param ingress.
      - No active client breakage reports that depend on legacy error wording.
