@@ -82,10 +82,9 @@ Phases:
 - Progress (2026-03-05): M3 final GitLab residual slice routed `/gitlab on|off` enable checks in [cli/repl_commands.py](/home/inc/repos/NEXUS3/nexus3/cli/repl_commands.py) through the shared kernel-backed permission-mutation helper, added pool-local GitLab visibility authorization in [rpc/pool.py](/home/inc/repos/NEXUS3/nexus3/rpc/pool.py) for create/restore registration, and threaded the explicit visibility decision through [skill/vcs/__init__.py](/home/inc/repos/NEXUS3/nexus3/skill/vcs/__init__.py) and [skill/vcs/gitlab/__init__.py](/home/inc/repos/NEXUS3/nexus3/skill/vcs/gitlab/__init__.py), with focused regressions in [tests/unit/test_gitlab_toggle.py](/home/inc/repos/NEXUS3/tests/unit/test_gitlab_toggle.py) and [tests/unit/test_pool.py](/home/inc/repos/NEXUS3/tests/unit/test_pool.py).
 - [x] Remove duplicate authorization branches.
 
-Closeout note (2026-03-05):
-- Plan A is effectively complete for the current branch scope.
-- The remaining accepted boundary is create-stage `parent_can_grant` precomputation in `rpc/pool.py`, which is still consumed by kernel evaluation and remains deferred only because adapter-local recomputation would require a broader authorization-request model redesign.
-- Follow-on execution plan for that boundary: [ARCH-A-AUTH-REQUEST-MODEL-V2-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-A-AUTH-REQUEST-MODEL-V2-PLAN-2026-03-05.md).
+Closeout note (updated 2026-03-06):
+- Plan A kernel-authoritative rollout is complete for this branch scope.
+- The previously accepted create-stage `parent_can_grant` boundary has been removed via the follow-on request-model-v2 execution in [ARCH-A-AUTH-REQUEST-MODEL-V2-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-A-AUTH-REQUEST-MODEL-V2-PLAN-2026-03-05.md).
 
 ## Documentation Updates
 

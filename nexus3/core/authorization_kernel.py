@@ -54,7 +54,8 @@ class CreateAuthorizationContext:
     check_stage: CreateAuthorizationStage
     parent_depth: int
     max_depth: int
-    parent_can_grant: bool | None = None
+    parent_permissions_json: str | None = None
+    requested_permissions_json: str | None = None
     parent_agent_id: str | None = None
 
     def to_context_map(self) -> AuthorizationContext:
@@ -64,8 +65,10 @@ class CreateAuthorizationContext:
             "parent_depth": self.parent_depth,
             "max_depth": self.max_depth,
         }
-        if self.parent_can_grant is not None:
-            context["parent_can_grant"] = self.parent_can_grant
+        if self.parent_permissions_json is not None:
+            context["parent_permissions_json"] = self.parent_permissions_json
+        if self.requested_permissions_json is not None:
+            context["requested_permissions_json"] = self.requested_permissions_json
         if self.parent_agent_id is not None:
             context["parent_agent_id"] = self.parent_agent_id
         return context
@@ -95,8 +98,15 @@ class CreateAuthorizationContext:
         ):
             return None
 
-        parent_can_grant = context.get("parent_can_grant")
-        if parent_can_grant is not None and not isinstance(parent_can_grant, bool):
+        parent_permissions_json = context.get("parent_permissions_json")
+        if parent_permissions_json is not None and not isinstance(parent_permissions_json, str):
+            return None
+
+        requested_permissions_json = context.get("requested_permissions_json")
+        if requested_permissions_json is not None and not isinstance(
+            requested_permissions_json,
+            str,
+        ):
             return None
 
         parent_agent_id = context.get("parent_agent_id")
@@ -107,7 +117,8 @@ class CreateAuthorizationContext:
             check_stage=stage,
             parent_depth=parent_depth,
             max_depth=max_depth,
-            parent_can_grant=parent_can_grant,
+            parent_permissions_json=parent_permissions_json,
+            requested_permissions_json=requested_permissions_json,
             parent_agent_id=parent_agent_id,
         )
 

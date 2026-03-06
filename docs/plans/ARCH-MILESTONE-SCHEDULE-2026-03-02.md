@@ -221,8 +221,11 @@ Exit gates:
 1. Plan A follow-on boundary removal:
    - [ARCH-A-AUTH-REQUEST-MODEL-V2-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-A-AUTH-REQUEST-MODEL-V2-PLAN-2026-03-05.md)
    - Target window: M4 early (after M3 data-integrity gates are green).
-   - Status note (2026-03-06): kickoff slice started (typed create-context
-     model foundation + pool wiring), local pending commit.
+  - Status note (2026-03-06): execution slices complete:
+    - Phase 1 baseline (typed create-context model foundation + pool wiring).
+    - Phase 2/3 follow-on (adapter-local grant evaluation from typed context,
+      `parent_can_grant` precompute removed from pool call sites, focused
+      adapter-authoritative regressions added).
    - Dependency gates:
      - M3 complete.
      - Current Plan A kernel-authoritative behavior remains stable.

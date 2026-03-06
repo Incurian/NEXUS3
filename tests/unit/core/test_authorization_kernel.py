@@ -80,7 +80,8 @@ class TestCreateAuthorizationContext:
             check_stage=CreateAuthorizationStage.BASE_CEILING,
             parent_depth=1,
             max_depth=5,
-            parent_can_grant=True,
+            parent_permissions_json='{"base_preset":"trusted"}',
+            requested_permissions_json='{"base_preset":"sandboxed"}',
             parent_agent_id="parent-1",
         )
 
@@ -95,6 +96,7 @@ class TestCreateAuthorizationContext:
             "check_stage": "base_ceiling",
             "parent_depth": True,  # bool should not be accepted as int
             "max_depth": 5,
+            "parent_permissions_json": 1,
         }
 
         parsed = CreateAuthorizationContext.from_context_map(invalid_context)

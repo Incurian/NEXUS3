@@ -53,8 +53,8 @@ Planned slices:
 
 ## Execution Status
 
-- 2026-03-06: kickoff slice (Phase 1 typed create-context foundation) in progress
-  and local pending commit:
+- 2026-03-06: kickoff slice (Phase 1 typed create-context foundation) completed
+  as committed baseline:
   - added typed create context/stage models to
     `nexus3/core/authorization_kernel.py` with scalar context compatibility
     (`to_context_map` / `from_context_map`).
@@ -63,11 +63,24 @@ Planned slices:
     existing allow/deny behavior.
   - added focused context-shape regressions in
     `tests/unit/core/test_authorization_kernel.py`.
+- 2026-03-06: follow-on slice (Phase 2 + Phase 3) completed:
+  - `_CreateAuthorizationAdapter` now computes base/delta ceiling grants from
+    typed scalar context payloads (`parent_permissions_json`,
+    `requested_permissions_json`) via adapter-local `AgentPermissions.can_grant(...)`.
+  - removed create-stage `parent_can_grant` precompute plumbing from
+    `AgentPool._create_unlocked(...)` and
+    `AgentPool._enforce_create_authorization(...)` call sites.
+  - added focused adapter-authoritative regressions in
+    `tests/unit/rpc/test_pool_create_auth_shadow.py` for:
+    - base/delta ceiling allow/deny from typed context permission payloads.
+    - missing/malformed typed payload fail-closed behavior.
+  - extended stage-order context regression in `tests/unit/test_pool.py` to
+    assert no `parent_can_grant` field is emitted for create ceiling stages.
   - validation snapshot:
     - `.venv/Scripts/ruff.exe check nexus3/core/authorization_kernel.py nexus3/rpc/pool.py tests/unit/core/test_authorization_kernel.py` passed.
     - `.venv/Scripts/mypy.exe nexus3/core/authorization_kernel.py nexus3/rpc/pool.py` passed.
-    - `.venv/Scripts/pytest.exe -q tests/unit/core/test_authorization_kernel.py` passed.
-    - `.venv/Scripts/pytest.exe -q tests/unit/rpc/test_pool_create_auth_shadow.py` blocked in this environment by Windows host permission errors creating/cleaning pytest temp directories (`WinError 5`).
+    - `.venv/Scripts/pytest.exe -q tests/unit/core/test_authorization_kernel.py tests/unit/rpc/test_pool_create_auth_shadow.py::test_create_adapter_base_ceiling_allow_uses_typed_context_permissions tests/unit/rpc/test_pool_create_auth_shadow.py::test_create_adapter_delta_ceiling_deny_uses_typed_context_permissions tests/unit/rpc/test_pool_create_auth_shadow.py::test_create_adapter_base_ceiling_missing_permissions_payload_denies tests/unit/rpc/test_pool_create_auth_shadow.py::test_create_adapter_base_ceiling_malformed_permissions_payload_denies` passed.
+    - broader `tmp_path`-using pytest coverage remains blocked in this environment by host ACL denials creating/accessing pytest temp roots (`WinError 5`, `pytest-of-inc`).
 
 ## Testing Strategy
 
@@ -85,10 +98,10 @@ Planned slices:
 ## Implementation Checklist
 
 - [x] Define typed create-stage authorization context model in core auth kernel.
-- [ ] Migrate create adapter grant decisions to adapter-local computation.
-- [ ] Remove `parent_can_grant` precompute plumbing from pool call sites.
-- [ ] Add/adjust focused regressions for adapter-authoritative create checks.
-- [ ] Update Plan A closeout notes and AGENTS running status after completion.
+- [x] Migrate create adapter grant decisions to adapter-local computation.
+- [x] Remove `parent_can_grant` precompute plumbing from pool call sites.
+- [x] Add/adjust focused regressions for adapter-authoritative create checks.
+- [x] Update Plan A closeout notes and AGENTS running status after completion.
 
 ## Documentation Updates
 

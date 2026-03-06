@@ -324,6 +324,18 @@ class TestAgentPool:
                 "base_ceiling",
                 "delta_ceiling",
             ]
+            observed_contexts = [
+                call.args[0].context
+                for call in pool._create_authorization_kernel.authorize.call_args_list
+            ]
+            base_context = observed_contexts[3]
+            delta_context = observed_contexts[4]
+            assert "parent_can_grant" not in base_context
+            assert "parent_can_grant" not in delta_context
+            assert isinstance(base_context.get("parent_permissions_json"), str)
+            assert isinstance(base_context.get("requested_permissions_json"), str)
+            assert isinstance(delta_context.get("parent_permissions_json"), str)
+            assert isinstance(delta_context.get("requested_permissions_json"), str)
 
     @pytest.mark.asyncio
     async def test_create_mcp_visibility_uses_kernel_and_fetches_when_allowed(self, tmp_path):

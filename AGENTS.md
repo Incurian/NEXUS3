@@ -228,14 +228,31 @@ Current milestone:
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
-- In progress (2026-03-06, local pending commit): Plan A v2 kickoff
-  (typed create-context foundation):
+- Completed (2026-03-06, committed `5c9c0e2`): Plan A v2 kickoff
+  Phase 1 (typed create-context foundation):
   - added typed create-stage authorization context/stage models in
     `nexus3/core/authorization_kernel.py` with scalar-wire compatibility.
   - wired `nexus3/rpc/pool.py` create authorization flow to
     `CreateAuthorizationContext` / `CreateAuthorizationStage` (no behavior flip).
   - added focused context-shape regressions in
     `tests/unit/core/test_authorization_kernel.py`.
+- Completed (2026-03-06, local working tree): Plan A v2 follow-on
+  Phase 2 + 3:
+  - `_CreateAuthorizationAdapter` now computes base/delta grant decisions
+    adapter-locally from typed create context permission payloads
+    (`parent_permissions_json`, `requested_permissions_json`).
+  - removed create-stage `parent_can_grant` precompute plumbing from
+    `AgentPool._create_unlocked()` and `_enforce_create_authorization()`
+    call sites.
+  - added focused adapter-authoritative create regressions in
+    `tests/unit/rpc/test_pool_create_auth_shadow.py` and extended stage-context
+    assertions in `tests/unit/test_pool.py`.
+  - focused validation:
+    - passed: `ruff` + `mypy`.
+    - passed: focused non-`tmp_path` pytest set for typed context and
+      adapter-ceiling checks.
+    - blocked: broader `tmp_path`-using pytest coverage in this host due
+      `WinError 5` ACL denials on pytest temp-root paths (`pytest-of-inc`).
 - Plan F Phase 1 is committed as `1079cd7` (`plan f phase 1: add ast v2 foundation and baseline fixtures`).
 - Plan F Phase 2 is committed as `4ded3fa` (`plan f phase 2: add byte-strict ast-v2 apply path`).
 - Plan F Phase 3 is committed as `4c10b0b` (`plan f phase 3: wire legacy vs byte_strict skill mode`).
@@ -378,7 +395,7 @@ Immediate tasks:
     - `mypy nexus3/ scripts/validation/post_m4_closeout_gate.py scripts/validation/prepare_post_m4_manual_closeout.py`
   - updated post-M4 runbook/artifact docs for `closeout-handoff.md` and
     `closeout-gate.json` handoff flow.
-- Completed (2026-03-06, local pending commit): external closeout run
+- Completed (2026-03-06, committed `8630f8f`): external closeout run
   (`post-m4-20260306-live1e`):
   - prepared closeout scaffold + artifacts:
     `docs/validation/post-m4-20260306-live1e/{windows,terminal,closeout-handoff.md}`.
@@ -403,6 +420,8 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `5c9c0e2` plan a v2 phase 1: add typed create auth context model
+- `8630f8f` post-m4 closeout: archive windows host evidence and pass gate
 - `6bbb2f1` post-m4 campaign: add manual closeout prep scaffolding
 - `ad53962` post-m4 campaign: add deterministic closeout gate checker
 - `5487d43` docs(post-m4): add canonical follow-up tracker mappings
@@ -456,8 +475,8 @@ Progress snapshot:
   - added [ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md)
   - updated [ARCH-MILESTONE-SCHEDULE-2026-03-02.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md) with explicit backlog dependency/exit gates
   - updated [docs/plans/README.md](/home/inc/repos/NEXUS3/docs/plans/README.md) follow-on index section
-- In progress (2026-03-06, local pending commit): Plan A follow-on
-  request-model-v2 kickoff:
+- Completed (2026-03-06, committed `5c9c0e2`): Plan A follow-on
+  request-model-v2 Phase 1 kickoff:
   - implemented typed create-stage context foundation in
     `nexus3/core/authorization_kernel.py`.
   - routed pool create-stage kernel requests through typed context emit/parse
@@ -847,6 +866,31 @@ Progress snapshot:
   - Plan A: kernel rollout is effectively complete for this branch scope; only the explicitly deferred `parent_can_grant` request-model boundary remains for future redesign work.
   - Plan G: optional consistency-only polish remains in a few sanitize-then-trusted-print callsites; not security-critical.
   - Operational next step: either commit this validated GitLab residual + Plan H closeout checkpoint, or pause and resume from this status block later.
+
+Compact checkpoint (2026-03-06, post-M4 closeout + Plan A v2 phase2/3 execution):
+- Branch: `feat/arch-overhaul-execution`.
+- Most recent committed baseline:
+  - `5c9c0e2` plan a v2 phase 1: add typed create auth context model
+  - `8630f8f` post-m4 closeout: archive windows host evidence and pass gate
+- Local execution completed since baseline:
+  - Plan A v2 Phase 2/3: adapter-local base/delta ceiling evaluation from typed
+    context payloads and removal of pool-side `parent_can_grant` precompute.
+  - Added focused adapter-authoritative regressions and updated create-stage
+    context assertions (`test_pool_create_auth_shadow.py`, `test_pool.py`).
+- Validation snapshot (local phase2/3 changes):
+  - passed: focused `ruff` and `mypy` checks for auth-kernel/pool/tests.
+  - passed: focused non-`tmp_path` pytest set for typed context + create
+    adapter ceiling behavior.
+  - blocked: broader `tmp_path`-using pytest coverage due host ACL denials on
+    pytest temp roots (`WinError 5`, `pytest-of-inc`).
+- Resume command set:
+  1. `git status --short --branch`
+  2. `Get-Content docs/plans/ARCH-A-AUTH-REQUEST-MODEL-V2-PLAN-2026-03-05.md`
+  3. `rg -n "parent_can_grant|parent_permissions_json|requested_permissions_json" nexus3/core/authorization_kernel.py nexus3/rpc/pool.py`
+  4. run focused checks, then commit phase2/3 + docs status updates.
+- Subagent note:
+  - If using Codex subagents, explicitly instruct: no escalated/sandbox-bypass
+    commands unless absolutely required by the task.
 
 Resume-first checklist (post-compact):
 1. Confirm branch + cleanliness: `git status --short --branch` (ignore existing unrelated untracked: `docs/plans/DOUBLE-SPINNER-FIX-PLAN.md`, `editors/`, `err/`).

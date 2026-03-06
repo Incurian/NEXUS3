@@ -36,11 +36,12 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 from nexus3.clipboard import CLIPBOARD_PRESETS, ClipboardManager
@@ -126,6 +127,33 @@ class _DestroyAuthorizationAdapter:
 class _CreateAuthorizationAdapter:
     """Kernel adapter mirroring legacy AgentPool.create parent ceiling checks."""
 
+    @staticmethod
+    def _deserialize_permissions(payload_json: str | None) -> AgentPermissions | None:
+        if not isinstance(payload_json, str):
+            return None
+        try:
+            raw_payload = json.loads(payload_json)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(raw_payload, dict):
+            return None
+        try:
+            typed_payload = cast(dict[str, Any], raw_payload)
+            return AgentPermissions.from_dict(typed_payload)
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    def _evaluate_parent_ceiling(self, create_context: CreateAuthorizationContext) -> bool | None:
+        parent_permissions = self._deserialize_permissions(
+            create_context.parent_permissions_json
+        )
+        requested_permissions = self._deserialize_permissions(
+            create_context.requested_permissions_json
+        )
+        if parent_permissions is None or requested_permissions is None:
+            return None
+        return parent_permissions.can_grant(requested_permissions)
+
     def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
         if request.action != AuthorizationAction.AGENT_CREATE:
             return None
@@ -148,8 +176,10 @@ class _CreateAuthorizationAdapter:
                 )
             return AuthorizationDecision.allow(request, reason="within_max_depth")
 
-        parent_can_grant = create_context.parent_can_grant
         if check_stage == CreateAuthorizationStage.BASE_CEILING:
+            parent_can_grant = self._evaluate_parent_ceiling(create_context)
+            if parent_can_grant is None:
+                return AuthorizationDecision.deny(request, reason="invalid_create_context")
             if parent_can_grant is True:
                 return AuthorizationDecision.allow(
                     request,
@@ -161,6 +191,9 @@ class _CreateAuthorizationAdapter:
             )
 
         if check_stage == CreateAuthorizationStage.DELTA_CEILING:
+            parent_can_grant = self._evaluate_parent_ceiling(create_context)
+            if parent_can_grant is None:
+                return AuthorizationDecision.deny(request, reason="invalid_create_context")
             if parent_can_grant is True:
                 return AuthorizationDecision.allow(
                     request,
@@ -829,13 +862,13 @@ class AgentPool:
                 ),
             )
             # First check: base preset must be allowed
-            base_can_grant = parent_permissions.can_grant(permissions)
             self._enforce_create_authorization(
                 target_agent_id=effective_id,
                 requester_id=create_requester_id,
                 check_stage=CreateAuthorizationStage.BASE_CEILING,
                 parent_depth=parent_permissions.depth,
-                parent_can_grant=base_can_grant,
+                parent_permissions=parent_permissions,
+                requested_permissions=permissions,
                 denial_message=f"Requested preset '{preset_name}' exceeds parent ceiling",
             )
 
@@ -844,13 +877,13 @@ class AgentPool:
             permissions = permissions.apply_delta(effective_config.delta)
             # Second check: delta result must also be allowed
             if parent_permissions is not None:
-                delta_can_grant = parent_permissions.can_grant(permissions)
                 self._enforce_create_authorization(
                     target_agent_id=effective_id,
                     requester_id=create_requester_id,
                     check_stage=CreateAuthorizationStage.DELTA_CEILING,
                     parent_depth=parent_permissions.depth,
-                    parent_can_grant=delta_can_grant,
+                    parent_permissions=parent_permissions,
+                    requested_permissions=permissions,
                     denial_message="Permission delta would exceed parent ceiling",
                 )
 
@@ -1041,7 +1074,8 @@ class AgentPool:
         check_stage: CreateAuthorizationStage,
         parent_depth: int,
         denial_message: str,
-        parent_can_grant: bool | None = None,
+        parent_permissions: AgentPermissions | None = None,
+        requested_permissions: AgentPermissions | None = None,
         parent_agent_id: str | None = None,
     ) -> None:
         """Apply create authorization kernel decision for a specific create stage."""
@@ -1049,7 +1083,10 @@ class AgentPool:
             check_stage=check_stage,
             parent_depth=parent_depth,
             max_depth=MAX_AGENT_DEPTH,
-            parent_can_grant=parent_can_grant,
+            parent_permissions_json=self._serialize_create_permissions(parent_permissions),
+            requested_permissions_json=self._serialize_create_permissions(
+                requested_permissions
+            ),
             parent_agent_id=parent_agent_id,
         )
         kernel_context = create_context.to_context_map()
@@ -1066,6 +1103,12 @@ class AgentPool:
         kernel_decision = self._create_authorization_kernel.authorize(kernel_request)
         if not kernel_decision.allowed:
             raise PermissionError(denial_message)
+
+    @staticmethod
+    def _serialize_create_permissions(permissions: AgentPermissions | None) -> str | None:
+        if permissions is None:
+            return None
+        return json.dumps(permissions.to_dict(), sort_keys=True)
 
     def _is_mcp_visible_for_agent(
         self,

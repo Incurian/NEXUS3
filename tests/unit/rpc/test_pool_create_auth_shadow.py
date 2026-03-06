@@ -1,18 +1,28 @@
 """Tests for authoritative create authorization in AgentPool."""
 
+import json
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from nexus3.core.authorization_kernel import AuthorizationDecision
+from nexus3.core.authorization_kernel import (
+    AuthorizationAction,
+    AuthorizationDecision,
+    AuthorizationRequest,
+    AuthorizationResource,
+    AuthorizationResourceType,
+    CreateAuthorizationContext,
+    CreateAuthorizationStage,
+)
 from nexus3.core.permissions import PermissionDelta, ToolPermission, resolve_preset
 from nexus3.rpc.pool import (
     MAX_AGENT_DEPTH,
     AgentConfig,
     AgentPool,
     SharedComponents,
+    _CreateAuthorizationAdapter,
 )
 
 
@@ -72,6 +82,85 @@ class _DenyCreateStageKernel:
         if request.context.get("check_stage") == self._check_stage:
             return AuthorizationDecision.deny(request, reason="forced_deny_for_test")
         return AuthorizationDecision.allow(request, reason="forced_allow_for_test")
+
+
+def _build_create_request(create_context: CreateAuthorizationContext) -> AuthorizationRequest:
+    return AuthorizationRequest(
+        action=AuthorizationAction.AGENT_CREATE,
+        resource=AuthorizationResource(
+            resource_type=AuthorizationResourceType.AGENT,
+            identifier="child-test-agent",
+        ),
+        principal_id="requester-agent",
+        context=create_context.to_context_map(),
+    )
+
+
+def test_create_adapter_base_ceiling_allow_uses_typed_context_permissions() -> None:
+    adapter = _CreateAuthorizationAdapter()
+    parent_permissions = resolve_preset("trusted")
+    requested_permissions = resolve_preset("sandboxed")
+    create_context = CreateAuthorizationContext(
+        check_stage=CreateAuthorizationStage.BASE_CEILING,
+        parent_depth=0,
+        max_depth=MAX_AGENT_DEPTH,
+        parent_permissions_json=json.dumps(parent_permissions.to_dict(), sort_keys=True),
+        requested_permissions_json=json.dumps(requested_permissions.to_dict(), sort_keys=True),
+    )
+
+    decision = adapter.authorize(_build_create_request(create_context))
+    assert decision is not None
+    assert decision.allowed is True
+    assert decision.reason == "base_preset_within_parent_ceiling"
+
+
+def test_create_adapter_delta_ceiling_deny_uses_typed_context_permissions() -> None:
+    adapter = _CreateAuthorizationAdapter()
+    parent_permissions = resolve_preset("sandboxed")
+    requested_permissions = resolve_preset("trusted")
+    create_context = CreateAuthorizationContext(
+        check_stage=CreateAuthorizationStage.DELTA_CEILING,
+        parent_depth=0,
+        max_depth=MAX_AGENT_DEPTH,
+        parent_permissions_json=json.dumps(parent_permissions.to_dict(), sort_keys=True),
+        requested_permissions_json=json.dumps(requested_permissions.to_dict(), sort_keys=True),
+    )
+
+    decision = adapter.authorize(_build_create_request(create_context))
+    assert decision is not None
+    assert decision.allowed is False
+    assert decision.reason == "delta_exceeds_parent_ceiling"
+
+
+def test_create_adapter_base_ceiling_missing_permissions_payload_denies() -> None:
+    adapter = _CreateAuthorizationAdapter()
+    create_context = CreateAuthorizationContext(
+        check_stage=CreateAuthorizationStage.BASE_CEILING,
+        parent_depth=0,
+        max_depth=MAX_AGENT_DEPTH,
+    )
+
+    decision = adapter.authorize(_build_create_request(create_context))
+    assert decision is not None
+    assert decision.allowed is False
+    assert decision.reason == "invalid_create_context"
+
+
+def test_create_adapter_base_ceiling_malformed_permissions_payload_denies() -> None:
+    adapter = _CreateAuthorizationAdapter()
+    parent_permissions = resolve_preset("trusted")
+    create_context = CreateAuthorizationContext(
+        check_stage=CreateAuthorizationStage.BASE_CEILING,
+        parent_depth=0,
+        max_depth=MAX_AGENT_DEPTH,
+        parent_permissions_json=json.dumps(parent_permissions.to_dict(), sort_keys=True),
+        requested_permissions_json="not-json",
+    )
+
+    decision = adapter.authorize(_build_create_request(create_context))
+    assert decision is not None
+    assert decision.allowed is False
+    assert decision.reason == "invalid_create_context"
 
 
 @pytest.mark.asyncio
