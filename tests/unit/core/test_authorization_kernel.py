@@ -11,6 +11,8 @@ from nexus3.core.authorization_kernel import (
     AuthorizationRequest,
     AuthorizationResource,
     AuthorizationResourceType,
+    CreateAuthorizationContext,
+    CreateAuthorizationStage,
 )
 
 
@@ -70,6 +72,33 @@ class TestAuthorizationSchemas:
 
         with pytest.raises(FrozenInstanceError):
             request.resource.identifier = "agent-3"  # type: ignore[misc]
+
+
+class TestCreateAuthorizationContext:
+    def test_round_trip_scalar_context_map(self) -> None:
+        context = CreateAuthorizationContext(
+            check_stage=CreateAuthorizationStage.BASE_CEILING,
+            parent_depth=1,
+            max_depth=5,
+            parent_can_grant=True,
+            parent_agent_id="parent-1",
+        )
+
+        serialized = context.to_context_map()
+        parsed = CreateAuthorizationContext.from_context_map(serialized)
+
+        assert parsed == context
+        assert serialized["check_stage"] == "base_ceiling"
+
+    def test_from_context_map_rejects_invalid_shapes(self) -> None:
+        invalid_context = {
+            "check_stage": "base_ceiling",
+            "parent_depth": True,  # bool should not be accepted as int
+            "max_depth": 5,
+        }
+
+        parsed = CreateAuthorizationContext.from_context_map(invalid_context)
+        assert parsed is None
 
 
 class TestAdapterAuthorizationKernel:

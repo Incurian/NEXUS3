@@ -52,6 +52,8 @@ from nexus3.core.authorization_kernel import (
     AuthorizationRequest,
     AuthorizationResource,
     AuthorizationResourceType,
+    CreateAuthorizationContext,
+    CreateAuthorizationStage,
 )
 from nexus3.core.capabilities import (
     CapabilityClaims,
@@ -130,24 +132,24 @@ class _CreateAuthorizationAdapter:
         if request.resource.resource_type != AuthorizationResourceType.AGENT:
             return None
 
-        check_stage = request.context.get("check_stage")
-        if check_stage == "lifecycle_entry":
+        create_context = CreateAuthorizationContext.from_context_map(request.context)
+        if create_context is None:
+            return AuthorizationDecision.deny(request, reason="invalid_create_context")
+
+        check_stage = create_context.check_stage
+        if check_stage == CreateAuthorizationStage.LIFECYCLE_ENTRY:
             return AuthorizationDecision.allow(request, reason="create_lifecycle_entry")
 
-        if check_stage == "max_depth":
-            parent_depth = request.context.get("parent_depth")
-            max_depth = request.context.get("max_depth")
-            if isinstance(parent_depth, int) and isinstance(max_depth, int):
-                if parent_depth >= max_depth:
-                    return AuthorizationDecision.deny(
-                        request,
-                        reason="max_depth_exceeded",
-                    )
-                return AuthorizationDecision.allow(request, reason="within_max_depth")
-            return AuthorizationDecision.deny(request, reason="invalid_depth_context")
+        if check_stage == CreateAuthorizationStage.MAX_DEPTH:
+            if create_context.parent_depth >= create_context.max_depth:
+                return AuthorizationDecision.deny(
+                    request,
+                    reason="max_depth_exceeded",
+                )
+            return AuthorizationDecision.allow(request, reason="within_max_depth")
 
-        parent_can_grant = request.context.get("parent_can_grant")
-        if check_stage == "base_ceiling":
+        parent_can_grant = create_context.parent_can_grant
+        if check_stage == CreateAuthorizationStage.BASE_CEILING:
             if parent_can_grant is True:
                 return AuthorizationDecision.allow(
                     request,
@@ -158,7 +160,7 @@ class _CreateAuthorizationAdapter:
                 reason="base_preset_exceeds_parent_ceiling",
             )
 
-        if check_stage == "delta_ceiling":
+        if check_stage == CreateAuthorizationStage.DELTA_CEILING:
             if parent_can_grant is True:
                 return AuthorizationDecision.allow(
                     request,
@@ -169,8 +171,8 @@ class _CreateAuthorizationAdapter:
                 reason="delta_exceeds_parent_ceiling",
             )
 
-        if check_stage == "requester_parent_binding":
-            parent_agent_id = request.context.get("parent_agent_id")
+        if check_stage == CreateAuthorizationStage.REQUESTER_PARENT_BINDING:
+            parent_agent_id = create_context.parent_agent_id
             if not isinstance(parent_agent_id, str):
                 return AuthorizationDecision.allow(
                     request,
@@ -190,9 +192,6 @@ class _CreateAuthorizationAdapter:
                 request,
                 reason="requester_parent_mismatch",
             )
-
-        return AuthorizationDecision.deny(request, reason="unknown_create_check_stage")
-
 
 class _McpVisibilityAuthorizationAdapter:
     """Kernel adapter for AgentPool MCP tool visibility checks."""
@@ -798,7 +797,7 @@ class AgentPool:
         self._enforce_create_authorization(
             target_agent_id=effective_id,
             requester_id=create_requester_id,
-            check_stage="lifecycle_entry",
+            check_stage=CreateAuthorizationStage.LIFECYCLE_ENTRY,
             parent_depth=parent_permissions.depth if parent_permissions is not None else 0,
             denial_message=(
                 "Cannot create agent: requester is not authorized to create this agent"
@@ -809,7 +808,7 @@ class AgentPool:
             self._enforce_create_authorization(
                 target_agent_id=effective_id,
                 requester_id=create_requester_id,
-                check_stage="requester_parent_binding",
+                check_stage=CreateAuthorizationStage.REQUESTER_PARENT_BINDING,
                 parent_depth=parent_permissions.depth if parent_permissions is not None else 0,
                 denial_message=(
                     "Cannot create agent: requester does not match the parent agent"
@@ -823,7 +822,7 @@ class AgentPool:
             self._enforce_create_authorization(
                 target_agent_id=effective_id,
                 requester_id=create_requester_id,
-                check_stage="max_depth",
+                check_stage=CreateAuthorizationStage.MAX_DEPTH,
                 parent_depth=parent_permissions.depth,
                 denial_message=(
                     f"Cannot create agent: max nesting depth ({MAX_AGENT_DEPTH}) exceeded"
@@ -834,7 +833,7 @@ class AgentPool:
             self._enforce_create_authorization(
                 target_agent_id=effective_id,
                 requester_id=create_requester_id,
-                check_stage="base_ceiling",
+                check_stage=CreateAuthorizationStage.BASE_CEILING,
                 parent_depth=parent_permissions.depth,
                 parent_can_grant=base_can_grant,
                 denial_message=f"Requested preset '{preset_name}' exceeds parent ceiling",
@@ -849,7 +848,7 @@ class AgentPool:
                 self._enforce_create_authorization(
                     target_agent_id=effective_id,
                     requester_id=create_requester_id,
-                    check_stage="delta_ceiling",
+                    check_stage=CreateAuthorizationStage.DELTA_CEILING,
                     parent_depth=parent_permissions.depth,
                     parent_can_grant=delta_can_grant,
                     denial_message="Permission delta would exceed parent ceiling",
@@ -1039,22 +1038,21 @@ class AgentPool:
         *,
         target_agent_id: str,
         requester_id: str,
-        check_stage: str,
+        check_stage: CreateAuthorizationStage,
         parent_depth: int,
         denial_message: str,
         parent_can_grant: bool | None = None,
         parent_agent_id: str | None = None,
     ) -> None:
         """Apply create authorization kernel decision for a specific create stage."""
-        kernel_context: dict[str, str | int | float | bool | None] = {
-            "check_stage": check_stage,
-            "parent_depth": parent_depth,
-            "max_depth": MAX_AGENT_DEPTH,
-        }
-        if parent_can_grant is not None:
-            kernel_context["parent_can_grant"] = parent_can_grant
-        if parent_agent_id is not None:
-            kernel_context["parent_agent_id"] = parent_agent_id
+        create_context = CreateAuthorizationContext(
+            check_stage=check_stage,
+            parent_depth=parent_depth,
+            max_depth=MAX_AGENT_DEPTH,
+            parent_can_grant=parent_can_grant,
+            parent_agent_id=parent_agent_id,
+        )
+        kernel_context = create_context.to_context_map()
 
         kernel_request = AuthorizationRequest(
             action=AuthorizationAction.AGENT_CREATE,

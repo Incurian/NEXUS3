@@ -228,6 +228,14 @@ Current milestone:
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
+- In progress (2026-03-06, local pending commit): Plan A v2 kickoff
+  (typed create-context foundation):
+  - added typed create-stage authorization context/stage models in
+    `nexus3/core/authorization_kernel.py` with scalar-wire compatibility.
+  - wired `nexus3/rpc/pool.py` create authorization flow to
+    `CreateAuthorizationContext` / `CreateAuthorizationStage` (no behavior flip).
+  - added focused context-shape regressions in
+    `tests/unit/core/test_authorization_kernel.py`.
 - Plan F Phase 1 is committed as `1079cd7` (`plan f phase 1: add ast v2 foundation and baseline fixtures`).
 - Plan F Phase 2 is committed as `4ded3fa` (`plan f phase 2: add byte-strict ast-v2 apply path`).
 - Plan F Phase 3 is committed as `4c10b0b` (`plan f phase 3: wire legacy vs byte_strict skill mode`).
@@ -448,6 +456,14 @@ Progress snapshot:
   - added [ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md)
   - updated [ARCH-MILESTONE-SCHEDULE-2026-03-02.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md) with explicit backlog dependency/exit gates
   - updated [docs/plans/README.md](/home/inc/repos/NEXUS3/docs/plans/README.md) follow-on index section
+- In progress (2026-03-06, local pending commit): Plan A follow-on
+  request-model-v2 kickoff:
+  - implemented typed create-stage context foundation in
+    `nexus3/core/authorization_kernel.py`.
+  - routed pool create-stage kernel requests through typed context emit/parse
+    in `nexus3/rpc/pool.py` while preserving current semantics.
+  - added focused context model regressions in
+    `tests/unit/core/test_authorization_kernel.py`.
 - Completed (2026-03-06, committed `34c2f67`): Post-M4 validation campaign
   Phase 1/2 bootstrap:
   - added [POST-M4-VALIDATION-RUNBOOK.md](/home/inc/repos/NEXUS3/docs/testing/POST-M4-VALIDATION-RUNBOOK.md)

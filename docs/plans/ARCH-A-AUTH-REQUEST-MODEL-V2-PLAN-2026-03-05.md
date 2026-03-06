@@ -51,6 +51,24 @@ Planned slices:
 4. Delete obsolete compatibility branches and tighten tests around adapter-first
    decision flow.
 
+## Execution Status
+
+- 2026-03-06: kickoff slice (Phase 1 typed create-context foundation) in progress
+  and local pending commit:
+  - added typed create context/stage models to
+    `nexus3/core/authorization_kernel.py` with scalar context compatibility
+    (`to_context_map` / `from_context_map`).
+  - wired create authorization paths in `nexus3/rpc/pool.py` to consume
+    `CreateAuthorizationContext` + `CreateAuthorizationStage` while preserving
+    existing allow/deny behavior.
+  - added focused context-shape regressions in
+    `tests/unit/core/test_authorization_kernel.py`.
+  - validation snapshot:
+    - `.venv/Scripts/ruff.exe check nexus3/core/authorization_kernel.py nexus3/rpc/pool.py tests/unit/core/test_authorization_kernel.py` passed.
+    - `.venv/Scripts/mypy.exe nexus3/core/authorization_kernel.py nexus3/rpc/pool.py` passed.
+    - `.venv/Scripts/pytest.exe -q tests/unit/core/test_authorization_kernel.py` passed.
+    - `.venv/Scripts/pytest.exe -q tests/unit/rpc/test_pool_create_auth_shadow.py` blocked in this environment by Windows host permission errors creating/cleaning pytest temp directories (`WinError 5`).
+
 ## Testing Strategy
 
 - Extend create authorization tests to prove adapter-local grant evaluation for:
@@ -66,7 +84,7 @@ Planned slices:
 
 ## Implementation Checklist
 
-- [ ] Define typed create-stage authorization context model in core auth kernel.
+- [x] Define typed create-stage authorization context model in core auth kernel.
 - [ ] Migrate create adapter grant decisions to adapter-local computation.
 - [ ] Remove `parent_can_grant` precompute plumbing from pool call sites.
 - [ ] Add/adjust focused regressions for adapter-authoritative create checks.

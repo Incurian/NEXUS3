@@ -12,6 +12,7 @@ from enum import Enum
 from typing import Protocol
 
 AuthorizationScalar = str | int | float | bool | None
+AuthorizationContext = dict[str, AuthorizationScalar]
 
 
 class AuthorizationAction(Enum):
@@ -36,6 +37,81 @@ class AuthorizationResourceType(Enum):
     RPC = "rpc"
 
 
+class CreateAuthorizationStage(Enum):
+    """Canonical create-authorization lifecycle stages."""
+
+    LIFECYCLE_ENTRY = "lifecycle_entry"
+    REQUESTER_PARENT_BINDING = "requester_parent_binding"
+    MAX_DEPTH = "max_depth"
+    BASE_CEILING = "base_ceiling"
+    DELTA_CEILING = "delta_ceiling"
+
+
+@dataclass(frozen=True)
+class CreateAuthorizationContext:
+    """Typed create-authorization context with scalar-wire compatibility."""
+
+    check_stage: CreateAuthorizationStage
+    parent_depth: int
+    max_depth: int
+    parent_can_grant: bool | None = None
+    parent_agent_id: str | None = None
+
+    def to_context_map(self) -> AuthorizationContext:
+        """Serialize create context into scalar-only request context."""
+        context: AuthorizationContext = {
+            "check_stage": self.check_stage.value,
+            "parent_depth": self.parent_depth,
+            "max_depth": self.max_depth,
+        }
+        if self.parent_can_grant is not None:
+            context["parent_can_grant"] = self.parent_can_grant
+        if self.parent_agent_id is not None:
+            context["parent_agent_id"] = self.parent_agent_id
+        return context
+
+    @classmethod
+    def from_context_map(
+        cls,
+        context: AuthorizationContext,
+    ) -> CreateAuthorizationContext | None:
+        """Parse typed create context from scalar request context."""
+        raw_stage = context.get("check_stage")
+        if not isinstance(raw_stage, str):
+            return None
+
+        try:
+            stage = CreateAuthorizationStage(raw_stage)
+        except ValueError:
+            return None
+
+        parent_depth = context.get("parent_depth")
+        max_depth = context.get("max_depth")
+        if (
+            not isinstance(parent_depth, int)
+            or isinstance(parent_depth, bool)
+            or not isinstance(max_depth, int)
+            or isinstance(max_depth, bool)
+        ):
+            return None
+
+        parent_can_grant = context.get("parent_can_grant")
+        if parent_can_grant is not None and not isinstance(parent_can_grant, bool):
+            return None
+
+        parent_agent_id = context.get("parent_agent_id")
+        if parent_agent_id is not None and not isinstance(parent_agent_id, str):
+            return None
+
+        return cls(
+            check_stage=stage,
+            parent_depth=parent_depth,
+            max_depth=max_depth,
+            parent_can_grant=parent_can_grant,
+            parent_agent_id=parent_agent_id,
+        )
+
+
 @dataclass(frozen=True)
 class AuthorizationResource:
     """Resource being authorized."""
@@ -52,7 +128,7 @@ class AuthorizationRequest:
     action: AuthorizationAction
     resource: AuthorizationResource
     principal_id: str
-    context: dict[str, AuthorizationScalar] = field(default_factory=dict)
+    context: AuthorizationContext = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
