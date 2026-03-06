@@ -348,7 +348,7 @@ Immediate tasks:
     `docs/validation/post-m4-20260306-live1d/issue-links.md`.
   - updated `docs/validation/post-m4-20260306-live1b/findings.md` with
     explicit owner roles + target windows aligned to tracker entries.
-- Completed (2026-03-06): closeout-gate tooling slice:
+- Completed (2026-03-06, committed `ad53962`): closeout-gate tooling slice:
   - added `scripts/validation/post_m4_closeout_gate.py` to evaluate campaign
     closure state across soak/race/terminal/windows artifacts + tracker status.
   - added focused regressions in
@@ -386,6 +386,7 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `ad53962` post-m4 campaign: add deterministic closeout gate checker
 - `5487d43` docs(post-m4): add canonical follow-up tracker mappings
 - `d8d7538` docs(status): record terminal follow-up commit in running log
 - `055dcb6` post-m4 campaign: add terminal follow-up refresh and sync status
