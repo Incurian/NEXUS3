@@ -337,7 +337,7 @@ Immediate tasks:
   - terminal strict checks remain green (`strict_failures=0`) while
     manual follow-up remains open (`manual_follow_up_cases=1`) for
     carriage-return multi-emulator behavior.
-- Completed (2026-03-06): follow-up tracker mapping slice:
+- Completed (2026-03-06, committed `5487d43`): follow-up tracker mapping slice:
   - added canonical follow-up map
     `docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md`
     with stable IDs for race/terminal/windows follow-ups.
@@ -370,6 +370,8 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `5487d43` docs(post-m4): add canonical follow-up tracker mappings
+- `d8d7538` docs(status): record terminal follow-up commit in running log
 - `055dcb6` post-m4 campaign: add terminal follow-up refresh and sync status
 - `abef28a` post-m4 campaign: add contention-aware race follow-up
 - `fa1c66a` docs(validation): add retained dry-run and initial live artifacts
