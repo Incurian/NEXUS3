@@ -41,6 +41,7 @@ Primary files to change:
 - `scripts/validation/race_harness.py`
 - `scripts/validation/terminal_payload_matrix.py`
 - `scripts/validation/post_m4_closeout_gate.py`
+- `scripts/validation/prepare_post_m4_manual_closeout.py`
 - [WINDOWS-LIVE-TESTING-GUIDE.md](/home/inc/repos/NEXUS3/docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md)
 
 Campaign tracks:
@@ -135,6 +136,11 @@ Artifact contract:
       - windows summary status still `pending_real_host`
       - terminal manual emulator closure marker not yet present
       - tracker statuses for terminal/windows remain `open`
+- 2026-03-06: added manual closeout prep helper + CI coverage:
+  - added `scripts/validation/prepare_post_m4_manual_closeout.py` with focused tests:
+    `tests/unit/validation/test_prepare_post_m4_manual_closeout.py`
+  - runbook/artifact docs updated with `closeout-handoff.md` + `closeout-gate.json` expectations.
+  - `.gitlab-ci.yml` now includes `scripts/validation/` in `ruff` checks and explicit mypy coverage for closeout tooling scripts.
 
 ## Testing Strategy
 
@@ -162,6 +168,7 @@ Artifact contract:
       artifacts.
 - [x] Execute terminal red-team matrix and archive artifacts.
 - [x] Add deterministic campaign closeout checker for artifact + tracker gates.
+- [x] Add manual closeout prep scaffolding utility and CI lint/type coverage for validation tooling.
 - [x] Convert findings into issues/plan updates with owners and target windows.
 - [ ] Mark milestone deferred-validation items closed with evidence links.
 

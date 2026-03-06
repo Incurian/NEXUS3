@@ -34,6 +34,15 @@ NEXUS_DEV=1 .venv/bin/python -m nexus3 --serve 9000
 
 Use one run id per campaign execution window (example: `post-m4-20260306-a`).
 
+Optional prep helper for manual closeout scaffolding:
+
+```bash
+.venv/bin/python scripts/validation/prepare_post_m4_manual_closeout.py \
+  --run-id post-m4-20260306-a \
+  --windows-source-run-id post-m4-20260306-live1b \
+  --terminal-source-run-id post-m4-20260306-live1d
+```
+
 Required for automated tracks (`soak`, `race`, `terminal`):
 
 - `metadata.json`: immutable run config + environment metadata.

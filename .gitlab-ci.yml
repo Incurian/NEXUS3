@@ -38,8 +38,8 @@ ruff:
   extends: .python-base
   stage: lint
   script:
-    - ruff check nexus3/
-    - ruff format --check nexus3/
+    - ruff check nexus3/ scripts/validation/
+    - ruff format --check nexus3/ scripts/validation/
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
@@ -48,7 +48,7 @@ mypy:
   extends: .python-base
   stage: lint
   script:
-    - mypy nexus3/
+    - mypy nexus3/ scripts/validation/post_m4_closeout_gate.py scripts/validation/prepare_post_m4_manual_closeout.py
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

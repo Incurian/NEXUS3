@@ -360,6 +360,17 @@ Immediate tasks:
   - current gate snapshot command:
     `.venv/bin/python scripts/validation/post_m4_closeout_gate.py --json-out /tmp/post-m4-closeout-gate-20260306.json`
     reports expected open checks (Windows status pending, terminal manual marker missing, terminal/windows tracker statuses open).
+- Completed (2026-03-06, local pending commit): manual-closeout prep + CI tooling slice:
+  - added `scripts/validation/prepare_post_m4_manual_closeout.py` to scaffold
+    `windows/*`, `terminal/summary.md`, and `closeout-handoff.md` for a new run id.
+  - added focused prep-script regressions in
+    `tests/unit/validation/test_prepare_post_m4_manual_closeout.py`.
+  - updated `.gitlab-ci.yml` lint/type jobs to cover validation tooling paths:
+    - `ruff check nexus3/ scripts/validation/`
+    - `ruff format --check nexus3/ scripts/validation/`
+    - `mypy nexus3/ scripts/validation/post_m4_closeout_gate.py scripts/validation/prepare_post_m4_manual_closeout.py`
+  - updated post-M4 runbook/artifact docs for `closeout-handoff.md` and
+    `closeout-gate.json` handoff flow.
 - Validation target (post-M4 campaign continuation, 2026-03-06):
   - real-host Windows run per
     `docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md` with artifacts under
@@ -368,6 +379,8 @@ Immediate tasks:
     `docs/validation/<next-run-id>/terminal/summary.md` (non-interactive
     matrix reruns alone do not close this gate)
 - Compact handoff (next slice, execute in order):
+  0. Prepare manual-closeout scaffold for the next run id:
+     `.venv/bin/python scripts/validation/prepare_post_m4_manual_closeout.py --run-id <next-run-id> --windows-source-run-id <windows-source> --terminal-source-run-id <terminal-source>`
   1. Run Windows-native validation on real host per
      `docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md`; populate
      `docs/validation/<next-run-id>/windows/{metadata.json,checklist.md,summary.json,notes.md}`.

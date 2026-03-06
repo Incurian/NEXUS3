@@ -369,6 +369,10 @@ Status note (2026-03-06, latest):
 Status note (2026-03-06, gate tooling):
 - Added deterministic closeout checker:
   `scripts/validation/post_m4_closeout_gate.py`.
+- Added manual closeout prep scaffolder:
+  `scripts/validation/prepare_post_m4_manual_closeout.py`.
+- CI lint/type coverage now includes `scripts/validation/` and explicit mypy
+  checks for closeout tooling scripts.
 - Current gate snapshot:
   - `.venv/bin/python scripts/validation/post_m4_closeout_gate.py --json-out /tmp/post-m4-closeout-gate-20260306.json` reports open checks for:
     - Windows summary status (`pending_real_host`).
