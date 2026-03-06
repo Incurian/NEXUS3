@@ -1,0 +1,63 @@
+{
+  "run_id": "post-m4-20260306-live1e",
+  "probe": "docs\\validation\\post-m4-20260306-live1e\\terminal\\cr_probe.py",
+  "all_returncodes_zero": true,
+  "all_outputs_include_carriage_return": true,
+  "all_outputs_include_overwrite_token": true,
+  "results": {
+    "cmd": {
+      "command": [
+        "cmd",
+        "/c",
+        ".venv\\Scripts\\python.exe docs\\validation\\post-m4-20260306-live1e\\terminal\\cr_probe.py"
+      ],
+      "returncode": 0,
+      "stdout_text": "prompt-safe\rprompt-overwrite\r\n",
+      "stderr_text": "",
+      "stdout_has_carriage_return": true,
+      "stdout_has_overwrite_token": true,
+      "stdout_hex_head": "70726f6d70742d736166650d70726f6d70742d6f76657277726974650d0a"
+    },
+    "powershell_5": {
+      "command": [
+        "powershell",
+        "-NoProfile",
+        "-Command",
+        ".venv\\Scripts\\python.exe docs\\validation\\post-m4-20260306-live1e\\terminal\\cr_probe.py"
+      ],
+      "returncode": 0,
+      "stdout_text": "prompt-safe\rprompt-overwrite\r\n",
+      "stderr_text": "",
+      "stdout_has_carriage_return": true,
+      "stdout_has_overwrite_token": true,
+      "stdout_hex_head": "70726f6d70742d736166650d70726f6d70742d6f76657277726974650d0a"
+    },
+    "powershell_7": {
+      "command": [
+        "pwsh",
+        "-NoProfile",
+        "-Command",
+        ".venv\\Scripts\\python.exe docs\\validation\\post-m4-20260306-live1e\\terminal\\cr_probe.py"
+      ],
+      "returncode": 0,
+      "stdout_text": "prompt-safe\rprompt-overwrite\r\n",
+      "stderr_text": "",
+      "stdout_has_carriage_return": true,
+      "stdout_has_overwrite_token": true,
+      "stdout_hex_head": "70726f6d70742d736166650d70726f6d70742d6f76657277726974650d0a"
+    },
+    "git_bash": {
+      "command": [
+        "bash",
+        "-lc",
+        "./.venv/Scripts/python.exe docs/validation/post-m4-20260306-live1e/terminal/cr_probe.py"
+      ],
+      "returncode": 0,
+      "stdout_text": "prompt-safe\rprompt-overwrite\r\n",
+      "stderr_text": "",
+      "stdout_has_carriage_return": true,
+      "stdout_has_overwrite_token": true,
+      "stdout_hex_head": "70726f6d70742d736166650d70726f6d70742d6f76657277726974650d0a"
+    }
+  }
+}

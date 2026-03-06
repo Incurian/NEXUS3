@@ -1,0 +1,25 @@
+{
+  "track": "windows",
+  "run_id": "post-m4-20260306-live1e",
+  "started_at": "2026-03-06T19:46:59Z",
+  "finished_at": "2026-03-06T19:48:20Z",
+  "duration_seconds": 81.0,
+  "config": {
+    "execution_mode": "real_host",
+    "runbook": "docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md",
+    "source_run_id": "post-m4-20260306-live1b"
+  },
+  "environment": {
+    "host": "INC-TR",
+    "os": "Windows-10-10.0.19045-SP0",
+    "os_build": "10.0.19045",
+    "python": "3.13.5",
+    "shells_verified": [
+      "cmd",
+      "powershell_5",
+      "powershell_7",
+      "git_bash"
+    ],
+    "notes": "Executed on a real Windows host. Subprocess-dependent checks were validated via unsandboxed execution due sandbox process restrictions."
+  }
+}

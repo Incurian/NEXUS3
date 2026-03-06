@@ -220,11 +220,10 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `Post-M4` validation campaign active: bootstrap + automated tracks are
-  complete with follow-up artifacts through `post-m4-20260306-live1d`;
-  deterministic closeout gating is now scripted; remaining closeout gates are
-  Windows real-host evidence and live multi-emulator carriage-return
-  verification.
+- `Post-M4` validation campaign closeout complete: external closeout slice
+  `post-m4-20260306-live1e` archived real-host Windows evidence and
+  multi-emulator carriage-return verification; deterministic closeout gate
+  now passes with explicit run ids.
 - `M4` implementation closeout complete: Plan E Phases 1-4 and Plan B Phases 1-4 are committed on this branch, and Plan G sink-boundary closure is complete.
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
@@ -315,9 +314,9 @@ Immediate tasks:
   - `docs/validation/post-m4-bootstrap-dryrun/`
   - `docs/validation/post-m4-20260306-live1/`
   - `docs/validation/post-m4-20260306-live2/`
-- Next target: close remaining post-M4 validation gaps:
-  - execute Windows-native checklist on real Windows host and archive evidence.
-  - complete live multi-emulator carriage-return follow-up and archive evidence.
+- Next target: advance deferred follow-on planning queue now that post-M4
+  validation gates are closed (Plan A v2, Plan H shim retirement,
+  Plan C service immutability, provider keep-alive investigation).
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with
@@ -371,27 +370,24 @@ Immediate tasks:
     - `mypy nexus3/ scripts/validation/post_m4_closeout_gate.py scripts/validation/prepare_post_m4_manual_closeout.py`
   - updated post-M4 runbook/artifact docs for `closeout-handoff.md` and
     `closeout-gate.json` handoff flow.
-- Validation target (post-M4 campaign continuation, 2026-03-06):
-  - real-host Windows run per
-    `docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md` with artifacts under
-    `docs/validation/<next-run-id>/windows/`
-  - live multi-emulator carriage-return verification notes appended to
-    `docs/validation/<next-run-id>/terminal/summary.md` (non-interactive
-    matrix reruns alone do not close this gate)
-- Compact handoff (next slice, execute in order):
-  0. Prepare manual-closeout scaffold for the next run id:
-     `.venv/bin/python scripts/validation/prepare_post_m4_manual_closeout.py --run-id <next-run-id> --windows-source-run-id <windows-source> --terminal-source-run-id <terminal-source>`
-  1. Run Windows-native validation on real host per
-     `docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md`; populate
-     `docs/validation/<next-run-id>/windows/{metadata.json,checklist.md,summary.json,notes.md}`.
-  2. Execute live multi-emulator carriage-return verification and append
-     evidence in `docs/validation/<next-run-id>/terminal/summary.md`.
-  3. Run closeout checker:
-     `.venv/bin/python scripts/validation/post_m4_closeout_gate.py --soak-run-id <id> --race-run-id <id> --terminal-run-id <id> --windows-run-id <id> --json-out docs/validation/<run-id>/closeout-gate.json`
-     and confirm `pass=true`.
-  4. Update `POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md`,
-     `ARCH-MILESTONE-SCHEDULE-2026-03-02.md`, and this running status; then
-     check off remaining campaign checklist items that are truly complete.
+- Completed (2026-03-06, local pending commit): external closeout run
+  (`post-m4-20260306-live1e`):
+  - prepared closeout scaffold + artifacts:
+    `docs/validation/post-m4-20260306-live1e/{windows,terminal,closeout-handoff.md}`.
+  - executed Windows real-host evidence checks on `INC-TR` and closed windows
+    summary status (`status=pass`) in
+    `docs/validation/post-m4-20260306-live1e/windows/summary.json`.
+  - executed multi-emulator carriage-return follow-up across
+    `cmd`/`powershell`/`pwsh`/`git bash`; archived raw evidence in
+    `docs/validation/post-m4-20260306-live1e/terminal/multi-shell-carriage-return-evidence.json`.
+  - mirrored terminal closure marker into
+    `docs/validation/post-m4-20260306-live1d/terminal/summary.md` for
+    deterministic gate compatibility.
+  - moved tracker follow-ups `POSTM4-FU-TERM-001` and `POSTM4-FU-WIN-001` to
+    `validation-closed` in
+    `docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md`.
+  - deterministic closeout gate command now passes with archived result:
+    `.venv/bin/python scripts/validation/post_m4_closeout_gate.py --artifact-root docs/validation --soak-run-id post-m4-20260306-live1b --race-run-id post-m4-20260306-live1c --terminal-run-id post-m4-20260306-live1d --windows-run-id post-m4-20260306-live1e --json-out docs/validation/post-m4-20260306-live1e/closeout-gate.json`.
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -482,6 +478,16 @@ Progress snapshot:
     `docs/validation/post-m4-20260306-live1c/`
   - updated post-M4 runbook/validation schema docs and milestone/plan status
     notes for contention-aware race follow-up evidence
+- Completed (2026-03-06, local pending commit): Post-M4 external closeout run
+  (`post-m4-20260306-live1e`):
+  - closed Windows real-host track with pass status:
+    `docs/validation/post-m4-20260306-live1e/windows/summary.json`
+  - closed multi-emulator carriage-return follow-up with evidence:
+    `docs/validation/post-m4-20260306-live1e/terminal/multi-shell-carriage-return-evidence.json`
+  - updated tracker statuses to `validation-closed`:
+    `docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md`
+  - archived deterministic gate pass output:
+    `docs/validation/post-m4-20260306-live1e/closeout-gate.json`
 - Completed (2026-03-05): Plan E Phase 2 provider/session integration (`e3cd304`):
   - migrated `Session.send()`/`Session.run_turn()` pre-user preflight repair
     path to compiler-backed normalization (`compile_context_messages(...)`)

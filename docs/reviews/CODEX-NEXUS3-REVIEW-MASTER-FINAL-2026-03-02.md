@@ -406,14 +406,23 @@ If delegated to an agent with limited reasoning depth, assign one bounded packag
 - Scope: `cli/*`, `display/*`, `mcp/error_formatter.py`, `context/loader.py`, `rpc/protocol.py`.
 - Done criteria: injected control-sequence payloads render safely; malformed configs/protocol payloads fail cleanly.
 
-## Deferred Work (Still Required Later)
+## Deferred Work (Status Update: 2026-03-06)
 
-These items were intentionally not completed in this environment and must be scheduled:
+Post-M4 deferred validation campaign closeout is complete with archived evidence:
 
-1. Long soak/performance stability runs under production-like workload.
-2. Windows-native validation on an actual Windows host.
-3. Timing-sensitive exploit validation for TOCTOU/lifecycle races under true concurrent multi-process load.
-4. Real terminal-emulator red-team tests for OSC/CSI/CR behavior differences.
+1. Long soak/performance stability runs:
+   - closed in `post-m4-20260306-live1b` soak artifacts.
+2. Windows-native validation on actual Windows host:
+   - closed in `post-m4-20260306-live1e/windows/`.
+3. Timing-sensitive TOCTOU/lifecycle race validation:
+   - closed in `post-m4-20260306-live1c/race/`.
+4. Real terminal-emulator validation for OSC/CSI/CR behavior differences:
+   - automated matrix coverage in `post-m4-20260306-live1d/terminal/`
+   - live multi-emulator carriage-return closure in
+     `post-m4-20260306-live1e/terminal/`.
+
+Deterministic campaign gate result:
+- `docs/validation/post-m4-20260306-live1e/closeout-gate.json` (`pass=true`)
 
 ## Final Notes
 

@@ -21,8 +21,13 @@
 
 ## Manual Follow-Up (2026-03-06)
 - `carriage-return` remains a manual-follow-up class even with strict checks passing.
-- This run was executed in the current Linux/WSL environment only; multi-emulator verification is still open.
-- Baseline Windows-native validation remains open in `post-m4-20260306-live1b/windows/summary.json` (`status=pending_real_host`).
+- Multi-emulator verification completed on a real Windows host in
+  `post-m4-20260306-live1e`:
+  - `docs/validation/post-m4-20260306-live1e/terminal/summary.md`
+  - `docs/validation/post-m4-20260306-live1e/terminal/multi-shell-carriage-return-evidence.json`
+- Windows-native validation closeout also completed in:
+  `docs/validation/post-m4-20260306-live1e/windows/summary.json` (`status=pass`).
+- Multi-emulator verification: PASS
 
 ## Reproduction Command
 ```bash

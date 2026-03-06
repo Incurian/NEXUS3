@@ -27,21 +27,26 @@ This document is the canonical source for post-M4 follow-up mapping IDs across r
 - Track: `terminal`
 - Scope: live multi-emulator carriage-return verification for terminal follow-up cases.
 - Owner role: CLI/Display owner
-- Target window: Week of 2026-03-09 (next live multi-emulator validation slot)
-- Status: `open`
+- Target window: 2026-03-06 real-host closeout slice (`post-m4-20260306-live1e`)
+- Status: `validation-closed`
 - Evidence:
   - [live1b terminal verdict](/home/inc/repos/NEXUS3/docs/validation/post-m4-20260306-live1b/terminal/verdict.json)
   - [live1d terminal verdict](/home/inc/repos/NEXUS3/docs/validation/post-m4-20260306-live1d/terminal/verdict.json)
   - [live1d terminal summary](/home/inc/repos/NEXUS3/docs/validation/post-m4-20260306-live1d/terminal/summary.md)
+  - [live1e terminal summary](/home/inc/repos/NEXUS3/docs/validation/post-m4-20260306-live1e/terminal/summary.md)
+  - [live1e multi-shell carriage-return evidence](/home/inc/repos/NEXUS3/docs/validation/post-m4-20260306-live1e/terminal/multi-shell-carriage-return-evidence.json)
 
 ### POSTM4-FU-WIN-001
 
 - Track: `windows`
 - Scope: Windows-native validation campaign execution on a real host and artifact closeout.
 - Owner role: Windows validation owner
-- Target window: Week of 2026-03-09 (first available real-host run slot)
-- Status: `open`
+- Target window: 2026-03-06 real-host closeout slice (`post-m4-20260306-live1e`)
+- Status: `validation-closed`
 - Evidence:
   - [live1b windows summary](/home/inc/repos/NEXUS3/docs/validation/post-m4-20260306-live1b/windows/summary.json)
   - [live1b windows checklist](/home/inc/repos/NEXUS3/docs/validation/post-m4-20260306-live1b/windows/checklist.md)
   - [Windows live testing guide](/home/inc/repos/NEXUS3/docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md)
+  - [live1e windows summary](/home/inc/repos/NEXUS3/docs/validation/post-m4-20260306-live1e/windows/summary.json)
+  - [live1e windows checklist](/home/inc/repos/NEXUS3/docs/validation/post-m4-20260306-live1e/windows/checklist.md)
+  - [live1e windows metadata](/home/inc/repos/NEXUS3/docs/validation/post-m4-20260306-live1e/windows/metadata.json)

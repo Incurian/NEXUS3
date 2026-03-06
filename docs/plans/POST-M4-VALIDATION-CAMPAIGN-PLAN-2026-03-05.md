@@ -141,6 +141,21 @@ Artifact contract:
     `tests/unit/validation/test_prepare_post_m4_manual_closeout.py`
   - runbook/artifact docs updated with `closeout-handoff.md` + `closeout-gate.json` expectations.
   - `.gitlab-ci.yml` now includes `scripts/validation/` in `ruff` checks and explicit mypy coverage for closeout tooling scripts.
+- 2026-03-06: external closeout slice completed on real Windows host
+  (`post-m4-20260306-live1e`):
+  - Windows track artifacts now pass:
+    - `docs/validation/post-m4-20260306-live1e/windows/summary.json` (`status=pass`)
+    - `docs/validation/post-m4-20260306-live1e/windows/live-check-output.json`
+  - Terminal manual follow-up closed with multi-emulator evidence:
+    - `docs/validation/post-m4-20260306-live1e/terminal/summary.md`
+    - `docs/validation/post-m4-20260306-live1e/terminal/multi-shell-carriage-return-evidence.json`
+    - mirrored closure marker in
+      `docs/validation/post-m4-20260306-live1d/terminal/summary.md`
+  - follow-up tracker statuses moved to `validation-closed` for
+    `POSTM4-FU-TERM-001` and `POSTM4-FU-WIN-001` in
+    [POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md)
+  - deterministic closeout gate passed:
+    - `.venv/bin/python scripts/validation/post_m4_closeout_gate.py --artifact-root docs/validation --soak-run-id post-m4-20260306-live1b --race-run-id post-m4-20260306-live1c --terminal-run-id post-m4-20260306-live1d --windows-run-id post-m4-20260306-live1e --json-out docs/validation/post-m4-20260306-live1e/closeout-gate.json`
 
 ## Testing Strategy
 
@@ -162,7 +177,7 @@ Artifact contract:
 - [x] Create runbook + artifact format for post-M4 validation tracks.
 - [x] Implement or wire campaign scripts for soak/race/terminal tracks.
 - [x] Execute soak/perf campaign and archive artifacts.
-- [ ] Execute Windows-native campaign on real Windows host(s) and archive
+- [x] Execute Windows-native campaign on real Windows host(s) and archive
       artifacts.
 - [x] Execute high-concurrency TOCTOU/lifecycle race campaign and archive
       artifacts.
@@ -170,7 +185,7 @@ Artifact contract:
 - [x] Add deterministic campaign closeout checker for artifact + tracker gates.
 - [x] Add manual closeout prep scaffolding utility and CI lint/type coverage for validation tooling.
 - [x] Convert findings into issues/plan updates with owners and target windows.
-- [ ] Mark milestone deferred-validation items closed with evidence links.
+- [x] Mark milestone deferred-validation items closed with evidence links.
 
 ## Documentation Updates
 

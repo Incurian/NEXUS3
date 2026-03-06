@@ -1,0 +1,83 @@
+{
+  "run_id": "post-m4-20260306-live1e",
+  "generated_at": "2026-03-06T19:47:03Z",
+  "duration_seconds": 3.622,
+  "environment": {
+    "python": "3.13.5",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "system": "Windows",
+    "release": "10",
+    "version": "10.0.19045",
+    "machine": "AMD64",
+    "hostname": "INC-TR",
+    "user": "inc"
+  },
+  "results": [
+    {
+      "section": "process_termination",
+      "pass": true,
+      "detail": "terminate_process_tree ended long-running ping and handled already-exited process",
+      "extra": {
+        "ping_pid": 12936,
+        "ping_returncode": 1,
+        "already_terminated_returncode": 0,
+        "already_terminated_exception": null
+      }
+    },
+    {
+      "section": "esc_detection",
+      "pass": true,
+      "detail": "msvcrt import + key APIs available",
+      "extra": {
+        "kbhit": true,
+        "getwch": true
+      }
+    },
+    {
+      "section": "bom_handling",
+      "pass": true,
+      "detail": "BOM-prefixed config/context loaded without BOM leakage",
+      "extra": {
+        "context_prefix": "# System Configuration\n\n## Syste"
+      }
+    },
+    {
+      "section": "environment_vars",
+      "pass": true,
+      "detail": "Windows safe env vars present and secrets filtered",
+      "extra": {
+        "missing_safe_vars": [],
+        "secrets_filtered": true,
+        "path_present": true
+      }
+    },
+    {
+      "section": "subprocess_cancellation_behavior",
+      "pass": true,
+      "detail": "BashSafeSkill executed subprocess command without window/error",
+      "extra": {
+        "error": "",
+        "output_excerpt": "subprocess-ok"
+      }
+    },
+    {
+      "section": "cli_terminal_behavior",
+      "pass": true,
+      "detail": "Shell detection and non-interactive CLI startup check",
+      "extra": {
+        "detected_shell": "GIT_BASH",
+        "supports_ansi": true,
+        "supports_unicode": true,
+        "code_page": 65001,
+        "code_page_utf8": true,
+        "cli_returncode": 0,
+        "cli_stdout_head": [
+          "usage: nexus3 [-h] [-v] [-V] [--serve [PORT]] [--raw-log] [--log-dir LOG_DIR]",
+          "              [--reload] [--resume] [--fresh] [--session NAME]",
+          "              [--template PATH] [--model NAME] [--connect [URL]]"
+        ]
+      }
+    }
+  ],
+  "all_pass": true
+}

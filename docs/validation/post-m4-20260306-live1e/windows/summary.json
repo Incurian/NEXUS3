@@ -1,0 +1,13 @@
+{
+  "status": "pass",
+  "dry_run": false,
+  "duration_seconds": 81.0,
+  "required_sections_total": 6,
+  "required_sections_passed": 6,
+  "required_sections_failed": 0,
+  "required_sections_pending": 0,
+  "evidence": {
+    "windows_live_checks": "docs/validation/post-m4-20260306-live1e/windows/live-check-output.json",
+    "terminal_multi_shell_probe": "docs/validation/post-m4-20260306-live1e/terminal/multi-shell-carriage-return-evidence.json"
+  }
+}
