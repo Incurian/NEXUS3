@@ -214,13 +214,13 @@ Suggested next hardening if failure persists:
   - optionally collapse illegal trailing TOOL blocks into a synthetic assistant note
   - emit one structured warning event with before/after diff summary.
 
-## Architecture Overhaul Running Status (2026-03-05)
+## Architecture Overhaul Running Status (2026-03-06)
 
 Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `M4` early execution active: Plan E Phases 1-4 and Plan B Phases 1-3A are committed on this branch, with Plan B Phase 4A implemented locally.
+- `M4` early execution active: Plan E Phases 1-4 and Plan B Phases 1-4A are committed on this branch, with Plan B Phase 4B implemented locally.
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
@@ -251,7 +251,8 @@ Immediate tasks:
   - `nexus3/rpc/README.md`: HTTP capability semantics + fallback precedence docs.
   - tests: focused HTTP/client wiring regressions for capability-present,
     capability-invalid (`INVALID_PARAMS`), and requester-only fallback flows.
-- Plan B Phase 4A migration-prep telemetry slice is implemented locally and ready to commit:
+- Plan B Phase 4A is committed as `2cb4817`
+  (`plan b phase 4a: add legacy requester fallback telemetry`):
   - `nexus3/rpc/http.py`: emit explicit warning telemetry when deprecated
     requester-only `X-Nexus-Agent` fallback is used without
     `X-Nexus-Capability`.
@@ -261,12 +262,22 @@ Immediate tasks:
     `docs/plans/ARCH-B-CAPABILITY-TOKENS-PLAN-2026-03-02.md`.
   - focused regression coverage in `tests/unit/test_http_pipeline_layers.py`
     for warning/no-warning paths + unchanged dispatch forwarding.
-- Next target: Plan B Phase 4B enforcement sequencing
-  (reject/remove legacy requester-only header path after migration gates).
-- Focused validation target (Phase 4A):
-  - `.venv/bin/ruff check nexus3/rpc/http.py tests/unit/test_http_pipeline_layers.py nexus3/rpc/README.md docs/plans/ARCH-B-CAPABILITY-TOKENS-PLAN-2026-03-02.md`
+- Plan B Phase 4B enforcement slice is implemented locally and ready to commit:
+  - `nexus3/rpc/http.py`: requester-only `X-Nexus-Agent` ingress is now rejected
+    unless `X-Nexus-Capability` is also present.
+  - deterministic JSON-RPC `INVALID_PARAMS` error returned for requester-only
+    header usage.
+  - `nexus3/rpc/README.md` + Plan B/schedule docs updated to reflect legacy
+    header-path removal semantics.
+  - focused regressions in `tests/unit/test_http_pipeline_layers.py` enforce:
+    requester-only rejection, capability-present forwarding, invalid-capability
+    behavior parity.
+- Next target: commit Plan B Phase 4B, then proceed to remaining M4 scope
+  (Plan G Phase 4 cleanup + milestone closeout validation).
+- Focused validation target (Phase 4B):
+  - `.venv/bin/ruff check nexus3/rpc/http.py tests/unit/test_http_pipeline_layers.py nexus3/rpc/README.md docs/plans/ARCH-B-CAPABILITY-TOKENS-PLAN-2026-03-02.md docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md`
   - `.venv/bin/mypy nexus3/rpc/http.py`
-  - `.venv/bin/pytest -q tests/unit/test_http_pipeline_layers.py tests/unit/test_nexus_skill_requester_propagation.py`
+  - `.venv/bin/pytest -q tests/unit/test_http_pipeline_layers.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/test_rpc_dispatcher.py tests/unit/test_nexus_skill_requester_propagation.py`
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -274,6 +285,7 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `2cb4817` plan b phase 4a: add legacy requester fallback telemetry
 - `6b65b17` plan b phase 3a: add http capability transport wiring
 - `35206ec` docs: record plan b phase 2 execution status
 - `43773be` plan b phase 2: integrate capabilities into direct rpc path
@@ -371,7 +383,7 @@ Progress snapshot:
   - added focused regressions in `tests/unit/test_http_pipeline_layers.py` and
     `tests/unit/test_client.py` for capability forwarding, invalid-capability
     `INVALID_PARAMS` surfacing, and requester-only fallback behavior.
-- Completed (2026-03-06, local): Plan B Phase 4A migration-prep telemetry slice:
+- Completed (2026-03-06): Plan B Phase 4A migration-prep telemetry slice (`2cb4817`):
   - updated `nexus3/rpc/http.py` to emit warning telemetry when deprecated
     requester-only `X-Nexus-Agent` fallback is used without
     `X-Nexus-Capability`.
@@ -382,6 +394,17 @@ Progress snapshot:
     Phase 4A (telemetry) vs Phase 4B (future enforcement) sequencing.
   - added focused warning-path coverage in
     `tests/unit/test_http_pipeline_layers.py`.
+- Completed (2026-03-06, local): Plan B Phase 4B enforcement slice:
+  - updated `nexus3/rpc/http.py` to reject requester-only `X-Nexus-Agent`
+    ingress when `X-Nexus-Capability` is absent.
+  - deterministic `INVALID_PARAMS` response now returned at HTTP ingress for
+    requester-only identity headers.
+  - updated `nexus3/rpc/README.md`,
+    `docs/plans/ARCH-B-CAPABILITY-TOKENS-PLAN-2026-03-02.md`, and
+    `docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md` for Phase 4B completion
+    semantics.
+  - updated focused regressions in `tests/unit/test_http_pipeline_layers.py`
+    for requester-only rejection behavior.
 - Validation snapshot (2026-03-05, Plan B Phase 2):
   - `.venv/bin/ruff check nexus3/core/capabilities.py nexus3/core/request_context.py nexus3/core/__init__.py nexus3/rpc/dispatch_core.py nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/agent_api.py nexus3/rpc/pool.py nexus3/rpc/http.py tests/unit/core/test_request_context.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py tests/unit/test_pool.py` passed.
   - `.venv/bin/mypy nexus3/core/capabilities.py nexus3/core/request_context.py nexus3/core/__init__.py nexus3/rpc/dispatch_core.py nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/agent_api.py nexus3/rpc/pool.py nexus3/rpc/http.py` passed.
@@ -410,6 +433,15 @@ Progress snapshot:
     - `.venv/bin/python -m nexus3 rpc create arch-b-phase4a --port 9000` (success)
     - `.venv/bin/python -m nexus3 rpc send arch-b-phase4a "describe your permissions and what you can do" --port 9000` (success)
     - `.venv/bin/python -m nexus3 rpc destroy arch-b-phase4a --port 9000` (success)
+- Validation snapshot (2026-03-06, Plan B Phase 4B local):
+  - `.venv/bin/ruff check nexus3/rpc/http.py tests/unit/test_http_pipeline_layers.py nexus3/rpc/README.md docs/plans/ARCH-B-CAPABILITY-TOKENS-PLAN-2026-03-02.md docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md` passed.
+  - `.venv/bin/mypy nexus3/rpc/http.py` passed.
+  - `.venv/bin/pytest -q tests/unit/test_http_pipeline_layers.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/test_rpc_dispatcher.py tests/unit/test_nexus_skill_requester_propagation.py` passed (`80 passed`, `13 warnings`).
+  - Live validation executed:
+    - `.venv/bin/python -m nexus3 --serve 9000` (server started)
+    - `.venv/bin/python -m nexus3 rpc create arch-b-phase4b --port 9000` (success)
+    - `.venv/bin/python -m nexus3 rpc send arch-b-phase4b "describe your permissions and what you can do" --port 9000` (success)
+    - `.venv/bin/python -m nexus3 rpc destroy arch-b-phase4b --port 9000` (success)
 - Completed: Plan A M0 foundation interfaces (`nexus3/core/authorization_kernel.py`) + unit tests.
 - Completed: Plan H M0 schema inventory scaffold (`nexus3/rpc/schemas.py`) + unit tests.
 - Completed: Plan H M1 Phase 2 first compat-safe ingress slice (`destroy_agent`, `get_messages`) wired to typed schemas with existing-style RPC error mapping + focused unit tests.

@@ -5,7 +5,6 @@ in the HTTP pipeline.
 """
 
 import json
-import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -359,7 +358,6 @@ class TestPipelineLayerIntegration:
     @pytest.mark.asyncio
     async def test_handle_connection_forwards_capability_header_to_global_dispatcher(
         self,
-        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Global HTTP dispatch forwards X-Nexus-Capability as capability_token."""
         from nexus3.rpc.http import HttpRequest, handle_connection
@@ -384,13 +382,12 @@ class TestPipelineLayerIntegration:
                 "nexus3.rpc.http.read_http_request",
                 AsyncMock(return_value=http_request),
             )
-            with caplog.at_level(logging.WARNING, logger="nexus3.rpc.http"):
-                await handle_connection(
-                    reader=MagicMock(),
-                    writer=writer,
-                    pool=mock_pool,
-                    global_dispatcher=mock_global,
-                )
+            await handle_connection(
+                reader=MagicMock(),
+                writer=writer,
+                pool=mock_pool,
+                global_dispatcher=mock_global,
+            )
 
         dispatched_request, requester_id = mock_global.dispatch.await_args.args
         assert dispatched_request.method == "list_agents"
@@ -398,11 +395,6 @@ class TestPipelineLayerIntegration:
         assert (
             mock_global.dispatch.await_args.kwargs["capability_token"]
             == "cap-token-1"
-        )
-        assert (
-            "Deprecated HTTP requester fallback used: "
-            "X-Nexus-Agent without X-Nexus-Capability"
-            not in caplog.text
         )
 
     @pytest.mark.asyncio
@@ -461,13 +453,12 @@ class TestPipelineLayerIntegration:
         assert "Invalid capability token" in payload["error"]["message"]
 
     @pytest.mark.asyncio
-    async def test_handle_connection_forwards_requester_id_to_agent_dispatcher(
+    async def test_handle_connection_rejects_requester_header_without_capability(
         self,
-        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Agent-scoped HTTP dispatch preserves X-Nexus-Agent requester identity."""
+        """Reject requester-only X-Nexus-Agent header with INVALID_PARAMS."""
         from nexus3.rpc.http import HttpRequest, handle_connection
-        from nexus3.rpc.protocol import make_success_response
+        from nexus3.rpc.protocol import INVALID_PARAMS, make_success_response
 
         mock_agent_dispatcher = MagicMock()
         mock_agent_dispatcher.dispatch = AsyncMock(
@@ -493,20 +484,22 @@ class TestPipelineLayerIntegration:
                 "nexus3.rpc.http.read_http_request",
                 AsyncMock(return_value=http_request),
             )
-            with caplog.at_level(logging.WARNING, logger="nexus3.rpc.http"):
-                await handle_connection(
-                    reader=MagicMock(),
-                    writer=writer,
-                    pool=mock_pool,
-                    global_dispatcher=mock_global,
-                )
+            await handle_connection(
+                reader=MagicMock(),
+                writer=writer,
+                pool=mock_pool,
+                global_dispatcher=mock_global,
+            )
 
-        dispatched_request, requester_id = mock_agent_dispatcher.dispatch.await_args.args
-        assert dispatched_request.method == "get_tokens"
-        assert requester_id == "caller-agent"
-        assert mock_agent_dispatcher.dispatch.await_args.kwargs["capability_token"] is None
+        mock_agent_dispatcher.dispatch.assert_not_awaited()
+
+        status_line, response_body = _parse_http_response(writer)
+        assert status_line == "HTTP/1.1 400 Bad Request"
+        payload = json.loads(response_body)
+        assert payload["id"] == 1
+        assert payload["error"]["code"] == INVALID_PARAMS
         assert (
-            "Deprecated HTTP requester fallback used: "
-            "X-Nexus-Agent without X-Nexus-Capability"
-            in caplog.text
+            payload["error"]["message"]
+            == "X-Nexus-Agent requires X-Nexus-Capability; "
+            "requester-only HTTP identity is no longer supported."
         )

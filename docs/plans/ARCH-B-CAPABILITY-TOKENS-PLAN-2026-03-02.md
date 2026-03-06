@@ -12,7 +12,7 @@ Included:
 - Optional HTTP transport phase for cross-process delegation.
 
 Deferred:
-- Full removal of legacy headers until migration complete.
+- None for HTTP delegation enforcement path (Phase 4B complete).
 
 Excluded:
 - External auth provider integration.
@@ -39,7 +39,7 @@ Phases:
 2. Use capabilities in direct in-process calls.
 3. Add optional signed/opaque HTTP capability transport.
 4A. Migration-prep telemetry: deprecate requester-only `X-Nexus-Agent` usage and emit warning telemetry when it is used without `X-Nexus-Capability` (no behavior flip; fallback remains active).
-4B. Enforcement: reject/remove legacy requester-only `X-Nexus-Agent` path after migration gate completion.
+4B. Enforcement: require `X-Nexus-Capability` whenever `X-Nexus-Agent` is sent; requester-only `X-Nexus-Agent` fails with deterministic `INVALID_PARAMS`.
 
 ## Testing Strategy
 
@@ -54,7 +54,7 @@ Phases:
 - [x] Integrate into direct API path.
 - [x] Integrate optional HTTP transport (Phase 3A ingress/client compatibility path).
 - [x] Phase 4A migration-prep telemetry/deprecation slice (compat fallback still active).
-- [ ] Phase 4B enforcement: reject/remove legacy identity-only requester header path after migration gate.
+- [x] Phase 4B enforcement: require capability header when requester header is present; reject requester-only header path with deterministic `INVALID_PARAMS`.
 
 ## Execution Status
 
@@ -134,9 +134,9 @@ Phases:
     - `.venv/bin/python -m nexus3 rpc send arch-b-http-cap "describe your permissions and what you can do" --port 9000`
     - `.venv/bin/python -m nexus3 rpc destroy arch-b-http-cap --port 9000`
 - 2026-03-06: Phase 4A migration-prep telemetry slice documented (compatibility mode retained).
-- Requests that omit `X-Nexus-Capability` still fall back to requester-only `X-Nexus-Agent` behavior for compatibility.
-- The requester-only fallback path is now treated as deprecated and emits warning telemetry to track remaining migration usage.
-- Next step (Phase 4B): enforce capability-first identity by rejecting/removing legacy requester-only header handling after migration gate criteria are met.
+- 2026-03-06: Phase 4B enforcement completed for HTTP delegation ingress.
+- `X-Nexus-Capability` is required whenever `X-Nexus-Agent` is present.
+- Requester-only `X-Nexus-Agent` is rejected with deterministic `INVALID_PARAMS`.
 
 ## Documentation Updates
 

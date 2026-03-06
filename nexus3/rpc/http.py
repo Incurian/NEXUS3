@@ -581,10 +581,14 @@ async def handle_connection(
         has_capability_header = "x-nexus-capability" in http_request.headers
         capability_token = http_request.headers.get("x-nexus-capability")
         if requester_id is not None and not has_capability_header:
-            logger.warning(
-                "Deprecated HTTP requester fallback used: "
-                "X-Nexus-Agent without X-Nexus-Capability"
+            error_response = make_error_response(
+                rpc_request.id,
+                INVALID_PARAMS,
+                "X-Nexus-Agent requires X-Nexus-Capability; "
+                "requester-only HTTP identity is no longer supported.",
             )
+            await send_http_response(writer, 400, serialize_response(error_response))
+            return
 
         try:
             rpc_response = await dispatcher.dispatch(
