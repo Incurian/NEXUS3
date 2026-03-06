@@ -578,7 +578,13 @@ async def handle_connection(
         # Layer 7: Dispatch to handler
         # Extract requester/capability identity headers for authorization.
         requester_id = http_request.headers.get("x-nexus-agent")
+        has_capability_header = "x-nexus-capability" in http_request.headers
         capability_token = http_request.headers.get("x-nexus-capability")
+        if requester_id is not None and not has_capability_header:
+            logger.warning(
+                "Deprecated HTTP requester fallback used: "
+                "X-Nexus-Agent without X-Nexus-Capability"
+            )
 
         try:
             rpc_response = await dispatcher.dispatch(

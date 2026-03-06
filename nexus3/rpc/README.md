@@ -275,12 +275,14 @@ requester.
 
 Over HTTP, requester context is accepted from:
 - `X-Nexus-Capability`: optional capability token header (Plan B Phase 3A path).
-- `X-Nexus-Agent`: legacy requester header (still supported for compatibility).
+- `X-Nexus-Agent`: legacy requester header (deprecated; compatibility fallback still active during migration).
 
 HTTP requester precedence/fallback is:
 - If `X-Nexus-Capability` is present and valid, the capability subject is the effective requester identity.
-- If `X-Nexus-Capability` is absent, requester identity falls back to `X-Nexus-Agent` behavior.
+- If `X-Nexus-Capability` is absent, requester identity still falls back to `X-Nexus-Agent` behavior for compatibility; this legacy requester-only path now emits warning telemetry for migration tracking.
 - If `X-Nexus-Capability` is present but invalid, dispatch fails deterministically with `INVALID_PARAMS` (no legacy-header fallback for that request).
+
+Phase 4A note: this migration-prep telemetry slice does not change request acceptance behavior. Phase 4 enforcement will reject/remove legacy requester-only `X-Nexus-Agent` usage after the migration gate is met.
 
 The resolved request context is preserved on both global and `/agent/{id}`
 routes and threaded through agent-scoped read handlers (`get_tokens`,

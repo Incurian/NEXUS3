@@ -38,7 +38,8 @@ Phases:
 1. Define capability format and verification API.
 2. Use capabilities in direct in-process calls.
 3. Add optional signed/opaque HTTP capability transport.
-4. Deprecate `X-Nexus-Agent` identity semantics and remove legacy path.
+4A. Migration-prep telemetry: deprecate requester-only `X-Nexus-Agent` usage and emit warning telemetry when it is used without `X-Nexus-Capability` (no behavior flip; fallback remains active).
+4B. Enforcement: reject/remove legacy requester-only `X-Nexus-Agent` path after migration gate completion.
 
 ## Testing Strategy
 
@@ -52,7 +53,8 @@ Phases:
 - [x] Define capability schema and signer/verifier.
 - [x] Integrate into direct API path.
 - [x] Integrate optional HTTP transport (Phase 3A ingress/client compatibility path).
-- [ ] Remove legacy identity-only authorization path.
+- [x] Phase 4A migration-prep telemetry/deprecation slice (compat fallback still active).
+- [ ] Phase 4B enforcement: reject/remove legacy identity-only requester header path after migration gate.
 
 ## Execution Status
 
@@ -131,6 +133,10 @@ Phases:
     - `.venv/bin/python -m nexus3 rpc create arch-b-http-cap --port 9000`
     - `.venv/bin/python -m nexus3 rpc send arch-b-http-cap "describe your permissions and what you can do" --port 9000`
     - `.venv/bin/python -m nexus3 rpc destroy arch-b-http-cap --port 9000`
+- 2026-03-06: Phase 4A migration-prep telemetry slice documented (compatibility mode retained).
+- Requests that omit `X-Nexus-Capability` still fall back to requester-only `X-Nexus-Agent` behavior for compatibility.
+- The requester-only fallback path is now treated as deprecated and emits warning telemetry to track remaining migration usage.
+- Next step (Phase 4B): enforce capability-first identity by rejecting/removing legacy requester-only header handling after migration gate criteria are met.
 
 ## Documentation Updates
 

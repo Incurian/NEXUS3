@@ -169,8 +169,13 @@ Status note (2026-03-05):
     `capability_token` on global and `/agent/{id}` routes
   - client supports explicit optional `X-Nexus-Capability` emission
   - focused HTTP/client capability transport regressions are green
-- Next target: Plan B Phase 4 legacy identity-path retirement sequencing behind
-  migration/compatibility gates.
+- Plan B Phase 4A implemented in local execution state (commit pending):
+  - HTTP ingress now emits warning telemetry when deprecated requester-only
+    `X-Nexus-Agent` fallback is used without `X-Nexus-Capability`
+  - compatibility behavior is intentionally unchanged in this slice
+  - focused warning-path and requester-fallback regressions are green
+- Next target: Plan B Phase 4B enforcement sequencing (reject/remove legacy
+  requester-only header path) after migration/compatibility gates.
 
 ### M4: Delegation and Strategic Evolution
 

@@ -5,6 +5,7 @@ in the HTTP pipeline.
 """
 
 import json
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -358,6 +359,7 @@ class TestPipelineLayerIntegration:
     @pytest.mark.asyncio
     async def test_handle_connection_forwards_capability_header_to_global_dispatcher(
         self,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         """Global HTTP dispatch forwards X-Nexus-Capability as capability_token."""
         from nexus3.rpc.http import HttpRequest, handle_connection
@@ -382,12 +384,13 @@ class TestPipelineLayerIntegration:
                 "nexus3.rpc.http.read_http_request",
                 AsyncMock(return_value=http_request),
             )
-            await handle_connection(
-                reader=MagicMock(),
-                writer=writer,
-                pool=mock_pool,
-                global_dispatcher=mock_global,
-            )
+            with caplog.at_level(logging.WARNING, logger="nexus3.rpc.http"):
+                await handle_connection(
+                    reader=MagicMock(),
+                    writer=writer,
+                    pool=mock_pool,
+                    global_dispatcher=mock_global,
+                )
 
         dispatched_request, requester_id = mock_global.dispatch.await_args.args
         assert dispatched_request.method == "list_agents"
@@ -395,6 +398,11 @@ class TestPipelineLayerIntegration:
         assert (
             mock_global.dispatch.await_args.kwargs["capability_token"]
             == "cap-token-1"
+        )
+        assert (
+            "Deprecated HTTP requester fallback used: "
+            "X-Nexus-Agent without X-Nexus-Capability"
+            not in caplog.text
         )
 
     @pytest.mark.asyncio
@@ -453,7 +461,10 @@ class TestPipelineLayerIntegration:
         assert "Invalid capability token" in payload["error"]["message"]
 
     @pytest.mark.asyncio
-    async def test_handle_connection_forwards_requester_id_to_agent_dispatcher(self) -> None:
+    async def test_handle_connection_forwards_requester_id_to_agent_dispatcher(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
         """Agent-scoped HTTP dispatch preserves X-Nexus-Agent requester identity."""
         from nexus3.rpc.http import HttpRequest, handle_connection
         from nexus3.rpc.protocol import make_success_response
@@ -482,14 +493,20 @@ class TestPipelineLayerIntegration:
                 "nexus3.rpc.http.read_http_request",
                 AsyncMock(return_value=http_request),
             )
-            await handle_connection(
-                reader=MagicMock(),
-                writer=writer,
-                pool=mock_pool,
-                global_dispatcher=mock_global,
-            )
+            with caplog.at_level(logging.WARNING, logger="nexus3.rpc.http"):
+                await handle_connection(
+                    reader=MagicMock(),
+                    writer=writer,
+                    pool=mock_pool,
+                    global_dispatcher=mock_global,
+                )
 
         dispatched_request, requester_id = mock_agent_dispatcher.dispatch.await_args.args
         assert dispatched_request.method == "get_tokens"
         assert requester_id == "caller-agent"
         assert mock_agent_dispatcher.dispatch.await_args.kwargs["capability_token"] is None
+        assert (
+            "Deprecated HTTP requester fallback used: "
+            "X-Nexus-Agent without X-Nexus-Capability"
+            in caplog.text
+        )
