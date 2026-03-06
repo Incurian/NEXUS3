@@ -360,7 +360,7 @@ Immediate tasks:
   - current gate snapshot command:
     `.venv/bin/python scripts/validation/post_m4_closeout_gate.py --json-out /tmp/post-m4-closeout-gate-20260306.json`
     reports expected open checks (Windows status pending, terminal manual marker missing, terminal/windows tracker statuses open).
-- Completed (2026-03-06, local pending commit): manual-closeout prep + CI tooling slice:
+- Completed (2026-03-06, committed `6bbb2f1`): manual-closeout prep + CI tooling slice:
   - added `scripts/validation/prepare_post_m4_manual_closeout.py` to scaffold
     `windows/*`, `terminal/summary.md`, and `closeout-handoff.md` for a new run id.
   - added focused prep-script regressions in
@@ -399,6 +399,7 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `6bbb2f1` post-m4 campaign: add manual closeout prep scaffolding
 - `ad53962` post-m4 campaign: add deterministic closeout gate checker
 - `5487d43` docs(post-m4): add canonical follow-up tracker mappings
 - `d8d7538` docs(status): record terminal follow-up commit in running log
