@@ -887,6 +887,38 @@ Progress snapshot:
   - Plan G: optional consistency-only polish remains in a few sanitize-then-trusted-print callsites; not security-critical.
   - Operational next step: either commit this validated GitLab residual + Plan H closeout checkpoint, or pause and resume from this status block later.
 
+Compact checkpoint (2026-03-06, post-Plan-H-shim-phase1 pre-compact):
+- Branch: `feat/arch-overhaul-execution`.
+- Head commit: `e4bdd23`.
+- Latest commits:
+  - `e4bdd23` docs(status): record plan h shim phase 1 commit in AGENTS
+  - `f22de38` plan h shim retirement phase 1: remove parent id wording remap
+  - `19e659e` docs(status): record plan a v2 phase 2 commit in AGENTS
+  - `0a4f99f` plan a v2 phase 2: compute create ceiling grants in adapter
+- Completed in latest slice:
+  - Plan H shim-retirement Phase 1 kickoff: inventory + canonical policy +
+    first compatibility-only remap removal (`create_agent.parent_agent_id` malformed-ID wording).
+  - focused checks passed:
+    - `.venv/Scripts/ruff.exe check nexus3/rpc/global_dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py`
+    - `.venv/Scripts/mypy.exe nexus3/rpc/global_dispatcher.py`
+    - `.venv/Scripts/pytest.exe -q -p no:cacheprovider tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py tests/unit/test_client.py`
+- Next immediate steps (resume order):
+  1. Continue Plan H shim-retirement Phase 2 by removing next compatibility-only
+     wording shims (start with `create_agent` field-mapping branches in
+     `nexus3/rpc/global_dispatcher.py` that still remap pydantic messages).
+  2. Update affected expectations in `tests/unit/rpc/test_schema_ingress_wiring.py`.
+  3. Re-run the same focused Plan H checks above.
+  4. Sync `docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md`,
+     `docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md`, and `AGENTS.md`,
+     then commit.
+- Host caveat:
+  - git status still warns about inaccessible leftover temp dirs
+    (`.tmp-pytest-debug-root/pytest-of-inc`, `.tmp-pytest-phase2-run5`); these
+    are untracked and should be ignored unless explicitly cleaned with fixed ACLs.
+- Subagent instruction:
+  - If using Codex subagents, explicitly require no escalated/sandbox-bypass
+    commands unless absolutely necessary.
+
 Compact checkpoint (2026-03-06, post-M4 closeout + Plan A v2 phase2/3 execution):
 - Branch: `feat/arch-overhaul-execution`.
 - Most recent commits:
