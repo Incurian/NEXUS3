@@ -355,6 +355,16 @@ Status note (2026-03-06, later):
     `docs/validation/post-m4-20260306-live1c/race/verdict.json` passed
     (`security_failures=0`, raw contention failures recorded separately).
 
+Status note (2026-03-06, latest):
+- Terminal follow-up refresh run recorded under
+  `docs/validation/post-m4-20260306-live1d/terminal/`:
+  - `verdict.json`: pass, `strict_failures=0`
+  - `summary.json`: `manual_follow_up_cases=1` (`carriage-return`)
+- Current deferred-validation closeout remains open on:
+  - Windows real-host track execution + artifact evidence.
+  - Live multi-emulator carriage-return verification evidence.
+  - Replacement of remaining `TBD-*` follow-up mappings with canonical tracker references.
+
 ## Related Documents
 
 - [Reviews Index (2026-03-02)](/home/inc/repos/NEXUS3/docs/reviews/README.md)

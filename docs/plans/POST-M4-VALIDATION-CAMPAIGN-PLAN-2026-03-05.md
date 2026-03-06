@@ -108,6 +108,16 @@ Artifact contract:
   - `security_failures=0`
   - raw contention churn remains visible in summary artifacts
     (`expected_contention_failures=31`)
+- 2026-03-06: Terminal follow-up refresh run completed
+  (`post-m4-20260306-live1d`).
+- Follow-up terminal result:
+  - pass (`docs/validation/post-m4-20260306-live1d/terminal/verdict.json`)
+  - `strict_failures=0`
+  - `manual_follow_up_cases=1` (`carriage-return`)
+- Open campaign gates after `live1d`:
+  - Windows-native real-host validation still pending.
+  - Live multi-emulator carriage-return verification still pending.
+  - Follow-up tracker IDs/owners still need canonical non-`TBD` mapping.
 
 ## Testing Strategy
 
@@ -134,7 +144,8 @@ Artifact contract:
 - [x] Execute high-concurrency TOCTOU/lifecycle race campaign and archive
       artifacts.
 - [x] Execute terminal red-team matrix and archive artifacts.
-- [x] Convert findings into issues/plan updates with owners and target windows.
+- [ ] Convert findings into issues/plan updates with owners and target windows
+      (replace current `TBD` placeholders with canonical mappings).
 - [ ] Mark milestone deferred-validation items closed with evidence links.
 
 ## Documentation Updates

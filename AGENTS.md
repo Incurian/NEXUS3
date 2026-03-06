@@ -220,9 +220,11 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `Post-M4` validation campaign active: Phase 1/2 bootstrap
-  (runbook + artifact schema + harness scripts) is complete, and first live
-  campaign run artifacts are recorded with open follow-up findings.
+- `Post-M4` validation campaign active: bootstrap + automated tracks are
+  complete with follow-up artifacts through `post-m4-20260306-live1d`;
+  remaining closeout gates are Windows real-host evidence, live
+  multi-emulator carriage-return verification, and canonical tracker mapping
+  for open findings.
 - `M4` implementation closeout complete: Plan E Phases 1-4 and Plan B Phases 1-4 are committed on this branch, and Plan G sink-boundary closure is complete.
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
@@ -327,20 +329,30 @@ Immediate tasks:
   - updated post-M4 docs to record contention-aware race gating and follow-up
     evidence (`POST-M4-VALIDATION-RUNBOOK.md`, plan/schedule, validation
     README).
+- Completed (2026-03-06, local pending commit): terminal follow-up refresh
+  slice (`post-m4-20260306-live1d`):
+  - reran `scripts/validation/terminal_payload_matrix.py` for a fresh terminal
+    artifact set under `docs/validation/post-m4-20260306-live1d/terminal/`.
+  - recorded terminal-only follow-up findings + issue mapping stubs in
+    `docs/validation/post-m4-20260306-live1d/{findings.md,issue-links.md}`.
+  - terminal strict checks remain green (`strict_failures=0`) while
+    manual follow-up remains open (`manual_follow_up_cases=1`) for
+    carriage-return multi-emulator behavior.
 - Validation target (post-M4 campaign continuation, 2026-03-06):
   - real-host Windows run per
     `docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md` with artifacts under
     `docs/validation/<next-run-id>/windows/`
-  - emulator matrix/manual verification notes appended to
-    `docs/validation/<next-run-id>/terminal/summary.md`
+  - live multi-emulator carriage-return verification notes appended to
+    `docs/validation/<next-run-id>/terminal/summary.md` (non-interactive
+    matrix reruns alone do not close this gate)
 - Compact handoff (next slice, execute in order):
   1. Run Windows-native validation on real host per
      `docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md`; populate
      `docs/validation/<next-run-id>/windows/{metadata.json,checklist.md,summary.json,notes.md}`.
-  2. Execute terminal emulator follow-up for carriage-return handling and append
+  2. Execute live multi-emulator carriage-return verification and append
      evidence in `docs/validation/<next-run-id>/terminal/summary.md`.
-  3. Create/update top-level findings + issue links for the new run-id and
-     replace `TBD-*` placeholders with real tracker IDs.
+  3. Replace remaining `TBD-*` follow-up mappings with canonical
+     tracker references and explicit owners/target windows in findings docs.
   4. Update `POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md`,
      `ARCH-MILESTONE-SCHEDULE-2026-03-02.md`, and this running status; then
      check off remaining campaign checklist items that are truly complete.
