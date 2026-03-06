@@ -236,7 +236,7 @@ Immediate tasks:
     `CreateAuthorizationContext` / `CreateAuthorizationStage` (no behavior flip).
   - added focused context-shape regressions in
     `tests/unit/core/test_authorization_kernel.py`.
-- Completed (2026-03-06, local working tree): Plan A v2 follow-on
+- Completed (2026-03-06, committed `0a4f99f`): Plan A v2 follow-on
   Phase 2 + 3:
   - `_CreateAuthorizationAdapter` now computes base/delta grant decisions
     adapter-locally from typed create context permission payloads
@@ -869,12 +869,13 @@ Progress snapshot:
 
 Compact checkpoint (2026-03-06, post-M4 closeout + Plan A v2 phase2/3 execution):
 - Branch: `feat/arch-overhaul-execution`.
-- Most recent committed baseline:
+- Most recent commits:
+  - `0a4f99f` plan a v2 phase 2: compute create ceiling grants in adapter
   - `5c9c0e2` plan a v2 phase 1: add typed create auth context model
   - `8630f8f` post-m4 closeout: archive windows host evidence and pass gate
-- Local execution completed since baseline:
-  - Plan A v2 Phase 2/3: adapter-local base/delta ceiling evaluation from typed
-    context payloads and removal of pool-side `parent_can_grant` precompute.
+- Plan A v2 execution completed:
+  - Phase 2/3: adapter-local base/delta ceiling evaluation from typed context
+    payloads and removal of pool-side `parent_can_grant` precompute.
   - Added focused adapter-authoritative regressions and updated create-stage
     context assertions (`test_pool_create_auth_shadow.py`, `test_pool.py`).
 - Validation snapshot (local phase2/3 changes):
