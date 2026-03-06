@@ -222,8 +222,9 @@ Branch:
 Current milestone:
 - `Post-M4` validation campaign active: bootstrap + automated tracks are
   complete with follow-up artifacts through `post-m4-20260306-live1d`;
-  remaining closeout gates are Windows real-host evidence, live
-  multi-emulator carriage-return verification.
+  deterministic closeout gating is now scripted; remaining closeout gates are
+  Windows real-host evidence and live multi-emulator carriage-return
+  verification.
 - `M4` implementation closeout complete: Plan E Phases 1-4 and Plan B Phases 1-4 are committed on this branch, and Plan G sink-boundary closure is complete.
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
@@ -347,6 +348,18 @@ Immediate tasks:
     `docs/validation/post-m4-20260306-live1d/issue-links.md`.
   - updated `docs/validation/post-m4-20260306-live1b/findings.md` with
     explicit owner roles + target windows aligned to tracker entries.
+- Completed (2026-03-06): closeout-gate tooling slice:
+  - added `scripts/validation/post_m4_closeout_gate.py` to evaluate campaign
+    closure state across soak/race/terminal/windows artifacts + tracker status.
+  - added focused regressions in
+    `tests/unit/validation/test_post_m4_closeout_gate.py`.
+  - focused validation passed:
+    - `.venv/bin/ruff check scripts/validation/post_m4_closeout_gate.py tests/unit/validation/test_post_m4_closeout_gate.py`
+    - `.venv/bin/mypy scripts/validation/post_m4_closeout_gate.py`
+    - `.venv/bin/pytest -q tests/unit/validation/test_post_m4_closeout_gate.py` (`2 passed`)
+  - current gate snapshot command:
+    `.venv/bin/python scripts/validation/post_m4_closeout_gate.py --json-out /tmp/post-m4-closeout-gate-20260306.json`
+    reports expected open checks (Windows status pending, terminal manual marker missing, terminal/windows tracker statuses open).
 - Validation target (post-M4 campaign continuation, 2026-03-06):
   - real-host Windows run per
     `docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md` with artifacts under
@@ -360,7 +373,10 @@ Immediate tasks:
      `docs/validation/<next-run-id>/windows/{metadata.json,checklist.md,summary.json,notes.md}`.
   2. Execute live multi-emulator carriage-return verification and append
      evidence in `docs/validation/<next-run-id>/terminal/summary.md`.
-  3. Update `POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md`,
+  3. Run closeout checker:
+     `.venv/bin/python scripts/validation/post_m4_closeout_gate.py --soak-run-id <id> --race-run-id <id> --terminal-run-id <id> --windows-run-id <id> --json-out docs/validation/<run-id>/closeout-gate.json`
+     and confirm `pass=true`.
+  4. Update `POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md`,
      `ARCH-MILESTONE-SCHEDULE-2026-03-02.md`, and this running status; then
      check off remaining campaign checklist items that are truly complete.
 - Keep follow-on deferred plans queued behind their dependency gates

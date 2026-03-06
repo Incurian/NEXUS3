@@ -40,6 +40,7 @@ Primary files to change:
 - `scripts/validation/soak_workload.py`
 - `scripts/validation/race_harness.py`
 - `scripts/validation/terminal_payload_matrix.py`
+- `scripts/validation/post_m4_closeout_gate.py`
 - [WINDOWS-LIVE-TESTING-GUIDE.md](/home/inc/repos/NEXUS3/docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md)
 
 Campaign tracks:
@@ -122,6 +123,18 @@ Artifact contract:
     [POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md)
   - replaced `TBD-*` placeholders in `live1b`/`live1c`/`live1d` issue-link docs.
   - updated `live1b` findings with explicit owner roles + target windows.
+- 2026-03-06: added deterministic closeout checker:
+  - added `scripts/validation/post_m4_closeout_gate.py` with focused tests:
+    `tests/unit/validation/test_post_m4_closeout_gate.py`
+  - validation snapshot:
+    - `.venv/bin/ruff check scripts/validation/post_m4_closeout_gate.py tests/unit/validation/test_post_m4_closeout_gate.py` passed.
+    - `.venv/bin/mypy scripts/validation/post_m4_closeout_gate.py` passed.
+    - `.venv/bin/pytest -q tests/unit/validation/test_post_m4_closeout_gate.py` passed (`2 passed`).
+  - current gate run:
+    - `.venv/bin/python scripts/validation/post_m4_closeout_gate.py --json-out /tmp/post-m4-closeout-gate-20260306.json` failed as expected with open checks:
+      - windows summary status still `pending_real_host`
+      - terminal manual emulator closure marker not yet present
+      - tracker statuses for terminal/windows remain `open`
 
 ## Testing Strategy
 
@@ -148,6 +161,7 @@ Artifact contract:
 - [x] Execute high-concurrency TOCTOU/lifecycle race campaign and archive
       artifacts.
 - [x] Execute terminal red-team matrix and archive artifacts.
+- [x] Add deterministic campaign closeout checker for artifact + tracker gates.
 - [x] Convert findings into issues/plan updates with owners and target windows.
 - [ ] Mark milestone deferred-validation items closed with evidence links.
 

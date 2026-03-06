@@ -167,6 +167,10 @@ Pass gate:
 
 - No successful control-sequence spoofing in script verdict + emulator follow-up.
 - `summary.md` captures any manual emulator follow-up required by payload class.
+- When emulator follow-up is complete, append an explicit closure marker to
+  `terminal/summary.md`:
+  - `Manual emulator verification: PASS`
+  - or `Multi-emulator verification: PASS`
 - Any failure includes screenshot/transcript and owner assignment.
 
 ## Campaign Closeout
@@ -180,4 +184,18 @@ After all four tracks complete:
    - `docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md`
    - `AGENTS.md` running status
 
-4. Mark deferred validation backlog items closed only with artifact evidence links.
+4. Run the closeout gate checker:
+
+```bash
+.venv/bin/python scripts/validation/post_m4_closeout_gate.py \
+  --soak-run-id <run-id> \
+  --race-run-id <run-id> \
+  --terminal-run-id <run-id> \
+  --windows-run-id <run-id> \
+  --json-out docs/validation/<run-id>/closeout-gate.json
+```
+
+If tracks were executed under different run ids, pass each track-specific id.
+Gate closes only when `pass=true`.
+
+5. Mark deferred validation backlog items closed only with artifact evidence links.

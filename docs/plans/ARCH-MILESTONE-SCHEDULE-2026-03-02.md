@@ -366,6 +366,15 @@ Status note (2026-03-06, latest):
 - Canonical follow-up mapping is now tracked in
   [POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md).
 
+Status note (2026-03-06, gate tooling):
+- Added deterministic closeout checker:
+  `scripts/validation/post_m4_closeout_gate.py`.
+- Current gate snapshot:
+  - `.venv/bin/python scripts/validation/post_m4_closeout_gate.py --json-out /tmp/post-m4-closeout-gate-20260306.json` reports open checks for:
+    - Windows summary status (`pending_real_host`).
+    - Terminal manual emulator closure marker.
+    - Tracker statuses for `POSTM4-FU-TERM-001` and `POSTM4-FU-WIN-001` (`open`).
+
 ## Related Documents
 
 - [Reviews Index (2026-03-02)](/home/inc/repos/NEXUS3/docs/reviews/README.md)
