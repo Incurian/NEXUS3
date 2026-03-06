@@ -317,7 +317,7 @@ Immediate tasks:
   - `docs/validation/post-m4-20260306-live2/`
 - Next target: close remaining post-M4 validation gaps:
   - execute Windows-native checklist on real Windows host and archive evidence.
-  - complete terminal emulator follow-up for carriage-return payload class.
+  - complete live multi-emulator carriage-return follow-up and archive evidence.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with
@@ -329,7 +329,7 @@ Immediate tasks:
   - updated post-M4 docs to record contention-aware race gating and follow-up
     evidence (`POST-M4-VALIDATION-RUNBOOK.md`, plan/schedule, validation
     README).
-- Completed (2026-03-06, local pending commit): terminal follow-up refresh
+- Completed (2026-03-06, committed `055dcb6`): terminal follow-up refresh
   slice (`post-m4-20260306-live1d`):
   - reran `scripts/validation/terminal_payload_matrix.py` for a fresh terminal
     artifact set under `docs/validation/post-m4-20260306-live1d/terminal/`.
@@ -363,6 +363,7 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `055dcb6` post-m4 campaign: add terminal follow-up refresh and sync status
 - `abef28a` post-m4 campaign: add contention-aware race follow-up
 - `fa1c66a` docs(validation): add retained dry-run and initial live artifacts
 - `59dab71` post-m4 campaign: run first live validation slice
