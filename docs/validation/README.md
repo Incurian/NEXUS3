@@ -67,6 +67,8 @@ When present, include:
 - `duration_seconds`
 - track counters (attempts/success/failures or equivalent)
 - `dry_run`
+- For race track, include raw vs unexpected failure counters when contention
+  exclusion mode is used.
 
 ## Example Layout
 

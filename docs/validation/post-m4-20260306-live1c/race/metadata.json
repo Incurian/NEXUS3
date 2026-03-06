@@ -1,0 +1,32 @@
+{
+  "config": {
+    "agent_prefix": "postm4-race",
+    "command_timeout": 120.0,
+    "dry_run": false,
+    "exclude_expected_contention_errors": true,
+    "max_failure_rate": 0.02,
+    "max_security_failures": 0,
+    "output_root": "docs/validation",
+    "port": 9000,
+    "python_bin": ".venv/bin/python",
+    "rounds": 10,
+    "send_timeout": 90,
+    "shared_agent_pool_size": 6,
+    "workers": 6
+  },
+  "duration_seconds": 456.24578300000024,
+  "environment": {
+    "hostname": "INC-TR",
+    "os": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "python": "3.11.14"
+  },
+  "finished_at": "2026-03-06T15:59:14.841404Z",
+  "git": {
+    "branch": "feat/arch-overhaul-execution",
+    "commit": "unknown"
+  },
+  "run_id": "post-m4-20260306-live1c",
+  "started_at": "2026-03-06T15:57:20.775597Z",
+  "tool_version": "post-m4-validation-v1",
+  "track": "race"
+}

@@ -1,0 +1,15 @@
+{
+  "commands_failed_raw": 31,
+  "commands_failed_unexpected": 0,
+  "commands_total": 180,
+  "dry_run": false,
+  "expected_contention_failures": 31,
+  "failure_rate_raw": 0.17222222222222222,
+  "failure_rate_unexpected": 0.0,
+  "rounds": 10,
+  "security_failures": 0,
+  "send_p95_seconds": 7.788794,
+  "shared_agent_pool_size": 6,
+  "status": "pass",
+  "workers": 6
+}

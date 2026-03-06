@@ -1,0 +1,18 @@
+{
+  "failed_checks": [],
+  "generated_at": "2026-03-06T15:59:14.841279Z",
+  "highlights": [
+    "workers=6",
+    "rounds=10",
+    "total_commands=180",
+    "failures_raw=31",
+    "failures_unexpected=0",
+    "expected_contention_failures=31",
+    "send_p95_seconds=7.789",
+    "security_failures=0"
+  ],
+  "pass": true,
+  "warnings": [
+    "excluded expected contention failures from failure-rate gate: 31"
+  ]
+}

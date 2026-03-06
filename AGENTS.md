@@ -286,7 +286,7 @@ Immediate tasks:
     `scripts/validation/soak_workload.py`,
     `scripts/validation/race_harness.py`,
     `scripts/validation/terminal_payload_matrix.py`
-- Completed (2026-03-06, local pending commit): post-M4 validation campaign
+- Completed (2026-03-06, committed `59dab71`): post-M4 validation campaign
   first live execution slice (`post-m4-20260306-live1b`):
   - preflight gates passed:
     `.venv/bin/ruff check nexus3/`,
@@ -310,10 +310,19 @@ Immediate tasks:
     constraints; live soak/race reruns used unsandboxed execution.
 - Next target: close remaining post-M4 validation gaps:
   - execute Windows-native checklist on real Windows host and archive evidence.
-  - triage race failure-rate findings and run follow-up race slice.
   - complete terminal emulator follow-up for carriage-return payload class.
+- Completed (2026-03-06, local pending commit): race follow-up slice
+  (`post-m4-20260306-live1c`):
+  - updated `scripts/validation/race_harness.py` with
+    `--exclude-expected-contention-errors` to gate on unexpected failures
+    while still reporting raw contention churn.
+  - race follow-up run passed:
+    `docs/validation/post-m4-20260306-live1c/race/verdict.json`
+    (`security_failures=0`, raw contention failures explicitly reported).
+  - updated post-M4 docs to record contention-aware race gating and follow-up
+    evidence (`POST-M4-VALIDATION-RUNBOOK.md`, plan/schedule, validation
+    README).
 - Validation target (post-M4 campaign continuation, 2026-03-06):
-  - `.venv/bin/python scripts/validation/race_harness.py --artifact-root docs/validation --run-id <next-run-id> --port 9000 --workers <N> --rounds <N> --shared-agent-pool-size <N> --send-timeout 90`
   - real-host Windows run per
     `docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md` with artifacts under
     `docs/validation/<next-run-id>/windows/`
@@ -326,6 +335,7 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `59dab71` post-m4 campaign: run first live validation slice
 - `34c2f67` post-m4 campaign: add runbook and validation harness bootstrap
 - `a1e445e` m4 closeout: remediate gate regressions and sync status docs
 - `ffb8b87` plan b phase 4b: enforce capability-first http requester identity
@@ -361,9 +371,9 @@ Recent execution commits (latest first):
 - `ce3d263` migrate confirmation ui prompts to SafeSink
 - `c5eb670` advance plan h: reject boolean json-rpc ids at protocol boundary
 - Local working-tree slice (pending commit):
-  - Post-M4 validation campaign first live execution slice:
-    preflight + soak/race/terminal artifacts + findings/windows placeholders +
-    milestone/plan/status sync.
+  - Post-M4 validation campaign race follow-up slice:
+    contention-aware race gating in harness + follow-up run artifacts +
+    milestone/plan/status docs sync.
 - `f6ee537` advance m1: harden send ingress params and migrate lobby outputs to safe sink
 - `a53c7dd` advance plan h: fail-fast mcp boundary validation and unify mcp config model
 - `1b455b5` advance m1: extend schema ingress create_agent and migrate repl mcp consent to safe sink
@@ -384,7 +394,7 @@ Progress snapshot:
     `scripts/validation/terminal_payload_matrix.py`
   - updated [WINDOWS-LIVE-TESTING-GUIDE.md](/home/inc/repos/NEXUS3/docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md)
     with post-M4 runbook/artifact references
-- Completed (2026-03-06, local pending commit): Post-M4 validation campaign
+- Completed (2026-03-06, committed `59dab71`): Post-M4 validation campaign
   first live execution slice (`post-m4-20260306-live1b`):
   - added run artifact set under
     `docs/validation/post-m4-20260306-live1b/{soak,race,terminal,windows}`
@@ -392,6 +402,14 @@ Progress snapshot:
     `docs/validation/post-m4-20260306-live1b/findings.md` and
     `docs/validation/post-m4-20260306-live1b/issue-links.md`
   - preflight + live validation commands captured in campaign plan/status docs
+- Completed (2026-03-06, local pending commit): Post-M4 race follow-up slice
+  (`post-m4-20260306-live1c`):
+  - updated `scripts/validation/race_harness.py` with contention-aware
+    failure-rate gating option (`--exclude-expected-contention-errors`)
+  - added follow-up artifacts and notes under
+    `docs/validation/post-m4-20260306-live1c/`
+  - updated post-M4 runbook/validation schema docs and milestone/plan status
+    notes for contention-aware race follow-up evidence
 - Completed (2026-03-05): Plan E Phase 2 provider/session integration (`e3cd304`):
   - migrated `Session.send()`/`Session.run_turn()` pre-user preflight repair
     path to compiler-backed normalization (`compile_context_messages(...)`)

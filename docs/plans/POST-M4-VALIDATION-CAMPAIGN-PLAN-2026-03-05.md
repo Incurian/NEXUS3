@@ -100,6 +100,14 @@ Artifact contract:
   - Initial sandboxed harness run (`post-m4-20260306-live1`) produced
     false "No NEXUS3 server running" negatives due nested subprocess sandbox
     limits; soak/race live runs were re-executed unsandboxed.
+- 2026-03-06: Race follow-up run completed (`post-m4-20260306-live1c`).
+- Race harness updated with contention-aware gating option:
+  `--exclude-expected-contention-errors`.
+- Follow-up race result:
+  - pass (`docs/validation/post-m4-20260306-live1c/race/verdict.json`)
+  - `security_failures=0`
+  - raw contention churn remains visible in summary artifacts
+    (`expected_contention_failures=31`)
 
 ## Testing Strategy
 

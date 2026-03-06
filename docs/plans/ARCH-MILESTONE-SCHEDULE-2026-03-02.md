@@ -188,7 +188,6 @@ Status note (2026-03-05):
   - live RPC create/send/destroy validation on `:9000` passed.
 - Next target: close remaining post-M4 validation findings by:
   - executing Windows-native checklist on a real Windows host with artifacts.
-  - triaging/rerunning race campaign follow-up for failure-rate findings.
   - completing terminal emulator follow-up for carriage-return handling.
 
 ### M4: Delegation and Strategic Evolution
@@ -336,8 +335,8 @@ Status note (2026-03-06):
     `scripts/validation/soak_workload.py`,
     `scripts/validation/race_harness.py`,
     `scripts/validation/terminal_payload_matrix.py`
-- Next deferred-validation gate is execution of the first soak/race/terminal
-  campaign runs and archival of evidence under `docs/validation/<run-id>/`.
+- Next deferred-validation gate is closure of remaining manual tracks:
+  Windows real-host validation and terminal emulator follow-up evidence.
 
 Status note (2026-03-06, later):
 - First live execution slice recorded under
@@ -351,6 +350,10 @@ Status note (2026-03-06, later):
 - Findings and follow-up placeholders:
   - `docs/validation/post-m4-20260306-live1b/findings.md`
   - `docs/validation/post-m4-20260306-live1b/issue-links.md`
+- Race follow-up status:
+  - contention-aware follow-up run
+    `docs/validation/post-m4-20260306-live1c/race/verdict.json` passed
+    (`security_failures=0`, raw contention failures recorded separately).
 
 ## Related Documents
 

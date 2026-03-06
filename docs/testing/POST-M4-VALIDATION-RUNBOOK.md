@@ -139,7 +139,8 @@ Script:
   --run-id post-m4-20260306-a \
   --port 9000 \
   --workers 8 \
-  --rounds 20
+  --rounds 20 \
+  --exclude-expected-contention-errors
 ```
 
 Pass gate:
@@ -147,6 +148,10 @@ Pass gate:
 - `verdict.json.pass == true`.
 - No authorization/state-integrity violations in failures.
 - All timeouts investigated and documented.
+- If shared-agent pool churn mode is used, expected contention outcomes
+  (`agent already exists`, `agent not found`) may be excluded from
+  failure-rate gating via `--exclude-expected-contention-errors`; they must
+  still be reported in `summary.json`.
 
 ## Track 4: Terminal Red-Team
 

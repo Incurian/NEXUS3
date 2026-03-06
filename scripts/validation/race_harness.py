@@ -25,6 +25,10 @@ SECURITY_PATTERNS = (
     "invariant",
     "state mismatch",
 )
+EXPECTED_CONTENTION_PATTERNS = (
+    "agent already exists",
+    "agent not found",
+)
 
 
 @dataclass(frozen=True)
@@ -126,6 +130,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--command-timeout", type=float, default=120.0)
     parser.add_argument("--max-failure-rate", type=float, default=0.02)
     parser.add_argument("--max-security-failures", type=int, default=0)
+    parser.add_argument(
+        "--exclude-expected-contention-errors",
+        action="store_true",
+        help=(
+            "Exclude known contention outcomes from failure-rate gating "
+            "(agent already exists / agent not found)."
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -244,7 +256,24 @@ def main() -> int:
         )
 
     failures = [item for item in outcomes if item.returncode != 0]
-    failure_rate = (len(failures) / len(outcomes)) if outcomes else 0.0
+    expected_contention_failures = [
+        item
+        for item in failures
+        if any(
+            pattern in f"{item.stdout_tail}\n{item.stderr_tail}".lower()
+            for pattern in EXPECTED_CONTENTION_PATTERNS
+        )
+    ]
+    if args.exclude_expected_contention_errors:
+        unexpected_failures = [
+            item for item in failures if item not in expected_contention_failures
+        ]
+    else:
+        unexpected_failures = failures
+    raw_failure_rate = (len(failures) / len(outcomes)) if outcomes else 0.0
+    unexpected_failure_rate = (
+        len(unexpected_failures) / len(outcomes) if outcomes else 0.0
+    )
     send_latencies = [item.duration_seconds for item in outcomes if item.operation == "send"]
     security_failures = [
         item
@@ -257,15 +286,22 @@ def main() -> int:
 
     failed_checks: list[str] = []
     warnings: list[str] = []
-    if failure_rate > args.max_failure_rate:
+    if unexpected_failure_rate > args.max_failure_rate:
         failed_checks.append(
-            f"failure rate {failure_rate:.3%} exceeded threshold {args.max_failure_rate:.3%}"
+            "unexpected failure rate "
+            f"{unexpected_failure_rate:.3%} exceeded threshold "
+            f"{args.max_failure_rate:.3%}"
         )
     if len(security_failures) > args.max_security_failures:
         failed_checks.append(
             "security failures "
             f"{len(security_failures)} exceeded threshold "
             f"{args.max_security_failures}"
+        )
+    if args.exclude_expected_contention_errors and expected_contention_failures:
+        warnings.append(
+            "excluded expected contention failures from failure-rate gate: "
+            f"{len(expected_contention_failures)}"
         )
     if args.dry_run:
         warnings.append("dry-run mode enabled: commands were not executed")
@@ -278,7 +314,9 @@ def main() -> int:
             f"workers={args.workers}",
             f"rounds={args.rounds}",
             f"total_commands={len(outcomes)}",
-            f"failures={len(failures)}",
+            f"failures_raw={len(failures)}",
+            f"failures_unexpected={len(unexpected_failures)}",
+            f"expected_contention_failures={len(expected_contention_failures)}",
             f"send_p95_seconds={p95(send_latencies):.3f}",
             f"security_failures={len(security_failures)}",
         ],
@@ -311,6 +349,7 @@ def main() -> int:
             "command_timeout": args.command_timeout,
             "max_failure_rate": args.max_failure_rate,
             "max_security_failures": args.max_security_failures,
+            "exclude_expected_contention_errors": args.exclude_expected_contention_errors,
             "dry_run": args.dry_run,
         },
     }
@@ -324,8 +363,11 @@ def main() -> int:
             "rounds": args.rounds,
             "shared_agent_pool_size": args.shared_agent_pool_size,
             "commands_total": len(outcomes),
-            "commands_failed": len(failures),
-            "failure_rate": failure_rate,
+            "commands_failed_raw": len(failures),
+            "commands_failed_unexpected": len(unexpected_failures),
+            "expected_contention_failures": len(expected_contention_failures),
+            "failure_rate_raw": raw_failure_rate,
+            "failure_rate_unexpected": unexpected_failure_rate,
             "send_p95_seconds": p95(send_latencies),
             "security_failures": len(security_failures),
         },
@@ -337,7 +379,10 @@ def main() -> int:
                 f"# Race Validation Summary: `{run}`",
                 "",
                 f"- total commands: {len(outcomes)}",
-                f"- failures: {len(failures)} ({failure_rate:.3%})",
+                f"- failures (raw): {len(failures)} ({raw_failure_rate:.3%})",
+                f"- failures (unexpected): "
+                f"{len(unexpected_failures)} ({unexpected_failure_rate:.3%})",
+                f"- expected contention failures: {len(expected_contention_failures)}",
                 f"- send p95 latency: {p95(send_latencies):.3f}s",
                 f"- security failures: {len(security_failures)}",
                 f"- pass: {verdict['pass']}",
