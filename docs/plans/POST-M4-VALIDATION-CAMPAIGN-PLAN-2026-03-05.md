@@ -80,6 +80,26 @@ Artifact contract:
   - `.venv/bin/python scripts/validation/soak_workload.py --dry-run --iterations 2 --artifact-root /tmp/nexus3-validation --run-id postm4-dryrun-20260306z10` passed.
   - `.venv/bin/python scripts/validation/race_harness.py --dry-run --workers 2 --rounds 2 --shared-agent-pool-size 2 --artifact-root /tmp/nexus3-validation --run-id postm4-dryrun-20260306z10` passed.
   - `.venv/bin/python scripts/validation/terminal_payload_matrix.py --artifact-root /tmp/nexus3-validation --run-id postm4-dryrun-20260306z10` passed.
+- 2026-03-06: First live execution slice completed (`post-m4-20260306-live1b`).
+- Preflight gates passed:
+  - `.venv/bin/ruff check nexus3/`
+  - `.venv/bin/mypy nexus3/`
+  - `.venv/bin/pytest tests/unit -q` (`3112 passed`, `1 skipped`)
+  - `.venv/bin/pytest tests/security -q` (`779 passed`)
+- Live track outcomes:
+  - soak: pass (`docs/validation/post-m4-20260306-live1b/soak/verdict.json`)
+  - race: fail on failure-rate threshold, `security_failures=0`
+    (`docs/validation/post-m4-20260306-live1b/race/verdict.json`)
+  - terminal: pass with manual emulator follow-up warning
+    (`docs/validation/post-m4-20260306-live1b/terminal/verdict.json`)
+- Findings + follow-up placeholders recorded:
+  - `docs/validation/post-m4-20260306-live1b/findings.md`
+  - `docs/validation/post-m4-20260306-live1b/issue-links.md`
+  - `docs/validation/post-m4-20260306-live1b/windows/` (pending real-host)
+- Note:
+  - Initial sandboxed harness run (`post-m4-20260306-live1`) produced
+    false "No NEXUS3 server running" negatives due nested subprocess sandbox
+    limits; soak/race live runs were re-executed unsandboxed.
 
 ## Testing Strategy
 
@@ -100,13 +120,13 @@ Artifact contract:
 
 - [x] Create runbook + artifact format for post-M4 validation tracks.
 - [x] Implement or wire campaign scripts for soak/race/terminal tracks.
-- [ ] Execute soak/perf campaign and archive artifacts.
+- [x] Execute soak/perf campaign and archive artifacts.
 - [ ] Execute Windows-native campaign on real Windows host(s) and archive
       artifacts.
-- [ ] Execute high-concurrency TOCTOU/lifecycle race campaign and archive
+- [x] Execute high-concurrency TOCTOU/lifecycle race campaign and archive
       artifacts.
-- [ ] Execute terminal red-team matrix and archive artifacts.
-- [ ] Convert findings into issues/plan updates with owners and target windows.
+- [x] Execute terminal red-team matrix and archive artifacts.
+- [x] Convert findings into issues/plan updates with owners and target windows.
 - [ ] Mark milestone deferred-validation items closed with evidence links.
 
 ## Documentation Updates

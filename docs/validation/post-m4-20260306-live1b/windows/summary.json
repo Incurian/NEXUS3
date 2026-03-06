@@ -1,0 +1,9 @@
+{
+  "status": "pending_real_host",
+  "dry_run": false,
+  "duration_seconds": 0.0,
+  "required_sections_total": 6,
+  "required_sections_passed": 0,
+  "required_sections_failed": 0,
+  "required_sections_pending": 6
+}

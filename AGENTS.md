@@ -222,7 +222,7 @@ Branch:
 Current milestone:
 - `Post-M4` validation campaign active: Phase 1/2 bootstrap
   (runbook + artifact schema + harness scripts) is complete, and first live
-  campaign runs are pending.
+  campaign run artifacts are recorded with open follow-up findings.
 - `M4` implementation closeout complete: Plan E Phases 1-4 and Plan B Phases 1-4 are committed on this branch, and Plan G sink-boundary closure is complete.
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
@@ -276,7 +276,7 @@ Immediate tasks:
   - focused regressions in `tests/unit/test_http_pipeline_layers.py` enforce:
     requester-only rejection, capability-present forwarding, invalid-capability
     behavior parity.
-- Completed (2026-03-06, local pending commit): post-M4 validation campaign
+- Completed (2026-03-06, committed `34c2f67`): post-M4 validation campaign
   Phase 1/2 bootstrap:
   - added canonical runbook:
     `docs/testing/POST-M4-VALIDATION-RUNBOOK.md`
@@ -286,18 +286,39 @@ Immediate tasks:
     `scripts/validation/soak_workload.py`,
     `scripts/validation/race_harness.py`,
     `scripts/validation/terminal_payload_matrix.py`
-- Next target: execute first post-M4 campaign runs and archive evidence under
-  `docs/validation/<run-id>/`:
-  - soak/perf (live)
-  - race/lifecycle (live)
-  - terminal matrix (script + emulator follow-up)
-  - windows-native checklist on real Windows host
-- Validation target (Phase 1/2 bootstrap, 2026-03-06):
-  - `.venv/bin/ruff check scripts/validation docs/testing/POST-M4-VALIDATION-RUNBOOK.md docs/validation/README.md`
-  - `.venv/bin/mypy scripts/validation`
-  - `.venv/bin/python scripts/validation/soak_workload.py --dry-run --iterations 2 --artifact-root /tmp/nexus3-validation --run-id postm4-dryrun-20260306z10`
-  - `.venv/bin/python scripts/validation/race_harness.py --dry-run --workers 2 --rounds 2 --shared-agent-pool-size 2 --artifact-root /tmp/nexus3-validation --run-id postm4-dryrun-20260306z10`
-  - `.venv/bin/python scripts/validation/terminal_payload_matrix.py --artifact-root /tmp/nexus3-validation --run-id postm4-dryrun-20260306z10`
+- Completed (2026-03-06, local pending commit): post-M4 validation campaign
+  first live execution slice (`post-m4-20260306-live1b`):
+  - preflight gates passed:
+    `.venv/bin/ruff check nexus3/`,
+    `.venv/bin/mypy nexus3/`,
+    `.venv/bin/pytest tests/unit -q`,
+    `.venv/bin/pytest tests/security -q`
+  - soak track passed:
+    `docs/validation/post-m4-20260306-live1b/soak/verdict.json`
+  - race track executed with non-security failure-rate finding:
+    `docs/validation/post-m4-20260306-live1b/race/verdict.json`
+    (`failure rate 13.333%`, `security_failures=0`)
+  - terminal track passed with manual emulator follow-up warning:
+    `docs/validation/post-m4-20260306-live1b/terminal/verdict.json`
+  - findings/issues placeholders recorded:
+    `docs/validation/post-m4-20260306-live1b/findings.md`,
+    `docs/validation/post-m4-20260306-live1b/issue-links.md`
+  - windows track recorded as pending real-host execution:
+    `docs/validation/post-m4-20260306-live1b/windows/`
+  - note: initial sandboxed harness runs (`post-m4-20260306-live1`) produced
+    false "No NEXUS3 server running" negatives due nested subprocess sandbox
+    constraints; live soak/race reruns used unsandboxed execution.
+- Next target: close remaining post-M4 validation gaps:
+  - execute Windows-native checklist on real Windows host and archive evidence.
+  - triage race failure-rate findings and run follow-up race slice.
+  - complete terminal emulator follow-up for carriage-return payload class.
+- Validation target (post-M4 campaign continuation, 2026-03-06):
+  - `.venv/bin/python scripts/validation/race_harness.py --artifact-root docs/validation --run-id <next-run-id> --port 9000 --workers <N> --rounds <N> --shared-agent-pool-size <N> --send-timeout 90`
+  - real-host Windows run per
+    `docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md` with artifacts under
+    `docs/validation/<next-run-id>/windows/`
+  - emulator matrix/manual verification notes appended to
+    `docs/validation/<next-run-id>/terminal/summary.md`
 - Keep follow-on deferred plans queued behind their dependency gates
   (M4/post-M4 windows) as recorded in milestone schedule.
 - Deferred follow-on planning checkpoint (2026-03-05):
@@ -305,6 +326,7 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `34c2f67` post-m4 campaign: add runbook and validation harness bootstrap
 - `a1e445e` m4 closeout: remediate gate regressions and sync status docs
 - `ffb8b87` plan b phase 4b: enforce capability-first http requester identity
 - `2cb4817` plan b phase 4a: add legacy requester fallback telemetry
@@ -339,8 +361,9 @@ Recent execution commits (latest first):
 - `ce3d263` migrate confirmation ui prompts to SafeSink
 - `c5eb670` advance plan h: reject boolean json-rpc ids at protocol boundary
 - Local working-tree slice (pending commit):
-  - Post-M4 validation campaign Phase 1/2 bootstrap:
-    runbook + artifact schema + campaign script scaffolds + milestone/plan/status sync.
+  - Post-M4 validation campaign first live execution slice:
+    preflight + soak/race/terminal artifacts + findings/windows placeholders +
+    milestone/plan/status sync.
 - `f6ee537` advance m1: harden send ingress params and migrate lobby outputs to safe sink
 - `a53c7dd` advance plan h: fail-fast mcp boundary validation and unify mcp config model
 - `1b455b5` advance m1: extend schema ingress create_agent and migrate repl mcp consent to safe sink
@@ -352,7 +375,7 @@ Progress snapshot:
   - added [ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md)
   - updated [ARCH-MILESTONE-SCHEDULE-2026-03-02.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md) with explicit backlog dependency/exit gates
   - updated [docs/plans/README.md](/home/inc/repos/NEXUS3/docs/plans/README.md) follow-on index section
-- Completed (2026-03-06, local pending commit): Post-M4 validation campaign
+- Completed (2026-03-06, committed `34c2f67`): Post-M4 validation campaign
   Phase 1/2 bootstrap:
   - added [POST-M4-VALIDATION-RUNBOOK.md](/home/inc/repos/NEXUS3/docs/testing/POST-M4-VALIDATION-RUNBOOK.md)
   - added [docs/validation/README.md](/home/inc/repos/NEXUS3/docs/validation/README.md)
@@ -361,6 +384,14 @@ Progress snapshot:
     `scripts/validation/terminal_payload_matrix.py`
   - updated [WINDOWS-LIVE-TESTING-GUIDE.md](/home/inc/repos/NEXUS3/docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md)
     with post-M4 runbook/artifact references
+- Completed (2026-03-06, local pending commit): Post-M4 validation campaign
+  first live execution slice (`post-m4-20260306-live1b`):
+  - added run artifact set under
+    `docs/validation/post-m4-20260306-live1b/{soak,race,terminal,windows}`
+  - recorded findings and follow-up placeholders in
+    `docs/validation/post-m4-20260306-live1b/findings.md` and
+    `docs/validation/post-m4-20260306-live1b/issue-links.md`
+  - preflight + live validation commands captured in campaign plan/status docs
 - Completed (2026-03-05): Plan E Phase 2 provider/session integration (`e3cd304`):
   - migrated `Session.send()`/`Session.run_turn()` pre-user preflight repair
     path to compiler-backed normalization (`compile_context_messages(...)`)

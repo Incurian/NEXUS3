@@ -1,0 +1,180 @@
+2026-03-06T15:50:33.919110Z | worker=0 | round=0 | create | rc=0 | duration=0.866s | .venv/bin/python -m nexus3 rpc create postm4-race-slot000 --port 9000
+2026-03-06T15:50:33.919651Z | worker=1 | round=0 | create | rc=0 | duration=1.346s | .venv/bin/python -m nexus3 rpc create postm4-race-slot001 --port 9000
+2026-03-06T15:50:33.920218Z | worker=2 | round=0 | create | rc=0 | duration=1.096s | .venv/bin/python -m nexus3 rpc create postm4-race-slot002 --port 9000
+2026-03-06T15:50:33.920669Z | worker=3 | round=0 | create | rc=0 | duration=1.585s | .venv/bin/python -m nexus3 rpc create postm4-race-slot003 --port 9000
+2026-03-06T15:50:33.922255Z | worker=4 | round=0 | create | rc=0 | duration=2.053s | .venv/bin/python -m nexus3 rpc create postm4-race-slot004 --port 9000
+2026-03-06T15:50:33.924004Z | worker=5 | round=0 | create | rc=0 | duration=1.825s | .venv/bin/python -m nexus3 rpc create postm4-race-slot005 --port 9000
+2026-03-06T15:50:34.784699Z | worker=0 | round=0 | send | rc=0 | duration=7.667s | .venv/bin/python -m nexus3 rpc send postm4-race-slot000 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:35.015791Z | worker=2 | round=0 | send | rc=0 | duration=7.450s | .venv/bin/python -m nexus3 rpc send postm4-race-slot002 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:35.265649Z | worker=1 | round=0 | send | rc=0 | duration=5.963s | .venv/bin/python -m nexus3 rpc send postm4-race-slot001 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:35.505893Z | worker=3 | round=0 | send | rc=0 | duration=7.592s | .venv/bin/python -m nexus3 rpc send postm4-race-slot003 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:35.749298Z | worker=5 | round=0 | send | rc=0 | duration=6.391s | .venv/bin/python -m nexus3 rpc send postm4-race-slot005 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:35.975611Z | worker=4 | round=0 | send | rc=0 | duration=6.697s | .venv/bin/python -m nexus3 rpc send postm4-race-slot004 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:41.228710Z | worker=1 | round=0 | destroy | rc=0 | duration=0.538s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot001 --port 9000
+2026-03-06T15:50:41.766650Z | worker=1 | round=1 | create | rc=1 | duration=0.582s | .venv/bin/python -m nexus3 rpc create postm4-race-slot002 --port 9000
+2026-03-06T15:50:42.140242Z | worker=5 | round=0 | destroy | rc=0 | duration=0.605s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot005 --port 9000
+2026-03-06T15:50:42.348290Z | worker=1 | round=1 | send | rc=0 | duration=2.926s | .venv/bin/python -m nexus3 rpc send postm4-race-slot002 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:42.452033Z | worker=0 | round=0 | destroy | rc=0 | duration=0.622s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot000 --port 9000
+2026-03-06T15:50:42.465831Z | worker=2 | round=0 | destroy | rc=0 | duration=0.643s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot002 --port 9000
+2026-03-06T15:50:42.672225Z | worker=4 | round=0 | destroy | rc=0 | duration=0.607s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot004 --port 9000
+2026-03-06T15:50:42.745549Z | worker=5 | round=1 | create | rc=0 | duration=0.839s | .venv/bin/python -m nexus3 rpc create postm4-race-slot000 --port 9000
+2026-03-06T15:50:43.073815Z | worker=0 | round=1 | create | rc=0 | duration=0.847s | .venv/bin/python -m nexus3 rpc create postm4-race-slot001 --port 9000
+2026-03-06T15:50:43.098420Z | worker=3 | round=0 | destroy | rc=0 | duration=1.087s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot003 --port 9000
+2026-03-06T15:50:43.108714Z | worker=2 | round=1 | create | rc=0 | duration=1.284s | .venv/bin/python -m nexus3 rpc create postm4-race-slot003 --port 9000
+2026-03-06T15:50:43.279174Z | worker=4 | round=1 | create | rc=0 | duration=0.907s | .venv/bin/python -m nexus3 rpc create postm4-race-slot005 --port 9000
+2026-03-06T15:50:43.584899Z | worker=5 | round=1 | send | rc=0 | duration=4.169s | .venv/bin/python -m nexus3 rpc send postm4-race-slot000 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:43.920975Z | worker=0 | round=1 | send | rc=0 | duration=3.771s | .venv/bin/python -m nexus3 rpc send postm4-race-slot001 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:44.185489Z | worker=3 | round=1 | create | rc=0 | duration=0.799s | .venv/bin/python -m nexus3 rpc create postm4-race-slot004 --port 9000
+2026-03-06T15:50:44.185987Z | worker=4 | round=1 | send | rc=0 | duration=3.424s | .venv/bin/python -m nexus3 rpc send postm4-race-slot005 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:44.392766Z | worker=2 | round=1 | send | rc=0 | duration=4.850s | .venv/bin/python -m nexus3 rpc send postm4-race-slot003 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:44.984130Z | worker=3 | round=1 | send | rc=0 | duration=4.264s | .venv/bin/python -m nexus3 rpc send postm4-race-slot004 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:45.273952Z | worker=1 | round=1 | destroy | rc=0 | duration=0.552s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot002 --port 9000
+2026-03-06T15:50:45.825606Z | worker=1 | round=2 | create | rc=1 | duration=0.597s | .venv/bin/python -m nexus3 rpc create postm4-race-slot003 --port 9000
+2026-03-06T15:50:46.422651Z | worker=1 | round=2 | send | rc=0 | duration=5.116s | .venv/bin/python -m nexus3 rpc send postm4-race-slot003 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:47.610148Z | worker=4 | round=1 | destroy | rc=0 | duration=0.725s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot005 --port 9000
+2026-03-06T15:50:47.692248Z | worker=0 | round=1 | destroy | rc=0 | duration=0.730s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot001 --port 9000
+2026-03-06T15:50:47.753487Z | worker=5 | round=1 | destroy | rc=0 | duration=0.702s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot000 --port 9000
+2026-03-06T15:50:48.334969Z | worker=4 | round=2 | create | rc=0 | duration=0.898s | .venv/bin/python -m nexus3 rpc create postm4-race-slot000 --port 9000
+2026-03-06T15:50:48.422448Z | worker=0 | round=2 | create | rc=0 | duration=1.372s | .venv/bin/python -m nexus3 rpc create postm4-race-slot002 --port 9000
+2026-03-06T15:50:48.455762Z | worker=5 | round=2 | create | rc=0 | duration=1.077s | .venv/bin/python -m nexus3 rpc create postm4-race-slot001 --port 9000
+2026-03-06T15:50:49.233453Z | worker=4 | round=2 | send | rc=0 | duration=5.441s | .venv/bin/python -m nexus3 rpc send postm4-race-slot000 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:49.242679Z | worker=2 | round=1 | destroy | rc=0 | duration=0.610s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot003 --port 9000
+2026-03-06T15:50:49.248635Z | worker=3 | round=1 | destroy | rc=0 | duration=0.668s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot004 --port 9000
+2026-03-06T15:50:49.533168Z | worker=5 | round=2 | send | rc=0 | duration=7.425s | .venv/bin/python -m nexus3 rpc send postm4-race-slot001 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:49.794490Z | worker=0 | round=2 | send | rc=0 | duration=6.094s | .venv/bin/python -m nexus3 rpc send postm4-race-slot002 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:49.852234Z | worker=2 | round=2 | create | rc=0 | duration=0.830s | .venv/bin/python -m nexus3 rpc create postm4-race-slot004 --port 9000
+2026-03-06T15:50:49.916253Z | worker=3 | round=2 | create | rc=0 | duration=1.006s | .venv/bin/python -m nexus3 rpc create postm4-race-slot005 --port 9000
+2026-03-06T15:50:50.682220Z | worker=2 | round=2 | send | rc=0 | duration=3.857s | .venv/bin/python -m nexus3 rpc send postm4-race-slot004 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:50.921970Z | worker=3 | round=2 | send | rc=0 | duration=4.319s | .venv/bin/python -m nexus3 rpc send postm4-race-slot005 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:51.538280Z | worker=1 | round=2 | destroy | rc=0 | duration=0.536s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot003 --port 9000
+2026-03-06T15:50:52.073899Z | worker=1 | round=3 | create | rc=1 | duration=0.544s | .venv/bin/python -m nexus3 rpc create postm4-race-slot004 --port 9000
+2026-03-06T15:50:52.617541Z | worker=1 | round=3 | send | rc=0 | duration=2.914s | .venv/bin/python -m nexus3 rpc send postm4-race-slot004 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:54.539003Z | worker=2 | round=2 | destroy | rc=0 | duration=0.566s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot004 --port 9000
+2026-03-06T15:50:54.674242Z | worker=4 | round=2 | destroy | rc=0 | duration=0.582s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot000 --port 9000
+2026-03-06T15:50:55.104824Z | worker=2 | round=3 | create | rc=1 | duration=0.595s | .venv/bin/python -m nexus3 rpc create postm4-race-slot005 --port 9000
+2026-03-06T15:50:55.240692Z | worker=3 | round=2 | destroy | rc=0 | duration=0.579s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot005 --port 9000
+2026-03-06T15:50:55.256645Z | worker=4 | round=3 | create | rc=1 | duration=0.583s | .venv/bin/python -m nexus3 rpc create postm4-race-slot001 --port 9000
+2026-03-06T15:50:55.531151Z | worker=1 | round=3 | destroy | rc=0 | duration=0.587s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot004 --port 9000
+2026-03-06T15:50:55.699699Z | worker=2 | round=3 | send | rc=1 | duration=0.610s | .venv/bin/python -m nexus3 rpc send postm4-race-slot005 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:55.820114Z | worker=3 | round=3 | create | rc=0 | duration=0.876s | .venv/bin/python -m nexus3 rpc create postm4-race-slot000 --port 9000
+2026-03-06T15:50:55.839864Z | worker=4 | round=3 | send | rc=0 | duration=3.415s | .venv/bin/python -m nexus3 rpc send postm4-race-slot001 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:55.888557Z | worker=0 | round=2 | destroy | rc=0 | duration=0.818s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot002 --port 9000
+2026-03-06T15:50:56.118530Z | worker=1 | round=4 | create | rc=0 | duration=0.831s | .venv/bin/python -m nexus3 rpc create postm4-race-slot005 --port 9000
+2026-03-06T15:50:56.309953Z | worker=2 | round=3 | destroy | rc=0 | duration=0.673s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot005 --port 9000
+2026-03-06T15:50:56.696175Z | worker=3 | round=3 | send | rc=0 | duration=5.004s | .venv/bin/python -m nexus3 rpc send postm4-race-slot000 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:56.706481Z | worker=0 | round=3 | create | rc=0 | duration=0.876s | .venv/bin/python -m nexus3 rpc create postm4-race-slot003 --port 9000
+2026-03-06T15:50:56.949277Z | worker=1 | round=4 | send | rc=1 | duration=0.639s | .venv/bin/python -m nexus3 rpc send postm4-race-slot005 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:56.958026Z | worker=5 | round=2 | destroy | rc=0 | duration=0.640s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot001 --port 9000
+2026-03-06T15:50:56.983466Z | worker=2 | round=4 | create | rc=1 | duration=0.608s | .venv/bin/python -m nexus3 rpc create postm4-race-slot000 --port 9000
+2026-03-06T15:50:57.582378Z | worker=0 | round=3 | send | rc=0 | duration=3.663s | .venv/bin/python -m nexus3 rpc send postm4-race-slot003 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:57.588659Z | worker=1 | round=4 | destroy | rc=0 | duration=0.589s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot005 --port 9000
+2026-03-06T15:50:57.591060Z | worker=2 | round=4 | send | rc=0 | duration=6.894s | .venv/bin/python -m nexus3 rpc send postm4-race-slot000 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:57.597857Z | worker=5 | round=3 | create | rc=0 | duration=0.833s | .venv/bin/python -m nexus3 rpc create postm4-race-slot002 --port 9000
+2026-03-06T15:50:58.177872Z | worker=1 | round=5 | create | rc=1 | duration=0.570s | .venv/bin/python -m nexus3 rpc create postm4-race-slot000 --port 9000
+2026-03-06T15:50:58.430510Z | worker=5 | round=3 | send | rc=0 | duration=4.705s | .venv/bin/python -m nexus3 rpc send postm4-race-slot002 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:58.748285Z | worker=1 | round=5 | send | rc=0 | duration=5.755s | .venv/bin/python -m nexus3 rpc send postm4-race-slot000 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:50:59.254436Z | worker=4 | round=3 | destroy | rc=0 | duration=0.560s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot001 --port 9000
+2026-03-06T15:50:59.814310Z | worker=4 | round=4 | create | rc=1 | duration=0.552s | .venv/bin/python -m nexus3 rpc create postm4-race-slot002 --port 9000
+2026-03-06T15:51:00.366558Z | worker=4 | round=4 | send | rc=0 | duration=5.926s | .venv/bin/python -m nexus3 rpc send postm4-race-slot002 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:01.245446Z | worker=0 | round=3 | destroy | rc=0 | duration=0.575s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot003 --port 9000
+2026-03-06T15:51:01.699841Z | worker=3 | round=3 | destroy | rc=0 | duration=0.609s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot000 --port 9000
+2026-03-06T15:51:01.820475Z | worker=0 | round=4 | create | rc=0 | duration=0.806s | .venv/bin/python -m nexus3 rpc create postm4-race-slot004 --port 9000
+2026-03-06T15:51:02.309226Z | worker=3 | round=4 | create | rc=0 | duration=0.796s | .venv/bin/python -m nexus3 rpc create postm4-race-slot001 --port 9000
+2026-03-06T15:51:02.626967Z | worker=0 | round=4 | send | rc=0 | duration=4.717s | .venv/bin/python -m nexus3 rpc send postm4-race-slot004 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:03.105102Z | worker=3 | round=4 | send | rc=0 | duration=4.783s | .venv/bin/python -m nexus3 rpc send postm4-race-slot001 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:03.135945Z | worker=5 | round=3 | destroy | rc=0 | duration=0.563s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot002 --port 9000
+2026-03-06T15:51:03.698529Z | worker=5 | round=4 | create | rc=0 | duration=0.803s | .venv/bin/python -m nexus3 rpc create postm4-race-slot003 --port 9000
+2026-03-06T15:51:04.485095Z | worker=2 | round=4 | destroy | rc=0 | duration=0.584s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot000 --port 9000
+2026-03-06T15:51:04.501279Z | worker=5 | round=4 | send | rc=0 | duration=5.327s | .venv/bin/python -m nexus3 rpc send postm4-race-slot003 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:04.503085Z | worker=1 | round=5 | destroy | rc=0 | duration=0.592s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot000 --port 9000
+2026-03-06T15:51:05.069019Z | worker=2 | round=5 | create | rc=1 | duration=0.571s | .venv/bin/python -m nexus3 rpc create postm4-race-slot001 --port 9000
+2026-03-06T15:51:05.095245Z | worker=1 | round=6 | create | rc=1 | duration=0.573s | .venv/bin/python -m nexus3 rpc create postm4-race-slot001 --port 9000
+2026-03-06T15:51:05.640161Z | worker=2 | round=5 | send | rc=0 | duration=4.003s | .venv/bin/python -m nexus3 rpc send postm4-race-slot001 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:05.668316Z | worker=1 | round=6 | send | rc=0 | duration=3.976s | .venv/bin/python -m nexus3 rpc send postm4-race-slot001 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:06.292609Z | worker=4 | round=4 | destroy | rc=0 | duration=0.547s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot002 --port 9000
+2026-03-06T15:51:06.840099Z | worker=4 | round=5 | create | rc=1 | duration=0.549s | .venv/bin/python -m nexus3 rpc create postm4-race-slot003 --port 9000
+2026-03-06T15:51:07.343925Z | worker=0 | round=4 | destroy | rc=0 | duration=0.558s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot004 --port 9000
+2026-03-06T15:51:07.389371Z | worker=4 | round=5 | send | rc=0 | duration=4.376s | .venv/bin/python -m nexus3 rpc send postm4-race-slot003 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:07.887777Z | worker=3 | round=4 | destroy | rc=0 | duration=0.576s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot001 --port 9000
+2026-03-06T15:51:07.902271Z | worker=0 | round=5 | create | rc=0 | duration=0.814s | .venv/bin/python -m nexus3 rpc create postm4-race-slot005 --port 9000
+2026-03-06T15:51:08.464195Z | worker=3 | round=5 | create | rc=0 | duration=0.817s | .venv/bin/python -m nexus3 rpc create postm4-race-slot002 --port 9000
+2026-03-06T15:51:08.716611Z | worker=0 | round=5 | send | rc=0 | duration=6.030s | .venv/bin/python -m nexus3 rpc send postm4-race-slot005 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:09.281619Z | worker=3 | round=5 | send | rc=0 | duration=6.359s | .venv/bin/python -m nexus3 rpc send postm4-race-slot002 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:09.643656Z | worker=2 | round=5 | destroy | rc=0 | duration=0.603s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot001 --port 9000
+2026-03-06T15:51:09.644187Z | worker=1 | round=6 | destroy | rc=0 | duration=0.616s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot001 --port 9000
+2026-03-06T15:51:09.828200Z | worker=5 | round=4 | destroy | rc=0 | duration=0.592s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot003 --port 9000
+2026-03-06T15:51:10.246993Z | worker=2 | round=6 | create | rc=1 | duration=0.600s | .venv/bin/python -m nexus3 rpc create postm4-race-slot002 --port 9000
+2026-03-06T15:51:10.260448Z | worker=1 | round=7 | create | rc=1 | duration=0.590s | .venv/bin/python -m nexus3 rpc create postm4-race-slot002 --port 9000
+2026-03-06T15:51:10.420129Z | worker=5 | round=5 | create | rc=0 | duration=0.838s | .venv/bin/python -m nexus3 rpc create postm4-race-slot004 --port 9000
+2026-03-06T15:51:10.846654Z | worker=2 | round=6 | send | rc=0 | duration=7.284s | .venv/bin/python -m nexus3 rpc send postm4-race-slot002 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:10.850327Z | worker=1 | round=7 | send | rc=0 | duration=7.281s | .venv/bin/python -m nexus3 rpc send postm4-race-slot002 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:11.258626Z | worker=5 | round=5 | send | rc=0 | duration=4.945s | .venv/bin/python -m nexus3 rpc send postm4-race-slot004 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:11.765073Z | worker=4 | round=5 | destroy | rc=0 | duration=0.550s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot003 --port 9000
+2026-03-06T15:51:12.314669Z | worker=4 | round=6 | create | rc=1 | duration=0.545s | .venv/bin/python -m nexus3 rpc create postm4-race-slot004 --port 9000
+2026-03-06T15:51:12.860143Z | worker=4 | round=6 | send | rc=0 | duration=6.448s | .venv/bin/python -m nexus3 rpc send postm4-race-slot004 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:14.746554Z | worker=0 | round=5 | destroy | rc=0 | duration=0.542s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot005 --port 9000
+2026-03-06T15:51:15.288754Z | worker=0 | round=6 | create | rc=0 | duration=0.820s | .venv/bin/python -m nexus3 rpc create postm4-race-slot000 --port 9000
+2026-03-06T15:51:15.640673Z | worker=3 | round=5 | destroy | rc=0 | duration=0.597s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot002 --port 9000
+2026-03-06T15:51:16.109107Z | worker=0 | round=6 | send | rc=0 | duration=6.769s | .venv/bin/python -m nexus3 rpc send postm4-race-slot000 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:16.203299Z | worker=5 | round=5 | destroy | rc=0 | duration=0.590s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot004 --port 9000
+2026-03-06T15:51:16.237934Z | worker=3 | round=6 | create | rc=0 | duration=0.826s | .venv/bin/python -m nexus3 rpc create postm4-race-slot003 --port 9000
+2026-03-06T15:51:16.793395Z | worker=5 | round=6 | create | rc=0 | duration=0.832s | .venv/bin/python -m nexus3 rpc create postm4-race-slot005 --port 9000
+2026-03-06T15:51:17.064101Z | worker=3 | round=6 | send | rc=0 | duration=4.039s | .venv/bin/python -m nexus3 rpc send postm4-race-slot003 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:17.625325Z | worker=5 | round=6 | send | rc=0 | duration=6.141s | .venv/bin/python -m nexus3 rpc send postm4-race-slot005 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:18.130968Z | worker=2 | round=6 | destroy | rc=0 | duration=0.546s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot002 --port 9000
+2026-03-06T15:51:18.131780Z | worker=1 | round=7 | destroy | rc=0 | duration=0.565s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot002 --port 9000
+2026-03-06T15:51:18.676823Z | worker=2 | round=7 | create | rc=1 | duration=0.540s | .venv/bin/python -m nexus3 rpc create postm4-race-slot003 --port 9000
+2026-03-06T15:51:18.696449Z | worker=1 | round=8 | create | rc=1 | duration=0.561s | .venv/bin/python -m nexus3 rpc create postm4-race-slot003 --port 9000
+2026-03-06T15:51:19.217088Z | worker=2 | round=7 | send | rc=0 | duration=3.884s | .venv/bin/python -m nexus3 rpc send postm4-race-slot003 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:19.257065Z | worker=1 | round=8 | send | rc=0 | duration=3.843s | .venv/bin/python -m nexus3 rpc send postm4-race-slot003 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:19.308550Z | worker=4 | round=6 | destroy | rc=0 | duration=0.555s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot004 --port 9000
+2026-03-06T15:51:19.863143Z | worker=4 | round=7 | create | rc=1 | duration=0.551s | .venv/bin/python -m nexus3 rpc create postm4-race-slot005 --port 9000
+2026-03-06T15:51:20.414157Z | worker=4 | round=7 | send | rc=0 | duration=5.476s | .venv/bin/python -m nexus3 rpc send postm4-race-slot005 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:21.102649Z | worker=3 | round=6 | destroy | rc=0 | duration=0.569s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot003 --port 9000
+2026-03-06T15:51:21.671678Z | worker=3 | round=7 | create | rc=0 | duration=0.749s | .venv/bin/python -m nexus3 rpc create postm4-race-slot004 --port 9000
+2026-03-06T15:51:22.420746Z | worker=3 | round=7 | send | rc=0 | duration=5.278s | .venv/bin/python -m nexus3 rpc send postm4-race-slot004 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:22.878180Z | worker=0 | round=6 | destroy | rc=0 | duration=0.625s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot000 --port 9000
+2026-03-06T15:51:23.099797Z | worker=1 | round=8 | destroy | rc=0 | duration=0.578s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot003 --port 9000
+2026-03-06T15:51:23.100900Z | worker=2 | round=7 | destroy | rc=0 | duration=0.674s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot003 --port 9000
+2026-03-06T15:51:23.503364Z | worker=0 | round=7 | create | rc=0 | duration=0.845s | .venv/bin/python -m nexus3 rpc create postm4-race-slot001 --port 9000
+2026-03-06T15:51:23.677963Z | worker=1 | round=9 | create | rc=1 | duration=0.680s | .venv/bin/python -m nexus3 rpc create postm4-race-slot004 --port 9000
+2026-03-06T15:51:23.766292Z | worker=5 | round=6 | destroy | rc=0 | duration=0.621s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot005 --port 9000
+2026-03-06T15:51:23.774997Z | worker=2 | round=8 | create | rc=1 | duration=0.606s | .venv/bin/python -m nexus3 rpc create postm4-race-slot004 --port 9000
+2026-03-06T15:51:24.347958Z | worker=0 | round=7 | send | rc=0 | duration=4.010s | .venv/bin/python -m nexus3 rpc send postm4-race-slot001 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:24.357915Z | worker=1 | round=9 | send | rc=0 | duration=5.245s | .venv/bin/python -m nexus3 rpc send postm4-race-slot004 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:24.381043Z | worker=2 | round=8 | send | rc=0 | duration=5.220s | .venv/bin/python -m nexus3 rpc send postm4-race-slot004 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:24.387837Z | worker=5 | round=7 | create | rc=0 | duration=0.794s | .venv/bin/python -m nexus3 rpc create postm4-race-slot000 --port 9000
+2026-03-06T15:51:25.181830Z | worker=5 | round=7 | send | rc=0 | duration=6.427s | .venv/bin/python -m nexus3 rpc send postm4-race-slot000 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:25.890065Z | worker=4 | round=7 | destroy | rc=0 | duration=0.554s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot005 --port 9000
+2026-03-06T15:51:26.443689Z | worker=4 | round=8 | create | rc=1 | duration=0.549s | .venv/bin/python -m nexus3 rpc create postm4-race-slot000 --port 9000
+2026-03-06T15:51:26.992380Z | worker=4 | round=8 | send | rc=0 | duration=5.972s | .venv/bin/python -m nexus3 rpc send postm4-race-slot000 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:27.699177Z | worker=3 | round=7 | destroy | rc=0 | duration=0.538s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot004 --port 9000
+2026-03-06T15:51:28.237330Z | worker=3 | round=8 | create | rc=0 | duration=0.774s | .venv/bin/python -m nexus3 rpc create postm4-race-slot005 --port 9000
+2026-03-06T15:51:28.357590Z | worker=0 | round=7 | destroy | rc=0 | duration=0.670s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot001 --port 9000
+2026-03-06T15:51:29.011195Z | worker=3 | round=8 | send | rc=0 | duration=4.998s | .venv/bin/python -m nexus3 rpc send postm4-race-slot005 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:29.027505Z | worker=0 | round=8 | create | rc=0 | duration=0.819s | .venv/bin/python -m nexus3 rpc create postm4-race-slot002 --port 9000
+2026-03-06T15:51:29.600809Z | worker=2 | round=8 | destroy | rc=0 | duration=0.585s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot004 --port 9000
+2026-03-06T15:51:29.602845Z | worker=1 | round=9 | destroy | rc=0 | duration=0.582s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot004 --port 9000
+2026-03-06T15:51:29.846358Z | worker=0 | round=8 | send | rc=0 | duration=4.206s | .venv/bin/python -m nexus3 rpc send postm4-race-slot002 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:30.185395Z | worker=2 | round=9 | create | rc=1 | duration=0.558s | .venv/bin/python -m nexus3 rpc create postm4-race-slot005 --port 9000
+2026-03-06T15:51:30.743630Z | worker=2 | round=9 | send | rc=0 | duration=5.188s | .venv/bin/python -m nexus3 rpc send postm4-race-slot005 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:31.608582Z | worker=5 | round=7 | destroy | rc=0 | duration=0.549s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot000 --port 9000
+2026-03-06T15:51:32.157458Z | worker=5 | round=8 | create | rc=0 | duration=0.807s | .venv/bin/python -m nexus3 rpc create postm4-race-slot001 --port 9000
+2026-03-06T15:51:32.964276Z | worker=5 | round=8 | send | rc=0 | duration=3.654s | .venv/bin/python -m nexus3 rpc send postm4-race-slot001 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:32.964772Z | worker=4 | round=8 | destroy | rc=0 | duration=0.589s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot000 --port 9000
+2026-03-06T15:51:33.553724Z | worker=4 | round=9 | create | rc=1 | duration=0.575s | .venv/bin/python -m nexus3 rpc create postm4-race-slot001 --port 9000
+2026-03-06T15:51:34.009578Z | worker=3 | round=8 | destroy | rc=0 | duration=0.614s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot005 --port 9000
+2026-03-06T15:51:34.052513Z | worker=0 | round=8 | destroy | rc=0 | duration=0.653s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot002 --port 9000
+2026-03-06T15:51:34.128992Z | worker=4 | round=9 | send | rc=0 | duration=4.370s | .venv/bin/python -m nexus3 rpc send postm4-race-slot001 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:34.623761Z | worker=3 | round=9 | create | rc=0 | duration=0.789s | .venv/bin/python -m nexus3 rpc create postm4-race-slot000 --port 9000
+2026-03-06T15:51:34.705550Z | worker=0 | round=9 | create | rc=0 | duration=0.957s | .venv/bin/python -m nexus3 rpc create postm4-race-slot003 --port 9000
+2026-03-06T15:51:35.412694Z | worker=3 | round=9 | send | rc=0 | duration=3.267s | .venv/bin/python -m nexus3 rpc send postm4-race-slot000 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:35.662858Z | worker=0 | round=9 | send | rc=0 | duration=5.031s | .venv/bin/python -m nexus3 rpc send postm4-race-slot003 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:35.931675Z | worker=2 | round=9 | destroy | rc=0 | duration=0.557s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot005 --port 9000
+2026-03-06T15:51:36.618647Z | worker=5 | round=8 | destroy | rc=0 | duration=0.564s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot001 --port 9000
+2026-03-06T15:51:37.182704Z | worker=5 | round=9 | create | rc=0 | duration=0.830s | .venv/bin/python -m nexus3 rpc create postm4-race-slot002 --port 9000
+2026-03-06T15:51:38.012309Z | worker=5 | round=9 | send | rc=0 | duration=4.417s | .venv/bin/python -m nexus3 rpc send postm4-race-slot002 'Reply with race-ok.' --port 9000 --timeout 90
+2026-03-06T15:51:38.498550Z | worker=4 | round=9 | destroy | rc=0 | duration=0.583s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot001 --port 9000
+2026-03-06T15:51:38.679402Z | worker=3 | round=9 | destroy | rc=0 | duration=0.639s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot000 --port 9000
+2026-03-06T15:51:40.694225Z | worker=0 | round=9 | destroy | rc=0 | duration=0.559s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot003 --port 9000
+2026-03-06T15:51:42.428906Z | worker=5 | round=9 | destroy | rc=0 | duration=0.537s | .venv/bin/python -m nexus3 rpc destroy postm4-race-slot002 --port 9000

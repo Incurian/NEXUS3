@@ -1,0 +1,13 @@
+{
+  "failed_checks": [],
+  "generated_at": "2026-03-06T15:50:24.969418Z",
+  "highlights": [
+    "iterations=25",
+    "total_commands=100",
+    "failures=0",
+    "send_p50_seconds=5.438",
+    "send_p95_seconds=6.877"
+  ],
+  "pass": true,
+  "warnings": []
+}

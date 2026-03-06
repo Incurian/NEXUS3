@@ -1,0 +1,15 @@
+{
+  "track": "windows",
+  "run_id": "post-m4-20260306-live1b",
+  "started_at": "2026-03-06T15:55:00Z",
+  "finished_at": "2026-03-06T15:55:00Z",
+  "duration_seconds": 0.0,
+  "config": {
+    "execution_mode": "pending_real_host",
+    "runbook": "docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md"
+  },
+  "environment": {
+    "host": "linux-ci-sandbox",
+    "notes": "Windows-native track requires real Windows host and is not executable in this environment."
+  }
+}

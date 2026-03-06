@@ -186,9 +186,10 @@ Status note (2026-03-05):
   - `.venv/bin/pytest tests/ -v` passed (`4102 passed`, `3 skipped`).
   - `.venv/bin/pytest tests/integration/ -v` passed (`211 passed`, `2 skipped`).
   - live RPC create/send/destroy validation on `:9000` passed.
-- Next target: execute first post-M4 campaign runs and archive evidence under
-  `docs/validation/<run-id>/` (soak/perf, race/lifecycle, terminal matrix +
-  emulator follow-up, and Windows-native checklist on real host).
+- Next target: close remaining post-M4 validation findings by:
+  - executing Windows-native checklist on a real Windows host with artifacts.
+  - triaging/rerunning race campaign follow-up for failure-rate findings.
+  - completing terminal emulator follow-up for carriage-return handling.
 
 ### M4: Delegation and Strategic Evolution
 
@@ -337,6 +338,19 @@ Status note (2026-03-06):
     `scripts/validation/terminal_payload_matrix.py`
 - Next deferred-validation gate is execution of the first soak/race/terminal
   campaign runs and archival of evidence under `docs/validation/<run-id>/`.
+
+Status note (2026-03-06, later):
+- First live execution slice recorded under
+  `docs/validation/post-m4-20260306-live1b/`.
+- Track outcomes:
+  - soak: pass
+  - race: fail on failure-rate threshold (`13.333%`), with
+    `security_failures=0`
+  - terminal: pass with manual carriage-return emulator follow-up warning
+  - windows: pending real-host execution (placeholder artifact set recorded)
+- Findings and follow-up placeholders:
+  - `docs/validation/post-m4-20260306-live1b/findings.md`
+  - `docs/validation/post-m4-20260306-live1b/issue-links.md`
 
 ## Related Documents
 
