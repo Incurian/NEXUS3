@@ -108,7 +108,7 @@ Phases:
     - `.venv/bin/python -m nexus3 rpc create test-agent --port 9000`
     - `.venv/bin/python -m nexus3 rpc send test-agent "describe your permissions and what you can do" --port 9000`
     - `.venv/bin/python -m nexus3 rpc destroy test-agent --port 9000`
-- 2026-03-05: Phase 3A completed (local branch state, commit pending).
+- 2026-03-05: Phase 3A completed and committed as `6b65b17`.
 - Added HTTP capability transport wiring:
   - `nexus3/rpc/http.py` now extracts optional `X-Nexus-Capability` and passes
     it through dispatch as `capability_token` on both global and agent routes.

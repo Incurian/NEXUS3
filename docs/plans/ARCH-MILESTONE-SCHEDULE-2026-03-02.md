@@ -164,7 +164,7 @@ Status note (2026-03-05):
   - added focused regressions in `tests/unit/test_agent_api.py`,
     `tests/unit/test_rpc_dispatcher.py`, `tests/unit/test_global_dispatcher.py`,
     `tests/unit/test_pool.py`, and `tests/unit/core/test_request_context.py`
-- Plan B Phase 3A implemented in local execution state (commit pending):
+- Plan B Phase 3A committed as `6b65b17`:
   - HTTP ingress now forwards optional `X-Nexus-Capability` as dispatch
     `capability_token` on global and `/agent/{id}` routes
   - client supports explicit optional `X-Nexus-Capability` emission

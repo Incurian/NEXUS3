@@ -220,7 +220,7 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- `M4` early execution active: Plan E Phases 1-4 and Plan B Phases 1-2 are committed on this branch, with Plan B Phase 3A now implemented locally.
+- `M4` early execution active: Plan E Phases 1-4 and Plan B Phases 1-3A are committed on this branch.
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
@@ -242,7 +242,8 @@ Immediate tasks:
   (`plan b phase 1: add capability token primitives`).
 - Plan B Phase 2 is committed as `43773be`
   (`plan b phase 2: integrate capabilities into direct rpc path`).
-- Plan B Phase 3A (HTTP ingress-first capability transport) is implemented locally and ready to commit:
+- Plan B Phase 3A is committed as `6b65b17`
+  (`plan b phase 3a: add http capability transport wiring`):
   - `nexus3/rpc/http.py`: optional `X-Nexus-Capability` header extraction and
     `capability_token` pass-through on global + agent dispatch routes.
   - `nexus3/client.py`: optional explicit `capability_token` client plumbing
@@ -250,8 +251,8 @@ Immediate tasks:
   - `nexus3/rpc/README.md`: HTTP capability semantics + fallback precedence docs.
   - tests: focused HTTP/client wiring regressions for capability-present,
     capability-invalid (`INVALID_PARAMS`), and requester-only fallback flows.
-- Next target: commit Plan B Phase 3A and then sequence the Plan B Phase 4
-  legacy identity-path retirement slice behind migration/compatibility gates.
+- Next target: sequence the Plan B Phase 4 legacy identity-path retirement
+  slice behind migration/compatibility gates.
 - Focused validation target (Phase 3A):
   - `.venv/bin/ruff check nexus3/rpc/http.py nexus3/client.py nexus3/rpc/README.md tests/unit/test_http_pipeline_layers.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/test_rpc_dispatcher.py`
   - `.venv/bin/mypy nexus3/rpc/http.py nexus3/client.py`
@@ -263,6 +264,7 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `6b65b17` plan b phase 3a: add http capability transport wiring
 - `35206ec` docs: record plan b phase 2 execution status
 - `43773be` plan b phase 2: integrate capabilities into direct rpc path
 - `14bc820` plan b phase 1: add capability token primitives
@@ -348,7 +350,7 @@ Progress snapshot:
   - added focused regressions in `tests/unit/test_agent_api.py`,
     `tests/unit/test_rpc_dispatcher.py`, `tests/unit/test_global_dispatcher.py`,
     `tests/unit/test_pool.py`, and `tests/unit/core/test_request_context.py`.
-- Completed (2026-03-05, local): Plan B Phase 3A HTTP ingress-first capability transport:
+- Completed (2026-03-05): Plan B Phase 3A HTTP ingress-first capability transport (`6b65b17`):
   - updated `nexus3/rpc/http.py` to forward optional
     `X-Nexus-Capability` as `capability_token` through global and
     `/agent/{id}` dispatch paths.
@@ -369,7 +371,7 @@ Progress snapshot:
     - `.venv/bin/python -m nexus3 rpc create test-agent --port 9000` (success)
     - `.venv/bin/python -m nexus3 rpc send test-agent "describe your permissions and what you can do" --port 9000` (success)
     - `.venv/bin/python -m nexus3 rpc destroy test-agent --port 9000` (success)
-- Validation snapshot (2026-03-05, Plan B Phase 3A local):
+- Validation snapshot (2026-03-05, Plan B Phase 3A):
   - `.venv/bin/ruff check nexus3/rpc/http.py nexus3/client.py nexus3/rpc/README.md tests/unit/test_http_pipeline_layers.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/test_rpc_dispatcher.py` passed.
   - `.venv/bin/mypy nexus3/rpc/http.py nexus3/client.py` passed.
   - `.venv/bin/pytest -q tests/unit/test_http_pipeline_layers.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/test_rpc_dispatcher.py` passed (`79 passed`, `12 warnings`).
