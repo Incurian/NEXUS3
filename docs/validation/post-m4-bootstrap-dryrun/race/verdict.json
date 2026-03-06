@@ -1,0 +1,16 @@
+{
+  "failed_checks": [],
+  "generated_at": "2026-03-06T15:21:41.051194Z",
+  "highlights": [
+    "workers=2",
+    "rounds=1",
+    "total_commands=6",
+    "failures=0",
+    "send_p95_seconds=0.000",
+    "security_failures=0"
+  ],
+  "pass": true,
+  "warnings": [
+    "dry-run mode enabled: commands were not executed"
+  ]
+}

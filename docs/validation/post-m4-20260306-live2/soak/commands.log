@@ -1,0 +1,8 @@
+2026-03-06T15:43:42.156775Z | create | rc=1 | duration=0.519s | .venv/bin/python -m nexus3 rpc create postm4-soak-0000 --port 9000
+2026-03-06T15:43:42.676020Z | send | rc=1 | duration=0.534s | .venv/bin/python -m nexus3 rpc send postm4-soak-0000 'Reply with OK and your agent id in one short sentence.' --port 9000 --timeout 90
+2026-03-06T15:43:43.209915Z | compact | rc=1 | duration=0.529s | .venv/bin/python -m nexus3 rpc compact postm4-soak-0000 --port 9000
+2026-03-06T15:43:43.738946Z | destroy | rc=1 | duration=0.525s | .venv/bin/python -m nexus3 rpc destroy postm4-soak-0000 --port 9000
+2026-03-06T15:43:44.263688Z | create | rc=1 | duration=0.529s | .venv/bin/python -m nexus3 rpc create postm4-soak-0001 --port 9000
+2026-03-06T15:43:44.793009Z | send | rc=1 | duration=0.526s | .venv/bin/python -m nexus3 rpc send postm4-soak-0001 'Reply with OK and your agent id in one short sentence.' --port 9000 --timeout 90
+2026-03-06T15:43:45.319408Z | compact | rc=1 | duration=0.522s | .venv/bin/python -m nexus3 rpc compact postm4-soak-0001 --port 9000
+2026-03-06T15:43:45.841688Z | destroy | rc=1 | duration=0.528s | .venv/bin/python -m nexus3 rpc destroy postm4-soak-0001 --port 9000

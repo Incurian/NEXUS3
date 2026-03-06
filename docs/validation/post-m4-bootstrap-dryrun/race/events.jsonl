@@ -1,0 +1,6 @@
+{"details": {"returncode": 0, "round_index": 0, "skipped": true, "stderr_tail": "", "stdout_tail": "", "worker": 0}, "duration_seconds": 0.0, "operation": "create", "status": "ok", "timestamp": "2026-03-06T15:21:41.050045Z"}
+{"details": {"returncode": 0, "round_index": 0, "skipped": true, "stderr_tail": "", "stdout_tail": "", "worker": 0}, "duration_seconds": 0.0, "operation": "send", "status": "ok", "timestamp": "2026-03-06T15:21:41.050059Z"}
+{"details": {"returncode": 0, "round_index": 0, "skipped": true, "stderr_tail": "", "stdout_tail": "", "worker": 0}, "duration_seconds": 0.0, "operation": "destroy", "status": "ok", "timestamp": "2026-03-06T15:21:41.050069Z"}
+{"details": {"returncode": 0, "round_index": 0, "skipped": true, "stderr_tail": "", "stdout_tail": "", "worker": 1}, "duration_seconds": 0.0, "operation": "create", "status": "ok", "timestamp": "2026-03-06T15:21:41.050290Z"}
+{"details": {"returncode": 0, "round_index": 0, "skipped": true, "stderr_tail": "", "stdout_tail": "", "worker": 1}, "duration_seconds": 0.0, "operation": "send", "status": "ok", "timestamp": "2026-03-06T15:21:41.050341Z"}
+{"details": {"returncode": 0, "round_index": 0, "skipped": true, "stderr_tail": "", "stdout_tail": "", "worker": 1}, "duration_seconds": 0.0, "operation": "destroy", "status": "ok", "timestamp": "2026-03-06T15:21:41.050355Z"}

@@ -1,0 +1,27 @@
+{
+  "config": {
+    "case_count": 7,
+    "dry_run": true,
+    "output_root": "docs/validation"
+  },
+  "counts": {
+    "manual_follow_up_cases": 1,
+    "strict_failures": 0,
+    "total_cases": 7
+  },
+  "duration_seconds": 0.000516,
+  "environment": {
+    "hostname": "INC-TR",
+    "os": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "python": "3.11.14"
+  },
+  "finished_at": "2026-03-06T15:21:41.226011Z",
+  "git": {
+    "branch": "feat/arch-overhaul-execution",
+    "commit": "unknown"
+  },
+  "run_id": "post-m4-bootstrap-dryrun",
+  "started_at": "2026-03-06T15:21:41.225495Z",
+  "tool_version": "post-m4-validation-v1",
+  "track": "terminal"
+}

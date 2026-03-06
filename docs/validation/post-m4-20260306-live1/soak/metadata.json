@@ -1,0 +1,37 @@
+{
+  "config": {
+    "agent_prefix": "postm4-soak",
+    "command_timeout": 120.0,
+    "dry_run": false,
+    "duration_seconds": null,
+    "iterations": 25,
+    "max_failure_rate": 0.01,
+    "max_send_p50_seconds": 10.0,
+    "max_send_p95_seconds": 20.0,
+    "output_root": "docs/validation",
+    "pause_seconds": 0.0,
+    "port": 9000,
+    "python_bin": ".venv/bin/python",
+    "send_timeout": 90
+  },
+  "counts": {
+    "failures": 100,
+    "send_samples": 25,
+    "total_commands": 100
+  },
+  "duration_seconds": 55.104073,
+  "environment": {
+    "hostname": "INC-TR",
+    "os": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "python": "3.11.14"
+  },
+  "finished_at": "2026-03-06T15:42:37.835445Z",
+  "git": {
+    "branch": "feat/arch-overhaul-execution",
+    "commit": "unknown"
+  },
+  "run_id": "post-m4-20260306-live1",
+  "started_at": "2026-03-06T15:41:42.731372Z",
+  "tool_version": "post-m4-validation-v1",
+  "track": "soak"
+}

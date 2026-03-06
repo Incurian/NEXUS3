@@ -1,0 +1,31 @@
+{
+  "config": {
+    "agent_prefix": "postm4-race",
+    "command_timeout": 120.0,
+    "dry_run": true,
+    "max_failure_rate": 0.02,
+    "max_security_failures": 0,
+    "output_root": "docs/validation",
+    "port": 9000,
+    "python_bin": ".venv/bin/python",
+    "rounds": 1,
+    "send_timeout": 90,
+    "shared_agent_pool_size": 1,
+    "workers": 2
+  },
+  "duration_seconds": 0.0,
+  "environment": {
+    "hostname": "INC-TR",
+    "os": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "python": "3.11.14"
+  },
+  "finished_at": "2026-03-06T15:21:41.051312Z",
+  "git": {
+    "branch": "feat/arch-overhaul-execution",
+    "commit": "unknown"
+  },
+  "run_id": "post-m4-bootstrap-dryrun",
+  "started_at": "2026-03-06T15:21:41.049685Z",
+  "tool_version": "post-m4-validation-v1",
+  "track": "race"
+}

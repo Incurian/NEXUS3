@@ -1,0 +1,13 @@
+{
+  "failed_checks": [],
+  "generated_at": "2026-03-06T15:41:42.916565Z",
+  "highlights": [
+    "total_cases=7",
+    "strict_failures=0",
+    "manual_follow_up_cases=1"
+  ],
+  "pass": true,
+  "warnings": [
+    "carriage-return: contains carriage return; requires live emulator verification"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "commands_failed": 0,
+  "commands_total": 4,
+  "dry_run": true,
+  "duration_seconds": 0.000483,
+  "failure_rate": 0.0,
+  "iterations_requested": 1,
+  "send_p50_seconds": 0.0,
+  "send_p95_seconds": 0.0,
+  "status": "pass"
+}

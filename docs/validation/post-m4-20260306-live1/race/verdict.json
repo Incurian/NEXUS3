@@ -1,0 +1,16 @@
+{
+  "failed_checks": [
+    "failure rate 100.000% exceeded threshold 2.000%"
+  ],
+  "generated_at": "2026-03-06T15:42:01.263001Z",
+  "highlights": [
+    "workers=6",
+    "rounds=10",
+    "total_commands=180",
+    "failures=180",
+    "send_p95_seconds=0.662",
+    "security_failures=0"
+  ],
+  "pass": false,
+  "warnings": []
+}

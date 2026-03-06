@@ -1,0 +1,14 @@
+{
+  "failed_checks": [],
+  "generated_at": "2026-03-06T15:21:41.229015Z",
+  "highlights": [
+    "total_cases=7",
+    "strict_failures=0",
+    "manual_follow_up_cases=1"
+  ],
+  "pass": true,
+  "warnings": [
+    "carriage-return: contains carriage return; requires live emulator verification",
+    "dry-run mode enabled: strict failure checks are informational"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "commands_failed": 180,
+  "commands_total": 180,
+  "dry_run": false,
+  "failure_rate": 1.0,
+  "rounds": 10,
+  "security_failures": 0,
+  "send_p95_seconds": 0.662278,
+  "shared_agent_pool_size": 6,
+  "status": "fail",
+  "workers": 6
+}
