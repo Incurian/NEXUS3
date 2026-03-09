@@ -3,14 +3,12 @@
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from nexus3.core.permissions import PermissionLevel
 from nexus3.skill.builtin.git import (
-    DANGEROUS_FLAGS,
     READ_ONLY_COMMANDS,
     GitSkill,
     git_factory,
@@ -18,30 +16,23 @@ from nexus3.skill.builtin.git import (
 from nexus3.skill.services import ServiceContainer
 
 
-class MockServiceContainer:
-    """Mock ServiceContainer for testing skills."""
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._data = kwargs
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return self._data.get(key, default)
-
-    def get_tool_allowed_paths(self, tool_name: str | None = None) -> list[Path] | None:
-        """Return allowed_paths from data."""
-        return self._data.get("allowed_paths")
-
-    def get_blocked_paths(self) -> list[Path]:
-        """Return blocked_paths from data (P2.3 security fix)."""
-        return self._data.get("blocked_paths", [])
-
-    def get_permission_level(self) -> PermissionLevel | None:
-        """Return permission_level from data."""
-        return self._data.get("permission_level")
-
-    def get_cwd(self) -> Path:
-        """Return cwd from data, or current directory as default."""
-        return self._data.get("cwd", Path.cwd())
+def _make_services(
+    *,
+    permission_level: PermissionLevel | None = None,
+    allowed_paths: list[Path] | None = None,
+    blocked_paths: list[Path] | None = None,
+    cwd: Path | str | None = None,
+) -> ServiceContainer:
+    services = ServiceContainer()
+    if permission_level is not None:
+        services.register("permission_level", permission_level)
+    if allowed_paths is not None:
+        services.register_runtime_compat("allowed_paths", allowed_paths)
+    if blocked_paths is not None:
+        services.register("blocked_paths", blocked_paths)
+    if cwd is not None:
+        services.set_cwd(cwd)
+    return services
 
 
 class TestGitSkillValidation:
@@ -49,17 +40,17 @@ class TestGitSkillValidation:
 
     @pytest.fixture
     def sandboxed_skill(self) -> GitSkill:
-        services = MockServiceContainer(permission_level=PermissionLevel.SANDBOXED)
+        services = _make_services(permission_level=PermissionLevel.SANDBOXED)
         return GitSkill(services)
 
     @pytest.fixture
     def trusted_skill(self) -> GitSkill:
-        services = MockServiceContainer(permission_level=PermissionLevel.TRUSTED)
+        services = _make_services(permission_level=PermissionLevel.TRUSTED)
         return GitSkill(services)
 
     @pytest.fixture
     def yolo_skill(self) -> GitSkill:
-        services = MockServiceContainer(permission_level=PermissionLevel.YOLO)
+        services = _make_services(permission_level=PermissionLevel.YOLO)
         return GitSkill(services)
 
     def test_empty_command_rejected(self, trusted_skill: GitSkill) -> None:
@@ -139,7 +130,7 @@ class TestGitSkillBypassPrevention:
 
     @pytest.fixture
     def trusted_skill(self) -> GitSkill:
-        services = MockServiceContainer(permission_level=PermissionLevel.TRUSTED)
+        services = _make_services(permission_level=PermissionLevel.TRUSTED)
         return GitSkill(services)
 
     def test_quoted_force_flag_blocked(self, trusted_skill: GitSkill) -> None:
@@ -223,7 +214,7 @@ class TestGitSkillExecution:
 
     @pytest.fixture
     def skill(self) -> GitSkill:
-        services = MockServiceContainer()
+        services = _make_services()
         return GitSkill(services)
 
     @pytest.mark.asyncio
@@ -243,7 +234,7 @@ class TestGitSkillExecution:
     @pytest.mark.asyncio
     async def test_sandbox_enforced(self, tmp_path: Path) -> None:
         """Sandbox is enforced when allowed_paths set."""
-        services = MockServiceContainer(allowed_paths=[tmp_path])
+        services = _make_services(allowed_paths=[tmp_path])
         skill = GitSkill(services)
         result = await skill.execute(command="status", cwd="/etc")
         assert result.error
@@ -255,7 +246,7 @@ class TestGitSkillExecution:
         # Initialize a git repo
         subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
 
-        services = MockServiceContainer()
+        services = _make_services()
         skill = GitSkill(services)
         result = await skill.execute(command="status", cwd=str(tmp_path))
 
@@ -268,7 +259,7 @@ class TestGitSkillExecution:
     @pytest.mark.asyncio
     async def test_git_not_a_repo(self, tmp_path: Path) -> None:
         """Git returns error when not in a repo."""
-        services = MockServiceContainer()
+        services = _make_services()
         skill = GitSkill(services)
         result = await skill.execute(command="status", cwd=str(tmp_path))
 
@@ -282,7 +273,7 @@ class TestGitSkillOutputParsing:
 
     @pytest.fixture
     def skill(self) -> GitSkill:
-        services = MockServiceContainer()
+        services = _make_services()
         return GitSkill(services)
 
     def test_parse_status_branch(self, skill: GitSkill) -> None:

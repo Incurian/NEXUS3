@@ -1358,6 +1358,19 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
 - Plan C service-container immutability follow-on is now committed:
   - `5c0e843` (pool/repl/session runtime migration to typed mutators/accessors)
   - `8143afe` (runtime register compatibility scoping via `register_runtime_compat(...)`)
+- Plan C fixture/test-double modernization follow-up is completed in WSL:
+  - retired remaining legacy `MockServiceContainer` doubles in:
+    `tests/unit/test_new_skills.py`,
+    `tests/unit/test_regex_replace_skill.py`,
+    `tests/unit/test_skill_enhancements.py`,
+    `tests/unit/test_git_skill.py`,
+    `tests/unit/skill/test_bash_windows_behavior.py`,
+    `tests/security/test_p2_defense_in_depth.py`.
+  - each file now uses real `ServiceContainer` setup helpers and typed
+    `set_cwd(...)` runtime mutation where cwd is configured.
+  - focused validation:
+    `.venv/bin/pytest -q tests/unit/test_new_skills.py tests/unit/test_regex_replace_skill.py tests/unit/test_skill_enhancements.py tests/unit/test_git_skill.py tests/unit/skill/test_bash_windows_behavior.py tests/security/test_p2_defense_in_depth.py`
+    (`105 passed`).
 - Plan H shim-retirement closeout for remaining `create_agent` compatibility
   remaps is committed in the current closeout wave:
   - `nexus3/rpc/global_dispatcher.py`: removed remaining custom create-agent

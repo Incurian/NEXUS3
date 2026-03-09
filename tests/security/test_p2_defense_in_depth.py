@@ -9,40 +9,35 @@ sandboxed agents, but if misconfiguration occurs, the skills themselves
 should refuse to run.
 """
 
-import pytest
 from pathlib import Path
-from typing import Any
+
+import pytest
 
 from nexus3.core.permissions import PermissionLevel
-from nexus3.core.types import ToolResult
 from nexus3.skill.builtin.bash import BashSafeSkill, ShellUnsafeSkill
 from nexus3.skill.builtin.run_python import RunPythonSkill
+from nexus3.skill.services import ServiceContainer
 
 
-class MockServiceContainer:
-    """Mock ServiceContainer for testing permission levels."""
+def _make_services(
+    permission_level: PermissionLevel | None = None,
+    *,
+    allowed_paths: list[Path] | None = None,
+    blocked_paths: list[Path] | None = None,
+    cwd: Path | None = None,
+) -> ServiceContainer:
+    services = ServiceContainer()
 
-    def __init__(self, permission_level: PermissionLevel | None = None, **kwargs: Any) -> None:
-        self._data = kwargs
-        self._permission_level = permission_level
+    if permission_level is not None:
+        services.register("permission_level", permission_level)
+    if allowed_paths is not None:
+        services.register_runtime_compat("allowed_paths", allowed_paths)
+    if blocked_paths is not None:
+        services.register("blocked_paths", blocked_paths)
+    if cwd is not None:
+        services.set_cwd(cwd)
 
-    def get(self, key: str, default: Any = None) -> Any:
-        return self._data.get(key, default)
-
-    def get_permission_level(self) -> PermissionLevel | None:
-        return self._permission_level
-
-    def get_permissions(self) -> None:
-        return None
-
-    def get_tool_allowed_paths(self, tool_name: str | None = None) -> list[Path] | None:
-        return self._data.get("allowed_paths")
-
-    def get_blocked_paths(self) -> list[Path]:
-        return self._data.get("blocked_paths", [])
-
-    def get_cwd(self) -> Path:
-        return self._data.get("cwd", Path.cwd())
+    return services
 
 
 class TestBashSafeDefenseInDepth:
@@ -51,7 +46,7 @@ class TestBashSafeDefenseInDepth:
     @pytest.mark.asyncio
     async def test_sandboxed_refuses_execution(self) -> None:
         """SANDBOXED permission level refuses bash_safe execution."""
-        services = MockServiceContainer(permission_level=PermissionLevel.SANDBOXED)
+        services = _make_services(permission_level=PermissionLevel.SANDBOXED)
         skill = BashSafeSkill(services)
 
         result = await skill.execute(command="echo hello")
@@ -64,7 +59,7 @@ class TestBashSafeDefenseInDepth:
     @pytest.mark.asyncio
     async def test_trusted_allows_execution(self, tmp_path: Path) -> None:
         """TRUSTED permission level allows bash_safe execution."""
-        services = MockServiceContainer(
+        services = _make_services(
             permission_level=PermissionLevel.TRUSTED,
             allowed_paths=[tmp_path],
             cwd=tmp_path,
@@ -79,7 +74,7 @@ class TestBashSafeDefenseInDepth:
     @pytest.mark.asyncio
     async def test_yolo_allows_execution(self, tmp_path: Path) -> None:
         """YOLO permission level allows bash_safe execution."""
-        services = MockServiceContainer(
+        services = _make_services(
             permission_level=PermissionLevel.YOLO,
             allowed_paths=[tmp_path],
             cwd=tmp_path,
@@ -94,7 +89,7 @@ class TestBashSafeDefenseInDepth:
     @pytest.mark.asyncio
     async def test_none_permission_allows_execution(self, tmp_path: Path) -> None:
         """None permission level (unset) allows execution (backwards compat)."""
-        services = MockServiceContainer(
+        services = _make_services(
             permission_level=None,
             allowed_paths=[tmp_path],
             cwd=tmp_path,
@@ -113,7 +108,7 @@ class TestShellUnsafeDefenseInDepth:
     @pytest.mark.asyncio
     async def test_sandboxed_refuses_execution(self) -> None:
         """SANDBOXED permission level refuses shell_UNSAFE execution."""
-        services = MockServiceContainer(permission_level=PermissionLevel.SANDBOXED)
+        services = _make_services(permission_level=PermissionLevel.SANDBOXED)
         skill = ShellUnsafeSkill(services)
 
         result = await skill.execute(command="echo hello")
@@ -125,7 +120,7 @@ class TestShellUnsafeDefenseInDepth:
     @pytest.mark.asyncio
     async def test_trusted_allows_execution(self, tmp_path: Path) -> None:
         """TRUSTED permission level allows shell_UNSAFE execution."""
-        services = MockServiceContainer(
+        services = _make_services(
             permission_level=PermissionLevel.TRUSTED,
             allowed_paths=[tmp_path],
             cwd=tmp_path,
@@ -140,7 +135,7 @@ class TestShellUnsafeDefenseInDepth:
     @pytest.mark.asyncio
     async def test_shell_features_work_when_allowed(self, tmp_path: Path) -> None:
         """Shell features (pipes, etc.) work when permission allows."""
-        services = MockServiceContainer(
+        services = _make_services(
             permission_level=PermissionLevel.TRUSTED,
             allowed_paths=[tmp_path],
             cwd=tmp_path,
@@ -160,7 +155,7 @@ class TestRunPythonDefenseInDepth:
     @pytest.mark.asyncio
     async def test_sandboxed_refuses_execution(self) -> None:
         """SANDBOXED permission level refuses run_python execution."""
-        services = MockServiceContainer(permission_level=PermissionLevel.SANDBOXED)
+        services = _make_services(permission_level=PermissionLevel.SANDBOXED)
         skill = RunPythonSkill(services)
 
         result = await skill.execute(code="print('hello')")
@@ -173,7 +168,7 @@ class TestRunPythonDefenseInDepth:
     @pytest.mark.asyncio
     async def test_trusted_allows_execution(self, tmp_path: Path) -> None:
         """TRUSTED permission level allows run_python execution."""
-        services = MockServiceContainer(
+        services = _make_services(
             permission_level=PermissionLevel.TRUSTED,
             allowed_paths=[tmp_path],
             cwd=tmp_path,
@@ -188,7 +183,7 @@ class TestRunPythonDefenseInDepth:
     @pytest.mark.asyncio
     async def test_yolo_allows_execution(self, tmp_path: Path) -> None:
         """YOLO permission level allows run_python execution."""
-        services = MockServiceContainer(
+        services = _make_services(
             permission_level=PermissionLevel.YOLO,
             allowed_paths=[tmp_path],
             cwd=tmp_path,
@@ -203,7 +198,7 @@ class TestRunPythonDefenseInDepth:
     @pytest.mark.asyncio
     async def test_code_actually_blocked_not_just_error_message(self) -> None:
         """Verify code doesn't run at all in SANDBOXED mode (not just error after)."""
-        services = MockServiceContainer(permission_level=PermissionLevel.SANDBOXED)
+        services = _make_services(permission_level=PermissionLevel.SANDBOXED)
         skill = RunPythonSkill(services)
 
         # This code would create a file if it ran
@@ -222,7 +217,7 @@ class TestDefenseInDepthErrorMessages:
     @pytest.mark.asyncio
     async def test_error_includes_skill_name(self) -> None:
         """Error message includes the skill name for debugging."""
-        services = MockServiceContainer(permission_level=PermissionLevel.SANDBOXED)
+        services = _make_services(permission_level=PermissionLevel.SANDBOXED)
 
         bash_skill = BashSafeSkill(services)
         result = await bash_skill.execute(command="echo test")
@@ -239,7 +234,7 @@ class TestDefenseInDepthErrorMessages:
     @pytest.mark.asyncio
     async def test_error_is_actionable(self) -> None:
         """Error message helps diagnose misconfiguration."""
-        services = MockServiceContainer(permission_level=PermissionLevel.SANDBOXED)
+        services = _make_services(permission_level=PermissionLevel.SANDBOXED)
         skill = BashSafeSkill(services)
 
         result = await skill.execute(command="echo test")

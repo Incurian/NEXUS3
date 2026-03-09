@@ -228,6 +228,18 @@ Current milestone:
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
+- Completed (2026-03-09, Plan C fixture-modernization closeout wave):
+  - retired remaining legacy `MockServiceContainer` test doubles in:
+    - `tests/unit/test_new_skills.py`
+    - `tests/unit/test_regex_replace_skill.py`
+    - `tests/unit/test_skill_enhancements.py`
+    - `tests/unit/test_git_skill.py`
+    - `tests/unit/skill/test_bash_windows_behavior.py`
+    - `tests/security/test_p2_defense_in_depth.py`
+  - each file now uses real `ServiceContainer` setup helpers and typed
+    `set_cwd(...)` runtime mutation where cwd is configured.
+  - focused validation passed:
+    - `.venv/bin/pytest -q tests/unit/test_new_skills.py tests/unit/test_regex_replace_skill.py tests/unit/test_skill_enhancements.py tests/unit/test_git_skill.py tests/unit/skill/test_bash_windows_behavior.py tests/security/test_p2_defense_in_depth.py` (`105 passed`).
 - Completed checkpoint (2026-03-09, committed `fd33b01`): Plan H
   shim-retirement Phase 3 canonical diagnostics follow-on:
   - retired compatibility remaps in RPC dispatcher/global-dispatcher/protocol
@@ -670,10 +682,10 @@ Immediate tasks:
     - `.venv/bin/mypy nexus3/session/session.py nexus3/session/tool_loop_events_runtime.py nexus3/session/single_tool_runtime.py nexus3/session/tool_runtime.py` passed.
     - `.venv/bin/pytest -q tests/unit/test_compaction.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_pool.py tests/unit/test_auto_restore.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py` passed (`213 passed`).
     - `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py tests/integration/test_chat.py tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py` passed (`91 passed, 2 skipped`).
-- Next target: deferred structural tracker/docs sync closeout is complete in
-  this wave; provider keep-alive real-endpoint evidence remains operationally
-  deferred (2026-03-09) pending endpoint credentials/config availability in the
-  current WSL environment.
+- Next target: Plan C fixture-modernization deferred backlog is now closed;
+  provider keep-alive real-endpoint evidence remains operationally deferred
+  (2026-03-09) pending endpoint credentials/config availability in the current
+  WSL environment.
 - Next gate after credentials/config are available: execute the reminder
   checklist above and link run IDs/artifacts in status docs.
 - Active architecture track: provider keep-alive real-endpoint evidence is

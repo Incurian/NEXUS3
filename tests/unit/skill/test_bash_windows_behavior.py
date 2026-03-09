@@ -2,7 +2,6 @@
 
 import asyncio
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,29 +10,26 @@ from nexus3.core.permissions import PermissionLevel
 from nexus3.skill.builtin import bash as bash_mod
 from nexus3.skill.builtin.bash import BashSafeSkill, ShellUnsafeSkill
 from nexus3.skill.builtin.run_python import RunPythonSkill
+from nexus3.skill.services import ServiceContainer
 
 
-class MockServiceContainer:
-    """Minimal ServiceContainer stub for execution skill tests."""
-
-    def __init__(self, permission_level: PermissionLevel | None = None, **kwargs: Any) -> None:
-        self._data = kwargs
-        self._permission_level = permission_level
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return self._data.get(key, default)
-
-    def get_permission_level(self) -> PermissionLevel | None:
-        return self._permission_level
-
-    def get_tool_allowed_paths(self, tool_name: str | None = None) -> list[Path] | None:
-        return self._data.get("allowed_paths")
-
-    def get_blocked_paths(self) -> list[Path]:
-        return self._data.get("blocked_paths", [])
-
-    def get_cwd(self) -> Path:
-        return self._data.get("cwd", Path.cwd())
+def _make_services(
+    *,
+    permission_level: PermissionLevel | None = None,
+    allowed_paths: list[Path] | None = None,
+    blocked_paths: list[Path] | None = None,
+    cwd: Path | str | None = None,
+) -> ServiceContainer:
+    services = ServiceContainer()
+    if permission_level is not None:
+        services.register("permission_level", permission_level)
+    if allowed_paths is not None:
+        services.register_runtime_compat("allowed_paths", allowed_paths)
+    if blocked_paths is not None:
+        services.register("blocked_paths", blocked_paths)
+    if cwd is not None:
+        services.set_cwd(cwd)
+    return services
 
 
 class TestBashSafeWindowsBehavior:
@@ -41,7 +37,7 @@ class TestBashSafeWindowsBehavior:
 
     @pytest.mark.asyncio
     async def test_source_is_parsed_like_normal_command(self, tmp_path: Path) -> None:
-        services = MockServiceContainer(
+        services = _make_services(
             permission_level=PermissionLevel.TRUSTED,
             allowed_paths=[tmp_path],
             cwd=tmp_path,
@@ -62,7 +58,7 @@ class TestBashSafeWindowsBehavior:
 
     @pytest.mark.asyncio
     async def test_winerror_2_returns_default_spawn_error(self, tmp_path: Path) -> None:
-        services = MockServiceContainer(
+        services = _make_services(
             permission_level=PermissionLevel.TRUSTED,
             allowed_paths=[tmp_path],
             cwd=tmp_path,
@@ -85,7 +81,7 @@ class TestShellUnsafeWindowsShellSelection:
 
     @pytest.mark.asyncio
     async def test_uses_git_bash_when_msystem_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        services = MockServiceContainer(permission_level=PermissionLevel.TRUSTED)
+        services = _make_services(permission_level=PermissionLevel.TRUSTED)
         skill = ShellUnsafeSkill(services)
         command = "source .venv/Scripts/activate && python -V"
 
@@ -110,7 +106,7 @@ class TestShellUnsafeWindowsShellSelection:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        services = MockServiceContainer(permission_level=PermissionLevel.TRUSTED)
+        services = _make_services(permission_level=PermissionLevel.TRUSTED)
         skill = ShellUnsafeSkill(services)
         command = ". .\\.venv\\Scripts\\Activate.ps1; python --version"
 
@@ -136,7 +132,7 @@ class TestShellUnsafeWindowsShellSelection:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        services = MockServiceContainer(permission_level=PermissionLevel.TRUSTED)
+        services = _make_services(permission_level=PermissionLevel.TRUSTED)
         skill = ShellUnsafeSkill(services)
         command = "echo hello"
 
@@ -161,7 +157,7 @@ class TestRunPythonConcurrencySafety:
 
     @pytest.mark.asyncio
     async def test_execute_passes_code_per_call_without_shared_state(self) -> None:
-        services = MockServiceContainer(permission_level=PermissionLevel.TRUSTED)
+        services = _make_services(permission_level=PermissionLevel.TRUSTED)
         skill = RunPythonSkill(services)
         seen_codes: list[str] = []
 

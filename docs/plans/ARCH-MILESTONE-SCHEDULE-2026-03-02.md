@@ -287,7 +287,17 @@ Exit gates:
      - focused regressions expanded in
        `tests/unit/skill/test_service_container_immutability.py`,
        `tests/unit/test_pool.py`, and `tests/unit/test_repl_commands.py`.
-     - fixture-modernization backlog remains deferred per plan scope.
+     - fixture/test-double modernization follow-up is now complete:
+       - retired remaining legacy `MockServiceContainer` doubles in
+         `tests/unit/test_new_skills.py`,
+         `tests/unit/test_regex_replace_skill.py`,
+         `tests/unit/test_skill_enhancements.py`,
+         `tests/unit/test_git_skill.py`,
+         `tests/unit/skill/test_bash_windows_behavior.py`, and
+         `tests/security/test_p2_defense_in_depth.py`.
+       - focused validation passed:
+         `.venv/bin/pytest -q tests/unit/test_new_skills.py tests/unit/test_regex_replace_skill.py tests/unit/test_skill_enhancements.py tests/unit/test_git_skill.py tests/unit/skill/test_bash_windows_behavior.py tests/security/test_p2_defense_in_depth.py`
+         (`105 passed`).
    - Dependency gates:
      - Current request-context propagation behavior is stable under existing tests.
      - No active regressions in REPL runtime mutation paths (`/cd`, `/permissions`, `/model`).

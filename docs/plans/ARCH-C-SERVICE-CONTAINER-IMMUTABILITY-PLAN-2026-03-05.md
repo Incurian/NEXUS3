@@ -18,7 +18,7 @@ Included:
 
 Deferred:
 - Capability-token identity redesign (Plan B).
-- Large test-fixture modernization for every `ServiceContainer` test double.
+- Any future broad test-fixture cleanup beyond the known legacy mock set.
 
 Excluded:
 - Permission policy behavior changes.
@@ -55,7 +55,7 @@ Planned slices:
 
 ## Execution Status
 
-Status note (2026-03-09, local WSL working tree; checkpoint commit pending):
+Status note (2026-03-09, committed waves through fixture closeout):
 - Slices 1-3 and mutator compatibility hardening are landed locally:
   - additive typed `ServiceContainer` mutators for `permissions`, `cwd`,
     `model`, and `child_agent_ids`.
@@ -76,8 +76,19 @@ Status note (2026-03-09, local WSL working tree; checkpoint commit pending):
   - focused immutability regressions added/expanded in
     `tests/unit/skill/test_service_container_immutability.py`,
     `tests/unit/test_pool.py`, and `tests/unit/test_repl_commands.py`.
-- Plan C follow-on closeout is complete for this wave; fixture-modernization
-  backlog remains deferred by plan scope.
+- Fixture/test-double modernization follow-up is completed in this wave:
+  - retired remaining legacy `MockServiceContainer` doubles in:
+    - `tests/unit/test_new_skills.py`
+    - `tests/unit/test_regex_replace_skill.py`
+    - `tests/unit/test_skill_enhancements.py`
+    - `tests/unit/test_git_skill.py`
+    - `tests/unit/skill/test_bash_windows_behavior.py`
+    - `tests/security/test_p2_defense_in_depth.py`
+  - each file now uses real `ServiceContainer` setup with local helpers and
+    typed `set_cwd(...)` mutation for cwd paths.
+  - focused validation passed:
+    - `.venv/bin/pytest -q tests/unit/test_new_skills.py tests/unit/test_regex_replace_skill.py tests/unit/test_skill_enhancements.py tests/unit/test_git_skill.py tests/unit/skill/test_bash_windows_behavior.py tests/security/test_p2_defense_in_depth.py` (`105 passed`).
+- Plan C follow-on closeout is complete for this plan scope.
 
 ## Testing Strategy
 
@@ -105,8 +116,7 @@ Status note (2026-03-09, local WSL working tree; checkpoint commit pending):
 - [x] Retire or explicitly scope generic mutation helpers to non-production use.
 - [x] Sync Plan C, milestone backlog, and AGENTS status for slice-1/2/3 local
       landing (WSL, uncommitted).
-- [ ] Modernize remaining legacy `ServiceContainer` fixture/test doubles
-      (deferred backlog; outside this wave).
+- [x] Modernize remaining legacy `ServiceContainer` fixture/test doubles.
 
 ## Documentation Updates
 

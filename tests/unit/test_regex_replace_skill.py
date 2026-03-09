@@ -2,7 +2,6 @@
 
 import tempfile
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -14,26 +13,23 @@ from nexus3.skill.builtin.regex_replace import (
 from nexus3.skill.services import ServiceContainer
 
 
-class MockServiceContainer:
-    """Mock ServiceContainer for testing skills."""
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._data = kwargs
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return self._data.get(key, default)
-
-    def get_tool_allowed_paths(self, tool_name: str | None = None) -> list[Path] | None:
-        """Return allowed_paths from data."""
-        return self._data.get("allowed_paths")
-
-    def get_blocked_paths(self) -> list[Path]:
-        """Return blocked_paths from data (P2.3 security fix)."""
-        return self._data.get("blocked_paths", [])
-
-    def get_cwd(self) -> Path:
-        """Return cwd from data, or current directory as default."""
-        return self._data.get("cwd", Path.cwd())
+def _make_services(
+    *,
+    allowed_paths: list[Path] | None = None,
+    blocked_paths: list[Path] | None = None,
+    cwd: Path | None = None,
+    permission_level: object | None = None,
+) -> ServiceContainer:
+    services = ServiceContainer()
+    if cwd is not None:
+        services.set_cwd(cwd)
+    if allowed_paths is not None:
+        services.register_runtime_compat("allowed_paths", allowed_paths)
+    if blocked_paths is not None:
+        services.register("blocked_paths", blocked_paths)
+    if permission_level is not None:
+        services.register("permission_level", permission_level)
+    return services
 
 
 class TestRegexReplaceBasic:
@@ -41,7 +37,7 @@ class TestRegexReplaceBasic:
 
     @pytest.fixture
     def skill(self) -> RegexReplaceSkill:
-        services = MockServiceContainer()
+        services = _make_services()
         return RegexReplaceSkill(services)
 
     @pytest.fixture
@@ -145,7 +141,7 @@ class TestRegexReplaceFlags:
 
     @pytest.fixture
     def skill(self) -> RegexReplaceSkill:
-        services = MockServiceContainer()
+        services = _make_services()
         return RegexReplaceSkill(services)
 
     @pytest.mark.asyncio
@@ -204,7 +200,7 @@ class TestRegexReplaceSafety:
 
     @pytest.fixture
     def skill(self) -> RegexReplaceSkill:
-        services = MockServiceContainer()
+        services = _make_services()
         return RegexReplaceSkill(services)
 
     @pytest.mark.asyncio
@@ -273,7 +269,7 @@ class TestRegexReplaceSafety:
         outside.write_text("test")
 
         try:
-            services = MockServiceContainer(allowed_paths=[tmp_path])
+            services = _make_services(allowed_paths=[tmp_path])
             skill = RegexReplaceSkill(services)
             result = await skill.execute(
                 path=str(outside),

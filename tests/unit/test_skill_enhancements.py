@@ -1,38 +1,33 @@
 """Tests for skill enhancements: read_file offset/limit, glob exclude, grep include/context."""
 
-import asyncio
-import tempfile
 from pathlib import Path
-from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
 
 from nexus3.skill.builtin.glob_search import GlobSkill, glob_factory
 from nexus3.skill.builtin.grep import GrepSkill, grep_factory
 from nexus3.skill.builtin.read_file import ReadFileSkill, read_file_factory
+from nexus3.skill.services import ServiceContainer
 
 
-class MockServiceContainer:
-    """Mock ServiceContainer for testing skills with factories."""
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._data = kwargs
-
-    def get(self, key: str, default: Any = None) -> Any:
-        return self._data.get(key, default)
-
-    def get_tool_allowed_paths(self, tool_name: str | None = None) -> list[Path] | None:
-        """Return allowed_paths from data (used by FileSkill._validate_path)."""
-        return self._data.get("allowed_paths")
-
-    def get_blocked_paths(self) -> list[Path]:
-        """Return blocked_paths from data (P2.3 security fix)."""
-        return self._data.get("blocked_paths", [])
-
-    def get_cwd(self) -> Path:
-        """Return cwd from data, or current directory as default."""
-        return self._data.get("cwd", Path.cwd())
+def _make_services(
+    *,
+    allowed_paths: list[Path] | None = None,
+    blocked_paths: list[Path] | None = None,
+    permission_level: object | None = None,
+    cwd: Path | str | None = None,
+) -> ServiceContainer:
+    """Build a real ServiceContainer for skill factory tests."""
+    services = ServiceContainer()
+    # Compatibility key still used by get_tool_allowed_paths() fallback paths in tests.
+    services.register_runtime_compat("allowed_paths", allowed_paths)
+    if blocked_paths is not None:
+        services.register("blocked_paths", blocked_paths)
+    if permission_level is not None:
+        services.register("permission_level", permission_level)
+    if cwd is not None:
+        services.set_cwd(cwd)
+    return services
 
 
 class TestReadFileOffsetLimit:
@@ -41,7 +36,7 @@ class TestReadFileOffsetLimit:
     @pytest.fixture
     def skill(self) -> ReadFileSkill:
         # Use factory to get validation wrapper
-        services = MockServiceContainer(allowed_paths=None)
+        services = _make_services(allowed_paths=None)
         return read_file_factory(services)
 
     @pytest.fixture
@@ -116,7 +111,7 @@ class TestGlobExclude:
     @pytest.fixture
     def skill(self) -> GlobSkill:
         # Use factory to get validation wrapper
-        services = MockServiceContainer(allowed_paths=None)
+        services = _make_services(allowed_paths=None)
         return glob_factory(services)
 
     @pytest.fixture
@@ -194,7 +189,7 @@ class TestGrepIncludeContext:
     @pytest.fixture
     def skill(self) -> GrepSkill:
         # Use factory to get validation wrapper
-        services = MockServiceContainer(allowed_paths=None)
+        services = _make_services(allowed_paths=None)
         return grep_factory(services)
 
     @pytest.fixture
