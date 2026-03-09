@@ -1375,6 +1375,10 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
     stale-recovery regressions and max-retry bound checks.
   - `scripts/diagnose-empty-stream.sh`: Step 10 now emits structured
     `10-keepalive-evidence.json` alongside textual logs.
+- Structural-refactor wave kickoff is documented in plan status:
+  - `docs/plans/STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md` now includes
+    the extraction map (old->new ownership, façade compatibility boundaries,
+    and execution order) and has checklist item 1 marked complete.
 - Focused validation snapshot:
   - passed:
     `.venv/bin/ruff check nexus3/rpc/global_dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py`
@@ -1402,10 +1406,12 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - Provider keep-alive kickoff slice is committed as `05ffb84`
     (`base.py`, `test_keepalive_recovery.py`, Step 10 JSON evidence).
 - Concrete resume steps for post-compact continuation:
-  1. Run manual endpoint validation with
+  1. Execute structural-refactor Phase 1 (REPL formatting-helper extraction)
+     with focused parity checks.
+  2. Run manual endpoint validation with
      `scripts/diagnose-empty-stream.sh` and archive `10-keepalive-evidence.json`
-     from at least one problematic and one known-good endpoint run.
-  2. Advance structural-refactor backlog kickoff based on risk priority.
+     from at least one problematic and one known-good endpoint run when real
+     endpoint access is available.
 
 ### Known Failures
 

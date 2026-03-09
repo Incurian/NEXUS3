@@ -415,9 +415,15 @@ Immediate tasks:
     `AGENTS_NEXUS3CONFIGOPS.md`,
     `nexus3/provider/README.md`,
     `CLAUDE.md`.
-- Next target: run manual provider keep-alive endpoint evidence capture
-  (`diagnose-empty-stream.sh` Step 10 JSON artifacts for one known-problematic
-  and one known-good endpoint), then queue structural-refactor-wave kickoff.
+- Completed (2026-03-09, structural-refactor kickoff): extraction map baseline
+  documented in
+  `docs/plans/STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md`:
+  - established old->new ownership map for REPL/session/pool/display slices.
+  - documented façade compatibility-boundary policy and extraction order.
+  - checked off the plan’s extraction-map checklist item.
+- Next target: execute structural-refactor Phase 1 (REPL formatting-helper
+  extraction) with focused parity tests; keep manual provider keep-alive
+  endpoint evidence capture queued for real endpoint availability.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with

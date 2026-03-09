@@ -63,6 +63,34 @@ Planned slices:
      config-backed override flow
    - document supported override fields and defaults.
 
+## Extraction Map (Kickoff 2026-03-09)
+
+Compatibility boundary policy:
+- Keep `nexus3/cli/repl.py`, `nexus3/session/session.py`, and
+  `nexus3/rpc/pool.py` as stable façade entrypoints during extraction.
+- Extract internals into sibling modules and re-export via façade imports until
+  one full parity-green cycle is complete.
+- Do not change external call signatures while moving code.
+
+Proposed old->new ownership map:
+
+| Current Module | Extraction Targets | Compatibility Boundary |
+|---|---|---|
+| `nexus3/cli/repl.py` | `nexus3/cli/repl_formatting.py`, `nexus3/cli/repl_runtime.py`, `nexus3/cli/repl_reload.py` | `run_repl(...)`, `main()`, `_run_with_reload(...)` remain in `repl.py` |
+| `nexus3/session/session.py` | `nexus3/session/turn_runner.py`, `nexus3/session/tool_runtime.py`, `nexus3/session/compaction_runtime.py` | `Session` public methods (`send`, `run_turn`, lifecycle APIs) remain in `session.py` |
+| `nexus3/rpc/pool.py` | `nexus3/rpc/pool_create.py`, `nexus3/rpc/pool_restore.py`, `nexus3/rpc/pool_visibility.py` | `AgentPool` class + exported pool types remain in `pool.py` |
+| display config paths (`nexus3/display` + config usage sites) | `nexus3/display/theme_contract.py` (or equivalent typed contract module) | Existing theme-loading call sites remain unchanged until final cleanup |
+
+Execution notes:
+- Initial extraction order (lowest risk first):
+  1. REPL formatting helpers
+  2. REPL runtime/client-discovery helpers
+  3. Session tool/compaction internals
+  4. Pool create/restore internals
+  5. Display contract cleanup
+- Each extraction step must run the focused parity suite before moving to the
+  next boundary.
+
 ## Testing Strategy
 
 - Before each extraction slice, lock behavior with focused parity tests and
@@ -76,7 +104,7 @@ Planned slices:
 
 ## Implementation Checklist
 
-- [ ] Establish extraction map with old->new module ownership and stable
+- [x] Establish extraction map with old->new module ownership and stable
       compatibility import boundaries.
 - [ ] Complete REPL extraction slices with parity checks.
 - [ ] Complete Session extraction slices with parity checks.
