@@ -24,6 +24,7 @@ from pathlib import Path
 # Using TYPE_CHECKING to avoid circular imports
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
+from nexus3.core.constants import get_default_server_port
 from nexus3.core.types import ToolResult
 from nexus3.core.validation import ALLOWED_INTERNAL_PARAMS, ValidationError
 
@@ -650,12 +651,7 @@ class NexusSkill(ABC):
     def _get_default_port(cls) -> int:
         """Get default port from config, with class-level caching."""
         if cls._default_port is None:
-            try:
-                from nexus3.config.loader import load_config
-                config = load_config()
-                cls._default_port = config.server.port
-            except Exception:
-                cls._default_port = 8765
+            cls._default_port = get_default_server_port()
         return cls._default_port
 
     def _get_port(self, port: int | None) -> int:

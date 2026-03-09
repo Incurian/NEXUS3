@@ -7,6 +7,7 @@ instead of hardcoding paths like `Path.home() / ".nexus3"`.
 from pathlib import Path
 
 NEXUS_DIR_NAME = ".nexus3"
+DEFAULT_SERVER_PORT = 8765
 
 # P2.5 SECURITY: File I/O limits to prevent memory DoS
 # These limits prevent reading huge files into memory
@@ -37,7 +38,21 @@ def get_default_config_path() -> Path:
     return get_nexus_dir() / "config.json"
 
 
-def get_rpc_token_path(port: int = 8765) -> Path:
+def get_default_server_port() -> int:
+    """Get default server port from config, with fallback to 8765."""
+    try:
+        from nexus3.config.loader import load_config
+        config = load_config()
+        return config.server.port
+    except Exception:
+        return DEFAULT_SERVER_PORT
+
+
+def get_rpc_token_path(port: int = DEFAULT_SERVER_PORT) -> Path:
     """Get RPC token file path for a given port."""
     nexus_dir = get_nexus_dir()
-    return nexus_dir / "rpc.token" if port == 8765 else nexus_dir / f"rpc-{port}.token"
+    return (
+        nexus_dir / "rpc.token"
+        if port == DEFAULT_SERVER_PORT
+        else nexus_dir / f"rpc-{port}.token"
+    )

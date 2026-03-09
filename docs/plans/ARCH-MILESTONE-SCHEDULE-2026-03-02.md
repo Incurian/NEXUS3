@@ -307,8 +307,19 @@ Exit gates:
        `10-keepalive-evidence.json` artifacts alongside text logs.
      - focused provider keep-alive regressions are green in
        `tests/unit/provider/test_keepalive_recovery.py` and related provider suites.
-     - next gate: archive real endpoint evidence runs for one
-       known-problematic and one known-good target.
+     - operational defer note (2026-03-09): real-endpoint evidence execution is
+       deferred pending endpoint credentials/config availability in the current
+       WSL environment.
+     - this is an operational defer only (no code rollback).
+     - resumption reminder checklist:
+       1. configure one known-problematic endpoint+model and one known-good
+          endpoint+model.
+       2. set required API key environment variables for both endpoints.
+       3. run `scripts/diagnose-empty-stream.sh` Step 10 flow.
+       4. archive `10-keepalive-evidence.json` artifacts and link run IDs in
+          status docs.
+     - next gate (updated): keep real-endpoint evidence deferred until the
+       above checklist is executable in WSL, then archive and link run IDs.
    - Dependency gates:
      - Existing provider empty-stream guards and retry behavior remain stable.
      - Repro artifacts exist from keep-alive diagnostics (Step 10 style runs).
@@ -446,8 +457,9 @@ Exit gates:
      - focused parity checks passed for REPL formatting/runtime/reload, REPL
        command, connect-lobby, and client paths.
      - next gate: deferred structural tracker/docs sync closeout is complete in
-       this status wave; next queued execution task is provider keep-alive
-       real-endpoint evidence capture.
+       this status wave; provider keep-alive real-endpoint evidence remains
+       operationally deferred (2026-03-09) pending endpoint credentials/config
+       in the current WSL environment.
    - Dependency gates:
      - No unresolved high-priority behavior defects in REPL/session/pool runtime paths.
      - Existing integration and regression baselines are green before each extraction slice.

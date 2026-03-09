@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from nexus3.core.constants import get_default_server_port
 from nexus3.core.errors import NexusError
 from nexus3.core.url_validator import UrlSecurityError, validate_url
 from nexus3.rpc.auth import discover_rpc_token
@@ -16,13 +17,8 @@ logger = logging.getLogger(__name__)
 
 
 def _get_default_port() -> int:
-    """Get default port from config, with fallback to 8765."""
-    try:
-        from nexus3.config.loader import load_config
-        config = load_config()
-        return config.server.port
-    except Exception:
-        return 8765
+    """Get default port from canonical config resolver."""
+    return get_default_server_port()
 
 
 class ClientError(NexusError):

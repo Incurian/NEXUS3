@@ -4,7 +4,25 @@
 
 Comprehensive cleanup plan based on Opus 4.6 codebase review (2026-02-05). Covers DRY violations, dead code removal, naming collisions, and minor security/correctness fixes across the NEXUS3 codebase (~53,000 lines, 187 .py files).
 
-**Status:** All decisions resolved. Ready for implementation.
+**Status:** In progress (P2 complete in WSL, 2026-03-09).
+
+Execution status (2026-03-09, WSL):
+- Completed: P2 default-port consolidation.
+  - Added canonical resolver in `nexus3/core/constants.py`:
+    `DEFAULT_SERVER_PORT` + `get_default_server_port()`.
+  - Updated `nexus3/client.py` and `nexus3/cli/client_commands.py` local
+    `_get_default_port()` helpers to delegate to
+    `get_default_server_port()`.
+  - Updated `nexus3/skill/base.py` `NexusSkill._get_default_port()` to cache
+    `get_default_server_port()`.
+  - Updated `get_rpc_token_path()` to use `DEFAULT_SERVER_PORT` instead of a
+    hardcoded literal.
+  - Focused validation passed:
+    - `.venv/bin/ruff check nexus3/core/constants.py nexus3/client.py nexus3/cli/client_commands.py nexus3/skill/base.py`
+    - `.venv/bin/mypy nexus3/core/constants.py nexus3/client.py nexus3/cli/client_commands.py nexus3/skill/base.py`
+    - `.venv/bin/pytest -q tests/unit/test_client.py tests/unit/cli/test_client_commands_safe_sink.py tests/unit/test_nexus_skill_requester_propagation.py tests/unit/test_auth.py -k "port or default or auto_auth or requester"` (`12 passed, 52 deselected`)
+- Next target: P1 subprocess helper extraction (`core/process.py` + consumer
+  call sites) per this plan.
 
 ## Scope
 
@@ -963,10 +981,10 @@ Per CLAUDE.md SOP, after P1 (subprocess helper) and P10 (GitLab async):
 - [ ] **P1.7** Update `mcp/transport.py` — MCP server launch
 - [ ] **P1.8** Clean up imports per file (see "Cleanup after all consumer updates" in P1 details for exact list)
 - [ ] **P1.9** Run `ruff check` and `pytest` — verify no regressions
-- [ ] **P2.1** Add `get_default_port()` to `core/constants.py`
-- [ ] **P2.2** Update `client.py` — delete local function, import from constants
-- [ ] **P2.3** Update `cli/client_commands.py` — delete local function, import from constants
-- [ ] **P2.4** Update `skill/base.py` — delegate to `get_default_port()` from constants
+- [x] **P2.1** Add canonical default-port resolver to `core/constants.py`
+- [x] **P2.2** Update `client.py` — delete local function, import from constants
+- [x] **P2.3** Update `cli/client_commands.py` — delete local function, import from constants
+- [x] **P2.4** Update `skill/base.py` — delegate to constants default-port resolver
 - [ ] **P3.1** Add `normalize_line()` to `patch/__init__.py`
 - [ ] **P3.2** Update `patch/applier.py` — delete local, import from package, rename calls
 - [ ] **P3.3** Update `patch/validator.py` — delete local, import from package, rename calls

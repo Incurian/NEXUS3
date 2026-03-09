@@ -415,6 +415,29 @@ Immediate tasks:
     `AGENTS_NEXUS3CONFIGOPS.md`,
     `nexus3/provider/README.md`,
     `CLAUDE.md`.
+  - operational defer note (2026-03-09, WSL): real-endpoint evidence capture
+    is explicitly deferred pending endpoint credentials/config availability in
+    the current WSL environment.
+  - this is an operational defer only (no code rollback).
+  - reminder checklist for resumption:
+    1. configure one known-problematic endpoint+model and one known-good
+       endpoint+model.
+    2. set required API key environment variables for both endpoints.
+    3. run `scripts/diagnose-empty-stream.sh` Step 10 flow.
+    4. archive `10-keepalive-evidence.json` artifacts and link run IDs in
+       status docs (`AGENTS.md`, `CLAUDE.md`, and milestone/plan docs).
+- Completed (2026-03-09, DRY cleanup P2 default-port consolidation):
+  - added canonical default-port resolver in `nexus3/core/constants.py`
+    (`DEFAULT_SERVER_PORT`, `get_default_server_port()`).
+  - updated `nexus3/client.py`, `nexus3/cli/client_commands.py`, and
+    `nexus3/skill/base.py` to delegate duplicated default-port resolution to
+    the canonical helper.
+  - updated `get_rpc_token_path()` to use `DEFAULT_SERVER_PORT` instead of a
+    hardcoded literal.
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/core/constants.py nexus3/client.py nexus3/cli/client_commands.py nexus3/skill/base.py`
+    - `.venv/bin/mypy nexus3/core/constants.py nexus3/client.py nexus3/cli/client_commands.py nexus3/skill/base.py`
+    - `.venv/bin/pytest -q tests/unit/test_client.py tests/unit/cli/test_client_commands_safe_sink.py tests/unit/test_nexus_skill_requester_propagation.py tests/unit/test_auth.py -k "port or default or auto_auth or requester"` (`12 passed, 52 deselected`).
 - Completed (2026-03-09, structural-refactor kickoff): extraction map baseline
   documented in
   `docs/plans/STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md`:
@@ -648,8 +671,13 @@ Immediate tasks:
     - `.venv/bin/pytest -q tests/unit/test_compaction.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_pool.py tests/unit/test_auto_restore.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py` passed (`213 passed`).
     - `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py tests/integration/test_chat.py tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py` passed (`91 passed, 2 skipped`).
 - Next target: deferred structural tracker/docs sync closeout is complete in
-  this wave; next queued gate is provider keep-alive real-endpoint evidence
-  capture (known-problematic + known-good targets).
+  this wave; provider keep-alive real-endpoint evidence remains operationally
+  deferred (2026-03-09) pending endpoint credentials/config availability in the
+  current WSL environment.
+- Next gate after credentials/config are available: execute the reminder
+  checklist above and link run IDs/artifacts in status docs.
+- Active non-blocked execution track: continue `docs/plans/DRY-CLEANUP-PLAN.md`
+  starting with P1 subprocess helper extraction slices.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with
@@ -830,10 +858,14 @@ Compact handover checkpoint (2026-03-09, post-session-wrapper-retirement wave):
 - Resume steps after compact:
   1. No structural wrapper work remains; keep deferred structural tracker/docs
      rows closed in status artifacts.
-  2. Run provider keep-alive manual endpoint validation with
-     `scripts/diagnose-empty-stream.sh` and archive `10-keepalive-evidence.json`
-     for one known-problematic and one known-good target.
-  3. Windows host is not required for the immediate provider-evidence gate.
+  2. Keep provider keep-alive real-endpoint evidence operationally deferred
+     (2026-03-09) pending endpoint credentials/config availability in the
+     current WSL environment (no code rollback).
+  3. Once unblocked, execute reminder checklist:
+     configure known-problematic + known-good endpoint/model targets, set API
+     key env vars, run `scripts/diagnose-empty-stream.sh` Step 10 flow, archive
+     `10-keepalive-evidence.json` artifacts, and link run IDs in status docs.
+  4. Windows host is not required for the immediate provider-evidence gate.
 
 Recent execution commits (latest first):
 - `73ccb78` docs(status): add post-phase1a compact handover checkpoint

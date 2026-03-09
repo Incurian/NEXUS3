@@ -98,6 +98,20 @@ Execution status (2026-03-09, WSL):
   - `.venv/bin/ruff check nexus3/provider/base.py tests/unit/provider/test_keepalive_recovery.py` passed
   - `.venv/bin/mypy nexus3/provider/base.py` passed
   - `.venv/bin/pytest -q tests/unit/provider/test_keepalive_recovery.py tests/unit/provider/test_lifecycle.py tests/unit/provider/test_retry_zero.py tests/unit/provider/test_empty_stream.py` passed (`48 passed`)
+- Operational defer note (2026-03-09, WSL):
+  - Real-endpoint evidence capture is explicitly deferred pending endpoint
+    credentials/config availability in the current WSL environment.
+  - This is an operational defer only (no code rollback).
+  - Resumption reminder checklist:
+    1. Configure one known-problematic endpoint+model and one known-good
+       endpoint+model.
+    2. Set required API key environment variables for both endpoints.
+    3. Run `scripts/diagnose-empty-stream.sh` Step 10 flow.
+    4. Archive `10-keepalive-evidence.json` artifacts and link run IDs in
+       status docs (`AGENTS.md`, `CLAUDE.md`, and milestone/plan status docs).
+- Next gate (updated): keep real-endpoint evidence deferred until endpoint
+  credentials/config are available in WSL, then execute the reminder checklist
+  above.
 
 ## Documentation Updates
 

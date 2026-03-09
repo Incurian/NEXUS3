@@ -1375,6 +1375,29 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
     stale-recovery regressions and max-retry bound checks.
   - `scripts/diagnose-empty-stream.sh`: Step 10 now emits structured
     `10-keepalive-evidence.json` alongside textual logs.
+  - operational defer note (2026-03-09, WSL): real-endpoint evidence capture
+    is explicitly deferred pending endpoint credentials/config availability in
+    the current WSL environment.
+  - this is an operational defer only (no code rollback).
+  - reminder checklist for resumption:
+    1. configure one known-problematic endpoint+model and one known-good
+       endpoint+model.
+    2. set required API key environment variables for both endpoints.
+    3. run `scripts/diagnose-empty-stream.sh` Step 10 flow.
+    4. archive `10-keepalive-evidence.json` artifacts and link run IDs in
+       status docs (`AGENTS.md`, `CLAUDE.md`, and milestone/plan docs).
+- DRY cleanup P2 (default-port consolidation) completed in WSL:
+  - canonical resolver added in `nexus3/core/constants.py`
+    (`DEFAULT_SERVER_PORT`, `get_default_server_port()`).
+  - duplicate default-port resolution in `nexus3/client.py`,
+    `nexus3/cli/client_commands.py`, and `nexus3/skill/base.py` now delegates
+    to the canonical resolver.
+  - `get_rpc_token_path()` now uses `DEFAULT_SERVER_PORT` instead of a
+    hardcoded literal.
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/core/constants.py nexus3/client.py nexus3/cli/client_commands.py nexus3/skill/base.py`
+    - `.venv/bin/mypy nexus3/core/constants.py nexus3/client.py nexus3/cli/client_commands.py nexus3/skill/base.py`
+    - `.venv/bin/pytest -q tests/unit/test_client.py tests/unit/cli/test_client_commands_safe_sink.py tests/unit/test_nexus_skill_requester_propagation.py tests/unit/test_auth.py -k "port or default or auto_auth or requester"` (`12 passed, 52 deselected`).
 - Structural-refactor wave kickoff is documented in plan status:
   - `docs/plans/STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md` now includes
     the extraction map (old->new ownership, façade compatibility boundaries,
@@ -1676,11 +1699,15 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
     `execute_single_tool` callables; display theme loader contract uses
     `load_theme()` without no-op overrides).
 - Concrete resume steps for post-compact continuation:
-  1. Run manual endpoint validation with
-     `scripts/diagnose-empty-stream.sh` and archive `10-keepalive-evidence.json`
-     from at least one problematic and one known-good endpoint run when real
-     endpoint access is available.
-  2. Record provider-evidence run ids/artifact links in status and plan docs.
+  1. Keep provider keep-alive real-endpoint evidence operationally deferred
+     (2026-03-09) pending endpoint credentials/config availability in the
+     current WSL environment (no code rollback).
+  2. Configure one known-problematic endpoint+model and one known-good
+     endpoint+model.
+  3. Set required API key environment variables and run
+     `scripts/diagnose-empty-stream.sh` Step 10 flow.
+  4. Archive `10-keepalive-evidence.json` artifacts and link provider-evidence
+     run IDs in status and plan docs.
 
 ### Known Failures
 
@@ -1806,7 +1833,7 @@ Do NOT use a NEXUS coordinator agent in the middle - Claude Code is better at co
 | Session.py split (~1100 lines) | Completed extraction + wrapper retirement on this branch (remaining Session wrappers removed in closeout wave) | M |
 | Pool.py split (~1250 lines) | Completed extraction + wrapper retirement on this branch | M |
 | Display config | Completed (`load_theme()` contract cleanup landed) | S |
-| HTTP keep-alive | Bounded stale-reuse recovery landed (2026-03-09); monitoring/manual endpoint validation remains | S |
+| HTTP keep-alive | Bounded stale-reuse recovery landed (2026-03-09); real-endpoint evidence is operationally deferred pending endpoint credentials/config in current WSL environment | S |
 
 ### DRY Cleanups
 
@@ -1838,11 +1865,12 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 
 Dynamic content (datetime, git status, clipboard) was being injected into the system prompt, invalidating the cache (~10-15K tokens) on every API call. Fix moves dynamic content to the last user message via `<session-context>` tags. See `docs/plans/PROMPT-CACHE-OPTIMIZATION-PLAN.md`.
 
-#### Next Up: STRUCTURAL-REFACTOR-WAVE-PLAN
+#### Next Up: DRY-CLEANUP-PLAN
 
-Structural decomposition, wrapper retirement, and deferred structural tracker
-docs sync are landed in this branch. Next queued execution task is provider
-keep-alive real-endpoint evidence capture.
+Provider keep-alive real-endpoint evidence remains operationally deferred
+(2026-03-09) pending endpoint credentials/config availability in the current
+WSL environment. Active non-blocked track is `docs/plans/DRY-CLEANUP-PLAN.md`,
+starting with P1 subprocess helper extraction slices (P2 is complete).
 
 ### Known Bugs
 
