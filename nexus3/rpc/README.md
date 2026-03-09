@@ -294,7 +294,15 @@ Ingress schema behavior:
 - Unknown params and malformed field types return `INVALID_PARAMS` with deterministic method-specific diagnostics.
 - `create_agent.parent_agent_id` malformed IDs now return canonical validation detail (invalid ID format) rather than synthetic parent-not-found wording.
 - Phase 2 (`b09c079`): compatibility create-ID message remaps were dropped; `create_agent.agent_id` failures now use canonical schema diagnostics.
-- Current Phase 3 WSL follow-on (local, uncommitted): `create_agent.preset` invalid literals, `create_agent.wait_for_initial_response` invalid booleans, non-string `create_agent.parent_agent_id`, and `create_agent.allowed_write_paths` type/item validation paths now use canonical schema diagnostics.
+- This Plan H closeout wave retired the remaining `create_agent`
+  compatibility-remap branches; malformed `create_agent` fields now
+  consistently surface canonical schema diagnostics (including prior
+  `preset`/`wait_for_initial_response`/`parent_agent_id`/
+  `allowed_write_paths` paths and the remaining type/shape paths).
+- Retained explicit diagnostics in `protocol.py`, `dispatch_core.py`, and
+  `dispatcher.py` are intentional invariants (strict envelope parity and
+  method-specific send/get_messages error clarity), not compatibility-only
+  remaps.
 - No-arg methods (`shutdown`, `get_tokens`, `get_context`, `cancel_all`, `list_agents`, `shutdown_server`) reject extra params.
 - Direct in-process dispatch (`dispatch(Request(...))`) now applies the same strict request-envelope validation before method routing, including explicit rejection of non-string `params` keys.
 

@@ -252,80 +252,8 @@ class GlobalDispatcher:
         except PydanticValidationError as exc:
             errors = exc.errors()
             if errors:
-                error = errors[0]
-                loc = error.get("loc", ())
-                field = str(loc[0]) if loc else None
-                raw_value = params.get(field) if field else None
-                message = str(error.get("msg", "Invalid create_agent parameters"))
-                error_type = str(error.get("type", ""))
-
-                if error_type == "extra_forbidden":
-                    raise InvalidParamsError(message) from exc
-
-                if field == "agent_id":
-                    if raw_value is not None and not isinstance(raw_value, str):
-                        raise InvalidParamsError(
-                            f"agent_id must be string, got: {type(raw_value).__name__}"
-                        ) from exc
-                    if isinstance(raw_value, str):
-                        raise InvalidParamsError(message) from exc
-
-                if field == "system_prompt" and raw_value is not None:
-                    raise InvalidParamsError(
-                        f"system_prompt must be string, got: {type(raw_value).__name__}"
-                    ) from exc
-
-                if field == "preset":
-                    if raw_value is not None and not isinstance(raw_value, str):
-                        raise InvalidParamsError(
-                            f"preset must be string, got: {type(raw_value).__name__}"
-                        ) from exc
-                    if isinstance(raw_value, str):
-                        raise InvalidParamsError(message) from exc
-
-                if field == "disable_tools":
-                    if raw_value is not None and not isinstance(raw_value, list):
-                        raise InvalidParamsError(
-                            f"disable_tools must be array, got: {type(raw_value).__name__}"
-                        ) from exc
-                    if (
-                        len(loc) > 1
-                        and isinstance(loc[1], int)
-                        and isinstance(raw_value, list)
-                        and loc[1] < len(raw_value)
-                    ):
-                        bad_value = raw_value[loc[1]]
-                        raise InvalidParamsError(
-                            "disable_tools"
-                            f"[{loc[1]}] must be string, got: {type(bad_value).__name__}"
-                        ) from exc
-
-                if field == "model" and raw_value is not None:
-                    raise InvalidParamsError(
-                        f"model must be string, got: {type(raw_value).__name__}"
-                    ) from exc
-
-                if field == "parent_agent_id":
-                    raise InvalidParamsError(message) from exc
-
-                if field == "cwd" and raw_value is not None:
-                    raise InvalidParamsError(
-                        f"cwd must be string, got: {type(raw_value).__name__}"
-                    ) from exc
-
-                if field == "allowed_write_paths":
-                    raise InvalidParamsError(message) from exc
-
-                if field == "initial_message":
-                    if raw_value is not None and not isinstance(raw_value, str):
-                        raise InvalidParamsError(
-                            f"initial_message must be string, got: {type(raw_value).__name__}"
-                        ) from exc
-                    if isinstance(raw_value, str) and not raw_value.strip():
-                        raise InvalidParamsError("initial_message cannot be empty") from exc
-
-                if field == "wait_for_initial_response":
-                    raise InvalidParamsError(message) from exc
+                message = str(errors[0].get("msg", "Invalid create_agent parameters"))
+                raise InvalidParamsError(message) from exc
 
             raise InvalidParamsError("Invalid create_agent parameters") from exc
 

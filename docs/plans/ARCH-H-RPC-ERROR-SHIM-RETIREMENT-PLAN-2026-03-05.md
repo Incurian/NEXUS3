@@ -78,15 +78,28 @@ Planned slices:
     - `.venv/Scripts/mypy.exe nexus3/rpc/global_dispatcher.py` passed.
     - `.venv/Scripts/pytest.exe -q -p no:cacheprovider tests/unit/rpc/test_schema_ingress_wiring.py` passed (`74 passed`).
     - `.venv/Scripts/pytest.exe -q -p no:cacheprovider tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py tests/unit/test_client.py` passed (`59 passed`).
-- 2026-03-09: Phase 2 completion + Phase 3 follow-on status.
+- 2026-03-09: Phase 2 + Phase 3 committed-wave closeout status.
   - Phase 2 completed in `b09c079`: dropped compatibility create-ID message
     remaps so `create_agent.agent_id` failures use canonical schema
     diagnostics.
-  - Current Phase 3 WSL follow-on (local, uncommitted): retired
-    compatibility remaps for `create_agent.preset` invalid literals,
-    `create_agent.wait_for_initial_response` invalid booleans, non-string
-    `create_agent.parent_agent_id`, and `create_agent.allowed_write_paths`
-    type/item validation paths; these now return canonical schema diagnostics.
+  - This wave completed the remaining `create_agent` compatibility-remap
+    retirement in `GlobalDispatcher._handle_create_agent(...)` by removing
+    custom field-specific wording branches and surfacing canonical schema
+    diagnostics for the first failing field.
+  - Canonical diagnostics now consistently cover malformed
+    `create_agent` fields, including `agent_id`, `system_prompt`,
+    `disable_tools`, `model`, `cwd`, and `initial_message` type/shape paths
+    in addition to previously retired `preset`, `wait_for_initial_response`,
+    `parent_agent_id`, and `allowed_write_paths` remaps.
+  - Retained diagnostic branches in `protocol.py`,
+    `dispatch_core.validate_direct_request_envelope(...)`, and
+    `dispatcher.py` are explicitly classified as required invariants
+    (strict envelope parity and method-specific send/get_messages clarity),
+    not compatibility-only wording shims.
+  - Focused validation snapshot (this wave):
+    - `.venv/bin/ruff check nexus3/rpc/global_dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py` passed.
+    - `.venv/bin/mypy nexus3/rpc/global_dispatcher.py` passed.
+    - `.venv/bin/pytest -q tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/test_rpc_dispatcher.py` passed (`138 passed`).
 
 ## Testing Strategy
 
@@ -106,10 +119,10 @@ Planned slices:
 
 - [x] Create and document RPC shim inventory with removal priority tiers.
 - [x] Define canonical post-shim diagnostics policy for malformed RPC inputs.
-- [ ] Remove compatibility-only shim branches in protocol/dispatch layers.
-- [ ] Update focused regression expectations and ensure no behavior drift in
+- [x] Remove compatibility-only shim branches in protocol/dispatch layers.
+- [x] Update focused regression expectations and ensure no behavior drift in
       codes/notification semantics.
-- [ ] Sync Plan H status, RPC README examples, and AGENTS running status.
+- [x] Sync Plan H status, RPC README examples, and AGENTS running status.
 
 ## Documentation Updates
 

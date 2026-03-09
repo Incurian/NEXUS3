@@ -235,9 +235,17 @@ Immediate tasks:
   - updated focused ingress regressions in
     `tests/unit/rpc/test_schema_ingress_wiring.py`,
     `tests/unit/test_client.py`, and `tests/unit/test_global_dispatcher.py`.
-  - remaining Plan H work: keep checklist conservative until any additional
-    compatibility-only remaps are either retired or explicitly retained with
-    rationale.
+- Completed (2026-03-09, committed in this wave): Plan H shim-retirement
+  closeout slice for `create_agent` canonical diagnostics:
+  - retired remaining compatibility-only create-agent field wording remaps in
+    `nexus3/rpc/global_dispatcher.py` so malformed fields now surface canonical
+    schema diagnostics.
+  - updated focused ingress expectations in
+    `tests/unit/rpc/test_schema_ingress_wiring.py`.
+  - focused validation passed:
+    `.venv/bin/ruff check nexus3/rpc/global_dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py`,
+    `.venv/bin/mypy nexus3/rpc/global_dispatcher.py`,
+    `.venv/bin/pytest -q tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/test_rpc_dispatcher.py` (`138 passed`).
 - Completed (2026-03-09, committed `5c0e843` and `8143afe`): Plan C
   service-container immutability follow-up (slices 1-3):
   - migrated pool create/restore + parent child-tracking runtime writes/reads
@@ -407,9 +415,9 @@ Immediate tasks:
     `AGENTS_NEXUS3CONFIGOPS.md`,
     `nexus3/provider/README.md`,
     `CLAUDE.md`.
-- Next target: resume Plan H shim-retirement closeout audit for any remaining
-  compatibility-only RPC diagnostic remaps; if no further remaps remain,
-  record explicit retention rationale and close Plan H checklist gates.
+- Next target: run manual provider keep-alive endpoint evidence capture
+  (`diagnose-empty-stream.sh` Step 10 JSON artifacts for one known-problematic
+  and one known-good endpoint), then queue structural-refactor-wave kickoff.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with
@@ -488,6 +496,7 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `(pending hash)` plan h shim retirement closeout: retire remaining create_agent compatibility remaps
 - `05ffb84` provider keepalive kickoff: add stale-reuse recovery and diagnostics evidence
 - `8143afe` plan c closeout: scope runtime register compatibility path
 - `5c0e843` plan c slices 2/3: migrate pool/repl/session runtime state to typed services

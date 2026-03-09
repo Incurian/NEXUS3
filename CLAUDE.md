@@ -1354,10 +1354,20 @@ As of 2026-02-25: **All tests, lints, and type checks pass 100%.**
 - `mypy nexus3/` — 0 errors (192 source files)
 - `pytest tests/` — 3742 passed, 3 skipped (2 require API key, 1 Windows-only)
 
-Architecture execution running status (2026-03-09, provider keep-alive kickoff wave):
+Architecture execution running status (2026-03-09, Plan H closeout + keep-alive wave):
 - Plan C service-container immutability follow-on is now committed:
   - `5c0e843` (pool/repl/session runtime migration to typed mutators/accessors)
   - `8143afe` (runtime register compatibility scoping via `register_runtime_compat(...)`)
+- Plan H shim-retirement closeout for remaining `create_agent` compatibility
+  remaps is committed in this wave:
+  - `nexus3/rpc/global_dispatcher.py`: removed remaining custom create-agent
+    field wording branches; malformed fields now surface canonical schema
+    diagnostics.
+  - `tests/unit/rpc/test_schema_ingress_wiring.py`: focused expectations
+    updated for canonical schema messages.
+  - retained explicit diagnostics in `protocol.py`, `dispatch_core.py`, and
+    `dispatcher.py` are intentionally preserved invariants (strict envelope
+    parity and method-specific send/get_messages error clarity).
 - Provider keep-alive investigation kickoff is committed as `05ffb84`:
   - `nexus3/provider/base.py`: stale keep-alive transport classification +
     bounded cached-client reset/retry within existing retry loop.
@@ -1366,6 +1376,13 @@ Architecture execution running status (2026-03-09, provider keep-alive kickoff w
   - `scripts/diagnose-empty-stream.sh`: Step 10 now emits structured
     `10-keepalive-evidence.json` alongside textual logs.
 - Focused validation snapshot:
+  - passed:
+    `.venv/bin/ruff check nexus3/rpc/global_dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py`
+  - passed:
+    `.venv/bin/mypy nexus3/rpc/global_dispatcher.py`
+  - passed:
+    `.venv/bin/pytest -q tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/test_rpc_dispatcher.py`
+    (`138 passed`).
   - passed:
     `.venv/bin/ruff check nexus3/provider/base.py tests/unit/provider/test_keepalive_recovery.py`
   - passed:
@@ -1379,6 +1396,8 @@ Architecture execution running status (2026-03-09, provider keep-alive kickoff w
 - Branch: `feat/arch-overhaul-execution`
 - Local state:
   - Plan H Phase 3 canonical diagnostics follow-on is committed as `fd33b01`.
+  - Plan H create-agent remap closeout is committed in this wave
+    (`global_dispatcher.py` + focused ingress tests).
   - Plan C slices 1-3 follow-on is committed as `5c0e843` and `8143afe`.
   - Provider keep-alive kickoff slice is committed as `05ffb84`
     (`base.py`, `test_keepalive_recovery.py`, Step 10 JSON evidence).
@@ -1386,8 +1405,7 @@ Architecture execution running status (2026-03-09, provider keep-alive kickoff w
   1. Run manual endpoint validation with
      `scripts/diagnose-empty-stream.sh` and archive `10-keepalive-evidence.json`
      from at least one problematic and one known-good endpoint run.
-  2. Continue Plan H conservative shim-retirement closeout audit or advance to
-     structural-refactor backlog based on risk priority.
+  2. Advance structural-refactor backlog kickoff based on risk priority.
 
 ### Known Failures
 

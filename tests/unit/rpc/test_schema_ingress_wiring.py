@@ -348,7 +348,7 @@ async def test_global_create_agent_schema_validation_rejects_malformed_agent_id_
     assert response is not None
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
-    assert "agent_id" in response.error["message"].lower()
+    assert response.error["message"] == "Input should be a valid string"
 
 
 @pytest.mark.asyncio
@@ -387,7 +387,7 @@ async def test_global_create_agent_rejects_blank_initial_message() -> None:
     assert response is not None
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
-    assert response.error["message"] == "initial_message cannot be empty"
+    assert response.error["message"] == "Value error, initial_message cannot be empty"
 
 
 @pytest.mark.asyncio
