@@ -238,37 +238,38 @@ Immediate tasks:
   - remaining Plan H work: keep checklist conservative until any additional
     compatibility-only remaps are either retired or explicitly retained with
     rationale.
-- In progress-complete (2026-03-09, WSL follow-on): Plan C service-container
-  immutability follow-up (slices 2/3) after slice-1 foundation:
-  - pool create/restore runtime migration complete in working tree
-    (pending commit):
+- Checkpoint-ready (2026-03-09, WSL final wave): Plan C service-container
+  immutability follow-up (slices 1-3) is complete in working tree
+  (pending commit):
+  - pool create/restore runtime migration complete in working tree:
     - migrated pool create/restore and parent child-tracking runtime
       writes/reads to typed mutators/accessors in `nexus3/rpc/pool.py`.
     - updated focused pool coverage in `tests/unit/test_pool.py`.
-  - REPL/session runtime mutation/read migration complete in working tree
-    (pending commit):
+  - REPL/session runtime mutation/read migration complete in working tree:
     - migrated REPL runtime permission/cwd/model mutation+read paths to typed
       service APIs in `nexus3/cli/repl_commands.py`.
     - migrated session runtime model-read path to typed service API in
       `nexus3/session/session.py`.
     - updated focused REPL regressions in `tests/unit/test_repl_commands.py`.
-  - service mutator compatibility hardening complete in working tree
-    (pending commit):
+  - service mutator compatibility hardening complete in working tree:
     - `ServiceContainer.set_permissions(...)` now synchronizes and clears
       legacy `allowed_paths` compatibility state in
       `nexus3/skill/services.py`.
-    - added focused `allowed_paths` compatibility regressions in
+    - `ServiceContainer.register(...)` now scopes runtime-key compatibility
+      state through `register_runtime_compat(...)`.
+    - expanded immutability regressions (including `allowed_paths` and
+      runtime-key compatibility scope coverage) in
       `tests/unit/skill/test_service_container_immutability.py`.
-  - focused validation snapshot (local WSL follow-on):
+  - focused validation snapshot (local WSL final wave):
     - passed:
       `.venv/bin/ruff check nexus3/rpc/pool.py nexus3/cli/repl_commands.py nexus3/session/session.py nexus3/skill/services.py tests/unit/test_pool.py tests/unit/test_repl_commands.py tests/unit/skill/test_service_container_immutability.py`
     - passed:
       `.venv/bin/mypy nexus3/rpc/pool.py nexus3/cli/repl_commands.py nexus3/session/session.py nexus3/skill/services.py`
     - passed:
       `.venv/bin/pytest -q tests/unit/test_repl_commands.py tests/unit/test_pool.py tests/unit/skill/test_service_container_immutability.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py`
-      (`165 passed in 8.59s`).
-  - current state: Plan C slice-2/3 follow-on implementation is complete in
-    working tree; checkpoint commit is pending.
+      (`168 passed`).
+  - current state: Plan C follow-on (slices 1-3) is checkpoint-ready and
+    complete in working tree; checkpoint commit is pending.
 - Completed (2026-03-09, committed `b09c079`): Plan H shim-retirement
   Phase 2:
   - retired compatibility-only `create_agent` malformed-ID message remap
@@ -406,13 +407,13 @@ Immediate tasks:
   - `docs/validation/post-m4-bootstrap-dryrun/`
   - `docs/validation/post-m4-20260306-live1/`
   - `docs/validation/post-m4-20260306-live2/`
-- Next target: checkpoint current WSL follow-ons, then advance remaining
-  deferred queue:
+- Next target (post-compact continuation): begin deferred provider
+  keep-alive investigation kickoff from a checkpoint-ready Plan C state:
   - commit Plan C service-immutability follow-on through slices 1-3
-    (pool create/restore migration, REPL/session runtime migration, and
-    `allowed_paths` compatibility hardening).
-  - after this checkpoint, proceed to provider keep-alive deferred
-    investigation.
+    (including `register_runtime_compat(...)` compatibility scoping).
+  - start execution from
+    `docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md` and
+    record the first checkpoint in AGENTS/CLAUDE.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with
@@ -2120,11 +2121,11 @@ Orchestrator handover checkpoint (2026-03-09, post-wave commit target):
   3. Keep Plan H checklist conservative until remaining compatibility-only
      remaps are either retired or explicitly documented as retained invariants.
 
-Orchestrator handover checkpoint (2026-03-09, Plan C slice-2/3 local-complete follow-on):
+Orchestrator handover checkpoint (2026-03-09, Plan C final-wave checkpoint-ready follow-on):
 - Branch/head:
   - `feat/arch-overhaul-execution`
   - base head before current local follow-on: `b09c079`
-- Scope completed in working tree (pending commit):
+- Scope completed in working tree (checkpoint-ready, pending commit):
   1. Pool create/restore migration to typed service runtime mutators/accessors:
      - `nexus3/rpc/pool.py` now uses typed runtime service APIs for create,
        restore, list, and parent-child tracking paths
@@ -2140,7 +2141,9 @@ Orchestrator handover checkpoint (2026-03-09, Plan C slice-2/3 local-complete fo
   3. Service mutator compatibility hardening for `allowed_paths`:
      - `nexus3/skill/services.py` now synchronizes and clears legacy
        `allowed_paths` compatibility state via `set_permissions(...)`.
-     - focused compatibility regressions in
+     - `ServiceContainer.register(...)` now scopes runtime-key compatibility
+       state through `register_runtime_compat(...)`.
+     - expanded compatibility regressions in
        `tests/unit/skill/test_service_container_immutability.py`.
 - Focused validation snapshot for this follow-on:
   - passed:
@@ -2149,12 +2152,12 @@ Orchestrator handover checkpoint (2026-03-09, Plan C slice-2/3 local-complete fo
     `.venv/bin/mypy nexus3/rpc/pool.py nexus3/cli/repl_commands.py nexus3/session/session.py nexus3/skill/services.py`
   - passed:
     `.venv/bin/pytest -q tests/unit/test_repl_commands.py tests/unit/test_pool.py tests/unit/skill/test_service_container_immutability.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py`
-    (`165 passed in 8.59s`).
-- Concrete resume steps for next slice:
-  1. Commit pending follow-ons on `feat/arch-overhaul-execution`:
-     - Plan C service-immutability follow-on through slices 1-3.
-  2. Re-run the focused validation trio above post-commit and archive command
-     outputs in session notes.
-  3. Start deferred provider keep-alive investigation kickoff using
+    (`168 passed`).
+- Concrete resume steps for post-compact continuation:
+  1. Commit the checkpoint-ready Plan C service-immutability follow-on
+     (slices 1-3) on `feat/arch-overhaul-execution`.
+  2. Start deferred provider keep-alive investigation kickoff from
      `docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md` and
      record the first checkpoint in AGENTS/CLAUDE running status.
+  3. Re-run the focused validation trio above after any provider keep-alive
+     implementation edits and archive command outputs in session notes.

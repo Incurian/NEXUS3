@@ -55,7 +55,7 @@ Planned slices:
 
 ## Execution Status
 
-Status note (2026-03-09, local WSL working tree; not committed):
+Status note (2026-03-09, local WSL working tree; checkpoint commit pending):
 - Slices 1-3 and mutator compatibility hardening are landed locally:
   - additive typed `ServiceContainer` mutators for `permissions`, `cwd`,
     `model`, and `child_agent_ids`.
@@ -65,12 +65,19 @@ Status note (2026-03-09, local WSL working tree; not committed):
     typed mutators.
   - session runtime model access path aligned to typed accessors.
   - `set_permissions(...)` now keeps legacy `allowed_paths` readers aligned
-    during migration.
+    during migration and clears compatibility state when permissions are unset.
+  - generic runtime `register(...)` helper usage is now explicitly scoped to
+    compatibility keys in `ServiceContainer`:
+    - direct runtime-key registration is limited by
+      `RUNTIME_COMPATIBILITY_REGISTER_KEYS`.
+    - `register(...)` routes scoped runtime keys via
+      `register_runtime_compat(...)`.
+    - `register_runtime_compat(...)` fail-fast rejects non-scoped keys.
   - focused immutability regressions added/expanded in
     `tests/unit/skill/test_service_container_immutability.py`,
     `tests/unit/test_pool.py`, and `tests/unit/test_repl_commands.py`.
-- Remaining follow-on item: retire or explicitly scope generic open-ended
-  mutation helpers to non-production compatibility usage.
+- Plan C follow-on closeout is complete for this wave; fixture-modernization
+  backlog remains deferred by plan scope.
 
 ## Testing Strategy
 
@@ -95,9 +102,11 @@ Status note (2026-03-09, local WSL working tree; not committed):
 - [x] Add focused immutability/isolation regressions for production mutation
       paths.
 - [x] Land runtime mutator compatibility hardening for migration-safe behavior.
-- [ ] Retire or explicitly scope generic mutation helpers to non-production use.
+- [x] Retire or explicitly scope generic mutation helpers to non-production use.
 - [x] Sync Plan C, milestone backlog, and AGENTS status for slice-1/2/3 local
       landing (WSL, uncommitted).
+- [ ] Modernize remaining legacy `ServiceContainer` fixture/test doubles
+      (deferred backlog; outside this wave).
 
 ## Documentation Updates
 

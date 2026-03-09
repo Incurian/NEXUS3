@@ -260,8 +260,8 @@ Exit gates:
 3. Plan C follow-on service immutability:
    - [ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md)
    - Target window: M4 mid (WSL follow-on closeout after current Plan A/Plan C runtime behavior stabilization).
-   - Status note (2026-03-09): Slices 1-3 + mutator compatibility hardening
-     landed locally (WSL; not committed):
+   - Status note (2026-03-09): Plan C follow-on closeout is complete for this
+     wave (WSL local; checkpoint commit pending):
      - additive typed `ServiceContainer` mutators for `permissions`, `cwd`,
        `model`, and `child_agent_ids`.
      - immutable runtime snapshot model added for runtime service-state access.
@@ -270,13 +270,20 @@ Exit gates:
        to typed mutator flows.
      - session runtime model access aligned to typed accessor flow.
      - mutator compatibility hardening landed (`set_permissions(...)` keeps
-       legacy `allowed_paths` readers aligned during migration).
+       legacy `allowed_paths` readers aligned during migration and clears
+       compatibility state when permissions are unset).
+     - generic runtime `ServiceContainer.register(...)` helper usage is now
+       explicitly compatibility-scoped in `nexus3/skill/services.py`:
+       - `RUNTIME_COMPATIBILITY_REGISTER_KEYS` limits direct runtime-key
+         registration to (`permissions`, `cwd`, `model`, `child_agent_ids`,
+         `allowed_paths`).
+       - `register(...)` routes scoped runtime keys via
+         `register_runtime_compat(...)`.
+       - `register_runtime_compat(...)` fail-fast rejects non-scoped keys.
      - focused regressions expanded in
        `tests/unit/skill/test_service_container_immutability.py`,
        `tests/unit/test_pool.py`, and `tests/unit/test_repl_commands.py`.
-     - remaining closeout item: retire or explicitly scope generic
-       `ServiceContainer.register(...)` runtime mutation usage to
-       non-production compatibility paths.
+     - fixture-modernization backlog remains deferred per plan scope.
    - Dependency gates:
      - Current request-context propagation behavior is stable under existing tests.
      - No active regressions in REPL runtime mutation paths (`/cd`, `/permissions`, `/model`).

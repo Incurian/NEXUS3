@@ -164,3 +164,33 @@ class TestServiceContainerRuntimeMutation:
 
         assert container.get_child_agent_ids() == {"child-a", "child-c"}
         assert snapshot.child_agent_ids == frozenset({"child-a"})
+
+    def test_runtime_key_policy_metadata_scopes_mutator_and_compat_keys(self) -> None:
+        """Runtime key policy metadata should explicitly scope mutator vs compat keys."""
+        assert ServiceContainer.RUNTIME_MANAGED_KEYS == frozenset(
+            {"permissions", "cwd", "model", "child_agent_ids"}
+        )
+        assert ServiceContainer.RUNTIME_COMPATIBILITY_REGISTER_KEYS == frozenset(
+            {"permissions", "cwd", "model", "child_agent_ids", "allowed_paths"}
+        )
+
+    def test_register_runtime_compat_rejects_non_runtime_keys(self) -> None:
+        """Compatibility helper should be restricted to runtime compatibility keys."""
+        container = ServiceContainer()
+
+        with pytest.raises(
+            KeyError, match="Runtime compatibility registration not allowed for key"
+        ):
+            container.register_runtime_compat("agent_pool", object())
+
+    def test_register_runtime_compat_preserves_legacy_direct_runtime_writes(self) -> None:
+        """Direct runtime-key register() writes should remain compatibility-preserving."""
+        container = ServiceContainer()
+        trusted_permissions = _make_permissions(base_preset="trusted")
+        container.register("allowed_paths", [Path("legacy")])
+
+        # Direct register() keeps legacy behavior and avoids mutator side effects.
+        container.register("permissions", trusted_permissions)
+
+        assert container.get_permissions() is trusted_permissions
+        assert container.get("allowed_paths") == [Path("legacy")]

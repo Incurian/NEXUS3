@@ -12,9 +12,8 @@ Included:
 - Introduce request context object (request id, requester, policy snapshot, trace id).
 
 Deferred:
-- Service-container immutability closeout (remaining generic mutation-helper
-  retirement + fixture-modernization backlog) in follow-on plan:
-  [ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md)).
+- Service-container fixture-modernization backlog in follow-on plan:
+  [ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md).
 
 Excluded:
 - Capability delegation semantics (Plan B).
@@ -58,15 +57,22 @@ Phases:
 - [x] Make selected built-in skills stateless per call.
 - [x] Add concurrency tests and stress-style regressions.
 
-Closeout note (2026-03-05):
-- The remaining deferred boundary for service-container immutability is tracked
-  in [ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md).
+Closeout note (2026-03-09):
+- Plan C service-container follow-on closeout for this wave is complete:
+  generic runtime helper usage is explicitly compatibility-scoped in
+  `ServiceContainer` (`RUNTIME_COMPATIBILITY_REGISTER_KEYS`,
+  `register_runtime_compat(...)`, and `set_permissions(...)`
+  `allowed_paths` sync/clear behavior).
+- Remaining deferred boundary is tracked in
+  [ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md)
+  and is limited to fixture modernization.
 
 Deferred-boundary status (2026-03-09):
 - Follow-on slice 2/3 migration for pool/REPL/session paths and mutator
   compatibility hardening landed in the current WSL wave.
-- Remaining explicit follow-on item: retire or scope generic runtime
-  `register(...)` mutation paths to non-production compatibility usage.
+- Generic runtime `register(...)` mutation usage is explicitly scoped to
+  compatibility keys in `ServiceContainer`.
+- Remaining deferred item: fixture-modernization backlog only.
 
 ### M2 Commit 1 Status (2026-03-04)
 

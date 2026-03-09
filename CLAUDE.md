@@ -1354,9 +1354,9 @@ As of 2026-02-25: **All tests, lints, and type checks pass 100%.**
 - `mypy nexus3/` — 0 errors (192 source files)
 - `pytest tests/` — 3742 passed, 3 skipped (2 require API key, 1 Windows-only)
 
-Architecture execution running status (2026-03-09, WSL follow-on, pending commit):
-- Plan C service-container immutability follow-on is now in progress-complete
-  local state through slices 2/3:
+Architecture execution running status (2026-03-09, WSL final wave, checkpoint-ready pending commit):
+- Plan C service-container immutability follow-on is complete in working tree
+  through slices 1-3:
   - pool create/restore migration to typed runtime mutators/accessors is
     implemented in `nexus3/rpc/pool.py` with focused updates in
     `tests/unit/test_pool.py`.
@@ -1364,7 +1364,10 @@ Architecture execution running status (2026-03-09, WSL follow-on, pending commit
     `nexus3/cli/repl_commands.py` and `nexus3/session/session.py`, with focused
     updates in `tests/unit/test_repl_commands.py`.
   - service mutator compatibility hardening for `allowed_paths` is implemented
-    in `nexus3/skill/services.py` with focused compatibility regressions in
+    in `nexus3/skill/services.py`.
+  - `ServiceContainer.register(...)` runtime-key compatibility scoping now uses
+    `register_runtime_compat(...)` in `nexus3/skill/services.py`.
+  - expanded immutability compatibility regressions are implemented in
     `tests/unit/skill/test_service_container_immutability.py`.
 - Focused validation snapshot:
   - passed:
@@ -1373,7 +1376,7 @@ Architecture execution running status (2026-03-09, WSL follow-on, pending commit
     `.venv/bin/mypy nexus3/rpc/pool.py nexus3/cli/repl_commands.py nexus3/session/session.py nexus3/skill/services.py`
   - passed:
     `.venv/bin/pytest -q tests/unit/test_repl_commands.py tests/unit/test_pool.py tests/unit/skill/test_service_container_immutability.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py`
-    (`165 passed in 8.59s`).
+    (`168 passed`).
 
 ### Orchestrator Handover Checkpoint (2026-03-09)
 
@@ -1381,15 +1384,17 @@ Architecture execution running status (2026-03-09, WSL follow-on, pending commit
 - Local state:
   - Plan H Phase 3 canonical diagnostics follow-on is already committed as
     `fd33b01`.
-  - Plan C slices 1-3 follow-on is implemented in working tree and pending
-    commit.
-- Concrete resume steps for next slice:
-  1. Commit Plan C service-immutability follow-on (pool create/restore,
-     REPL/session runtime typed API migration, `allowed_paths` compatibility hardening).
-  2. Re-run the focused validation trio above post-commit.
-  3. Kick off deferred provider keep-alive investigation from
+  - Plan C slices 1-3 follow-on is checkpoint-ready, complete in working tree,
+    and pending commit.
+- Concrete resume steps for post-compact continuation:
+  1. Commit checkpoint-ready Plan C service-immutability follow-on
+     (pool create/restore, REPL/session runtime typed API migration,
+     `allowed_paths` + `register_runtime_compat(...)` compatibility scoping).
+  2. Kick off deferred provider keep-alive investigation from
      `docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md` and log
      the next checkpoint in AGENTS/CLAUDE.
+  3. Re-run the focused validation trio above after any provider keep-alive
+     implementation edits.
 
 ### Known Failures
 

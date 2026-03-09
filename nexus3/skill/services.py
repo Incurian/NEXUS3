@@ -24,7 +24,7 @@ Example usage:
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 if TYPE_CHECKING:
     from nexus3.config.schema import ResolvedModel
@@ -68,6 +68,15 @@ class ServiceContainer:
         pool = services.require("agent_pool")  # Raises KeyError if missing
     """
 
+    # Runtime-managed keys should be mutated through typed mutators.
+    RUNTIME_MANAGED_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"permissions", "cwd", "model", "child_agent_ids"}
+    )
+    # Compatibility-only direct registration keys for legacy/non-production paths.
+    RUNTIME_COMPATIBILITY_REGISTER_KEYS: ClassVar[frozenset[str]] = (
+        RUNTIME_MANAGED_KEYS | frozenset({"allowed_paths"})
+    )
+
     _services: dict[str, Any] = field(default_factory=dict)
 
     def get(self, name: str) -> Any:
@@ -104,11 +113,32 @@ class ServiceContainer:
         """Register a service by name.
 
         Overwrites any existing service with the same name.
+        Runtime-managed fields should use typed mutators:
+        set_permissions(), set_cwd(), set_model(), set_child_agent_ids().
+        Direct register() writes for runtime-managed keys are preserved only
+        as a compatibility path for legacy/non-production call sites.
 
         Args:
             name: The name to register the service under.
             service: The service instance to register.
         """
+        if name in self.RUNTIME_COMPATIBILITY_REGISTER_KEYS:
+            self.register_runtime_compat(name, service)
+            return
+
+        self._services[name] = service
+
+    def register_runtime_compat(self, name: str, service: Any) -> None:
+        """Compatibility-only direct registration for runtime-key services.
+
+        This path exists to preserve legacy/non-production direct runtime-field
+        writes while runtime state migrates to typed mutators.
+        """
+        if name not in self.RUNTIME_COMPATIBILITY_REGISTER_KEYS:
+            raise KeyError(
+                f"Runtime compatibility registration not allowed for key: {name}"
+            )
+
         self._services[name] = service
 
     def has(self, name: str) -> bool:
