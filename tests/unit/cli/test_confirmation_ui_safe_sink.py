@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from io import StringIO
 from pathlib import Path
 
 import pytest
+from rich.console import Console
 
 from nexus3.cli import confirmation_ui
 from nexus3.core.permissions import ConfirmationResult
@@ -36,6 +38,24 @@ class _FakeStdout:
 
     def flush(self) -> None:
         return None
+
+
+class _PromptingRichConsole:
+    def __init__(self, response: str) -> None:
+        self._response = response
+        self._buffer = StringIO()
+        self._console = Console(file=self._buffer, force_terminal=False, width=120)
+        self.input_prompts: list[str] = []
+
+    def print(self, *args: object, **kwargs: object) -> None:
+        self._console.print(*args, **kwargs)
+
+    def input(self, prompt: str) -> str:
+        self.input_prompts.append(prompt)
+        return self._response
+
+    def rendered(self) -> str:
+        return self._buffer.getvalue()
 
 
 async def _to_thread_inline(func, /, *args, **kwargs):
@@ -120,6 +140,76 @@ async def test_confirm_tool_action_exec_choice_parity_with_sanitized_preview(mon
     assert "echo \\[red]hi\\[/red]" in rendered
     assert "/tmp/\\[bold]work\\[/bold]" in rendered
     assert "\x1b" not in rendered
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool_call", "target_path", "response", "expected_result", "expected_text"),
+    [
+        (
+            ToolCall(id="call_mcp", name="mcp_server_tool", arguments={"arg": "x"}),
+            None,
+            "4",
+            ConfirmationResult.DENY,
+            "Allow MCP tool 'mcp_server_tool'?",
+        ),
+        (
+            ToolCall(
+                id="call_exec",
+                name="bash_safe",
+                arguments={"command": "echo hi", "cwd": "/tmp"},
+            ),
+            None,
+            "3",
+            ConfirmationResult.DENY,
+            "Execute bash_safe?",
+        ),
+        (
+            ToolCall(id="call_nexus", name="nexus_send", arguments={"agent_id": "worker-1"}),
+            None,
+            "4",
+            ConfirmationResult.DENY,
+            "Allow nexus_send?",
+        ),
+        (
+            ToolCall(id="call_file", name="read_file", arguments={"path": "/tmp/example.txt"}),
+            Path("/tmp/example.txt"),
+            "4",
+            ConfirmationResult.DENY,
+            "Allow read_file?",
+        ),
+    ],
+    ids=["mcp", "exec", "nexus", "file"],
+)
+async def test_confirm_tool_action_header_markup_renders_with_real_rich_console(
+    monkeypatch,
+    tool_call: ToolCall,
+    target_path: Path | None,
+    response: str,
+    expected_result: ConfirmationResult,
+    expected_text: str,
+) -> None:
+    rich_console = _PromptingRichConsole(response=response)
+    fake_stdout = _FakeStdout()
+    monkeypatch.setattr(confirmation_ui, "get_console", lambda: rich_console)
+    monkeypatch.setattr(confirmation_ui.asyncio, "to_thread", _to_thread_inline)
+    monkeypatch.setattr(confirmation_ui.sys, "stdout", fake_stdout)
+
+    pause_event = asyncio.Event()
+    pause_event.set()
+    pause_ack_event = asyncio.Event()
+    pause_ack_event.set()
+
+    result = await confirmation_ui.confirm_tool_action(
+        tool_call=tool_call,
+        target_path=target_path,
+        agent_cwd=Path("/tmp"),
+        pause_event=pause_event,
+        pause_ack_event=pause_ack_event,
+    )
+
+    assert result == expected_result
+    assert expected_text in rich_console.rendered()
 
 
 def test_format_tool_params_sanitizes_markup_and_terminal_escapes() -> None:

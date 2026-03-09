@@ -311,9 +311,9 @@ async def confirm_tool_action(
             args_preview = str(tool_call.arguments)[:120]
             if len(str(tool_call.arguments)) > 120:
                 args_preview += "..."
-            sink.print_trusted("\n[yellow]Allow MCP tool '", end="")
+            sink.print_trusted("\n[yellow]Allow MCP tool '[/]", end="")
             sink.print_untrusted(tool_name, end="")
-            sink.print_trusted("'?[/]")
+            sink.print_trusted("[yellow]'?[/]")
             sink.print_trusted("  [dim]Server:[/] ", end="")
             sink.print_untrusted(server_name)
             sink.print_trusted("  [dim]Arguments:[/] ", end="")
@@ -324,9 +324,9 @@ async def confirm_tool_action(
             cwd = tool_call.arguments.get("cwd", str(agent_cwd))
             command = tool_call.arguments.get("command", tool_call.arguments.get("code", ""))
             preview = command[:100] + "..." if len(command) > 100 else command
-            sink.print_trusted("\n[yellow]Execute ", end="")
+            sink.print_trusted("\n[yellow]Execute [/]", end="")
             sink.print_untrusted(tool_name, end="")
-            sink.print_trusted("?[/]")
+            sink.print_trusted("[yellow]?[/]")
             sink.print_trusted("  [dim]Command:[/] ", end="")
             sink.print_untrusted(preview)
             sink.print_trusted("  [dim]Directory:[/] ", end="")
@@ -335,9 +335,9 @@ async def confirm_tool_action(
         elif is_nexus_tool:
             # Nexus tools use agent_id instead of path
             agent_id = tool_call.arguments.get("agent_id", "unknown")
-            sink.print_trusted("\n[yellow]Allow ", end="")
+            sink.print_trusted("\n[yellow]Allow [/]", end="")
             sink.print_untrusted(tool_name, end="")
-            sink.print_trusted("?[/]")
+            sink.print_trusted("[yellow]?[/]")
             sink.print_trusted("  [dim]Agent:[/] ", end="")
             sink.print_untrusted(str(agent_id))
             lines_printed += 3  # empty + header + agent
@@ -345,9 +345,9 @@ async def confirm_tool_action(
             path_str = str(target_path) if target_path else tool_call.arguments.get(
                 "path", "unknown"
             )
-            sink.print_trusted("\n[yellow]Allow ", end="")
+            sink.print_trusted("\n[yellow]Allow [/]", end="")
             sink.print_untrusted(tool_name, end="")
-            sink.print_trusted("?[/]")
+            sink.print_trusted("[yellow]?[/]")
             sink.print_trusted("  [dim]Path:[/] ", end="")
             sink.print_untrusted(str(path_str))
             lines_printed += 3  # empty + header + path
