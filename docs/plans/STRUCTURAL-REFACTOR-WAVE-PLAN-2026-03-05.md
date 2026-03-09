@@ -173,9 +173,23 @@ Execution notes:
     - `.venv/bin/mypy nexus3/session/session.py nexus3/session/compaction_runtime.py nexus3/session/tool_runtime.py nexus3/session/permission_runtime.py nexus3/session/single_tool_runtime.py`
     - `.venv/bin/pytest -q tests/unit/session/test_session_permission_kernelization.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_cancellation.py` (`54 passed`)
     - `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py` (`30 passed`)
-- Next gate: execute remaining Session extraction internals (tool-loop/core
-  send-turn internals; event-loop/send-turn extraction) with focused parity
-  checks.
+- 2026-03-09: Phase 2E (Session streaming runtime extraction) completed in
+  WSL.
+  - Added `nexus3/session/streaming_runtime.py` for callback-adapter streaming
+    runtime helper ownership.
+  - Kept `Session._execute_tool_loop_streaming(...)` as a thin wrapper
+    delegating to `streaming_runtime.py`.
+  - Behavior parity preserved: event->callback mapping and yielded chunk
+    semantics remained unchanged.
+  - Focused validation passed:
+    - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/streaming_runtime.py`
+    - `.venv/bin/mypy nexus3/session/session.py nexus3/session/streaming_runtime.py`
+    - `.venv/bin/pytest -q tests/integration/test_skill_execution.py -k "test_tool_call_executes_skill or test_multiple_tool_calls_in_sequence or test_multiple_tool_calls_in_parallel or test_failing_skill_error_in_context or test_max_iterations_prevents_infinite_loop or test_tool_loop_builds_correct_messages"` (`6 passed`)
+    - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py -k "test_stale_cancelled_tools_are_dropped or test_cancelled_tool_tail_repaired_before_next_user_turn or test_preflight_repairs_orphaned_tool_batch_before_user_turn or test_preflight_prunes_stale_tool_results_before_user_turn"` (`4 passed`)
+    - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py -k "test_cancellation_before_assistant_message_no_orphans or test_cancellation_after_first_tool_adds_remaining_results or test_cancelled_error_during_tool_creates_result"` (`3 passed`)
+- Next gate: execute remaining Session core event-loop/send-turn extraction
+  internals (likely `_execute_tool_loop_events(...)` and `send`/`run_turn`
+  core paths) with focused parity checks.
 
 ## Testing Strategy
 
@@ -202,8 +216,11 @@ Execution notes:
       parity checks.
 - [x] Complete Session Phase 2D single-tool runtime extraction with focused
       parity checks.
-- [ ] Complete remaining Session extraction internals (tool-loop/core send-turn
-      internals; event-loop/send-turn extraction) with parity checks.
+- [x] Complete Session Phase 2E streaming runtime extraction with focused
+      parity checks.
+- [ ] Complete remaining Session core event-loop/send-turn extraction internals
+      (likely `_execute_tool_loop_events(...)` and `send`/`run_turn` core
+      paths) with parity checks.
 - [ ] Complete Pool extraction slices with parity checks.
 - [ ] Land display-config cleanup with documented override contract.
 - [ ] Remove temporary compatibility wrappers after one full green cycle.

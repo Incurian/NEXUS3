@@ -1423,6 +1423,14 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
     resolution/unknown-skill handling, malformed `_raw_arguments` handling,
     argument validation, effective timeout derivation, and MCP/GitLab
     delegation).
+- Structural-refactor Phase 2E (Session streaming runtime extraction)
+  is completed:
+  - `nexus3/session/streaming_runtime.py` now owns callback-adapter streaming
+    runtime helpers.
+  - `Session._execute_tool_loop_streaming(...)` remains a thin wrapper for
+    compatibility.
+  - behavior parity preserved (event->callback mapping and yielded chunk
+    semantics unchanged).
 - Focused validation snapshot:
   - passed:
     `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
@@ -1479,6 +1487,19 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
     `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py`
     (`30 passed`).
   - passed:
+    `.venv/bin/ruff check nexus3/session/session.py nexus3/session/streaming_runtime.py`
+  - passed:
+    `.venv/bin/mypy nexus3/session/session.py nexus3/session/streaming_runtime.py`
+  - passed:
+    `.venv/bin/pytest -q tests/integration/test_skill_execution.py -k "test_tool_call_executes_skill or test_multiple_tool_calls_in_sequence or test_multiple_tool_calls_in_parallel or test_failing_skill_error_in_context or test_max_iterations_prevents_infinite_loop or test_tool_loop_builds_correct_messages"`
+    (`6 passed`).
+  - passed:
+    `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py -k "test_stale_cancelled_tools_are_dropped or test_cancelled_tool_tail_repaired_before_next_user_turn or test_preflight_repairs_orphaned_tool_batch_before_user_turn or test_preflight_prunes_stale_tool_results_before_user_turn"`
+    (`4 passed`).
+  - passed:
+    `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py -k "test_cancellation_before_assistant_message_no_orphans or test_cancellation_after_first_tool_adds_remaining_results or test_cancelled_error_during_tool_creates_result"`
+    (`3 passed`).
+  - passed:
     `.venv/bin/ruff check nexus3/rpc/global_dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py`
   - passed:
     `.venv/bin/mypy nexus3/rpc/global_dispatcher.py`
@@ -1503,15 +1524,16 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - Plan C slices 1-3 follow-on is committed as `5c0e843` and `8143afe`.
   - Provider keep-alive kickoff slice is committed as `05ffb84`
     (`base.py`, `test_keepalive_recovery.py`, Step 10 JSON evidence).
-  - Structural-refactor Phase 2A/2B/2C/2D extraction is complete
+  - Structural-refactor Phase 2A/2B/2C/2D/2E extraction is complete
     (`compaction_runtime.py`, `tool_runtime.py`, and
-    `permission_runtime.py`, `single_tool_runtime.py` extracted; `session.py`
-    compaction/tool/permission/single-tool methods remain compatibility
-    wrappers).
+    `permission_runtime.py`, `single_tool_runtime.py`,
+    `streaming_runtime.py` extracted; `session.py`
+    compaction/tool/permission/single-tool/streaming methods remain
+    compatibility wrappers).
 - Concrete resume steps for post-compact continuation:
-  1. Execute remaining Session extraction internals
-     (tool-loop/core send-turn internals; event-loop/send-turn extraction)
-     with focused parity checks.
+  1. Execute remaining Session core event-loop/send-turn extraction internals
+     (likely `_execute_tool_loop_events(...)` and `send`/`run_turn` core
+     paths) with focused parity checks.
   2. Run manual endpoint validation with
      `scripts/diagnose-empty-stream.sh` and archive `10-keepalive-evidence.json`
      from at least one problematic and one known-good endpoint run when real

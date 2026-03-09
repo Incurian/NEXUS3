@@ -68,6 +68,9 @@ from nexus3.session.permission_runtime import (
 from nexus3.session.single_tool_runtime import (
     execute_single_tool as execute_single_tool_runtime,
 )
+from nexus3.session.streaming_runtime import (
+    execute_tool_loop_streaming as execute_tool_loop_streaming_runtime,
+)
 from nexus3.session.tool_runtime import (
     execute_skill as execute_skill_runtime,
 )
@@ -840,41 +843,19 @@ class Session:
         Yields:
             String chunks of the assistant's response.
         """
-        async for event in self._execute_tool_loop_events(cancel_token):
-            # Convert events to callbacks and yield content
-            if isinstance(event, ContentChunk):
-                yield event.text
-            elif isinstance(event, ReasoningStarted):
-                if self.on_reasoning:
-                    self.on_reasoning(True)
-            elif isinstance(event, ReasoningEnded):
-                if self.on_reasoning:
-                    self.on_reasoning(False)
-            elif isinstance(event, ToolDetected):
-                if self.on_tool_call:
-                    self.on_tool_call(event.name, event.tool_id)
-            elif isinstance(event, ToolBatchStarted):
-                if self.on_batch_start:
-                    self.on_batch_start(event.tool_calls)
-            elif isinstance(event, ToolStarted):
-                if self.on_tool_active:
-                    self.on_tool_active(event.name, event.tool_id)
-            elif isinstance(event, ToolCompleted):
-                if self.on_batch_progress:
-                    self.on_batch_progress(
-                        event.name, event.tool_id, event.success, event.error, event.output
-                    )
-                # Legacy callback (deprecated)
-                if self.on_tool_complete:
-                    self.on_tool_complete(event.name, event.tool_id, event.success)
-            elif isinstance(event, ToolBatchHalted):
-                if self.on_batch_halt:
-                    self.on_batch_halt()
-            elif isinstance(event, ToolBatchCompleted):
-                if self.on_batch_complete:
-                    self.on_batch_complete()
-            # IterationCompleted and SessionCompleted are internal events
-            # not mapped to callbacks in the original implementation
+        async for chunk in execute_tool_loop_streaming_runtime(
+            execute_tool_loop_events=self._execute_tool_loop_events,
+            cancel_token=cancel_token,
+            on_tool_call=self.on_tool_call,
+            on_tool_complete=self.on_tool_complete,
+            on_reasoning=self.on_reasoning,
+            on_batch_start=self.on_batch_start,
+            on_tool_active=self.on_tool_active,
+            on_batch_progress=self.on_batch_progress,
+            on_batch_halt=self.on_batch_halt,
+            on_batch_complete=self.on_batch_complete,
+        ):
+            yield chunk
 
     async def _execute_single_tool(self, tool_call: "ToolCall") -> ToolResult:
         """Execute a single tool call with permission checks.
