@@ -1961,3 +1961,42 @@ Pre-compact checkpoint (2026-03-05, post-round41 commit):
 ## Source of Truth
 
 `CLAUDE.md` contains full project reference detail. This file is the Codex-oriented operating guide distilled from it.
+
+Emergency handover checkpoint (2026-03-07, power-loss shutdown):
+- Branch/head:
+  - `feat/arch-overhaul-execution` (ahead 7).
+- Current local working state (uncommitted):
+  - modified: `nexus3/rpc/global_dispatcher.py`
+  - modified: `tests/unit/rpc/test_schema_ingress_wiring.py`
+  - no commit created yet in this slice.
+- Scope completed before shutdown:
+  1. Plan H shim-retirement Phase 2 in progress:
+     - removed `create_agent` compatibility-only Pydantic message remap
+       prefix stripping in `GlobalDispatcher._handle_create_agent(...)` for
+       malformed `agent_id` and `parent_agent_id` string inputs.
+     - handler now surfaces canonical schema-derived diagnostics directly
+       (`Value error, <field> invalid: ...`) while keeping deterministic type
+       checks (`... must be string, got: ...`) unchanged.
+  2. Updated ingress regressions:
+     - changed malformed `parent_agent_id` expectation to canonical schema
+       message with field prefix.
+     - added explicit malformed string `agent_id` regression asserting canonical
+       schema detail.
+- Validation executed in this slice:
+  - passed: `.venv\\Scripts\\ruff.exe check nexus3/rpc/global_dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py`
+  - passed: `.venv\\Scripts\\pytest.exe -q -p no:cacheprovider tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py tests/unit/test_client.py` (`134 passed`, 12 client CA-path warnings)
+  - host baseline issue: `.venv\\Scripts\\mypy.exe nexus3/rpc/global_dispatcher.py` reports unrelated pre-existing repo errors on this host.
+  - passed (file-scoped confirmation): `.venv\\Scripts\\mypy.exe --follow-imports=skip nexus3/rpc/global_dispatcher.py`
+- Next immediate resume steps:
+  1. Update docs/status files for this Phase 2 slice:
+     - `docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md`
+     - `docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md`
+     - `AGENTS.md` running-status sections near the active architecture block.
+  2. Optionally refresh `nexus3/rpc/README.md` ingress-diagnostics note for
+     `create_agent` malformed ID wording (now schema-derived prefix included).
+  3. Re-run focused checks above if any docs/code are touched.
+  4. Commit as: `plan h shim retirement phase 2: drop create id message remaps`.
+- Environment caveats:
+  - `git` requires safe-directory override in this session (`-c safe.directory=...`).
+  - recurring warnings for inaccessible temp dirs remain expected:
+    `.tmp-pytest-debug-root/pytest-of-inc/`, `.tmp-pytest-phase2-run5/`.

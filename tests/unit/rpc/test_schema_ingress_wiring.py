@@ -352,6 +352,28 @@ async def test_global_create_agent_schema_validation_rejects_malformed_agent_id_
 
 
 @pytest.mark.asyncio
+async def test_global_create_agent_rejects_malformed_agent_id_with_canonical_validation_detail(
+) -> None:
+    dispatcher = GlobalDispatcher(_StubPool())
+    request = Request(
+        jsonrpc="2.0",
+        method="create_agent",
+        params={"agent_id": "../../escape"},
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == (
+        "Value error, agent_id invalid: "
+        "Invalid agent ID '../../escape': must be 1-63 chars, "
+        "alphanumeric/dot/underscore/hyphen, start with alphanumeric or dot"
+    )
+
+
+@pytest.mark.asyncio
 async def test_global_create_agent_rejects_blank_initial_message() -> None:
     dispatcher = GlobalDispatcher(_StubPool())
     request = Request(
@@ -387,6 +409,7 @@ async def test_global_create_agent_parent_id_wiring_rejects_malformed_id_with_va
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
     assert response.error["message"] == (
+        "Value error, parent_agent_id invalid: "
         "Invalid agent ID '../../escape': must be 1-63 chars, "
         "alphanumeric/dot/underscore/hyphen, start with alphanumeric or dot"
     )

@@ -263,14 +263,12 @@ class GlobalDispatcher:
                     raise InvalidParamsError(message) from exc
 
                 if field == "agent_id":
-                    if not isinstance(raw_value, str):
+                    if raw_value is not None and not isinstance(raw_value, str):
                         raise InvalidParamsError(
                             f"agent_id must be string, got: {type(raw_value).__name__}"
                         ) from exc
-                    if message.startswith("Value error, agent_id invalid: "):
-                        raise InvalidParamsError(
-                            message.removeprefix("Value error, agent_id invalid: ")
-                        ) from exc
+                    if isinstance(raw_value, str):
+                        raise InvalidParamsError(message) from exc
 
                 if field == "system_prompt" and raw_value is not None:
                     raise InvalidParamsError(
@@ -315,12 +313,8 @@ class GlobalDispatcher:
                         raise InvalidParamsError(
                             f"parent_agent_id must be string, got: {type(raw_value).__name__}"
                         ) from exc
-                    if isinstance(raw_value, str) and message.startswith(
-                        "Value error, parent_agent_id invalid: "
-                    ):
-                        raise InvalidParamsError(
-                            message.removeprefix("Value error, parent_agent_id invalid: ")
-                        ) from exc
+                    if isinstance(raw_value, str):
+                        raise InvalidParamsError(message) from exc
 
                 if field == "cwd" and raw_value is not None:
                     raise InvalidParamsError(
