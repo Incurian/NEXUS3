@@ -254,8 +254,30 @@ Execution notes:
     - `.venv/bin/ruff check nexus3/display/theme.py nexus3/display/README.md tests/unit/test_display.py`
     - `.venv/bin/mypy nexus3/display/theme.py nexus3/cli/repl.py nexus3/display/manager.py nexus3/display/spinner.py`
     - `.venv/bin/pytest -q tests/unit/test_display.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py` (`137 passed`)
-- Next gate: execute remaining Pool extraction slices (create/restore/lifecycle)
-  with focused parity checks, then remove temporary compatibility wrappers.
+- 2026-03-09: Phase 3B (Pool create-path extraction foundation) completed in
+  WSL.
+  - Added `nexus3/rpc/pool_create.py` and moved create-path authorization
+    adapter/serialization and lock-wrapper helpers there.
+  - `AgentPool.create(...)` / `create_temp(...)` and
+    `AgentPool._enforce_create_authorization(...)` now delegate to extracted
+    runtime helpers while preserving behavior.
+  - Focused validation passed:
+    - `.venv/bin/ruff check nexus3/rpc/pool.py nexus3/rpc/pool_create.py`
+    - `.venv/bin/mypy nexus3/rpc/pool.py nexus3/rpc/pool_create.py`
+    - `.venv/bin/pytest -q tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_auto_restore.py tests/unit/test_pool.py -k "create_ or create_temp or restore_ or get_or_restore or mcp_visibility or gitlab_visibility"` (`43 passed`)
+- 2026-03-09: Phase 3C (Pool restore-path extraction) completed in WSL.
+  - Added `nexus3/rpc/pool_restore.py` and moved `get_or_restore(...)`,
+    `_restore_unlocked(...)`, and `restore_from_saved(...)` internals to
+    dependency-injected runtime helpers.
+  - `pool.py` now retains thin wrappers + restore dependency-bundle builders
+    for compatibility.
+  - Focused validation passed:
+    - `.venv/bin/ruff check nexus3/rpc/pool.py nexus3/rpc/pool_restore.py`
+    - `.venv/bin/mypy nexus3/rpc/pool.py nexus3/rpc/pool_restore.py`
+    - `.venv/bin/pytest -q tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_auto_restore.py tests/unit/test_pool.py -k "create_ or create_temp or restore_ or get_or_restore or mcp_visibility or gitlab_visibility"` (`43 passed`)
+    - `.venv/bin/pytest -q tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py` (`51 passed`)
+- Next gate: execute remaining Pool lifecycle extraction slice with focused
+  parity checks, then remove temporary compatibility wrappers.
 
 ## Testing Strategy
 

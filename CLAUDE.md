@@ -1463,6 +1463,17 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - no-op override argument path was removed with runtime behavior preserved.
   - display README and tests now document/assert the canonical theme-loader
     contract.
+- Structural-refactor Phase 3B (Pool create-path extraction foundation) is
+  completed:
+  - `nexus3/rpc/pool_create.py` now owns create authorization adapter and
+    create-path runtime helper foundations.
+  - `AgentPool.create(...)`, `create_temp(...)`, and create-authorization
+    enforcement now delegate to extracted helpers.
+- Structural-refactor Phase 3C (Pool restore-path extraction) is completed:
+  - `nexus3/rpc/pool_restore.py` now owns restore runtime helper internals.
+  - `AgentPool.get_or_restore(...)`, `_restore_unlocked(...)`, and
+    `restore_from_saved(...)` now delegate to dependency-injected restore
+    helpers via thin compatibility wrappers.
 - Focused validation snapshot:
   - passed:
     `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
@@ -1572,6 +1583,16 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - passed:
     `.venv/bin/pytest -q tests/unit/test_display.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py`
     (`137 passed`).
+  - passed:
+    `.venv/bin/ruff check nexus3/rpc/pool.py nexus3/rpc/pool_create.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_visibility.py`
+  - passed:
+    `.venv/bin/mypy nexus3/rpc/pool.py nexus3/rpc/pool_create.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_visibility.py`
+  - passed:
+    `.venv/bin/pytest -q tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_auto_restore.py tests/unit/test_pool.py -k "create_ or create_temp or restore_ or get_or_restore or mcp_visibility or gitlab_visibility"`
+    (`43 passed`).
+  - passed:
+    `.venv/bin/pytest -q tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py`
+    (`51 passed`).
   - passed (live smoke):
     `NEXUS_DEV=1 .venv/bin/python -m nexus3 --serve 9000`,
     `.venv/bin/python -m nexus3 rpc create test-agent --port 9000`,
@@ -1603,21 +1624,19 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - Plan C slices 1-3 follow-on is committed as `5c0e843` and `8143afe`.
   - Provider keep-alive kickoff slice is committed as `05ffb84`
     (`base.py`, `test_keepalive_recovery.py`, Step 10 JSON evidence).
-  - Structural-refactor Phase 2A/2B/2C/2D/2E/2F/2G/2H + Phase 3A/4A slices are
-    complete
+  - Structural-refactor Phase 2A/2B/2C/2D/2E/2F/2G/2H + Phase 3A/3B/3C/4A
+    slices are complete
     (`compaction_runtime.py`, `tool_runtime.py`, and
     `permission_runtime.py`, `single_tool_runtime.py`,
     `streaming_runtime.py`, `tool_loop_events_runtime.py`,
-    `turn_entry_runtime.py`, `simple_turn_runtime.py`,
-    `pool_visibility.py` extracted; `session.py` compaction/tool/permission/
-    single-tool/streaming/tool-loop methods remain compatibility wrappers, and
-    `send(...)` / `run_turn(...)` now share turn-entry preflight/reset via
-    `prepare_turn_entry(...)` and non-tool simple-turn runtime helpers via
-    `simple_turn_runtime.py`; display theme loader contract now uses
-    `load_theme()` without no-op overrides).
+    `turn_entry_runtime.py`, `simple_turn_runtime.py`, `pool_visibility.py`,
+    `pool_create.py`, `pool_restore.py` extracted; `session.py` and `pool.py`
+    retain compatibility wrappers while delegating extracted internals;
+    display theme loader contract now uses `load_theme()` without no-op
+    overrides).
 - Concrete resume steps for post-compact continuation:
-  1. Execute remaining pool extraction slices
-     (create/restore/lifecycle) with focused parity checks.
+  1. Execute remaining pool lifecycle extraction slice with focused parity
+     checks.
   2. Remove temporary compatibility wrappers after one full green cycle.
   3. Run manual endpoint validation with
      `scripts/diagnose-empty-stream.sh` and archive `10-keepalive-evidence.json`

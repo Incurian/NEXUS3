@@ -579,9 +579,31 @@ Immediate tasks:
     `.venv/bin/ruff check nexus3/display/theme.py nexus3/display/README.md tests/unit/test_display.py`,
     `.venv/bin/mypy nexus3/display/theme.py nexus3/cli/repl.py nexus3/display/manager.py nexus3/display/spinner.py`,
     `.venv/bin/pytest -q tests/unit/test_display.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py` (`137 passed`).
-- Next target: execute remaining Pool extraction slices
-  (create/restore/lifecycle) with focused parity checks, then remove temporary
-  compatibility wrappers.
+- Completed (2026-03-09, structural-refactor Phase 3B): pool create-path
+  extraction foundation:
+  - added `nexus3/rpc/pool_create.py`.
+  - extracted create authorization adapter + lock-wrapper/runtime helper
+    internals there.
+  - `AgentPool.create(...)`, `create_temp(...)`, and
+    create-authorization enforcement now delegate to extracted helpers.
+  - focused validation passed:
+    `.venv/bin/ruff check nexus3/rpc/pool.py nexus3/rpc/pool_create.py`,
+    `.venv/bin/mypy nexus3/rpc/pool.py nexus3/rpc/pool_create.py`,
+    `.venv/bin/pytest -q tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_auto_restore.py tests/unit/test_pool.py -k "create_ or create_temp or restore_ or get_or_restore or mcp_visibility or gitlab_visibility"` (`43 passed`).
+- Completed (2026-03-09, structural-refactor Phase 3C): pool restore-path
+  extraction:
+  - added `nexus3/rpc/pool_restore.py`.
+  - moved restore internals (`get_or_restore(...)`,
+    `_restore_unlocked(...)`, `restore_from_saved(...)`) to
+    dependency-injected runtime helpers while keeping compatibility wrappers in
+    `pool.py`.
+  - focused validation passed:
+    `.venv/bin/ruff check nexus3/rpc/pool.py nexus3/rpc/pool_restore.py`,
+    `.venv/bin/mypy nexus3/rpc/pool.py nexus3/rpc/pool_restore.py`,
+    `.venv/bin/pytest -q tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_auto_restore.py tests/unit/test_pool.py -k "create_ or create_temp or restore_ or get_or_restore or mcp_visibility or gitlab_visibility"` (`43 passed`),
+    `.venv/bin/pytest -q tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py` (`51 passed`).
+- Next target: execute remaining Pool lifecycle extraction slice with focused
+  parity checks, then remove temporary compatibility wrappers.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with

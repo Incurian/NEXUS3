@@ -77,6 +77,9 @@ HTTP Client
 | `global_dispatcher.py` | Global methods (create/destroy/list agents) |
 | `dispatch_core.py` | Shared dispatch infrastructure |
 | `pool.py` | `AgentPool`, `Agent`, `SharedComponents`, `AgentConfig` |
+| `pool_visibility.py` | Extracted MCP/GitLab visibility adapters and helpers |
+| `pool_create.py` | Extracted create-path authorization and runtime helpers |
+| `pool_restore.py` | Extracted restore-path runtime helpers |
 | `agent_api.py` | In-process API (`DirectAgentAPI`, `AgentScopedAPI`) |
 | `auth.py` | Token generation, validation, secure storage |
 | `detection.py` | Server detection and probing |

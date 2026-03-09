@@ -36,12 +36,11 @@ from __future__ import annotations
 
 import asyncio
 import copy
-import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from nexus3.clipboard import CLIPBOARD_PRESETS, ClipboardManager
@@ -53,7 +52,6 @@ from nexus3.core.authorization_kernel import (
     AuthorizationRequest,
     AuthorizationResource,
     AuthorizationResourceType,
-    CreateAuthorizationContext,
     CreateAuthorizationStage,
 )
 from nexus3.core.capabilities import (
@@ -74,6 +72,34 @@ from nexus3.core.permissions import (
 from nexus3.mcp.registry import MCPServerRegistry
 from nexus3.rpc.dispatcher import Dispatcher
 from nexus3.rpc.log_multiplexer import LogMultiplexer
+from nexus3.rpc.pool_create import (
+    _CreateAuthorizationAdapter,
+)
+from nexus3.rpc.pool_create import (
+    create as create_runtime,
+)
+from nexus3.rpc.pool_create import (
+    create_temp as create_temp_runtime,
+)
+from nexus3.rpc.pool_create import (
+    enforce_create_authorization as enforce_create_authorization_runtime,
+)
+from nexus3.rpc.pool_restore import (
+    RestoreRuntimeDeps,
+    RestoreSharedDeps,
+)
+from nexus3.rpc.pool_restore import (
+    _restore_unlocked as restore_unlocked_runtime,
+)
+from nexus3.rpc.pool_restore import (
+    default_logger_factory as restore_logger_factory,
+)
+from nexus3.rpc.pool_restore import (
+    get_or_restore as get_or_restore_runtime,
+)
+from nexus3.rpc.pool_restore import (
+    restore_from_saved as restore_from_saved_runtime,
+)
 from nexus3.rpc.pool_visibility import (
     _convert_gitlab_config,
     _GitLabVisibilityAuthorizationAdapter,
@@ -82,11 +108,7 @@ from nexus3.rpc.pool_visibility import (
     is_mcp_visible_for_agent,
 )
 from nexus3.session import LogConfig, LogStream, Session, SessionLogger
-from nexus3.session.persistence import (
-    SavedSession,
-    deserialize_clipboard_entries,
-    deserialize_messages,
-)
+from nexus3.session.persistence import SavedSession
 from nexus3.skill import ServiceContainer, SkillRegistry
 from nexus3.skill.vcs import register_vcs_skills
 
@@ -127,109 +149,6 @@ class _DestroyAuthorizationAdapter:
         if isinstance(target_parent_agent_id, str) and target_parent_agent_id == requester_id:
             return AuthorizationDecision.allow(request, reason="parent_destroy")
         return AuthorizationDecision.deny(request, reason="not_parent_or_self")
-
-
-class _CreateAuthorizationAdapter:
-    """Kernel adapter mirroring legacy AgentPool.create parent ceiling checks."""
-
-    @staticmethod
-    def _deserialize_permissions(payload_json: str | None) -> AgentPermissions | None:
-        if not isinstance(payload_json, str):
-            return None
-        try:
-            raw_payload = json.loads(payload_json)
-        except json.JSONDecodeError:
-            return None
-        if not isinstance(raw_payload, dict):
-            return None
-        try:
-            typed_payload = cast(dict[str, Any], raw_payload)
-            return AgentPermissions.from_dict(typed_payload)
-        except (KeyError, TypeError, ValueError):
-            return None
-
-    def _evaluate_parent_ceiling(self, create_context: CreateAuthorizationContext) -> bool | None:
-        parent_permissions = self._deserialize_permissions(
-            create_context.parent_permissions_json
-        )
-        requested_permissions = self._deserialize_permissions(
-            create_context.requested_permissions_json
-        )
-        if parent_permissions is None or requested_permissions is None:
-            return None
-        return parent_permissions.can_grant(requested_permissions)
-
-    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
-        if request.action != AuthorizationAction.AGENT_CREATE:
-            return None
-        if request.resource.resource_type != AuthorizationResourceType.AGENT:
-            return None
-
-        create_context = CreateAuthorizationContext.from_context_map(request.context)
-        if create_context is None:
-            return AuthorizationDecision.deny(request, reason="invalid_create_context")
-
-        check_stage = create_context.check_stage
-        if check_stage == CreateAuthorizationStage.LIFECYCLE_ENTRY:
-            return AuthorizationDecision.allow(request, reason="create_lifecycle_entry")
-
-        if check_stage == CreateAuthorizationStage.MAX_DEPTH:
-            if create_context.parent_depth >= create_context.max_depth:
-                return AuthorizationDecision.deny(
-                    request,
-                    reason="max_depth_exceeded",
-                )
-            return AuthorizationDecision.allow(request, reason="within_max_depth")
-
-        if check_stage == CreateAuthorizationStage.BASE_CEILING:
-            parent_can_grant = self._evaluate_parent_ceiling(create_context)
-            if parent_can_grant is None:
-                return AuthorizationDecision.deny(request, reason="invalid_create_context")
-            if parent_can_grant is True:
-                return AuthorizationDecision.allow(
-                    request,
-                    reason="base_preset_within_parent_ceiling",
-                )
-            return AuthorizationDecision.deny(
-                request,
-                reason="base_preset_exceeds_parent_ceiling",
-            )
-
-        if check_stage == CreateAuthorizationStage.DELTA_CEILING:
-            parent_can_grant = self._evaluate_parent_ceiling(create_context)
-            if parent_can_grant is None:
-                return AuthorizationDecision.deny(request, reason="invalid_create_context")
-            if parent_can_grant is True:
-                return AuthorizationDecision.allow(
-                    request,
-                    reason="delta_within_parent_ceiling",
-                )
-            return AuthorizationDecision.deny(
-                request,
-                reason="delta_exceeds_parent_ceiling",
-            )
-
-        if check_stage == CreateAuthorizationStage.REQUESTER_PARENT_BINDING:
-            parent_agent_id = create_context.parent_agent_id
-            if not isinstance(parent_agent_id, str):
-                return AuthorizationDecision.allow(
-                    request,
-                    reason="no_parent_binding",
-                )
-            if request.principal_id == "external":
-                return AuthorizationDecision.allow(
-                    request,
-                    reason="external_requester",
-                )
-            if request.principal_id == parent_agent_id:
-                return AuthorizationDecision.allow(
-                    request,
-                    reason="requester_matches_parent",
-                )
-            return AuthorizationDecision.deny(
-                request,
-                reason="requester_parent_mismatch",
-            )
 
 class AuthorizationError(Exception):
     """Raised when an operation is not authorized.
@@ -654,12 +573,13 @@ class AgentPool:
         Raises:
             ValueError: If an agent with the given ID already exists.
         """
-        async with self._lock:
-            return await self._create_unlocked(
-                agent_id=agent_id,
-                config=config,
-                requester_id=requester_id,
-            )
+        return await create_runtime(
+            lock=self._lock,
+            create_unlocked_fn=self._create_unlocked,
+            agent_id=agent_id,
+            config=config,
+            requester_id=requester_id,
+        )
 
     async def _create_unlocked(
         self,
@@ -1023,36 +943,18 @@ class AgentPool:
         parent_agent_id: str | None = None,
     ) -> None:
         """Apply create authorization kernel decision for a specific create stage."""
-        create_context = CreateAuthorizationContext(
+        enforce_create_authorization_runtime(
+            kernel=self._create_authorization_kernel,
+            target_agent_id=target_agent_id,
+            requester_id=requester_id,
             check_stage=check_stage,
             parent_depth=parent_depth,
-            max_depth=MAX_AGENT_DEPTH,
-            parent_permissions_json=self._serialize_create_permissions(parent_permissions),
-            requested_permissions_json=self._serialize_create_permissions(
-                requested_permissions
-            ),
+            denial_message=denial_message,
+            parent_permissions=parent_permissions,
+            requested_permissions=requested_permissions,
             parent_agent_id=parent_agent_id,
+            max_agent_depth=MAX_AGENT_DEPTH,
         )
-        kernel_context = create_context.to_context_map()
-
-        kernel_request = AuthorizationRequest(
-            action=AuthorizationAction.AGENT_CREATE,
-            resource=AuthorizationResource(
-                resource_type=AuthorizationResourceType.AGENT,
-                identifier=target_agent_id,
-            ),
-            principal_id=requester_id,
-            context=kernel_context,
-        )
-        kernel_decision = self._create_authorization_kernel.authorize(kernel_request)
-        if not kernel_decision.allowed:
-            raise PermissionError(denial_message)
-
-    @staticmethod
-    def _serialize_create_permissions(permissions: AgentPermissions | None) -> str | None:
-        if permissions is None:
-            return None
-        return json.dumps(permissions.to_dict(), sort_keys=True)
 
     def _is_mcp_visible_for_agent(
         self,
@@ -1084,6 +986,24 @@ class AgentPool:
             check_stage=check_stage,
         )
 
+    @staticmethod
+    def _build_temp_agent_config(
+        config: AgentConfig | None,
+        temp_id: str,
+    ) -> AgentConfig:
+        """Build temp-agent config while preserving non-ID options."""
+        effective_config = config or AgentConfig()
+        return AgentConfig(
+            agent_id=temp_id,
+            system_prompt=effective_config.system_prompt,
+            preset=effective_config.preset,
+            cwd=effective_config.cwd,
+            model=effective_config.model,
+            delta=effective_config.delta,
+            parent_permissions=effective_config.parent_permissions,
+            parent_agent_id=effective_config.parent_agent_id,
+        )
+
     async def create_temp(self, config: AgentConfig | None = None) -> Agent:
         """Create a new temp agent with auto-generated ID.
 
@@ -1110,27 +1030,14 @@ class AgentPool:
             agent2 = await pool.create_temp()
             print(agent2.agent_id)  # ".2"
         """
-        # P1.9 SECURITY FIX: Hold lock for entire operation to prevent race condition
-        # Previously, lock was released between generate_temp_id() and create(), allowing
-        # concurrent calls to generate the same ID before either stored it
-        async with self._lock:
-            temp_id = generate_temp_id(set(self._agents.keys()))
-
-            # Create agent with the temp ID
-            effective_config = config or AgentConfig()
-            # Override any agent_id in config with the temp ID
-            effective_config = AgentConfig(
-                agent_id=temp_id,
-                system_prompt=effective_config.system_prompt,
-                preset=effective_config.preset,
-                cwd=effective_config.cwd,
-                model=effective_config.model,
-                delta=effective_config.delta,
-                parent_permissions=effective_config.parent_permissions,
-                parent_agent_id=effective_config.parent_agent_id,
-            )
-            # Use _create_unlocked since we already hold the lock
-            return await self._create_unlocked(config=effective_config)
+        return await create_temp_runtime(
+            lock=self._lock,
+            existing_agent_ids=lambda: self._agents.keys(),
+            generate_temp_id=generate_temp_id,
+            build_temp_config=self._build_temp_agent_config,
+            create_unlocked_fn=self._create_unlocked,
+            config=config,
+        )
 
     def is_temp(self, agent_id: str) -> bool:
         """Check if an agent ID represents a temp agent.
@@ -1151,254 +1058,45 @@ class AgentPool:
         agent_id: str,
         session_manager: SessionManager | None = None,
     ) -> Agent | None:
-        """Get agent, restoring from saved session if needed.
-
-        This is atomic - concurrent calls for the same agent_id are safe.
-        The lock is held throughout the check-and-restore operation to prevent
-        TOCTOU race conditions where multiple requests could try to restore
-        the same saved session simultaneously.
-
-        Args:
-            agent_id: The ID of the agent to get or restore.
-            session_manager: Optional session manager for loading saved sessions.
-                           If None, only returns active agents.
-
-        Returns:
-            The Agent instance if found or restored, None if not found and
-            cannot be restored.
-
-        Example:
-            # Safe for concurrent requests
-            agent = await pool.get_or_restore("worker-1", session_manager)
-            if agent:
-                response = await agent.dispatcher.dispatch(request)
-        """
-        async with self._lock:
-            # Check 1: Already active?
-            if agent_id in self._agents:
-                return self._agents[agent_id]
-
-            # Check 2: Can restore?
-            if session_manager is not None and session_manager.session_exists(agent_id):
-                saved = session_manager.load_session(agent_id)
-                return await self._restore_unlocked(saved)
-
-            return None
+        """Get agent, restoring from saved session if needed."""
+        return await get_or_restore_runtime(
+            agent_id=agent_id,
+            session_manager=session_manager,
+            runtime=self._build_restore_runtime_deps(),
+            restore_unlocked=self._restore_unlocked,
+        )
 
     async def _restore_unlocked(self, saved: SavedSession) -> Agent:
-        """Internal restore logic - caller MUST hold self._lock.
-
-        This is the actual restoration logic, factored out to allow
-        get_or_restore() to hold the lock while both checking for existing
-        agents AND restoring from saved session (TOCTOU race condition fix).
-
-        Args:
-            saved: The SavedSession containing the agent's persisted state.
-
-        Returns:
-            The restored Agent instance with full conversation history.
-
-        Raises:
-            ValueError: If an agent with the saved session's ID already exists.
-        """
-        agent_id = saved.agent_id
-
-        # Validate agent ID for path traversal attacks (P0.5 security fix)
-        validate_agent_id(agent_id)
-
-        # Check for duplicate (caller should have checked, but defense-in-depth)
-        if agent_id in self._agents:
-            raise ValueError(f"Agent already exists: {agent_id}")
-
-        # Create agent log directory
-        agent_log_dir = self._shared.base_log_dir / agent_id
-
-        # Create session logger
-        log_config = LogConfig(
-            base_dir=agent_log_dir,
-            streams=self._shared.log_streams,
-            mode="agent",
-        )
-        logger = SessionLogger(log_config)
-
-        # Register raw logging callback with the multiplexer
-        raw_callback = logger.get_raw_log_callback()
-        if raw_callback is not None:
-            self._log_multiplexer.register(agent_id, raw_callback)
-
-        # Use system prompt from saved session
-        system_prompt = saved.system_prompt
-
-        # Resolve model for context window
-        resolved_model = self._shared.config.resolve_model(saved.model_alias)
-
-        # Create skill registry with services
-        from nexus3.skill.builtin import register_builtin_skills
-
-        services = ServiceContainer()
-
-        # Resolve permissions from saved session or fall back to default
-        preset_name = (
-            saved.permission_preset
-            if saved.permission_preset
-            else self._shared.config.permissions.default_preset
-        )
-        try:
-            permissions = resolve_preset(preset_name, self._shared.custom_presets)
-        except ValueError:
-            # Fall back to sandboxed if preset not found
-            permissions = resolve_preset("sandboxed", self._shared.custom_presets)
-
-        # Apply disabled_tools from saved session
-        if saved.disabled_tools:
-            delta = PermissionDelta(disable_tools=saved.disabled_tools)
-            permissions = permissions.apply_delta(delta)
-
-        # Register agent_id, permissions, cwd, model and MCP registry
-        services.register("agent_id", agent_id)
-        services.set_permissions(permissions)
-        services.register("mcp_registry", self._shared.mcp_registry)
-        services.set_model(resolved_model)  # ResolvedModel for /model command
-        # Per-agent cwd for isolation (restored from saved session)
-        agent_cwd = Path(saved.working_directory) if saved.working_directory else Path.cwd()
-        services.set_cwd(agent_cwd)
-
-        # Create ClipboardManager based on permission level
-        permission_level = permissions.effective_policy.level
-        if permission_level == PermissionLevel.YOLO:
-            clipboard_perms = CLIPBOARD_PRESETS["yolo"]
-        elif permission_level == PermissionLevel.TRUSTED:
-            clipboard_perms = CLIPBOARD_PRESETS["trusted"]
-        else:  # SANDBOXED or unknown - fail safe
-            clipboard_perms = CLIPBOARD_PRESETS["sandboxed"]
-
-        clipboard_manager = ClipboardManager(
-            agent_id=agent_id,
-            cwd=agent_cwd,
-            permissions=clipboard_perms,
-        )
-        services.register("clipboard_manager", clipboard_manager)
-
-        # Restore agent-scope clipboard entries if present
-        if saved.clipboard_agent_entries:
-            entries = deserialize_clipboard_entries(saved.clipboard_agent_entries)
-            clipboard_manager.restore_agent_entries(entries)
-
-        # Create context manager with saved model's context window
-        context_config = ContextConfig(
-            max_tokens=resolved_model.context_window,
-        )
-        context = ContextManager(
-            config=context_config,
-            logger=logger,
-            agent_id=agent_id,
-            clipboard_manager=clipboard_manager,
-            clipboard_config=self._shared.config.clipboard,
-        )
-        context.set_system_prompt(system_prompt)
-
-        # Restore conversation history from saved session
-        messages = deserialize_messages(saved.messages)
-        for msg in messages:
-            context._messages.append(msg)
-
-        # Refresh git repository context
-        context.refresh_git_context(agent_cwd)
-
-        # Register GitLab config for VCS skills
-        gitlab_config = _convert_gitlab_config(self._shared.config)
-        if gitlab_config:
-            services.register("gitlab_config", gitlab_config)
-
-        # Register AgentAPI for in-process communication (bypasses HTTP).
-        # requester_id is retained for compatibility while direct capabilities
-        # are issued per call by AgentAPI via pool.issue_direct_capability().
-        if self._global_dispatcher is not None:
-            from nexus3.rpc.agent_api import DirectAgentAPI
-            agent_api = DirectAgentAPI(self, self._global_dispatcher, requester_id=agent_id)
-            services.register("agent_api", agent_api)
-
-        registry = SkillRegistry(services)
-        register_builtin_skills(registry)
-
-        # Register VCS skills (GitLab, GitHub) if configured
-        register_vcs_skills(
-            registry,
-            services,
-            permissions,
-            gitlab_visible=self._is_gitlab_visible_for_agent(
-                agent_id=agent_id,
-                permissions=permissions,
-                check_stage="restore",
-            ),
+        """Internal restore logic - caller MUST hold self._lock."""
+        return await restore_unlocked_runtime(
+            saved=saved,
+            shared=self._build_restore_shared_deps(),
+            runtime=self._build_restore_runtime_deps(),
         )
 
-        # Default gitlab skills to disabled (user enables via /gitlab on)
-        # Guard: skip tools already in tool_permissions (e.g. restored sessions)
-        for skill_name in list(registry._specs):
-            if skill_name.startswith("gitlab_") and skill_name not in permissions.tool_permissions:
-                permissions.tool_permissions[skill_name] = ToolPermission(enabled=False)
-
-        # SECURITY FIX: Inject only enabled tool definitions into context
-        # Disabled tools should not be visible to the LLM at all
-        tool_defs = registry.get_definitions_for_permissions(permissions)
-
-        # Add MCP tools if agent has MCP permission (TRUSTED/YOLO only)
-        # Only include tools from MCP servers visible to this agent
-        if self._is_mcp_visible_for_agent(
-            agent_id=agent_id,
-            permissions=permissions,
-            check_stage="restore",
-        ):
-            for mcp_skill in await self._shared.mcp_registry.get_all_skills(agent_id=agent_id):
-                # Check if MCP tool is disabled in permissions
-                tool_perm = permissions.tool_permissions.get(mcp_skill.name)
-                if tool_perm is not None and not tool_perm.enabled:
-                    continue
-                tool_defs.append({
-                    "type": "function",
-                    "function": {
-                        "name": mcp_skill.name,
-                        "description": mcp_skill.description,
-                        "parameters": mcp_skill.parameters,
-                    },
-                })
-
-        context.set_tool_definitions(tool_defs)
-
-        # Get the provider from the registry for restored sessions
-        # Model alias is now persisted in SavedSession and restored here
-        provider = self._shared.provider_registry.get(
-            resolved_model.provider_name,
-            resolved_model.model_id,
-            resolved_model.reasoning,
+    async def restore_from_saved(self, saved: SavedSession) -> Agent:
+        """Restore an agent from a saved session."""
+        return await restore_from_saved_runtime(
+            saved=saved,
+            runtime=self._build_restore_runtime_deps(),
+            restore_unlocked=self._restore_unlocked,
         )
 
-        # Create session with context and services for permission enforcement
-        session = Session(
-            provider,
-            context=context,
-            logger=logger,
-            registry=registry,
-            skill_timeout=self._shared.config.skill_timeout,
-            max_concurrent_tools=self._shared.config.max_concurrent_tools,
-            services=services,
-            config=self._shared.config,
-            context_loader=self._shared.context_loader,
-            is_repl=self._shared.is_repl,
-        )
-
-        # Create dispatcher with context for token info and log multiplexer
-        dispatcher = Dispatcher(
-            session,
-            context=context,
-            agent_id=agent_id,
-            log_multiplexer=self._log_multiplexer,
-            pool=self,
-        )
-
-        # Create agent instance with saved creation time if available
-        agent = Agent(
+    @staticmethod
+    def _restore_agent_factory(
+        *,
+        agent_id: str,
+        logger: SessionLogger,
+        context: ContextManager,
+        services: ServiceContainer,
+        registry: SkillRegistry,
+        session: Session,
+        dispatcher: Dispatcher,
+        created_at: datetime | None = None,
+    ) -> Agent:
+        """Construct Agent instance from restore runtime components."""
+        effective_created_at = created_at if created_at is not None else datetime.now()
+        return Agent(
             agent_id=agent_id,
             logger=logger,
             context=context,
@@ -1406,41 +1104,37 @@ class AgentPool:
             registry=registry,
             session=session,
             dispatcher=dispatcher,
-            created_at=saved.created_at,
+            created_at=effective_created_at,
         )
 
-        # Store in pool
-        self._agents[agent_id] = agent
+    def _build_restore_shared_deps(self) -> RestoreSharedDeps:
+        """Build shared dependency bundle for extracted restore helpers."""
+        return RestoreSharedDeps(
+            config=self._shared.config,
+            provider_registry=self._shared.provider_registry,
+            base_log_dir=self._shared.base_log_dir,
+            context_loader=self._shared.context_loader,
+            log_streams=self._shared.log_streams,
+            custom_presets=dict(self._shared.custom_presets),
+            mcp_registry=self._shared.mcp_registry,
+            is_repl=self._shared.is_repl,
+        )
 
-        return agent
-
-    async def restore_from_saved(self, saved: SavedSession) -> Agent:
-        """Restore an agent from a saved session.
-
-        Creates a new agent with the saved session's state, including
-        conversation history, system prompt, and other configuration.
-        This is used for cross-session auto-restore when external requests
-        target inactive saved sessions.
-
-        Note: For atomic get-or-restore operations, prefer get_or_restore()
-        which handles the TOCTOU race condition properly.
-
-        Args:
-            saved: The SavedSession containing the agent's persisted state.
-
-        Returns:
-            The restored Agent instance with full conversation history.
-
-        Raises:
-            ValueError: If an agent with the saved session's ID already exists.
-
-        Example:
-            saved = session_manager.load_session("archived-helper")
-            agent = await pool.restore_from_saved(saved)
-            # Agent now has its full conversation history restored
-        """
-        async with self._lock:
-            return await self._restore_unlocked(saved)
+    def _build_restore_runtime_deps(self) -> RestoreRuntimeDeps[Agent]:
+        """Build runtime dependency bundle for extracted restore helpers."""
+        return RestoreRuntimeDeps(
+            agents=self._agents,
+            lock=self._lock,
+            log_multiplexer=self._log_multiplexer,
+            pool_ref=self,
+            global_dispatcher=self._global_dispatcher,
+            validate_agent_id=validate_agent_id,
+            is_mcp_visible_for_agent=self._is_mcp_visible_for_agent,
+            is_gitlab_visible_for_agent=self._is_gitlab_visible_for_agent,
+            agent_factory=self._restore_agent_factory,
+            logger_factory=restore_logger_factory,
+            register_vcs_skills_fn=register_vcs_skills,
+        )
 
     async def destroy(
         self,
