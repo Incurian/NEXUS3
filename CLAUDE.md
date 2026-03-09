@@ -1412,6 +1412,17 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - Session permission-handling methods remain thin wrappers for compatibility.
   - behavior parity preserved (kernel-authoritative decisions and confirmation
     flows).
+- Structural-refactor Phase 2D (Session single-tool runtime extraction)
+  is completed:
+  - `nexus3/session/single_tool_runtime.py` now owns single-tool execution
+    runtime helpers.
+  - `Session._execute_single_tool(...)` remains a thin wrapper for
+    compatibility.
+  - behavior parity preserved (permissions fail-closed, enforcer checks and
+    confirmation flow including multi-path allowances, skill
+    resolution/unknown-skill handling, malformed `_raw_arguments` handling,
+    argument validation, effective timeout derivation, and MCP/GitLab
+    delegation).
 - Focused validation snapshot:
   - passed:
     `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
@@ -1458,6 +1469,16 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
     `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py`
     (`30 passed`).
   - passed:
+    `.venv/bin/ruff check nexus3/session/session.py nexus3/session/compaction_runtime.py nexus3/session/tool_runtime.py nexus3/session/permission_runtime.py nexus3/session/single_tool_runtime.py`
+  - passed:
+    `.venv/bin/mypy nexus3/session/session.py nexus3/session/compaction_runtime.py nexus3/session/tool_runtime.py nexus3/session/permission_runtime.py nexus3/session/single_tool_runtime.py`
+  - passed:
+    `.venv/bin/pytest -q tests/unit/session/test_session_permission_kernelization.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_cancellation.py`
+    (`54 passed`).
+  - passed:
+    `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py`
+    (`30 passed`).
+  - passed:
     `.venv/bin/ruff check nexus3/rpc/global_dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py`
   - passed:
     `.venv/bin/mypy nexus3/rpc/global_dispatcher.py`
@@ -1482,13 +1503,15 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - Plan C slices 1-3 follow-on is committed as `5c0e843` and `8143afe`.
   - Provider keep-alive kickoff slice is committed as `05ffb84`
     (`base.py`, `test_keepalive_recovery.py`, Step 10 JSON evidence).
-  - Structural-refactor Phase 2A/2B/2C extraction is complete
+  - Structural-refactor Phase 2A/2B/2C/2D extraction is complete
     (`compaction_runtime.py`, `tool_runtime.py`, and
-    `permission_runtime.py` extracted; `session.py` compaction/tool/permission
-    methods remain compatibility wrappers).
+    `permission_runtime.py`, `single_tool_runtime.py` extracted; `session.py`
+    compaction/tool/permission/single-tool methods remain compatibility
+    wrappers).
 - Concrete resume steps for post-compact continuation:
   1. Execute remaining Session extraction internals
-     (tool-loop/core send-turn internals) with focused parity checks.
+     (tool-loop/core send-turn internals; event-loop/send-turn extraction)
+     with focused parity checks.
   2. Run manual endpoint validation with
      `scripts/diagnose-empty-stream.sh` and archive `10-keepalive-evidence.json`
      from at least one problematic and one known-good endpoint run when real

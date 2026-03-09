@@ -30,7 +30,6 @@ from nexus3.core.types import (
     ToolCallStarted,
     ToolResult,
 )
-from nexus3.core.validation import ValidationError, validate_tool_arguments
 from nexus3.session.compaction_runtime import (
     generate_summary as generate_compaction_summary,
 )
@@ -65,6 +64,9 @@ from nexus3.session.permission_runtime import (
 )
 from nexus3.session.permission_runtime import (
     handle_mcp_permissions as handle_mcp_permissions_runtime,
+)
+from nexus3.session.single_tool_runtime import (
+    execute_single_tool as execute_single_tool_runtime,
 )
 from nexus3.session.tool_runtime import (
     execute_skill as execute_skill_runtime,
@@ -888,96 +890,19 @@ class Session:
         Returns:
             The tool result.
         """
-        permissions = self._services.get_permissions() if self._services else None
-
-        # Fail-closed: require permissions for tool execution (H3 fix)
-        if permissions is None:
-            return ToolResult(
-                error="Tool execution denied: permissions not configured. "
-                "This is a programming error - all Sessions should have permissions."
-            )
-
-        # 1. Permission checks (enabled, action allowed, path restrictions)
-        error = self._enforcer.check_all(tool_call, permissions)
-        if error:
-            return error
-
-        # 2. Check if confirmation needed
-        if self._enforcer.requires_confirmation(tool_call, permissions):
-            # Fix 1.2: Get display path and ALL write paths for multi-path tools
-            display_path, write_paths = self._enforcer.get_confirmation_context(tool_call)
-            exec_cwd = self._enforcer.extract_exec_cwd(tool_call)
-            agent_cwd = self._services.get_cwd() if self._services else Path.cwd()
-
-            # Show confirmation for the write target (display_path)
-            result = await self._confirmation.request(
-                tool_call, display_path, agent_cwd, self.on_confirm
-            )
-
-            if result == ConfirmationResult.DENY:
-                return ToolResult(error="Action cancelled by user")
-
-            # Fix 1.2: Apply allowance to ALL write paths (e.g., destination for copy_file)
-            if permissions and write_paths:
-                for write_path in write_paths:
-                    self._confirmation.apply_result(
-                        permissions, result, tool_call, write_path, exec_cwd
-                    )
-            elif permissions:
-                # Fallback for tools without explicit write paths (e.g., exec tools)
-                self._confirmation.apply_result(
-                    permissions, result, tool_call, display_path, exec_cwd
-                )
-
-        # 3. Resolve skill
-        skill, mcp_server_name = self._dispatcher.find_skill(tool_call)
-
-        # 4. MCP permission check and confirmation (if MCP skill)
-        if mcp_server_name and permissions:
-            error = await self._handle_mcp_permissions(
-                tool_call, skill, mcp_server_name, permissions
-            )
-            if error:
-                return error
-
-        # 4b. GitLab permission check and confirmation (if GitLab skill)
-        if tool_call.name.startswith("gitlab_") and permissions:
-            error = await self._handle_gitlab_permissions(
-                tool_call, skill, permissions
-            )
-            if error:
-                return error
-
-        # 5. Unknown skill check
-        if not skill:
-            logger.debug("Unknown skill requested: %s", tool_call.name)
-            return ToolResult(error=f"Unknown skill: {tool_call.name}")
-
-        # 6. Check for malformed/truncated tool call JSON
-        if "_raw_arguments" in tool_call.arguments:
-            raw = tool_call.arguments["_raw_arguments"]
-            preview = raw[:200] + "..." if len(raw) > 200 else raw
-            return ToolResult(
-                error=f"Tool call for {tool_call.name} had malformed JSON arguments "
-                f"(likely truncated response). Raw text: {preview}\n"
-                f"Please retry the tool call with valid, complete JSON."
-            )
-
-        # 7. Validate arguments
-        try:
-            args = validate_tool_arguments(
-                tool_call.arguments,
-                skill.parameters,
-            )
-        except ValidationError as e:
-            return ToolResult(error=f"Invalid arguments for {tool_call.name}: {e.message}")
-
-        # 7. Execute with timeout
-        effective_timeout = self._enforcer.get_effective_timeout(
-            tool_call.name, permissions, self.skill_timeout
+        return await execute_single_tool_runtime(
+            tool_call=tool_call,
+            services=self._services,
+            enforcer=self._enforcer,
+            confirmation=self._confirmation,
+            dispatcher=self._dispatcher,
+            on_confirm=self.on_confirm,
+            handle_mcp_permissions=self._handle_mcp_permissions,
+            handle_gitlab_permissions=self._handle_gitlab_permissions,
+            execute_skill=self._execute_skill,
+            skill_timeout=self.skill_timeout,
+            runtime_logger=logger,
         )
-
-        return await self._execute_skill(skill, args, effective_timeout)
 
     async def _handle_mcp_permissions(
         self,

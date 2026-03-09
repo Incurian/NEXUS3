@@ -21,6 +21,7 @@ nexus3/session/
 ├── compaction_runtime.py # Compaction provider/summary runtime helpers
 ├── tool_runtime.py      # Tool execution runtime helpers
 ├── permission_runtime.py # MCP/GitLab permission runtime helpers
+├── single_tool_runtime.py # Single-tool execution runtime helpers
 ├── session_manager.py   # Disk persistence (save/load/list sessions)
 ├── events.py            # Typed SessionEvent hierarchy
 ├── types.py             # LogConfig, LogStream, SessionInfo
@@ -47,8 +48,9 @@ Compatibility note: `Session._get_compaction_provider()` and
 `Session._execute_tools_parallel()` are retained as thin wrappers that delegate
 to `tool_runtime.py`, and `Session._handle_mcp_permissions()` plus
 `Session._handle_gitlab_permissions()` are retained as thin wrappers that
-delegate to `permission_runtime.py`, so existing `Session` call sites stay
-stable during extraction.
+delegate to `permission_runtime.py`, and `Session._execute_single_tool()` is
+retained as a thin wrapper that delegates to `single_tool_runtime.py`, so
+existing `Session` call sites stay stable during extraction.
 
 ### Callback Type Aliases (from `session.py`)
 
@@ -886,10 +888,11 @@ If `compaction.model` is configured, a separate provider is used for summarizati
 
 | Module | Dependency |
 |--------|------------|
-| `session.py` | `core.types`, `core.errors`, `core.interfaces`, `core.permissions`, `core.validation`, `context.compaction`, `session.events`, `session.dispatcher`, `session.enforcer`, `session.confirmation`, `session.http_logging`, `session.compaction_runtime`, `session.tool_runtime`, `session.permission_runtime` |
+| `session.py` | `core.types`, `core.errors`, `core.interfaces`, `core.permissions`, `core.validation`, `context.compaction`, `session.events`, `session.dispatcher`, `session.enforcer`, `session.confirmation`, `session.http_logging`, `session.compaction_runtime`, `session.tool_runtime`, `session.permission_runtime`, `session.single_tool_runtime` |
 | `compaction_runtime.py` | `context.compaction`, `core.interfaces`, `core.types`, `session.http_logging` (lazy runtime import: `provider.create_provider`) |
 | `tool_runtime.py` | `core.errors`, `core.types`, `skill.base` (TYPE_CHECKING only) |
 | `permission_runtime.py` | `core.authorization_kernel`, `core.permissions`, `core.types`, `session.confirmation`, `skill.base` (TYPE_CHECKING only), `skill.services` (TYPE_CHECKING only), lazy runtime imports: `mcp.permissions`, `skill.vcs.gitlab.permissions` |
+| `single_tool_runtime.py` | `core.permissions`, `core.types`, `core.validation`, `skill.base` (TYPE_CHECKING only), `skill.services` (TYPE_CHECKING only) |
 | `logging.py` | `core.types`, `core.secure_io`, `session.storage`, `session.markdown`, `session.events`, `session.types` |
 | `storage.py` | `core.secure_io` (sqlite3 stdlib) |
 | `persistence.py` | `core.types`, `core.errors`, `clipboard.types` |

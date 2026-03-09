@@ -157,8 +157,25 @@ Execution notes:
     - `.venv/bin/mypy nexus3/session/session.py nexus3/session/compaction_runtime.py nexus3/session/tool_runtime.py nexus3/session/permission_runtime.py`
     - `.venv/bin/pytest -q tests/unit/session/test_session_permission_kernelization.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_cancellation.py` (`54 passed`)
     - `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py` (`30 passed`)
+- 2026-03-09: Phase 2D (Session single-tool runtime extraction) completed in
+  WSL.
+  - Added `nexus3/session/single_tool_runtime.py` for single-tool execution
+    runtime helper ownership.
+  - Kept `Session._execute_single_tool(...)` as a thin wrapper delegating to
+    `single_tool_runtime.py`.
+  - Behavior parity preserved: permissions fail-closed, enforcer checks and
+    confirmation flow (including multi-path allowances), skill
+    resolution/unknown-skill handling, malformed `_raw_arguments` handling,
+    argument validation, effective timeout derivation, and MCP/GitLab
+    permission delegation.
+  - Focused validation passed:
+    - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/compaction_runtime.py nexus3/session/tool_runtime.py nexus3/session/permission_runtime.py nexus3/session/single_tool_runtime.py`
+    - `.venv/bin/mypy nexus3/session/session.py nexus3/session/compaction_runtime.py nexus3/session/tool_runtime.py nexus3/session/permission_runtime.py nexus3/session/single_tool_runtime.py`
+    - `.venv/bin/pytest -q tests/unit/session/test_session_permission_kernelization.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_cancellation.py` (`54 passed`)
+    - `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py` (`30 passed`)
 - Next gate: execute remaining Session extraction internals (tool-loop/core
-  send-turn internals) with focused parity checks.
+  send-turn internals; event-loop/send-turn extraction) with focused parity
+  checks.
 
 ## Testing Strategy
 
@@ -183,8 +200,10 @@ Execution notes:
       focused parity checks.
 - [x] Complete Session Phase 2C permission runtime extraction with focused
       parity checks.
+- [x] Complete Session Phase 2D single-tool runtime extraction with focused
+      parity checks.
 - [ ] Complete remaining Session extraction internals (tool-loop/core send-turn
-      internals) with parity checks.
+      internals; event-loop/send-turn extraction) with parity checks.
 - [ ] Complete Pool extraction slices with parity checks.
 - [ ] Land display-config cleanup with documented override contract.
 - [ ] Remove temporary compatibility wrappers after one full green cycle.

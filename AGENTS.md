@@ -484,9 +484,24 @@ Immediate tasks:
     `.venv/bin/mypy nexus3/session/session.py nexus3/session/compaction_runtime.py nexus3/session/tool_runtime.py nexus3/session/permission_runtime.py`,
     `.venv/bin/pytest -q tests/unit/session/test_session_permission_kernelization.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_cancellation.py` (`54 passed`),
     `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py` (`30 passed`).
+- Completed (2026-03-09, structural-refactor Phase 2D): Session single-tool
+  runtime extraction:
+  - added `nexus3/session/single_tool_runtime.py`.
+  - moved single-tool execution internals there while keeping
+    `Session._execute_single_tool(...)` as a thin compatibility wrapper.
+  - behavior parity preserved: permissions fail-closed, enforcer checks and
+    confirmation flow (including multi-path allowances), skill
+    resolution/unknown-skill handling, malformed `_raw_arguments` handling,
+    argument validation, effective timeout derivation, and MCP/GitLab
+    permission delegation.
+  - focused validation passed:
+    `.venv/bin/ruff check nexus3/session/session.py nexus3/session/compaction_runtime.py nexus3/session/tool_runtime.py nexus3/session/permission_runtime.py nexus3/session/single_tool_runtime.py`,
+    `.venv/bin/mypy nexus3/session/session.py nexus3/session/compaction_runtime.py nexus3/session/tool_runtime.py nexus3/session/permission_runtime.py nexus3/session/single_tool_runtime.py`,
+    `.venv/bin/pytest -q tests/unit/session/test_session_permission_kernelization.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_cancellation.py` (`54 passed`),
+    `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py` (`30 passed`).
 - Next target: execute remaining Session extraction internals
-  (tool-loop/core send-turn internals), while keeping manual provider
-  keep-alive endpoint evidence capture queued for real endpoint availability.
+  (tool-loop/core send-turn internals; event-loop/send-turn extraction) with
+  focused parity checks.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with
@@ -583,7 +598,7 @@ Compact handover checkpoint (2026-03-09, post-structural Phase 1B wave):
   - `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_runtime.py nexus3/cli/repl_reload.py` passed.
   - `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/unit/test_repl_commands.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/test_client.py` passed (`125 passed`).
 - Next gate after compact:
-  1. Execute remaining Session extraction internals (tool-loop/core send-turn internals) with focused parity checks.
+  1. Execute remaining Session extraction internals (tool-loop/core send-turn internals; event-loop/send-turn extraction) with focused parity checks.
   2. Keep manual provider keep-alive endpoint evidence capture queued until real endpoint access is available.
   3. Windows host is not required for the immediate next gate.
 
