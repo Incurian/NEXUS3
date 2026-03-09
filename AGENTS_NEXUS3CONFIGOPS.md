@@ -377,7 +377,7 @@ Operational pattern:
 | `session.py` split (~1100 lines) | large refactor | M |
 | `pool.py` split (~1250 lines) | large refactor | M |
 | display config cleanup | polish | S |
-| HTTP keep-alive | advanced feature | M |
+| HTTP keep-alive | bounded stale-reuse recovery landed (2026-03-09); monitor only | S |
 
 ### DRY Cleanups
 
@@ -393,7 +393,7 @@ Operational pattern:
 
 - `PROMPT-CACHE-OPTIMIZATION-PLAN.md`
 - `PROVIDER-BUGFIX-PLAN.md`
-- `PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md`
+- `PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md` (closeout landed 2026-03-09)
 - `ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md`
 - `STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md`
 - `POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md`
@@ -403,5 +403,4 @@ Operational pattern:
 
 ### Known Bugs (from status section)
 
-- custom `ssl_ca_cert` currently replaces system CAs (needs merge behavior)
 - double-spinner/trapped ESC on concurrent RPC sends with active REPL

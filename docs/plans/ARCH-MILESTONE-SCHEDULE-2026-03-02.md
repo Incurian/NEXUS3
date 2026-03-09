@@ -295,6 +295,16 @@ Exit gates:
 4. Provider keep-alive deferred investigation:
    - [PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md)
    - Target window: M4 late / post-M4 stabilization window.
+   - Status note (2026-03-09): kickoff implementation slice complete in WSL:
+     - bounded stale keep-alive recovery is landed in
+       `nexus3/provider/base.py` (classified stale transport failures trigger
+       cached-client reset + retry within existing retry budget).
+     - Step 10 diagnostics now emit structured
+       `10-keepalive-evidence.json` artifacts alongside text logs.
+     - focused provider keep-alive regressions are green in
+       `tests/unit/provider/test_keepalive_recovery.py` and related provider suites.
+     - next gate: archive real endpoint evidence runs for one
+       known-problematic and one known-good target.
    - Dependency gates:
      - Existing provider empty-stream guards and retry behavior remain stable.
      - Repro artifacts exist from keep-alive diagnostics (Step 10 style runs).

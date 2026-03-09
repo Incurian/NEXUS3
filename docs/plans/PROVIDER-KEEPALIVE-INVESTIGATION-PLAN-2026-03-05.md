@@ -36,11 +36,10 @@ Excluded:
 
 Primary files to change:
 - [base.py](/home/inc/repos/NEXUS3/nexus3/provider/base.py)
-- [schema.py](/home/inc/repos/NEXUS3/nexus3/config/schema.py)
-- [test_lifecycle.py](/home/inc/repos/NEXUS3/tests/unit/provider/test_lifecycle.py)
 - New: `tests/unit/provider/test_keepalive_recovery.py`
 - [diagnose-empty-stream.sh](/home/inc/repos/NEXUS3/scripts/diagnose-empty-stream.sh)
 - [PROVIDER-BUGFIX-PLAN.md](/home/inc/repos/NEXUS3/docs/plans/PROVIDER-BUGFIX-PLAN.md)
+- [README.md](/home/inc/repos/NEXUS3/nexus3/provider/README.md)
 
 Planned slices:
 1. Add a dedicated keep-alive diagnostic harness extension (or paired script)
@@ -65,21 +64,40 @@ Planned slices:
 - Verify no regression in existing lifecycle/retry behavior.
 - Focused checks:
   - `.venv/bin/pytest -q tests/unit/provider/test_keepalive_recovery.py tests/unit/provider/test_lifecycle.py tests/unit/provider/test_retry_zero.py tests/unit/provider/test_empty_stream.py`
-  - `.venv/bin/ruff check nexus3/provider/base.py nexus3/config/schema.py tests/unit/provider/test_keepalive_recovery.py`
-  - `.venv/bin/mypy nexus3/provider/base.py nexus3/config/schema.py`
+  - `.venv/bin/ruff check nexus3/provider/base.py tests/unit/provider/test_keepalive_recovery.py`
+  - `.venv/bin/mypy nexus3/provider/base.py`
 - Manual validation: rerun keep-alive diagnostics against at least one
   problematic endpoint and one known-good endpoint, then capture logs in
   `err/diagnose-*`.
 
 ## Implementation Checklist
 
-- [ ] Add reproducible keep-alive diagnostic harness and artifact format.
-- [ ] Add provider diagnostic classification for stale/reused-connection
+- [x] Add reproducible keep-alive diagnostic harness and artifact format.
+- [x] Add provider diagnostic classification for stale/reused-connection
       failures.
-- [ ] Decide mitigation branch from evidence (no-change vs fresh-client retry).
-- [ ] Implement and test bounded stale-connection mitigation if required.
-- [ ] Update provider bugfix/deferred docs with final decision and rollout
+- [x] Decide mitigation branch from evidence (no-change vs fresh-client retry).
+- [x] Implement and test bounded stale-connection mitigation if required.
+- [x] Update provider bugfix/deferred docs with final decision and rollout
       guidance.
+
+Execution status (2026-03-09, WSL):
+- Decision: bounded mitigation landed.
+- Implemented behavior:
+  - `BaseProvider` now classifies likely stale keep-alive transport failures
+    (`RemoteProtocolError`, `ReadError`, `WriteError`, EOF/protocol signatures).
+  - On classified stale failures, request paths reset the cached client via
+    `aclose()` and retry through existing retry-loop bounds (`max_retries`).
+  - Warning/debug logs now include request mode and attempt context for stale
+    recovery decisions.
+- Diagnostic harness evidence:
+  - Step 10 now emits `10-keepalive-evidence.json` alongside
+    `10-keepalive.txt`, capturing run id/timestamp, endpoint/model context,
+    fresh-vs-reuse status fields, and normalized conclusion labels
+    (`no-diff`, `keepalive-regression`, `ambiguous`).
+- Focused validation snapshot:
+  - `.venv/bin/ruff check nexus3/provider/base.py tests/unit/provider/test_keepalive_recovery.py` passed
+  - `.venv/bin/mypy nexus3/provider/base.py` passed
+  - `.venv/bin/pytest -q tests/unit/provider/test_keepalive_recovery.py tests/unit/provider/test_lifecycle.py tests/unit/provider/test_retry_zero.py tests/unit/provider/test_empty_stream.py` passed (`48 passed`)
 
 ## Documentation Updates
 
@@ -87,8 +105,8 @@ Planned slices:
   to remove or close the keep-alive defer note.
 - Update `AGENTS_NEXUS3CONFIGOPS.md` and `CLAUDE.md` deferred tracker entries
   for HTTP keep-alive.
-- Add operator-facing troubleshooting notes to `nexus3/provider/README.md` if
-  mitigation toggles are introduced.
+- Add operator-facing troubleshooting notes to `nexus3/provider/README.md` for
+  stale keep-alive recovery and Step 10 evidence interpretation.
 
 ## Related Documents
 

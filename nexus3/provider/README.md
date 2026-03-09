@@ -208,6 +208,7 @@ The abstract base class providing shared functionality for all providers.
 | **Timeout Handling** | Configurable request timeout (default 120s) |
 | **Error Body Limits** | Caps error response bodies at 10KB to prevent memory exhaustion |
 | **Connection Reuse** | Lazy httpx client with persistent connections |
+| **Stale Keep-Alive Recovery** | Classifies likely stale transport failures and retries after cached-client reset (bounded by `max_retries`) |
 | **SSL Configuration** | Custom CA certs and SSL verification control for on-prem deployments |
 | **Windows SSL Fallback** | Falls back to system certificate store if certifi bundle is missing/corrupted |
 | **Raw Logging** | Callbacks for request/response/chunk logging |
@@ -251,6 +252,17 @@ config = ProviderConfig(
     retry_backoff=2.0,
 )
 ```
+
+### Keep-Alive Recovery
+
+- Provider clients are reused for connection pooling.
+- When a request fails with likely stale-connection signatures (for example
+  `httpx.RemoteProtocolError` or EOF/protocol read/write transport errors),
+  `BaseProvider` closes the cached client and retries using the normal retry loop.
+- Recovery remains bounded by configured `max_retries`; `max_retries=0`
+  remains fail-fast.
+- `scripts/diagnose-empty-stream.sh` Step 10 now emits
+  `10-keepalive-evidence.json` with fresh-vs-reused metrics and derived flags.
 
 ---
 
@@ -866,6 +878,7 @@ PROVIDER_DEFAULTS["myprovider"] = {
 | `ProviderError("API request failed (429/5xx)")` | Rate limit/server error | Retry with backoff |
 | `ProviderError("Failed to connect")` | Network error | Retry with backoff |
 | `ProviderError("Request timed out")` | Timeout | Retry with backoff |
+| `ProviderError("HTTP error occurred")` | Non-retryable HTTP transport error | Fail fast unless classified as stale keep-alive transport failure |
 | `ConfigError("Unknown provider type")` | Invalid `type` | Raised by factory |
 
 ---

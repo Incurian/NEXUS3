@@ -1635,6 +1635,7 @@ else
     echo ""
 
     # Check for differences
+    STEP10_CLASSIFICATION="connection_issues_detected"
     FRESH_OK=0
     REUSE_OK=0
     FRESH_STREAM_OK=0
@@ -1643,23 +1644,87 @@ else
     [[ "$FRESH_STREAM_HTTP" == "200" && "$FRESH_STREAM_DATA" -gt 1 && ( "$FRESH_STREAM_HAS_CONTENT" -eq 1 || "$FRESH_STREAM_HAS_REASONING" -eq 1 ) ]] && FRESH_STREAM_OK=1
 
     if [[ "$FRESH_OK" -eq 1 && "$REUSE_OK" -eq 1 && "$FRESH_STREAM_OK" -eq 1 ]]; then
+        STEP10_CLASSIFICATION="no_keepalive_regression"
         result_pass "Both connection types work for sync and streaming"
         advice "Connection reuse is not contributing to the issue."
     elif [[ "$FRESH_OK" -eq 1 && "$REUSE_OK" -eq 0 ]]; then
+        STEP10_CLASSIFICATION="reuse_path_failure"
         result_fail "Fresh connection works but keep-alive fails"
         advice "The server or proxy has issues with connection reuse."
         advice "This could cause intermittent failures if httpx reuses connections."
     elif [[ "$FRESH_OK" -eq 0 && "$REUSE_OK" -eq 1 ]]; then
+        STEP10_CLASSIFICATION="fresh_path_failure_unusual"
         result_warn "Keep-alive works but fresh connection fails (unusual)"
         advice "Check for connection limits or rate limiting on new connections."
     elif [[ "$FRESH_STREAM_OK" -eq 0 && "$FRESH_OK" -eq 1 ]]; then
+        STEP10_CLASSIFICATION="streaming_path_failure"
         result_fail "Sync works with fresh connection but streaming doesn't"
         advice "Streaming specifically broken with fresh connections. Proxy may be"
         advice "buffering SSE on new connections differently than reused ones."
     else
+        STEP10_CLASSIFICATION="connection_issues_detected"
         result_fail "Connection issues detected"
         advice "Check ${STEP10_LOG} for details."
     fi
+
+    STEP10_CONCLUSION="ambiguous"
+    if [[ "$STEP10_CLASSIFICATION" == "no_keepalive_regression" ]]; then
+        STEP10_CONCLUSION="no-diff"
+    elif [[ "$STEP10_CLASSIFICATION" == "reuse_path_failure" ]]; then
+        STEP10_CONCLUSION="keepalive-regression"
+    fi
+
+    FRESH_SYNC_STATUS="FAIL"
+    REUSE_SYNC_STATUS="FAIL"
+    FRESH_STREAM_STATUS="FAIL"
+    [[ "$FRESH_OK" -eq 1 ]] && FRESH_SYNC_STATUS="PASS"
+    [[ "$REUSE_OK" -eq 1 ]] && REUSE_SYNC_STATUS="PASS"
+    [[ "$FRESH_STREAM_OK" -eq 1 ]] && FRESH_STREAM_STATUS="PASS"
+
+    STEP10_JSON="$OUTDIR/10-keepalive-evidence.json"
+    STEP10_GENERATED_AT_UTC=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    cat > "$STEP10_JSON" <<EOF
+{
+  "run_id": "${TIMESTAMP}",
+  "generated_at_utc": "${STEP10_GENERATED_AT_UTC}",
+  "endpoint": "${ENDPOINT}",
+  "chat_url": "${CHAT_URL}",
+  "model": "${MODEL}",
+  "step": 10,
+  "classification": "${STEP10_CLASSIFICATION}",
+  "conclusion": "${STEP10_CONCLUSION}",
+  "fresh_sync": {
+    "status": "${FRESH_SYNC_STATUS}",
+    "http_status": "${FRESH_HTTP}",
+    "ttfb_seconds": "${FRESH_TTFB}",
+    "total_seconds": "${FRESH_TIME}",
+    "content_chars": ${FRESH_CONTENT},
+    "reasoning_chars": ${FRESH_REASONING}
+  },
+  "reuse_sync_second_request": {
+    "status": "${REUSE_SYNC_STATUS}",
+    "http_status": "${REUSE_HTTP}",
+    "ttfb_seconds": "${REUSE_TTFB}",
+    "total_seconds": "${REUSE_TIME}",
+    "content_chars": ${REUSE_CONTENT},
+    "reasoning_chars": ${REUSE_REASONING}
+  },
+  "fresh_stream": {
+    "status": "${FRESH_STREAM_STATUS}",
+    "http_status": "${FRESH_STREAM_HTTP}",
+    "sse_data_events": ${FRESH_STREAM_DATA},
+    "has_content_delta": ${FRESH_STREAM_HAS_CONTENT},
+    "has_reasoning_delta": ${FRESH_STREAM_HAS_REASONING}
+  },
+  "derived_flags": {
+    "fresh_sync_ok": ${FRESH_OK},
+    "reuse_sync_ok": ${REUSE_OK},
+    "fresh_stream_ok": ${FRESH_STREAM_OK}
+  }
+}
+EOF
+    echo "Keepalive evidence JSON: ${STEP10_JSON}" >> "$STEP10_LOG"
+    info "Keepalive evidence JSON: ${STEP10_JSON}"
     echo -e "  ${DIM}Full log: ${STEP10_LOG}${RESET}"
 fi
 
@@ -1699,7 +1764,7 @@ cat > "$SUMMARY" <<SUMEOF
 | 7 | /v1/models health check | 07-models-check.txt |
 | 8 | Parallel streaming (${PARALLEL_COUNT}x) | 08-parallel-stream.txt |
 | 9 | Alternate model test | 09-alt-model.txt |
-| 10 | Keep-alive vs fresh connection | 10-keepalive.txt |
+| 10 | Keep-alive vs fresh connection | 10-keepalive.txt, 10-keepalive-evidence.json |
 
 ## How to Interpret
 

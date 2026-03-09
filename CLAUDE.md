@@ -1354,47 +1354,40 @@ As of 2026-02-25: **All tests, lints, and type checks pass 100%.**
 - `mypy nexus3/` — 0 errors (192 source files)
 - `pytest tests/` — 3742 passed, 3 skipped (2 require API key, 1 Windows-only)
 
-Architecture execution running status (2026-03-09, WSL final wave, checkpoint-ready pending commit):
-- Plan C service-container immutability follow-on is complete in working tree
-  through slices 1-3:
-  - pool create/restore migration to typed runtime mutators/accessors is
-    implemented in `nexus3/rpc/pool.py` with focused updates in
-    `tests/unit/test_pool.py`.
-  - REPL/session runtime mutation/read migration to typed APIs is implemented in
-    `nexus3/cli/repl_commands.py` and `nexus3/session/session.py`, with focused
-    updates in `tests/unit/test_repl_commands.py`.
-  - service mutator compatibility hardening for `allowed_paths` is implemented
-    in `nexus3/skill/services.py`.
-  - `ServiceContainer.register(...)` runtime-key compatibility scoping now uses
-    `register_runtime_compat(...)` in `nexus3/skill/services.py`.
-  - expanded immutability compatibility regressions are implemented in
-    `tests/unit/skill/test_service_container_immutability.py`.
+Architecture execution running status (2026-03-09, provider keep-alive kickoff wave):
+- Plan C service-container immutability follow-on is now committed:
+  - `5c0e843` (pool/repl/session runtime migration to typed mutators/accessors)
+  - `8143afe` (runtime register compatibility scoping via `register_runtime_compat(...)`)
+- Provider keep-alive investigation kickoff is implemented in working tree:
+  - `nexus3/provider/base.py`: stale keep-alive transport classification +
+    bounded cached-client reset/retry within existing retry loop.
+  - `tests/unit/provider/test_keepalive_recovery.py`: focused sync/streaming
+    stale-recovery regressions and max-retry bound checks.
+  - `scripts/diagnose-empty-stream.sh`: Step 10 now emits structured
+    `10-keepalive-evidence.json` alongside textual logs.
 - Focused validation snapshot:
   - passed:
-    `.venv/bin/ruff check nexus3/rpc/pool.py nexus3/cli/repl_commands.py nexus3/session/session.py nexus3/skill/services.py tests/unit/test_pool.py tests/unit/test_repl_commands.py tests/unit/skill/test_service_container_immutability.py`
+    `.venv/bin/ruff check nexus3/provider/base.py tests/unit/provider/test_keepalive_recovery.py`
   - passed:
-    `.venv/bin/mypy nexus3/rpc/pool.py nexus3/cli/repl_commands.py nexus3/session/session.py nexus3/skill/services.py`
+    `.venv/bin/mypy nexus3/provider/base.py`
   - passed:
-    `.venv/bin/pytest -q tests/unit/test_repl_commands.py tests/unit/test_pool.py tests/unit/skill/test_service_container_immutability.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py`
-    (`168 passed`).
+    `.venv/bin/pytest -q tests/unit/provider/test_keepalive_recovery.py tests/unit/provider/test_lifecycle.py tests/unit/provider/test_retry_zero.py tests/unit/provider/test_empty_stream.py`
+    (`48 passed`).
 
 ### Orchestrator Handover Checkpoint (2026-03-09)
 
 - Branch: `feat/arch-overhaul-execution`
 - Local state:
-  - Plan H Phase 3 canonical diagnostics follow-on is already committed as
-    `fd33b01`.
-  - Plan C slices 1-3 follow-on is checkpoint-ready, complete in working tree,
-    and pending commit.
+  - Plan H Phase 3 canonical diagnostics follow-on is committed as `fd33b01`.
+  - Plan C slices 1-3 follow-on is committed as `5c0e843` and `8143afe`.
+  - Provider keep-alive kickoff slice is implemented in this branch
+    (`base.py`, `test_keepalive_recovery.py`, Step 10 JSON evidence).
 - Concrete resume steps for post-compact continuation:
-  1. Commit checkpoint-ready Plan C service-immutability follow-on
-     (pool create/restore, REPL/session runtime typed API migration,
-     `allowed_paths` + `register_runtime_compat(...)` compatibility scoping).
-  2. Kick off deferred provider keep-alive investigation from
-     `docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md` and log
-     the next checkpoint in AGENTS/CLAUDE.
-  3. Re-run the focused validation trio above after any provider keep-alive
-     implementation edits.
+  1. Run manual endpoint validation with
+     `scripts/diagnose-empty-stream.sh` and archive `10-keepalive-evidence.json`
+     from at least one problematic and one known-good endpoint run.
+  2. Continue Plan H conservative shim-retirement closeout audit or advance to
+     structural-refactor backlog based on risk priority.
 
 ### Known Failures
 
@@ -1520,7 +1513,7 @@ Do NOT use a NEXUS coordinator agent in the middle - Claude Code is better at co
 | Session.py split (~1100 lines) | Large refactor | M |
 | Pool.py split (~1250 lines) | Large refactor | M |
 | Display config | Polish, no current need | S |
-| HTTP keep-alive | Advanced feature | M |
+| HTTP keep-alive | Bounded stale-reuse recovery landed (2026-03-09); monitoring/manual endpoint validation remains | S |
 
 ### DRY Cleanups
 
@@ -1540,7 +1533,7 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 |------|-------------|--------|
 | `PROMPT-CACHE-OPTIMIZATION-PLAN.md` | Separate dynamic context from system prompt for cache-optimal message structure | 1-2 days |
 | `PROVIDER-BUGFIX-PLAN.md` | SSL cert handling, MSYS2 path normalization, reasoning_content logging | 1 day |
-| `PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md` | Investigate and close deferred keep-alive stale-connection behavior | 1-2 days |
+| `PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md` | Keep-alive stale-connection closeout (bounded mitigation + evidence workflow) | 1-2 days |
 | `ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md` | Replace mutable service-container runtime pattern with typed immutable snapshots | 2-4 days |
 | `STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md` | Split oversized REPL/session/pool modules and clean display config wiring | 1-2 weeks |
 | `POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md` | Run soak, Windows-native, TOCTOU race, and terminal red-team closeout validation | 1 week |
@@ -1552,16 +1545,14 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 
 Dynamic content (datetime, git status, clipboard) was being injected into the system prompt, invalidating the cache (~10-15K tokens) on every API call. Fix moves dynamic content to the last user message via `<session-context>` tags. See `docs/plans/PROMPT-CACHE-OPTIMIZATION-PLAN.md`.
 
-#### Next Up: PROVIDER-BUGFIX-PLAN
+#### Next Up: STRUCTURAL-REFACTOR-WAVE-PLAN
 
-Three bugs found via diagnostic script testing on corporate endpoint. See `docs/plans/PROVIDER-BUGFIX-PLAN.md`:
-1. `ssl_ca_cert` replaces system CAs instead of adding to them (HTTP 502 on corporate proxies)
-2. `ssl_ca_cert` path not normalized for Git Bash MSYS2 format
-3. Non-streaming `_parse_response()` silently discards `reasoning_content`
+Provider bugfix and keep-alive follow-on slices are already landed in this
+branch. Next queued cleanup target is structural decomposition of oversized
+REPL/session/pool modules per `docs/plans/STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md`.
 
 ### Known Bugs
 
-- **SSL custom cert replaces system CAs**: When `ssl_ca_cert` is set in provider config, `base.py` passes the path directly to httpx `verify=`, which drops all system CAs. Corporate proxies need both. Fix planned in `PROVIDER-BUGFIX-PLAN.md`.
 - **Double spinner on concurrent RPC sends**: When two external `rpc send` requests arrive at an agent with active REPL, two spinners appear and ESC gets trapped. Root cause: missing `try/finally` for "ended" notification in `dispatcher.py:_handle_send()` + module-level spinner state variables can't handle rapid start/stop cycles. Fix planned in `DOUBLE-SPINNER-FIX-PLAN.md`.
 
 <!-- Previously fixed:

@@ -2,15 +2,18 @@
 
 ## Context
 
-During diagnostic testing of NEXUS on a corporate OpenAI-compatible endpoint (Azure AI Factory), we discovered three bugs in the NEXUS provider code and one deferred investigation item. These were found via the `scripts/diagnose-empty-stream.sh` diagnostic script run on Git Bash/Windows against a thinking model (`gpt-oss-120b`).
+During diagnostic testing of NEXUS on a corporate OpenAI-compatible endpoint (Azure AI Factory), we discovered three bugs in the NEXUS provider code and one follow-on connection-lifecycle item. These were found via the `scripts/diagnose-empty-stream.sh` diagnostic script run on Git Bash/Windows against a thinking model (`gpt-oss-120b`).
 
 **Bugs to fix:**
 1. Custom CA cert replaces system CAs instead of adding to them → TLS failures on corporate proxies
 2. `ssl_ca_cert` config path not normalized → MSYS2/Git Bash paths fail in Python
 3. Non-streaming `_parse_response()` silently discards `reasoning_content` → no logging, could confuse debugging
 
-**Deferred:**
-- Keep-alive connection failures (test 10: "fresh works but keep-alive fails") — the empty stream guard already protects against the worst outcome. Follow-on investigation plan: [PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md).
+**Follow-on status (closed 2026-03-09):**
+- Keep-alive stale-connection mitigation is now implemented and documented in [PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md):
+  - stale transport failures are classified in `BaseProvider`
+  - cached provider client is reset and retried through existing retry bounds
+  - Step 10 diagnostics now emits `10-keepalive-evidence.json` for artifacted decisions.
 
 ## Bug Details
 
@@ -156,6 +159,13 @@ if reasoning:
 ### Phase 5: Documentation
 - [x] **P5.1** Update memory notes with completed fixes
 
-## Deferred
+## Follow-on Closeout
 
-- **Keep-alive failures**: Test 10 showed "fresh connection works but keep-alive fails". This is likely the corporate proxy routing reused connections to a bad backend (matching earlier `gcell`/`pcell` observations). The empty stream guard (c735329) already prevents cascading failures from this. httpx's connection pool should handle stale connections gracefully in most cases. Deferred investigation is tracked in [PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md).
+- **Keep-alive failures**: Follow-on investigation is now implemented and no
+  longer deferred. `BaseProvider` retries classified stale keep-alive
+  transport failures (`RemoteProtocolError`/read/write/protocol EOF signatures)
+  by resetting the cached client and retrying within existing `max_retries`
+  bounds. Diagnostic evidence is recorded by
+  `scripts/diagnose-empty-stream.sh` Step 10 in both text
+  (`10-keepalive.txt`) and structured JSON
+  (`10-keepalive-evidence.json`).

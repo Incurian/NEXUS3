@@ -46,6 +46,14 @@ MAX_RETRIES = 3
 MAX_RETRY_DELAY = 10.0  # Maximum delay between retries in seconds
 DEFAULT_RETRY_BACKOFF = 1.5  # Exponential backoff multiplier
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+_STALE_CONNECTION_ERROR_MARKERS = (
+    "connection reset by peer",
+    "disconnected without sending a response",
+    "eof occurred in violation of protocol",
+    "server disconnected",
+    "stream closed",
+    "unexpected eof",
+)
 
 
 def validate_base_url(url: str, allow_insecure: bool = False) -> None:
@@ -298,6 +306,49 @@ class BaseProvider(ABC):
         """
         return status_code in RETRYABLE_STATUS_CODES
 
+    def _is_likely_stale_connection_error(self, error: Exception) -> bool:
+        """Classify transport errors that are likely stale keep-alive reuse failures."""
+        if isinstance(error, (httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError)):
+            return True
+
+        error_text = str(error).lower()
+        return any(marker in error_text for marker in _STALE_CONNECTION_ERROR_MARKERS)
+
+    async def _reset_cached_client_after_stale_error(
+        self,
+        *,
+        error: Exception,
+        attempt: int,
+        stale_recovery_attempted: bool,
+        request_mode: str,
+    ) -> bool:
+        """Reset cached client and signal retry for stale-connection failures."""
+        if stale_recovery_attempted:
+            return False
+        if not self._is_likely_stale_connection_error(error):
+            return False
+        if attempt >= self._max_retries:
+            logger.debug(
+                "Detected likely stale keep-alive connection during %s request "
+                "(attempt=%d/%d) but retry budget is exhausted: %s",
+                request_mode,
+                attempt + 1,
+                self._max_retries + 1,
+                error,
+            )
+            return False
+
+        logger.warning(
+            "Detected likely stale keep-alive connection during %s request "
+            "(attempt=%d/%d): %s. Resetting cached client and retrying.",
+            request_mode,
+            attempt + 1,
+            self._max_retries + 1,
+            error,
+        )
+        await self.aclose()
+        return True
+
     def _parse_error_body_for_logging(
         self,
         error_body: bytes,
@@ -341,6 +392,7 @@ class BaseProvider(ABC):
             self._raw_log.on_request(url, body)
 
         last_error: Exception | None = None
+        stale_recovery_attempted = False
 
         for attempt in range(self._max_retries + 1):
             try:
@@ -416,6 +468,14 @@ class BaseProvider(ABC):
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 # Network errors are retryable
                 last_error = e
+                if await self._reset_cached_client_after_stale_error(
+                    error=e,
+                    attempt=attempt,
+                    stale_recovery_attempted=stale_recovery_attempted,
+                    request_mode="non-streaming",
+                ):
+                    stale_recovery_attempted = True
+                    continue
                 if attempt < self._max_retries:
                     delay = self._calculate_retry_delay(attempt)
                     await asyncio.sleep(delay)
@@ -429,6 +489,14 @@ class BaseProvider(ABC):
                     f"API request timed out after {self._max_retries + 1} attempts: {e}"
                 ) from e
             except httpx.HTTPError as e:
+                if await self._reset_cached_client_after_stale_error(
+                    error=e,
+                    attempt=attempt,
+                    stale_recovery_attempted=stale_recovery_attempted,
+                    request_mode="non-streaming",
+                ):
+                    stale_recovery_attempted = True
+                    continue
                 # Other HTTP errors - don't retry
                 raise ProviderError(f"HTTP error occurred: {e}") from e
 
@@ -460,6 +528,7 @@ class BaseProvider(ABC):
             self._raw_log.on_request(url, body)
 
         last_error: Exception | None = None
+        stale_recovery_attempted = False
 
         for attempt in range(self._max_retries + 1):
             try:
@@ -531,6 +600,14 @@ class BaseProvider(ABC):
             except (httpx.ConnectError, httpx.TimeoutException) as e:
                 # Network errors are retryable
                 last_error = e
+                if await self._reset_cached_client_after_stale_error(
+                    error=e,
+                    attempt=attempt,
+                    stale_recovery_attempted=stale_recovery_attempted,
+                    request_mode="streaming",
+                ):
+                    stale_recovery_attempted = True
+                    continue
                 if attempt < self._max_retries:
                     delay = self._calculate_retry_delay(attempt)
                     await asyncio.sleep(delay)
@@ -544,6 +621,14 @@ class BaseProvider(ABC):
                     f"API request timed out after {self._max_retries + 1} attempts: {e}"
                 ) from e
             except httpx.HTTPError as e:
+                if await self._reset_cached_client_after_stale_error(
+                    error=e,
+                    attempt=attempt,
+                    stale_recovery_attempted=stale_recovery_attempted,
+                    request_mode="streaming",
+                ):
+                    stale_recovery_attempted = True
+                    continue
                 # Other HTTP errors - don't retry
                 raise ProviderError(f"HTTP error occurred: {e}") from e
 
