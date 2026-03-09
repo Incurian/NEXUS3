@@ -511,7 +511,32 @@ Immediate tasks:
   - Added explicit unblocking/execution plans for all currently tracked deferred boundaries (Plan A, Plan H, Plan C service immutability, provider keep-alive investigation, structural refactor wave, post-M4 validation campaign).
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
+Compact handover checkpoint (2026-03-09, post-structural Phase 1A wave):
+- Branch: `feat/arch-overhaul-execution`
+- Current head: `7fec6c5` (`structural phase 1a: extract repl formatting helpers`)
+- Pre-wave status alignment commit: `cbff9b0`
+- Execution model used:
+  - orchestrator selected next slices and delegated disjoint write scopes to
+    parallel Codex subagents.
+  - subagent-delivered changes were validated in local WSL before checkpointing.
+- Completed in this wave:
+  - REPL formatting/sanitization helper extraction to
+    `nexus3/cli/repl_formatting.py` with façade-compatible imports in
+    `nexus3/cli/repl.py`.
+  - structural plan/status docs synced for Phase 1A completion.
+- Local validation rerun at checkpoint:
+  - `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py` passed.
+  - `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_formatting.py` passed.
+  - `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/unit/test_repl_commands.py` passed (`97 passed`).
+- Next gate after compact:
+  1. Execute structural-refactor Phase 1B (REPL runtime/client-discovery helper extraction) with focused parity checks.
+  2. Keep manual provider keep-alive endpoint evidence capture queued until real endpoint access is available.
+  3. Windows host is not required for the immediate next gate.
+
 Recent execution commits (latest first):
+- `7fec6c5` structural phase 1a: extract repl formatting helpers
+- `cbff9b0` docs(status): align structural kickoff and next-step ordering
+- `a22c631` docs(status): record plan h closeout commit in handoff
 - `a9aaa12` plan h shim retirement closeout: retire remaining create_agent remaps
 - `05ffb84` provider keepalive kickoff: add stale-reuse recovery and diagnostics evidence
 - `8143afe` plan c closeout: scope runtime register compatibility path
