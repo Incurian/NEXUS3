@@ -157,8 +157,16 @@ class ServiceContainer:
         self.register(name, value)
 
     def set_permissions(self, permissions: "AgentPermissions | None") -> None:
-        """Set or clear the current runtime permissions."""
+        """Set or clear runtime permissions and sync legacy allowed-path state."""
         self._set_optional_runtime_service("permissions", permissions)
+
+        # Compatibility shim for in-flight migration from generic register() calls:
+        # keep legacy "allowed_paths" readers aligned with effective policy paths.
+        if permissions is None:
+            self.unregister("allowed_paths")
+            return
+
+        self.register("allowed_paths", permissions.effective_policy.allowed_paths)
 
     def set_cwd(self, cwd: Path | str | None) -> None:
         """Set or clear the current runtime working directory."""

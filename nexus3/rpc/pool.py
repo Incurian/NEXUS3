@@ -807,7 +807,7 @@ class AgentPool:
                     f"{effective_config.parent_agent_id}"
                 )
 
-            live_parent_permissions = parent_agent.services.get("permissions")
+            live_parent_permissions = parent_agent.services.get_permissions()
             if not isinstance(live_parent_permissions, AgentPermissions):
                 raise PermissionError(
                     "Cannot create agent: parent agent has no permissions service"
@@ -896,15 +896,14 @@ class AgentPool:
             permissions.parent_agent_id = effective_config.parent_agent_id
             permissions.depth = parent_permissions.depth + 1
 
-        # Register agent_id, permissions, allowed_paths, model, cwd, and MCP registry
+        # Register agent_id, permissions, model, cwd, and MCP registry
         services.register("agent_id", effective_id)
-        services.register("permissions", permissions)
-        services.register("allowed_paths", permissions.effective_policy.allowed_paths)
-        services.register("model", resolved_model)  # ResolvedModel for model hotswapping
+        services.set_permissions(permissions)
+        services.set_model(resolved_model)  # ResolvedModel for model hotswapping
         services.register("mcp_registry", self._shared.mcp_registry)
         # Per-agent cwd for isolation (avoids global os.chdir)
         agent_cwd = effective_config.cwd or Path.cwd()
-        services.register("cwd", agent_cwd)
+        services.set_cwd(agent_cwd)
 
         # Create ClipboardManager based on permission level
         permission_level = permissions.effective_policy.level
@@ -1060,9 +1059,10 @@ class AgentPool:
         if effective_config.parent_agent_id is not None:
             parent = self._agents.get(effective_config.parent_agent_id)
             if parent:
-                child_ids: set[str] = parent.services.get("child_agent_ids") or set()
-                child_ids.add(effective_id)
-                parent.services.register("child_agent_ids", child_ids)
+                child_ids = parent.services.get_child_agent_ids() or set()
+                updated_child_ids = set(child_ids)
+                updated_child_ids.add(effective_id)
+                parent.services.set_child_agent_ids(updated_child_ids)
 
         return agent
 
@@ -1332,15 +1332,14 @@ class AgentPool:
             delta = PermissionDelta(disable_tools=saved.disabled_tools)
             permissions = permissions.apply_delta(delta)
 
-        # Register agent_id, permissions, allowed_paths, cwd, model and MCP registry
+        # Register agent_id, permissions, cwd, model and MCP registry
         services.register("agent_id", agent_id)
-        services.register("permissions", permissions)
-        services.register("allowed_paths", permissions.effective_policy.allowed_paths)
+        services.set_permissions(permissions)
         services.register("mcp_registry", self._shared.mcp_registry)
-        services.register("model", resolved_model)  # ResolvedModel for /model command
+        services.set_model(resolved_model)  # ResolvedModel for /model command
         # Per-agent cwd for isolation (restored from saved session)
         agent_cwd = Path(saved.working_directory) if saved.working_directory else Path.cwd()
-        services.register("cwd", agent_cwd)
+        services.set_cwd(agent_cwd)
 
         # Create ClipboardManager based on permission level
         permission_level = permissions.effective_policy.level
@@ -1563,7 +1562,7 @@ class AgentPool:
             agent = self._agents[agent_id]
 
             # Authorization check through kernel adapter for all requester contexts.
-            target_permissions: AgentPermissions | None = agent.services.get("permissions")
+            target_permissions = agent.services.get_permissions()
             destroy_principal_id = requester_id or "external"
             kernel_request = AuthorizationRequest(
                 action=AuthorizationAction.AGENT_DESTROY,
@@ -1593,13 +1592,15 @@ class AgentPool:
             self._agents.pop(agent_id)
 
             # Remove from parent's child tracking
-            permissions: AgentPermissions | None = agent.services.get("permissions")
+            permissions = agent.services.get_permissions()
             if permissions and permissions.parent_agent_id:
                 parent = self._agents.get(permissions.parent_agent_id)
                 if parent:
-                    child_ids: set[str] | None = parent.services.get("child_agent_ids")
+                    child_ids = parent.services.get_child_agent_ids()
                     if child_ids and agent_id in child_ids:
-                        child_ids.discard(agent_id)
+                        updated_child_ids = set(child_ids)
+                        updated_child_ids.discard(agent_id)
+                        parent.services.set_child_agent_ids(updated_child_ids)
 
             # Cancel all in-progress requests before cleanup
             await agent.dispatcher.cancel_all_requests()
@@ -1640,7 +1641,7 @@ class AgentPool:
         agent = self._agents.get(agent_id)
         if agent is None:
             return []
-        child_ids: set[str] | None = agent.services.get("child_agent_ids")
+        child_ids = agent.services.get_child_agent_ids()
         return list(child_ids) if child_ids else []
 
     def list(self) -> list[dict[str, Any]]:
@@ -1666,14 +1667,12 @@ class AgentPool:
             - cwd: Working directory path
             - write_paths: List of allowed write paths (None = unrestricted)
         """
-        from nexus3.config.schema import ResolvedModel
-
         result: list[dict[str, Any]] = []
         for agent in self._agents.values():
-            permissions: AgentPermissions | None = agent.services.get("permissions")
-            child_ids: set[str] | None = agent.services.get("child_agent_ids")
-            resolved_model: ResolvedModel | None = agent.services.get("model")
-            cwd: Path | None = agent.services.get("cwd")
+            permissions = agent.services.get_permissions()
+            child_ids = agent.services.get_child_agent_ids()
+            resolved_model = agent.services.get_model()
+            cwd = agent.services.get_cwd() if agent.services.has("cwd") else None
 
             # Get write paths from permissions (check write_file tool permission)
             write_paths: list[str] | None = None

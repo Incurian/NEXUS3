@@ -12,7 +12,8 @@ Included:
 - Introduce request context object (request id, requester, policy snapshot, trace id).
 
 Deferred:
-- Wider service-container immutability redesign (follow-on plan:
+- Service-container immutability closeout (remaining generic mutation-helper
+  retirement + fixture-modernization backlog) in follow-on plan:
   [ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md)).
 
 Excluded:
@@ -60,6 +61,12 @@ Phases:
 Closeout note (2026-03-05):
 - The remaining deferred boundary for service-container immutability is tracked
   in [ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md).
+
+Deferred-boundary status (2026-03-09):
+- Follow-on slice 2/3 migration for pool/REPL/session paths and mutator
+  compatibility hardening landed in the current WSL wave.
+- Remaining explicit follow-on item: retire or scope generic runtime
+  `register(...)` mutation paths to non-production compatibility usage.
 
 ### M2 Commit 1 Status (2026-03-04)
 

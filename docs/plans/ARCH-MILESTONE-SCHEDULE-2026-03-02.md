@@ -259,15 +259,24 @@ Exit gates:
 
 3. Plan C follow-on service immutability:
    - [ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md)
-   - Target window: M4 mid (active WSL follow-on after current Plan A/Plan C runtime behavior stabilization).
-   - Status note (2026-03-09): Slice 1 foundation landed locally (WSL; not committed):
+   - Target window: M4 mid (WSL follow-on closeout after current Plan A/Plan C runtime behavior stabilization).
+   - Status note (2026-03-09): Slices 1-3 + mutator compatibility hardening
+     landed locally (WSL; not committed):
      - additive typed `ServiceContainer` mutators for `permissions`, `cwd`,
        `model`, and `child_agent_ids`.
      - immutable runtime snapshot model added for runtime service-state access.
-     - focused regressions added in
-       `tests/unit/skill/test_service_container_immutability.py`.
-     - follow-on remains in progress for slice 2/3 call-site migration
-       (`pool.py` create/restore and REPL runtime mutation surfaces).
+     - pool create/restore wiring migrated to typed mutator flows.
+     - REPL runtime mutation paths (`/cd`, `/permissions`, `/model`) migrated
+       to typed mutator flows.
+     - session runtime model access aligned to typed accessor flow.
+     - mutator compatibility hardening landed (`set_permissions(...)` keeps
+       legacy `allowed_paths` readers aligned during migration).
+     - focused regressions expanded in
+       `tests/unit/skill/test_service_container_immutability.py`,
+       `tests/unit/test_pool.py`, and `tests/unit/test_repl_commands.py`.
+     - remaining closeout item: retire or explicitly scope generic
+       `ServiceContainer.register(...)` runtime mutation usage to
+       non-production compatibility paths.
    - Dependency gates:
      - Current request-context propagation behavior is stable under existing tests.
      - No active regressions in REPL runtime mutation paths (`/cd`, `/permissions`, `/model`).

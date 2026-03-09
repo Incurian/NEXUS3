@@ -134,7 +134,7 @@ async def _refresh_agent_tools(
     """
     from nexus3.mcp.permissions import can_use_mcp
 
-    permissions = agent.services.get("permissions")
+    permissions = agent.services.get_permissions()
     if permissions is None:
         return
 
@@ -855,7 +855,7 @@ async def _show_agent_status(ctx: CommandContext) -> CommandOutput:
     agent_type = "temp" if is_temp_agent(agent.agent_id) else "named"
 
     # Get model info
-    current_model: ResolvedModel | None = agent.services.get("model")
+    current_model: ResolvedModel | None = agent.services.get_model()
     if current_model:
         model_display = current_model.alias or current_model.model_id
         model_id = current_model.model_id
@@ -1019,7 +1019,7 @@ async def cmd_cwd(
             return CommandOutput.error(f"Not a directory: {path}")
 
         # Validate against agent's allowed_paths if sandboxed
-        permissions: AgentPermissions | None = agent.services.get("permissions")
+        permissions: AgentPermissions | None = agent.services.get_permissions()
         if permissions and permissions.effective_policy.allowed_paths:
             from nexus3.core.errors import PathSecurityError
             from nexus3.core.paths import validate_path
@@ -1029,7 +1029,7 @@ async def cmd_cwd(
                 return CommandOutput.error(f"Directory outside sandbox: {e}")
 
         # Update ONLY this agent's cwd
-        agent.services.register("cwd", new_path)
+        agent.services.set_cwd(new_path)
 
         # Refresh git context for new directory
         agent.context.refresh_git_context(new_path)
@@ -1072,7 +1072,7 @@ async def cmd_permissions(
         return CommandOutput.error(f"Agent not found: {ctx.current_agent_id}")
 
     # Get current permissions
-    perms: AgentPermissions | None = agent.services.get("permissions")
+    perms: AgentPermissions | None = agent.services.get_permissions()
 
     if not args or not args.strip():
         # Show current permissions
@@ -1279,8 +1279,7 @@ async def _change_preset(
         new_perms.depth = perms.depth
         new_perms.session_allowances = copy.deepcopy(perms.session_allowances)
 
-    agent.services.register("permissions", new_perms)
-    agent.services.register("allowed_paths", new_perms.effective_policy.allowed_paths)
+    agent.services.set_permissions(new_perms)
 
     # Resync tool definitions for new preset's permissions
     agent.context.set_tool_definitions(
@@ -1397,9 +1396,8 @@ async def cmd_prompt(
         agent.context.set_system_prompt(content)
 
         # Refresh git context (prompt changed, context rebuilt)
-        cwd: Path | None = agent.services.get("cwd")
-        if cwd is not None:
-            agent.context.refresh_git_context(cwd)
+        if agent.services.has("cwd"):
+            agent.context.refresh_git_context(agent.services.get_cwd())
 
         return CommandOutput.success(
             message=f"System prompt loaded from: {prompt_path} ({len(content)} chars)",
@@ -1580,7 +1578,7 @@ async def cmd_model(
     from nexus3.config.schema import ResolvedModel
 
     # Get current model from agent services
-    current_model: ResolvedModel | None = agent.services.get("model")
+    current_model: ResolvedModel | None = agent.services.get_model()
 
     if name is None:
         # Show current model
@@ -1642,7 +1640,7 @@ async def cmd_model(
         )
 
     # Update model in agent services
-    agent.services.register("model", new_model)
+    agent.services.set_model(new_model)
 
     # Update context manager's max_tokens
     if hasattr(agent.context, "config"):
@@ -1664,9 +1662,8 @@ async def cmd_model(
             return CommandOutput.error(f"Failed to switch model: {e.message}")
 
     # Refresh git context (context window changed, prompt will be rebuilt)
-    cwd: Path | None = agent.services.get("cwd")
-    if cwd is not None:
-        agent.context.refresh_git_context(cwd)
+    if agent.services.has("cwd"):
+        agent.context.refresh_git_context(agent.services.get_cwd())
 
     alias_info = f" (alias: {new_model.alias})" if new_model.alias else ""
     return CommandOutput.success(
@@ -1836,7 +1833,7 @@ async def cmd_mcp(
     # Get current agent info
     current_agent_id = ctx.current_agent_id or "main"
     agent = ctx.pool.get(current_agent_id) if ctx.current_agent_id else None
-    perms = agent.services.get("permissions") if agent else None
+    perms = agent.services.get_permissions() if agent else None
 
     # Check agent permissions for MCP access
     if perms is not None and not can_use_mcp(perms):
@@ -2393,7 +2390,7 @@ def _gitlab_status(ctx: CommandContext, config: Any) -> CommandOutput:
 
     # Count gitlab tools in current agent's registry
     agent = ctx.pool.get(ctx.current_agent_id) if ctx.current_agent_id else None
-    perms: AgentPermissions | None = agent.services.get("permissions") if agent else None
+    perms: AgentPermissions | None = agent.services.get_permissions() if agent else None
 
     enabled_count = 0
     disabled_count = 0
@@ -2456,7 +2453,7 @@ def _gitlab_toggle(ctx: CommandContext, enable: bool) -> CommandOutput:
     if agent is None:
         return CommandOutput.error(f"Agent not found: {ctx.current_agent_id}")
 
-    perms: AgentPermissions | None = agent.services.get("permissions")
+    perms: AgentPermissions | None = agent.services.get_permissions()
     if perms is None:
         return CommandOutput.error("Cannot modify permissions: no policy set")
 
@@ -2492,9 +2489,8 @@ def _gitlab_toggle(ctx: CommandContext, enable: bool) -> CommandOutput:
     )
 
     # Refresh git context (tool definitions changed)
-    cwd: Path | None = agent.services.get("cwd")
-    if cwd is not None:
-        agent.context.refresh_git_context(cwd)
+    if agent.services.has("cwd"):
+        agent.context.refresh_git_context(agent.services.get_cwd())
 
     if enable:
         msg = f"GitLab: ON ({count} tools enabled)"

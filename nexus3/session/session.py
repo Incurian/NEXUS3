@@ -610,11 +610,9 @@ class Session:
             final_message: Message | None = None
             is_reasoning = False
             show_reasoning = False
-            if self._services:
-                from nexus3.config.schema import ResolvedModel
-                resolved_model: ResolvedModel | None = self._services.get("model")
-                if resolved_model:
-                    show_reasoning = resolved_model.reasoning
+            runtime_model = self._services.get_model() if self._services else None
+            if runtime_model is not None:
+                show_reasoning = runtime_model.reasoning
             elif self._config:
                 default_model = self._config.resolve_model()
                 show_reasoning = default_model.reasoning

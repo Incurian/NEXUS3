@@ -113,3 +113,54 @@ class TestServiceContainerRuntimeMutation:
         assert container.get_cwd() == cwd_b
         assert container.get_model() is model_b
         assert container.get_child_agent_ids() == {"child-b"}
+
+    def test_set_permissions_syncs_legacy_allowed_paths_compatibility(self) -> None:
+        """Setting permissions should keep legacy allowed_paths reads aligned."""
+        container = ServiceContainer()
+        container.register("allowed_paths", [Path("stale")])
+        sandboxed_permissions = _make_permissions(base_preset="sandboxed")
+
+        container.set_permissions(sandboxed_permissions)
+
+        assert container.get_permissions() is sandboxed_permissions
+        assert container.get("allowed_paths") == [Path("sandbox-root")]
+        assert container.get_tool_allowed_paths() == [Path("sandbox-root")]
+
+    def test_set_permissions_with_unrestricted_policy_clears_stale_allowed_paths(self) -> None:
+        """Trusted permissions should clear stale fallback allowed_paths entries."""
+        container = ServiceContainer()
+        container.register("allowed_paths", [Path("stale")])
+
+        container.set_permissions(_make_permissions(base_preset="trusted"))
+
+        assert container.get("allowed_paths") is None
+        assert container.get_tool_allowed_paths() is None
+
+    def test_clearing_permissions_clears_legacy_allowed_paths_compatibility(self) -> None:
+        """Clearing permissions should clear legacy allowed_paths compatibility state."""
+        container = ServiceContainer()
+        container.set_permissions(_make_permissions(base_preset="sandboxed"))
+
+        container.set_permissions(None)
+
+        assert container.get_permissions() is None
+        assert container.get("allowed_paths") is None
+        assert container.get_tool_allowed_paths() is None
+
+    def test_snapshot_child_agent_ids_stays_stable_after_runtime_mutation(self) -> None:
+        """Snapshot should capture child IDs as an immutable point-in-time copy."""
+        container = ServiceContainer()
+        input_child_ids = {"child-a"}
+        container.set_child_agent_ids(input_child_ids)
+
+        # Verify mutator copies caller-owned set.
+        input_child_ids.add("child-b")
+        assert container.get_child_agent_ids() == {"child-a"}
+
+        snapshot = container.snapshot_runtime()
+        live_child_ids = container.get_child_agent_ids()
+        assert live_child_ids is not None
+        live_child_ids.add("child-c")
+
+        assert container.get_child_agent_ids() == {"child-a", "child-c"}
+        assert snapshot.child_agent_ids == frozenset({"child-a"})

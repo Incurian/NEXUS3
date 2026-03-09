@@ -1354,6 +1354,43 @@ As of 2026-02-25: **All tests, lints, and type checks pass 100%.**
 - `mypy nexus3/` — 0 errors (192 source files)
 - `pytest tests/` — 3742 passed, 3 skipped (2 require API key, 1 Windows-only)
 
+Architecture execution running status (2026-03-09, WSL follow-on, pending commit):
+- Plan C service-container immutability follow-on is now in progress-complete
+  local state through slices 2/3:
+  - pool create/restore migration to typed runtime mutators/accessors is
+    implemented in `nexus3/rpc/pool.py` with focused updates in
+    `tests/unit/test_pool.py`.
+  - REPL/session runtime mutation/read migration to typed APIs is implemented in
+    `nexus3/cli/repl_commands.py` and `nexus3/session/session.py`, with focused
+    updates in `tests/unit/test_repl_commands.py`.
+  - service mutator compatibility hardening for `allowed_paths` is implemented
+    in `nexus3/skill/services.py` with focused compatibility regressions in
+    `tests/unit/skill/test_service_container_immutability.py`.
+- Focused validation snapshot:
+  - passed:
+    `.venv/bin/ruff check nexus3/rpc/pool.py nexus3/cli/repl_commands.py nexus3/session/session.py nexus3/skill/services.py tests/unit/test_pool.py tests/unit/test_repl_commands.py tests/unit/skill/test_service_container_immutability.py`
+  - passed:
+    `.venv/bin/mypy nexus3/rpc/pool.py nexus3/cli/repl_commands.py nexus3/session/session.py nexus3/skill/services.py`
+  - passed:
+    `.venv/bin/pytest -q tests/unit/test_repl_commands.py tests/unit/test_pool.py tests/unit/skill/test_service_container_immutability.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py`
+    (`165 passed in 8.59s`).
+
+### Orchestrator Handover Checkpoint (2026-03-09)
+
+- Branch: `feat/arch-overhaul-execution`
+- Local state:
+  - Plan H Phase 3 canonical diagnostics follow-on is already committed as
+    `fd33b01`.
+  - Plan C slices 1-3 follow-on is implemented in working tree and pending
+    commit.
+- Concrete resume steps for next slice:
+  1. Commit Plan C service-immutability follow-on (pool create/restore,
+     REPL/session runtime typed API migration, `allowed_paths` compatibility hardening).
+  2. Re-run the focused validation trio above post-commit.
+  3. Kick off deferred provider keep-alive investigation from
+     `docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md` and log
+     the next checkpoint in AGENTS/CLAUDE.
+
 ### Known Failures
 
 None. If any test or lint failure is introduced and cannot be immediately resolved, document it here with:
@@ -1498,6 +1535,10 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 |------|-------------|--------|
 | `PROMPT-CACHE-OPTIMIZATION-PLAN.md` | Separate dynamic context from system prompt for cache-optimal message structure | 1-2 days |
 | `PROVIDER-BUGFIX-PLAN.md` | SSL cert handling, MSYS2 path normalization, reasoning_content logging | 1 day |
+| `PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md` | Investigate and close deferred keep-alive stale-connection behavior | 1-2 days |
+| `ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md` | Replace mutable service-container runtime pattern with typed immutable snapshots | 2-4 days |
+| `STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md` | Split oversized REPL/session/pool modules and clean display config wiring | 1-2 weeks |
+| `POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md` | Run soak, Windows-native, TOCTOU race, and terminal red-team closeout validation | 1 week |
 | `DOUBLE-SPINNER-FIX-PLAN.md` | Fix double spinner / trapped ESC when concurrent RPC sends hit REPL | 1 day |
 | `DRY-CLEANUP-PLAN.md` | DRY violations, dead code removal, naming fixes from Opus 4.6 review | 1-2 days |
 | `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | 2 weeks |

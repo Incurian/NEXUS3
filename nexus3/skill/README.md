@@ -473,7 +473,8 @@ my_filtered_skill_factory = filtered_command_skill_factory(MyFilteredSkill)
 
 ## ServiceContainer
 
-A simple dependency injection container for skills:
+A dependency injection container for skills. For runtime agent fields, prefer
+typed mutators over generic `register(...)` writes.
 
 ```python
 from nexus3.skill.services import ServiceContainer
@@ -490,11 +491,17 @@ services.clear()               # Remove all services
 services.names()               # List registered names
 ```
 
-### Typed Accessors
+### Typed Accessors and Runtime Mutators
 
-ServiceContainer provides typed accessors for common services:
+ServiceContainer provides typed mutators/accessors for common runtime services:
 
 ```python
+# Runtime mutators (preferred for runtime fields)
+services.set_permissions(agent_permissions)           # AgentPermissions | None
+services.set_cwd(Path("/sandbox"))                    # Path | str | None
+services.set_model(resolved_model)                    # ResolvedModel | None
+services.set_child_agent_ids({"child-a", "child-b"}) # set[str] | None
+
 # Permission-related
 services.get_permissions()           # AgentPermissions | None
 services.get_permission_level()      # PermissionLevel | None
@@ -551,8 +558,8 @@ from nexus3.skill import SkillRegistry, ServiceContainer
 
 # Create registry with service container
 services = ServiceContainer()
-services.register("permissions", agent_permissions)
-services.register("cwd", Path("/sandbox"))
+services.set_permissions(agent_permissions)
+services.set_cwd(Path("/sandbox"))
 
 registry = SkillRegistry(services)
 ```
@@ -1024,8 +1031,8 @@ async def main():
     cwd = Path.cwd()
     permissions = resolve_preset("trusted", cwd=cwd)
 
-    services.register("cwd", cwd)
-    services.register("permissions", permissions)
+    services.set_cwd(cwd)
+    services.set_permissions(permissions)
 
     # Create registry and register skills
     registry = SkillRegistry(services)

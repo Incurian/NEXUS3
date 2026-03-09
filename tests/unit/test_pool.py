@@ -629,7 +629,7 @@ class TestAgentPool:
             pool = AgentPool(shared)
             await pool.create(agent_id="parent-agent")
             child = await pool.create(agent_id="child-agent")
-            child_permissions = child.services.get("permissions")
+            child_permissions = child.services.get_permissions()
             assert child_permissions is not None
             child_permissions.parent_agent_id = "parent-agent"
 
@@ -637,6 +637,56 @@ class TestAgentPool:
 
             assert result is True
             assert "child-agent" not in pool
+
+    @pytest.mark.asyncio
+    async def test_create_tracks_child_ids_on_parent_services(self, tmp_path):
+        """create() tracks child IDs on the parent's runtime services."""
+        shared = create_mock_shared_components(tmp_path)
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            parent = await pool.create(
+                config=AgentConfig(agent_id="parent-track", preset="trusted")
+            )
+            await pool.create(
+                config=AgentConfig(
+                    agent_id="child-track",
+                    preset="sandboxed",
+                    parent_agent_id="parent-track",
+                ),
+                requester_id="parent-track",
+            )
+
+            assert set(pool.get_children("parent-track")) == {"child-track"}
+            assert parent.services.get_child_agent_ids() == {"child-track"}
+
+    @pytest.mark.asyncio
+    async def test_destroy_updates_parent_child_tracking(self, tmp_path):
+        """destroy() removes destroyed child IDs from parent runtime services."""
+        shared = create_mock_shared_components(tmp_path)
+
+        with patch("nexus3.skill.builtin.register_builtin_skills"):
+            pool = AgentPool(shared)
+            parent = await pool.create(
+                config=AgentConfig(agent_id="parent-destroy-track", preset="trusted")
+            )
+            await pool.create(
+                config=AgentConfig(
+                    agent_id="child-destroy-track",
+                    preset="sandboxed",
+                    parent_agent_id="parent-destroy-track",
+                ),
+                requester_id="parent-destroy-track",
+            )
+
+            destroyed = await pool.destroy(
+                "child-destroy-track",
+                requester_id="parent-destroy-track",
+            )
+
+            assert destroyed is True
+            assert pool.get_children("parent-destroy-track") == []
+            assert parent.services.get_child_agent_ids() == set()
 
     @pytest.mark.asyncio
     async def test_destroy_external_requester_uses_kernel_and_is_allowed(self, tmp_path):
@@ -1212,7 +1262,7 @@ class TestGlobalDispatcher:
         assert response is not None
         assert response.error is not None
         assert response.error["code"] == -32602  # INVALID_PARAMS
-        assert "agent_id" in response.error["message"].lower()
+        assert response.error["message"] == "Field required"
 
     @pytest.mark.asyncio
     async def test_list_agents_empty(self):

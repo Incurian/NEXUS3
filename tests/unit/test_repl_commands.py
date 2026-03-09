@@ -52,12 +52,41 @@ class MockServices:
     def register(self, name: str, value: Any) -> None:
         self._services[name] = value
 
+    def has(self, name: str) -> bool:
+        return name in self._services
+
     def get_cwd(self) -> Path:
         """Get agent's working directory."""
         cwd = self._services.get("cwd")
         if cwd is not None:
             return Path(cwd)
         return Path.cwd()
+
+    def set_cwd(self, cwd: Path | str | None) -> None:
+        if cwd is None:
+            self._services.pop("cwd", None)
+            return
+        self._services["cwd"] = Path(cwd)
+
+    def get_permissions(self) -> Any:
+        return self._services.get("permissions")
+
+    def set_permissions(self, permissions: Any) -> None:
+        if permissions is None:
+            self._services.pop("permissions", None)
+            self._services.pop("allowed_paths", None)
+            return
+        self._services["permissions"] = permissions
+        self._services["allowed_paths"] = permissions.effective_policy.allowed_paths
+
+    def get_model(self) -> Any:
+        return self._services.get("model")
+
+    def set_model(self, model: Any) -> None:
+        if model is None:
+            self._services.pop("model", None)
+            return
+        self._services["model"] = model
 
 
 class MockResolvedModel:
@@ -99,7 +128,7 @@ class MockAgent:
 
         # Mock services (with model)
         self.services = MockServices()
-        self.services.register("model", MockResolvedModel())
+        self.services.set_model(MockResolvedModel())
 
         # Mock registry for permission-based tool filtering
         self.registry = MagicMock()
@@ -481,7 +510,7 @@ class TestCmdCwd:
         assert "Changed" in output.message
         # Verify agent's cwd was updated
         agent = mock_pool.get("main")
-        assert agent.services.get("cwd") == tmp_path
+        assert agent.services.get_cwd() == tmp_path
 
     @pytest.mark.asyncio
     async def test_change_directory_nonexistent(self, ctx_with_agent: CommandContext):
@@ -553,7 +582,7 @@ class TestCmdPermissions:
 
         agent = mock_pool.add_agent("main")
         perms = resolve_preset("trusted")
-        agent.services.register("permissions", perms)
+        agent.services.set_permissions(perms)
 
         ctx = CommandContext(
             pool=mock_pool,
@@ -632,7 +661,7 @@ class TestCmdPermissions:
 
         agent = mock_pool.add_agent("main")
         perms = resolve_preset("trusted")
-        agent.services.register("permissions", perms)
+        agent.services.set_permissions(perms)
 
         ctx = CommandContext(
             pool=mock_pool,
@@ -655,7 +684,7 @@ class TestCmdPermissions:
         agent = mock_pool.add_agent("main")
         perms = resolve_preset("trusted")
         perms.tool_permissions["write_file"] = ToolPermission(enabled=False)
-        agent.services.register("permissions", perms)
+        agent.services.set_permissions(perms)
 
         ctx = CommandContext(
             pool=mock_pool,
@@ -680,7 +709,7 @@ class TestCmdPermissions:
         perms.tool_permissions["write_file"] = ToolPermission(enabled=False)
         perms.ceiling = resolve_preset("yolo")
         perms.ceiling.tool_permissions["write_file"] = ToolPermission(enabled=False)
-        agent.services.register("permissions", perms)
+        agent.services.set_permissions(perms)
 
         ctx = CommandContext(
             pool=mock_pool,
@@ -702,7 +731,7 @@ class TestCmdPermissions:
         """Can list tool permissions."""
         agent = mock_pool.add_agent("main")
         perms = resolve_preset("sandboxed")  # Has some disabled tools by default
-        agent.services.register("permissions", perms)
+        agent.services.set_permissions(perms)
 
         ctx = CommandContext(
             pool=mock_pool,
@@ -749,7 +778,7 @@ class TestCmdPermissions:
         perms.ceiling = resolve_preset("trusted")
         perms.parent_agent_id = "parent-agent"
         perms.depth = 1
-        agent.services.register("permissions", perms)
+        agent.services.set_permissions(perms)
 
         ctx = CommandContext(
             pool=mock_pool,
@@ -761,7 +790,7 @@ class TestCmdPermissions:
 
         assert output.result == CommandResult.ERROR
         assert "exceeds ceiling" in output.message
-        live_perms = agent.services.get("permissions")
+        live_perms = agent.services.get_permissions()
         assert live_perms is perms
         assert live_perms.base_preset == "sandboxed"
         agent.context.set_tool_definitions.assert_not_called()
@@ -777,7 +806,7 @@ class TestCmdPermissions:
         agent = mock_pool.add_agent("main")
         agent_cwd = tmp_path / "agent-cwd"
         agent_cwd.mkdir()
-        agent.services.register("cwd", agent_cwd)
+        agent.services.set_cwd(agent_cwd)
         perms = resolve_preset("trusted")
         perms.ceiling = resolve_preset("yolo")
         perms.parent_agent_id = "parent-agent"
@@ -787,7 +816,7 @@ class TestCmdPermissions:
         perms.session_allowances.add_write_file(allowed_file)
         perms.session_allowances.add_exec_directory("run_python", agent_cwd)
         perms.session_allowances.add_mcp_tool("mcp_demo")
-        agent.services.register("permissions", perms)
+        agent.services.set_permissions(perms)
 
         ctx = CommandContext(
             pool=mock_pool,
@@ -798,7 +827,7 @@ class TestCmdPermissions:
         output = await cmd_permissions(ctx, args="sandboxed")
 
         assert output.result == CommandResult.SUCCESS
-        live_perms = agent.services.get("permissions")
+        live_perms = agent.services.get_permissions()
         assert live_perms is not None
         assert live_perms.base_preset == "sandboxed"
         assert live_perms.parent_agent_id == "parent-agent"
