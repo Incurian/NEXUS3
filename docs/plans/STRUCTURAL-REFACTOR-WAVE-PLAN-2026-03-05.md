@@ -91,6 +91,18 @@ Execution notes:
 - Each extraction step must run the focused parity suite before moving to the
   next boundary.
 
+## Execution Status
+
+- 2026-03-09: Phase 1A (REPL formatting-helper extraction) completed in WSL.
+  - Extracted SafeSink-backed REPL formatting/sanitization helpers into
+    `nexus3/cli/repl_formatting.py`.
+  - Kept `nexus3/cli/repl.py` as façade entrypoint by importing helper names
+    so existing call sites and tests remain unchanged.
+  - Focused validation passed:
+    - `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
+    - `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
+    - `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/unit/test_repl_commands.py` (`97 passed`)
+
 ## Testing Strategy
 
 - Before each extraction slice, lock behavior with focused parity tests and
@@ -106,6 +118,7 @@ Execution notes:
 
 - [x] Establish extraction map with old->new module ownership and stable
       compatibility import boundaries.
+- [x] Complete REPL formatting-helper extraction slice with parity checks.
 - [ ] Complete REPL extraction slices with parity checks.
 - [ ] Complete Session extraction slices with parity checks.
 - [ ] Complete Pool extraction slices with parity checks.

@@ -37,6 +37,7 @@ The unified REPL calls `Session` directly (not through HTTP) to preserve streami
 nexus3/cli/
 ├── __init__.py          # Package entry point, exports main()
 ├── repl.py              # Main REPL implementation (~2050 lines)
+├── repl_formatting.py   # SafeSink-backed REPL formatting/sanitization helpers
 ├── serve.py             # Headless HTTP server mode
 ├── arg_parser.py        # CLI argument parsing with subparsers
 ├── client_commands.py   # RPC CLI command handlers
@@ -67,6 +68,10 @@ Exports only `main()` from `repl.py`.
 ### `repl.py` - Main REPL Implementation
 
 The heart of the CLI, implementing the unified REPL architecture.
+
+Formatting/sanitization helper functions are extracted into
+`repl_formatting.py`, while `repl.py` keeps a façade-compatible import surface
+for existing call sites and tests.
 
 #### Key Functions
 

@@ -421,9 +421,19 @@ Immediate tasks:
   - established old->new ownership map for REPL/session/pool/display slices.
   - documented façade compatibility-boundary policy and extraction order.
   - checked off the plan’s extraction-map checklist item.
-- Next target: execute structural-refactor Phase 1 (REPL formatting-helper
-  extraction) with focused parity tests; keep manual provider keep-alive
-  endpoint evidence capture queued for real endpoint availability.
+- Completed (2026-03-09, structural-refactor Phase 1A): REPL formatting-helper
+  extraction:
+  - extracted formatting/sanitization helpers into
+    `nexus3/cli/repl_formatting.py` while keeping `nexus3/cli/repl.py` as a
+    façade import surface.
+  - focused validation passed:
+    `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py`,
+    `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_formatting.py`,
+    `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/unit/test_repl_commands.py`
+    (`97 passed`).
+- Next target: execute structural-refactor Phase 1B (REPL runtime/client-discovery
+  helper extraction), while keeping manual provider keep-alive endpoint evidence
+  capture queued for real endpoint availability.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with
