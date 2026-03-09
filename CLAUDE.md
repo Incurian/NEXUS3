@@ -1359,7 +1359,7 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - `5c0e843` (pool/repl/session runtime migration to typed mutators/accessors)
   - `8143afe` (runtime register compatibility scoping via `register_runtime_compat(...)`)
 - Plan H shim-retirement closeout for remaining `create_agent` compatibility
-  remaps is committed in this wave:
+  remaps is committed in the current closeout wave:
   - `nexus3/rpc/global_dispatcher.py`: removed remaining custom create-agent
     field wording branches; malformed fields now surface canonical schema
     diagnostics.
@@ -1396,7 +1396,7 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
 - Branch: `feat/arch-overhaul-execution`
 - Local state:
   - Plan H Phase 3 canonical diagnostics follow-on is committed as `fd33b01`.
-  - Plan H create-agent remap closeout is committed in this wave
+  - Plan H create-agent remap closeout is committed as `a9aaa12`
     (`global_dispatcher.py` + focused ingress tests).
   - Plan C slices 1-3 follow-on is committed as `5c0e843` and `8143afe`.
   - Provider keep-alive kickoff slice is committed as `05ffb84`

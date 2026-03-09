@@ -235,7 +235,7 @@ Immediate tasks:
   - updated focused ingress regressions in
     `tests/unit/rpc/test_schema_ingress_wiring.py`,
     `tests/unit/test_client.py`, and `tests/unit/test_global_dispatcher.py`.
-- Completed (2026-03-09, committed in this wave): Plan H shim-retirement
+- Completed (2026-03-09, Plan H closeout wave): Plan H shim-retirement
   closeout slice for `create_agent` canonical diagnostics:
   - retired remaining compatibility-only create-agent field wording remaps in
     `nexus3/rpc/global_dispatcher.py` so malformed fields now surface canonical
@@ -496,7 +496,7 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
-- `(pending hash)` plan h shim retirement closeout: retire remaining create_agent compatibility remaps
+- `a9aaa12` plan h shim retirement closeout: retire remaining create_agent remaps
 - `05ffb84` provider keepalive kickoff: add stale-reuse recovery and diagnostics evidence
 - `8143afe` plan c closeout: scope runtime register compatibility path
 - `5c0e843` plan c slices 2/3: migrate pool/repl/session runtime state to typed services
