@@ -306,7 +306,7 @@ Exit gates:
      - Typed immutability/mutation regression coverage is in place for pool + REPL + session paths.
      - Focused pool/repl/session authorization suites pass.
 
-4. Provider keep-alive deferred investigation:
+4. Provider keep-alive deferred evidence follow-up (external prerequisites):
    - [PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md)
    - Target window: M4 late / post-M4 stabilization window.
    - Status note (2026-03-09): kickoff implementation slice complete in WSL:
@@ -328,7 +328,7 @@ Exit gates:
        3. run `scripts/diagnose-empty-stream.sh` Step 10 flow.
        4. archive `10-keepalive-evidence.json` artifacts and link run IDs in
           status docs.
-     - next gate (updated): keep real-endpoint evidence deferred until the
+     - next gate (updated): external evidence gate remains deferred until the
        above checklist is executable in WSL, then archive and link run IDs.
    - Dependency gates:
      - Existing provider empty-stream guards and retry behavior remain stable.

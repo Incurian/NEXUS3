@@ -228,6 +228,13 @@ Current milestone:
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
+- Completed (2026-03-09, docs/status closeout wave):
+  - clarified branch-scope status across `AGENTS.md`, `CLAUDE.md`, the
+    milestone schedule, and the provider keep-alive plan so the remaining
+    keep-alive item is presented as deferred external evidence only.
+  - explicit status now says no additional architecture implementation slice
+    is queued on this branch; resumption depends on WSL credentials/config for
+    the keep-alive evidence checklist.
 - Completed (2026-03-09, Plan C runtime-key test-setup hygiene closeout wave):
   - migrated remaining non-compat direct runtime-key test wiring to typed/compat
     APIs in:
@@ -741,18 +748,17 @@ Immediate tasks:
     - `.venv/bin/mypy nexus3/session/session.py nexus3/session/tool_loop_events_runtime.py nexus3/session/single_tool_runtime.py nexus3/session/tool_runtime.py` passed.
     - `.venv/bin/pytest -q tests/unit/test_compaction.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_pool.py tests/unit/test_auto_restore.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py` passed (`213 passed`).
     - `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py tests/integration/test_chat.py tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py` passed (`91 passed, 2 skipped`).
-- Next target: Plan C optional test-hygiene backlog is now closed except for
-  the intentional legacy-compat coverage in
-  `tests/unit/skill/test_service_container_immutability.py`; provider
-  keep-alive real-endpoint evidence remains operationally deferred
-  (2026-03-09) pending endpoint credentials/config availability in the current
-  WSL environment.
+- Execution status: architecture implementation backlog is complete for the
+  current branch scope. Plan C optional test-hygiene backlog is closed except
+  for the intentional legacy-compat coverage in
+  `tests/unit/skill/test_service_container_immutability.py`; only deferred
+  external provider keep-alive evidence remains pending endpoint
+  credentials/config availability in the current WSL environment.
 - Next gate after credentials/config are available: execute the reminder
   checklist above and link run IDs/artifacts in status docs.
-- Active architecture track: provider keep-alive real-endpoint evidence is
-  operationally deferred pending credentials/config. No additional
-  architecture-gated implementation slice is currently queued ahead of that
-  evidence checkpoint.
+- Active architecture track: no additional architecture implementation slice is
+  currently queued. Provider keep-alive real-endpoint evidence remains an
+  operationally deferred external follow-up pending credentials/config.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with
@@ -2616,9 +2622,10 @@ Orchestrator handover checkpoint (2026-03-09, Plan C final-wave checkpoint-ready
 - Concrete resume steps for post-compact continuation:
   1. Commit the checkpoint-ready Plan C service-immutability follow-on
      (slices 1-3) on `feat/arch-overhaul-execution`.
-  2. Start deferred provider keep-alive investigation kickoff from
-     `docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md` and
-     record the first checkpoint in AGENTS/CLAUDE running status.
+  2. Historical next step at that checkpoint (completed 2026-03-09):
+     provider keep-alive investigation kickoff from
+     `docs/plans/PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md`,
+     with the first checkpoint recorded in AGENTS/CLAUDE running status.
   3. Re-run the focused validation trio above after any provider keep-alive
      implementation edits and archive command outputs in session notes.
 

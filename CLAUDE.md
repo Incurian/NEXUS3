@@ -1925,7 +1925,7 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 |------|-------------|--------|
 | `PROMPT-CACHE-OPTIMIZATION-PLAN.md` | Separate dynamic context from system prompt for cache-optimal message structure | 1-2 days |
 | `PROVIDER-BUGFIX-PLAN.md` | SSL cert handling, MSYS2 path normalization, reasoning_content logging | 1 day |
-| `PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md` | Keep-alive stale-connection closeout (bounded mitigation + evidence workflow) | 1-2 days |
+| `PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05.md` | Keep-alive stale-connection closeout complete; real-endpoint evidence deferred pending credentials/config | Deferred external evidence |
 | `ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md` | Replace mutable service-container runtime pattern with typed immutable snapshots | 2-4 days |
 | `STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md` | Split oversized REPL/session/pool modules and clean display config wiring | 1-2 weeks |
 | `POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md` | Run soak, Windows-native, TOCTOU race, and terminal red-team closeout validation | 1 week |
@@ -1937,12 +1937,13 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 
 Dynamic content (datetime, git status, clipboard) was being injected into the system prompt, invalidating the cache (~10-15K tokens) on every API call. Fix moves dynamic content to the last user message via `<session-context>` tags. See `docs/plans/PROMPT-CACHE-OPTIMIZATION-PLAN.md`.
 
-#### Next Up: PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05
+#### Deferred External Follow-Up: PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05
 
 Provider keep-alive real-endpoint evidence remains operationally deferred
 (2026-03-09) pending endpoint credentials/config availability in the current
-WSL environment. Resume architecture execution from the documented
-keep-alive checklist once those credentials/config inputs are available.
+WSL environment. Resume the keep-alive evidence workflow from the documented
+checklist once those credentials/config inputs are available; the architecture
+implementation backlog is otherwise complete.
 
 ### Known Bugs
 

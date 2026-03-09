@@ -109,7 +109,7 @@ Execution status (2026-03-09, WSL):
     3. Run `scripts/diagnose-empty-stream.sh` Step 10 flow.
     4. Archive `10-keepalive-evidence.json` artifacts and link run IDs in
        status docs (`AGENTS.md`, `CLAUDE.md`, and milestone/plan status docs).
-- Next gate (updated): keep real-endpoint evidence deferred until endpoint
+- Next gate (updated): external evidence gate remains deferred until endpoint
   credentials/config are available in WSL, then execute the reminder checklist
   above.
 
