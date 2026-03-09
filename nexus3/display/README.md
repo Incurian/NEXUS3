@@ -28,7 +28,7 @@ from nexus3.display import (
     Theme,                # Theme configuration dataclass
     Status,               # Status enum (ACTIVE, PENDING, COMPLETE, ERROR, CANCELLED)
     Activity,             # Activity enum (IDLE, WAITING, THINKING, RESPONDING, TOOL_CALLING)
-    load_theme,           # Load theme with optional overrides
+    load_theme,           # Load runtime theme
 
     # Printing
     InlinePrinter,        # Scrolling output with gumballs
@@ -177,7 +177,7 @@ The theme system defines visual styling for all display components.
 | `Activity` | Enum for agent activities (IDLE, WAITING, THINKING, RESPONDING, TOOL_CALLING) |
 | `Theme` | Dataclass with all styling configuration |
 | `DEFAULT_THEME` | Pre-created default theme instance |
-| `load_theme(overrides)` | Load theme with optional overrides |
+| `load_theme()` | Load runtime theme |
 
 **Status Enum:**
 

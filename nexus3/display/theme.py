@@ -60,12 +60,10 @@ class Theme:
 DEFAULT_THEME = Theme()
 
 
-def load_theme(overrides: dict[str, str] | None = None) -> Theme:
-    """Load theme with optional overrides from config."""
-    if not overrides:
-        return Theme()
+def load_theme() -> Theme:
+    """Load the runtime display theme.
 
-    # Apply overrides (future: deep merge from config)
-    theme = Theme()
-    # Could override individual fields here from config
-    return theme
+    Theme overrides are currently a no-op, so runtime behavior remains the
+    default theme.
+    """
+    return Theme()

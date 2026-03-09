@@ -127,15 +127,17 @@ class TestLoadTheme:
         theme = load_theme()
         assert isinstance(theme, Theme)
 
-    def test_load_theme_with_none_overrides(self) -> None:
-        """load_theme() with None overrides returns default Theme."""
-        theme = load_theme(None)
-        assert isinstance(theme, Theme)
+    def test_load_theme_uses_default_theme_values(self) -> None:
+        """load_theme() returns default runtime theme values."""
+        theme = load_theme()
+        assert theme.summary_separator == " | "
+        assert theme.spinner_frames == "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
-    def test_load_theme_with_empty_overrides(self) -> None:
-        """load_theme() with empty dict returns Theme."""
-        theme = load_theme({})
-        assert isinstance(theme, Theme)
+    def test_load_theme_returns_fresh_theme_instance(self) -> None:
+        """load_theme() returns a new Theme instance each call."""
+        first = load_theme()
+        second = load_theme()
+        assert first is not second
 
 
 # =============================================================================

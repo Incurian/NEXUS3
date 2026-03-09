@@ -235,8 +235,27 @@ Execution notes:
     - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/simple_turn_runtime.py nexus3/session/README.md`
     - `.venv/bin/mypy nexus3/session/session.py nexus3/session/simple_turn_runtime.py`
     - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/integration/test_chat.py` (`22 passed, 2 skipped`)
-- Next gate: execute Pool extraction slices with focused parity checks, then
-  land display-config cleanup with documented override contract.
+- 2026-03-09: Phase 3A (Pool visibility extraction) completed in WSL.
+  - Added `nexus3/rpc/pool_visibility.py` for extracted MCP/GitLab visibility
+    adapter + helper ownership.
+  - Kept `AgentPool._is_mcp_visible_for_agent(...)` and
+    `AgentPool._is_gitlab_visible_for_agent(...)` as thin wrappers in
+    `nexus3/rpc/pool.py`.
+  - Focused validation passed:
+    - `.venv/bin/ruff check nexus3/rpc/pool.py nexus3/rpc/pool_visibility.py`
+    - `.venv/bin/mypy nexus3/rpc/pool.py nexus3/rpc/pool_visibility.py`
+    - `.venv/bin/pytest -q tests/unit/test_pool.py -k "mcp_visibility or gitlab_visibility"` (`4 passed`)
+- 2026-03-09: Phase 4A (Display no-op override cleanup) completed in WSL.
+  - Simplified `nexus3/display/theme.py` to `load_theme() -> Theme`,
+    removing no-op override argument path while preserving runtime behavior.
+  - Updated display module docs and theme tests for the canonical runtime
+    theme-loader contract.
+  - Focused validation passed:
+    - `.venv/bin/ruff check nexus3/display/theme.py nexus3/display/README.md tests/unit/test_display.py`
+    - `.venv/bin/mypy nexus3/display/theme.py nexus3/cli/repl.py nexus3/display/manager.py nexus3/display/spinner.py`
+    - `.venv/bin/pytest -q tests/unit/test_display.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py` (`137 passed`)
+- Next gate: execute remaining Pool extraction slices (create/restore/lifecycle)
+  with focused parity checks, then remove temporary compatibility wrappers.
 
 ## Testing Strategy
 
@@ -272,7 +291,7 @@ Execution notes:
 - [x] Complete remaining post-turn-entry Session core `send(...)` /
       `run_turn(...)` extraction internals with parity checks.
 - [ ] Complete Pool extraction slices with parity checks.
-- [ ] Land display-config cleanup with documented override contract.
+- [x] Land display-config cleanup with documented override contract.
 - [ ] Remove temporary compatibility wrappers after one full green cycle.
 - [ ] Update deferred tracker rows for structural refactors and display config.
 

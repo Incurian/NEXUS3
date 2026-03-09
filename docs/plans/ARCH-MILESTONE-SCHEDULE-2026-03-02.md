@@ -321,7 +321,7 @@ Exit gates:
    - [STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md)
    - Target window: post-M4 cleanup (non-blocking for security gates).
    - Status note (2026-03-09): kickoff + REPL + Session Phase 2A/2B/2C/2D/2E/2F/2G/2H
-     slices complete in WSL:
+     plus Pool visibility + display cleanup slices complete in WSL:
      - extraction map and compatibility-boundary policy documented in plan.
      - Phase 1A completed: REPL formatting/sanitization helpers extracted to
        `nexus3/cli/repl_formatting.py` with façade-compatible imports in
@@ -362,6 +362,12 @@ Exit gates:
        extracted to `nexus3/session/simple_turn_runtime.py` with
        `send(...)` / `run_turn(...)` simple paths using
        `execute_simple_send(...)` / `execute_simple_run_turn(...)`.
+     - Phase 3A completed: Pool MCP/GitLab visibility internals extracted to
+       `nexus3/rpc/pool_visibility.py` with `AgentPool` visibility methods
+       retained as compatibility wrappers.
+     - Phase 4A completed: display theme no-op override path removed by
+       simplifying `load_theme(overrides=...)` to `load_theme()` with
+       parity-preserving default behavior.
      - focused parity checks passed for Session compaction/runtime extraction
        in session + compaction/context suites (`54 passed`, `75 passed`).
      - focused parity checks passed for Session tool execution extraction in
@@ -380,12 +386,17 @@ Exit gates:
        `40 passed, 2 skipped`).
      - focused parity checks passed for Session simple-turn runtime extraction
        in session/chat suites (`22 passed, 2 skipped`).
+     - focused parity checks passed for Pool visibility extraction in targeted
+       pool unit tests (`4 passed`).
+     - focused parity checks passed for display cleanup in display unit suites
+       (`137 passed`).
      - live smoke validation passed on port 9000 (`--serve`, `rpc create`,
        `rpc send`, `rpc destroy`, `rpc shutdown`).
      - focused parity checks passed for REPL formatting/runtime/reload, REPL
        command, connect-lobby, and client paths.
-     - next gate: begin pool extraction slices (start with visibility helpers)
-       with parity validation, then land display-config cleanup.
+     - next gate: execute remaining Pool extraction slices
+       (create/restore/lifecycle) with parity validation, then remove temporary
+       compatibility wrappers.
    - Dependency gates:
      - No unresolved high-priority behavior defects in REPL/session/pool runtime paths.
      - Existing integration and regression baselines are green before each extraction slice.
