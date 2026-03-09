@@ -1944,6 +1944,9 @@ Provider keep-alive real-endpoint evidence remains operationally deferred
 WSL environment. Resume the keep-alive evidence workflow from the documented
 checklist once those credentials/config inputs are available; the architecture
 implementation backlog is otherwise complete.
+If that evidence is clean, it closes the last remaining branch-scope checkbox.
+If it surfaces a real defect, treat it as a standalone bugfix follow-up rather
+than reopening the architecture execution plan.
 
 ### Known Bugs
 

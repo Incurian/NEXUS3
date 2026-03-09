@@ -112,6 +112,10 @@ Execution status (2026-03-09, WSL):
 - Next gate (updated): external evidence gate remains deferred until endpoint
   credentials/config are available in WSL, then execute the reminder checklist
   above.
+- Closeout decision note (2026-03-09): clean real-endpoint evidence closes the
+  final remaining checkbox for this branch-scope plan. Any confirmed failure
+  found by that evidence should be handled as a standalone provider bugfix
+  follow-up, not as reopened architecture-overhaul execution work.
 
 ## Documentation Updates
 

@@ -754,6 +754,10 @@ Immediate tasks:
   `tests/unit/skill/test_service_container_immutability.py`; only deferred
   external provider keep-alive evidence remains pending endpoint
   credentials/config availability in the current WSL environment.
+  - decision note (2026-03-09): if the deferred keep-alive evidence is clean,
+    it closes the final remaining branch-scope checkbox; if it reveals a real
+    failure, handle that as a standalone bugfix follow-up rather than reopening
+    the architecture execution backlog.
 - Next gate after credentials/config are available: execute the reminder
   checklist above and link run IDs/artifacts in status docs.
 - Active architecture track: no additional architecture implementation slice is
