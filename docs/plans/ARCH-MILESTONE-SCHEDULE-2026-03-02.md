@@ -321,8 +321,8 @@ Exit gates:
    - [STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md)
    - Target window: post-M4 cleanup (non-blocking for security gates).
    - Status note (2026-03-09): kickoff + REPL + Session Phase 2A/2B/2C/2D/2E/2F/2G/2H
-     plus Pool visibility/create/restore + display cleanup slices complete in
-     WSL:
+     plus Pool visibility/create/restore/lifecycle + display cleanup slices
+     complete in WSL:
      - extraction map and compatibility-boundary policy documented in plan.
      - Phase 1A completed: REPL formatting/sanitization helpers extracted to
        `nexus3/cli/repl_formatting.py` with façade-compatible imports in
@@ -374,6 +374,9 @@ Exit gates:
        `nexus3/rpc/pool_restore.py` with `get_or_restore(...)`,
        `_restore_unlocked(...)`, and `restore_from_saved(...)` routed through
        dependency-injected runtime helpers.
+     - Phase 3D completed: pool lifecycle internals extracted to
+       `nexus3/rpc/pool_lifecycle.py` with destroy/capability/accessor paths
+       routed through extracted helpers.
      - Phase 4A completed: display theme no-op override path removed by
        simplifying `load_theme(overrides=...)` to `load_theme()` with
        parity-preserving default behavior.
@@ -400,14 +403,16 @@ Exit gates:
      - focused parity checks passed for Pool create/restore extraction in
        pool/auth-shadow targeted suites (`43 passed`) and integration guards
        (`51 passed`).
+     - focused parity checks passed for Pool lifecycle extraction in targeted
+       lifecycle/auth/dispatcher suites (`70 passed`, `62 passed`).
      - focused parity checks passed for display cleanup in display unit suites
        (`137 passed`).
      - live smoke validation passed on port 9000 (`--serve`, `rpc create`,
        `rpc send`, `rpc destroy`, `rpc shutdown`).
      - focused parity checks passed for REPL formatting/runtime/reload, REPL
        command, connect-lobby, and client paths.
-     - next gate: execute remaining Pool lifecycle extraction slice with parity
-       validation, then remove temporary compatibility wrappers.
+     - next gate: remove temporary compatibility wrappers after one full green
+       cycle.
    - Dependency gates:
      - No unresolved high-priority behavior defects in REPL/session/pool runtime paths.
      - Existing integration and regression baselines are green before each extraction slice.

@@ -37,28 +37,23 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+from collections.abc import MutableMapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 from nexus3.clipboard import CLIPBOARD_PRESETS, ClipboardManager
 from nexus3.context import ContextConfig, ContextLoader, ContextManager, LoadedContext
 from nexus3.core.authorization_kernel import (
     AdapterAuthorizationKernel,
-    AuthorizationAction,
-    AuthorizationDecision,
-    AuthorizationRequest,
-    AuthorizationResource,
-    AuthorizationResourceType,
     CreateAuthorizationStage,
 )
 from nexus3.core.capabilities import (
     CapabilityClaims,
     CapabilitySigner,
     InMemoryCapabilityRevocationStore,
-    direct_rpc_scope_for_method,
     generate_capability_secret,
 )
 from nexus3.core.permissions import (
@@ -83,6 +78,55 @@ from nexus3.rpc.pool_create import (
 )
 from nexus3.rpc.pool_create import (
     enforce_create_authorization as enforce_create_authorization_runtime,
+)
+from nexus3.rpc.pool_lifecycle import (
+    AuthorizationError as LifecycleAuthorizationError,
+)
+from nexus3.rpc.pool_lifecycle import (
+    CapabilityLifecycleState,
+    _DestroyAuthorizationAdapter,
+)
+from nexus3.rpc.pool_lifecycle import (
+    destroy as destroy_runtime,
+)
+from nexus3.rpc.pool_lifecycle import (
+    destroy_unlocked as destroy_unlocked_runtime,
+)
+from nexus3.rpc.pool_lifecycle import (
+    get_agent as get_agent_runtime,
+)
+from nexus3.rpc.pool_lifecycle import (
+    get_children as get_children_runtime,
+)
+from nexus3.rpc.pool_lifecycle import (
+    is_repl_connected as is_repl_connected_runtime,
+)
+from nexus3.rpc.pool_lifecycle import (
+    issue_direct_capability as issue_direct_capability_runtime,
+)
+from nexus3.rpc.pool_lifecycle import (
+    list_agents as list_agents_runtime,
+)
+from nexus3.rpc.pool_lifecycle import (
+    pool_contains as pool_contains_runtime,
+)
+from nexus3.rpc.pool_lifecycle import (
+    pool_len as pool_len_runtime,
+)
+from nexus3.rpc.pool_lifecycle import (
+    revoke_capabilities_for_agent as revoke_capabilities_for_agent_runtime,
+)
+from nexus3.rpc.pool_lifecycle import (
+    set_repl_connected as set_repl_connected_runtime,
+)
+from nexus3.rpc.pool_lifecycle import (
+    should_shutdown as should_shutdown_runtime,
+)
+from nexus3.rpc.pool_lifecycle import (
+    track_issued_capability as track_issued_capability_runtime,
+)
+from nexus3.rpc.pool_lifecycle import (
+    verify_direct_capability as verify_direct_capability_runtime,
 )
 from nexus3.rpc.pool_restore import (
     RestoreRuntimeDeps,
@@ -124,41 +168,8 @@ if TYPE_CHECKING:
 MAX_AGENT_DEPTH = 5
 logger = logging.getLogger(__name__)
 
-
-class _DestroyAuthorizationAdapter:
-    """Kernel adapter mirroring legacy AgentPool.destroy authorization checks."""
-
-    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
-        if request.action != AuthorizationAction.AGENT_DESTROY:
-            return None
-        if request.resource.resource_type != AuthorizationResourceType.AGENT:
-            return None
-
-        requester_id = request.principal_id
-        target_agent_id = request.resource.identifier
-        target_parent_agent_id = request.context.get("target_parent_agent_id")
-        admin_override = request.context.get("admin_override")
-
-        if admin_override is True:
-            return AuthorizationDecision.allow(request, reason="admin_override")
-        if requester_id == "external":
-            return AuthorizationDecision.allow(request, reason="external_requester")
-
-        if requester_id == target_agent_id:
-            return AuthorizationDecision.allow(request, reason="self_destroy")
-        if isinstance(target_parent_agent_id, str) and target_parent_agent_id == requester_id:
-            return AuthorizationDecision.allow(request, reason="parent_destroy")
-        return AuthorizationDecision.deny(request, reason="not_parent_or_self")
-
-class AuthorizationError(Exception):
-    """Raised when an operation is not authorized.
-
-    Used for pool-level authorization checks, such as verifying that
-    an agent has permission to destroy another agent.
-    """
-
-    pass
-
+# Re-export lifecycle authorization error from extracted module for compatibility.
+AuthorizationError = LifecycleAuthorizationError
 
 # === Agent Naming Helpers ===
 
@@ -465,23 +476,13 @@ class AgentPool:
         ttl_seconds: int | None = None,
     ) -> str:
         """Issue a direct in-process capability token for one RPC method scope."""
-        required_scope = direct_rpc_scope_for_method(rpc_method)
-        if required_scope is None:
-            raise ValueError(f"Unsupported direct capability method: {rpc_method}")
-        if not issuer_id:
-            raise ValueError("issuer_id must be non-empty")
-        if not subject_id:
-            raise ValueError("subject_id must be non-empty")
-
-        token = self._capability_signer.issue(
+        return issue_direct_capability_runtime(
+            state=self._capability_lifecycle_state(),
             issuer_id=issuer_id,
             subject_id=subject_id,
-            scopes=(required_scope,),
-            ttl_seconds=ttl_seconds or self._direct_capability_ttl_seconds,
+            rpc_method=rpc_method,
+            ttl_seconds=ttl_seconds,
         )
-        claims = self._capability_signer.verify(token)
-        self._track_issued_capability(claims)
-        return token
 
     def verify_direct_capability(
         self,
@@ -490,48 +491,33 @@ class AgentPool:
         required_scope: str,
     ) -> CapabilityClaims:
         """Verify a direct in-process capability token with revocation checks."""
-        return self._capability_signer.verify(
-            token,
-            required_scopes=(required_scope,),
-            revocation_store=self._capability_revocation_store,
+        return verify_direct_capability_runtime(
+            state=self._capability_lifecycle_state(),
+            token=token,
+            required_scope=required_scope,
         )
 
     def _track_issued_capability(self, claims: CapabilityClaims) -> None:
-        self._issued_capability_token_ids_by_subject.setdefault(
-            claims.subject_id,
-            set(),
-        ).add(claims.token_id)
-        self._issued_capability_token_ids_by_issuer.setdefault(
-            claims.issuer_id,
-            set(),
-        ).add(claims.token_id)
+        track_issued_capability_runtime(
+            state=self._capability_lifecycle_state(),
+            claims=claims,
+        )
 
     def _revoke_capabilities_for_agent(self, agent_id: str) -> None:
-        token_ids: set[str] = set()
-        token_ids.update(
-            self._issued_capability_token_ids_by_subject.pop(agent_id, set())
+        revoke_capabilities_for_agent_runtime(
+            state=self._capability_lifecycle_state(),
+            agent_id=agent_id,
         )
-        token_ids.update(
-            self._issued_capability_token_ids_by_issuer.pop(agent_id, set())
+
+    def _capability_lifecycle_state(self) -> CapabilityLifecycleState:
+        """Build shared capability lifecycle state for extracted helpers."""
+        return CapabilityLifecycleState(
+            signer=self._capability_signer,
+            revocation_store=self._capability_revocation_store,
+            issued_token_ids_by_subject=self._issued_capability_token_ids_by_subject,
+            issued_token_ids_by_issuer=self._issued_capability_token_ids_by_issuer,
+            default_ttl_seconds=self._direct_capability_ttl_seconds,
         )
-        if not token_ids:
-            return
-
-        for token_id in token_ids:
-            self._capability_revocation_store.revoke(token_id)
-
-        # Remove revoked token ids from all remaining issuer/subject indexes.
-        for mapping in (
-            self._issued_capability_token_ids_by_subject,
-            self._issued_capability_token_ids_by_issuer,
-        ):
-            stale_keys: list[str] = []
-            for principal_id, tracked in mapping.items():
-                tracked.difference_update(token_ids)
-                if not tracked:
-                    stale_keys.append(principal_id)
-            for principal_id in stale_keys:
-                mapping.pop(principal_id, None)
 
     @property
     def system_prompt_path(self) -> str | None:
@@ -1143,96 +1129,31 @@ class AgentPool:
         *,
         admin_override: bool = False,
     ) -> bool:
-        """Destroy an agent and clean up its resources.
+        """Destroy an agent and clean up its resources."""
+        return await destroy_runtime(
+            lock=self._lock,
+            destroy_unlocked_fn=self._destroy_unlocked,
+            agent_id=agent_id,
+            requester_id=requester_id,
+            admin_override=admin_override,
+        )
 
-        This method:
-        1. Checks authorization through the kernel adapter
-        2. Removes the agent from the pool
-        3. Cancels all in-progress requests
-        4. Closes the agent's logger (flushes buffers, closes DB)
-        5. Removes from parent's child tracking (if applicable)
-
-        The agent's log directory is preserved for debugging/auditing.
-
-        Authorization Rules:
-        - Self-destruction is always allowed (agent destroys itself)
-        - Parent can destroy its children
-        - External clients (requester_id=None) are treated as admin
-        - admin_override=True is allowed by kernel policy (for shutdown, etc.)
-
-        Args:
-            agent_id: The ID of the agent to destroy.
-            requester_id: ID of the requesting agent (None for external clients).
-            admin_override: If True, skip authorization checks (for server shutdown).
-
-        Returns:
-            True if the agent was found and destroyed, False if not found.
-
-        Raises:
-            AuthorizationError: If requester is not authorized to destroy the agent.
-        """
-        async with self._lock:
-            if agent_id not in self._agents:
-                return False
-
-            agent = self._agents[agent_id]
-
-            # Authorization check through kernel adapter for all requester contexts.
-            target_permissions = agent.services.get_permissions()
-            destroy_principal_id = requester_id or "external"
-            kernel_request = AuthorizationRequest(
-                action=AuthorizationAction.AGENT_DESTROY,
-                resource=AuthorizationResource(
-                    resource_type=AuthorizationResourceType.AGENT,
-                    identifier=agent_id,
-                ),
-                principal_id=destroy_principal_id,
-                context={
-                    "target_parent_agent_id": (
-                        target_permissions.parent_agent_id
-                        if target_permissions is not None
-                        else None
-                    ),
-                    "admin_override": admin_override,
-                },
-            )
-            kernel_decision = self._destroy_authorization_kernel.authorize(kernel_request)
-            if not kernel_decision.allowed:
-                raise AuthorizationError(
-                    f"Agent '{destroy_principal_id}' is not authorized to destroy '{agent_id}'"
-                )
-
-            self._revoke_capabilities_for_agent(agent_id)
-
-            # Remove from pool
-            self._agents.pop(agent_id)
-
-            # Remove from parent's child tracking
-            permissions = agent.services.get_permissions()
-            if permissions and permissions.parent_agent_id:
-                parent = self._agents.get(permissions.parent_agent_id)
-                if parent:
-                    child_ids = parent.services.get_child_agent_ids()
-                    if child_ids and agent_id in child_ids:
-                        updated_child_ids = set(child_ids)
-                        updated_child_ids.discard(agent_id)
-                        parent.services.set_child_agent_ids(updated_child_ids)
-
-            # Cancel all in-progress requests before cleanup
-            await agent.dispatcher.cancel_all_requests()
-
-            # Unregister from log multiplexer
-            self._log_multiplexer.unregister(agent_id)
-
-            # Clean up clipboard manager (closes DB connections)
-            clipboard_manager: ClipboardManager | None = agent.services.get("clipboard_manager")
-            if clipboard_manager:
-                clipboard_manager.close()
-
-            # Clean up logger (closes DB connection, flushes files)
-            agent.logger.close()
-
-            return True
+    async def _destroy_unlocked(
+        self,
+        agent_id: str,
+        requester_id: str | None = None,
+        admin_override: bool = False,
+    ) -> bool:
+        """Internal destroy logic - caller MUST hold self._lock."""
+        return await destroy_unlocked_runtime(
+            agents=cast(MutableMapping[str, Any], self._agents),
+            destroy_authorization_kernel=self._destroy_authorization_kernel,
+            revoke_capabilities_for_agent_fn=self._revoke_capabilities_for_agent,
+            unregister_log_multiplexer_agent_fn=self._log_multiplexer.unregister,
+            agent_id=agent_id,
+            requester_id=requester_id,
+            admin_override=admin_override,
+        )
 
     def get(self, agent_id: str) -> Agent | None:
         """Get an agent by ID.
@@ -1243,7 +1164,13 @@ class AgentPool:
         Returns:
             The Agent instance, or None if no agent with that ID exists.
         """
-        return self._agents.get(agent_id)
+        return cast(
+            Agent | None,
+            get_agent_runtime(
+                agents=cast(MutableMapping[str, Any], self._agents),
+                agent_id=agent_id,
+            ),
+        )
 
     def get_children(self, agent_id: str) -> list[str]:
         """Get IDs of all child agents of a given agent.
@@ -1254,11 +1181,10 @@ class AgentPool:
         Returns:
             List of child agent IDs (may be empty).
         """
-        agent = self._agents.get(agent_id)
-        if agent is None:
-            return []
-        child_ids = agent.services.get_child_agent_ids()
-        return list(child_ids) if child_ids else []
+        return get_children_runtime(
+            agents=cast(MutableMapping[str, Any], self._agents),
+            agent_id=agent_id,
+        )
 
     def list(self) -> list[dict[str, Any]]:
         """List all agents with basic info.
@@ -1283,42 +1209,10 @@ class AgentPool:
             - cwd: Working directory path
             - write_paths: List of allowed write paths (None = unrestricted)
         """
-        result: list[dict[str, Any]] = []
-        for agent in self._agents.values():
-            permissions = agent.services.get_permissions()
-            child_ids = agent.services.get_child_agent_ids()
-            resolved_model = agent.services.get_model()
-            cwd = agent.services.get_cwd() if agent.services.has("cwd") else None
-
-            # Get write paths from permissions (check write_file tool permission)
-            write_paths: list[str] | None = None
-            if permissions:
-                write_file_perm = permissions.tool_permissions.get("write_file")
-                if write_file_perm and write_file_perm.allowed_paths is not None:
-                    write_paths = [str(p) for p in write_file_perm.allowed_paths]
-
-            result.append({
-                "agent_id": agent.agent_id,
-                "is_temp": is_temp_agent(agent.agent_id),
-                "created_at": agent.created_at.isoformat(),
-                "message_count": len(agent.context.messages),
-                "should_shutdown": agent.dispatcher.should_shutdown,
-                "parent_agent_id": permissions.parent_agent_id if permissions else None,
-                "child_count": len(child_ids) if child_ids else 0,
-                "halted_at_iteration_limit": agent.session.halted_at_iteration_limit,
-                "model": resolved_model.alias if resolved_model else None,
-                "last_action_at": (
-                    agent.session.last_action_at.isoformat()
-                    if agent.session.last_action_at
-                    else None
-                ),
-                "permission_level": (
-                    permissions.effective_policy.level.name if permissions else None
-                ),
-                "cwd": str(cwd) if cwd else None,
-                "write_paths": write_paths,
-            })
-        return result
+        return list_agents_runtime(
+            agents=cast(MutableMapping[str, Any], self._agents),
+            is_temp_agent_fn=is_temp_agent,
+        )
 
     def set_repl_connected(self, agent_id: str, connected: bool) -> None:
         """Set REPL connection state for an agent.
@@ -1327,9 +1221,11 @@ class AgentPool:
             agent_id: The agent to update.
             connected: True if REPL is connected, False otherwise.
         """
-        agent = self._agents.get(agent_id)
-        if agent:
-            agent.repl_connected = connected
+        set_repl_connected_runtime(
+            agents=cast(MutableMapping[str, Any], self._agents),
+            agent_id=agent_id,
+            connected=connected,
+        )
 
     def is_repl_connected(self, agent_id: str) -> bool:
         """Check if REPL is connected to an agent.
@@ -1340,8 +1236,10 @@ class AgentPool:
         Returns:
             True if REPL is connected, False otherwise.
         """
-        agent = self._agents.get(agent_id)
-        return agent.repl_connected if agent else False
+        return is_repl_connected_runtime(
+            agents=cast(MutableMapping[str, Any], self._agents),
+            agent_id=agent_id,
+        )
 
     @property
     def should_shutdown(self) -> bool:
@@ -1354,15 +1252,19 @@ class AgentPool:
         Returns:
             True if all agents want shutdown (or pool is empty), False otherwise.
         """
-        if not self._agents:
-            return False  # Empty pool doesn't trigger shutdown
-
-        return all(agent.dispatcher.should_shutdown for agent in self._agents.values())
+        return should_shutdown_runtime(
+            agents=cast(MutableMapping[str, Any], self._agents),
+        )
 
     def __len__(self) -> int:
         """Return the number of agents in the pool."""
-        return len(self._agents)
+        return pool_len_runtime(
+            agents=cast(MutableMapping[str, Any], self._agents),
+        )
 
     def __contains__(self, agent_id: str) -> bool:
         """Check if an agent ID exists in the pool."""
-        return agent_id in self._agents
+        return pool_contains_runtime(
+            agents=cast(MutableMapping[str, Any], self._agents),
+            agent_id=agent_id,
+        )

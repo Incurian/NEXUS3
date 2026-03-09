@@ -276,8 +276,20 @@ Execution notes:
     - `.venv/bin/mypy nexus3/rpc/pool.py nexus3/rpc/pool_restore.py`
     - `.venv/bin/pytest -q tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_auto_restore.py tests/unit/test_pool.py -k "create_ or create_temp or restore_ or get_or_restore or mcp_visibility or gitlab_visibility"` (`43 passed`)
     - `.venv/bin/pytest -q tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py` (`51 passed`)
-- Next gate: execute remaining Pool lifecycle extraction slice with focused
-  parity checks, then remove temporary compatibility wrappers.
+- 2026-03-09: Phase 3D (Pool lifecycle extraction) completed in WSL.
+  - Added `nexus3/rpc/pool_lifecycle.py` and moved lifecycle internals there:
+    destroy authorization + teardown flow, capability issue/verify/revoke
+    helpers, and pool accessor helpers.
+  - `pool.py` now retains thin compatibility wrappers for lifecycle and
+    capability methods.
+  - Focused validation passed:
+    - `.venv/bin/ruff check nexus3/rpc/pool.py nexus3/rpc/pool_lifecycle.py nexus3/rpc/pool_create.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_visibility.py`
+    - `.venv/bin/mypy nexus3/rpc/pool.py nexus3/rpc/pool_lifecycle.py nexus3/rpc/pool_create.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_visibility.py`
+    - `.venv/bin/pytest -q tests/unit/test_pool.py tests/unit/test_auto_restore.py tests/unit/rpc/test_pool_create_auth_shadow.py -k "destroy_ or capability or should_shutdown or list_returns_agent_info_dicts or get_returns_ or len_returns_agent_count or contains_checks_agent_id or mcp_visibility or gitlab_visibility or create_ or create_temp or restore_ or get_or_restore"` (`70 passed`)
+    - `.venv/bin/pytest -q tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py` (`62 passed`)
+    - `.venv/bin/pytest -q tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py` (`51 passed`)
+- Next gate: remove temporary compatibility wrappers after one full green
+  cycle, then update deferred tracker rows for structural refactors.
 
 ## Testing Strategy
 
@@ -312,7 +324,7 @@ Execution notes:
       parity checks.
 - [x] Complete remaining post-turn-entry Session core `send(...)` /
       `run_turn(...)` extraction internals with parity checks.
-- [ ] Complete Pool extraction slices with parity checks.
+- [x] Complete Pool extraction slices with parity checks.
 - [x] Land display-config cleanup with documented override contract.
 - [ ] Remove temporary compatibility wrappers after one full green cycle.
 - [ ] Update deferred tracker rows for structural refactors and display config.

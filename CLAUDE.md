@@ -1474,6 +1474,11 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - `AgentPool.get_or_restore(...)`, `_restore_unlocked(...)`, and
     `restore_from_saved(...)` now delegate to dependency-injected restore
     helpers via thin compatibility wrappers.
+- Structural-refactor Phase 3D (Pool lifecycle extraction) is completed:
+  - `nexus3/rpc/pool_lifecycle.py` now owns lifecycle internals for
+    destroy/capability/accessor paths.
+  - `pool.py` lifecycle/capability/accessor methods now delegate to extracted
+    helpers via compatibility wrappers.
 - Focused validation snapshot:
   - passed:
     `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
@@ -1593,6 +1598,16 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - passed:
     `.venv/bin/pytest -q tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py`
     (`51 passed`).
+  - passed:
+    `.venv/bin/ruff check nexus3/rpc/pool.py nexus3/rpc/pool_lifecycle.py nexus3/rpc/pool_create.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_visibility.py`
+  - passed:
+    `.venv/bin/mypy nexus3/rpc/pool.py nexus3/rpc/pool_lifecycle.py nexus3/rpc/pool_create.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_visibility.py`
+  - passed:
+    `.venv/bin/pytest -q tests/unit/test_pool.py tests/unit/test_auto_restore.py tests/unit/rpc/test_pool_create_auth_shadow.py -k "destroy_ or capability or should_shutdown or list_returns_agent_info_dicts or get_returns_ or len_returns_agent_count or contains_checks_agent_id or mcp_visibility or gitlab_visibility or create_ or create_temp or restore_ or get_or_restore"`
+    (`70 passed, 30 deselected`).
+  - passed:
+    `.venv/bin/pytest -q tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py`
+    (`62 passed`).
   - passed (live smoke):
     `NEXUS_DEV=1 .venv/bin/python -m nexus3 --serve 9000`,
     `.venv/bin/python -m nexus3 rpc create test-agent --port 9000`,
@@ -1624,20 +1639,20 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - Plan C slices 1-3 follow-on is committed as `5c0e843` and `8143afe`.
   - Provider keep-alive kickoff slice is committed as `05ffb84`
     (`base.py`, `test_keepalive_recovery.py`, Step 10 JSON evidence).
-  - Structural-refactor Phase 2A/2B/2C/2D/2E/2F/2G/2H + Phase 3A/3B/3C/4A
+  - Structural-refactor Phase 2A/2B/2C/2D/2E/2F/2G/2H + Phase 3A/3B/3C/3D/4A
     slices are complete
     (`compaction_runtime.py`, `tool_runtime.py`, and
     `permission_runtime.py`, `single_tool_runtime.py`,
     `streaming_runtime.py`, `tool_loop_events_runtime.py`,
     `turn_entry_runtime.py`, `simple_turn_runtime.py`, `pool_visibility.py`,
-    `pool_create.py`, `pool_restore.py` extracted; `session.py` and `pool.py`
-    retain compatibility wrappers while delegating extracted internals;
-    display theme loader contract now uses `load_theme()` without no-op
-    overrides).
+    `pool_create.py`, `pool_restore.py`, `pool_lifecycle.py` extracted;
+    `session.py` and `pool.py` retain compatibility wrappers while delegating
+    extracted internals; display theme loader contract now uses `load_theme()`
+    without no-op overrides).
 - Concrete resume steps for post-compact continuation:
-  1. Execute remaining pool lifecycle extraction slice with focused parity
-     checks.
-  2. Remove temporary compatibility wrappers after one full green cycle.
+  1. Remove temporary compatibility wrappers in `session.py` and `pool.py`
+     after one full green cycle.
+  2. Update deferred tracker rows/docs for structural-refactor closeout.
   3. Run manual endpoint validation with
      `scripts/diagnose-empty-stream.sh` and archive `10-keepalive-evidence.json`
      from at least one problematic and one known-good endpoint run when real

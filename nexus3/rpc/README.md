@@ -80,6 +80,7 @@ HTTP Client
 | `pool_visibility.py` | Extracted MCP/GitLab visibility adapters and helpers |
 | `pool_create.py` | Extracted create-path authorization and runtime helpers |
 | `pool_restore.py` | Extracted restore-path runtime helpers |
+| `pool_lifecycle.py` | Extracted lifecycle helpers (destroy, capabilities, accessors) |
 | `agent_api.py` | In-process API (`DirectAgentAPI`, `AgentScopedAPI`) |
 | `auth.py` | Token generation, validation, secure storage |
 | `detection.py` | Server detection and probing |
