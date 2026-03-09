@@ -392,7 +392,7 @@ Immediate tasks:
   - `docs/validation/post-m4-bootstrap-dryrun/`
   - `docs/validation/post-m4-20260306-live1/`
   - `docs/validation/post-m4-20260306-live2/`
-- Completed (2026-03-09, WSL kickoff wave): deferred provider keep-alive
+- Completed (2026-03-09, committed `05ffb84`): deferred provider keep-alive
   investigation kickoff:
   - added stale/reused-connection classification + bounded cached-client
     recycle retry path in `nexus3/provider/base.py` for non-streaming and
@@ -488,6 +488,7 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `05ffb84` provider keepalive kickoff: add stale-reuse recovery and diagnostics evidence
 - `8143afe` plan c closeout: scope runtime register compatibility path
 - `5c0e843` plan c slices 2/3: migrate pool/repl/session runtime state to typed services
 - `fd33b01` plan h phase 3 + plan c slice 1: canonical rpc diagnostics and typed service runtime api
