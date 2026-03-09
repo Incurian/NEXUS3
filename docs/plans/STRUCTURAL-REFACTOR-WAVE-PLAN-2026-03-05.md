@@ -205,8 +205,27 @@ Execution notes:
     - `.venv/bin/python -m nexus3 rpc send test-agent "describe your permissions and what you can do" --port 9000`
     - `.venv/bin/python -m nexus3 rpc destroy test-agent --port 9000`
     - `.venv/bin/python -m nexus3 rpc shutdown --port 9000`
-- Next gate: execute remaining Session core `send(...)` / `run_turn(...)`
-  extraction internals with focused parity checks.
+- 2026-03-09: Phase 2G (Session turn-entry runtime extraction) completed in
+  WSL.
+  - Added `nexus3/session/turn_entry_runtime.py` for shared turn-entry
+    preflight/reset helper ownership.
+  - `send(...)` and `run_turn(...)` now route shared context-mode preflight and
+    reset logic through `prepare_turn_entry(...)`.
+  - Behavior parity preserved; tool-loop runtime behavior was unchanged in this
+    slice.
+  - Focused validation passed:
+    - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/turn_entry_runtime.py`
+    - `.venv/bin/mypy nexus3/session/session.py nexus3/session/turn_entry_runtime.py`
+    - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py` (`12 passed`)
+    - `.venv/bin/pytest -q tests/integration/test_skill_execution.py tests/integration/test_permission_enforcement.py tests/integration/test_chat.py` (`40 passed, 2 skipped`)
+  - Live smoke validation passed:
+    - `NEXUS_DEV=1 .venv/bin/python -m nexus3 --serve 9000`
+    - `.venv/bin/python -m nexus3 rpc create test-agent --port 9000`
+    - `.venv/bin/python -m nexus3 rpc send test-agent "describe your permissions and what you can do" --port 9000`
+    - `.venv/bin/python -m nexus3 rpc destroy test-agent --port 9000`
+    - `.venv/bin/python -m nexus3 rpc shutdown --port 9000`
+- Next gate: execute remaining post-turn-entry Session core `send(...)` /
+  `run_turn(...)` extraction internals with focused parity checks.
 
 ## Testing Strategy
 
@@ -237,8 +256,10 @@ Execution notes:
       parity checks.
 - [x] Complete Session Phase 2F tool-loop events runtime extraction with
       focused parity checks.
-- [ ] Complete remaining Session core `send(...)` / `run_turn(...)`
-      extraction internals with parity checks.
+- [x] Complete Session Phase 2G turn-entry runtime extraction with focused
+      parity checks.
+- [ ] Complete remaining post-turn-entry Session core `send(...)` /
+      `run_turn(...)` extraction internals with parity checks.
 - [ ] Complete Pool extraction slices with parity checks.
 - [ ] Land display-config cleanup with documented override contract.
 - [ ] Remove temporary compatibility wrappers after one full green cycle.

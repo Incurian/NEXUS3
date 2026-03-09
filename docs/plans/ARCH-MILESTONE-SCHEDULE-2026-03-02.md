@@ -354,6 +354,10 @@ Exit gates:
        `nexus3/session/tool_loop_events_runtime.py` with
        `Session._execute_tool_loop_events(...)` retained as a compatibility
        wrapper.
+     - Phase 2G completed: Session turn-entry shared preflight/reset internals
+       extracted to `nexus3/session/turn_entry_runtime.py` with
+       `send(...)` / `run_turn(...)` using
+       `prepare_turn_entry(...)` for shared context-mode preflight/reset flow.
      - focused parity checks passed for Session compaction/runtime extraction
        in session + compaction/context suites (`54 passed`, `75 passed`).
      - focused parity checks passed for Session tool execution extraction in
@@ -367,12 +371,16 @@ Exit gates:
        `3 passed`).
      - focused parity checks passed for Session tool-loop events runtime
        extraction in session unit/integration suites (`54 passed`, `30 passed`).
+     - focused parity checks passed for Session turn-entry runtime extraction
+       in session unit/integration/chat suites (`12 passed`,
+       `40 passed, 2 skipped`).
      - live smoke validation passed on port 9000 (`--serve`, `rpc create`,
        `rpc send`, `rpc destroy`, `rpc shutdown`).
      - focused parity checks passed for REPL formatting/runtime/reload, REPL
        command, connect-lobby, and client paths.
-     - next gate: remaining Session core `send(...)` / `run_turn(...)`
-       extraction internals with parity validation before pool/display slices.
+     - next gate: remaining post-turn-entry Session core `send(...)` /
+       `run_turn(...)` extraction internals with parity validation before
+       pool/display slices.
    - Dependency gates:
      - No unresolved high-priority behavior defects in REPL/session/pool runtime paths.
      - Existing integration and regression baselines are green before each extraction slice.

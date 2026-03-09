@@ -24,6 +24,7 @@ nexus3/session/
 ├── single_tool_runtime.py # Single-tool execution runtime helpers
 ├── tool_loop_events_runtime.py # Event-loop tool execution runtime helpers
 ├── streaming_runtime.py # Streaming callback-adapter runtime helpers
+├── turn_entry_runtime.py # Shared turn-entry preflight/reset runtime helpers
 ├── session_manager.py   # Disk persistence (save/load/list sessions)
 ├── events.py            # Typed SessionEvent hierarchy
 ├── types.py             # LogConfig, LogStream, SessionInfo
@@ -56,7 +57,10 @@ retained as a thin wrapper that delegates to `single_tool_runtime.py`, and
 delegates to `streaming_runtime.py`, and `Session._execute_tool_loop_events()`
 is retained as a thin wrapper that delegates to
 `tool_loop_events_runtime.py`, so existing `Session` call sites (including
-`send()` / `run_turn()`) stay stable during extraction.
+`send()` / `run_turn()`) stay stable during extraction. `send()` and
+`run_turn()` now share context-mode preflight/reset through
+`turn_entry_runtime.prepare_turn_entry(...)`; tool-loop runtime behavior
+remains unchanged in this slice.
 
 ### Callback Type Aliases (from `session.py`)
 
@@ -113,7 +117,7 @@ async def send(
     """Stream response text, invoking callbacks for tool events."""
 ```
 
-This is the traditional callback-based API. Tool events are dispatched via callback functions. Internally calls `Session._execute_tool_loop_streaming()`, which is a thin wrapper delegating callback adaptation to `streaming_runtime.execute_tool_loop_streaming(...)` over `_execute_tool_loop_events()` for backward compatibility.
+This is the traditional callback-based API. Tool events are dispatched via callback functions. `send()` and `run_turn()` now share turn-entry preflight/reset through `turn_entry_runtime.prepare_turn_entry(...)` before streaming begins. Internally calls `Session._execute_tool_loop_streaming()`, which is a thin wrapper delegating callback adaptation to `streaming_runtime.execute_tool_loop_streaming(...)` over `_execute_tool_loop_events()` for backward compatibility.
 
 #### `run_turn()` - Event-based streaming
 
@@ -128,6 +132,9 @@ async def run_turn(
 ```
 
 The newer event-based API yields `SessionEvent` objects, enabling cleaner UI decoupling. Requires a context manager (raises `RuntimeError` if `self.context` is None).
+Like `send()`, `run_turn()` enters through
+`turn_entry_runtime.prepare_turn_entry(...)` for shared context-mode
+preflight/reset handling.
 Internally this routes through `Session._execute_tool_loop_events()`, which is
 a thin wrapper delegating to
 `tool_loop_events_runtime.execute_tool_loop_events(...)`.

@@ -530,8 +530,26 @@ Immediate tasks:
     `.venv/bin/python -m nexus3 rpc send test-agent "describe your permissions and what you can do" --port 9000`,
     `.venv/bin/python -m nexus3 rpc destroy test-agent --port 9000`,
     `.venv/bin/python -m nexus3 rpc shutdown --port 9000`.
-- Next target: execute remaining Session core `send(...)` / `run_turn(...)`
-  extraction internals with focused parity checks.
+- Completed (2026-03-09, structural-refactor Phase 2G): Session turn-entry
+  runtime extraction:
+  - added `nexus3/session/turn_entry_runtime.py`.
+  - `send(...)` and `run_turn(...)` now use
+    `prepare_turn_entry(...)` for shared context-mode preflight/reset path.
+  - behavior parity preserved; tool-loop runtime behavior is unchanged in this
+    slice.
+  - focused validation passed:
+    `.venv/bin/ruff check nexus3/session/session.py nexus3/session/turn_entry_runtime.py`,
+    `.venv/bin/mypy nexus3/session/session.py nexus3/session/turn_entry_runtime.py`,
+    `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py` (`12 passed`),
+    `.venv/bin/pytest -q tests/integration/test_skill_execution.py tests/integration/test_permission_enforcement.py tests/integration/test_chat.py` (`40 passed, 2 skipped`).
+  - live smoke passed:
+    `NEXUS_DEV=1 .venv/bin/python -m nexus3 --serve 9000`,
+    `.venv/bin/python -m nexus3 rpc create test-agent --port 9000`,
+    `.venv/bin/python -m nexus3 rpc send test-agent "describe your permissions and what you can do" --port 9000`,
+    `.venv/bin/python -m nexus3 rpc destroy test-agent --port 9000`,
+    `.venv/bin/python -m nexus3 rpc shutdown --port 9000`.
+- Next target: execute remaining post-turn-entry Session core `send(...)` /
+  `run_turn(...)` extraction internals with focused parity checks.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with

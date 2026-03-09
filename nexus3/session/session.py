@@ -70,6 +70,9 @@ from nexus3.session.tool_runtime import (
 from nexus3.session.tool_runtime import (
     execute_tools_parallel as execute_tools_parallel_runtime,
 )
+from nexus3.session.turn_entry_runtime import (
+    prepare_turn_entry as prepare_turn_entry_runtime,
+)
 
 if TYPE_CHECKING:
     from nexus3.config.schema import CompactionConfig, Config
@@ -391,21 +394,12 @@ class Session:
 
         try:
             if self.context:
-                # Flush any cancelled tool results from previous turn
-                self._flush_cancelled_tools()
-                # Normalize context through compiler-backed invariants before
-                # appending the next user turn.
-                self._normalize_context_preflight(path="send.pre_user")
-
-                # Reset iteration state for this send()
-                self._halted_at_iteration_limit = False
-                self._last_iteration_count = 0
-
-                # Multi-turn: use context manager
-                self.context.add_user_message(user_input, meta=user_meta)
-
-                # Check if we should use tool mode
-                has_tools = self.registry and self.registry.get_definitions()
+                has_tools = prepare_turn_entry_runtime(
+                    self,
+                    user_input=user_input,
+                    user_meta=user_meta,
+                    preflight_path="send.pre_user",
+                )
                 if use_tools or has_tools:
                     # Use streaming tool execution loop
                     async for chunk in self._execute_tool_loop_streaming(cancel_token):
@@ -494,21 +488,12 @@ class Session:
             set_current_logger(self.logger)
 
         try:
-            # Flush any cancelled tool results from previous turn
-            self._flush_cancelled_tools()
-            # Normalize context through compiler-backed invariants before
-            # appending the next user turn.
-            self._normalize_context_preflight(path="run_turn.pre_user")
-
-            # Reset iteration state for this turn
-            self._halted_at_iteration_limit = False
-            self._last_iteration_count = 0
-
-            # Add user message to context
-            self.context.add_user_message(user_input, meta=user_meta)
-
-            # Check if we should use tool mode
-            has_tools = self.registry and self.registry.get_definitions()
+            has_tools = prepare_turn_entry_runtime(
+                self,
+                user_input=user_input,
+                user_meta=user_meta,
+                preflight_path="run_turn.pre_user",
+            )
             if use_tools or has_tools:
                 # Use streaming tool execution loop with events
                 async for event in self._execute_tool_loop_events(cancel_token):
