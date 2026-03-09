@@ -1391,8 +1391,9 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   is completed:
   - `nexus3/session/compaction_runtime.py` now owns compaction provider and
     summary helper internals.
-  - `Session._get_compaction_provider(...)` and
-    `Session._generate_summary(...)` remain thin wrappers for compatibility.
+  - latest wrapper-cleanup wave removed `Session._get_compaction_provider(...)`
+    and `Session._generate_summary(...)`; `compact()` now calls
+    `compaction_runtime.generate_summary(...)` directly.
   - behavior parity preserved (lazy provider creation, compaction cache
     semantics, logger lifecycle).
 - Structural-refactor Phase 2B (Session tool execution primitives extraction)
@@ -1427,17 +1428,18 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   is completed:
   - `nexus3/session/streaming_runtime.py` now owns callback-adapter streaming
     runtime helpers.
-  - `Session._execute_tool_loop_streaming(...)` remains a thin wrapper for
-    compatibility.
+  - latest wrapper-cleanup wave removed
+    `Session._execute_tool_loop_streaming(...)`; `send(...)` / `run_turn(...)`
+    now call runtime helpers directly.
   - behavior parity preserved (event->callback mapping and yielded chunk
     semantics unchanged).
 - Structural-refactor Phase 2F (Session tool-loop events runtime extraction)
   is completed:
   - `nexus3/session/tool_loop_events_runtime.py` now owns tool-loop event
     execution runtime helpers.
-  - `Session._execute_tool_loop_events(...)` remains a thin wrapper for
-    compatibility.
-  - `send(...)` / `run_turn(...)` call paths are unchanged in this slice.
+  - latest wrapper-cleanup wave removed
+    `Session._execute_tool_loop_events(...)`; `send(...)` / `run_turn(...)`
+    now call runtime helpers directly.
 - Structural-refactor Phase 2G (Session turn-entry runtime extraction)
   is completed:
   - `nexus3/session/turn_entry_runtime.py` now owns shared turn-entry
@@ -1457,7 +1459,8 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
 - Structural-refactor Phase 3A (Pool visibility extraction) is completed:
   - `nexus3/rpc/pool_visibility.py` now owns MCP/GitLab visibility adapters and
     helper internals.
-  - `AgentPool` visibility methods remain thin wrappers for compatibility.
+  - latest wrapper-cleanup wave removed pool visibility wrappers
+    `_is_mcp_visible_for_agent(...)` and `_is_gitlab_visible_for_agent(...)`.
 - Structural-refactor Phase 4A (Display no-op override cleanup) is completed:
   - `nexus3/display/theme.py` now exposes `load_theme() -> Theme` only.
   - no-op override argument path was removed with runtime behavior preserved.
@@ -1471,14 +1474,16 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
     enforcement now delegate to extracted helpers.
 - Structural-refactor Phase 3C (Pool restore-path extraction) is completed:
   - `nexus3/rpc/pool_restore.py` now owns restore runtime helper internals.
-  - `AgentPool.get_or_restore(...)`, `_restore_unlocked(...)`, and
-    `restore_from_saved(...)` now delegate to dependency-injected restore
-    helpers via thin compatibility wrappers.
+  - latest wrapper-cleanup wave removed restore dependency-builder wrappers and
+    the `_restore_unlocked(...)` shim from `pool.py`; `pool_restore.get_or_restore(...)`
+    and `restore_from_saved(...)` now take `shared` + `runtime` and invoke
+    `_restore_unlocked(...)` internally.
 - Structural-refactor Phase 3D (Pool lifecycle extraction) is completed:
   - `nexus3/rpc/pool_lifecycle.py` now owns lifecycle internals for
     destroy/capability/accessor paths.
-  - `pool.py` lifecycle/capability/accessor methods now delegate to extracted
-    helpers via compatibility wrappers.
+  - latest wrapper-cleanup wave removed `_destroy_unlocked(...)`,
+    `_enforce_create_authorization(...)`, and capability-state passthrough
+    wrappers in `pool.py`; call sites now wire directly to runtime helpers.
 - Focused validation snapshot:
   - passed:
     `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
@@ -1608,6 +1613,16 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - passed:
     `.venv/bin/pytest -q tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py`
     (`62 passed`).
+  - passed:
+    `.venv/bin/ruff check nexus3/session/session.py nexus3/session/README.md nexus3/rpc/pool.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_lifecycle.py nexus3/rpc/README.md`
+  - passed:
+    `.venv/bin/mypy nexus3/session/session.py nexus3/rpc/pool.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_lifecycle.py`
+  - passed:
+    `.venv/bin/pytest -q tests/unit/test_compaction.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_pool.py tests/unit/test_auto_restore.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py`
+    (`213 passed`).
+  - passed:
+    `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py tests/integration/test_chat.py tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py`
+    (`91 passed, 2 skipped`).
   - passed (live smoke):
     `NEXUS_DEV=1 .venv/bin/python -m nexus3 --serve 9000`,
     `.venv/bin/python -m nexus3 rpc create test-agent --port 9000`,
@@ -1646,13 +1661,16 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
     `streaming_runtime.py`, `tool_loop_events_runtime.py`,
     `turn_entry_runtime.py`, `simple_turn_runtime.py`, `pool_visibility.py`,
     `pool_create.py`, `pool_restore.py`, `pool_lifecycle.py` extracted;
-    `session.py` and `pool.py` retain compatibility wrappers while delegating
-    extracted internals; display theme loader contract now uses `load_theme()`
+    wrapper-cleanup follow-on removed Session compaction/tool-loop wrappers plus
+    pool restore/visibility/create/destroy/capability passthrough wrappers;
+    remaining temporary wrappers in `session.py` / `pool.py` are now the next
+    structural closeout slice; display theme loader contract uses `load_theme()`
     without no-op overrides).
 - Concrete resume steps for post-compact continuation:
-  1. Remove temporary compatibility wrappers in `session.py` and `pool.py`
-     after one full green cycle.
-  2. Update deferred tracker rows/docs for structural-refactor closeout.
+  1. Remove remaining temporary compatibility wrappers in `session.py` and
+     `pool.py`.
+  2. After remaining wrapper cleanup is green, update deferred tracker rows/docs
+     for structural-refactor closeout.
   3. Run manual endpoint validation with
      `scripts/diagnose-empty-stream.sh` and archive `10-keepalive-evidence.json`
      from at least one problematic and one known-good endpoint run when real
@@ -1778,10 +1796,10 @@ Do NOT use a NEXUS coordinator agent in the middle - Claude Code is better at co
 
 | Issue | Reason | Effort |
 |-------|--------|--------|
-| Repl.py split (~2050 lines) | Large refactor | L |
-| Session.py split (~1100 lines) | Large refactor | M |
-| Pool.py split (~1250 lines) | Large refactor | M |
-| Display config | Polish, no current need | S |
+| Repl.py split (~2050 lines) | Completed extraction in this branch (phases 1A/1B complete) | L |
+| Session.py split (~1100 lines) | Extraction complete; wrapper cleanup partially complete (compaction + tool-loop wrappers removed, remaining wrappers pending) | M |
+| Pool.py split (~1250 lines) | Extraction complete; wrapper cleanup partially complete (restore/create/destroy/visibility/capability wrapper wave landed, remaining wrappers pending) | M |
+| Display config | Completed (`load_theme()` contract cleanup landed) | S |
 | HTTP keep-alive | Bounded stale-reuse recovery landed (2026-03-09); monitoring/manual endpoint validation remains | S |
 
 ### DRY Cleanups
@@ -1816,9 +1834,10 @@ Dynamic content (datetime, git status, clipboard) was being injected into the sy
 
 #### Next Up: STRUCTURAL-REFACTOR-WAVE-PLAN
 
-Provider bugfix and keep-alive follow-on slices are already landed in this
-branch. Next queued cleanup target is structural decomposition of oversized
-REPL/session/pool modules per `docs/plans/STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md`.
+Structural decomposition is already landed in this branch, including the latest
+wrapper-cleanup wave. Next gate is remaining wrapper retirement in
+`session.py` / `pool.py`, then deferred tracker closeout updates across status
+and plan docs.
 
 ### Known Bugs
 

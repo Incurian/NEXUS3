@@ -615,8 +615,31 @@ Immediate tasks:
     `.venv/bin/pytest -q tests/unit/test_pool.py tests/unit/test_auto_restore.py tests/unit/rpc/test_pool_create_auth_shadow.py -k "destroy_ or capability or should_shutdown or list_returns_agent_info_dicts or get_returns_ or len_returns_agent_count or contains_checks_agent_id or mcp_visibility or gitlab_visibility or create_ or create_temp or restore_ or get_or_restore"` (`70 passed`),
     `.venv/bin/pytest -q tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py` (`62 passed`),
     `.venv/bin/pytest -q tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py` (`51 passed`).
-- Next target: remove temporary compatibility wrappers after one full green
-  cycle, then update deferred tracker rows for structural refactors.
+- Completed (2026-03-09, structural-refactor wrapper-cleanup wave):
+  - removed Session compaction wrappers
+    `_get_compaction_provider(...)` and `_generate_summary(...)`; `compact()`
+    now calls `compaction_runtime.generate_summary(...)` directly.
+  - removed Session loop wrappers `_execute_tool_loop_events(...)` and
+    `_execute_tool_loop_streaming(...)`; `send(...)` / `run_turn(...)` now call
+    runtime functions directly.
+  - removed pool capability-state passthrough wrappers and now build capability
+    lifecycle state inline at call sites.
+  - removed restore dependency-builder wrappers and `_restore_unlocked` shim in
+    `nexus3/rpc/pool.py`; `pool_restore.get_or_restore(...)` and
+    `pool_restore.restore_from_saved(...)` now take `shared` + `runtime` and
+    invoke `_restore_unlocked(...)` internally.
+  - removed `pool.py` wrappers `_destroy_unlocked(...)`,
+    `_enforce_create_authorization(...)`, `_is_mcp_visible_for_agent(...)`, and
+    `_is_gitlab_visible_for_agent(...)`; wiring now calls extracted runtime
+    helpers directly.
+  - focused validation snapshot:
+    - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/README.md nexus3/rpc/pool.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_lifecycle.py nexus3/rpc/README.md` passed.
+    - `.venv/bin/mypy nexus3/session/session.py nexus3/rpc/pool.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_lifecycle.py` passed.
+    - `.venv/bin/pytest -q tests/unit/test_compaction.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_pool.py tests/unit/test_auto_restore.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py` passed (`213 passed`).
+    - `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py tests/integration/test_chat.py tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py` passed (`91 passed, 2 skipped`).
+- Next target: remove remaining temporary compatibility wrappers in
+  `session.py` / `pool.py`, then sequence deferred structural-tracker closeout
+  updates across status/plan docs.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with
@@ -777,6 +800,37 @@ Compact handover checkpoint (2026-03-09, post-structural Phase 3D wave):
   2. Update deferred tracker rows/docs for structural refactor closeout.
   3. Keep provider keep-alive real-endpoint evidence capture queued; Windows
      host is not required for the immediate wrapper-cleanup gate.
+
+Compact handover checkpoint (2026-03-09, post-wrapper-cleanup wave):
+- Branch: `feat/arch-overhaul-execution`
+- Completed in this wave:
+  - removed Session compaction wrappers `_get_compaction_provider(...)` and
+    `_generate_summary(...)`; `compact()` now calls
+    `compaction_runtime.generate_summary(...)` directly.
+  - removed Session loop wrappers `_execute_tool_loop_events(...)` and
+    `_execute_tool_loop_streaming(...)`; `send(...)` / `run_turn(...)` now call
+    runtime functions directly.
+  - removed pool capability-state passthrough wrappers and now build capability
+    lifecycle state inline at call sites.
+  - removed pool restore dependency-builder wrappers and `_restore_unlocked`
+    shim in `pool.py`; restore entry points now pass `shared` + `runtime` into
+    `pool_restore` helpers, which invoke `_restore_unlocked(...)` internally.
+  - removed pool wrappers `_destroy_unlocked(...)`,
+    `_enforce_create_authorization(...)`, `_is_mcp_visible_for_agent(...)`, and
+    `_is_gitlab_visible_for_agent(...)`; call sites now wire directly to runtime
+    helpers.
+- Validation snapshot for this wave:
+  - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/README.md nexus3/rpc/pool.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_lifecycle.py nexus3/rpc/README.md` passed.
+  - `.venv/bin/mypy nexus3/session/session.py nexus3/rpc/pool.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_lifecycle.py` passed.
+  - `.venv/bin/pytest -q tests/unit/test_compaction.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_pool.py tests/unit/test_auto_restore.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py` passed (`213 passed`).
+  - `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py tests/integration/test_chat.py tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py` passed (`91 passed, 2 skipped`).
+- Resume steps after compact:
+  1. Remove remaining temporary compatibility wrappers in `session.py` and
+     `pool.py`.
+  2. After remaining wrappers are retired and green, close deferred structural
+     tracker rows in config-ops + status docs.
+  3. Keep provider keep-alive real-endpoint evidence capture queued; Windows
+     host is not required for the immediate wrapper-closeout gate.
 
 Recent execution commits (latest first):
 - `73ccb78` docs(status): add post-phase1a compact handover checkpoint

@@ -28,9 +28,6 @@ from nexus3.core.types import (
 from nexus3.session.compaction_runtime import (
     generate_summary as generate_compaction_summary,
 )
-from nexus3.session.compaction_runtime import (
-    get_compaction_provider as get_compaction_provider_runtime,
-)
 from nexus3.session.confirmation import ConfirmationController
 from nexus3.session.dispatcher import ToolDispatcher
 from nexus3.session.enforcer import PermissionEnforcer
@@ -74,7 +71,7 @@ from nexus3.session.turn_entry_runtime import (
 )
 
 if TYPE_CHECKING:
-    from nexus3.config.schema import CompactionConfig, Config
+    from nexus3.config.schema import Config
     from nexus3.context.loader import ContextLoader
     from nexus3.context.manager import ContextManager
     from nexus3.core.cancel import CancellationToken
@@ -401,7 +398,21 @@ class Session:
                 )
                 if use_tools or has_tools:
                     # Use streaming tool execution loop
-                    async for chunk in self._execute_tool_loop_streaming(cancel_token):
+                    async for chunk in execute_tool_loop_streaming_runtime(
+                        execute_tool_loop_events=lambda token: execute_tool_loop_events_runtime(
+                            self,
+                            cancel_token=token,
+                        ),
+                        cancel_token=cancel_token,
+                        on_tool_call=self.on_tool_call,
+                        on_tool_complete=self.on_tool_complete,
+                        on_reasoning=self.on_reasoning,
+                        on_batch_start=self.on_batch_start,
+                        on_tool_active=self.on_tool_active,
+                        on_batch_progress=self.on_batch_progress,
+                        on_batch_halt=self.on_batch_halt,
+                        on_batch_complete=self.on_batch_complete,
+                    ):
                         yield chunk
                     return
 
@@ -468,7 +479,10 @@ class Session:
             )
             if use_tools or has_tools:
                 # Use streaming tool execution loop with events
-                async for event in self._execute_tool_loop_events(cancel_token):
+                async for event in execute_tool_loop_events_runtime(
+                    self,
+                    cancel_token=cancel_token,
+                ):
                     yield event
                 return
 
@@ -489,58 +503,6 @@ class Session:
         finally:
             # Clear current logger after turn completes
             clear_current_logger()
-
-    async def _execute_tool_loop_events(
-        self, cancel_token: "CancellationToken | None" = None
-    ) -> AsyncIterator[SessionEvent]:
-        """Execute tools yielding events, not calling callbacks.
-
-        This is the event-based version of _execute_tool_loop_streaming().
-        Instead of calling callback functions, it yields SessionEvent objects.
-
-        Args:
-            cancel_token: Optional cancellation token to cancel the operation.
-
-        Yields:
-            SessionEvent objects for all tool execution lifecycle events.
-        """
-        async for event in execute_tool_loop_events_runtime(
-            self,
-            cancel_token=cancel_token,
-        ):
-            yield event
-
-    async def _execute_tool_loop_streaming(
-        self, cancel_token: "CancellationToken | None" = None
-    ) -> AsyncIterator[str]:
-        """Execute tools with streaming, yielding content as it arrives.
-
-        This method wraps the event-based _execute_tool_loop_events() and
-        converts events back to callbacks for backward compatibility.
-
-        Execution mode:
-        - Default: Sequential (safe for dependent operations)
-        - Parallel: If any tool call has "_parallel": true in arguments
-
-        Args:
-            cancel_token: Optional cancellation token to cancel the operation.
-
-        Yields:
-            String chunks of the assistant's response.
-        """
-        async for chunk in execute_tool_loop_streaming_runtime(
-            execute_tool_loop_events=self._execute_tool_loop_events,
-            cancel_token=cancel_token,
-            on_tool_call=self.on_tool_call,
-            on_tool_complete=self.on_tool_complete,
-            on_reasoning=self.on_reasoning,
-            on_batch_start=self.on_batch_start,
-            on_tool_active=self.on_tool_active,
-            on_batch_progress=self.on_batch_progress,
-            on_batch_halt=self.on_batch_halt,
-            on_batch_complete=self.on_batch_complete,
-        ):
-            yield chunk
 
     async def _execute_single_tool(self, tool_call: "ToolCall") -> ToolResult:
         """Execute a single tool call with permission checks.
@@ -727,7 +689,11 @@ class Session:
             return None
 
         # Generate summary via LLM
-        summary_text = await self._generate_summary(to_summarize, compaction_config)
+        summary_text = await generate_compaction_summary(
+            self,
+            to_summarize,
+            compaction_config,
+        )
         summary_message = create_summary_message(summary_text)
 
         # Reload system prompt fresh (picks up NEXUS.md changes)
@@ -754,28 +720,3 @@ class Session:
             original_token_count=original_tokens,
             new_token_count=new_usage["messages"],
         )
-
-    def _get_compaction_provider(self) -> AsyncProvider:
-        """Get or create the provider for compaction.
-
-        If compaction.model is configured, creates a separate provider with that model.
-        Otherwise uses the main provider.
-
-        Returns:
-            Provider for compaction requests.
-        """
-        return get_compaction_provider_runtime(self)
-
-    async def _generate_summary(
-        self, messages: list[Message], compaction_config: "CompactionConfig"
-    ) -> str:
-        """Generate summary of messages via LLM call.
-
-        Args:
-            messages: Messages to summarize
-            compaction_config: Compaction configuration
-
-        Returns:
-            Summary text
-        """
-        return await generate_compaction_summary(self, messages, compaction_config)

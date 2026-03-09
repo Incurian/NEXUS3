@@ -373,10 +373,10 @@ Operational pattern:
 
 | Issue | Reason | Effort |
 |-------|--------|--------|
-| `repl.py` split (~2050 lines) | large refactor | L |
-| `session.py` split (~1100 lines) | large refactor | M |
-| `pool.py` split (~1250 lines) | large refactor | M |
-| display config cleanup | polish | S |
+| `repl.py` split (~2050 lines) | completed extraction wave on `feat/arch-overhaul-execution` | L |
+| `session.py` split (~1100 lines) | extraction complete; wrapper cleanup partially complete (compaction + loop wrappers removed, remaining wrappers pending) | M |
+| `pool.py` split (~1250 lines) | extraction complete; wrapper cleanup partially complete (restore/create/destroy/visibility/capability wrapper wave landed, remaining wrappers pending) | M |
+| display config cleanup | completed (`load_theme()` canonical contract) | S |
 | HTTP keep-alive | bounded stale-reuse recovery landed (2026-03-09); monitor only | S |
 
 ### DRY Cleanups

@@ -270,7 +270,7 @@ async def destroy_unlocked(
     *,
     agents: MutableMapping[str, AgentT],
     destroy_authorization_kernel: AdapterAuthorizationKernel,
-    revoke_capabilities_for_agent_fn: Callable[[str], None],
+    capability_state: CapabilityLifecycleState,
     unregister_log_multiplexer_agent_fn: Callable[[str], None],
     agent_id: str,
     requester_id: str | None = None,
@@ -290,7 +290,10 @@ async def destroy_unlocked(
         target_permissions=target_permissions,
     )
 
-    revoke_capabilities_for_agent_fn(agent_id)
+    revoke_capabilities_for_agent(
+        state=capability_state,
+        agent_id=agent_id,
+    )
 
     agents.pop(agent_id)
 
@@ -446,4 +449,3 @@ __all__ = [
     "track_issued_capability",
     "verify_direct_capability",
 ]
-

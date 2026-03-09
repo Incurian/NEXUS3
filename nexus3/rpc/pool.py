@@ -87,9 +87,6 @@ from nexus3.rpc.pool_lifecycle import (
     _DestroyAuthorizationAdapter,
 )
 from nexus3.rpc.pool_lifecycle import (
-    destroy as destroy_runtime,
-)
-from nexus3.rpc.pool_lifecycle import (
     destroy_unlocked as destroy_unlocked_runtime,
 )
 from nexus3.rpc.pool_lifecycle import (
@@ -114,16 +111,10 @@ from nexus3.rpc.pool_lifecycle import (
     pool_len as pool_len_runtime,
 )
 from nexus3.rpc.pool_lifecycle import (
-    revoke_capabilities_for_agent as revoke_capabilities_for_agent_runtime,
-)
-from nexus3.rpc.pool_lifecycle import (
     set_repl_connected as set_repl_connected_runtime,
 )
 from nexus3.rpc.pool_lifecycle import (
     should_shutdown as should_shutdown_runtime,
-)
-from nexus3.rpc.pool_lifecycle import (
-    track_issued_capability as track_issued_capability_runtime,
 )
 from nexus3.rpc.pool_lifecycle import (
     verify_direct_capability as verify_direct_capability_runtime,
@@ -131,9 +122,6 @@ from nexus3.rpc.pool_lifecycle import (
 from nexus3.rpc.pool_restore import (
     RestoreRuntimeDeps,
     RestoreSharedDeps,
-)
-from nexus3.rpc.pool_restore import (
-    _restore_unlocked as restore_unlocked_runtime,
 )
 from nexus3.rpc.pool_restore import (
     default_logger_factory as restore_logger_factory,
@@ -476,8 +464,15 @@ class AgentPool:
         ttl_seconds: int | None = None,
     ) -> str:
         """Issue a direct in-process capability token for one RPC method scope."""
+        capability_state = CapabilityLifecycleState(
+            signer=self._capability_signer,
+            revocation_store=self._capability_revocation_store,
+            issued_token_ids_by_subject=self._issued_capability_token_ids_by_subject,
+            issued_token_ids_by_issuer=self._issued_capability_token_ids_by_issuer,
+            default_ttl_seconds=self._direct_capability_ttl_seconds,
+        )
         return issue_direct_capability_runtime(
-            state=self._capability_lifecycle_state(),
+            state=capability_state,
             issuer_id=issuer_id,
             subject_id=subject_id,
             rpc_method=rpc_method,
@@ -491,32 +486,17 @@ class AgentPool:
         required_scope: str,
     ) -> CapabilityClaims:
         """Verify a direct in-process capability token with revocation checks."""
-        return verify_direct_capability_runtime(
-            state=self._capability_lifecycle_state(),
-            token=token,
-            required_scope=required_scope,
-        )
-
-    def _track_issued_capability(self, claims: CapabilityClaims) -> None:
-        track_issued_capability_runtime(
-            state=self._capability_lifecycle_state(),
-            claims=claims,
-        )
-
-    def _revoke_capabilities_for_agent(self, agent_id: str) -> None:
-        revoke_capabilities_for_agent_runtime(
-            state=self._capability_lifecycle_state(),
-            agent_id=agent_id,
-        )
-
-    def _capability_lifecycle_state(self) -> CapabilityLifecycleState:
-        """Build shared capability lifecycle state for extracted helpers."""
-        return CapabilityLifecycleState(
+        capability_state = CapabilityLifecycleState(
             signer=self._capability_signer,
             revocation_store=self._capability_revocation_store,
             issued_token_ids_by_subject=self._issued_capability_token_ids_by_subject,
             issued_token_ids_by_issuer=self._issued_capability_token_ids_by_issuer,
             default_ttl_seconds=self._direct_capability_ttl_seconds,
+        )
+        return verify_direct_capability_runtime(
+            state=capability_state,
+            token=token,
+            required_scope=required_scope,
         )
 
     @property
@@ -677,7 +657,8 @@ class AgentPool:
 
         create_requester_id = requester_id or effective_config.parent_agent_id or "external"
 
-        self._enforce_create_authorization(
+        enforce_create_authorization_runtime(
+            kernel=self._create_authorization_kernel,
             target_agent_id=effective_id,
             requester_id=create_requester_id,
             check_stage=CreateAuthorizationStage.LIFECYCLE_ENTRY,
@@ -685,10 +666,12 @@ class AgentPool:
             denial_message=(
                 "Cannot create agent: requester is not authorized to create this agent"
             ),
+            max_agent_depth=MAX_AGENT_DEPTH,
         )
 
         if effective_config.parent_agent_id is not None:
-            self._enforce_create_authorization(
+            enforce_create_authorization_runtime(
+                kernel=self._create_authorization_kernel,
                 target_agent_id=effective_id,
                 requester_id=create_requester_id,
                 check_stage=CreateAuthorizationStage.REQUESTER_PARENT_BINDING,
@@ -697,12 +680,14 @@ class AgentPool:
                     "Cannot create agent: requester does not match the parent agent"
                 ),
                 parent_agent_id=effective_config.parent_agent_id,
+                max_agent_depth=MAX_AGENT_DEPTH,
             )
 
         # SECURITY: Check ceiling BEFORE applying delta
         # This ensures the base preset is allowed, then we check the delta result
         if parent_permissions is not None:
-            self._enforce_create_authorization(
+            enforce_create_authorization_runtime(
+                kernel=self._create_authorization_kernel,
                 target_agent_id=effective_id,
                 requester_id=create_requester_id,
                 check_stage=CreateAuthorizationStage.MAX_DEPTH,
@@ -710,9 +695,11 @@ class AgentPool:
                 denial_message=(
                     f"Cannot create agent: max nesting depth ({MAX_AGENT_DEPTH}) exceeded"
                 ),
+                max_agent_depth=MAX_AGENT_DEPTH,
             )
             # First check: base preset must be allowed
-            self._enforce_create_authorization(
+            enforce_create_authorization_runtime(
+                kernel=self._create_authorization_kernel,
                 target_agent_id=effective_id,
                 requester_id=create_requester_id,
                 check_stage=CreateAuthorizationStage.BASE_CEILING,
@@ -720,6 +707,7 @@ class AgentPool:
                 parent_permissions=parent_permissions,
                 requested_permissions=permissions,
                 denial_message=f"Requested preset '{preset_name}' exceeds parent ceiling",
+                max_agent_depth=MAX_AGENT_DEPTH,
             )
 
         # Apply delta if provided
@@ -727,7 +715,8 @@ class AgentPool:
             permissions = permissions.apply_delta(effective_config.delta)
             # Second check: delta result must also be allowed
             if parent_permissions is not None:
-                self._enforce_create_authorization(
+                enforce_create_authorization_runtime(
+                    kernel=self._create_authorization_kernel,
                     target_agent_id=effective_id,
                     requester_id=create_requester_id,
                     check_stage=CreateAuthorizationStage.DELTA_CEILING,
@@ -735,6 +724,7 @@ class AgentPool:
                     parent_permissions=parent_permissions,
                     requested_permissions=permissions,
                     denial_message="Permission delta would exceed parent ceiling",
+                    max_agent_depth=MAX_AGENT_DEPTH,
                 )
 
         # Set ceiling reference and depth after all checks pass
@@ -820,7 +810,8 @@ class AgentPool:
             registry,
             services,
             permissions,
-            gitlab_visible=self._is_gitlab_visible_for_agent(
+            gitlab_visible=is_gitlab_visible_for_agent(
+                kernel=self._gitlab_visibility_authorization_kernel,
                 agent_id=effective_id,
                 permissions=permissions,
                 check_stage="create",
@@ -839,7 +830,8 @@ class AgentPool:
 
         # Add MCP tools if agent has MCP permission (TRUSTED/YOLO only)
         # Only include tools from MCP servers visible to this agent
-        if self._is_mcp_visible_for_agent(
+        if is_mcp_visible_for_agent(
+            kernel=self._mcp_visibility_authorization_kernel,
             agent_id=effective_id,
             permissions=permissions,
             check_stage="create",
@@ -916,62 +908,6 @@ class AgentPool:
 
         return agent
 
-    def _enforce_create_authorization(
-        self,
-        *,
-        target_agent_id: str,
-        requester_id: str,
-        check_stage: CreateAuthorizationStage,
-        parent_depth: int,
-        denial_message: str,
-        parent_permissions: AgentPermissions | None = None,
-        requested_permissions: AgentPermissions | None = None,
-        parent_agent_id: str | None = None,
-    ) -> None:
-        """Apply create authorization kernel decision for a specific create stage."""
-        enforce_create_authorization_runtime(
-            kernel=self._create_authorization_kernel,
-            target_agent_id=target_agent_id,
-            requester_id=requester_id,
-            check_stage=check_stage,
-            parent_depth=parent_depth,
-            denial_message=denial_message,
-            parent_permissions=parent_permissions,
-            requested_permissions=requested_permissions,
-            parent_agent_id=parent_agent_id,
-            max_agent_depth=MAX_AGENT_DEPTH,
-        )
-
-    def _is_mcp_visible_for_agent(
-        self,
-        *,
-        agent_id: str,
-        permissions: AgentPermissions,
-        check_stage: str,
-    ) -> bool:
-        """Thin wrapper around extracted MCP visibility evaluation logic."""
-        return is_mcp_visible_for_agent(
-            kernel=self._mcp_visibility_authorization_kernel,
-            agent_id=agent_id,
-            permissions=permissions,
-            check_stage=check_stage,
-        )
-
-    def _is_gitlab_visible_for_agent(
-        self,
-        *,
-        agent_id: str,
-        permissions: AgentPermissions,
-        check_stage: str,
-    ) -> bool:
-        """Thin wrapper around extracted GitLab visibility evaluation logic."""
-        return is_gitlab_visible_for_agent(
-            kernel=self._gitlab_visibility_authorization_kernel,
-            agent_id=agent_id,
-            permissions=permissions,
-            check_stage=check_stage,
-        )
-
     @staticmethod
     def _build_temp_agent_config(
         config: AgentConfig | None,
@@ -1045,27 +981,93 @@ class AgentPool:
         session_manager: SessionManager | None = None,
     ) -> Agent | None:
         """Get agent, restoring from saved session if needed."""
+        shared_deps = RestoreSharedDeps(
+            config=self._shared.config,
+            provider_registry=self._shared.provider_registry,
+            base_log_dir=self._shared.base_log_dir,
+            context_loader=self._shared.context_loader,
+            log_streams=self._shared.log_streams,
+            custom_presets=dict(self._shared.custom_presets),
+            mcp_registry=self._shared.mcp_registry,
+            is_repl=self._shared.is_repl,
+        )
+        runtime_deps = RestoreRuntimeDeps(
+            agents=self._agents,
+            lock=self._lock,
+            log_multiplexer=self._log_multiplexer,
+            pool_ref=self,
+            global_dispatcher=self._global_dispatcher,
+            validate_agent_id=validate_agent_id,
+            is_mcp_visible_for_agent=(
+                lambda *, agent_id, permissions, check_stage: is_mcp_visible_for_agent(
+                    kernel=self._mcp_visibility_authorization_kernel,
+                    agent_id=agent_id,
+                    permissions=permissions,
+                    check_stage=check_stage,
+                )
+            ),
+            is_gitlab_visible_for_agent=(
+                lambda *, agent_id, permissions, check_stage: is_gitlab_visible_for_agent(
+                    kernel=self._gitlab_visibility_authorization_kernel,
+                    agent_id=agent_id,
+                    permissions=permissions,
+                    check_stage=check_stage,
+                )
+            ),
+            agent_factory=self._restore_agent_factory,
+            logger_factory=restore_logger_factory,
+            register_vcs_skills_fn=register_vcs_skills,
+        )
         return await get_or_restore_runtime(
             agent_id=agent_id,
             session_manager=session_manager,
-            runtime=self._build_restore_runtime_deps(),
-            restore_unlocked=self._restore_unlocked,
-        )
-
-    async def _restore_unlocked(self, saved: SavedSession) -> Agent:
-        """Internal restore logic - caller MUST hold self._lock."""
-        return await restore_unlocked_runtime(
-            saved=saved,
-            shared=self._build_restore_shared_deps(),
-            runtime=self._build_restore_runtime_deps(),
+            shared=shared_deps,
+            runtime=runtime_deps,
         )
 
     async def restore_from_saved(self, saved: SavedSession) -> Agent:
         """Restore an agent from a saved session."""
+        shared_deps = RestoreSharedDeps(
+            config=self._shared.config,
+            provider_registry=self._shared.provider_registry,
+            base_log_dir=self._shared.base_log_dir,
+            context_loader=self._shared.context_loader,
+            log_streams=self._shared.log_streams,
+            custom_presets=dict(self._shared.custom_presets),
+            mcp_registry=self._shared.mcp_registry,
+            is_repl=self._shared.is_repl,
+        )
+        runtime_deps = RestoreRuntimeDeps(
+            agents=self._agents,
+            lock=self._lock,
+            log_multiplexer=self._log_multiplexer,
+            pool_ref=self,
+            global_dispatcher=self._global_dispatcher,
+            validate_agent_id=validate_agent_id,
+            is_mcp_visible_for_agent=(
+                lambda *, agent_id, permissions, check_stage: is_mcp_visible_for_agent(
+                    kernel=self._mcp_visibility_authorization_kernel,
+                    agent_id=agent_id,
+                    permissions=permissions,
+                    check_stage=check_stage,
+                )
+            ),
+            is_gitlab_visible_for_agent=(
+                lambda *, agent_id, permissions, check_stage: is_gitlab_visible_for_agent(
+                    kernel=self._gitlab_visibility_authorization_kernel,
+                    agent_id=agent_id,
+                    permissions=permissions,
+                    check_stage=check_stage,
+                )
+            ),
+            agent_factory=self._restore_agent_factory,
+            logger_factory=restore_logger_factory,
+            register_vcs_skills_fn=register_vcs_skills,
+        )
         return await restore_from_saved_runtime(
             saved=saved,
-            runtime=self._build_restore_runtime_deps(),
-            restore_unlocked=self._restore_unlocked,
+            shared=shared_deps,
+            runtime=runtime_deps,
         )
 
     @staticmethod
@@ -1093,35 +1095,6 @@ class AgentPool:
             created_at=effective_created_at,
         )
 
-    def _build_restore_shared_deps(self) -> RestoreSharedDeps:
-        """Build shared dependency bundle for extracted restore helpers."""
-        return RestoreSharedDeps(
-            config=self._shared.config,
-            provider_registry=self._shared.provider_registry,
-            base_log_dir=self._shared.base_log_dir,
-            context_loader=self._shared.context_loader,
-            log_streams=self._shared.log_streams,
-            custom_presets=dict(self._shared.custom_presets),
-            mcp_registry=self._shared.mcp_registry,
-            is_repl=self._shared.is_repl,
-        )
-
-    def _build_restore_runtime_deps(self) -> RestoreRuntimeDeps[Agent]:
-        """Build runtime dependency bundle for extracted restore helpers."""
-        return RestoreRuntimeDeps(
-            agents=self._agents,
-            lock=self._lock,
-            log_multiplexer=self._log_multiplexer,
-            pool_ref=self,
-            global_dispatcher=self._global_dispatcher,
-            validate_agent_id=validate_agent_id,
-            is_mcp_visible_for_agent=self._is_mcp_visible_for_agent,
-            is_gitlab_visible_for_agent=self._is_gitlab_visible_for_agent,
-            agent_factory=self._restore_agent_factory,
-            logger_factory=restore_logger_factory,
-            register_vcs_skills_fn=register_vcs_skills,
-        )
-
     async def destroy(
         self,
         agent_id: str,
@@ -1130,30 +1103,23 @@ class AgentPool:
         admin_override: bool = False,
     ) -> bool:
         """Destroy an agent and clean up its resources."""
-        return await destroy_runtime(
-            lock=self._lock,
-            destroy_unlocked_fn=self._destroy_unlocked,
-            agent_id=agent_id,
-            requester_id=requester_id,
-            admin_override=admin_override,
+        capability_state = CapabilityLifecycleState(
+            signer=self._capability_signer,
+            revocation_store=self._capability_revocation_store,
+            issued_token_ids_by_subject=self._issued_capability_token_ids_by_subject,
+            issued_token_ids_by_issuer=self._issued_capability_token_ids_by_issuer,
+            default_ttl_seconds=self._direct_capability_ttl_seconds,
         )
-
-    async def _destroy_unlocked(
-        self,
-        agent_id: str,
-        requester_id: str | None = None,
-        admin_override: bool = False,
-    ) -> bool:
-        """Internal destroy logic - caller MUST hold self._lock."""
-        return await destroy_unlocked_runtime(
-            agents=cast(MutableMapping[str, Any], self._agents),
-            destroy_authorization_kernel=self._destroy_authorization_kernel,
-            revoke_capabilities_for_agent_fn=self._revoke_capabilities_for_agent,
-            unregister_log_multiplexer_agent_fn=self._log_multiplexer.unregister,
-            agent_id=agent_id,
-            requester_id=requester_id,
-            admin_override=admin_override,
-        )
+        async with self._lock:
+            return await destroy_unlocked_runtime(
+                agents=cast(MutableMapping[str, Any], self._agents),
+                destroy_authorization_kernel=self._destroy_authorization_kernel,
+                capability_state=capability_state,
+                unregister_log_multiplexer_agent_fn=self._log_multiplexer.unregister,
+                agent_id=agent_id,
+                requester_id=requester_id,
+                admin_override=admin_override,
+            )
 
     def get(self, agent_id: str) -> Agent | None:
         """Get an agent by ID.

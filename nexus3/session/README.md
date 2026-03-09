@@ -46,20 +46,17 @@ nexus3/session/
 
 The `Session` class is the main coordinator between the CLI/REPL and the LLM provider. It manages multi-turn conversations, tool execution loops, and context compaction.
 
-Compatibility note: `Session._get_compaction_provider()` and
-`Session._generate_summary()` are retained as thin wrappers that delegate to
-`compaction_runtime.py`, and `Session._execute_skill()` plus
+Compatibility note: `Session._execute_skill()` plus
 `Session._execute_tools_parallel()` are retained as thin wrappers that delegate
 to `tool_runtime.py`, and `Session._handle_mcp_permissions()` plus
 `Session._handle_gitlab_permissions()` are retained as thin wrappers that
 delegate to `permission_runtime.py`, and `Session._execute_single_tool()` is
-retained as a thin wrapper that delegates to `single_tool_runtime.py`, and
-`Session._execute_tool_loop_streaming()` is retained as a thin wrapper that
-delegates to `streaming_runtime.py`, and `Session._execute_tool_loop_events()`
-is retained as a thin wrapper that delegates to
-`tool_loop_events_runtime.py`, so existing `Session` call sites (including
-`send()` / `run_turn()`) stay stable during extraction. `send()` and
-`run_turn()` now share context-mode preflight/reset through
+retained as a thin wrapper that delegates to `single_tool_runtime.py`.
+`send()` now calls `streaming_runtime.execute_tool_loop_streaming(...)`
+directly, and `run_turn()` now calls
+`tool_loop_events_runtime.execute_tool_loop_events(...)` directly.
+`compact()` calls `compaction_runtime.generate_summary(...)` directly.
+`send()` and `run_turn()` share context-mode preflight/reset through
 `turn_entry_runtime.prepare_turn_entry(...)`, and their non-tool simple
 streaming paths delegate to `simple_turn_runtime.py`; tool-loop runtime
 behavior remains unchanged in this slice.
@@ -119,7 +116,7 @@ async def send(
     """Stream response text, invoking callbacks for tool events."""
 ```
 
-This is the traditional callback-based API. Tool events are dispatched via callback functions. `send()` and `run_turn()` now share turn-entry preflight/reset through `turn_entry_runtime.prepare_turn_entry(...)` before streaming begins. Internally calls `Session._execute_tool_loop_streaming()`, which is a thin wrapper delegating callback adaptation to `streaming_runtime.execute_tool_loop_streaming(...)` over `_execute_tool_loop_events()` for backward compatibility. When tools are not active, `send()` delegates simple streaming to `simple_turn_runtime.execute_simple_send(...)`.
+This is the traditional callback-based API. Tool events are dispatched via callback functions. `send()` and `run_turn()` now share turn-entry preflight/reset through `turn_entry_runtime.prepare_turn_entry(...)` before streaming begins. Tool-loop callback adaptation is handled directly by `streaming_runtime.execute_tool_loop_streaming(...)`, which is wired to `tool_loop_events_runtime.execute_tool_loop_events(...)`. When tools are not active, `send()` delegates simple streaming to `simple_turn_runtime.execute_simple_send(...)`.
 
 #### `run_turn()` - Event-based streaming
 
@@ -137,8 +134,7 @@ The newer event-based API yields `SessionEvent` objects, enabling cleaner UI dec
 Like `send()`, `run_turn()` enters through
 `turn_entry_runtime.prepare_turn_entry(...)` for shared context-mode
 preflight/reset handling.
-Internally this routes through `Session._execute_tool_loop_events()`, which is
-a thin wrapper delegating to
+Internally this routes directly to
 `tool_loop_events_runtime.execute_tool_loop_events(...)`.
 When tools are not active, `run_turn()` delegates simple event streaming to
 `simple_turn_runtime.execute_simple_run_turn(...)`.
@@ -151,6 +147,7 @@ async def compact(force: bool = False) -> CompactionResult | None:
 ```
 
 Compaction uses a separate LLM call to summarize conversation history when token usage exceeds the configured threshold.
+The summary path delegates directly to `compaction_runtime.generate_summary(...)`.
 
 #### `add_cancelled_tools()` - Track cancelled tool calls
 

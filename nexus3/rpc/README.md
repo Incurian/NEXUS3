@@ -88,6 +88,10 @@ HTTP Client
 | `log_multiplexer.py` | Routes provider logs to correct agent via contextvars |
 | `bootstrap.py` | Server component wiring and initialization |
 
+`pool.py` wires restore/lifecycle helpers by passing explicit dependency
+bundles (`RestoreSharedDeps`, `RestoreRuntimeDeps`, `CapabilityLifecycleState`)
+rather than callback-based compatibility shims.
+
 ---
 
 ## JSON-RPC 2.0 Protocol

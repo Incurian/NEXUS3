@@ -8,7 +8,7 @@ not coupled to pool internals beyond explicit dependencies passed by the caller.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, MutableMapping
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -203,8 +203,8 @@ async def get_or_restore(
     *,
     agent_id: str,
     session_manager: SessionManagerLike | None,
+    shared: RestoreSharedDeps,
     runtime: RestoreRuntimeDeps[AgentT],
-    restore_unlocked: Callable[[SavedSession], Awaitable[AgentT]],
 ) -> AgentT | None:
     """Get an active agent or restore from persistence atomically."""
     async with runtime.lock:
@@ -214,7 +214,11 @@ async def get_or_restore(
 
         if session_manager is not None and session_manager.session_exists(agent_id):
             saved = session_manager.load_session(agent_id)
-            return await restore_unlocked(saved)
+            return await _restore_unlocked(
+                saved=saved,
+                shared=shared,
+                runtime=runtime,
+            )
 
         return None
 
@@ -225,7 +229,7 @@ async def _restore_unlocked(
     shared: RestoreSharedDeps,
     runtime: RestoreRuntimeDeps[AgentT],
 ) -> AgentT:
-    """Restore internals equivalent to ``AgentPool._restore_unlocked``."""
+    """Restore internals equivalent to the previous AgentPool inline path."""
     agent_id = saved.agent_id
 
     # Preserve AgentPool validation + defense-in-depth duplicate check semantics.
@@ -403,12 +407,16 @@ async def _restore_unlocked(
 async def restore_from_saved(
     *,
     saved: SavedSession,
+    shared: RestoreSharedDeps,
     runtime: RestoreRuntimeDeps[AgentT],
-    restore_unlocked: Callable[[SavedSession], Awaitable[AgentT]],
 ) -> AgentT:
     """Restore a saved agent while holding the pool lock."""
     async with runtime.lock:
-        return await restore_unlocked(saved)
+        return await _restore_unlocked(
+            saved=saved,
+            shared=shared,
+            runtime=runtime,
+        )
 
 
 __all__ = [
