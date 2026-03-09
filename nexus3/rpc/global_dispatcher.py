@@ -281,10 +281,7 @@ class GlobalDispatcher:
                             f"preset must be string, got: {type(raw_value).__name__}"
                         ) from exc
                     if isinstance(raw_value, str):
-                        valid_presets = {"trusted", "sandboxed"}
-                        raise InvalidParamsError(
-                            f"Invalid preset: {raw_value}. Valid: {sorted(valid_presets)}"
-                        ) from exc
+                        raise InvalidParamsError(message) from exc
 
                 if field == "disable_tools":
                     if raw_value is not None and not isinstance(raw_value, list):
@@ -309,12 +306,7 @@ class GlobalDispatcher:
                     ) from exc
 
                 if field == "parent_agent_id":
-                    if raw_value is not None and not isinstance(raw_value, str):
-                        raise InvalidParamsError(
-                            f"parent_agent_id must be string, got: {type(raw_value).__name__}"
-                        ) from exc
-                    if isinstance(raw_value, str):
-                        raise InvalidParamsError(message) from exc
+                    raise InvalidParamsError(message) from exc
 
                 if field == "cwd" and raw_value is not None:
                     raise InvalidParamsError(
@@ -322,21 +314,7 @@ class GlobalDispatcher:
                     ) from exc
 
                 if field == "allowed_write_paths":
-                    if raw_value is not None and not isinstance(raw_value, list):
-                        raise InvalidParamsError(
-                            f"allowed_write_paths must be array, got: {type(raw_value).__name__}"
-                        ) from exc
-                    if (
-                        len(loc) > 1
-                        and isinstance(loc[1], int)
-                        and isinstance(raw_value, list)
-                        and loc[1] < len(raw_value)
-                    ):
-                        bad_value = raw_value[loc[1]]
-                        raise InvalidParamsError(
-                            "allowed_write_paths"
-                            f"[{loc[1]}] must be string, got: {type(bad_value).__name__}"
-                        ) from exc
+                    raise InvalidParamsError(message) from exc
 
                 if field == "initial_message":
                     if raw_value is not None and not isinstance(raw_value, str):
@@ -347,7 +325,7 @@ class GlobalDispatcher:
                         raise InvalidParamsError("initial_message cannot be empty") from exc
 
                 if field == "wait_for_initial_response":
-                    raise InvalidParamsError("wait_for_initial_response must be boolean") from exc
+                    raise InvalidParamsError(message) from exc
 
             raise InvalidParamsError("Invalid create_agent parameters") from exc
 
@@ -650,13 +628,6 @@ class GlobalDispatcher:
             InvalidParamsError: If agent_id is missing, invalid, or requester
                                is not authorized to destroy the agent.
         """
-        if "agent_id" not in params:
-            raise InvalidParamsError("Missing required parameter: agent_id")
-        if not isinstance(params["agent_id"], str):
-            raise InvalidParamsError(
-                f"agent_id must be string, got: {type(params['agent_id']).__name__}"
-            )
-
         try:
             validated = DestroyAgentParamsSchema.model_validate(
                 dict(params),

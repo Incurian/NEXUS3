@@ -214,7 +214,7 @@ Suggested next hardening if failure persists:
   - optionally collapse illegal trailing TOOL blocks into a synthetic assistant note
   - emit one structured warning event with before/after diff summary.
 
-## Architecture Overhaul Running Status (2026-03-06)
+## Architecture Overhaul Running Status (2026-03-09)
 
 Branch:
 - `feat/arch-overhaul-execution`
@@ -228,6 +228,35 @@ Current milestone:
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
+- In progress (2026-03-09, WSL follow-on): Plan H shim-retirement Phase 3:
+  - retired compatibility-only `create_agent.preset` invalid-literal remap in
+    `nexus3/rpc/global_dispatcher.py`; handler now returns canonical
+    schema-derived literal diagnostics (`Input should be 'trusted' or 'sandboxed'`).
+  - retired compatibility-only `create_agent.wait_for_initial_response`
+    boolean remap in `nexus3/rpc/global_dispatcher.py`; handler now returns
+    canonical schema-derived boolean diagnostics (`Input should be a valid boolean`).
+  - updated focused ingress regressions in
+    `tests/unit/rpc/test_schema_ingress_wiring.py` to assert canonical details.
+  - current state: local WSL working-tree follow-on (no commit yet in this phase).
+- In progress (2026-03-09, WSL follow-on): Plan C service-container
+  immutability follow-up after slice-1 foundation:
+  - slice-1 foundation landed locally (not committed yet):
+    - additive typed `ServiceContainer` mutators for `permissions`, `cwd`,
+      `model`, and `child_agent_ids`.
+    - immutable runtime snapshot model for runtime service-state access.
+    - focused regressions added in
+      `tests/unit/skill/test_service_container_immutability.py`.
+  - next gate in this follow-on: migrate pool create/restore and REPL runtime
+    mutation call sites to typed mutator/snapshot flows (slice 2/3).
+- Completed (2026-03-09, committed `b09c079`): Plan H shim-retirement
+  Phase 2:
+  - retired compatibility-only `create_agent` malformed-ID message remap
+    prefix stripping in `nexus3/rpc/global_dispatcher.py` for malformed
+    `agent_id` and `parent_agent_id` string inputs.
+  - handler now surfaces canonical schema-derived validation detail directly
+    while preserving deterministic type diagnostics.
+  - updated focused ingress regressions in
+    `tests/unit/rpc/test_schema_ingress_wiring.py`.
 - Completed (2026-03-06, committed `5c9c0e2`): Plan A v2 kickoff
   Phase 1 (typed create-context foundation):
   - added typed create-stage authorization context/stage models in
@@ -356,9 +385,13 @@ Immediate tasks:
   - `docs/validation/post-m4-bootstrap-dryrun/`
   - `docs/validation/post-m4-20260306-live1/`
   - `docs/validation/post-m4-20260306-live2/`
-- Next target: advance deferred follow-on planning queue now that post-M4
-  validation gates are closed (Plan A v2, Plan H shim retirement,
-  Plan C service immutability, provider keep-alive investigation).
+- Next target: checkpoint current WSL follow-ons, then advance remaining
+  deferred queue:
+  - commit Plan H shim-retirement Phase 3 local follow-on changes.
+  - commit Plan C service-immutability slice-1 foundation, then execute
+    slice 2/3 call-site migration.
+  - after both checkpoints, proceed to provider keep-alive deferred
+    investigation.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with
@@ -437,6 +470,9 @@ Immediate tasks:
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
 Recent execution commits (latest first):
+- `b09c079` plan h shim retirement phase 2: drop create id message remaps
+- `fc890bc` docs(status): add post-plan-h-phase1 compact checkpoint
+- `e4bdd23` docs(status): record plan h shim phase 1 commit in AGENTS
 - `f22de38` plan h shim retirement phase 1: remove parent id wording remap
 - `19e659e` docs(status): record plan a v2 phase 2 commit in AGENTS
 - `0a4f99f` plan a v2 phase 2: compute create ceiling grants in adapter
@@ -2000,3 +2036,65 @@ Emergency handover checkpoint (2026-03-07, power-loss shutdown):
   - `git` requires safe-directory override in this session (`-c safe.directory=...`).
   - recurring warnings for inaccessible temp dirs remain expected:
     `.tmp-pytest-debug-root/pytest-of-inc/`, `.tmp-pytest-phase2-run5/`.
+
+Orchestrator handover checkpoint (2026-03-09, post-wave commit target):
+- Branch/head:
+  - `feat/arch-overhaul-execution`
+  - base head before this local wave: `b09c079`
+- Execution mode used in this wave:
+  - orchestrator-first flow from the main Codex agent.
+  - parallel subagent execution with disjoint file ownership per slice.
+  - max parallelism exercised safely (up to 5 concurrent subagents this round).
+  - integration model: subagent patch -> main-agent diff review -> unified focused validation.
+- Scope completed in this wave (local):
+  1. Plan H shim-retirement follow-on (canonical diagnostics migration):
+     - `nexus3/rpc/protocol.py`:
+       - removed sentence-case mutual-exclusion remaps in `parse_response(...)`;
+         now surfaces canonical schema message text.
+     - `nexus3/rpc/dispatcher.py`:
+       - removed compatibility cancel-param text remaps in `_handle_cancel(...)`;
+         now surfaces canonical schema diagnostics.
+     - `nexus3/rpc/global_dispatcher.py`:
+       - removed compatibility remaps for `create_agent` fields:
+         `preset`, `wait_for_initial_response`, non-string
+         `parent_agent_id`, and malformed `allowed_write_paths` shape/items.
+       - removed pre-schema destroy-agent text remap guards in
+         `_handle_destroy_agent(...)`; malformed input now uses schema diagnostics.
+     - focused test updates:
+       `tests/unit/rpc/test_schema_ingress_wiring.py`,
+       `tests/unit/test_client.py`,
+       `tests/unit/test_global_dispatcher.py`.
+  2. Plan C service-container immutability follow-on, slice 1 foundation:
+     - `nexus3/skill/services.py`:
+       - added additive typed mutators:
+         `set_permissions(...)`, `set_cwd(...)`, `set_model(...)`,
+         `set_child_agent_ids(...)`.
+       - added typed accessor `get_model(...)`.
+       - added immutable runtime snapshot model
+         `ServiceContainerRuntimeSnapshot` + `snapshot_runtime()`.
+       - preserved legacy compatibility path (`register`/`unregister`/`clear`)
+         in this slice.
+     - added focused coverage:
+       `tests/unit/skill/test_service_container_immutability.py`.
+  3. Status/docs synchronization:
+     - Plan H docs: `docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md`,
+       `docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md`,
+       `nexus3/rpc/README.md`.
+     - Plan C docs/status:
+       `docs/plans/ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md`,
+       `docs/plans/ARCH-MILESTONE-SCHEDULE-2026-03-02.md`,
+       this `AGENTS.md` running-status block.
+- Validation executed this wave:
+  - `.venv/bin/ruff check nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/protocol.py nexus3/skill/services.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_client.py tests/unit/test_global_dispatcher.py tests/unit/skill/test_service_container_immutability.py` -> passed.
+  - `.venv/bin/mypy nexus3/rpc/dispatcher.py nexus3/rpc/global_dispatcher.py nexus3/rpc/protocol.py nexus3/skill/services.py` -> passed.
+  - `.venv/bin/pytest -q tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py tests/unit/test_client.py` -> `138 passed`, `12 warnings`.
+  - `.venv/bin/pytest -q tests/unit/skill/test_service_container_immutability.py tests/unit/test_skill_registry.py -k ServiceContainer` -> `19 passed`, `24 deselected`.
+- Next execution slices after this checkpoint:
+  1. Commit this wave as a single logical checkpoint (Plan H canonical diagnostics + Plan C slice-1 foundation + status sync).
+  2. Continue Plan C slice 2/3 in parallel with disjoint ownership:
+     - slice 2: pool create/restore migration (`nexus3/rpc/pool.py`, `tests/unit/test_pool.py`)
+     - slice 3: REPL/session runtime mutation migration
+       (`nexus3/cli/repl_commands.py`, `nexus3/session/session.py`,
+       `nexus3/session/enforcer.py`, focused REPL/session tests).
+  3. Keep Plan H checklist conservative until remaining compatibility-only
+     remaps are either retired or explicitly documented as retained invariants.

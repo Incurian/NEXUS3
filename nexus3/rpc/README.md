@@ -293,6 +293,8 @@ Ingress schema behavior:
 - Method params are validated with strict Pydantic schemas (`strict=True`, `extra="forbid"`).
 - Unknown params and malformed field types return `INVALID_PARAMS` with deterministic method-specific diagnostics.
 - `create_agent.parent_agent_id` malformed IDs now return canonical validation detail (invalid ID format) rather than synthetic parent-not-found wording.
+- Phase 2 (`b09c079`): compatibility create-ID message remaps were dropped; `create_agent.agent_id` failures now use canonical schema diagnostics.
+- Current Phase 3 WSL follow-on (local, uncommitted): `create_agent.preset` invalid literals, `create_agent.wait_for_initial_response` invalid booleans, non-string `create_agent.parent_agent_id`, and `create_agent.allowed_write_paths` type/item validation paths now use canonical schema diagnostics.
 - No-arg methods (`shutdown`, `get_tokens`, `get_context`, `cancel_all`, `list_agents`, `shutdown_server`) reject extra params.
 - Direct in-process dispatch (`dispatch(Request(...))`) now applies the same strict request-envelope validation before method routing, including explicit rejection of non-string `params` keys.
 

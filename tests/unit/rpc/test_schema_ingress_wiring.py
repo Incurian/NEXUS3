@@ -391,6 +391,24 @@ async def test_global_create_agent_rejects_blank_initial_message() -> None:
 
 
 @pytest.mark.asyncio
+async def test_global_create_agent_preset_wiring_rejects_invalid_literal_with_canonical_detail(
+) -> None:
+    dispatcher = GlobalDispatcher(_StubPool())
+    request = Request(
+        jsonrpc="2.0",
+        method="create_agent",
+        params={"preset": "yolo"},
+        id=1,
+    )
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602  # INVALID_PARAMS
+    assert response.error["message"] == "Input should be 'trusted' or 'sandboxed'"
+
+
+@pytest.mark.asyncio
 async def test_global_create_agent_parent_id_wiring_rejects_malformed_id_with_validation_detail(
 ) -> None:
     dispatcher = GlobalDispatcher(_NoParentLookupPool())
@@ -433,7 +451,7 @@ async def test_global_create_agent_wait_flag_wiring_rejects_invalid_type_pre_cre
     assert response is not None
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
-    assert response.error["message"] == "wait_for_initial_response must be boolean"
+    assert response.error["message"] == "Input should be a valid boolean"
 
 
 @pytest.mark.asyncio
@@ -457,7 +475,7 @@ async def test_global_create_agent_wait_flag_wiring_rejects_coercible_values_pre
     assert response is not None
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
-    assert response.error["message"] == "wait_for_initial_response must be boolean"
+    assert response.error["message"] == "Input should be a valid boolean"
 
 
 @pytest.mark.asyncio
@@ -477,7 +495,7 @@ async def test_global_create_agent_parent_id_wiring_rejects_invalid_type_pre_loo
     assert response is not None
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
-    assert response.error["message"] == "parent_agent_id must be string, got: int"
+    assert response.error["message"] == "Input should be a valid string"
 
 
 @pytest.mark.asyncio
@@ -497,7 +515,7 @@ async def test_global_create_agent_wait_flag_rejected_without_initial_message() 
     assert response is not None
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
-    assert response.error["message"] == "wait_for_initial_response must be boolean"
+    assert response.error["message"] == "Input should be a valid boolean"
 
 
 @pytest.mark.asyncio
@@ -527,8 +545,8 @@ async def test_global_create_agent_wait_flag_accepts_valid_bool_without_initial_
 @pytest.mark.parametrize(
     ("allowed_write_paths", "expected_message"),
     [
-        ("not-a-list", "allowed_write_paths must be array, got: str"),
-        ([1], "allowed_write_paths[0] must be string, got: int"),
+        ("not-a-list", "Input should be a valid list"),
+        ([1], "Input should be a valid string"),
     ],
 )
 async def test_global_create_agent_allowed_write_paths_wiring_rejects_malformed_type_shape(
@@ -694,9 +712,16 @@ def test_parse_response_schema_ingress_rejects_unknown_top_level_fields() -> Non
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("params", [{}, {"request_id": ""}])
-async def test_dispatcher_cancel_schema_validation_preserves_missing_error_style(
+@pytest.mark.parametrize(
+    ("params", "expected_message"),
+    [
+        ({}, "request_id: Field required"),
+        ({"request_id": ""}, "Value error, request_id cannot be empty"),
+    ],
+)
+async def test_dispatcher_cancel_schema_validation_surfaces_canonical_missing_and_empty(
     params: dict[str, object],
+    expected_message: str,
 ) -> None:
     dispatcher = Dispatcher(_StubSession(), context=None, agent_id="agent-1")
     request = Request(
@@ -710,13 +735,21 @@ async def test_dispatcher_cancel_schema_validation_preserves_missing_error_style
     assert response is not None
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
-    assert response.error["message"] == "Missing required parameter: request_id"
+    assert response.error["message"] == expected_message
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("request_id", [True, 1.0, {"bad": "shape"}])
+@pytest.mark.parametrize(
+    ("request_id", "expected_message"),
+    [
+        (True, "Value error, request_id must be string or integer"),
+        (1.0, "Input should be a valid string"),
+        ({"bad": "shape"}, "Input should be a valid string"),
+    ],
+)
 async def test_dispatcher_cancel_schema_validation_rejects_malformed_request_id_type(
     request_id: object,
+    expected_message: str,
 ) -> None:
     dispatcher = Dispatcher(_StubSession(), context=None, agent_id="agent-1")
     request = Request(
@@ -730,7 +763,7 @@ async def test_dispatcher_cancel_schema_validation_rejects_malformed_request_id_
     assert response is not None
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
-    assert response.error["message"] == "request_id must be string or integer"
+    assert response.error["message"] == expected_message
 
 
 @pytest.mark.asyncio
@@ -767,7 +800,7 @@ async def test_dispatcher_cancel_schema_validation_rejects_unknown_extra_params(
     assert response is not None
     assert response.error is not None
     assert response.error["code"] == -32602  # INVALID_PARAMS
-    assert "extra inputs are not permitted" in response.error["message"].lower()
+    assert response.error["message"] == "Extra inputs are not permitted"
 
 
 @pytest.mark.asyncio

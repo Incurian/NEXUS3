@@ -237,10 +237,18 @@ Exit gates:
 2. Plan H follow-on shim retirement:
    - [ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-H-RPC-ERROR-SHIM-RETIREMENT-PLAN-2026-03-05.md)
    - Target window: post-M4 cleanup after strict ingress has soaked in production-like use.
-   - Status note (2026-03-06): kickoff slice landed:
-     - shim inventory and canonical diagnostics policy recorded.
-     - first compatibility-only remap retired for malformed
+   - Status note (2026-03-09): Phase 2 complete; Phase 3 follow-on active:
+     - kickoff inventory and canonical diagnostics policy landed, and the
+       first compatibility-only remap was retired for malformed
        `create_agent.parent_agent_id` wording.
+     - Phase 2 completed in `b09c079`: dropped compatibility create-ID message
+       remaps; `create_agent.agent_id` failures now use canonical schema
+       diagnostics.
+     - current Phase 3 WSL follow-on (local, uncommitted): retired
+       compatibility remaps for `create_agent.preset` invalid literals,
+       `create_agent.wait_for_initial_response` invalid booleans, non-string
+       `create_agent.parent_agent_id`, and `create_agent.allowed_write_paths`
+       type/item validation paths; these now use canonical schema diagnostics.
    - Dependency gates:
      - Strict ingress default remains stable across protocol + direct dispatch + method param ingress.
      - No active client breakage reports that depend on legacy error wording.
@@ -251,7 +259,15 @@ Exit gates:
 
 3. Plan C follow-on service immutability:
    - [ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/ARCH-C-SERVICE-CONTAINER-IMMUTABILITY-PLAN-2026-03-05.md)
-   - Target window: M4 mid (after current Plan A/Plan C runtime behavior is stable).
+   - Target window: M4 mid (active WSL follow-on after current Plan A/Plan C runtime behavior stabilization).
+   - Status note (2026-03-09): Slice 1 foundation landed locally (WSL; not committed):
+     - additive typed `ServiceContainer` mutators for `permissions`, `cwd`,
+       `model`, and `child_agent_ids`.
+     - immutable runtime snapshot model added for runtime service-state access.
+     - focused regressions added in
+       `tests/unit/skill/test_service_container_immutability.py`.
+     - follow-on remains in progress for slice 2/3 call-site migration
+       (`pool.py` create/restore and REPL runtime mutation surfaces).
    - Dependency gates:
      - Current request-context propagation behavior is stable under existing tests.
      - No active regressions in REPL runtime mutation paths (`/cd`, `/permissions`, `/model`).

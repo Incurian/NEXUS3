@@ -85,6 +85,34 @@ async def test_global_dispatch_rejects_malformed_params_shape_before_handlers(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("params", "expected_message"),
+    [
+        ({}, "Field required"),
+        ({"agent_id": 123}, "Input should be a valid string"),
+    ],
+)
+async def test_global_dispatch_destroy_agent_uses_canonical_schema_validation_for_malformed_params(
+    params: dict[str, object],
+    expected_message: str,
+) -> None:
+    dispatcher = GlobalDispatcher(_GuardPool())
+    request = Request(
+        jsonrpc="2.0",
+        method="destroy_agent",
+        params=params,
+        id=1,
+    )
+
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is not None
+    assert response.error["code"] == -32602
+    assert response.error["message"] == expected_message
+
+
+@pytest.mark.asyncio
 async def test_global_dispatch_rejects_boolean_id_before_handlers() -> None:
     dispatcher = GlobalDispatcher(_GuardPool())
     request = Request(

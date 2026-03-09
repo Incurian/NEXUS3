@@ -706,17 +706,13 @@ class Dispatcher:
             errors = exc.errors()
             if errors:
                 error = errors[0]
-                loc = error.get("loc", ())
-                field = str(loc[0]) if loc else None
-                raw_value = params.get(field) if field else None
-                if field == "request_id":
-                    if error.get("type") == "missing" or raw_value == "":
-                        raise InvalidParamsError("Missing required parameter: request_id") from exc
-                    raise InvalidParamsError("request_id must be string or integer") from exc
-                if error.get("type") == "extra_forbidden":
-                    raise InvalidParamsError(
-                        str(error.get("msg", "Invalid request_id"))
-                    ) from exc
+                message = str(error.get("msg", "Invalid request_id"))
+                if error.get("type") == "missing":
+                    loc = error.get("loc", ())
+                    if loc:
+                        field = str(loc[0])
+                        raise InvalidParamsError(f"{field}: {message}") from exc
+                raise InvalidParamsError(message) from exc
             raise InvalidParamsError("Invalid request_id") from exc
 
         self._enforce_lifecycle_authorization("cancel", request_context)

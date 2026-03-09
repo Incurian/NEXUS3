@@ -27,9 +27,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
+    from nexus3.config.schema import ResolvedModel
     from nexus3.core.permissions import AgentPermissions, PermissionLevel
     from nexus3.rpc.agent_api import DirectAgentAPI
     from nexus3.skill.vcs.config import GitLabConfig
+
+
+@dataclass(frozen=True)
+class ServiceContainerRuntimeSnapshot:
+    """Immutable runtime snapshot of key mutable ServiceContainer fields."""
+
+    permissions: "AgentPermissions | None"
+    cwd: Path
+    model: "ResolvedModel | None"
+    child_agent_ids: frozenset[str] | None
 
 
 @dataclass
@@ -135,6 +146,39 @@ class ServiceContainer:
         return list(self._services.keys())
 
     # =========================================================================
+    # Typed runtime mutation API (additive)
+    # =========================================================================
+
+    def _set_optional_runtime_service(self, name: str, value: Any) -> None:
+        """Set or clear an optional runtime service field."""
+        if value is None:
+            self.unregister(name)
+            return
+        self.register(name, value)
+
+    def set_permissions(self, permissions: "AgentPermissions | None") -> None:
+        """Set or clear the current runtime permissions."""
+        self._set_optional_runtime_service("permissions", permissions)
+
+    def set_cwd(self, cwd: Path | str | None) -> None:
+        """Set or clear the current runtime working directory."""
+        if cwd is None:
+            self.unregister("cwd")
+            return
+        self.register("cwd", Path(cwd))
+
+    def set_model(self, model: "ResolvedModel | None") -> None:
+        """Set or clear the current runtime model."""
+        self._set_optional_runtime_service("model", model)
+
+    def set_child_agent_ids(self, child_agent_ids: set[str] | None) -> None:
+        """Set or clear current runtime child agent IDs."""
+        if child_agent_ids is None:
+            self.unregister("child_agent_ids")
+            return
+        self.register("child_agent_ids", set(child_agent_ids))
+
+    # =========================================================================
     # Typed accessors for common services
     # =========================================================================
 
@@ -156,6 +200,10 @@ class ServiceContainer:
         if cwd is not None:
             return Path(cwd)
         return Path.cwd()
+
+    def get_model(self) -> "ResolvedModel | None":
+        """Get the agent's resolved model if available."""
+        return cast("ResolvedModel | None", self.get("model"))
 
     def get_agent_api(self) -> "DirectAgentAPI | None":
         """Get the DirectAgentAPI for in-process agent communication.
@@ -248,6 +296,18 @@ class ServiceContainer:
             Set of child agent IDs, or None if not registered.
         """
         return cast("set[str] | None", self.get("child_agent_ids"))
+
+    def snapshot_runtime(self) -> ServiceContainerRuntimeSnapshot:
+        """Capture an immutable snapshot of current runtime fields."""
+        child_agent_ids = self.get_child_agent_ids()
+        return ServiceContainerRuntimeSnapshot(
+            permissions=self.get_permissions(),
+            cwd=self.get_cwd(),
+            model=self.get_model(),
+            child_agent_ids=(
+                frozenset(child_agent_ids) if child_agent_ids is not None else None
+            ),
+        )
 
     def get_mcp_registry(self) -> Any | None:
         """Get MCP registry if available.

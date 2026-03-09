@@ -96,7 +96,16 @@ class TestParseResponse:
         with pytest.raises(ParseError) as exc_info:
             parse_response('{"jsonrpc":"2.0","id":1}')
 
-        assert "result" in str(exc_info.value) or "error" in str(exc_info.value)
+        assert str(exc_info.value) == "Value error, response must have either 'result' or 'error'"
+
+    def test_parse_response_rejects_result_and_error_together(self):
+        """Response with both result and error raises ParseError."""
+        with pytest.raises(ParseError) as exc_info:
+            parse_response(
+                '{"jsonrpc":"2.0","id":1,"result":"ok","error":{"code":-32603,"message":"boom"}}'
+            )
+
+        assert str(exc_info.value) == "Value error, response cannot have both 'result' and 'error'"
 
     def test_parse_response_rejects_boolean_id(self):
         """Response with boolean id raises ParseError."""

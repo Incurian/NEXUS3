@@ -53,6 +53,19 @@ Planned slices:
    restrict them to test-only compatibility adapters with explicit TODO
    retirement notes).
 
+## Execution Status
+
+Status note (2026-03-09, local WSL working tree; not committed):
+- Slice 1 foundation is landed locally:
+  - additive typed `ServiceContainer` mutators for `permissions`, `cwd`,
+    `model`, and `child_agent_ids`.
+  - immutable runtime snapshot model for runtime service state.
+  - focused regressions added in
+    `tests/unit/skill/test_service_container_immutability.py`.
+- Follow-on remains active for slice 2/3 call-site migration
+  (`nexus3/rpc/pool.py` create/restore and `nexus3/cli/repl_commands.py`
+  runtime mutation paths) before generic mutation path retirement.
+
 ## Testing Strategy
 
 - Add focused tests proving mutation isolation and no cross-agent state bleed.
@@ -67,13 +80,17 @@ Planned slices:
 
 ## Implementation Checklist
 
-- [ ] Add immutable service snapshot model and typed runtime mutation APIs.
+- [x] Add immutable service snapshot model and typed runtime mutation APIs.
+- [x] Add focused slice-1 immutability foundation regressions in
+      `tests/unit/skill/test_service_container_immutability.py`
+      (local WSL, uncommitted).
 - [ ] Migrate pool create/restore service wiring to snapshot initialization.
 - [ ] Migrate REPL runtime mutation call sites to typed service mutators.
 - [ ] Add focused immutability/isolation regressions for production mutation
       paths.
 - [ ] Retire or explicitly scope generic mutation helpers to non-production use.
-- [ ] Sync Plan C, milestone backlog, and AGENTS status after rollout.
+- [x] Sync Plan C, milestone backlog, and AGENTS status for slice-1 local
+      landing (WSL, uncommitted).
 
 ## Documentation Updates
 

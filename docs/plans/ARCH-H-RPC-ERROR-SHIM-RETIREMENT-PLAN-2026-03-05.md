@@ -78,6 +78,15 @@ Planned slices:
     - `.venv/Scripts/mypy.exe nexus3/rpc/global_dispatcher.py` passed.
     - `.venv/Scripts/pytest.exe -q -p no:cacheprovider tests/unit/rpc/test_schema_ingress_wiring.py` passed (`74 passed`).
     - `.venv/Scripts/pytest.exe -q -p no:cacheprovider tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py tests/unit/test_client.py` passed (`59 passed`).
+- 2026-03-09: Phase 2 completion + Phase 3 follow-on status.
+  - Phase 2 completed in `b09c079`: dropped compatibility create-ID message
+    remaps so `create_agent.agent_id` failures use canonical schema
+    diagnostics.
+  - Current Phase 3 WSL follow-on (local, uncommitted): retired
+    compatibility remaps for `create_agent.preset` invalid literals,
+    `create_agent.wait_for_initial_response` invalid booleans, non-string
+    `create_agent.parent_agent_id`, and `create_agent.allowed_write_paths`
+    type/item validation paths; these now return canonical schema diagnostics.
 
 ## Testing Strategy
 

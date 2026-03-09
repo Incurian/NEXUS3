@@ -256,9 +256,9 @@ def parse_response(line: str) -> Response:
                 raise ParseError("Invalid JSON-RPC response") from e
 
             if "response cannot have both 'result' and 'error'" in message:
-                raise ParseError("Response cannot have both 'result' and 'error'") from e
+                raise ParseError(message) from e
             if "response must have either 'result' or 'error'" in message:
-                raise ParseError("Response must have either 'result' or 'error'") from e
+                raise ParseError(message) from e
 
         raise ParseError("Invalid JSON-RPC response") from e
 
