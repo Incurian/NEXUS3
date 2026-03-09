@@ -1482,7 +1482,7 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - Plan C slices 1-3 follow-on is committed as `5c0e843` and `8143afe`.
   - Provider keep-alive kickoff slice is committed as `05ffb84`
     (`base.py`, `test_keepalive_recovery.py`, Step 10 JSON evidence).
-  - Structural-refactor Phase 2A/2C extraction is complete
+  - Structural-refactor Phase 2A/2B/2C extraction is complete
     (`compaction_runtime.py`, `tool_runtime.py`, and
     `permission_runtime.py` extracted; `session.py` compaction/tool/permission
     methods remain compatibility wrappers).

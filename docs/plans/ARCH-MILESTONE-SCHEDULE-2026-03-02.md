@@ -320,7 +320,7 @@ Exit gates:
 5. Structural refactor wave:
    - [STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md)
    - Target window: post-M4 cleanup (non-blocking for security gates).
-   - Status note (2026-03-09): kickoff + REPL + Session Phase 2A/2C slices
+   - Status note (2026-03-09): kickoff + REPL + Session Phase 2A/2B/2C slices
      complete in WSL:
      - extraction map and compatibility-boundary policy documented in plan.
      - Phase 1A completed: REPL formatting/sanitization helpers extracted to
