@@ -650,6 +650,37 @@ Compact handover checkpoint (2026-03-09, post-structural Phase 1B wave):
   2. Keep manual provider keep-alive endpoint evidence capture queued until real endpoint access is available.
   3. Windows host is not required for the immediate next gate.
 
+Compact handover checkpoint (2026-03-09, post-structural Phase 2G wave):
+- Branch: `feat/arch-overhaul-execution`
+- Latest structural execution commit: `f25b020`
+  (`structural phase 2g: extract session turn-entry runtime helper`)
+- Execution model used:
+  - orchestrator selected next safe slices and delegated disjoint work to
+    parallel Codex subagents.
+  - subagent-delivered changes were reviewed and revalidated locally in WSL
+    before each commit.
+- Completed in this wave:
+  - extracted shared `send(...)`/`run_turn(...)` context-mode preflight/reset
+    path to `nexus3/session/turn_entry_runtime.py`.
+  - `send(...)` and `run_turn(...)` now call `prepare_turn_entry(...)` while
+    preserving existing behavior.
+  - synchronized structural status docs (plan/schedule + AGENTS/CLAUDE +
+    session README).
+- Validation snapshot for this wave:
+  - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/turn_entry_runtime.py` passed.
+  - `.venv/bin/mypy nexus3/session/session.py nexus3/session/turn_entry_runtime.py` passed.
+  - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py` passed (`12 passed`).
+  - `.venv/bin/pytest -q tests/integration/test_skill_execution.py tests/integration/test_permission_enforcement.py tests/integration/test_chat.py` passed (`40 passed, 2 skipped`).
+  - live smoke passed on port 9000:
+    `NEXUS_DEV=1 .venv/bin/python -m nexus3 --serve 9000`,
+    `.venv/bin/python -m nexus3 rpc create/send/destroy/shutdown --port 9000`.
+- Next gate after compact:
+  1. Execute remaining post-turn-entry Session core `send(...)` / `run_turn(...)`
+     extraction internals with focused parity checks.
+  2. Keep provider keep-alive endpoint evidence capture queued until real
+     endpoint access is available.
+  3. Windows host is not required for the immediate next gate.
+
 Recent execution commits (latest first):
 - `73ccb78` docs(status): add post-phase1a compact handover checkpoint
 - `7fec6c5` structural phase 1a: extract repl formatting helpers
