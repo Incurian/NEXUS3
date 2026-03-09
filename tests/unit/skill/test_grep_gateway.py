@@ -16,8 +16,8 @@ def _build_grep_skill(
     blocked_paths: list[Path] | None = None,
 ) -> GrepSkill:
     services = ServiceContainer()
-    services.register("cwd", cwd)
-    services.register("allowed_paths", allowed_paths)
+    services.set_cwd(cwd)
+    services.register_runtime_compat("allowed_paths", allowed_paths)
     services.register("blocked_paths", blocked_paths or [])
     return grep_factory(services)
 

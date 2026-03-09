@@ -1371,6 +1371,20 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - focused validation:
     `.venv/bin/pytest -q tests/unit/test_new_skills.py tests/unit/test_regex_replace_skill.py tests/unit/test_skill_enhancements.py tests/unit/test_git_skill.py tests/unit/skill/test_bash_windows_behavior.py tests/security/test_p2_defense_in_depth.py`
     (`105 passed`).
+- Plan C runtime-key test-setup hygiene follow-up is completed in WSL:
+  - migrated runtime-key test wiring in:
+    `tests/unit/skill/test_concat_files.py`,
+    `tests/unit/skill/test_glob_search.py`,
+    `tests/unit/skill/test_grep_gateway.py`,
+    `tests/unit/skill/test_outline.py`,
+    `tests/unit/core/test_filesystem_access.py`,
+    `tests/unit/skill/test_patch.py`.
+  - runtime-key writes now use typed/compat APIs:
+    - `set_cwd(...)` for cwd setup
+    - `register_runtime_compat("allowed_paths", ...)` for allowed-path setup
+  - focused validation:
+    `.venv/bin/pytest -q tests/unit/skill/test_concat_files.py tests/unit/skill/test_glob_search.py tests/unit/skill/test_grep_gateway.py tests/unit/skill/test_outline.py tests/unit/core/test_filesystem_access.py tests/unit/skill/test_patch.py`
+    (`214 passed`).
 - Plan H shim-retirement closeout for remaining `create_agent` compatibility
   remaps is committed in the current closeout wave:
   - `nexus3/rpc/global_dispatcher.py`: removed remaining custom create-agent

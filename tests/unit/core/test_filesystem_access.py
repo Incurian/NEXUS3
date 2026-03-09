@@ -15,8 +15,8 @@ def _build_gateway(
     blocked_paths: list[Path] | None = None,
 ) -> FilesystemAccessGateway:
     services = ServiceContainer()
-    services.register("cwd", cwd)
-    services.register("allowed_paths", allowed_paths)
+    services.set_cwd(cwd)
+    services.register_runtime_compat("allowed_paths", allowed_paths)
     services.register("blocked_paths", blocked_paths or [])
     return FilesystemAccessGateway(services, tool_name="glob")
 
@@ -86,4 +86,3 @@ class TestFilesystemAccessGateway:
         results = list(gateway.iter_authorized_paths([link], must_exist=True))
 
         assert results == []
-

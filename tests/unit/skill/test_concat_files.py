@@ -20,7 +20,7 @@ class TestConcatFilesSkill:
     def services(self, tmp_path):
         """Create ServiceContainer with tmp_path as cwd."""
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
+        services.set_cwd(tmp_path)
         return services
 
     @pytest.fixture
@@ -36,8 +36,8 @@ def _build_concat_skill(
     blocked_paths: list[Path] | None = None,
 ) -> ConcatFilesSkill:
     services = ServiceContainer()
-    services.register("cwd", cwd)
-    services.register("allowed_paths", allowed_paths)
+    services.set_cwd(cwd)
+    services.register_runtime_compat("allowed_paths", allowed_paths)
     services.register("blocked_paths", blocked_paths or [])
     return concat_files_factory(services)
 

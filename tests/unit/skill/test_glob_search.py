@@ -16,8 +16,8 @@ def _build_glob_skill(
     blocked_paths: list[Path] | None = None,
 ) -> GlobSkill:
     services = ServiceContainer()
-    services.register("cwd", cwd)
-    services.register("allowed_paths", allowed_paths)
+    services.set_cwd(cwd)
+    services.register_runtime_compat("allowed_paths", allowed_paths)
     services.register("blocked_paths", blocked_paths or [])
     return glob_factory(services)
 

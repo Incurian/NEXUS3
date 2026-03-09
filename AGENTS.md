@@ -228,6 +228,20 @@ Current milestone:
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
+- Completed (2026-03-09, Plan C runtime-key test-setup hygiene wave):
+  - migrated runtime-key test wiring to typed/compat APIs in:
+    - `tests/unit/skill/test_concat_files.py`
+    - `tests/unit/skill/test_glob_search.py`
+    - `tests/unit/skill/test_grep_gateway.py`
+    - `tests/unit/skill/test_outline.py`
+    - `tests/unit/core/test_filesystem_access.py`
+    - `tests/unit/skill/test_patch.py`
+  - replaced direct `register("cwd", ...)` calls with `set_cwd(...)`.
+  - replaced direct `register("allowed_paths", ...)` calls with
+    `register_runtime_compat("allowed_paths", ...)`.
+  - focused validation passed:
+    - `.venv/bin/ruff check tests/unit/skill/test_concat_files.py tests/unit/skill/test_glob_search.py tests/unit/skill/test_grep_gateway.py tests/unit/skill/test_outline.py tests/unit/core/test_filesystem_access.py tests/unit/skill/test_patch.py` passed.
+    - `.venv/bin/pytest -q tests/unit/skill/test_concat_files.py tests/unit/skill/test_glob_search.py tests/unit/skill/test_grep_gateway.py tests/unit/skill/test_outline.py tests/unit/core/test_filesystem_access.py tests/unit/skill/test_patch.py` (`214 passed`).
 - Completed (2026-03-09, Plan C fixture-modernization closeout wave):
   - retired remaining legacy `MockServiceContainer` test doubles in:
     - `tests/unit/test_new_skills.py`

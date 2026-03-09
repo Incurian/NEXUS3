@@ -51,8 +51,8 @@ def _build_outline_skill(
     blocked_paths: list[Path] | None = None,
 ) -> OutlineSkill:
     services = ServiceContainer()
-    services.register("cwd", cwd)
-    services.register("allowed_paths", allowed_paths)
+    services.set_cwd(cwd)
+    services.register_runtime_compat("allowed_paths", allowed_paths)
     services.register("blocked_paths", blocked_paths or [])
     return outline_factory(services)
 
@@ -61,7 +61,7 @@ def _build_outline_skill(
 def services(tmp_path):
     """Create ServiceContainer with tmp_path as cwd."""
     services = ServiceContainer()
-    services.register("cwd", str(tmp_path))
+    services.set_cwd(str(tmp_path))
     return services
 
 
