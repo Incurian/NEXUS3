@@ -19,6 +19,7 @@ nexus3/session/
 ├── __init__.py          # Public exports
 ├── session.py           # Session class - main coordinator
 ├── compaction_runtime.py # Compaction provider/summary runtime helpers
+├── tool_runtime.py      # Tool execution runtime helpers
 ├── session_manager.py   # Disk persistence (save/load/list sessions)
 ├── events.py            # Typed SessionEvent hierarchy
 ├── types.py             # LogConfig, LogStream, SessionInfo
@@ -41,7 +42,9 @@ The `Session` class is the main coordinator between the CLI/REPL and the LLM pro
 
 Compatibility note: `Session._get_compaction_provider()` and
 `Session._generate_summary()` are retained as thin wrappers that delegate to
-`compaction_runtime.py`, so existing `Session` call sites stay stable during
+`compaction_runtime.py`, and `Session._execute_skill()` plus
+`Session._execute_tools_parallel()` are retained as thin wrappers that delegate
+to `tool_runtime.py`, so existing `Session` call sites stay stable during
 extraction.
 
 ### Callback Type Aliases (from `session.py`)
@@ -878,8 +881,9 @@ If `compaction.model` is configured, a separate provider is used for summarizati
 
 | Module | Dependency |
 |--------|------------|
-| `session.py` | `core.types`, `core.errors`, `core.interfaces`, `core.permissions`, `core.validation`, `context.compaction`, `session.events`, `session.dispatcher`, `session.enforcer`, `session.confirmation`, `session.http_logging`, `session.compaction_runtime` |
+| `session.py` | `core.types`, `core.errors`, `core.interfaces`, `core.permissions`, `core.validation`, `context.compaction`, `session.events`, `session.dispatcher`, `session.enforcer`, `session.confirmation`, `session.http_logging`, `session.compaction_runtime`, `session.tool_runtime` |
 | `compaction_runtime.py` | `context.compaction`, `core.interfaces`, `core.types`, `session.http_logging` (lazy runtime import: `provider.create_provider`) |
+| `tool_runtime.py` | `core.errors`, `core.types`, `skill.base` (TYPE_CHECKING only) |
 | `logging.py` | `core.types`, `core.secure_io`, `session.storage`, `session.markdown`, `session.events`, `session.types` |
 | `storage.py` | `core.secure_io` (sqlite3 stdlib) |
 | `persistence.py` | `core.types`, `core.errors`, `clipboard.types` |

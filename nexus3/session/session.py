@@ -23,7 +23,6 @@ from nexus3.core.authorization_kernel import (
     AuthorizationResource,
     AuthorizationResourceType,
 )
-from nexus3.core.errors import sanitize_error_for_agent
 from nexus3.core.interfaces import AsyncProvider
 from nexus3.core.permissions import AgentPermissions, ConfirmationResult
 from nexus3.core.types import (
@@ -62,6 +61,12 @@ from nexus3.session.events import (
     ToolStarted,
 )
 from nexus3.session.http_logging import clear_current_logger, set_current_logger
+from nexus3.session.tool_runtime import (
+    execute_skill as execute_skill_runtime,
+)
+from nexus3.session.tool_runtime import (
+    execute_tools_parallel as execute_tools_parallel_runtime,
+)
 
 if TYPE_CHECKING:
     from nexus3.config.schema import CompactionConfig, Config
@@ -1147,33 +1152,12 @@ class Session:
         Returns:
             The tool result.
         """
-        try:
-            if timeout > 0:
-                result = await asyncio.wait_for(
-                    skill.execute(**args),
-                    timeout=timeout,
-                )
-            else:
-                result = await skill.execute(**args)
-
-            if result.error:
-                # Log full error for debugging (debug level to avoid Live display artifacts)
-                logger.debug("Skill '%s' returned error: %s", skill.name, result.error)
-                # Sanitize for agent
-                sanitized_error = sanitize_error_for_agent(result.error, skill.name)
-                if sanitized_error != result.error:
-                    logger.debug("Sanitized error for agent: %s", sanitized_error)
-                    result = ToolResult(output=result.output, error=sanitized_error or "")
-
-            return result
-        except TimeoutError:
-            logger.debug("Skill '%s' timed out after %ss", skill.name, timeout)
-            return ToolResult(error=f"Skill timed out after {timeout}s")
-        except Exception as e:
-            logger.debug("Skill '%s' raised exception: %s", skill.name, e, exc_info=True)
-            raw = f"Skill execution error: {e}"
-            safe = sanitize_error_for_agent(raw, skill.name)
-            return ToolResult(error=safe or "Skill execution error")
+        return await execute_skill_runtime(
+            skill=skill,
+            args=args,
+            timeout=timeout,
+            runtime_logger=logger,
+        )
 
     async def _execute_tools_parallel(
         self, tool_calls: "tuple[ToolCall, ...]"
@@ -1188,26 +1172,11 @@ class Session:
         Returns:
             List of tool results in the same order as tool_calls.
         """
-        async def execute_one(tc: "ToolCall") -> ToolResult:
-            async with self._tool_semaphore:
-                return await self._execute_single_tool(tc)
-
-        results = await asyncio.gather(
-            *[execute_one(tc) for tc in tool_calls],
-            return_exceptions=True,
+        return await execute_tools_parallel_runtime(
+            tool_calls=tool_calls,
+            tool_semaphore=self._tool_semaphore,
+            execute_single_tool=self._execute_single_tool,
         )
-
-        # Convert exceptions to ToolResults
-        final_results: list[ToolResult] = []
-        for r in results:
-            if isinstance(r, BaseException):
-                raw = f"Execution error: {r}"
-                safe = sanitize_error_for_agent(raw, "")
-                final_results.append(ToolResult(error=safe or "Execution error"))
-            else:
-                final_results.append(r)
-
-        return final_results
 
     # === Context Compaction ===
 

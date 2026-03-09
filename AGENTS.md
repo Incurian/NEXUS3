@@ -455,8 +455,21 @@ Immediate tasks:
     `.venv/bin/mypy nexus3/session/session.py nexus3/session/compaction_runtime.py`,
     `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_permission_kernelization.py` (`54 passed`),
     `.venv/bin/pytest -q tests/unit/test_compaction.py tests/unit/test_context_manager.py tests/unit/context/test_graph.py tests/unit/context/test_compiler.py tests/unit/context/test_compile_baseline.py` (`75 passed`).
-- Next target: execute structural-refactor Phase 2B Session extraction slice
-  for tool execution internals, while keeping manual provider keep-alive
+- Completed (2026-03-09, structural-refactor Phase 2B): Session tool-execution
+  primitives extraction:
+  - added `nexus3/session/tool_runtime.py` and moved tool execution primitives
+    there.
+  - kept `Session._execute_skill(...)` and
+    `Session._execute_tools_parallel(...)` as thin wrappers for compatibility.
+  - behavior parity preserved: timeout handling, exception mapping, and
+    sanitization semantics.
+  - focused validation passed:
+    `.venv/bin/ruff check nexus3/session/session.py nexus3/session/compaction_runtime.py nexus3/session/tool_runtime.py`,
+    `.venv/bin/mypy nexus3/session/session.py nexus3/session/compaction_runtime.py nexus3/session/tool_runtime.py`,
+    `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_permission_kernelization.py` (`54 passed`),
+    `.venv/bin/pytest -q tests/integration/test_skill_execution.py tests/integration/test_permission_enforcement.py` (`30 passed`).
+- Next target: execute remaining Session extraction internals
+  (permission/MCP/GitLab handling), while keeping manual provider keep-alive
   endpoint evidence capture queued for real endpoint availability.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
@@ -554,7 +567,7 @@ Compact handover checkpoint (2026-03-09, post-structural Phase 1B wave):
   - `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_runtime.py nexus3/cli/repl_reload.py` passed.
   - `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/unit/test_repl_commands.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/test_client.py` passed (`125 passed`).
 - Next gate after compact:
-  1. Execute structural-refactor Phase 2B Session extraction slice (tool execution internals) with focused parity checks.
+  1. Execute remaining Session extraction internals (permission/MCP/GitLab handling) with focused parity checks.
   2. Keep manual provider keep-alive endpoint evidence capture queued until real endpoint access is available.
   3. Windows host is not required for the immediate next gate.
 
