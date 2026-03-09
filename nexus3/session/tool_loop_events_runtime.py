@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
@@ -43,6 +43,10 @@ if TYPE_CHECKING:
     from nexus3.skill.services import ServiceContainer
 
 
+ExecuteToolsParallel = Callable[[tuple[ToolCall, ...]], Awaitable[list[ToolResult]]]
+ExecuteSingleTool = Callable[[ToolCall], Awaitable[ToolResult]]
+
+
 class _ToolLoopEventsSession(Protocol):
     provider: AsyncProvider
     context: ContextManager | None
@@ -68,20 +72,12 @@ class _ToolLoopEventsSession(Protocol):
 
     def _log_event(self, event: SessionEvent) -> None: ...
 
-    def _execute_tools_parallel(
-        self,
-        tool_calls: tuple[ToolCall, ...],
-    ) -> Awaitable[list[ToolResult]]: ...
-
-    def _execute_single_tool(
-        self,
-        tool_call: ToolCall,
-    ) -> Awaitable[ToolResult]: ...
-
 
 async def execute_tool_loop_events(
     session: _ToolLoopEventsSession,
     *,
+    execute_tools_parallel: ExecuteToolsParallel,
+    execute_single_tool: ExecuteSingleTool,
     cancel_token: CancellationToken | None = None,
 ) -> AsyncIterator[SessionEvent]:
     """Execute tools yielding SessionEvent objects."""
@@ -190,7 +186,7 @@ async def execute_tool_loop_events(
                     tool_start = ToolStarted(name=tc.name, tool_id=tc.id)
                     session._log_event(tool_start)
                     yield tool_start
-                tool_results = await session._execute_tools_parallel(final_message.tool_calls)
+                tool_results = await execute_tools_parallel(final_message.tool_calls)
                 for i, (tc, tool_result) in enumerate(
                     zip(final_message.tool_calls, tool_results, strict=True), start=1
                 ):
@@ -221,7 +217,7 @@ async def execute_tool_loop_events(
                     yield tool_start
                     # Handle mid-execution cancellation
                     try:
-                        tool_result = await session._execute_single_tool(tc)
+                        tool_result = await execute_single_tool(tc)
                     except asyncio.CancelledError:
                         # Tool was interrupted mid-execution
                         tool_result = ToolResult(

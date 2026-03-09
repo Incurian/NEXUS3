@@ -5,11 +5,20 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
+from nexus3.core.authorization_kernel import AdapterAuthorizationKernel
 from nexus3.core.permissions import AgentPermissions, ConfirmationResult
 from nexus3.core.types import ToolCall, ToolResult
 from nexus3.core.validation import ValidationError, validate_tool_arguments
+from nexus3.session.confirmation import ConfirmationController
+from nexus3.session.permission_runtime import (
+    handle_gitlab_permissions as handle_gitlab_permissions_runtime,
+)
+from nexus3.session.permission_runtime import (
+    handle_mcp_permissions as handle_mcp_permissions_runtime,
+)
+from nexus3.session.tool_runtime import execute_skill as execute_skill_runtime
 
 if TYPE_CHECKING:
     from nexus3.skill.base import Skill
@@ -47,55 +56,8 @@ class _PermissionEnforcer(Protocol):
     ) -> float: ...
 
 
-class _ConfirmationController(Protocol):
-    def request(
-        self,
-        tool_call: ToolCall,
-        target_path: Path | None,
-        agent_cwd: Path,
-        callback: ConfirmationCallback | None,
-    ) -> Awaitable[ConfirmationResult]: ...
-
-    def apply_result(
-        self,
-        permissions: AgentPermissions,
-        result: ConfirmationResult,
-        tool_call: ToolCall,
-        target_path: Path | None,
-        exec_cwd: Path | None,
-    ) -> None: ...
-
-
 class _ToolDispatcher(Protocol):
     def find_skill(self, tool_call: ToolCall) -> tuple[Skill | None, str | None]: ...
-
-
-class _McpPermissionHandler(Protocol):
-    def __call__(
-        self,
-        tool_call: ToolCall,
-        skill: Skill | None,
-        server_name: str,
-        permissions: AgentPermissions,
-    ) -> Awaitable[ToolResult | None]: ...
-
-
-class _GitLabPermissionHandler(Protocol):
-    def __call__(
-        self,
-        tool_call: ToolCall,
-        skill: Skill | None,
-        permissions: AgentPermissions,
-    ) -> Awaitable[ToolResult | None]: ...
-
-
-class _SkillExecutor(Protocol):
-    def __call__(
-        self,
-        skill: Skill,
-        args: dict[str, Any],
-        timeout: float,
-    ) -> Awaitable[ToolResult]: ...
 
 
 async def execute_single_tool(
@@ -103,12 +65,11 @@ async def execute_single_tool(
     *,
     services: ServiceContainer | None,
     enforcer: _PermissionEnforcer,
-    confirmation: _ConfirmationController,
+    confirmation: ConfirmationController,
     dispatcher: _ToolDispatcher,
     on_confirm: ConfirmationCallback | None,
-    handle_mcp_permissions: _McpPermissionHandler,
-    handle_gitlab_permissions: _GitLabPermissionHandler,
-    execute_skill: _SkillExecutor,
+    mcp_authorization_kernel: AdapterAuthorizationKernel,
+    gitlab_authorization_kernel: AdapterAuthorizationKernel,
     skill_timeout: float,
     runtime_logger: logging.Logger,
 ) -> ToolResult:
@@ -153,13 +114,30 @@ async def execute_single_tool(
 
     # 4. MCP permission check and confirmation (if MCP skill)
     if mcp_server_name and permissions:
-        error = await handle_mcp_permissions(tool_call, skill, mcp_server_name, permissions)
+        error = await handle_mcp_permissions_runtime(
+            tool_call=tool_call,
+            skill=skill,
+            server_name=mcp_server_name,
+            permissions=permissions,
+            authorization_kernel=mcp_authorization_kernel,
+            confirmation=confirmation,
+            services=services,
+            on_confirm=on_confirm,
+        )
         if error:
             return error
 
     # 4b. GitLab permission check and confirmation (if GitLab skill)
     if tool_call.name.startswith("gitlab_") and permissions:
-        error = await handle_gitlab_permissions(tool_call, skill, permissions)
+        error = await handle_gitlab_permissions_runtime(
+            tool_call=tool_call,
+            skill=skill,
+            permissions=permissions,
+            authorization_kernel=gitlab_authorization_kernel,
+            confirmation=confirmation,
+            services=services,
+            on_confirm=on_confirm,
+        )
         if error:
             return error
 
@@ -190,4 +168,9 @@ async def execute_single_tool(
     # 7. Execute with timeout
     effective_timeout = enforcer.get_effective_timeout(tool_call.name, permissions, skill_timeout)
 
-    return await execute_skill(skill, args, effective_timeout)
+    return await execute_skill_runtime(
+        skill=skill,
+        args=args,
+        timeout=effective_timeout,
+        runtime_logger=runtime_logger,
+    )

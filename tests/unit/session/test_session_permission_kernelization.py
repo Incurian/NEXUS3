@@ -7,6 +7,12 @@ import pytest
 from nexus3.core.authorization_kernel import AuthorizationDecision
 from nexus3.core.permissions import ConfirmationResult, resolve_preset
 from nexus3.core.types import ToolCall
+from nexus3.session.permission_runtime import (
+    handle_gitlab_permissions as handle_gitlab_permissions_runtime,
+)
+from nexus3.session.permission_runtime import (
+    handle_mcp_permissions as handle_mcp_permissions_runtime,
+)
 from nexus3.session.session import Session
 from nexus3.skill.services import ServiceContainer
 from nexus3.skill.vcs.config import GitLabConfig, GitLabInstance
@@ -39,11 +45,15 @@ class TestSessionIntegrationLevelKernelization:
 
         session._mcp_authorization_kernel.authorize = deny_request  # type: ignore[method-assign]
 
-        result = await session._handle_mcp_permissions(
+        result = await handle_mcp_permissions_runtime(
             tool_call=tool_call,
             skill=object(),
             server_name="demo",
             permissions=permissions,
+            authorization_kernel=session._mcp_authorization_kernel,
+            confirmation=session._confirmation,
+            services=session._services,
+            on_confirm=session.on_confirm,
         )
 
         assert result is not None
@@ -66,10 +76,14 @@ class TestSessionIntegrationLevelKernelization:
 
         session._gitlab_authorization_kernel.authorize = deny_request  # type: ignore[method-assign]
 
-        result = await session._handle_gitlab_permissions(
+        result = await handle_gitlab_permissions_runtime(
             tool_call=tool_call,
             skill=object(),
             permissions=permissions,
+            authorization_kernel=session._gitlab_authorization_kernel,
+            confirmation=session._confirmation,
+            services=session._services,
+            on_confirm=session.on_confirm,
         )
 
         assert result is not None
@@ -93,11 +107,15 @@ class TestSessionIntegrationLevelKernelization:
         permissions = resolve_preset("trusted")
         tool_call = ToolCall(id="tc-1", name="mcp_demo_list", arguments={})
 
-        result = await session._handle_mcp_permissions(
+        result = await handle_mcp_permissions_runtime(
             tool_call=tool_call,
             skill=object(),
             server_name="demo",
             permissions=permissions,
+            authorization_kernel=session._mcp_authorization_kernel,
+            confirmation=session._confirmation,
+            services=session._services,
+            on_confirm=session.on_confirm,
         )
 
         assert result is None
@@ -129,10 +147,14 @@ class TestSessionIntegrationLevelKernelization:
             arguments={"action": "create", "instance": "default"},
         )
 
-        result = await session._handle_gitlab_permissions(
+        result = await handle_gitlab_permissions_runtime(
             tool_call=tool_call,
             skill=object(),
             permissions=permissions,
+            authorization_kernel=session._gitlab_authorization_kernel,
+            confirmation=session._confirmation,
+            services=session._services,
+            on_confirm=session.on_confirm,
         )
 
         assert result is None

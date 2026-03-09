@@ -10,7 +10,7 @@ Tests that the Session class properly enforces permissions when executing tools:
 7. Sessions without permissions allow all tools
 
 These tests verify the integration between:
-- Session._execute_single_tool()
+- session tool-loop runtime wiring (`single_tool_runtime.execute_single_tool()`)
 - AgentPermissions and ToolPermission
 - Confirmation callbacks (on_confirm)
 """

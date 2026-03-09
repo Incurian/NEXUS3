@@ -632,14 +632,24 @@ Immediate tasks:
     `_enforce_create_authorization(...)`, `_is_mcp_visible_for_agent(...)`, and
     `_is_gitlab_visible_for_agent(...)`; wiring now calls extracted runtime
     helpers directly.
+- Completed (2026-03-09, structural-refactor Session wrapper-retirement
+  closeout):
+  - removed remaining Session wrappers `_execute_single_tool(...)`,
+    `_handle_mcp_permissions(...)`, `_handle_gitlab_permissions(...)`,
+    `_execute_skill(...)`, and `_execute_tools_parallel(...)`.
+  - `send(...)` / `run_turn(...)` now build explicit runtime callables and pass
+    them to `execute_tool_loop_events(...)`.
+  - `tool_loop_events_runtime.execute_tool_loop_events(...)` now accepts
+    explicit `execute_tools_parallel` and `execute_single_tool` callables.
+  - kernelization tests now call permission runtime helpers directly.
   - focused validation snapshot:
-    - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/README.md nexus3/rpc/pool.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_lifecycle.py nexus3/rpc/README.md` passed.
-    - `.venv/bin/mypy nexus3/session/session.py nexus3/rpc/pool.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_lifecycle.py` passed.
+    - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/tool_loop_events_runtime.py nexus3/session/single_tool_runtime.py nexus3/session/tool_runtime.py nexus3/session/README.md tests/unit/session/test_session_permission_kernelization.py tests/integration/test_permission_enforcement.py` passed.
+    - `.venv/bin/mypy nexus3/session/session.py nexus3/session/tool_loop_events_runtime.py nexus3/session/single_tool_runtime.py nexus3/session/tool_runtime.py` passed.
     - `.venv/bin/pytest -q tests/unit/test_compaction.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_pool.py tests/unit/test_auto_restore.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py` passed (`213 passed`).
     - `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py tests/integration/test_chat.py tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py` passed (`91 passed, 2 skipped`).
-- Next target: remove remaining temporary compatibility wrappers in
-  `session.py` / `pool.py`, then sequence deferred structural-tracker closeout
-  updates across status/plan docs.
+- Next target: deferred structural tracker/docs sync closeout is complete in
+  this wave; next queued gate is provider keep-alive real-endpoint evidence
+  capture (known-problematic + known-good targets).
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with
@@ -801,36 +811,29 @@ Compact handover checkpoint (2026-03-09, post-structural Phase 3D wave):
   3. Keep provider keep-alive real-endpoint evidence capture queued; Windows
      host is not required for the immediate wrapper-cleanup gate.
 
-Compact handover checkpoint (2026-03-09, post-wrapper-cleanup wave):
+Compact handover checkpoint (2026-03-09, post-session-wrapper-retirement wave):
 - Branch: `feat/arch-overhaul-execution`
 - Completed in this wave:
-  - removed Session compaction wrappers `_get_compaction_provider(...)` and
-    `_generate_summary(...)`; `compact()` now calls
-    `compaction_runtime.generate_summary(...)` directly.
-  - removed Session loop wrappers `_execute_tool_loop_events(...)` and
-    `_execute_tool_loop_streaming(...)`; `send(...)` / `run_turn(...)` now call
-    runtime functions directly.
-  - removed pool capability-state passthrough wrappers and now build capability
-    lifecycle state inline at call sites.
-  - removed pool restore dependency-builder wrappers and `_restore_unlocked`
-    shim in `pool.py`; restore entry points now pass `shared` + `runtime` into
-    `pool_restore` helpers, which invoke `_restore_unlocked(...)` internally.
-  - removed pool wrappers `_destroy_unlocked(...)`,
-    `_enforce_create_authorization(...)`, `_is_mcp_visible_for_agent(...)`, and
-    `_is_gitlab_visible_for_agent(...)`; call sites now wire directly to runtime
-    helpers.
+  - removed remaining Session wrappers `_execute_single_tool(...)`,
+    `_handle_mcp_permissions(...)`, `_handle_gitlab_permissions(...)`,
+    `_execute_skill(...)`, and `_execute_tools_parallel(...)`.
+  - `send(...)` / `run_turn(...)` now build explicit runtime callables and pass
+    them to `execute_tool_loop_events(...)`.
+  - `tool_loop_events_runtime.execute_tool_loop_events(...)` now accepts
+    explicit `execute_tools_parallel` and `execute_single_tool` callables.
+  - kernelization tests now call permission runtime helpers directly.
 - Validation snapshot for this wave:
-  - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/README.md nexus3/rpc/pool.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_lifecycle.py nexus3/rpc/README.md` passed.
-  - `.venv/bin/mypy nexus3/session/session.py nexus3/rpc/pool.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_lifecycle.py` passed.
+  - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/tool_loop_events_runtime.py nexus3/session/single_tool_runtime.py nexus3/session/tool_runtime.py nexus3/session/README.md tests/unit/session/test_session_permission_kernelization.py tests/integration/test_permission_enforcement.py` passed.
+  - `.venv/bin/mypy nexus3/session/session.py nexus3/session/tool_loop_events_runtime.py nexus3/session/single_tool_runtime.py nexus3/session/tool_runtime.py` passed.
   - `.venv/bin/pytest -q tests/unit/test_compaction.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_pool.py tests/unit/test_auto_restore.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py` passed (`213 passed`).
   - `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py tests/integration/test_chat.py tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py` passed (`91 passed, 2 skipped`).
 - Resume steps after compact:
-  1. Remove remaining temporary compatibility wrappers in `session.py` and
-     `pool.py`.
-  2. After remaining wrappers are retired and green, close deferred structural
-     tracker rows in config-ops + status docs.
-  3. Keep provider keep-alive real-endpoint evidence capture queued; Windows
-     host is not required for the immediate wrapper-closeout gate.
+  1. No structural wrapper work remains; keep deferred structural tracker/docs
+     rows closed in status artifacts.
+  2. Run provider keep-alive manual endpoint validation with
+     `scripts/diagnose-empty-stream.sh` and archive `10-keepalive-evidence.json`
+     for one known-problematic and one known-good target.
+  3. Windows host is not required for the immediate provider-evidence gate.
 
 Recent execution commits (latest first):
 - `73ccb78` docs(status): add post-phase1a compact handover checkpoint

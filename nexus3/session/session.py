@@ -18,7 +18,7 @@ from nexus3.core.authorization_kernel import (
     AdapterAuthorizationKernel,
 )
 from nexus3.core.interfaces import AsyncProvider
-from nexus3.core.permissions import AgentPermissions, ConfirmationResult
+from nexus3.core.permissions import ConfirmationResult
 from nexus3.core.types import (
     Message,
     Role,
@@ -39,12 +39,6 @@ from nexus3.session.permission_runtime import (
     _GitLabLevelAuthorizationAdapter,
     _McpLevelAuthorizationAdapter,
 )
-from nexus3.session.permission_runtime import (
-    handle_gitlab_permissions as handle_gitlab_permissions_runtime,
-)
-from nexus3.session.permission_runtime import (
-    handle_mcp_permissions as handle_mcp_permissions_runtime,
-)
 from nexus3.session.simple_turn_runtime import (
     execute_simple_run_turn as execute_simple_run_turn_runtime,
 )
@@ -61,9 +55,6 @@ from nexus3.session.tool_loop_events_runtime import (
     execute_tool_loop_events as execute_tool_loop_events_runtime,
 )
 from nexus3.session.tool_runtime import (
-    execute_skill as execute_skill_runtime,
-)
-from nexus3.session.tool_runtime import (
     execute_tools_parallel as execute_tools_parallel_runtime,
 )
 from nexus3.session.turn_entry_runtime import (
@@ -76,7 +67,6 @@ if TYPE_CHECKING:
     from nexus3.context.manager import ContextManager
     from nexus3.core.cancel import CancellationToken
     from nexus3.session.logging import SessionLogger
-    from nexus3.skill.base import Skill
     from nexus3.skill.registry import SkillRegistry
     from nexus3.skill.services import ServiceContainer
 
@@ -362,6 +352,39 @@ class Session:
         """Timestamp of the last action taken by the agent (tool call or response)."""
         return self._last_action_at
 
+    def _build_tool_execution_callables(
+        self,
+    ) -> tuple[
+        Callable[[ToolCall], Awaitable[ToolResult]],
+        Callable[[tuple[ToolCall, ...]], Awaitable[list[ToolResult]]],
+    ]:
+        """Build per-turn tool execution callables for event runtimes."""
+
+        async def execute_single_tool(tool_call: ToolCall) -> ToolResult:
+            return await execute_single_tool_runtime(
+                tool_call=tool_call,
+                services=self._services,
+                enforcer=self._enforcer,
+                confirmation=self._confirmation,
+                dispatcher=self._dispatcher,
+                on_confirm=self.on_confirm,
+                mcp_authorization_kernel=self._mcp_authorization_kernel,
+                gitlab_authorization_kernel=self._gitlab_authorization_kernel,
+                skill_timeout=self.skill_timeout,
+                runtime_logger=logger,
+            )
+
+        async def execute_tools_parallel(
+            tool_calls: tuple[ToolCall, ...],
+        ) -> list[ToolResult]:
+            return await execute_tools_parallel_runtime(
+                tool_calls=tool_calls,
+                tool_semaphore=self._tool_semaphore,
+                execute_single_tool=execute_single_tool,
+            )
+
+        return execute_single_tool, execute_tools_parallel
+
     async def send(
         self,
         user_input: str,
@@ -397,10 +420,15 @@ class Session:
                     preflight_path="send.pre_user",
                 )
                 if use_tools or has_tools:
+                    execute_single_tool, execute_tools_parallel = (
+                        self._build_tool_execution_callables()
+                    )
                     # Use streaming tool execution loop
                     async for chunk in execute_tool_loop_streaming_runtime(
                         execute_tool_loop_events=lambda token: execute_tool_loop_events_runtime(
                             self,
+                            execute_tools_parallel=execute_tools_parallel,
+                            execute_single_tool=execute_single_tool,
                             cancel_token=token,
                         ),
                         cancel_token=cancel_token,
@@ -478,9 +506,14 @@ class Session:
                 preflight_path="run_turn.pre_user",
             )
             if use_tools or has_tools:
+                execute_single_tool, execute_tools_parallel = (
+                    self._build_tool_execution_callables()
+                )
                 # Use streaming tool execution loop with events
                 async for event in execute_tool_loop_events_runtime(
                     self,
+                    execute_tools_parallel=execute_tools_parallel,
+                    execute_single_tool=execute_single_tool,
                     cancel_token=cancel_token,
                 ):
                     yield event
@@ -503,131 +536,6 @@ class Session:
         finally:
             # Clear current logger after turn completes
             clear_current_logger()
-
-    async def _execute_single_tool(self, tool_call: "ToolCall") -> ToolResult:
-        """Execute a single tool call with permission checks.
-
-        Delegates to extracted components:
-        - PermissionEnforcer: Permission checks (enabled, action, path)
-        - ConfirmationController: User confirmation flow
-        - ToolDispatcher: Skill resolution
-
-        Args:
-            tool_call: The tool call to execute.
-
-        Returns:
-            The tool result.
-        """
-        return await execute_single_tool_runtime(
-            tool_call=tool_call,
-            services=self._services,
-            enforcer=self._enforcer,
-            confirmation=self._confirmation,
-            dispatcher=self._dispatcher,
-            on_confirm=self.on_confirm,
-            handle_mcp_permissions=self._handle_mcp_permissions,
-            handle_gitlab_permissions=self._handle_gitlab_permissions,
-            execute_skill=self._execute_skill,
-            skill_timeout=self.skill_timeout,
-            runtime_logger=logger,
-        )
-
-    async def _handle_mcp_permissions(
-        self,
-        tool_call: "ToolCall",
-        skill: "Skill | None",
-        server_name: str,
-        permissions: AgentPermissions,
-    ) -> ToolResult | None:
-        """Handle MCP-specific permission checks and confirmation.
-
-        Args:
-            tool_call: The MCP tool call.
-            skill: The resolved MCP skill (may be None).
-            server_name: MCP server name.
-            permissions: Agent permissions.
-
-        Returns:
-            ToolResult with error if permission denied, None if allowed.
-        """
-        return await handle_mcp_permissions_runtime(
-            tool_call=tool_call,
-            skill=skill,
-            server_name=server_name,
-            permissions=permissions,
-            authorization_kernel=self._mcp_authorization_kernel,
-            confirmation=self._confirmation,
-            services=self._services,
-            on_confirm=self.on_confirm,
-        )
-
-    async def _handle_gitlab_permissions(
-        self,
-        tool_call: "ToolCall",
-        skill: "Skill | None",
-        permissions: AgentPermissions,
-    ) -> ToolResult | None:
-        """Handle GitLab-specific permission checks and confirmation.
-
-        Args:
-            tool_call: The GitLab tool call.
-            skill: The resolved GitLab skill (may be None).
-            permissions: Agent permissions.
-
-        Returns:
-            ToolResult with error if permission denied, None if allowed.
-        """
-        return await handle_gitlab_permissions_runtime(
-            tool_call=tool_call,
-            skill=skill,
-            permissions=permissions,
-            authorization_kernel=self._gitlab_authorization_kernel,
-            confirmation=self._confirmation,
-            services=self._services,
-            on_confirm=self.on_confirm,
-        )
-
-    async def _execute_skill(
-        self,
-        skill: "Skill",
-        args: dict[str, Any],
-        timeout: float,
-    ) -> ToolResult:
-        """Execute a skill with timeout.
-
-        Args:
-            skill: The skill to execute.
-            args: Validated arguments.
-            timeout: Timeout in seconds (0 = no timeout).
-
-        Returns:
-            The tool result.
-        """
-        return await execute_skill_runtime(
-            skill=skill,
-            args=args,
-            timeout=timeout,
-            runtime_logger=logger,
-        )
-
-    async def _execute_tools_parallel(
-        self, tool_calls: "tuple[ToolCall, ...]"
-    ) -> list[ToolResult]:
-        """Execute multiple tool calls in parallel.
-
-        Uses a semaphore to limit concurrency to max_concurrent_tools.
-
-        Args:
-            tool_calls: The tool calls to execute.
-
-        Returns:
-            List of tool results in the same order as tool_calls.
-        """
-        return await execute_tools_parallel_runtime(
-            tool_calls=tool_calls,
-            tool_semaphore=self._tool_semaphore,
-            execute_single_tool=self._execute_single_tool,
-        )
 
     # === Context Compaction ===
 

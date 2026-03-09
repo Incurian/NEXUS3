@@ -380,7 +380,8 @@ Exit gates:
      - Phase 4A completed: display theme no-op override path removed by
        simplifying `load_theme(overrides=...)` to `load_theme()` with
        parity-preserving default behavior.
-     - wrapper-cleanup follow-on slice completed:
+     - wrapper-cleanup follow-on + Session wrapper-retirement closeout slices
+       completed:
        - removed Session compaction wrappers
          `_get_compaction_provider(...)` / `_generate_summary(...)`;
          `compact()` now calls `compaction_runtime.generate_summary(...)`
@@ -388,6 +389,14 @@ Exit gates:
        - removed Session loop wrappers `_execute_tool_loop_events(...)` /
          `_execute_tool_loop_streaming(...)`; `send(...)` / `run_turn(...)`
          now call runtime helpers directly.
+       - removed remaining Session wrappers `_execute_single_tool(...)`,
+         `_handle_mcp_permissions(...)`, `_handle_gitlab_permissions(...)`,
+         `_execute_skill(...)`, and `_execute_tools_parallel(...)`.
+       - `send(...)` / `run_turn(...)` now build explicit runtime callables and
+         pass them to `execute_tool_loop_events(...)`.
+       - `tool_loop_events_runtime.execute_tool_loop_events(...)` now accepts
+         explicit `execute_tools_parallel` and `execute_single_tool` callables.
+       - kernelization tests now call permission runtime helpers directly.
        - removed pool capability-state passthrough wrappers and now build
          capability lifecycle state inline at call sites.
        - removed restore dependency-builder wrappers and `_restore_unlocked`
@@ -426,18 +435,19 @@ Exit gates:
        lifecycle/auth/dispatcher suites (`70 passed`, `62 passed`).
      - focused parity checks passed for display cleanup in display unit suites
        (`137 passed`).
-     - focused validation snapshot passed for wrapper-cleanup follow-on:
-       - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/README.md nexus3/rpc/pool.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_lifecycle.py nexus3/rpc/README.md`
-       - `.venv/bin/mypy nexus3/session/session.py nexus3/rpc/pool.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_lifecycle.py`
+     - focused validation snapshot passed for wrapper-cleanup + Session
+       wrapper-retirement closeout:
+       - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/tool_loop_events_runtime.py nexus3/session/single_tool_runtime.py nexus3/session/tool_runtime.py nexus3/session/README.md tests/unit/session/test_session_permission_kernelization.py tests/integration/test_permission_enforcement.py`
+       - `.venv/bin/mypy nexus3/session/session.py nexus3/session/tool_loop_events_runtime.py nexus3/session/single_tool_runtime.py nexus3/session/tool_runtime.py`
        - `.venv/bin/pytest -q tests/unit/test_compaction.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_pool.py tests/unit/test_auto_restore.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py` (`213 passed`)
        - `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py tests/integration/test_chat.py tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py` (`91 passed, 2 skipped`)
      - live smoke validation passed on port 9000 (`--serve`, `rpc create`,
        `rpc send`, `rpc destroy`, `rpc shutdown`).
      - focused parity checks passed for REPL formatting/runtime/reload, REPL
        command, connect-lobby, and client paths.
-     - next gate: remove remaining temporary compatibility wrappers, then
-       execute deferred structural-tracker closeout sequencing across status
-       and plan docs.
+     - next gate: deferred structural tracker/docs sync closeout is complete in
+       this status wave; next queued execution task is provider keep-alive
+       real-endpoint evidence capture.
    - Dependency gates:
      - No unresolved high-priority behavior defects in REPL/session/pool runtime paths.
      - Existing integration and regression baselines are green before each extraction slice.

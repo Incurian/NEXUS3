@@ -46,15 +46,12 @@ nexus3/session/
 
 The `Session` class is the main coordinator between the CLI/REPL and the LLM provider. It manages multi-turn conversations, tool execution loops, and context compaction.
 
-Compatibility note: `Session._execute_skill()` plus
-`Session._execute_tools_parallel()` are retained as thin wrappers that delegate
-to `tool_runtime.py`, and `Session._handle_mcp_permissions()` plus
-`Session._handle_gitlab_permissions()` are retained as thin wrappers that
-delegate to `permission_runtime.py`, and `Session._execute_single_tool()` is
-retained as a thin wrapper that delegates to `single_tool_runtime.py`.
-`send()` now calls `streaming_runtime.execute_tool_loop_streaming(...)`
-directly, and `run_turn()` now calls
-`tool_loop_events_runtime.execute_tool_loop_events(...)` directly.
+Compatibility note: temporary Session wrapper methods for single-tool,
+parallel-tool, permission, and skill execution have been retired.
+`send()` and `run_turn()` now wire
+`tool_loop_events_runtime.execute_tool_loop_events(...)` directly with explicit
+runtime callables/dependencies.
+`send()` calls `streaming_runtime.execute_tool_loop_streaming(...)` directly.
 `compact()` calls `compaction_runtime.generate_summary(...)` directly.
 `send()` and `run_turn()` share context-mode preflight/reset through
 `turn_entry_runtime.prepare_turn_entry(...)`, and their non-tool simple
@@ -659,8 +656,8 @@ Permission checks (in order):
 
 Path semantics are still determined by `PathDecisionEngine` (including blocked paths and per-tool path resolution), while final allow/deny is enforced through authorization-kernel evaluation.
 Session-level MCP/GitLab level gates run through `permission_runtime.py` helpers
-invoked by `Session` wrappers, and remain kernel-authoritative `TOOL_EXECUTE`
-decisions before confirmation/allowance handling.
+invoked through single-tool runtime wiring, and remain kernel-authoritative
+`TOOL_EXECUTE` decisions before confirmation/allowance handling.
 
 ### Target Validation
 

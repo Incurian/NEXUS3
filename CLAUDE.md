@@ -1400,8 +1400,8 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   is completed:
   - `nexus3/session/tool_runtime.py` now owns extracted tool execution
     primitives.
-  - `Session._execute_skill(...)` and `Session._execute_tools_parallel(...)`
-    remain thin wrappers for compatibility.
+  - latest Session wrapper-retirement closeout removed
+    `Session._execute_skill(...)` and `Session._execute_tools_parallel(...)`.
   - behavior parity preserved (timeout handling, exception mapping, and
     sanitization semantics).
 - Structural-refactor Phase 2C (Session permission runtime extraction)
@@ -1410,15 +1410,18 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - `_McpLevelAuthorizationAdapter`, `_GitLabLevelAuthorizationAdapter`, and
     internals of `Session._handle_mcp_permissions(...)` /
     `Session._handle_gitlab_permissions(...)` are extracted to runtime helpers.
-  - Session permission-handling methods remain thin wrappers for compatibility.
+  - latest Session wrapper-retirement closeout removed
+    `Session._handle_mcp_permissions(...)` and
+    `Session._handle_gitlab_permissions(...)`; kernelization tests now call
+    permission runtime helpers directly.
   - behavior parity preserved (kernel-authoritative decisions and confirmation
     flows).
 - Structural-refactor Phase 2D (Session single-tool runtime extraction)
   is completed:
   - `nexus3/session/single_tool_runtime.py` now owns single-tool execution
     runtime helpers.
-  - `Session._execute_single_tool(...)` remains a thin wrapper for
-    compatibility.
+  - latest Session wrapper-retirement closeout removed
+    `Session._execute_single_tool(...)`.
   - behavior parity preserved (permissions fail-closed, enforcer checks and
     confirmation flow including multi-path allowances, skill
     resolution/unknown-skill handling, malformed `_raw_arguments` handling,
@@ -1440,6 +1443,9 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - latest wrapper-cleanup wave removed
     `Session._execute_tool_loop_events(...)`; `send(...)` / `run_turn(...)`
     now call runtime helpers directly.
+  - `send(...)` / `run_turn(...)` now build explicit runtime callables and pass
+    them to `execute_tool_loop_events(...)`; the runtime helper now accepts
+    explicit `execute_tools_parallel` and `execute_single_tool` callables.
 - Structural-refactor Phase 2G (Session turn-entry runtime extraction)
   is completed:
   - `nexus3/session/turn_entry_runtime.py` now owns shared turn-entry
@@ -1614,9 +1620,9 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
     `.venv/bin/pytest -q tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py`
     (`62 passed`).
   - passed:
-    `.venv/bin/ruff check nexus3/session/session.py nexus3/session/README.md nexus3/rpc/pool.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_lifecycle.py nexus3/rpc/README.md`
+    `.venv/bin/ruff check nexus3/session/session.py nexus3/session/tool_loop_events_runtime.py nexus3/session/single_tool_runtime.py nexus3/session/tool_runtime.py nexus3/session/README.md tests/unit/session/test_session_permission_kernelization.py tests/integration/test_permission_enforcement.py`
   - passed:
-    `.venv/bin/mypy nexus3/session/session.py nexus3/rpc/pool.py nexus3/rpc/pool_restore.py nexus3/rpc/pool_lifecycle.py`
+    `.venv/bin/mypy nexus3/session/session.py nexus3/session/tool_loop_events_runtime.py nexus3/session/single_tool_runtime.py nexus3/session/tool_runtime.py`
   - passed:
     `.venv/bin/pytest -q tests/unit/test_compaction.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_pool.py tests/unit/test_auto_restore.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py`
     (`213 passed`).
@@ -1661,20 +1667,20 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
     `streaming_runtime.py`, `tool_loop_events_runtime.py`,
     `turn_entry_runtime.py`, `simple_turn_runtime.py`, `pool_visibility.py`,
     `pool_create.py`, `pool_restore.py`, `pool_lifecycle.py` extracted;
-    wrapper-cleanup follow-on removed Session compaction/tool-loop wrappers plus
-    pool restore/visibility/create/destroy/capability passthrough wrappers;
-    remaining temporary wrappers in `session.py` / `pool.py` are now the next
-    structural closeout slice; display theme loader contract uses `load_theme()`
-    without no-op overrides).
+    wrapper-retirement closeout removed remaining Session wrappers
+    `_execute_single_tool(...)`, `_handle_mcp_permissions(...)`,
+    `_handle_gitlab_permissions(...)`, `_execute_skill(...)`, and
+    `_execute_tools_parallel(...)`; `send(...)` / `run_turn(...)` now build
+    explicit runtime callables for `execute_tool_loop_events(...)`, whose
+    runtime signature now accepts explicit `execute_tools_parallel` and
+    `execute_single_tool` callables; display theme loader contract uses
+    `load_theme()` without no-op overrides).
 - Concrete resume steps for post-compact continuation:
-  1. Remove remaining temporary compatibility wrappers in `session.py` and
-     `pool.py`.
-  2. After remaining wrapper cleanup is green, update deferred tracker rows/docs
-     for structural-refactor closeout.
-  3. Run manual endpoint validation with
+  1. Run manual endpoint validation with
      `scripts/diagnose-empty-stream.sh` and archive `10-keepalive-evidence.json`
      from at least one problematic and one known-good endpoint run when real
      endpoint access is available.
+  2. Record provider-evidence run ids/artifact links in status and plan docs.
 
 ### Known Failures
 
@@ -1797,8 +1803,8 @@ Do NOT use a NEXUS coordinator agent in the middle - Claude Code is better at co
 | Issue | Reason | Effort |
 |-------|--------|--------|
 | Repl.py split (~2050 lines) | Completed extraction in this branch (phases 1A/1B complete) | L |
-| Session.py split (~1100 lines) | Extraction complete; wrapper cleanup partially complete (compaction + tool-loop wrappers removed, remaining wrappers pending) | M |
-| Pool.py split (~1250 lines) | Extraction complete; wrapper cleanup partially complete (restore/create/destroy/visibility/capability wrapper wave landed, remaining wrappers pending) | M |
+| Session.py split (~1100 lines) | Completed extraction + wrapper retirement on this branch (remaining Session wrappers removed in closeout wave) | M |
+| Pool.py split (~1250 lines) | Completed extraction + wrapper retirement on this branch | M |
 | Display config | Completed (`load_theme()` contract cleanup landed) | S |
 | HTTP keep-alive | Bounded stale-reuse recovery landed (2026-03-09); monitoring/manual endpoint validation remains | S |
 
@@ -1834,10 +1840,9 @@ Dynamic content (datetime, git status, clipboard) was being injected into the sy
 
 #### Next Up: STRUCTURAL-REFACTOR-WAVE-PLAN
 
-Structural decomposition is already landed in this branch, including the latest
-wrapper-cleanup wave. Next gate is remaining wrapper retirement in
-`session.py` / `pool.py`, then deferred tracker closeout updates across status
-and plan docs.
+Structural decomposition, wrapper retirement, and deferred structural tracker
+docs sync are landed in this branch. Next queued execution task is provider
+keep-alive real-endpoint evidence capture.
 
 ### Known Bugs
 
