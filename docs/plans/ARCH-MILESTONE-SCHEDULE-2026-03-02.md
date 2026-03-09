@@ -320,7 +320,7 @@ Exit gates:
 5. Structural refactor wave:
    - [STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md)
    - Target window: post-M4 cleanup (non-blocking for security gates).
-   - Status note (2026-03-09): kickoff + REPL + Session Phase 2A/2B/2C/2D/2E
+   - Status note (2026-03-09): kickoff + REPL + Session Phase 2A/2B/2C/2D/2E/2F
      slices complete in WSL:
      - extraction map and compatibility-boundary policy documented in plan.
      - Phase 1A completed: REPL formatting/sanitization helpers extracted to
@@ -350,6 +350,10 @@ Exit gates:
        extracted to `nexus3/session/streaming_runtime.py` with
        `Session._execute_tool_loop_streaming(...)` retained as a compatibility
        wrapper.
+     - Phase 2F completed: Session tool-loop event internals extracted to
+       `nexus3/session/tool_loop_events_runtime.py` with
+       `Session._execute_tool_loop_events(...)` retained as a compatibility
+       wrapper.
      - focused parity checks passed for Session compaction/runtime extraction
        in session + compaction/context suites (`54 passed`, `75 passed`).
      - focused parity checks passed for Session tool execution extraction in
@@ -361,11 +365,14 @@ Exit gates:
      - focused parity checks passed for Session streaming runtime extraction in
        targeted integration/cancellation suites (`6 passed`, `4 passed`,
        `3 passed`).
+     - focused parity checks passed for Session tool-loop events runtime
+       extraction in session unit/integration suites (`54 passed`, `30 passed`).
+     - live smoke validation passed on port 9000 (`--serve`, `rpc create`,
+       `rpc send`, `rpc destroy`, `rpc shutdown`).
      - focused parity checks passed for REPL formatting/runtime/reload, REPL
        command, connect-lobby, and client paths.
-     - next gate: remaining Session core event-loop/send-turn extraction
-       internals (likely `_execute_tool_loop_events(...)` and `send`/`run_turn`
-       core paths) with parity validation before pool/display slices.
+     - next gate: remaining Session core `send(...)` / `run_turn(...)`
+       extraction internals with parity validation before pool/display slices.
    - Dependency gates:
      - No unresolved high-priority behavior defects in REPL/session/pool runtime paths.
      - Existing integration and regression baselines are green before each extraction slice.

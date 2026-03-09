@@ -1431,6 +1431,13 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
     compatibility.
   - behavior parity preserved (event->callback mapping and yielded chunk
     semantics unchanged).
+- Structural-refactor Phase 2F (Session tool-loop events runtime extraction)
+  is completed:
+  - `nexus3/session/tool_loop_events_runtime.py` now owns tool-loop event
+    execution runtime helpers.
+  - `Session._execute_tool_loop_events(...)` remains a thin wrapper for
+    compatibility.
+  - `send(...)` / `run_turn(...)` call paths are unchanged in this slice.
 - Focused validation snapshot:
   - passed:
     `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
@@ -1500,6 +1507,22 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
     `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py -k "test_cancellation_before_assistant_message_no_orphans or test_cancellation_after_first_tool_adds_remaining_results or test_cancelled_error_during_tool_creates_result"`
     (`3 passed`).
   - passed:
+    `.venv/bin/ruff check nexus3/session/session.py nexus3/session/tool_loop_events_runtime.py`
+  - passed:
+    `.venv/bin/mypy nexus3/session/session.py nexus3/session/tool_loop_events_runtime.py`
+  - passed:
+    `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py tests/unit/session/test_enforcer.py`
+    (`54 passed`).
+  - passed:
+    `.venv/bin/pytest -q tests/integration/test_skill_execution.py tests/integration/test_permission_enforcement.py`
+    (`30 passed`).
+  - passed (live smoke):
+    `NEXUS_DEV=1 .venv/bin/python -m nexus3 --serve 9000`,
+    `.venv/bin/python -m nexus3 rpc create test-agent --port 9000`,
+    `.venv/bin/python -m nexus3 rpc send test-agent "describe your permissions and what you can do" --port 9000`,
+    `.venv/bin/python -m nexus3 rpc destroy test-agent --port 9000`,
+    `.venv/bin/python -m nexus3 rpc shutdown --port 9000`.
+  - passed:
     `.venv/bin/ruff check nexus3/rpc/global_dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py`
   - passed:
     `.venv/bin/mypy nexus3/rpc/global_dispatcher.py`
@@ -1524,16 +1547,15 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - Plan C slices 1-3 follow-on is committed as `5c0e843` and `8143afe`.
   - Provider keep-alive kickoff slice is committed as `05ffb84`
     (`base.py`, `test_keepalive_recovery.py`, Step 10 JSON evidence).
-  - Structural-refactor Phase 2A/2B/2C/2D/2E extraction is complete
+  - Structural-refactor Phase 2A/2B/2C/2D/2E/2F extraction is complete
     (`compaction_runtime.py`, `tool_runtime.py`, and
     `permission_runtime.py`, `single_tool_runtime.py`,
-    `streaming_runtime.py` extracted; `session.py`
-    compaction/tool/permission/single-tool/streaming methods remain
-    compatibility wrappers).
+    `streaming_runtime.py`, `tool_loop_events_runtime.py` extracted;
+    `session.py` compaction/tool/permission/single-tool/streaming/tool-loop
+    methods remain compatibility wrappers).
 - Concrete resume steps for post-compact continuation:
-  1. Execute remaining Session core event-loop/send-turn extraction internals
-     (likely `_execute_tool_loop_events(...)` and `send`/`run_turn` core
-     paths) with focused parity checks.
+  1. Execute remaining Session core `send(...)` / `run_turn(...)` extraction
+     internals with focused parity checks.
   2. Run manual endpoint validation with
      `scripts/diagnose-empty-stream.sh` and archive `10-keepalive-evidence.json`
      from at least one problematic and one known-good endpoint run when real

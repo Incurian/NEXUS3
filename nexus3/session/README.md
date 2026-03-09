@@ -22,6 +22,7 @@ nexus3/session/
 ├── tool_runtime.py      # Tool execution runtime helpers
 ├── permission_runtime.py # MCP/GitLab permission runtime helpers
 ├── single_tool_runtime.py # Single-tool execution runtime helpers
+├── tool_loop_events_runtime.py # Event-loop tool execution runtime helpers
 ├── streaming_runtime.py # Streaming callback-adapter runtime helpers
 ├── session_manager.py   # Disk persistence (save/load/list sessions)
 ├── events.py            # Typed SessionEvent hierarchy
@@ -52,8 +53,10 @@ to `tool_runtime.py`, and `Session._handle_mcp_permissions()` plus
 delegate to `permission_runtime.py`, and `Session._execute_single_tool()` is
 retained as a thin wrapper that delegates to `single_tool_runtime.py`, and
 `Session._execute_tool_loop_streaming()` is retained as a thin wrapper that
-delegates to `streaming_runtime.py`, so existing `Session` call sites stay
-stable during extraction.
+delegates to `streaming_runtime.py`, and `Session._execute_tool_loop_events()`
+is retained as a thin wrapper that delegates to
+`tool_loop_events_runtime.py`, so existing `Session` call sites (including
+`send()` / `run_turn()`) stay stable during extraction.
 
 ### Callback Type Aliases (from `session.py`)
 
@@ -125,6 +128,9 @@ async def run_turn(
 ```
 
 The newer event-based API yields `SessionEvent` objects, enabling cleaner UI decoupling. Requires a context manager (raises `RuntimeError` if `self.context` is None).
+Internally this routes through `Session._execute_tool_loop_events()`, which is
+a thin wrapper delegating to
+`tool_loop_events_runtime.execute_tool_loop_events(...)`.
 
 #### `compact()` - Context compaction
 
@@ -891,11 +897,12 @@ If `compaction.model` is configured, a separate provider is used for summarizati
 
 | Module | Dependency |
 |--------|------------|
-| `session.py` | `core.types`, `core.errors`, `core.interfaces`, `core.permissions`, `core.validation`, `context.compaction`, `session.events`, `session.dispatcher`, `session.enforcer`, `session.confirmation`, `session.http_logging`, `session.compaction_runtime`, `session.tool_runtime`, `session.permission_runtime`, `session.single_tool_runtime`, `session.streaming_runtime` |
+| `session.py` | `core.types`, `core.errors`, `core.interfaces`, `core.permissions`, `core.validation`, `context.compaction`, `session.events`, `session.dispatcher`, `session.enforcer`, `session.confirmation`, `session.http_logging`, `session.compaction_runtime`, `session.tool_runtime`, `session.permission_runtime`, `session.single_tool_runtime`, `session.tool_loop_events_runtime`, `session.streaming_runtime` |
 | `compaction_runtime.py` | `context.compaction`, `core.interfaces`, `core.types`, `session.http_logging` (lazy runtime import: `provider.create_provider`) |
 | `tool_runtime.py` | `core.errors`, `core.types`, `skill.base` (TYPE_CHECKING only) |
 | `permission_runtime.py` | `core.authorization_kernel`, `core.permissions`, `core.types`, `session.confirmation`, `skill.base` (TYPE_CHECKING only), `skill.services` (TYPE_CHECKING only), lazy runtime imports: `mcp.permissions`, `skill.vcs.gitlab.permissions` |
 | `single_tool_runtime.py` | `core.permissions`, `core.types`, `core.validation`, `skill.base` (TYPE_CHECKING only), `skill.services` (TYPE_CHECKING only) |
+| `tool_loop_events_runtime.py` | `context.compaction`, `context.git_context`, `core.interfaces`, `core.types`, `session.events`, `config.schema` (TYPE_CHECKING only), `context.manager` (TYPE_CHECKING only), `core.cancel` (TYPE_CHECKING only), `skill.services` (TYPE_CHECKING only) |
 | `streaming_runtime.py` | `core.types`, `session.events`, `core.cancel` (TYPE_CHECKING only) |
 | `logging.py` | `core.types`, `core.secure_io`, `session.storage`, `session.markdown`, `session.events`, `session.types` |
 | `storage.py` | `core.secure_io` (sqlite3 stdlib) |

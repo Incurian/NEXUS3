@@ -187,9 +187,26 @@ Execution notes:
     - `.venv/bin/pytest -q tests/integration/test_skill_execution.py -k "test_tool_call_executes_skill or test_multiple_tool_calls_in_sequence or test_multiple_tool_calls_in_parallel or test_failing_skill_error_in_context or test_max_iterations_prevents_infinite_loop or test_tool_loop_builds_correct_messages"` (`6 passed`)
     - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py -k "test_stale_cancelled_tools_are_dropped or test_cancelled_tool_tail_repaired_before_next_user_turn or test_preflight_repairs_orphaned_tool_batch_before_user_turn or test_preflight_prunes_stale_tool_results_before_user_turn"` (`4 passed`)
     - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py -k "test_cancellation_before_assistant_message_no_orphans or test_cancellation_after_first_tool_adds_remaining_results or test_cancelled_error_during_tool_creates_result"` (`3 passed`)
-- Next gate: execute remaining Session core event-loop/send-turn extraction
-  internals (likely `_execute_tool_loop_events(...)` and `send`/`run_turn`
-  core paths) with focused parity checks.
+- 2026-03-09: Phase 2F (Session tool-loop events runtime extraction) completed
+  in WSL.
+  - Added `nexus3/session/tool_loop_events_runtime.py` for tool-loop event
+    runtime helper ownership.
+  - Kept `Session._execute_tool_loop_events(...)` as a thin wrapper delegating
+    to `tool_loop_events_runtime.py`.
+  - `send(...)` / `run_turn(...)` call paths remained unchanged.
+  - Focused validation passed:
+    - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/tool_loop_events_runtime.py`
+    - `.venv/bin/mypy nexus3/session/session.py nexus3/session/tool_loop_events_runtime.py`
+    - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py tests/unit/session/test_enforcer.py` (`54 passed`)
+    - `.venv/bin/pytest -q tests/integration/test_skill_execution.py tests/integration/test_permission_enforcement.py` (`30 passed`)
+  - Live smoke validation passed:
+    - `NEXUS_DEV=1 .venv/bin/python -m nexus3 --serve 9000`
+    - `.venv/bin/python -m nexus3 rpc create test-agent --port 9000`
+    - `.venv/bin/python -m nexus3 rpc send test-agent "describe your permissions and what you can do" --port 9000`
+    - `.venv/bin/python -m nexus3 rpc destroy test-agent --port 9000`
+    - `.venv/bin/python -m nexus3 rpc shutdown --port 9000`
+- Next gate: execute remaining Session core `send(...)` / `run_turn(...)`
+  extraction internals with focused parity checks.
 
 ## Testing Strategy
 
@@ -218,9 +235,10 @@ Execution notes:
       parity checks.
 - [x] Complete Session Phase 2E streaming runtime extraction with focused
       parity checks.
-- [ ] Complete remaining Session core event-loop/send-turn extraction internals
-      (likely `_execute_tool_loop_events(...)` and `send`/`run_turn` core
-      paths) with parity checks.
+- [x] Complete Session Phase 2F tool-loop events runtime extraction with
+      focused parity checks.
+- [ ] Complete remaining Session core `send(...)` / `run_turn(...)`
+      extraction internals with parity checks.
 - [ ] Complete Pool extraction slices with parity checks.
 - [ ] Land display-config cleanup with documented override contract.
 - [ ] Remove temporary compatibility wrappers after one full green cycle.
