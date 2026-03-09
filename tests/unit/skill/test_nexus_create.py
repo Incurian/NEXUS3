@@ -74,3 +74,35 @@ async def test_execute_preserves_downstream_create_error_text() -> None:
         initial_message=None,
         wait_for_initial_response=False,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("initial_message", ["", "   "])
+async def test_execute_treats_blank_initial_message_as_omitted(
+    initial_message: str,
+) -> None:
+    create_agent = AsyncMock(return_value={"agent_id": "child-agent", "url": "/agent/child-agent"})
+    skill = _build_skill(create_agent=create_agent)
+
+    result = await skill.execute(
+        agent_id="child-agent",
+        initial_message=initial_message,
+        wait_for_initial_response=True,
+    )
+
+    assert result.error == ""
+    assert json.loads(result.output) == {
+        "agent_id": "child-agent",
+        "url": "/agent/child-agent",
+    }
+    create_agent.assert_awaited_once_with(
+        agent_id="child-agent",
+        preset=None,
+        disable_tools=None,
+        parent_agent_id="parent-agent",
+        cwd=None,
+        allowed_write_paths=None,
+        model=None,
+        initial_message=None,
+        wait_for_initial_response=True,
+    )

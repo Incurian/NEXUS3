@@ -128,6 +128,11 @@ class NexusCreateSkill(NexusSkill):
             if "\x00" in model or ".." in model:
                 return ToolResult(error="Invalid model name")
 
+        if initial_message is not None:
+            initial_message = initial_message.strip()
+            if initial_message == "":
+                initial_message = None
+
         # Get parent agent ID for server-side ceiling enforcement lookup
         parent_agent_id: str | None = self._services.get("agent_id")
 

@@ -39,7 +39,7 @@ class TestInitialMessageValidation:
                 "agent_id": "test",
                 "initial_message": 123,  # Not a string
             })
-        assert "initial_message must be string" in str(exc_info.value)
+        assert "Input should be a valid string" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_initial_message_string_accepted(self, dispatcher, mock_pool):
