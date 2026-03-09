@@ -2587,3 +2587,56 @@ Orchestrator handover checkpoint (2026-03-09, Plan C final-wave checkpoint-ready
      record the first checkpoint in AGENTS/CLAUDE running status.
   3. Re-run the focused validation trio above after any provider keep-alive
      implementation edits and archive command outputs in session notes.
+
+Compact handover checkpoint (2026-03-09, post-Plan C test-hygiene wave 3):
+- Branch/head:
+  - `feat/arch-overhaul-execution`
+  - latest committed head before compact: `98629da`
+- Execution model used in this continuation:
+  - main agent operated as orchestrator.
+  - work split into disjoint, file-owned parallel subagent waves (up to 6 at once).
+  - integration policy: subagent patch -> main-agent validation -> commit.
+- Commits landed this continuation:
+  - `0522c12` `plan c: modernize legacy servicecontainer test doubles`
+  - `e2f1bd1` `plan c: normalize test runtime-key service setup`
+  - `98629da` `plan c: continue test runtime-key setup normalization`
+- Current wave scope completed in working tree (checkpoint-ready):
+  - runtime-key test setup migration in:
+    - `tests/security/test_p2_append_file.py`
+    - `tests/security/test_p2_file_size_limits.py`
+    - `tests/security/test_p2_blocked_paths.py`
+    - `tests/security/test_p2_exec_cwd_normalization.py`
+    - `tests/integration/test_file_editing_skills.py`
+    - `tests/unit/session/test_session_permission_kernelization.py`
+  - migration pattern:
+    - `register("cwd", ...)` -> `set_cwd(...)`
+    - `register("allowed_paths", ...)` ->
+      `register_runtime_compat("allowed_paths", ...)` where present
+  - incidental lint-debt cleanup in touched files:
+    - removed unused imports in
+      `tests/security/test_p2_exec_cwd_normalization.py` and
+      `tests/security/test_p2_file_size_limits.py`
+    - renamed one ambiguous comprehension variable in
+      `tests/security/test_p2_file_size_limits.py`
+    - wrapped one long assertion line in
+      `tests/security/test_p2_file_size_limits.py`
+- Validation snapshot for this wave:
+  - passed:
+    `.venv/bin/ruff check tests/security/test_p2_append_file.py tests/security/test_p2_file_size_limits.py tests/security/test_p2_blocked_paths.py tests/security/test_p2_exec_cwd_normalization.py tests/integration/test_file_editing_skills.py tests/unit/session/test_session_permission_kernelization.py`
+  - passed:
+    `.venv/bin/pytest -q tests/security/test_p2_append_file.py tests/security/test_p2_file_size_limits.py tests/security/test_p2_blocked_paths.py tests/security/test_p2_exec_cwd_normalization.py tests/unit/session/test_session_permission_kernelization.py`
+    (`50 passed`)
+  - sandbox caveat encountered on integration test:
+    - `timeout 180 .venv/bin/pytest -q tests/integration/test_file_editing_skills.py`
+      timed out in sandbox (no output).
+    - unsandboxed rerun passed:
+      `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py`
+      (`17 passed`).
+- Resume gates and next actions after compact:
+  1. Commit this checkpoint-ready wave.
+  2. Continue optional Plan C test-hygiene waves only on disjoint files
+     (same orchestrator + parallel subagent model).
+  3. Primary architecture gate remains unchanged:
+     provider keep-alive real-endpoint evidence is deferred pending endpoint/model credentials and API keys in WSL.
+  4. Windows host is not currently required for this gate; resume keep-alive
+     Step 10 evidence once credentials/config become available.

@@ -13,9 +13,6 @@ before checking against allowed_paths.
 
 from pathlib import Path
 
-import pytest
-
-from nexus3.core.errors import PathSecurityError
 from nexus3.core.resolver import PathResolver
 from nexus3.skill.services import ServiceContainer
 
@@ -31,8 +28,8 @@ class TestCwdNormalizationBeforeCheck:
         forbidden.mkdir()
 
         services = ServiceContainer()
-        services.register("cwd", allowed)
-        services.register("allowed_paths", [allowed])
+        services.set_cwd(allowed)
+        services.register_runtime_compat("allowed_paths", [allowed])
 
         resolver = PathResolver(services)
 
@@ -57,8 +54,8 @@ class TestCwdNormalizationBeforeCheck:
         symlink.symlink_to(forbidden)
 
         services = ServiceContainer()
-        services.register("cwd", allowed)
-        services.register("allowed_paths", [allowed])
+        services.set_cwd(allowed)
+        services.register_runtime_compat("allowed_paths", [allowed])
 
         resolver = PathResolver(services)
 
@@ -77,8 +74,8 @@ class TestCwdNormalizationBeforeCheck:
         subdir.mkdir()
 
         services = ServiceContainer()
-        services.register("cwd", allowed)
-        services.register("allowed_paths", [allowed])
+        services.set_cwd(allowed)
+        services.register_runtime_compat("allowed_paths", [allowed])
 
         resolver = PathResolver(services)
 
@@ -93,8 +90,8 @@ class TestCwdNormalizationBeforeCheck:
         allowed.mkdir(parents=True)
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
-        services.register("allowed_paths", [allowed])
+        services.set_cwd(tmp_path)
+        services.register_runtime_compat("allowed_paths", [allowed])
 
         resolver = PathResolver(services)
 
@@ -113,8 +110,8 @@ class TestCwdNormalizationBeforeCheck:
         blocked.mkdir()
 
         services = ServiceContainer()
-        services.register("cwd", allowed)
-        services.register("allowed_paths", [tmp_path])  # Allow parent
+        services.set_cwd(allowed)
+        services.register_runtime_compat("allowed_paths", [tmp_path])  # Allow parent
         services.register("blocked_paths", [blocked])
 
         resolver = PathResolver(services)
@@ -140,8 +137,8 @@ class TestExecSkillCwdValidation:
         target.mkdir()
 
         services = ServiceContainer()
-        services.register("cwd", agent_cwd)  # Agent's cwd
-        services.register("allowed_paths", [agent_cwd])
+        services.set_cwd(agent_cwd)  # Agent's cwd
+        services.register_runtime_compat("allowed_paths", [agent_cwd])
 
         resolver = PathResolver(services)
 
@@ -159,8 +156,8 @@ class TestExecSkillCwdValidation:
         outside.mkdir()
 
         services = ServiceContainer()
-        services.register("cwd", agent_cwd)
-        services.register("allowed_paths", [agent_cwd])
+        services.set_cwd(agent_cwd)
+        services.register_runtime_compat("allowed_paths", [agent_cwd])
 
         resolver = PathResolver(services)
 
@@ -176,7 +173,7 @@ class TestExecSkillCwdValidation:
         agent_cwd.mkdir()
 
         services = ServiceContainer()
-        services.register("cwd", agent_cwd)
+        services.set_cwd(agent_cwd)
 
         resolver = PathResolver(services)
 
@@ -191,7 +188,7 @@ class TestExecSkillCwdValidation:
         agent_cwd.mkdir()
 
         services = ServiceContainer()
-        services.register("cwd", agent_cwd)
+        services.set_cwd(agent_cwd)
 
         resolver = PathResolver(services)
 

@@ -92,7 +92,7 @@ class TestSessionIntegrationLevelKernelization:
     @pytest.mark.asyncio
     async def test_mcp_confirmation_behavior_preserved_when_level_allows(self) -> None:
         services = ServiceContainer()
-        services.register("cwd", Path("/tmp"))
+        services.set_cwd(Path("/tmp"))
         confirmations: list[tuple[ToolCall, Path | None, Path]] = []
 
         async def on_confirm(
@@ -127,7 +127,7 @@ class TestSessionIntegrationLevelKernelization:
     @pytest.mark.asyncio
     async def test_gitlab_confirmation_behavior_preserved_when_level_allows(self) -> None:
         services = ServiceContainer()
-        services.register("cwd", Path("/tmp"))
+        services.set_cwd(Path("/tmp"))
         services.register("gitlab_config", _make_gitlab_config())
         confirmations: list[tuple[ToolCall, Path | None, Path]] = []
 

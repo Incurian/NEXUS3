@@ -29,7 +29,7 @@ class TestBlockedPathsEnforcement:
         (blocked_dir / "secret.txt").write_text("secret")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
         services.register("blocked_paths", [blocked_dir])
 
         resolver = PathResolver(services)
@@ -47,8 +47,10 @@ class TestBlockedPathsEnforcement:
         (sensitive / "data.txt").write_text("sensitive data")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
-        services.register("allowed_paths", [tmp_path])  # Allow entire tmp_path
+        services.set_cwd(tmp_path)
+        services.register_runtime_compat(
+            "allowed_paths", [tmp_path]
+        )  # Allow entire tmp_path
         services.register("blocked_paths", [sensitive])  # But block sensitive dir
 
         resolver = PathResolver(services)
@@ -74,7 +76,7 @@ class TestBlockedPathsEnforcement:
         symlink.symlink_to(blocked_dir / "secret.txt")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
         services.register("blocked_paths", [blocked_dir])
 
         resolver = PathResolver(services)
@@ -88,7 +90,7 @@ class TestBlockedPathsEnforcement:
     def test_empty_blocked_paths(self, tmp_path: Path) -> None:
         """Empty blocked_paths list allows all paths."""
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
         services.register("blocked_paths", [])
 
         resolver = PathResolver(services)
@@ -103,7 +105,7 @@ class TestBlockedPathsEnforcement:
     def test_no_blocked_paths_set(self, tmp_path: Path) -> None:
         """When blocked_paths not set, all paths allowed (by blocked_paths)."""
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
         # Don't register blocked_paths at all
 
         resolver = PathResolver(services)
@@ -125,10 +127,10 @@ class TestBlockedPathsWithToolPermissions:
         (blocked / "file.txt").write_text("blocked")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
         services.register("blocked_paths", [blocked])
         # Even with very permissive per-tool paths
-        services.register("allowed_paths", None)  # Unrestricted
+        services.register_runtime_compat("allowed_paths", None)  # Unrestricted
 
         resolver = PathResolver(services)
 
@@ -145,7 +147,7 @@ class TestBlockedPathsErrorMessages:
         blocked.mkdir()
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
         services.register("blocked_paths", [blocked])
 
         resolver = PathResolver(services)
@@ -166,7 +168,7 @@ class TestResolveCwdWithBlockedPaths:
         blocked.mkdir()
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
         services.register("blocked_paths", [blocked])
 
         resolver = PathResolver(services)
@@ -182,7 +184,7 @@ class TestResolveCwdWithBlockedPaths:
         allowed.mkdir()
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
         services.register("blocked_paths", [tmp_path / "other_blocked"])
 
         resolver = PathResolver(services)

@@ -27,7 +27,7 @@ class TestAppendFileBasicBehavior:
         test_file.write_text("")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = AppendFileSkill(services)
         result = await skill.execute(path=str(test_file), content="hello")
@@ -45,7 +45,7 @@ class TestAppendFileBasicBehavior:
         test_file.write_text("line1\n")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = AppendFileSkill(services)
         result = await skill.execute(path=str(test_file), content="line2")
@@ -63,7 +63,7 @@ class TestAppendFileBasicBehavior:
         test_file.write_text("no newline at end")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = AppendFileSkill(services)
         result = await skill.execute(path=str(test_file), content="new content")
@@ -82,7 +82,7 @@ class TestAppendFileBasicBehavior:
         test_file.write_text("ends with newline\n")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = AppendFileSkill(services)
         result = await skill.execute(path=str(test_file), content="new content")
@@ -101,7 +101,7 @@ class TestAppendFileBasicBehavior:
         test_file.write_text("no newline")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = AppendFileSkill(services)
         result = await skill.execute(
@@ -122,7 +122,7 @@ class TestAppendFileBasicBehavior:
         assert not test_file.exists()
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = AppendFileSkill(services)
         result = await skill.execute(path=str(test_file), content="new content")
@@ -220,7 +220,7 @@ class TestAppendFileTrueAppend:
         test_file.write_text(large_content)
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = AppendFileSkill(services)
         result = await skill.execute(path=str(test_file), content="appended")
@@ -244,7 +244,7 @@ class TestAppendFileTrueAppend:
         test_file.write_text("")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = AppendFileSkill(services)
 

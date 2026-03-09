@@ -9,7 +9,6 @@ The fix:
 - grep: Skips files > MAX_GREP_FILE_SIZE, streams search
 """
 
-import os
 from pathlib import Path
 
 import pytest
@@ -39,7 +38,7 @@ class TestReadFileSizeLimits:
             f.write("x" * (MAX_FILE_SIZE_BYTES + 1024 * 1024))
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = ReadFileSkill(services)
         result = await skill.execute(path=str(large_file))
@@ -60,7 +59,7 @@ class TestReadFileSizeLimits:
                 f.write(f"Line {i}\n")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = ReadFileSkill(services)
         result = await skill.execute(path=str(test_file), limit=10)
@@ -70,7 +69,9 @@ class TestReadFileSizeLimits:
         # Should have exactly 10 lines (plus truncation message)
         lines = result.output.strip().split("\n")
         # Count actual content lines (lines with line numbers, not truncation/empty)
-        content_lines = [l for l in lines if l and ":" in l and not l.startswith("[")]
+        content_lines = [
+            line for line in lines if line and ":" in line and not line.startswith("[")
+        ]
         assert len(content_lines) == 10
 
     @pytest.mark.asyncio
@@ -86,7 +87,7 @@ class TestReadFileSizeLimits:
                 f.write(f"Line {i}\n")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = ReadFileSkill(services)
         result = await skill.execute(path=str(test_file))
@@ -107,7 +108,7 @@ class TestReadFileSizeLimits:
                 f.write(f"Line {i}\n")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = ReadFileSkill(services)
         result = await skill.execute(path=str(test_file), offset=10, limit=5)
@@ -129,7 +130,7 @@ class TestReadFileSizeLimits:
         test_file.write_text("Line 1\nLine 2\nLine 3\n")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = ReadFileSkill(services)
         result = await skill.execute(path=str(test_file))
@@ -156,7 +157,7 @@ class TestTailSizeLimits:
                 f.write(f"Log line {i}\n")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = TailSkill(services)
         result = await skill.execute(path=str(large_file), lines=10)
@@ -179,14 +180,15 @@ class TestTailSizeLimits:
                 f.write("x" * 50000 + f" line {i}\n")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = TailSkill(services)
         result = await skill.execute(path=str(test_file), lines=50)
 
         assert result.output is not None
         # Output should be bounded
-        assert len(result.output.encode("utf-8")) <= MAX_OUTPUT_BYTES + 1000  # Some buffer for message
+        # Some buffer for message
+        assert len(result.output.encode("utf-8")) <= MAX_OUTPUT_BYTES + 1000
 
 
 class TestGrepSizeLimits:
@@ -210,7 +212,7 @@ class TestGrepSizeLimits:
         small_file.write_text("FINDME in small file\n")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = GrepSkill(services)
         result = await skill.execute(pattern="FINDME", path=str(tmp_path))
@@ -233,7 +235,7 @@ class TestGrepSizeLimits:
                 f.write(f"MATCH line {i}\n")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = GrepSkill(services)
         result = await skill.execute(
@@ -254,7 +256,7 @@ class TestGrepSizeLimits:
         test_file.write_text("line one\nMATCH line two\nline three\nMATCH line four\n")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
 
         skill = GrepSkill(services)
         result = await skill.execute(pattern="MATCH", path=str(test_file))
