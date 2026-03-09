@@ -228,6 +228,19 @@ Current milestone:
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
+- Completed (2026-03-09, Plan C runtime-key test-setup hygiene wave 2):
+  - migrated runtime-key test wiring to typed/compat APIs in:
+    - `tests/unit/skill/test_clipboard_skills.py`
+    - `tests/unit/skill/test_clipboard_extras.py`
+    - `tests/unit/skill/test_clipboard_manage.py`
+    - `tests/unit/skill/test_edit_file.py`
+    - `tests/unit/skill/test_edit_lines.py`
+    - `tests/unit/skill/test_skill_validation.py`
+  - replaced direct `register("cwd", ...)` calls with `set_cwd(...)`.
+  - replaced direct `register("allowed_paths", ...)` calls with
+    `register_runtime_compat("allowed_paths", ...)` where applicable.
+  - focused validation passed:
+    - `.venv/bin/pytest -q tests/unit/skill/test_clipboard_skills.py tests/unit/skill/test_clipboard_extras.py tests/unit/skill/test_clipboard_manage.py tests/unit/skill/test_edit_file.py tests/unit/skill/test_edit_lines.py tests/unit/skill/test_skill_validation.py` (`154 passed`).
 - Completed (2026-03-09, Plan C runtime-key test-setup hygiene wave):
   - migrated runtime-key test wiring to typed/compat APIs in:
     - `tests/unit/skill/test_concat_files.py`

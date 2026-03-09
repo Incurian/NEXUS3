@@ -13,7 +13,7 @@ class TestEditLinesSkill:
     def services(self, tmp_path):
         """Create ServiceContainer with tmp_path as cwd."""
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
+        services.set_cwd(str(tmp_path))
         return services
 
     @pytest.fixture

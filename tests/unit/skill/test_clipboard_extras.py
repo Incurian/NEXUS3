@@ -36,9 +36,9 @@ def clipboard_manager(tmp_path: Path) -> ClipboardManager:
 def services(tmp_path: Path, clipboard_manager: ClipboardManager) -> ServiceContainer:
     """Create ServiceContainer with clipboard manager registered."""
     container = ServiceContainer()
-    container.register("cwd", str(tmp_path))
+    container.set_cwd(str(tmp_path))
     container.register("clipboard_manager", clipboard_manager)
-    container.register("allowed_paths", [tmp_path])
+    container.register_runtime_compat("allowed_paths", [tmp_path])
     return container
 
 
@@ -144,7 +144,7 @@ class TestClipboardSearchSkill:
     async def test_search_missing_manager(self, tmp_path: Path) -> None:
         """Test search without clipboard manager returns error."""
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
+        services.set_cwd(str(tmp_path))
         skill = clipboard_search_factory(services)
 
         result = await skill.execute(query="test")
@@ -277,7 +277,7 @@ class TestClipboardTagSkill:
     async def test_tag_missing_manager(self, tmp_path: Path) -> None:
         """Test tag skill without clipboard manager returns error."""
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
+        services.set_cwd(str(tmp_path))
         skill = clipboard_tag_factory(services)
 
         result = await skill.execute(action="list")
@@ -374,8 +374,8 @@ class TestClipboardExportSkill:
     async def test_export_missing_manager(self, tmp_path: Path) -> None:
         """Test export without clipboard manager returns error."""
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
-        services.register("allowed_paths", [tmp_path])
+        services.set_cwd(str(tmp_path))
+        services.register_runtime_compat("allowed_paths", [tmp_path])
         skill = clipboard_export_factory(services)
 
         export_path = tmp_path / "export.json"
@@ -606,8 +606,8 @@ class TestClipboardImportSkill:
     async def test_import_missing_manager(self, tmp_path: Path) -> None:
         """Test import without clipboard manager returns error."""
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
-        services.register("allowed_paths", [tmp_path])
+        services.set_cwd(str(tmp_path))
+        services.register_runtime_compat("allowed_paths", [tmp_path])
         skill = clipboard_import_factory(services)
 
         import_path = tmp_path / "import.json"

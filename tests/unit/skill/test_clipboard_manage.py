@@ -34,7 +34,7 @@ def clipboard_manager(tmp_path):
 def services(tmp_path, clipboard_manager):
     """Create ServiceContainer with clipboard manager registered."""
     container = ServiceContainer()
-    container.register("cwd", str(tmp_path))
+    container.set_cwd(str(tmp_path))
     container.register("clipboard_manager", clipboard_manager)
     return container
 
@@ -164,7 +164,7 @@ class TestClipboardListSkill:
     async def test_list_missing_clipboard_manager(self, tmp_path):
         """Test error when clipboard manager not available."""
         container = ServiceContainer()
-        container.register("cwd", str(tmp_path))
+        container.set_cwd(str(tmp_path))
         skill = clipboard_list_factory(container)
 
         result = await skill.execute()
@@ -275,7 +275,7 @@ class TestClipboardGetSkill:
     async def test_get_missing_clipboard_manager(self, tmp_path):
         """Test error when clipboard manager not available."""
         container = ServiceContainer()
-        container.register("cwd", str(tmp_path))
+        container.set_cwd(str(tmp_path))
         skill = clipboard_get_factory(container)
 
         result = await skill.execute(key="test")
@@ -394,7 +394,7 @@ class TestClipboardUpdateSkill:
     async def test_update_missing_clipboard_manager(self, tmp_path):
         """Test error when clipboard manager not available."""
         container = ServiceContainer()
-        container.register("cwd", str(tmp_path))
+        container.set_cwd(str(tmp_path))
         skill = clipboard_update_factory(container)
 
         result = await skill.execute(key="test", scope="agent", short_description="desc")
@@ -456,7 +456,7 @@ class TestClipboardDeleteSkill:
     async def test_delete_missing_clipboard_manager(self, tmp_path):
         """Test error when clipboard manager not available."""
         container = ServiceContainer()
-        container.register("cwd", str(tmp_path))
+        container.set_cwd(str(tmp_path))
         skill = clipboard_delete_factory(container)
 
         result = await skill.execute(key="test", scope="agent")
@@ -532,7 +532,7 @@ class TestClipboardClearSkill:
     async def test_clear_missing_clipboard_manager(self, tmp_path):
         """Test error when clipboard manager not available."""
         container = ServiceContainer()
-        container.register("cwd", str(tmp_path))
+        container.set_cwd(str(tmp_path))
         skill = clipboard_clear_factory(container)
 
         result = await skill.execute(scope="agent", confirm=True)

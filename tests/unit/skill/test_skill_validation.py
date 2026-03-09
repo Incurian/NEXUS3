@@ -15,7 +15,7 @@ class TestValidationUniformity:
         """Create registry with all builtin skills registered."""
         registry = SkillRegistry()
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
+        services.set_cwd(str(tmp_path))
         registry = SkillRegistry(services)
         register_builtin_skills(registry)
         return registry
@@ -159,7 +159,7 @@ class TestValidationWrapperApplication:
         from nexus3.skill.builtin.read_file import read_file_factory
 
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
+        services.set_cwd(str(tmp_path))
         skill = read_file_factory(services)
 
         # The execute method should be wrapped
@@ -172,7 +172,7 @@ class TestValidationWrapperApplication:
         from nexus3.skill.builtin.bash import bash_safe_factory
 
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
+        services.set_cwd(str(tmp_path))
         skill = bash_safe_factory(services)
 
         assert hasattr(skill, "execute")
@@ -183,7 +183,7 @@ class TestValidationWrapperApplication:
         from nexus3.skill.builtin.nexus_status import nexus_status_factory
 
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
+        services.set_cwd(str(tmp_path))
         skill = nexus_status_factory(services)
 
         assert hasattr(skill, "execute")
@@ -194,7 +194,7 @@ class TestValidationWrapperApplication:
         from nexus3.skill.builtin.git import git_factory
 
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
+        services.set_cwd(str(tmp_path))
         skill = git_factory(services)
 
         assert hasattr(skill, "execute")

@@ -1385,6 +1385,21 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - focused validation:
     `.venv/bin/pytest -q tests/unit/skill/test_concat_files.py tests/unit/skill/test_glob_search.py tests/unit/skill/test_grep_gateway.py tests/unit/skill/test_outline.py tests/unit/core/test_filesystem_access.py tests/unit/skill/test_patch.py`
     (`214 passed`).
+- Plan C runtime-key test-setup hygiene follow-up (wave 2) is completed in WSL:
+  - migrated runtime-key test wiring in:
+    `tests/unit/skill/test_clipboard_skills.py`,
+    `tests/unit/skill/test_clipboard_extras.py`,
+    `tests/unit/skill/test_clipboard_manage.py`,
+    `tests/unit/skill/test_edit_file.py`,
+    `tests/unit/skill/test_edit_lines.py`,
+    `tests/unit/skill/test_skill_validation.py`.
+  - runtime-key writes now use typed/compat APIs:
+    - `set_cwd(...)` for cwd setup
+    - `register_runtime_compat("allowed_paths", ...)` for allowed-path setup
+      where applicable.
+  - focused validation:
+    `.venv/bin/pytest -q tests/unit/skill/test_clipboard_skills.py tests/unit/skill/test_clipboard_extras.py tests/unit/skill/test_clipboard_manage.py tests/unit/skill/test_edit_file.py tests/unit/skill/test_edit_lines.py tests/unit/skill/test_skill_validation.py`
+    (`154 passed`).
 - Plan H shim-retirement closeout for remaining `create_agent` compatibility
   remaps is committed in the current closeout wave:
   - `nexus3/rpc/global_dispatcher.py`: removed remaining custom create-agent

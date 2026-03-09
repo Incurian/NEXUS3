@@ -29,7 +29,7 @@ def clipboard_manager(tmp_path):
 def services(tmp_path, clipboard_manager):
     """Create ServiceContainer with clipboard manager registered."""
     container = ServiceContainer()
-    container.register("cwd", str(tmp_path))
+    container.set_cwd(str(tmp_path))
     container.register("clipboard_manager", clipboard_manager)
     return container
 
@@ -175,7 +175,7 @@ class TestCopySkill:
         """Test that missing clipboard manager returns error."""
         # Create services without clipboard manager
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
+        services.set_cwd(str(tmp_path))
         skill = copy_factory(services)
 
         # Create a temp file
@@ -634,7 +634,7 @@ class TestPasteSkill:
     async def test_paste_missing_clipboard_manager(self, tmp_path, target_file):
         """Test error when clipboard manager not available."""
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
+        services.set_cwd(str(tmp_path))
         skill = paste_skill_factory(services)
 
         result = await skill.execute(
