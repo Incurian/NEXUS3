@@ -676,8 +676,10 @@ Immediate tasks:
   current WSL environment.
 - Next gate after credentials/config are available: execute the reminder
   checklist above and link run IDs/artifacts in status docs.
-- Active non-blocked execution track: continue `docs/plans/DRY-CLEANUP-PLAN.md`
-  starting with P1 subprocess helper extraction slices.
+- Active architecture track: provider keep-alive real-endpoint evidence is
+  operationally deferred pending credentials/config. No additional
+  architecture-gated implementation slice is currently queued ahead of that
+  evidence checkpoint.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with

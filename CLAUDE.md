@@ -1858,19 +1858,19 @@ Implementation plans for UI/UX improvements, bug fixes, and features are in `doc
 | `STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md` | Split oversized REPL/session/pool modules and clean display config wiring | 1-2 weeks |
 | `POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md` | Run soak, Windows-native, TOCTOU race, and terminal red-team closeout validation | 1 week |
 | `DOUBLE-SPINNER-FIX-PLAN.md` | Fix double spinner / trapped ESC when concurrent RPC sends hit REPL | 1 day |
-| `DRY-CLEANUP-PLAN.md` | DRY violations, dead code removal, naming fixes from Opus 4.6 review | 1-2 days |
+| `.archive/DRY-CLEANUP-PLAN.md` | Archived pre-architecture DRY cleanup snapshot (not an active execution plan) | N/A |
 | `MCP-SERVER-PLAN.md` | Expose NEXUS skills as MCP server (separate project) | 2 weeks |
 
 #### In Progress: PROMPT-CACHE-OPTIMIZATION-PLAN
 
 Dynamic content (datetime, git status, clipboard) was being injected into the system prompt, invalidating the cache (~10-15K tokens) on every API call. Fix moves dynamic content to the last user message via `<session-context>` tags. See `docs/plans/PROMPT-CACHE-OPTIMIZATION-PLAN.md`.
 
-#### Next Up: DRY-CLEANUP-PLAN
+#### Next Up: PROVIDER-KEEPALIVE-INVESTIGATION-PLAN-2026-03-05
 
 Provider keep-alive real-endpoint evidence remains operationally deferred
 (2026-03-09) pending endpoint credentials/config availability in the current
-WSL environment. Active non-blocked track is `docs/plans/DRY-CLEANUP-PLAN.md`,
-starting with P1 subprocess helper extraction slices (P2 is complete).
+WSL environment. Resume architecture execution from the documented
+keep-alive checklist once those credentials/config inputs are available.
 
 ### Known Bugs
 
