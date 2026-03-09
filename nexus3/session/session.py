@@ -20,12 +20,9 @@ from nexus3.core.authorization_kernel import (
 from nexus3.core.interfaces import AsyncProvider
 from nexus3.core.permissions import AgentPermissions, ConfirmationResult
 from nexus3.core.types import (
-    ContentDelta,
     Message,
     Role,
-    StreamComplete,
     ToolCall,
-    ToolCallStarted,
     ToolResult,
 )
 from nexus3.session.compaction_runtime import (
@@ -38,11 +35,7 @@ from nexus3.session.confirmation import ConfirmationController
 from nexus3.session.dispatcher import ToolDispatcher
 from nexus3.session.enforcer import PermissionEnforcer
 from nexus3.session.events import (
-    ContentChunk,
-    SessionCancelled,
-    SessionCompleted,
     SessionEvent,
-    ToolDetected,
 )
 from nexus3.session.http_logging import clear_current_logger, set_current_logger
 from nexus3.session.permission_runtime import (
@@ -54,6 +47,12 @@ from nexus3.session.permission_runtime import (
 )
 from nexus3.session.permission_runtime import (
     handle_mcp_permissions as handle_mcp_permissions_runtime,
+)
+from nexus3.session.simple_turn_runtime import (
+    execute_simple_run_turn as execute_simple_run_turn_runtime,
+)
+from nexus3.session.simple_turn_runtime import (
+    execute_simple_send as execute_simple_send_runtime,
 )
 from nexus3.session.single_tool_runtime import (
     execute_single_tool as execute_single_tool_runtime,
@@ -417,42 +416,15 @@ class Session:
                 tools = None
                 dynamic_context = None
 
-            # Stream response from provider using new event-based interface
-            final_message: Message | None = None
-            self._log_provider_preflight(
-                messages, tools, dynamic_context, path="send.simple",
-            )
-            async for event in self.provider.stream(
-                messages, tools, dynamic_context=dynamic_context,
+            async for chunk in execute_simple_send_runtime(
+                self,
+                messages=messages,
+                tools=tools,
+                dynamic_context=dynamic_context,
+                preflight_path="send.simple",
+                cancel_token=cancel_token,
             ):
-                if cancel_token and cancel_token.is_cancelled:
-                    return
-                if isinstance(event, ContentDelta):
-                    yield event.text
-                    if cancel_token and cancel_token.is_cancelled:
-                        return
-                elif isinstance(event, ToolCallStarted):
-                    # Notify callback if set (for display updates)
-                    if self.on_tool_call:
-                        self.on_tool_call(event.name, event.id)
-                elif isinstance(event, StreamComplete):
-                    final_message = event.message
-
-            # If cancellation arrived mid-stream before StreamComplete,
-            # exit quietly instead of treating as empty provider output.
-            if cancel_token and cancel_token.is_cancelled:
-                return
-
-            # Log/store assistant response
-            if final_message:
-                if not final_message.content and not final_message.tool_calls:
-                    yield "[Provider returned an empty response]"
-                elif self.context:
-                    self.context.add_assistant_message(
-                        final_message.content, list(final_message.tool_calls)
-                    )
-                elif self.logger:
-                    self.logger.log_assistant(final_message.content)
+                yield chunk
         finally:
             # Clear current logger after send completes
             clear_current_logger()
@@ -505,40 +477,15 @@ class Session:
             tools = self.context.get_tool_definitions()
             dynamic_context = self.context.build_dynamic_context()
 
-            final_message: Message | None = None
-            self._log_provider_preflight(
-                messages, tools, dynamic_context, path="run_turn.simple",
-            )
-            async for stream_event in self.provider.stream(
-                messages, tools, dynamic_context=dynamic_context,
+            async for event in execute_simple_run_turn_runtime(
+                self,
+                messages=messages,
+                tools=tools,
+                dynamic_context=dynamic_context,
+                preflight_path="run_turn.simple",
+                cancel_token=cancel_token,
             ):
-                if cancel_token and cancel_token.is_cancelled:
-                    yield SessionCancelled()
-                    return
-                if isinstance(stream_event, ContentDelta):
-                    yield ContentChunk(text=stream_event.text)
-                    if cancel_token and cancel_token.is_cancelled:
-                        yield SessionCancelled()
-                        return
-                elif isinstance(stream_event, ToolCallStarted):
-                    yield ToolDetected(name=stream_event.name, tool_id=stream_event.id)
-                elif isinstance(stream_event, StreamComplete):
-                    final_message = stream_event.message
-
-            if cancel_token and cancel_token.is_cancelled:
-                yield SessionCancelled()
-                return
-
-            # Store assistant response
-            if final_message:
-                if not final_message.content and not final_message.tool_calls:
-                    yield ContentChunk(text="[Provider returned an empty response]")
-                else:
-                    self.context.add_assistant_message(
-                        final_message.content, list(final_message.tool_calls)
-                    )
-
-            yield SessionCompleted(halted_at_limit=False)
+                yield event
         finally:
             # Clear current logger after turn completes
             clear_current_logger()

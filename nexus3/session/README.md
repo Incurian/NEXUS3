@@ -25,6 +25,7 @@ nexus3/session/
 ├── tool_loop_events_runtime.py # Event-loop tool execution runtime helpers
 ├── streaming_runtime.py # Streaming callback-adapter runtime helpers
 ├── turn_entry_runtime.py # Shared turn-entry preflight/reset runtime helpers
+├── simple_turn_runtime.py # Shared non-tool simple-turn streaming runtime helpers
 ├── session_manager.py   # Disk persistence (save/load/list sessions)
 ├── events.py            # Typed SessionEvent hierarchy
 ├── types.py             # LogConfig, LogStream, SessionInfo
@@ -59,8 +60,9 @@ is retained as a thin wrapper that delegates to
 `tool_loop_events_runtime.py`, so existing `Session` call sites (including
 `send()` / `run_turn()`) stay stable during extraction. `send()` and
 `run_turn()` now share context-mode preflight/reset through
-`turn_entry_runtime.prepare_turn_entry(...)`; tool-loop runtime behavior
-remains unchanged in this slice.
+`turn_entry_runtime.prepare_turn_entry(...)`, and their non-tool simple
+streaming paths delegate to `simple_turn_runtime.py`; tool-loop runtime
+behavior remains unchanged in this slice.
 
 ### Callback Type Aliases (from `session.py`)
 
@@ -117,7 +119,7 @@ async def send(
     """Stream response text, invoking callbacks for tool events."""
 ```
 
-This is the traditional callback-based API. Tool events are dispatched via callback functions. `send()` and `run_turn()` now share turn-entry preflight/reset through `turn_entry_runtime.prepare_turn_entry(...)` before streaming begins. Internally calls `Session._execute_tool_loop_streaming()`, which is a thin wrapper delegating callback adaptation to `streaming_runtime.execute_tool_loop_streaming(...)` over `_execute_tool_loop_events()` for backward compatibility.
+This is the traditional callback-based API. Tool events are dispatched via callback functions. `send()` and `run_turn()` now share turn-entry preflight/reset through `turn_entry_runtime.prepare_turn_entry(...)` before streaming begins. Internally calls `Session._execute_tool_loop_streaming()`, which is a thin wrapper delegating callback adaptation to `streaming_runtime.execute_tool_loop_streaming(...)` over `_execute_tool_loop_events()` for backward compatibility. When tools are not active, `send()` delegates simple streaming to `simple_turn_runtime.execute_simple_send(...)`.
 
 #### `run_turn()` - Event-based streaming
 
@@ -138,6 +140,8 @@ preflight/reset handling.
 Internally this routes through `Session._execute_tool_loop_events()`, which is
 a thin wrapper delegating to
 `tool_loop_events_runtime.execute_tool_loop_events(...)`.
+When tools are not active, `run_turn()` delegates simple event streaming to
+`simple_turn_runtime.execute_simple_run_turn(...)`.
 
 #### `compact()` - Context compaction
 
@@ -904,11 +908,12 @@ If `compaction.model` is configured, a separate provider is used for summarizati
 
 | Module | Dependency |
 |--------|------------|
-| `session.py` | `core.types`, `core.errors`, `core.interfaces`, `core.permissions`, `core.validation`, `context.compaction`, `session.events`, `session.dispatcher`, `session.enforcer`, `session.confirmation`, `session.http_logging`, `session.compaction_runtime`, `session.tool_runtime`, `session.permission_runtime`, `session.single_tool_runtime`, `session.tool_loop_events_runtime`, `session.streaming_runtime` |
+| `session.py` | `core.types`, `core.errors`, `core.interfaces`, `core.permissions`, `core.validation`, `context.compaction`, `session.events`, `session.dispatcher`, `session.enforcer`, `session.confirmation`, `session.http_logging`, `session.compaction_runtime`, `session.tool_runtime`, `session.permission_runtime`, `session.single_tool_runtime`, `session.simple_turn_runtime`, `session.tool_loop_events_runtime`, `session.streaming_runtime` |
 | `compaction_runtime.py` | `context.compaction`, `core.interfaces`, `core.types`, `session.http_logging` (lazy runtime import: `provider.create_provider`) |
 | `tool_runtime.py` | `core.errors`, `core.types`, `skill.base` (TYPE_CHECKING only) |
 | `permission_runtime.py` | `core.authorization_kernel`, `core.permissions`, `core.types`, `session.confirmation`, `skill.base` (TYPE_CHECKING only), `skill.services` (TYPE_CHECKING only), lazy runtime imports: `mcp.permissions`, `skill.vcs.gitlab.permissions` |
 | `single_tool_runtime.py` | `core.permissions`, `core.types`, `core.validation`, `skill.base` (TYPE_CHECKING only), `skill.services` (TYPE_CHECKING only) |
+| `simple_turn_runtime.py` | `core.types`, `session.events`, `context.manager` (TYPE_CHECKING only), `core.cancel` (TYPE_CHECKING only), `core.interfaces` (TYPE_CHECKING only), `session.logging` (TYPE_CHECKING only) |
 | `tool_loop_events_runtime.py` | `context.compaction`, `context.git_context`, `core.interfaces`, `core.types`, `session.events`, `config.schema` (TYPE_CHECKING only), `context.manager` (TYPE_CHECKING only), `core.cancel` (TYPE_CHECKING only), `skill.services` (TYPE_CHECKING only) |
 | `streaming_runtime.py` | `core.types`, `session.events`, `core.cancel` (TYPE_CHECKING only) |
 | `logging.py` | `core.types`, `core.secure_io`, `session.storage`, `session.markdown`, `session.events`, `session.types` |

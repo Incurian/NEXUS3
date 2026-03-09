@@ -548,8 +548,20 @@ Immediate tasks:
     `.venv/bin/python -m nexus3 rpc send test-agent "describe your permissions and what you can do" --port 9000`,
     `.venv/bin/python -m nexus3 rpc destroy test-agent --port 9000`,
     `.venv/bin/python -m nexus3 rpc shutdown --port 9000`.
-- Next target: execute remaining post-turn-entry Session core `send(...)` /
-  `run_turn(...)` extraction internals with focused parity checks.
+- Completed (2026-03-09, structural-refactor Phase 2H): Session simple-turn
+  runtime extraction:
+  - added `nexus3/session/simple_turn_runtime.py`.
+  - extracted and centralized non-tool simple streaming internals shared by
+    `send(...)` and `run_turn(...)`.
+  - `send(...)` / `run_turn(...)` now delegate non-tool simple paths to
+    `execute_simple_send(...)` / `execute_simple_run_turn(...)` while
+    preserving cancellation and empty-response semantics.
+  - focused validation passed:
+    `.venv/bin/ruff check nexus3/session/session.py nexus3/session/simple_turn_runtime.py nexus3/session/README.md`,
+    `.venv/bin/mypy nexus3/session/session.py nexus3/session/simple_turn_runtime.py`,
+    `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/integration/test_chat.py` (`22 passed, 2 skipped`).
+- Next target: execute Pool extraction slices with focused parity checks
+  (visibility first), then land display-config cleanup.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with

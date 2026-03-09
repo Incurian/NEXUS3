@@ -224,8 +224,19 @@ Execution notes:
     - `.venv/bin/python -m nexus3 rpc send test-agent "describe your permissions and what you can do" --port 9000`
     - `.venv/bin/python -m nexus3 rpc destroy test-agent --port 9000`
     - `.venv/bin/python -m nexus3 rpc shutdown --port 9000`
-- Next gate: execute remaining post-turn-entry Session core `send(...)` /
-  `run_turn(...)` extraction internals with focused parity checks.
+- 2026-03-09: Phase 2H (Session simple-turn runtime extraction) completed in
+  WSL.
+  - Added `nexus3/session/simple_turn_runtime.py` for shared non-tool
+    streaming internals used by `send(...)` and `run_turn(...)`.
+  - `send(...)` and `run_turn(...)` now route their non-tool simple streaming
+    path through `execute_simple_send(...)` and
+    `execute_simple_run_turn(...)` while keeping behavior parity.
+  - Focused validation passed:
+    - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/simple_turn_runtime.py nexus3/session/README.md`
+    - `.venv/bin/mypy nexus3/session/session.py nexus3/session/simple_turn_runtime.py`
+    - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/integration/test_chat.py` (`22 passed, 2 skipped`)
+- Next gate: execute Pool extraction slices with focused parity checks, then
+  land display-config cleanup with documented override contract.
 
 ## Testing Strategy
 
@@ -258,7 +269,7 @@ Execution notes:
       focused parity checks.
 - [x] Complete Session Phase 2G turn-entry runtime extraction with focused
       parity checks.
-- [ ] Complete remaining post-turn-entry Session core `send(...)` /
+- [x] Complete remaining post-turn-entry Session core `send(...)` /
       `run_turn(...)` extraction internals with parity checks.
 - [ ] Complete Pool extraction slices with parity checks.
 - [ ] Land display-config cleanup with documented override contract.
