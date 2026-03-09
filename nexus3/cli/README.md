@@ -36,8 +36,10 @@ The unified REPL calls `Session` directly (not through HTTP) to preserve streami
 ```
 nexus3/cli/
 ├── __init__.py          # Package entry point, exports main()
-├── repl.py              # Main REPL implementation (~2050 lines)
+├── repl.py              # REPL facade entrypoints and mode dispatch
 ├── repl_formatting.py   # SafeSink-backed REPL formatting/sanitization helpers
+├── repl_runtime.py      # REPL runtime and client-discovery helpers
+├── repl_reload.py       # REPL reload/watchfiles helper
 ├── serve.py             # Headless HTTP server mode
 ├── arg_parser.py        # CLI argument parsing with subparsers
 ├── client_commands.py   # RPC CLI command handlers
@@ -69,9 +71,10 @@ Exports only `main()` from `repl.py`.
 
 The heart of the CLI, implementing the unified REPL architecture.
 
-Formatting/sanitization helper functions are extracted into
-`repl_formatting.py`, while `repl.py` keeps a façade-compatible import surface
-for existing call sites and tests.
+Formatting/sanitization, runtime/client-discovery, and reload helper functions
+are extracted into `repl_formatting.py`, `repl_runtime.py`, and
+`repl_reload.py`, while `repl.py` keeps a façade-compatible import surface for
+existing call sites and tests.
 
 #### Key Functions
 
@@ -82,6 +85,10 @@ for existing call sites and tests.
 | `_run_connect_with_discovery()` | Connect mode with server discovery lobby |
 | `main()` | Entry point parsing args and dispatching to modes |
 | `_run_with_reload()` | Serve mode with watchfiles auto-reload |
+
+Runtime/client-discovery logic now lives in `repl_runtime.py`, and reload
+helpers live in `repl_reload.py`; `repl.py` re-exports the façade symbols for
+compatibility.
 
 #### `run_repl()` Parameters
 

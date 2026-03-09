@@ -431,9 +431,20 @@ Immediate tasks:
     `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_formatting.py`,
     `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/unit/test_repl_commands.py`
     (`97 passed`).
-- Next target: execute structural-refactor Phase 1B (REPL runtime/client-discovery
-  helper extraction), while keeping manual provider keep-alive endpoint evidence
-  capture queued for real endpoint availability.
+- Completed (2026-03-09, structural-refactor Phase 1B): REPL runtime/client-discovery
+  and reload-helper extraction:
+  - extracted runtime/client-discovery helpers into
+    `nexus3/cli/repl_runtime.py`.
+  - extracted reload helper into `nexus3/cli/repl_reload.py`.
+  - retained façade-compatible symbols/imports in `nexus3/cli/repl.py`.
+  - focused validation passed:
+    `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_runtime.py nexus3/cli/repl_reload.py`,
+    `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_runtime.py nexus3/cli/repl_reload.py`,
+    `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/unit/test_repl_commands.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/test_client.py`
+    (`125 passed`).
+- Next target: execute structural-refactor Phase 2 Session extraction slices,
+  while keeping manual provider keep-alive endpoint evidence capture queued for
+  real endpoint availability.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with
@@ -511,29 +522,31 @@ Immediate tasks:
   - Added explicit unblocking/execution plans for all currently tracked deferred boundaries (Plan A, Plan H, Plan C service immutability, provider keep-alive investigation, structural refactor wave, post-M4 validation campaign).
   - Added milestone-schedule backlog entries with target windows and exit gates for each follow-on plan.
 
-Compact handover checkpoint (2026-03-09, post-structural Phase 1A wave):
+Compact handover checkpoint (2026-03-09, post-structural Phase 1B wave):
 - Branch: `feat/arch-overhaul-execution`
-- Current head: `7fec6c5` (`structural phase 1a: extract repl formatting helpers`)
-- Pre-wave status alignment commit: `cbff9b0`
+- Current head: `73ccb78` (`docs(status): add post-phase1a compact handover checkpoint`)
+- Pre-wave status alignment commit: `73ccb78`
 - Execution model used:
   - orchestrator selected next slices and delegated disjoint write scopes to
     parallel Codex subagents.
   - subagent-delivered changes were validated in local WSL before checkpointing.
 - Completed in this wave:
-  - REPL formatting/sanitization helper extraction to
-    `nexus3/cli/repl_formatting.py` with façade-compatible imports in
-    `nexus3/cli/repl.py`.
-  - structural plan/status docs synced for Phase 1A completion.
+  - REPL runtime/client-discovery helper extraction to
+    `nexus3/cli/repl_runtime.py`.
+  - REPL reload helper extraction to `nexus3/cli/repl_reload.py`.
+  - `nexus3/cli/repl.py` retained façade-compatible symbols/imports.
+  - structural plan/status docs synced for Phase 1B completion.
 - Local validation rerun at checkpoint:
-  - `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py` passed.
-  - `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_formatting.py` passed.
-  - `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/unit/test_repl_commands.py` passed (`97 passed`).
+  - `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_runtime.py nexus3/cli/repl_reload.py` passed.
+  - `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_runtime.py nexus3/cli/repl_reload.py` passed.
+  - `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/unit/test_repl_commands.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/test_client.py` passed (`125 passed`).
 - Next gate after compact:
-  1. Execute structural-refactor Phase 1B (REPL runtime/client-discovery helper extraction) with focused parity checks.
+  1. Execute structural-refactor Phase 2 Session extraction slices with focused parity checks.
   2. Keep manual provider keep-alive endpoint evidence capture queued until real endpoint access is available.
   3. Windows host is not required for the immediate next gate.
 
 Recent execution commits (latest first):
+- `73ccb78` docs(status): add post-phase1a compact handover checkpoint
 - `7fec6c5` structural phase 1a: extract repl formatting helpers
 - `cbff9b0` docs(status): align structural kickoff and next-step ordering
 - `a22c631` docs(status): record plan h closeout commit in handoff

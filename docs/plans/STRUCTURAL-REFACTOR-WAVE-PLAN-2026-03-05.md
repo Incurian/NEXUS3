@@ -102,6 +102,17 @@ Execution notes:
     - `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
     - `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
     - `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/unit/test_repl_commands.py` (`97 passed`)
+- 2026-03-09: Phase 1B (REPL runtime/client-discovery + reload extraction)
+  completed in WSL.
+  - Extracted runtime/client-discovery helpers into
+    `nexus3/cli/repl_runtime.py`.
+  - Extracted reload helper into `nexus3/cli/repl_reload.py`.
+  - Kept `nexus3/cli/repl.py` as a façade import surface for compatibility.
+  - Focused validation passed:
+    - `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_runtime.py nexus3/cli/repl_reload.py`
+    - `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_runtime.py nexus3/cli/repl_reload.py`
+    - `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/unit/test_repl_commands.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/test_client.py` (`125 passed`)
+- Next gate: execute Phase 2 Session extraction slices with focused parity checks.
 
 ## Testing Strategy
 
@@ -119,7 +130,7 @@ Execution notes:
 - [x] Establish extraction map with old->new module ownership and stable
       compatibility import boundaries.
 - [x] Complete REPL formatting-helper extraction slice with parity checks.
-- [ ] Complete REPL extraction slices with parity checks.
+- [x] Complete REPL extraction slices with parity checks.
 - [ ] Complete Session extraction slices with parity checks.
 - [ ] Complete Pool extraction slices with parity checks.
 - [ ] Land display-config cleanup with documented override contract.

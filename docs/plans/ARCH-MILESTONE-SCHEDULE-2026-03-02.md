@@ -320,14 +320,19 @@ Exit gates:
 5. Structural refactor wave:
    - [STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md)
    - Target window: post-M4 cleanup (non-blocking for security gates).
-   - Status note (2026-03-09): kickoff + first extraction slice complete in WSL:
+   - Status note (2026-03-09): kickoff + REPL extraction slices complete in WSL:
      - extraction map and compatibility-boundary policy documented in plan.
      - Phase 1A completed: REPL formatting/sanitization helpers extracted to
        `nexus3/cli/repl_formatting.py` with façade-compatible imports in
        `nexus3/cli/repl.py`.
-     - focused parity checks passed for REPL formatting and REPL command paths.
-     - next gate: Phase 1B runtime/client-discovery helper extraction with
-       parity validation before session/pool slices.
+     - Phase 1B completed: runtime/client-discovery helpers extracted to
+       `nexus3/cli/repl_runtime.py` and reload helper extracted to
+       `nexus3/cli/repl_reload.py`, with façade-compatible symbols retained in
+       `nexus3/cli/repl.py`.
+     - focused parity checks passed for REPL formatting/runtime/reload, REPL
+       command, connect-lobby, and client paths.
+     - next gate: Phase 2 Session extraction slices with parity validation
+       before pool/display slices.
    - Dependency gates:
      - No unresolved high-priority behavior defects in REPL/session/pool runtime paths.
      - Existing integration and regression baselines are green before each extraction slice.
