@@ -319,7 +319,7 @@ class TestGitSkillFactory:
         mock_perms.tool_permissions = {"git": MagicMock(allowed_paths=[Path("/tmp")])}
         mock_perms.effective_policy.allowed_paths = None
         mock_perms.effective_policy.level = PermissionLevel.TRUSTED
-        services.register("permissions", mock_perms)
+        services.set_permissions(mock_perms)
 
         skill = git_factory(services)
         assert isinstance(skill, GitSkill)
@@ -334,7 +334,7 @@ class TestGitSkillFactory:
         mock_perms.effective_policy.level = PermissionLevel.SANDBOXED
         mock_perms.tool_permissions = {}
         mock_perms.effective_policy.allowed_paths = None
-        services.register("permissions", mock_perms)
+        services.set_permissions(mock_perms)
         services.register("permission_level", PermissionLevel.SANDBOXED)
 
         skill = git_factory(services)

@@ -109,7 +109,7 @@ class TestServiceContainerToolAllowedPaths:
         from pathlib import Path
 
         container = ServiceContainer()
-        container.register("allowed_paths", [Path("/sandbox")])
+        container.register_runtime_compat("allowed_paths", [Path("/sandbox")])
 
         result = container.get_tool_allowed_paths("write_file")
         assert result == [Path("/sandbox")]
@@ -134,7 +134,7 @@ class TestServiceContainerToolAllowedPaths:
             ),
             tool_permissions={},  # No per-tool overrides
         )
-        container.register("permissions", permissions)
+        container.set_permissions(permissions)
 
         result = container.get_tool_allowed_paths("read_file")
         assert result == [Path("/sandbox")]
@@ -157,7 +157,7 @@ class TestServiceContainerToolAllowedPaths:
                 ),
             },
         )
-        container.register("permissions", permissions)
+        container.set_permissions(permissions)
 
         # write_file should use its per-tool override
         result = container.get_tool_allowed_paths("write_file")
@@ -185,7 +185,7 @@ class TestServiceContainerToolAllowedPaths:
                 ),
             },
         )
-        container.register("permissions", permissions)
+        container.set_permissions(permissions)
 
         # Should inherit from policy even though ToolPermission exists
         result = container.get_tool_allowed_paths("write_file")
@@ -209,7 +209,7 @@ class TestServiceContainerToolAllowedPaths:
                 ),
             },
         )
-        container.register("permissions", permissions)
+        container.set_permissions(permissions)
 
         # Empty list means tool cannot access any paths
         result = container.get_tool_allowed_paths("write_file")
@@ -481,6 +481,7 @@ class TestSkillRegistryPermissionFiltering:
 
     def _create_test_skill_factory(self, name: str, desc: str):
         """Helper to create a test skill factory."""
+
         def factory(services: ServiceContainer):
             class TestSkill:
                 @property
@@ -499,6 +500,7 @@ class TestSkillRegistryPermissionFiltering:
                     return ToolResult(output=name)
 
             return TestSkill()
+
         return factory
 
     def test_all_tools_enabled_by_default(self):
@@ -527,7 +529,10 @@ class TestSkillRegistryPermissionFiltering:
         registry = SkillRegistry()
         registry.register("echo", echo_skill_factory)
         registry.register("write_file", self._create_test_skill_factory("write_file", "Write file"))
-        registry.register("read_file", self._create_test_skill_factory("read_file", "Read file"))
+        registry.register(
+            "read_file",
+            self._create_test_skill_factory("read_file", "Read file"),
+        )
 
         # Permissions with write_file disabled
         policy = PermissionPolicy(level=PermissionLevel.TRUSTED)
@@ -550,9 +555,18 @@ class TestSkillRegistryPermissionFiltering:
         """Multiple disabled tools are all excluded."""
         registry = SkillRegistry()
         registry.register("echo", echo_skill_factory)
-        registry.register("nexus_create", self._create_test_skill_factory("nexus_create", "Create agent"))
-        registry.register("nexus_destroy", self._create_test_skill_factory("nexus_destroy", "Destroy agent"))
-        registry.register("nexus_send", self._create_test_skill_factory("nexus_send", "Send message"))
+        registry.register(
+            "nexus_create",
+            self._create_test_skill_factory("nexus_create", "Create agent"),
+        )
+        registry.register(
+            "nexus_destroy",
+            self._create_test_skill_factory("nexus_destroy", "Destroy agent"),
+        )
+        registry.register(
+            "nexus_send",
+            self._create_test_skill_factory("nexus_send", "Send message"),
+        )
         registry.register("read_file", self._create_test_skill_factory("read_file", "Read file"))
 
         # Sandboxed preset typically disables nexus tools
@@ -648,10 +662,22 @@ class TestSkillRegistryPermissionFiltering:
         from nexus3.core.permissions import resolve_preset
 
         registry = SkillRegistry()
-        registry.register("read_file", self._create_test_skill_factory("read_file", "Read file"))
-        registry.register("write_file", self._create_test_skill_factory("write_file", "Write file"))
-        registry.register("nexus_create", self._create_test_skill_factory("nexus_create", "Create agent"))
-        registry.register("nexus_send", self._create_test_skill_factory("nexus_send", "Send message"))
+        registry.register(
+            "read_file",
+            self._create_test_skill_factory("read_file", "Read file"),
+        )
+        registry.register(
+            "write_file",
+            self._create_test_skill_factory("write_file", "Write file"),
+        )
+        registry.register(
+            "nexus_create",
+            self._create_test_skill_factory("nexus_create", "Create agent"),
+        )
+        registry.register(
+            "nexus_send",
+            self._create_test_skill_factory("nexus_send", "Send message"),
+        )
 
         # Get sandboxed permissions which has most nexus tools disabled
         permissions = resolve_preset("sandboxed")

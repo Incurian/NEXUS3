@@ -45,7 +45,7 @@ class GitLabSkillTestBase:
     def services(self, tmp_path: Path, gitlab_config: GitLabConfig) -> ServiceContainer:
         """Create mock service container."""
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
+        services.set_cwd(str(tmp_path))
         services.register("gitlab_config", gitlab_config)
         return services
 
@@ -777,7 +777,7 @@ class TestGitLabSkillProperties:
     ) -> None:
         """GitLabIssueSkill has correct properties."""
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
+        services.set_cwd(str(tmp_path))
         config = GitLabConfig()
 
         skill = GitLabIssueSkill(services, config)
@@ -793,7 +793,7 @@ class TestGitLabSkillProperties:
     ) -> None:
         """GitLabMRSkill has correct properties."""
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
+        services.set_cwd(str(tmp_path))
         config = GitLabConfig()
 
         skill = GitLabMRSkill(services, config)
@@ -809,7 +809,7 @@ class TestGitLabSkillProperties:
     ) -> None:
         """GitLabBranchSkill has correct properties."""
         services = ServiceContainer()
-        services.register("cwd", str(tmp_path))
+        services.set_cwd(str(tmp_path))
         config = GitLabConfig()
 
         skill = GitLabBranchSkill(services, config)

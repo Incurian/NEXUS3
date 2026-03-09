@@ -3,27 +3,27 @@
 import socket
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
-from nexus3.core.allowances import SessionAllowances
 from nexus3.core.permissions import AgentPermissions, PermissionLevel, PermissionPolicy
 from nexus3.skill.services import ServiceContainer
 from nexus3.skill.vcs.config import GitLabConfig, GitLabInstance
 
-
 # Test domains that need to bypass DNS resolution
-TEST_DOMAINS = frozenset({
-    "gitlab.work.com",
-    "work.gitlab.com",
-    "gitlab.example.com",
-    "gitlab.local",
-    "alpha.com",
-    "beta.com",
-    "gitlab.mycompany.com",
-    "work.com",
-})
+TEST_DOMAINS = frozenset(
+    {
+        "gitlab.work.com",
+        "work.gitlab.com",
+        "gitlab.example.com",
+        "gitlab.local",
+        "alpha.com",
+        "beta.com",
+        "gitlab.mycompany.com",
+        "work.com",
+    }
+)
 
 
 @pytest.fixture(autouse=True)
@@ -71,7 +71,10 @@ def gitlab_instance_env() -> GitLabInstance:
 
 
 @pytest.fixture
-def gitlab_config(gitlab_instance: GitLabInstance, gitlab_instance_env: GitLabInstance) -> GitLabConfig:
+def gitlab_config(
+    gitlab_instance: GitLabInstance,
+    gitlab_instance_env: GitLabInstance,
+) -> GitLabConfig:
     """Create a GitLabConfig with multiple instances."""
     return GitLabConfig(
         instances={
@@ -86,7 +89,7 @@ def gitlab_config(gitlab_instance: GitLabInstance, gitlab_instance_env: GitLabIn
 def mock_services(tmp_path: Path, gitlab_config: GitLabConfig) -> ServiceContainer:
     """Create a mock ServiceContainer with GitLab config."""
     services = ServiceContainer()
-    services.register("cwd", str(tmp_path))
+    services.set_cwd(str(tmp_path))
     services.register("gitlab_config", gitlab_config)
     return services
 

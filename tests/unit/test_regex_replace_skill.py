@@ -304,7 +304,7 @@ class TestRegexReplaceFactory:
     def test_factory_creates_skill(self) -> None:
         """Factory creates skill with configuration."""
         services = ServiceContainer()
-        services.register("allowed_paths", [Path("/tmp")])
+        services.register_runtime_compat("allowed_paths", [Path("/tmp")])
 
         skill = regex_replace_factory(services)
         assert isinstance(skill, RegexReplaceSkill)

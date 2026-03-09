@@ -1354,7 +1354,7 @@ As of 2026-02-25: **All tests, lints, and type checks pass 100%.**
 - `mypy nexus3/` — 0 errors (192 source files)
 - `pytest tests/` — 3742 passed, 3 skipped (2 require API key, 1 Windows-only)
 
-Architecture execution running status (2026-03-09, Plan H closeout + keep-alive wave):
+Architecture execution running status (2026-03-09, Plan C hygiene closeout + keep-alive wave):
 - Plan C service-container immutability follow-on is now committed:
   - `5c0e843` (pool/repl/session runtime migration to typed mutators/accessors)
   - `8143afe` (runtime register compatibility scoping via `register_runtime_compat(...)`)
@@ -1400,6 +1400,36 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - focused validation:
     `.venv/bin/pytest -q tests/unit/skill/test_clipboard_skills.py tests/unit/skill/test_clipboard_extras.py tests/unit/skill/test_clipboard_manage.py tests/unit/skill/test_edit_file.py tests/unit/skill/test_edit_lines.py tests/unit/skill/test_skill_validation.py`
     (`154 passed`).
+- Plan C runtime-key test-setup hygiene closeout wave is completed in WSL:
+  - migrated remaining non-compat direct runtime-key test wiring in:
+    `tests/security/test_arch_a2_path_decision.py`,
+    `tests/security/test_p1_process_group_kill.py`,
+    `tests/unit/session/test_session_cancellation.py`,
+    `tests/unit/skill/test_nexus_create.py`,
+    `tests/unit/skill/vcs/conftest.py`,
+    `tests/unit/skill/vcs/test_gitlab_skills.py`,
+    `tests/unit/test_git_skill.py`,
+    `tests/unit/test_gitlab_toggle.py`,
+    `tests/unit/test_new_skills.py`,
+    `tests/unit/test_regex_replace_skill.py`,
+    `tests/unit/test_skill_registry.py`.
+  - runtime-key writes now use typed/compat APIs:
+    - `set_permissions(...)` for permissions setup
+    - `set_cwd(...)` for cwd setup
+    - `register_runtime_compat("allowed_paths", ...)` for allowed-path setup
+  - `tests/unit/test_gitlab_toggle.py` now uses a `ServiceContainer`-backed
+    mock service shim so command tests retain typed accessor parity.
+  - focused validation:
+    `.venv/bin/ruff check tests/integration/test_clipboard.py tests/integration/test_file_editing_skills.py tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py tests/security/test_arch_a2_path_decision.py tests/security/test_p1_process_group_kill.py tests/unit/session/test_session_cancellation.py tests/unit/skill/test_nexus_create.py tests/unit/skill/vcs/conftest.py tests/unit/skill/vcs/test_gitlab_skills.py tests/unit/test_git_skill.py tests/unit/test_gitlab_toggle.py tests/unit/test_new_skills.py tests/unit/test_regex_replace_skill.py tests/unit/test_skill_registry.py`
+    passed;
+    `.venv/bin/pytest -q tests/security/test_arch_a2_path_decision.py tests/security/test_p1_process_group_kill.py tests/unit/session/test_session_cancellation.py tests/unit/skill/test_nexus_create.py tests/unit/skill/vcs/test_gitlab_skills.py tests/unit/test_git_skill.py tests/unit/test_gitlab_toggle.py tests/unit/test_new_skills.py tests/unit/test_regex_replace_skill.py tests/unit/test_skill_registry.py`
+    (`279 passed`);
+    `.venv/bin/pytest -q tests/integration/test_clipboard.py tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py`
+    (`65 passed`);
+    `timeout 180 .venv/bin/pytest -q tests/integration/test_file_editing_skills.py`
+    stalled without output in sandbox; unsandboxed rerun
+    `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py`
+    passed (`17 passed`).
 - Plan H shim-retirement closeout for remaining `create_agent` compatibility
   remaps is committed in the current closeout wave:
   - `nexus3/rpc/global_dispatcher.py`: removed remaining custom create-agent

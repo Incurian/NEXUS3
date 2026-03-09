@@ -17,11 +17,8 @@ def _build_skill(*, create_agent: AsyncMock) -> NexusCreateSkill:
     services = ServiceContainer()
     services.register("agent_api", SimpleNamespace(create_agent=create_agent))
     services.register("agent_id", "parent-agent")
-    services.register("cwd", Path("/workspace/parent"))
-    services.register(
-        "permissions",
-        resolve_preset("sandboxed", cwd=Path("/workspace/parent")),
-    )
+    services.set_cwd(Path("/workspace/parent"))
+    services.set_permissions(resolve_preset("sandboxed", cwd=Path("/workspace/parent")))
     return NexusCreateSkill(services)
 
 
@@ -31,9 +28,7 @@ async def test_execute_defers_parent_ceiling_decision_to_rpc_create() -> None:
     requested_permissions = resolve_preset("trusted", cwd=Path("/workspace/parent"))
     assert parent_permissions.can_grant(requested_permissions) is False
 
-    create_agent = AsyncMock(
-        return_value={"agent_id": "child-agent", "url": "/agent/child-agent"}
-    )
+    create_agent = AsyncMock(return_value={"agent_id": "child-agent", "url": "/agent/child-agent"})
     skill = _build_skill(create_agent=create_agent)
 
     result = await skill.execute(agent_id="child-agent", preset="trusted")
@@ -67,10 +62,7 @@ async def test_execute_preserves_downstream_create_error_text() -> None:
 
     result = await skill.execute(agent_id="child-agent", preset="trusted")
 
-    assert (
-        result.error
-        == "RPC error -32000: Requested preset 'trusted' exceeds parent ceiling"
-    )
+    assert result.error == "RPC error -32000: Requested preset 'trusted' exceeds parent ceiling"
     create_agent.assert_awaited_once_with(
         agent_id="child-agent",
         preset="trusted",

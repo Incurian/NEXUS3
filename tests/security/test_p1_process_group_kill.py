@@ -13,11 +13,9 @@ from pathlib import Path
 
 import pytest
 
-
 # Skip on Windows - process groups work differently
 pytestmark = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="Process groups not available on Windows"
+    sys.platform == "win32", reason="Process groups not available on Windows"
 )
 
 
@@ -27,7 +25,7 @@ def services():
     from nexus3.skill.services import ServiceContainer
 
     container = ServiceContainer()
-    container.register("cwd", "/tmp")
+    container.set_cwd("/tmp")
     return container
 
 
@@ -70,17 +68,14 @@ class TestProcessGroupKill:
                 # Clean it up so we don't leave orphans
                 os.kill(child_pid, 9)
                 pytest.fail(
-                    f"Child process {child_pid} survived timeout - "
-                    "process group kill failed!"
+                    f"Child process {child_pid} survived timeout - process group kill failed!"
                 )
             except ProcessLookupError:
                 # Good - child was killed
                 pass
             except PermissionError:
                 # Process exists but we can't signal it - might be orphan
-                pytest.fail(
-                    f"Child process {child_pid} may have survived as orphan"
-                )
+                pytest.fail(f"Child process {child_pid} may have survived as orphan")
 
     async def test_child_processes_killed_on_timeout_run_python(
         self, services, tmp_path: Path
@@ -128,17 +123,14 @@ time.sleep(300)
                 # Clean it up
                 os.kill(child_pid, 9)
                 pytest.fail(
-                    f"Child process {child_pid} survived timeout - "
-                    "process group kill failed!"
+                    f"Child process {child_pid} survived timeout - process group kill failed!"
                 )
             except ProcessLookupError:
                 # Good - child was killed
                 pass
             except PermissionError:
                 # Process exists but we can't signal it
-                pytest.fail(
-                    f"Child process {child_pid} may have survived as orphan"
-                )
+                pytest.fail(f"Child process {child_pid} may have survived as orphan")
 
 
 class TestStartNewSession:
@@ -152,10 +144,7 @@ class TestStartNewSession:
 
         # With start_new_session=True, the shell process should be its own
         # session leader, meaning its PID equals its PGID
-        result = await skill.execute(
-            command="ps -o pid=,pgid= -p $$",
-            timeout=5
-        )
+        result = await skill.execute(command="ps -o pid=,pgid= -p $$", timeout=5)
 
         assert result.output is not None
         # Parse output: should show PID and PGID as equal

@@ -45,7 +45,7 @@ def services(temp_dir: Path) -> ServiceContainer:
         ),
     )
     container = ServiceContainer()
-    container.register("permissions", permissions)
+    container.set_permissions(permissions)
     container.set_cwd(temp_dir)
     return container
 
@@ -66,7 +66,7 @@ def restricted_services(temp_dir: Path) -> ServiceContainer:
         ),
     )
     container = ServiceContainer()
-    container.register("permissions", permissions)
+    container.set_permissions(permissions)
     container.set_cwd(allowed_subdir)
     return container
 

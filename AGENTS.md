@@ -228,6 +228,38 @@ Current milestone:
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
+- Completed (2026-03-09, Plan C runtime-key test-setup hygiene closeout wave):
+  - migrated remaining non-compat direct runtime-key test wiring to typed/compat
+    APIs in:
+    - `tests/security/test_arch_a2_path_decision.py`
+    - `tests/security/test_p1_process_group_kill.py`
+    - `tests/unit/session/test_session_cancellation.py`
+    - `tests/unit/skill/test_nexus_create.py`
+    - `tests/unit/skill/vcs/conftest.py`
+    - `tests/unit/skill/vcs/test_gitlab_skills.py`
+    - `tests/unit/test_git_skill.py`
+    - `tests/unit/test_gitlab_toggle.py`
+    - `tests/unit/test_new_skills.py`
+    - `tests/unit/test_regex_replace_skill.py`
+    - `tests/unit/test_skill_registry.py`
+  - replaced direct `register("permissions", ...)` calls with
+    `set_permissions(...)`.
+  - replaced direct `register("cwd", ...)` calls with `set_cwd(...)`.
+  - replaced direct `register("allowed_paths", ...)` calls with
+    `register_runtime_compat("allowed_paths", ...)`.
+  - updated `tests/unit/test_gitlab_toggle.py` mock services to inherit
+    `ServiceContainer` so command tests continue using typed accessors.
+  - focused validation passed:
+    - `.venv/bin/ruff check tests/integration/test_clipboard.py tests/integration/test_file_editing_skills.py tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py tests/security/test_arch_a2_path_decision.py tests/security/test_p1_process_group_kill.py tests/unit/session/test_session_cancellation.py tests/unit/skill/test_nexus_create.py tests/unit/skill/vcs/conftest.py tests/unit/skill/vcs/test_gitlab_skills.py tests/unit/test_git_skill.py tests/unit/test_gitlab_toggle.py tests/unit/test_new_skills.py tests/unit/test_regex_replace_skill.py tests/unit/test_skill_registry.py`
+      passed.
+    - `.venv/bin/pytest -q tests/security/test_arch_a2_path_decision.py tests/security/test_p1_process_group_kill.py tests/unit/session/test_session_cancellation.py tests/unit/skill/test_nexus_create.py tests/unit/skill/vcs/test_gitlab_skills.py tests/unit/test_git_skill.py tests/unit/test_gitlab_toggle.py tests/unit/test_new_skills.py tests/unit/test_regex_replace_skill.py tests/unit/test_skill_registry.py`
+      (`279 passed`).
+    - `.venv/bin/pytest -q tests/integration/test_clipboard.py tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py`
+      (`65 passed`).
+    - `timeout 180 .venv/bin/pytest -q tests/integration/test_file_editing_skills.py`
+      stalled without output in sandbox; unsandboxed rerun
+      `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py`
+      passed (`17 passed`).
 - Completed (2026-03-09, Plan C runtime-key test-setup hygiene wave 2):
   - migrated runtime-key test wiring to typed/compat APIs in:
     - `tests/unit/skill/test_clipboard_skills.py`
@@ -709,8 +741,10 @@ Immediate tasks:
     - `.venv/bin/mypy nexus3/session/session.py nexus3/session/tool_loop_events_runtime.py nexus3/session/single_tool_runtime.py nexus3/session/tool_runtime.py` passed.
     - `.venv/bin/pytest -q tests/unit/test_compaction.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_pool.py tests/unit/test_auto_restore.py tests/unit/rpc/test_pool_create_auth_shadow.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/test_global_dispatcher.py` passed (`213 passed`).
     - `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py tests/integration/test_chat.py tests/integration/test_permission_inheritance.py tests/integration/test_sandboxed_parent_send.py` passed (`91 passed, 2 skipped`).
-- Next target: Plan C fixture-modernization deferred backlog is now closed;
-  provider keep-alive real-endpoint evidence remains operationally deferred
+- Next target: Plan C optional test-hygiene backlog is now closed except for
+  the intentional legacy-compat coverage in
+  `tests/unit/skill/test_service_container_immutability.py`; provider
+  keep-alive real-endpoint evidence remains operationally deferred
   (2026-03-09) pending endpoint credentials/config availability in the current
   WSL environment.
 - Next gate after credentials/config are available: execute the reminder

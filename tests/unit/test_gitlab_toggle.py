@@ -8,7 +8,6 @@ Tests:
 - /gitlab status shows correct state
 """
 
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -22,27 +21,20 @@ from nexus3.core.permissions import (
     ToolPermission,
     resolve_preset,
 )
+from nexus3.skill.services import ServiceContainer
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-class MockServices:
-    """Minimal ServiceContainer mock."""
-
-    def __init__(self) -> None:
-        self._services: dict[str, Any] = {}
-
-    def get(self, name: str) -> Any:
-        return self._services.get(name)
-
-    def register(self, name: str, value: Any) -> None:
-        self._services[name] = value
+class MockServices(ServiceContainer):
+    """Minimal ServiceContainer-backed shim."""
 
 
 class MockSkillSpec:
     """Minimal SkillSpec stand-in (only name matters for _specs dict)."""
+
     pass
 
 
@@ -51,12 +43,27 @@ def _make_registry_with_gitlab() -> MagicMock:
     registry = MagicMock()
     # Simulate 21 gitlab tools + some non-gitlab tools
     gitlab_names = [
-        "gitlab_repo", "gitlab_issue", "gitlab_mr", "gitlab_label",
-        "gitlab_branch", "gitlab_tag", "gitlab_epic", "gitlab_iteration",
-        "gitlab_milestone", "gitlab_board", "gitlab_time", "gitlab_approval",
-        "gitlab_draft", "gitlab_discussion", "gitlab_pipeline", "gitlab_job",
-        "gitlab_artifact", "gitlab_variable", "gitlab_deploy_key",
-        "gitlab_deploy_token", "gitlab_feature_flag",
+        "gitlab_repo",
+        "gitlab_issue",
+        "gitlab_mr",
+        "gitlab_label",
+        "gitlab_branch",
+        "gitlab_tag",
+        "gitlab_epic",
+        "gitlab_iteration",
+        "gitlab_milestone",
+        "gitlab_board",
+        "gitlab_time",
+        "gitlab_approval",
+        "gitlab_draft",
+        "gitlab_discussion",
+        "gitlab_pipeline",
+        "gitlab_job",
+        "gitlab_artifact",
+        "gitlab_variable",
+        "gitlab_deploy_key",
+        "gitlab_deploy_token",
+        "gitlab_feature_flag",
     ]
     specs = {name: MockSkillSpec() for name in gitlab_names}
     specs["read_file"] = MockSkillSpec()
@@ -85,7 +92,7 @@ def _make_agent(
         if name.startswith("gitlab_"):
             perms.tool_permissions[name] = ToolPermission(enabled=gitlab_enabled)
     agent.services = MockServices()
-    agent.services.register("permissions", perms)
+    agent.services.set_permissions(perms)
 
     agent.context = MagicMock()
     return agent
@@ -326,7 +333,7 @@ class TestGitlabToggle:
             effective_policy=PermissionPolicy(level=PermissionLevel.TRUSTED),
         )
         agent.services = MockServices()
-        agent.services.register("permissions", perms)
+        agent.services.set_permissions(perms)
 
         ctx = _make_ctx(agent)
         result = await cmd_gitlab(ctx, "on")

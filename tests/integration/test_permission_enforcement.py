@@ -195,7 +195,7 @@ def create_session_with_permissions(
     # Register permissions in the service container
     services = registry.services
     if permissions is not None:
-        services.register("permissions", permissions)
+        services.set_permissions(permissions)
 
     # Create session with optional confirmation callback
     # Note: on_confirm is not yet a standard Session parameter,
@@ -241,7 +241,7 @@ class TestDisabledToolReturnsError:
 
         # Create registry with write_file skill
         services = ServiceContainer()
-        services.register("permissions", permissions)
+        services.set_permissions(permissions)
         registry = SkillRegistry(services)
         write_skill = WriteFileTestSkill()
         registry.register("write_file", lambda _: write_skill)
@@ -281,7 +281,7 @@ class TestDisabledToolReturnsError:
         provider = MockProviderWithTools(responses)
 
         services = ServiceContainer()
-        services.register("permissions", permissions)
+        services.set_permissions(permissions)
         registry = SkillRegistry(services)
         echo_skill = EchoSkill()
         registry.register("echo", lambda _: echo_skill)
@@ -317,7 +317,7 @@ class TestEnabledToolExecutes:
         provider = MockProviderWithTools(responses)
 
         services = ServiceContainer()
-        services.register("permissions", permissions)
+        services.set_permissions(permissions)
         registry = SkillRegistry(services)
         echo_skill = EchoSkill()
         registry.register("echo", lambda _: echo_skill)
@@ -349,7 +349,7 @@ class TestEnabledToolExecutes:
         provider = MockProviderWithTools(responses)
 
         services = ServiceContainer()
-        services.register("permissions", permissions)
+        services.set_permissions(permissions)
         registry = SkillRegistry(services)
         echo_skill = EchoSkill()
         registry.register("echo", lambda _: echo_skill)
@@ -387,7 +387,7 @@ class TestPerToolTimeout:
         provider = MockProviderWithTools(responses)
 
         services = ServiceContainer()
-        services.register("permissions", permissions)
+        services.set_permissions(permissions)
         registry = SkillRegistry(services)
         slow_skill = SlowSkill(delay=5.0)  # 5 second default delay
         registry.register("slow_skill", lambda _: slow_skill)
@@ -429,7 +429,7 @@ class TestPerToolTimeout:
         provider = MockProviderWithTools(responses)
 
         services = ServiceContainer()
-        services.register("permissions", permissions)
+        services.set_permissions(permissions)
         registry = SkillRegistry(services)
         slow_skill = SlowSkill(delay=0.05)  # 50ms delay
         registry.register("slow_skill", lambda _: slow_skill)
@@ -479,7 +479,7 @@ class TestConfirmationCallback:
         provider = MockProviderWithTools(responses)
 
         services = ServiceContainer()
-        services.register("permissions", permissions)
+        services.set_permissions(permissions)
         registry = SkillRegistry(services)
         write_skill = WriteFileTestSkill()
         registry.register("write_file", lambda _: write_skill)
@@ -521,7 +521,7 @@ class TestConfirmationCallback:
         provider = MockProviderWithTools(responses)
 
         services = ServiceContainer()
-        services.register("permissions", permissions)
+        services.set_permissions(permissions)
         registry = SkillRegistry(services)
         echo_skill = EchoSkill()
         registry.register("echo", lambda _: echo_skill)
@@ -566,7 +566,7 @@ class TestConfirmationDenied:
         provider = MockProviderWithTools(responses)
 
         services = ServiceContainer()
-        services.register("permissions", permissions)
+        services.set_permissions(permissions)
         registry = SkillRegistry(services)
         write_skill = WriteFileTestSkill()
         registry.register("write_file", lambda _: write_skill)
@@ -615,7 +615,7 @@ class TestYoloModeSkipsConfirmation:
         provider = MockProviderWithTools(responses)
 
         services = ServiceContainer()
-        services.register("permissions", permissions)
+        services.set_permissions(permissions)
         registry = SkillRegistry(services)
         write_skill = WriteFileTestSkill()
         registry.register("write_file", lambda _: write_skill)
@@ -743,7 +743,7 @@ class TestMixedPermissions:
         provider = MockProviderWithTools(responses)
 
         services = ServiceContainer()
-        services.register("permissions", permissions)
+        services.set_permissions(permissions)
         registry = SkillRegistry(services)
         echo_skill = EchoSkill()
         write_skill = WriteFileTestSkill()

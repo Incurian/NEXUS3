@@ -754,8 +754,8 @@ class TestFromServicesFactory:
     def test_creates_engine_from_services(self, tmp_path: Path) -> None:
         """Creates engine from ServiceContainer."""
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
-        services.register("allowed_paths", [tmp_path])
+        services.set_cwd(tmp_path)
+        services.register_runtime_compat("allowed_paths", [tmp_path])
         services.register("blocked_paths", [tmp_path / "blocked"])
 
         engine = PathDecisionEngine.from_services(services)
@@ -770,7 +770,7 @@ class TestFromServicesFactory:
         custom_cwd.mkdir()
 
         services = ServiceContainer()
-        services.register("cwd", custom_cwd)
+        services.set_cwd(custom_cwd)
 
         engine = PathDecisionEngine.from_services(services)
 
@@ -802,8 +802,8 @@ class TestFromServicesFactory:
         )
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
-        services.register("permissions", permissions)
+        services.set_cwd(tmp_path)
+        services.set_permissions(permissions)
 
         # Without tool_name, uses general path
         engine_general = PathDecisionEngine.from_services(services)
@@ -833,8 +833,8 @@ class TestFromServicesFactory:
         )
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
-        services.register("permissions", permissions)
+        services.set_cwd(tmp_path)
+        services.set_permissions(permissions)
 
         engine = PathDecisionEngine.from_services(services)
 
@@ -855,8 +855,8 @@ class TestFromServicesFactory:
         )
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
-        services.register("permissions", permissions)
+        services.set_cwd(tmp_path)
+        services.set_permissions(permissions)
 
         engine = PathDecisionEngine.from_services(services)
 
@@ -1070,8 +1070,8 @@ class TestServiceContainerIntegration:
     def test_fallback_to_simple_services(self, tmp_path: Path) -> None:
         """Works with simple services (no AgentPermissions)."""
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
-        services.register("allowed_paths", [tmp_path])
+        services.set_cwd(tmp_path)
+        services.register_runtime_compat("allowed_paths", [tmp_path])
 
         engine = PathDecisionEngine.from_services(services)
 
@@ -1088,7 +1088,7 @@ class TestServiceContainerIntegration:
         (blocked / "secret.txt").write_text("secret")
 
         services = ServiceContainer()
-        services.register("cwd", tmp_path)
+        services.set_cwd(tmp_path)
         services.register("blocked_paths", [blocked])
 
         engine = PathDecisionEngine.from_services(services)

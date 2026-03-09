@@ -121,7 +121,7 @@ class TestTailSkill:
         mock_perms = MagicMock()
         mock_perms.tool_permissions = {}
         mock_perms.effective_policy.allowed_paths = [Path("/tmp")]
-        services.register("permissions", mock_perms)
+        services.set_permissions(mock_perms)
         skill = tail_factory(services)
         assert isinstance(skill, TailSkill)
         assert skill._allowed_paths == [Path("/tmp")]
@@ -203,7 +203,7 @@ class TestFileInfoSkill:
     def test_factory_creates_skill(self) -> None:
         """Factory creates skill with proper configuration."""
         services = ServiceContainer()
-        services.register("allowed_paths", [Path("/tmp")])
+        services.register_runtime_compat("allowed_paths", [Path("/tmp")])
         skill = file_info_factory(services)
         assert isinstance(skill, FileInfoSkill)
 
@@ -307,7 +307,7 @@ class TestAppendFileSkill:
     def test_factory_creates_skill(self) -> None:
         """Factory creates skill with proper configuration."""
         services = ServiceContainer()
-        services.register("allowed_paths", [Path("/tmp")])
+        services.register_runtime_compat("allowed_paths", [Path("/tmp")])
         skill = append_file_factory(services)
         assert isinstance(skill, AppendFileSkill)
 

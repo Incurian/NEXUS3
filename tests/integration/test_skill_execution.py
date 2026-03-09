@@ -33,7 +33,7 @@ def create_services_with_permissions() -> ServiceContainer:
     """Create a ServiceContainer with YOLO permissions for testing."""
     services = ServiceContainer()
     permissions = resolve_preset("yolo")
-    services.register("permissions", permissions)
+    services.set_permissions(permissions)
     return services
 
 

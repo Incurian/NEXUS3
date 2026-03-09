@@ -15,37 +15,26 @@ Tests cover:
 import asyncio
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from nexus3.clipboard import (
     CLIPBOARD_PRESETS,
-    ClipboardEntry,
     ClipboardManager,
-    ClipboardPermissions,
     ClipboardScope,
     format_clipboard_context,
 )
-from nexus3.clipboard.storage import ClipboardStorage
 from nexus3.core.permissions import resolve_preset
 from nexus3.core.types import ToolResult
-from nexus3.skill.builtin.clipboard_copy import CopySkill, CutSkill, copy_factory, cut_factory
-from nexus3.skill.builtin.clipboard_export import ClipboardExportSkill, clipboard_export_factory
-from nexus3.skill.builtin.clipboard_import import ClipboardImportSkill, clipboard_import_factory
+from nexus3.skill.builtin.clipboard_copy import copy_factory, cut_factory
+from nexus3.skill.builtin.clipboard_export import clipboard_export_factory
+from nexus3.skill.builtin.clipboard_import import clipboard_import_factory
 from nexus3.skill.builtin.clipboard_manage import (
     ClipboardListSkill,
-    ClipboardGetSkill,
-    ClipboardDeleteSkill,
-    ClipboardClearSkill,
-    clipboard_list_factory,
-    clipboard_get_factory,
-    clipboard_delete_factory,
-    clipboard_clear_factory,
 )
-from nexus3.skill.builtin.clipboard_paste import PasteSkill, paste_skill_factory
-from nexus3.skill.builtin.clipboard_search import ClipboardSearchSkill, clipboard_search_factory
-from nexus3.skill.builtin.clipboard_tag import ClipboardTagSkill, clipboard_tag_factory
+from nexus3.skill.builtin.clipboard_paste import paste_skill_factory
+from nexus3.skill.builtin.clipboard_search import clipboard_search_factory
+from nexus3.skill.builtin.clipboard_tag import clipboard_tag_factory
 from nexus3.skill.services import ServiceContainer
 
 
@@ -68,9 +57,9 @@ def create_services_with_clipboard(
 
     # Set up permissions
     permissions = resolve_preset(preset)
-    services.register("permissions", permissions)
-    services.register("cwd", tmp_path)
-    services.register("allowed_paths", [tmp_path])
+    services.set_permissions(permissions)
+    services.set_cwd(tmp_path)
+    services.register_runtime_compat("allowed_paths", [tmp_path])
 
     # Get clipboard permissions from preset
     clipboard_perms = CLIPBOARD_PRESETS.get(preset, CLIPBOARD_PRESETS["sandboxed"])
@@ -335,7 +324,12 @@ class TestContextInjection:
 
         # Add some entries
         manager.copy("entry1", "Content 1\nLine 2", scope=ClipboardScope.AGENT)
-        manager.copy("entry2", "Content 2", scope=ClipboardScope.AGENT, short_description="Second entry")
+        manager.copy(
+            "entry2",
+            "Content 2",
+            scope=ClipboardScope.AGENT,
+            short_description="Second entry",
+        )
 
         # Get context injection
         context = format_clipboard_context(manager)
@@ -585,8 +579,18 @@ class TestSearch:
         services = create_services_with_clipboard(tmp_path)
         manager = services.get("clipboard_manager")
 
-        manager.copy("entry1", "Content", scope=ClipboardScope.AGENT, short_description="Important data")
-        manager.copy("entry2", "Content", scope=ClipboardScope.AGENT, short_description="Unrelated stuff")
+        manager.copy(
+            "entry1",
+            "Content",
+            scope=ClipboardScope.AGENT,
+            short_description="Important data",
+        )
+        manager.copy(
+            "entry2",
+            "Content",
+            scope=ClipboardScope.AGENT,
+            short_description="Unrelated stuff",
+        )
 
         results = manager.search("Important")
         assert len(results) == 1
@@ -623,7 +627,12 @@ class TestTags:
 
         manager.copy("entry1", "Content 1", scope=ClipboardScope.AGENT, tags=["important"])
         manager.copy("entry2", "Content 2", scope=ClipboardScope.AGENT, tags=["urgent"])
-        manager.copy("entry3", "Content 3", scope=ClipboardScope.AGENT, tags=["important", "urgent"])
+        manager.copy(
+            "entry3",
+            "Content 3",
+            scope=ClipboardScope.AGENT,
+            tags=["important", "urgent"],
+        )
 
         # Filter by "important" tag
         results = manager.list_entries(tags=["important"])
@@ -646,7 +655,12 @@ class TestTags:
 
         manager.copy("entry1", "Content 1", scope=ClipboardScope.AGENT, tags=["important"])
         manager.copy("entry2", "Content 2", scope=ClipboardScope.AGENT, tags=["urgent"])
-        manager.copy("entry3", "Content 3", scope=ClipboardScope.AGENT, tags=["important", "urgent"])
+        manager.copy(
+            "entry3",
+            "Content 3",
+            scope=ClipboardScope.AGENT,
+            tags=["important", "urgent"],
+        )
 
         # Filter by both tags (AND logic - must have ALL)
         results = manager.list_entries(tags=["important", "urgent"])
