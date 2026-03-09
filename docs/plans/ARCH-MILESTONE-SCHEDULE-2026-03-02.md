@@ -320,7 +320,7 @@ Exit gates:
 5. Structural refactor wave:
    - [STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/STRUCTURAL-REFACTOR-WAVE-PLAN-2026-03-05.md)
    - Target window: post-M4 cleanup (non-blocking for security gates).
-   - Status note (2026-03-09): kickoff + REPL + Session Phase 2A/2B slices
+   - Status note (2026-03-09): kickoff + REPL + Session Phase 2A/2C slices
      complete in WSL:
      - extraction map and compatibility-boundary policy documented in plan.
      - Phase 1A completed: REPL formatting/sanitization helpers extracted to
@@ -338,14 +338,21 @@ Exit gates:
        `nexus3/session/tool_runtime.py` with `Session._execute_skill(...)` and
        `Session._execute_tools_parallel(...)` retained as compatibility
        wrappers.
+     - Phase 2C completed: Session permission runtime helpers extracted to
+       `nexus3/session/permission_runtime.py` with
+       `Session._handle_mcp_permissions(...)` and
+       `Session._handle_gitlab_permissions(...)` retained as compatibility
+       wrappers.
      - focused parity checks passed for Session compaction/runtime extraction
        in session + compaction/context suites (`54 passed`, `75 passed`).
      - focused parity checks passed for Session tool execution extraction in
        session unit/integration suites (`54 passed`, `30 passed`).
+     - focused parity checks passed for Session permission runtime extraction
+       in session unit/integration suites (`54 passed`, `30 passed`).
      - focused parity checks passed for REPL formatting/runtime/reload, REPL
        command, connect-lobby, and client paths.
      - next gate: remaining Session extraction internals
-       (permission/MCP/GitLab handling) with parity validation before
+       (tool-loop/core send-turn internals) with parity validation before
        pool/display slices.
    - Dependency gates:
      - No unresolved high-priority behavior defects in REPL/session/pool runtime paths.

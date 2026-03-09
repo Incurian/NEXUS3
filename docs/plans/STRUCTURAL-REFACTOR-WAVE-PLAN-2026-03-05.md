@@ -140,8 +140,25 @@ Execution notes:
     - `.venv/bin/mypy nexus3/session/session.py nexus3/session/compaction_runtime.py nexus3/session/tool_runtime.py`
     - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_permission_kernelization.py` (`54 passed`)
     - `.venv/bin/pytest -q tests/integration/test_skill_execution.py tests/integration/test_permission_enforcement.py` (`30 passed`)
-- Next gate: execute remaining Session extraction internals (permission/MCP/GitLab
-  handling) with focused parity checks.
+- 2026-03-09: Phase 2C (Session permission runtime extraction) completed in
+  WSL.
+  - Added `nexus3/session/permission_runtime.py` for permission runtime helper
+    ownership.
+  - Moved `_McpLevelAuthorizationAdapter`,
+    `_GitLabLevelAuthorizationAdapter`, and internals of
+    `_handle_mcp_permissions(...)` / `_handle_gitlab_permissions(...)` into
+    runtime helpers.
+  - Kept `Session` permission-handling methods as thin wrappers for
+    compatibility.
+  - Behavior parity preserved for kernel-authoritative decisions and
+    confirmation flows.
+  - Focused validation passed:
+    - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/compaction_runtime.py nexus3/session/tool_runtime.py nexus3/session/permission_runtime.py`
+    - `.venv/bin/mypy nexus3/session/session.py nexus3/session/compaction_runtime.py nexus3/session/tool_runtime.py nexus3/session/permission_runtime.py`
+    - `.venv/bin/pytest -q tests/unit/session/test_session_permission_kernelization.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_cancellation.py` (`54 passed`)
+    - `.venv/bin/pytest -q tests/integration/test_permission_enforcement.py tests/integration/test_skill_execution.py` (`30 passed`)
+- Next gate: execute remaining Session extraction internals (tool-loop/core
+  send-turn internals) with focused parity checks.
 
 ## Testing Strategy
 
@@ -164,8 +181,10 @@ Execution notes:
       focused parity checks.
 - [x] Complete Session Phase 2B tool execution primitives extraction with
       focused parity checks.
-- [ ] Complete remaining Session extraction internals (permission/MCP/GitLab
-      handling) with parity checks.
+- [x] Complete Session Phase 2C permission runtime extraction with focused
+      parity checks.
+- [ ] Complete remaining Session extraction internals (tool-loop/core send-turn
+      internals) with parity checks.
 - [ ] Complete Pool extraction slices with parity checks.
 - [ ] Land display-config cleanup with documented override contract.
 - [ ] Remove temporary compatibility wrappers after one full green cycle.

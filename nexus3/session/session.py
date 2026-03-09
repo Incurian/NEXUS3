@@ -17,11 +17,6 @@ from nexus3.context.compiler import compile_context_messages
 from nexus3.context.git_context import should_refresh_git_context
 from nexus3.core.authorization_kernel import (
     AdapterAuthorizationKernel,
-    AuthorizationAction,
-    AuthorizationDecision,
-    AuthorizationRequest,
-    AuthorizationResource,
-    AuthorizationResourceType,
 )
 from nexus3.core.interfaces import AsyncProvider
 from nexus3.core.permissions import AgentPermissions, ConfirmationResult
@@ -61,6 +56,16 @@ from nexus3.session.events import (
     ToolStarted,
 )
 from nexus3.session.http_logging import clear_current_logger, set_current_logger
+from nexus3.session.permission_runtime import (
+    _GitLabLevelAuthorizationAdapter,
+    _McpLevelAuthorizationAdapter,
+)
+from nexus3.session.permission_runtime import (
+    handle_gitlab_permissions as handle_gitlab_permissions_runtime,
+)
+from nexus3.session.permission_runtime import (
+    handle_mcp_permissions as handle_mcp_permissions_runtime,
+)
 from nexus3.session.tool_runtime import (
     execute_skill as execute_skill_runtime,
 )
@@ -98,34 +103,6 @@ ToolActiveCallback = Callable[[str, str], None]  # (name, id) - tool starting ex
 BatchProgressCallback = Callable[[str, str, bool, str, str], None]
 BatchHaltCallback = Callable[[], None]  # Sequential batch halted due to error
 BatchCompleteCallback = Callable[[], None]  # All tools in batch finished
-
-
-class _McpLevelAuthorizationAdapter:
-    """Kernel adapter mirroring MCP level gating in session tool execution."""
-
-    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
-        if request.action != AuthorizationAction.TOOL_EXECUTE:
-            return None
-        if request.resource.resource_type != AuthorizationResourceType.TOOL:
-            return None
-
-        if bool(request.context.get("mcp_level_allowed", False)):
-            return AuthorizationDecision.allow(request, reason="mcp_level_allowed")
-        return AuthorizationDecision.deny(request, reason="mcp_level_denied")
-
-
-class _GitLabLevelAuthorizationAdapter:
-    """Kernel adapter mirroring GitLab level gating in session tool execution."""
-
-    def authorize(self, request: AuthorizationRequest) -> AuthorizationDecision | None:
-        if request.action != AuthorizationAction.TOOL_EXECUTE:
-            return None
-        if request.resource.resource_type != AuthorizationResourceType.TOOL:
-            return None
-
-        if bool(request.context.get("gitlab_level_allowed", False)):
-            return AuthorizationDecision.allow(request, reason="gitlab_level_allowed")
-        return AuthorizationDecision.deny(request, reason="gitlab_level_denied")
 
 
 class Session:
@@ -1020,49 +997,16 @@ class Session:
         Returns:
             ToolResult with error if permission denied, None if allowed.
         """
-        from nexus3.core.permissions import PermissionLevel
-        from nexus3.mcp.permissions import can_use_mcp
-
-        mcp_level_allowed = can_use_mcp(permissions)
-        requester_id = self._services.get("agent_id") if self._services else None
-        principal_id = requester_id if isinstance(requester_id, str) and requester_id else "unknown"
-        kernel_request = AuthorizationRequest(
-            action=AuthorizationAction.TOOL_EXECUTE,
-            resource=AuthorizationResource(
-                resource_type=AuthorizationResourceType.TOOL,
-                identifier=tool_call.name,
-            ),
-            principal_id=principal_id,
-            context={"mcp_level_allowed": mcp_level_allowed},
+        return await handle_mcp_permissions_runtime(
+            tool_call=tool_call,
+            skill=skill,
+            server_name=server_name,
+            permissions=permissions,
+            authorization_kernel=self._mcp_authorization_kernel,
+            confirmation=self._confirmation,
+            services=self._services,
+            on_confirm=self.on_confirm,
         )
-        kernel_decision = self._mcp_authorization_kernel.authorize(kernel_request)
-        if not kernel_decision.allowed:
-            return ToolResult(error="MCP tools require TRUSTED or YOLO permission level")
-
-        if not skill:
-            return None  # Let caller handle unknown skill
-
-        # Check if confirmation needed for this MCP tool/server
-        level = permissions.effective_policy.level
-        if level != PermissionLevel.YOLO:
-            allowances = permissions.session_allowances
-            server_allowed = allowances.is_mcp_server_allowed(server_name)
-            tool_allowed = allowances.is_mcp_tool_allowed(tool_call.name)
-
-            if not server_allowed and not tool_allowed:
-                agent_cwd = self._services.get_cwd() if self._services else Path.cwd()
-                result = await self._confirmation.request(
-                    tool_call, None, agent_cwd, self.on_confirm
-                )
-
-                if result == ConfirmationResult.DENY:
-                    return ToolResult(error="MCP tool action denied by user")
-
-                self._confirmation.apply_mcp_result(
-                    permissions, result, tool_call.name, server_name
-                )
-
-        return None
 
     async def _handle_gitlab_permissions(
         self,
@@ -1080,61 +1024,15 @@ class Session:
         Returns:
             ToolResult with error if permission denied, None if allowed.
         """
-        from nexus3.skill.vcs.gitlab.permissions import (
-            can_use_gitlab,
-            requires_gitlab_confirmation,
+        return await handle_gitlab_permissions_runtime(
+            tool_call=tool_call,
+            skill=skill,
+            permissions=permissions,
+            authorization_kernel=self._gitlab_authorization_kernel,
+            confirmation=self._confirmation,
+            services=self._services,
+            on_confirm=self.on_confirm,
         )
-
-        gitlab_level_allowed = can_use_gitlab(permissions)
-        requester_id = self._services.get("agent_id") if self._services else None
-        principal_id = requester_id if isinstance(requester_id, str) and requester_id else "unknown"
-        kernel_request = AuthorizationRequest(
-            action=AuthorizationAction.TOOL_EXECUTE,
-            resource=AuthorizationResource(
-                resource_type=AuthorizationResourceType.TOOL,
-                identifier=tool_call.name,
-            ),
-            principal_id=principal_id,
-            context={"gitlab_level_allowed": gitlab_level_allowed},
-        )
-        kernel_decision = self._gitlab_authorization_kernel.authorize(kernel_request)
-        if not kernel_decision.allowed:
-            return ToolResult(error="GitLab tools require TRUSTED or YOLO permission level")
-
-        if not skill:
-            return None  # Let caller handle unknown skill
-
-        # Extract action and instance from arguments
-        action = tool_call.arguments.get("action", "")
-        instance_name = tool_call.arguments.get("instance")
-
-        # Resolve instance to get host
-        gitlab_config = self._services.get_gitlab_config() if self._services else None
-        if not gitlab_config:
-            return None  # Should not happen if skill exists
-
-        instance = gitlab_config.get_instance(instance_name)
-        if not instance:
-            # Let skill handle the error (will produce better error message)
-            return None
-
-        instance_host = instance.host
-
-        # Check if confirmation needed
-        if requires_gitlab_confirmation(permissions, tool_call.name, instance_host, action):
-            agent_cwd = self._services.get_cwd() if self._services else Path.cwd()
-            result = await self._confirmation.request(
-                tool_call, None, agent_cwd, self.on_confirm
-            )
-
-            if result == ConfirmationResult.DENY:
-                return ToolResult(error="GitLab action denied by user")
-
-            self._confirmation.apply_gitlab_result(
-                permissions, result, tool_call.name, instance_host
-            )
-
-        return None
 
     async def _execute_skill(
         self,
