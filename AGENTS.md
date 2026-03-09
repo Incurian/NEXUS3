@@ -442,9 +442,22 @@ Immediate tasks:
     `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_runtime.py nexus3/cli/repl_reload.py`,
     `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/unit/test_repl_commands.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/test_client.py`
     (`125 passed`).
-- Next target: execute structural-refactor Phase 2 Session extraction slices,
-  while keeping manual provider keep-alive endpoint evidence capture queued for
-  real endpoint availability.
+- Completed (2026-03-09, structural-refactor Phase 2A): Session compaction
+  runtime helper extraction:
+  - added `nexus3/session/compaction_runtime.py` and moved compaction provider
+    and summary helper internals there.
+  - kept `Session._get_compaction_provider(...)` and
+    `Session._generate_summary(...)` as thin wrappers for compatibility.
+  - behavior parity preserved: lazy provider creation, compaction cache
+    semantics, and logger lifecycle.
+  - focused validation passed:
+    `.venv/bin/ruff check nexus3/session/session.py nexus3/session/compaction_runtime.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_compaction.py tests/unit/test_context_manager.py tests/unit/context/test_graph.py tests/unit/context/test_compiler.py tests/unit/context/test_compile_baseline.py`,
+    `.venv/bin/mypy nexus3/session/session.py nexus3/session/compaction_runtime.py`,
+    `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_permission_kernelization.py` (`54 passed`),
+    `.venv/bin/pytest -q tests/unit/test_compaction.py tests/unit/test_context_manager.py tests/unit/context/test_graph.py tests/unit/context/test_compiler.py tests/unit/context/test_compile_baseline.py` (`75 passed`).
+- Next target: execute structural-refactor Phase 2B Session extraction slice
+  for tool execution internals, while keeping manual provider keep-alive
+  endpoint evidence capture queued for real endpoint availability.
 - Completed (2026-03-06, committed `abef28a`): race follow-up slice
   (`post-m4-20260306-live1c`):
   - updated `scripts/validation/race_harness.py` with
@@ -541,7 +554,7 @@ Compact handover checkpoint (2026-03-09, post-structural Phase 1B wave):
   - `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_runtime.py nexus3/cli/repl_reload.py` passed.
   - `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/unit/test_repl_commands.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/test_client.py` passed (`125 passed`).
 - Next gate after compact:
-  1. Execute structural-refactor Phase 2 Session extraction slices with focused parity checks.
+  1. Execute structural-refactor Phase 2B Session extraction slice (tool execution internals) with focused parity checks.
   2. Keep manual provider keep-alive endpoint evidence capture queued until real endpoint access is available.
   3. Windows host is not required for the immediate next gate.
 

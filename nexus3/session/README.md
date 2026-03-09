@@ -18,6 +18,7 @@ The session module is the heart of NEXUS3's conversation management. It coordina
 nexus3/session/
 ├── __init__.py          # Public exports
 ├── session.py           # Session class - main coordinator
+├── compaction_runtime.py # Compaction provider/summary runtime helpers
 ├── session_manager.py   # Disk persistence (save/load/list sessions)
 ├── events.py            # Typed SessionEvent hierarchy
 ├── types.py             # LogConfig, LogStream, SessionInfo
@@ -37,6 +38,11 @@ nexus3/session/
 ## Session Class
 
 The `Session` class is the main coordinator between the CLI/REPL and the LLM provider. It manages multi-turn conversations, tool execution loops, and context compaction.
+
+Compatibility note: `Session._get_compaction_provider()` and
+`Session._generate_summary()` are retained as thin wrappers that delegate to
+`compaction_runtime.py`, so existing `Session` call sites stay stable during
+extraction.
 
 ### Callback Type Aliases (from `session.py`)
 
@@ -872,7 +878,8 @@ If `compaction.model` is configured, a separate provider is used for summarizati
 
 | Module | Dependency |
 |--------|------------|
-| `session.py` | `core.types`, `core.errors`, `core.interfaces`, `core.permissions`, `core.validation`, `context.compaction`, `session.events`, `session.dispatcher`, `session.enforcer`, `session.confirmation`, `session.http_logging` |
+| `session.py` | `core.types`, `core.errors`, `core.interfaces`, `core.permissions`, `core.validation`, `context.compaction`, `session.events`, `session.dispatcher`, `session.enforcer`, `session.confirmation`, `session.http_logging`, `session.compaction_runtime` |
+| `compaction_runtime.py` | `context.compaction`, `core.interfaces`, `core.types`, `session.http_logging` (lazy runtime import: `provider.create_provider`) |
 | `logging.py` | `core.types`, `core.secure_io`, `session.storage`, `session.markdown`, `session.events`, `session.types` |
 | `storage.py` | `core.secure_io` (sqlite3 stdlib) |
 | `persistence.py` | `core.types`, `core.errors`, `clipboard.types` |
@@ -899,4 +906,4 @@ If `compaction.model` is configured, a separate provider is used for summarizati
 
 ---
 
-Updated: 2026-02-10
+Updated: 2026-03-09

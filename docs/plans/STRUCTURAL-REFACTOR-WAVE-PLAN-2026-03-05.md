@@ -112,7 +112,22 @@ Execution notes:
     - `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_runtime.py nexus3/cli/repl_reload.py`
     - `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_runtime.py nexus3/cli/repl_reload.py`
     - `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/unit/test_repl_commands.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/test_client.py` (`125 passed`)
-- Next gate: execute Phase 2 Session extraction slices with focused parity checks.
+- 2026-03-09: Phase 2A (Session compaction runtime helper extraction)
+  completed in WSL.
+  - Added `nexus3/session/compaction_runtime.py` for compaction provider and
+    summary helper logic.
+  - Kept `Session._get_compaction_provider(...)` and
+    `Session._generate_summary(...)` as thin wrappers delegating to the helper
+    module.
+  - Behavior parity preserved: lazy provider creation, compaction cache
+    semantics, and logger lifecycle.
+  - Focused validation passed:
+    - `.venv/bin/ruff check nexus3/session/session.py nexus3/session/compaction_runtime.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_compaction.py tests/unit/test_context_manager.py tests/unit/context/test_graph.py tests/unit/context/test_compiler.py tests/unit/context/test_compile_baseline.py`
+    - `.venv/bin/mypy nexus3/session/session.py nexus3/session/compaction_runtime.py`
+    - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_permission_kernelization.py` (`54 passed`)
+    - `.venv/bin/pytest -q tests/unit/test_compaction.py tests/unit/test_context_manager.py tests/unit/context/test_graph.py tests/unit/context/test_compiler.py tests/unit/context/test_compile_baseline.py` (`75 passed`)
+- Next gate: execute Phase 2B Session extraction slice (tool execution
+  internals) with focused parity checks.
 
 ## Testing Strategy
 
@@ -131,7 +146,10 @@ Execution notes:
       compatibility import boundaries.
 - [x] Complete REPL formatting-helper extraction slice with parity checks.
 - [x] Complete REPL extraction slices with parity checks.
-- [ ] Complete Session extraction slices with parity checks.
+- [x] Complete Session Phase 2A compaction runtime helper extraction with
+      focused parity checks.
+- [ ] Complete remaining Session extraction slices (next: tool execution
+      internals) with parity checks.
 - [ ] Complete Pool extraction slices with parity checks.
 - [ ] Land display-config cleanup with documented override contract.
 - [ ] Remove temporary compatibility wrappers after one full green cycle.

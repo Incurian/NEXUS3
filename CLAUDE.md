@@ -1387,6 +1387,14 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - `nexus3/cli/repl_runtime.py` now owns REPL runtime/client-discovery helpers.
   - `nexus3/cli/repl_reload.py` now owns REPL reload helper logic.
   - `nexus3/cli/repl.py` retains façade-compatible symbols/imports.
+- Structural-refactor Phase 2A (Session compaction runtime helper extraction)
+  is completed:
+  - `nexus3/session/compaction_runtime.py` now owns compaction provider and
+    summary helper internals.
+  - `Session._get_compaction_provider(...)` and
+    `Session._generate_summary(...)` remain thin wrappers for compatibility.
+  - behavior parity preserved (lazy provider creation, compaction cache
+    semantics, logger lifecycle).
 - Focused validation snapshot:
   - passed:
     `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
@@ -1402,6 +1410,16 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - passed:
     `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/unit/test_repl_commands.py tests/unit/cli/test_connect_lobby_safe_sink.py tests/unit/test_client.py`
     (`125 passed`).
+  - passed:
+    `.venv/bin/ruff check nexus3/session/session.py nexus3/session/compaction_runtime.py tests/unit/session/test_session_cancellation.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_permission_kernelization.py tests/unit/test_compaction.py tests/unit/test_context_manager.py tests/unit/context/test_graph.py tests/unit/context/test_compiler.py tests/unit/context/test_compile_baseline.py`
+  - passed:
+    `.venv/bin/mypy nexus3/session/session.py nexus3/session/compaction_runtime.py`
+  - passed:
+    `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/unit/session/test_enforcer.py tests/unit/session/test_session_permission_kernelization.py`
+    (`54 passed`).
+  - passed:
+    `.venv/bin/pytest -q tests/unit/test_compaction.py tests/unit/test_context_manager.py tests/unit/context/test_graph.py tests/unit/context/test_compiler.py tests/unit/context/test_compile_baseline.py`
+    (`75 passed`).
   - passed:
     `.venv/bin/ruff check nexus3/rpc/global_dispatcher.py tests/unit/rpc/test_schema_ingress_wiring.py`
   - passed:
@@ -1427,11 +1445,12 @@ Architecture execution running status (2026-03-09, Plan H closeout + keep-alive 
   - Plan C slices 1-3 follow-on is committed as `5c0e843` and `8143afe`.
   - Provider keep-alive kickoff slice is committed as `05ffb84`
     (`base.py`, `test_keepalive_recovery.py`, Step 10 JSON evidence).
-  - Structural-refactor Phase 1B extraction is complete
-    (`repl_runtime.py`, `repl_reload.py`, `repl.py` façade parity maintained).
+  - Structural-refactor Phase 2A extraction is complete
+    (`compaction_runtime.py` extracted; `session.py` compaction methods remain
+    compatibility wrappers).
 - Concrete resume steps for post-compact continuation:
-  1. Execute structural-refactor Phase 2 Session extraction slices with focused
-     parity checks.
+  1. Execute structural-refactor Phase 2B Session extraction slice
+     (tool execution internals) with focused parity checks.
   2. Run manual endpoint validation with
      `scripts/diagnose-empty-stream.sh` and archive `10-keepalive-evidence.json`
      from at least one problematic and one known-good endpoint run when real

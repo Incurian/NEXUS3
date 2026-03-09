@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any
 
 from nexus3.context.compaction import (
     CompactionResult,
-    build_summarize_prompt,
     create_summary_message,
     select_messages_for_compaction,
 )
@@ -38,6 +37,12 @@ from nexus3.core.types import (
     ToolResult,
 )
 from nexus3.core.validation import ValidationError, validate_tool_arguments
+from nexus3.session.compaction_runtime import (
+    generate_summary as generate_compaction_summary,
+)
+from nexus3.session.compaction_runtime import (
+    get_compaction_provider as get_compaction_provider_runtime,
+)
 from nexus3.session.confirmation import ConfirmationController
 from nexus3.session.dispatcher import ToolDispatcher
 from nexus3.session.enforcer import PermissionEnforcer
@@ -1301,26 +1306,7 @@ class Session:
         Returns:
             Provider for compaction requests.
         """
-        if self._compaction_provider is not None:
-            return self._compaction_provider
-
-        if self._config is None:
-            return self.provider
-
-        compaction_model = self._config.compaction.model
-        if compaction_model is None:
-            # No separate model configured, use main provider
-            return self.provider
-
-        # Resolve compaction model alias to get provider and model_id
-        from nexus3.provider import create_provider
-
-        resolved = self._config.resolve_model(compaction_model)
-        provider_config = self._config.get_provider_config(resolved.provider_name)
-        self._compaction_provider = create_provider(
-            provider_config, resolved.model_id
-        )
-        return self._compaction_provider
+        return get_compaction_provider_runtime(self)
 
     async def _generate_summary(
         self, messages: list[Message], compaction_config: "CompactionConfig"
@@ -1334,22 +1320,4 @@ class Session:
         Returns:
             Summary text
         """
-        prompt = build_summarize_prompt(messages)
-
-        # Build minimal message for summarization
-        summary_messages = [
-            Message(role=Role.USER, content=prompt)
-        ]
-
-        # Set current logger for HTTP debug routing to verbose.md
-        if self.logger:
-            set_current_logger(self.logger)
-
-        try:
-            # Use compaction provider (may be different model than main)
-            provider = self._get_compaction_provider()
-            response = await provider.complete(summary_messages, tools=None)
-
-            return response.content
-        finally:
-            clear_current_logger()
+        return await generate_compaction_summary(self, messages, compaction_config)
