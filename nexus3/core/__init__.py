@@ -53,6 +53,7 @@ from nexus3.core.shell_detection import (
     WindowsShell,
     check_console_codepage,
     detect_windows_shell,
+    resolve_git_bash_executable,
     supports_ansi,
     supports_unicode,
 )
@@ -136,6 +137,7 @@ __all__ = [
     # Shell detection
     "WindowsShell",
     "detect_windows_shell",
+    "resolve_git_bash_executable",
     "supports_ansi",
     "supports_unicode",
     "check_console_codepage",

@@ -91,15 +91,44 @@ class TestShellUnsafeWindowsShellSelection:
         monkeypatch.setattr(bash_mod.subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200, raising=False)
         monkeypatch.setattr(bash_mod.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
 
-        with patch(
-            "nexus3.skill.builtin.bash.asyncio.create_subprocess_exec",
-            new=AsyncMock(return_value=MagicMock()),
-        ) as mock_exec:
+        with (
+            patch(
+                "nexus3.skill.builtin.bash.resolve_git_bash_executable",
+                return_value=r"C:\Program Files\Git\usr\bin\bash.exe",
+            ) as mock_resolve,
+            patch(
+                "nexus3.skill.builtin.bash.asyncio.create_subprocess_exec",
+                new=AsyncMock(return_value=MagicMock()),
+            ) as mock_exec,
+        ):
             await skill._create_process(work_dir=None, command=command)
 
+        mock_resolve.assert_called_once()
         mock_exec.assert_awaited_once()
         args = mock_exec.await_args.args
-        assert args[:3] == ("bash", "-lc", command)
+        assert args[:3] == (r"C:\Program Files\Git\usr\bin\bash.exe", "-lc", command)
+        assert mock_exec.await_args.kwargs["env"]["MSYSTEM"] == "MINGW64"
+
+    @pytest.mark.asyncio
+    async def test_fails_closed_when_git_bash_cannot_be_resolved(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        services = _make_services(permission_level=PermissionLevel.TRUSTED)
+        skill = ShellUnsafeSkill(services)
+
+        monkeypatch.setattr("nexus3.skill.builtin.bash.sys.platform", "win32")
+        monkeypatch.setenv("MSYSTEM", "MINGW64")
+        monkeypatch.delenv("PSModulePath", raising=False)
+
+        with patch(
+            "nexus3.skill.builtin.bash.resolve_git_bash_executable",
+            return_value=None,
+        ):
+            result = await skill.execute(command="echo hello")
+
+        assert result.error is not None
+        assert "Git Bash shell could not be resolved safely on Windows" in result.error
 
     @pytest.mark.asyncio
     async def test_uses_powershell_when_psmodulepath_set(

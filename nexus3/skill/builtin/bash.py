@@ -30,6 +30,7 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from nexus3.core.permissions import PermissionLevel
+from nexus3.core.shell_detection import resolve_git_bash_executable
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import ExecutionSkill, execution_skill_factory
 from nexus3.skill.builtin.env import get_safe_env
@@ -289,17 +290,25 @@ class ShellUnsafeSkill(ExecutionSkill):
         # On Windows, route through the active shell family when detectable.
         # This prevents cmd.exe fallback from breaking Git Bash / PowerShell syntax.
         if sys.platform == "win32":
+            env = get_safe_env(work_dir)
+            creationflags = (
+                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) |
+                getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            )
             if os.environ.get("MSYSTEM"):
+                bash_executable = resolve_git_bash_executable(env.get("PATH"))
+                if bash_executable is None:
+                    raise OSError(
+                        "Git Bash shell could not be resolved safely on Windows"
+                    )
+                env["MSYSTEM"] = os.environ["MSYSTEM"]
                 return await asyncio.create_subprocess_exec(
-                    "bash", "-lc", command,
+                    bash_executable, "-lc", command,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     cwd=work_dir,
-                    env=get_safe_env(work_dir),
-                    creationflags=(
-                        subprocess.CREATE_NEW_PROCESS_GROUP |
-                        subprocess.CREATE_NO_WINDOW
-                    ),
+                    env=env,
+                    creationflags=creationflags,
                 )
             if os.environ.get("PSModulePath"):
                 return await asyncio.create_subprocess_exec(
@@ -308,22 +317,16 @@ class ShellUnsafeSkill(ExecutionSkill):
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     cwd=work_dir,
-                    env=get_safe_env(work_dir),
-                    creationflags=(
-                        subprocess.CREATE_NEW_PROCESS_GROUP |
-                        subprocess.CREATE_NO_WINDOW
-                    ),
+                    env=env,
+                    creationflags=creationflags,
                 )
             return await asyncio.create_subprocess_shell(
                 command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=work_dir,
-                env=get_safe_env(work_dir),
-                creationflags=(
-                    subprocess.CREATE_NEW_PROCESS_GROUP |
-                    subprocess.CREATE_NO_WINDOW
-                ),
+                env=env,
+                creationflags=creationflags,
             )
         else:
             return await asyncio.create_subprocess_shell(

@@ -8,10 +8,12 @@ import pytest
 
 from nexus3.core.shell_detection import (
     WindowsShell,
+    check_console_codepage,
     detect_windows_shell,
+    is_windows_wsl_bash_shim,
+    resolve_git_bash_executable,
     supports_ansi,
     supports_unicode,
-    check_console_codepage,
 )
 
 
@@ -190,3 +192,71 @@ class TestCheckConsoleCodepage:
             from nexus3.core.shell_detection import check_console_codepage
             codepage, is_utf8 = check_console_codepage()
             # Note: may still get real value depending on import order
+
+
+class TestResolveGitBashExecutable:
+    """Test explicit Git Bash executable resolution on Windows."""
+
+    @pytest.mark.windows_mock
+    def test_rejects_known_wsl_shims(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(sys, "platform", "win32")
+
+        assert is_windows_wsl_bash_shim(r"C:\Windows\System32\bash.exe") is True
+        assert is_windows_wsl_bash_shim(
+            r"C:\Users\inc\AppData\Local\Microsoft\WindowsApps\bash.exe"
+        ) is True
+        assert is_windows_wsl_bash_shim(r"C:\Program Files\Git\usr\bin\bash.exe") is False
+
+    @pytest.mark.windows_mock
+    def test_prefers_git_bash_path_over_wsl_shim(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", "win32")
+
+        path_value = (
+            r"C:\Windows\System32;"
+            r"C:\Program Files\Git\usr\bin;"
+            r"C:\Users\inc\AppData\Local\Microsoft\WindowsApps"
+        )
+
+        def fake_isfile(path: str) -> bool:
+            normalized = os.path.normcase(os.path.normpath(path))
+            return normalized in {
+                os.path.normcase(os.path.normpath(r"C:\Windows\System32\bash.exe")),
+                os.path.normcase(
+                    os.path.normpath(r"C:\Program Files\Git\usr\bin\bash.exe")
+                ),
+                os.path.normcase(
+                    os.path.normpath(
+                        r"C:\Users\inc\AppData\Local\Microsoft\WindowsApps\bash.exe"
+                    )
+                ),
+            }
+
+        monkeypatch.setattr("nexus3.core.shell_detection.os.path.isfile", fake_isfile)
+
+        assert resolve_git_bash_executable(path_value) == r"C:\Program Files\Git\usr\bin\bash.exe"
+
+    @pytest.mark.windows_mock
+    def test_falls_back_to_common_git_install_root(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", "win32")
+
+        path_value = r"C:\Windows\System32"
+
+        def fake_isfile(path: str) -> bool:
+            normalized = os.path.normcase(os.path.normpath(path))
+            return normalized in {
+                os.path.normcase(os.path.normpath(r"C:\Windows\System32\bash.exe")),
+                os.path.normcase(
+                    os.path.normpath(r"C:\Program Files\Git\usr\bin\bash.exe")
+                ),
+            }
+
+        monkeypatch.setattr("nexus3.core.shell_detection.os.path.isfile", fake_isfile)
+        monkeypatch.setenv("ProgramFiles", r"C:\Program Files")
+
+        assert resolve_git_bash_executable(path_value) == r"C:\Program Files\Git\usr\bin\bash.exe"

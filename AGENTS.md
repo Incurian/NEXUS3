@@ -226,11 +226,12 @@ Current milestone:
     to track the open post-arch bugfix backlog (file-editing safety/contract
     fixes, Git Bash shell bug, Git Bash ESC, Git Bash multiline paste, docs
     closeout).
-  - active execution gate: Phase 4 from that plan
-    (`shell_UNSAFE` Windows Git-Bash WSL misrouting).
-  - most recent completed gate: Phase 1
-    (`edit_lines` / `patch` sandboxed+TRUSTED+path-semantics hardening),
-    with focused validation now green.
+  - active execution gate: Phase 2 from that plan
+    (`read_file` / `outline` / `patch` contract cleanup and `edit_file`
+    batch-atomicity alignment).
+  - most recent completed gate: Phase 4
+    (`shell_UNSAFE` Windows Git-Bash WSL misrouting), with focused validation
+    now green.
 - `Post-M4` validation campaign closeout complete: external closeout slice
   `post-m4-20260306-live1e` archived real-host Windows evidence and
   multi-emulator carriage-return verification; deterministic closeout gate
@@ -243,12 +244,33 @@ Immediate tasks:
   - canonical next-work plan:
     [POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md)
   - preferred execution order from the new plan:
-    1. Phase 4: fix Windows `shell_UNSAFE` Git-Bash shell resolution.
-    2. Phase 2: align `read_file` / `outline` / `patch` contracts and
+    1. Phase 2: align `read_file` / `outline` / `patch` contracts and
        `edit_file` batch atomicity.
-    3. Phase 3: newline / encoding / regex hardening.
-    4. Phase 5: Git Bash ESC + multiline paste.
-    5. Phase 6: docs and live validation closeout.
+    2. Phase 3: newline / encoding / regex hardening.
+    3. Phase 5: Git Bash ESC + multiline paste.
+    4. Phase 6: docs and live validation closeout.
+- Completed follow-on hardening slice (2026-03-09): Plan Phase 4
+  Windows `shell_UNSAFE` Git-Bash shell resolution:
+  - `nexus3/core/shell_detection.py`
+    - added explicit Git-Bash executable resolution that scans PATH and common
+      Git-for-Windows install roots while rejecting known WSL launcher shims
+      (`System32\\bash.exe`, `WindowsApps\\bash.exe`).
+  - `nexus3/skill/builtin/bash.py`
+    - Windows Git-Bash `shell_UNSAFE` branch now launches the resolved
+      executable path instead of bare `bash`, preserves `MSYSTEM` only for that
+      child shell, and fails closed with a deterministic error if no safe Git
+      Bash executable can be found.
+  - `nexus3/core/__init__.py`
+    - exported the new shell-resolution helper.
+  - focused regression coverage added/updated in:
+    - `tests/unit/core/test_shell_detection.py`
+    - `tests/unit/skill/test_bash_windows_behavior.py`
+  - focused validation passed:
+    - `git diff --check`
+    - `.venv/bin/ruff check nexus3/core/__init__.py nexus3/core/shell_detection.py nexus3/skill/builtin/bash.py tests/unit/core/test_shell_detection.py tests/unit/skill/test_bash_windows_behavior.py`
+    - `.venv/bin/pytest -q tests/unit/core/test_shell_detection.py tests/unit/skill/test_bash_windows_behavior.py`
+  - next gate: Phase 2 (`read_file` / `outline` / `patch` contracts and
+    `edit_file` batch atomicity).
 - Completed follow-on hardening slice (2026-03-09): Plan Phase 1
   `edit_lines` / `patch` sandboxed + TRUSTED + path-semantics hardening:
   - `nexus3/rpc/global_dispatcher.py`
@@ -269,7 +291,8 @@ Immediate tasks:
     - `git diff --check`
     - `.venv/bin/ruff check nexus3/rpc/global_dispatcher.py nexus3/core/policy.py nexus3/session/path_semantics.py tests/unit/test_global_dispatcher.py tests/security/test_multipath_confirmation.py tests/unit/test_permissions.py`
     - `.venv/bin/pytest -q tests/unit/test_global_dispatcher.py tests/security/test_multipath_confirmation.py tests/unit/test_permissions.py`
-  - next gate: Phase 4 (`shell_UNSAFE` Windows Git-Bash WSL misrouting).
+  - next gate at completion time was Phase 4 (`shell_UNSAFE` Windows Git-Bash
+    WSL misrouting), now complete.
 - Compact review handoff (2026-03-09, file-editing tool/doc audit; no code
   changes yet):
   - user requested a deep-dive sanity check of file-editing tools, cross-OS

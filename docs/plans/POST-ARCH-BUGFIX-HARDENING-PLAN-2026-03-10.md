@@ -272,8 +272,8 @@ Rationale:
 - [x] Create execution tracker entries in `AGENTS.md` for this plan and keep them current.
 - [x] Phase 1: close `edit_lines` / `patch` sandboxed, TRUSTED, and path-semantics gaps.
 - [x] Phase 1: add focused permission/confirmation regressions.
-- [ ] Phase 4: fix Windows `shell_UNSAFE` Git-Bash shell resolution.
-- [ ] Phase 4: add focused Windows shell-resolution regressions.
+- [x] Phase 4: fix Windows `shell_UNSAFE` Git-Bash shell resolution.
+- [x] Phase 4: add focused Windows shell-resolution regressions.
 - [ ] Phase 2: align `read_file` / `outline` / `patch` agent-facing contract.
 - [ ] Phase 2: fix or re-spec `edit_file` batch atomicity.
 - [ ] Phase 3: fix newline, encoding, and regex hardening items.

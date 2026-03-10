@@ -10,12 +10,25 @@ SINGLE SOURCE OF TRUTH for shell detection across NEXUS3.
 from __future__ import annotations
 
 import logging
+import ntpath
 import os
+import shutil
 import sys
 from enum import Enum, auto
 from functools import lru_cache
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_windows_path(path: str) -> str:
+    """Normalize a Windows path for case-insensitive comparisons."""
+    return ntpath.normcase(ntpath.normpath(path))
+
+
+_WSL_BASH_SHIM_SUFFIXES = (
+    _normalize_windows_path(r"\Windows\System32\bash.exe"),
+    _normalize_windows_path(r"\AppData\Local\Microsoft\WindowsApps\bash.exe"),
+)
 
 
 class WindowsShell(Enum):
@@ -69,6 +82,72 @@ def detect_windows_shell() -> WindowsShell:
 
     logger.debug("Unknown Windows shell environment")
     return WindowsShell.UNKNOWN
+
+
+def is_windows_wsl_bash_shim(path: str) -> bool:
+    """Return True when a resolved bash path is a known WSL launcher shim."""
+    normalized = _normalize_windows_path(path)
+    return any(normalized.endswith(suffix) for suffix in _WSL_BASH_SHIM_SUFFIXES)
+
+
+def _iter_path_bash_candidates(path_value: str | None) -> list[str]:
+    """Enumerate concrete bash executables from a PATH string."""
+    if not path_value:
+        return []
+
+    separator = ";" if sys.platform == "win32" else os.pathsep
+    seen: set[str] = set()
+    candidates: list[str] = []
+    for entry in path_value.split(separator):
+        if not entry:
+            continue
+        for name in ("bash.exe", "bash"):
+            candidate = ntpath.join(entry, name)
+            normalized = _normalize_windows_path(candidate)
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            if os.path.isfile(candidate):
+                candidates.append(candidate)
+    return candidates
+
+
+def resolve_git_bash_executable(path_value: str | None = None) -> str | None:
+    """Resolve a safe Git-for-Windows bash executable on Windows.
+
+    The returned path must be a concrete executable path, not a bare `bash`
+    command name, and must not be one of the WSL launcher shims.
+    """
+    if sys.platform != "win32":
+        return None
+
+    for candidate in _iter_path_bash_candidates(path_value):
+        if not is_windows_wsl_bash_shim(candidate):
+            return candidate
+
+    install_roots: list[str] = []
+    for env_var, suffix in (
+        ("ProgramFiles", "Git"),
+        ("ProgramFiles(x86)", "Git"),
+        ("LocalAppData", ntpath.join("Programs", "Git")),
+    ):
+        base = os.environ.get(env_var)
+        if base:
+            install_roots.append(ntpath.join(base, suffix))
+
+    for root in install_roots:
+        for relative_path in (
+            ntpath.join("usr", "bin", "bash.exe"),
+            ntpath.join("bin", "bash.exe"),
+        ):
+            candidate = ntpath.join(root, relative_path)
+            if os.path.isfile(candidate):
+                return candidate
+
+    resolved = shutil.which("bash", path=path_value)
+    if resolved and not is_windows_wsl_bash_shim(resolved):
+        return resolved
+    return None
 
 
 def supports_ansi() -> bool:
