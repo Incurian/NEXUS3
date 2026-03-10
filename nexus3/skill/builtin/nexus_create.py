@@ -66,12 +66,14 @@ class NexusCreateSkill(NexusSkill):
                     "type": "string",
                     "description": "Message to send to the agent immediately after creation. "
                     "By default returns immediately with initial_request_id. "
-                    "Set wait_for_initial_response=true to block for response.",
+                    "Set wait_for_initial_response=true to block for response. "
+                    "If omitted, wait_for_initial_response has no effect.",
                 },
                 "wait_for_initial_response": {
                     "type": "boolean",
                     "description": "If true, block until initial_message response is ready "
-                    "and include it in result. Default false (returns immediately).",
+                    "and include it in result. Default false (returns immediately). "
+                    "Only applies when initial_message is provided.",
                 },
                 "port": {
                     "type": "integer",
@@ -79,6 +81,7 @@ class NexusCreateSkill(NexusSkill):
                 },
             },
             "required": ["agent_id"],
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -120,11 +123,15 @@ class NexusCreateSkill(NexusSkill):
         if cwd == "":
             cwd = None
 
-        # Validate model parameter if provided
-        if model:
+        # Some callers send empty-string placeholders for omitted optional
+        # parameters. Normalize blank model placeholders to omission.
+        if model is not None:
             model = model.strip()
-            if not model:
-                return ToolResult(error="Model cannot be empty or whitespace")
+            if model == "":
+                model = None
+
+        # Validate model parameter if provided
+        if model is not None:
             if len(model) > 128:
                 return ToolResult(error="Model name too long (max 128 chars)")
             # Disallow suspicious patterns (path traversal, null bytes)

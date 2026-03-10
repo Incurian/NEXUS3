@@ -3763,3 +3763,51 @@ Execution update (2026-03-10, broad tool-family audit phase 1 complete):
   - keep the MCP/open-ended-schema validation hazard recorded for the later
     shared validation slice before expanding strictness to more external-tool
     families
+
+Execution update (2026-03-10, broad tool-family audit phase 2 complete):
+- Completed Phase 2 from
+  `docs/plans/BROAD-TOOL-FAMILY-AUDIT-AND-HARDENING-PLAN-2026-03-10.md`:
+  nexus-family contract hardening
+- Hardened the `nexus_*` family in:
+  - `nexus3/skill/builtin/nexus_create.py`
+    - top-level schema is now strict (`additionalProperties: false`)
+    - blank `model=""` / whitespace-only model placeholders now normalize to
+      omission instead of producing confusing downstream model-resolution
+      behavior
+    - parameter descriptions now explicitly state that
+      `wait_for_initial_response` only matters when `initial_message` is
+      provided
+  - `nexus3/skill/builtin/nexus_send.py`
+    - top-level schema is now strict
+    - whitespace-only content is rejected before dispatch
+  - `nexus3/skill/builtin/nexus_status.py`
+    - top-level schema is now strict
+  - `nexus3/skill/builtin/nexus_cancel.py`
+    - top-level schema is now strict
+    - `request_id` now accepts string or integer to match RPC id semantics
+  - `nexus3/skill/builtin/nexus_destroy.py`
+    - top-level schema is now strict
+  - `nexus3/skill/builtin/nexus_shutdown.py`
+    - top-level schema is now strict
+- Added focused regressions in:
+  - `tests/unit/skill/test_nexus_create.py`
+    - blank-model placeholder normalization
+  - `tests/unit/skill/test_nexus_skills.py`
+    - integer `nexus_cancel.request_id`
+    - whitespace-only `nexus_send` rejection
+  - `tests/unit/skill/test_skill_validation.py`
+    - unknown-arg rejection across the full `nexus_*` family
+- Synced user-facing docs in:
+  - `nexus3/defaults/NEXUS-DEFAULT.md`
+  - `AGENTS_NEXUS3SKILLSCAT.md`
+  - `README.md`
+  - `nexus3/skill/README.md`
+  - `CLAUDE.md`
+- Focused validation passed:
+  - `.venv/bin/ruff check nexus3/skill/builtin/nexus_create.py nexus3/skill/builtin/nexus_send.py nexus3/skill/builtin/nexus_status.py nexus3/skill/builtin/nexus_cancel.py nexus3/skill/builtin/nexus_destroy.py nexus3/skill/builtin/nexus_shutdown.py tests/unit/skill/test_nexus_create.py tests/unit/skill/test_nexus_skills.py tests/unit/skill/test_skill_validation.py`
+  - `.venv/bin/pytest -q tests/unit/skill/test_nexus_create.py tests/unit/skill/test_nexus_skills.py tests/unit/skill/test_skill_validation.py tests/unit/test_initial_message.py -k 'nexus or initial_message or validation'` (`53 passed`)
+  - `git diff --check`
+- Next gate:
+  - Phase 3: shell / exec family contract hardening
+  - keep the MCP/open-ended-schema validation hazard queued for the later
+    shared validation slice rather than mixing it into the shell-family work

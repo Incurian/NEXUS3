@@ -66,15 +66,18 @@ problems, not just schema/docs drift.
 
 ### Nexus Agent-Management
 
-1. `nexus_*` tool schemas are not strict.
-2. `nexus_create` still forwards `model=""` instead of normalizing it to
-   omission.
-3. Prompt/docs omit some valid knobs (`allowed_write_paths`, `disable_tools`,
-   `wait_for_initial_response`, `port`) in some tables.
-4. `wait_for_initial_response=true` without `initial_message` is accepted but
-   effectively a no-op.
-5. `nexus_cancel` accepts only string `request_id`, while the RPC layer accepts
-   broader JSON-RPC id types.
+1. `nexus_*` tool schemas were non-strict and silently dropped typoed args
+   until Phase 2 hardened them.
+2. `nexus_create` previously forwarded blank `model=""` placeholders instead of
+   normalizing them to omission.
+3. Prompt/docs tables previously omitted some valid knobs
+   (`allowed_write_paths`, `disable_tools`, `wait_for_initial_response`,
+   `port`) in some user-facing references.
+4. `wait_for_initial_response=true` without `initial_message` is intentionally
+   accepted as a no-op by the underlying RPC contract, so the skill/docs must
+   document that behavior rather than pretend it blocks.
+5. `nexus_cancel` previously accepted only string `request_id`, while the RPC
+   layer accepts broader JSON-RPC id types.
 
 ### Shell / Exec / Git
 
@@ -154,9 +157,9 @@ Work:
 
 - Add strict unknown-arg rejection to the `nexus_*` family.
 - Normalize `model=""` to omission in `nexus_create`.
-- Decide and enforce/document the `wait_for_initial_response` without
-  `initial_message` contract.
-- Consider broadening `nexus_cancel.request_id` to match RPC id types.
+- Keep the current `wait_for_initial_response` without `initial_message`
+  behavior documented as a no-op rather than changing the RPC contract here.
+- Broaden `nexus_cancel.request_id` to match RPC id types.
 - Sync prompt/docs tables.
 
 ### Phase 3: Shell / Exec Family Contract Hardening
@@ -220,7 +223,7 @@ Work:
 
 - [x] Record broad audit findings and phased fix order.
 - [x] Phase 1: harden clipboard path validation and confirmation semantics.
-- [ ] Phase 2: harden `nexus_*` contracts.
+- [x] Phase 2: harden `nexus_*` contracts.
 - [ ] Phase 3: harden shell / exec family contracts.
 - [ ] Phase 4: tighten clipboard and GitLab schema strictness/docs.
 - [ ] Phase 5: address GitLab operational follow-ups or defer explicitly.

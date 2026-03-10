@@ -31,7 +31,8 @@ class NexusShutdownSkill(NexusSkill):
                     "description": "Server port (default: 8765)"
                 }
             },
-            "required": []
+            "required": [],
+            "additionalProperties": False,
         }
 
     async def execute(self, port: int | None = None, **kwargs: Any) -> ToolResult:

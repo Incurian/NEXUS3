@@ -449,11 +449,11 @@ instead of being silently dropped.
 | `shell_UNSAFE` | `command`, `timeout`? | Execute shell=True (pipes work, but injection-vulnerable) |
 | `run_python` | `code`, `timeout`? | Execute Python code |
 | `sleep` | `seconds`, `label`? | Pause execution (for testing) |
-| `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `model`?, `initial_message`?, `wait_for_initial_response`? | Create agent (initial_message queued by default) |
+| `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `allowed_write_paths`?, `model`?, `initial_message`?, `wait_for_initial_response`?, `port`? | Create agent (initial_message queued by default; wait flag only matters when `initial_message` is set) |
 | `nexus_destroy` | `agent_id`, `port`? | Remove an agent (server keeps running) |
 | `nexus_send` | `agent_id`, `content`, `port`? | Send message to an agent |
 | `nexus_status` | `agent_id`, `port`? | Get agent tokens + context |
-| `nexus_cancel` | `agent_id`, `request_id`, `port`? | Cancel in-progress request |
+| `nexus_cancel` | `agent_id`, `request_id`, `port`? | Cancel in-progress request (`request_id` may be string or integer) |
 | `nexus_shutdown` | `port`? | Shutdown the entire server |
 | `copy` | `source`, `key`, `scope`?, `start_line`?, `end_line`?, `short_description`?, `tags`?, `ttl_seconds`? | Copy file content to clipboard |
 | `cut` | `source`, `key`, `scope`?, `start_line`?, `end_line`?, `short_description`?, `tags`?, `ttl_seconds`? | Cut file content to clipboard (removes from source) |

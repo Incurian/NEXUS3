@@ -28,21 +28,22 @@ class NexusCancelSkill(NexusSkill):
                     "description": "ID of the agent (e.g., 'worker-1')"
                 },
                 "request_id": {
-                    "type": "string",
-                    "description": "Request ID to cancel"
+                    "type": ["string", "integer"],
+                    "description": "Request ID to cancel (string or integer)"
                 },
                 "port": {
                     "type": "integer",
                     "description": "Server port (default: 8765)"
                 }
             },
-            "required": ["agent_id", "request_id"]
+            "required": ["agent_id", "request_id"],
+            "additionalProperties": False,
         }
 
     async def execute(
         self,
         agent_id: str = "",
-        request_id: str = "",
+        request_id: str | int | None = None,
         port: int | None = None,
         **kwargs: Any
     ) -> ToolResult:
@@ -55,17 +56,23 @@ class NexusCancelSkill(NexusSkill):
         except ValidationError as e:
             return ToolResult(error=f"Invalid agent_id: {e.message}")
 
-        if not request_id:
+        if request_id is None:
             return ToolResult(error="No request_id provided")
+        if isinstance(request_id, bool):
+            return ToolResult(error="Request ID must be string or integer")
 
-        request_id_stripped = request_id.strip()
-        if not request_id_stripped:
-            return ToolResult(error="Request ID must be a non-empty string")
+        if isinstance(request_id, str):
+            request_id_stripped = request_id.strip()
+            if not request_id_stripped:
+                return ToolResult(error="Request ID must be a non-empty string")
+            normalized_request_id: str | int = request_id_stripped
+        else:
+            normalized_request_id = request_id
 
         return await self._execute_with_client(
             port=port,
             agent_id=agent_id,
-            operation=lambda client: client.cancel(request_id_stripped)
+            operation=lambda client: client.cancel(normalized_request_id)
         )
 
 

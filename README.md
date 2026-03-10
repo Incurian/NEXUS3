@@ -1455,14 +1455,16 @@ Git commands are filtered by permission level:
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `nexus_create` | Create agent | `agent_id`, `preset`, `cwd`, `allowed_write_paths`, `disable_tools`, `model`, `initial_message`, `wait_for_initial_response`, `port` |
+| `nexus_create` | Create agent (`wait_for_initial_response` only matters with `initial_message`) | `agent_id`, `preset`, `cwd`, `allowed_write_paths`, `disable_tools`, `model`, `initial_message`, `wait_for_initial_response`, `port` |
 | `nexus_destroy` | Destroy agent | `agent_id`, `port` |
 | `nexus_send` | Send message to agent | `agent_id`, `content`, `port` |
 | `nexus_status` | Get agent status | `agent_id`, `port` |
-| `nexus_cancel` | Cancel request | `agent_id`, `request_id`, `port` |
+| `nexus_cancel` | Cancel request | `agent_id`, `request_id`, `port` (`request_id` may be string or integer) |
 | `nexus_shutdown` | Shutdown server | `port` |
 
-**Note:** All `nexus_*` skills default to port 8765.
+**Note:** If `port` is omitted, `nexus_*` skills use the current
+session/service port when available, otherwise the configured default
+(`8765` fallback).
 
 ### Utility
 

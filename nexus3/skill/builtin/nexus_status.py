@@ -42,6 +42,7 @@ class NexusStatusSkill(NexusSkill):
                 },
             },
             "required": ["agent_id"],
+            "additionalProperties": False,
         }
 
     async def execute(

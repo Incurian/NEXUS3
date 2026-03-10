@@ -233,6 +233,36 @@ class TestValidationUniformity:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("skill_name", "params"),
+        [
+            ("nexus_create", {"agent_id": "worker-1"}),
+            ("nexus_send", {"agent_id": "worker-1", "content": "hello"}),
+            ("nexus_status", {"agent_id": "worker-1"}),
+            ("nexus_cancel", {"agent_id": "worker-1", "request_id": "req-1"}),
+            ("nexus_destroy", {"agent_id": "worker-1"}),
+            ("nexus_shutdown", {}),
+        ],
+    )
+    async def test_nexus_family_rejects_unknown_params(
+        self,
+        registry_with_skills,
+        skill_name,
+        params,
+    ):
+        """nexus_* tools should fail closed on unknown top-level params."""
+        skill = registry_with_skills.get(skill_name)
+
+        result = await skill.execute(**params, unknown_xyz="boom")
+
+        assert not result.success
+        assert "unknown_xyz" in result.error
+        assert (
+            "unexpected" in result.error.lower()
+            or "additional properties" in result.error.lower()
+        )
+
+    @pytest.mark.asyncio
     async def test_file_info_validates_required_params(self, registry_with_skills):
         """File info skill validates required parameters via wrapper."""
         file_info = registry_with_skills.get("file_info")

@@ -27,7 +27,8 @@ You have access to tools for file operations, command execution, code search, cl
 - Trusted agents can only create sandboxed subagents
 - Sandboxed agents cannot create agents at all (nexus_* tools disabled, except `nexus_send` to parent)
 - Subagent `cwd` must be within parent's `cwd` (cannot escape parent scope)
-- Subagent `allowed_write_paths` must be within parent's `cwd`
+- For sandboxed parents, subagent `allowed_write_paths` must stay within the
+  parent's `cwd`
 - If no `cwd` specified, inherits parent's `cwd`
 
 ### RPC-Created Agent Defaults
@@ -171,12 +172,12 @@ Execution notes:
 ### Agent Communication
 | Tool | Key Parameters | Description |
 |------|----------------|-------------|
-| `nexus_create` | `agent_id`, `preset`?, `cwd`?, `allowed_write_paths`?, `model`?, `initial_message`? | Create a new agent |
-| `nexus_send` | `agent_id`, `content` | Send message to agent |
-| `nexus_status` | `agent_id` | Get agent tokens/context info |
-| `nexus_destroy` | `agent_id` | Remove an agent |
-| `nexus_cancel` | `agent_id`, `request_id` | Cancel in-progress request |
-| `nexus_shutdown` | — | Shutdown the entire server |
+| `nexus_create` | `agent_id`, `preset`?, `cwd`?, `allowed_write_paths`?, `disable_tools`?, `model`?, `initial_message`?, `wait_for_initial_response`?, `port`? | Create a new agent (`wait_for_initial_response` only matters when `initial_message` is set) |
+| `nexus_send` | `agent_id`, `content`, `port`? | Send message to agent |
+| `nexus_status` | `agent_id`, `port`? | Get agent tokens/context info |
+| `nexus_destroy` | `agent_id`, `port`? | Remove an agent |
+| `nexus_cancel` | `agent_id`, `request_id`, `port`? | Cancel in-progress request (`request_id` may be string or integer) |
+| `nexus_shutdown` | `port`? | Shutdown the entire server |
 
 ### Clipboard
 | Tool | Key Parameters | Description |

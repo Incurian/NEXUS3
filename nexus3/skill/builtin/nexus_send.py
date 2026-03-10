@@ -43,6 +43,7 @@ class NexusSendSkill(NexusSkill):
                 },
             },
             "required": ["agent_id", "content"],
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -61,7 +62,7 @@ class NexusSendSkill(NexusSkill):
         except ValidationError as e:
             return ToolResult(error=f"Invalid agent_id: {e.message}")
 
-        if not content:
+        if not content or not content.strip():
             return ToolResult(error="No content provided")
 
         # Get caller's agent_id for source attribution (Phase 5b)

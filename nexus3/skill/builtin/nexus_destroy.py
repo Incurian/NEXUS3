@@ -36,7 +36,8 @@ class NexusDestroySkill(NexusSkill):
                     "description": "Server port (default: 8765)"
                 }
             },
-            "required": ["agent_id"]
+            "required": ["agent_id"],
+            "additionalProperties": False,
         }
 
     async def execute(
