@@ -11,7 +11,7 @@ closed instead of being silently dropped.
 
 | Skill | Parameters | Description |
 |-------|------------|-------------|
-| `read_file` | `path`, `offset`?, `limit`?, `line_numbers`? | Read file contents (numbered by default; raw mode available with `line_numbers=false`) |
+| `read_file` | `path`, `offset`?, `limit`?, `start_line`?, `end_line`?, `line_numbers`? | Read file contents (numbered by default; raw mode available with `line_numbers=false`; `start_line`/`end_line` are compatibility aliases for `offset`/`limit`) |
 | `tail` | `path`, `lines`? | Read last N lines of a file (default: 10) |
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
 | `write_file` | `path`, `content` | Write/create UTF-8 text files (exact newline bytes; read file first) |

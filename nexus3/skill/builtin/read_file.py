@@ -72,6 +72,42 @@ def _stream_read_lines(
     return lines, truncated
 
 
+def _resolve_line_window(
+    offset: int | None,
+    limit: int | None,
+    start_line: int | None,
+    end_line: int | None,
+) -> tuple[int, int | None]:
+    """Normalize offset/limit and start_line/end_line aliases.
+
+    `offset`/`limit` remain the canonical paging contract. `start_line` and
+    `end_line` are compatibility aliases for cross-tool consistency.
+    """
+    if offset is not None and start_line is not None and offset != start_line:
+        raise ValueError(
+            "read_file offset and start_line must match when both are provided"
+        )
+
+    effective_offset = start_line if start_line is not None else offset
+    if effective_offset is None:
+        effective_offset = 1
+
+    if end_line is not None and end_line < effective_offset:
+        raise ValueError("read_file end_line must be >= start_line/offset")
+
+    alias_limit = None
+    if end_line is not None:
+        alias_limit = end_line - effective_offset + 1
+
+    if limit is not None and alias_limit is not None and limit != alias_limit:
+        raise ValueError(
+            "read_file limit and end_line must describe the same line window"
+        )
+
+    effective_limit = alias_limit if alias_limit is not None else limit
+    return effective_offset, effective_limit
+
+
 class ReadFileSkill(FileSkill):
     """Skill that reads the contents of a file.
 
@@ -107,11 +143,26 @@ class ReadFileSkill(FileSkill):
                     "type": "integer",
                     "description": "Line number to start reading from (1-indexed, default: 1)",
                     "minimum": 1,
-                    "default": 1
+                },
+                "start_line": {
+                    "type": "integer",
+                    "description": (
+                        "Compatibility alias for offset. First line to read "
+                        "(1-indexed, default: 1)."
+                    ),
+                    "minimum": 1,
                 },
                 "limit": {
                     "type": "integer",
                     "description": "Maximum number of lines to read (default: 10000)"
+                },
+                "end_line": {
+                    "type": "integer",
+                    "description": (
+                        "Compatibility alias for offset+limit. Last line to read "
+                        "(inclusive)."
+                    ),
+                    "minimum": 1,
                 },
                 "line_numbers": {
                     "type": "boolean",
@@ -129,8 +180,10 @@ class ReadFileSkill(FileSkill):
     async def execute(
         self,
         path: str = "",
-        offset: int = 1,
+        offset: int | None = None,
         limit: int | None = None,
+        start_line: int | None = None,
+        end_line: int | None = None,
         line_numbers: bool = True,
         **kwargs: Any
     ) -> ToolResult:
@@ -149,6 +202,13 @@ class ReadFileSkill(FileSkill):
             # Validate path (resolves symlinks, checks allowed_paths if set)
             p = self._validate_path(path)
 
+            effective_offset, effective_limit = _resolve_line_window(
+                offset,
+                limit,
+                start_line,
+                end_line,
+            )
+
             # P2.5 SECURITY: Check file size before reading
             file_size = await asyncio.to_thread(os.path.getsize, p)
             if file_size > MAX_FILE_SIZE_BYTES:
@@ -161,12 +221,17 @@ class ReadFileSkill(FileSkill):
 
             # P2.5 SECURITY: Stream-read with limits
             lines, truncated = await asyncio.to_thread(
-                _stream_read_lines, p, offset, limit, MAX_OUTPUT_BYTES, line_numbers
+                _stream_read_lines,
+                p,
+                effective_offset,
+                effective_limit,
+                MAX_OUTPUT_BYTES,
+                line_numbers,
             )
 
             if not lines:
                 return ToolResult(
-                    output=f"(File is empty or offset {offset}"
+                    output=f"(File is empty or offset {effective_offset}"
                     " is beyond end of file)"
                 )
 

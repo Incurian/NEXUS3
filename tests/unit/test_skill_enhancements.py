@@ -89,6 +89,81 @@ class TestReadFileOffsetLimit:
         assert "5: Line 5" not in result.output
 
     @pytest.mark.asyncio
+    async def test_start_line_end_line_aliases(
+        self,
+        skill: ReadFileSkill,
+        test_file: Path,
+    ) -> None:
+        """start_line/end_line aliases map to the same read window."""
+        result = await skill.execute(path=str(test_file), start_line=3, end_line=4)
+
+        assert not result.error
+        assert "3: Line 3" in result.output
+        assert "4: Line 4" in result.output
+        assert "2: Line 2" not in result.output
+        assert "5: Line 5" not in result.output
+
+    @pytest.mark.asyncio
+    async def test_alias_and_canonical_params_can_match(
+        self,
+        skill: ReadFileSkill,
+        test_file: Path,
+    ) -> None:
+        """Mixed canonical and alias params are accepted when they describe the same window."""
+        result = await skill.execute(
+            path=str(test_file),
+            offset=3,
+            start_line=3,
+            limit=2,
+            end_line=4,
+        )
+
+        assert not result.error
+        assert "3: Line 3" in result.output
+        assert "4: Line 4" in result.output
+
+    @pytest.mark.asyncio
+    async def test_conflicting_offset_and_start_line_rejected(
+        self,
+        skill: ReadFileSkill,
+        test_file: Path,
+    ) -> None:
+        """Mixed canonical/alias params fail closed when they disagree on the start."""
+        result = await skill.execute(path=str(test_file), offset=2, start_line=3)
+
+        assert result.error is not None
+        assert "offset and start_line" in result.error
+
+    @pytest.mark.asyncio
+    async def test_conflicting_limit_and_end_line_rejected(
+        self,
+        skill: ReadFileSkill,
+        test_file: Path,
+    ) -> None:
+        """Mixed canonical/alias params fail closed when they disagree on the range."""
+        result = await skill.execute(
+            path=str(test_file),
+            offset=3,
+            limit=2,
+            end_line=5,
+        )
+
+        assert result.error is not None
+        assert "limit and end_line" in result.error
+
+    @pytest.mark.asyncio
+    async def test_end_line_before_start_line_rejected(
+        self,
+        skill: ReadFileSkill,
+        test_file: Path,
+    ) -> None:
+        """end_line must not precede the effective start line."""
+        result = await skill.execute(path=str(test_file), start_line=4, end_line=3)
+
+        assert result.error is not None
+        assert "end_line" in result.error
+
+    @pytest.mark.asyncio
     async def test_offset_beyond_file_returns_empty(
         self,
         skill: ReadFileSkill,

@@ -56,7 +56,7 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 ### File Operations (Read)
 | Tool | Key Parameters | Description |
 |------|----------------|-------------|
-| `read_file` | `path`, `offset`?, `limit`?, `line_numbers`? | Read file contents (numbered by default; set `line_numbers=false` for raw text) |
+| `read_file` | `path`, `offset`?, `limit`?, `start_line`?, `end_line`?, `line_numbers`? | Read file contents (numbered by default; set `line_numbers=false` for raw text; `start_line`/`end_line` alias `offset`/`limit`) |
 | `tail` | `path`, `lines`? | Read last N lines (default: 10) |
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
 | `list_directory` | `path` | List directory contents |
@@ -282,6 +282,9 @@ If `diff=true` cannot query git successfully, `outline` now says so explicitly i
 ### Best Practices for Editing Files
 
 1. Read before write: use `read_file` (and `outline` for navigation) before any edit.
+   `read_file` supports both `offset`/`limit` and the more edit-aligned
+   `start_line`/`end_line` aliases; if you mix them, they must describe the
+   same line window.
 2. Prefer the least powerful tool that can do the job safely (`edit_file` > `regex_replace` > `patch` for simple edits).
 3. For multiple literal edits, use atomic `edit_file` + `edits` only when the edits do not depend on earlier replacements changing later match targets.
 4. For `edit_lines`, preserve indentation. For multiple separate calls, edit bottom-to-top; for `edits=[...]` batches, NEXUS3 applies ranges bottom-to-top automatically.
