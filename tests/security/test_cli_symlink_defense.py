@@ -16,7 +16,6 @@ import pytest
 from nexus3.cli.repl_commands import cmd_cwd, cmd_prompt
 from nexus3.commands.protocol import CommandContext, CommandResult
 
-
 # -----------------------------------------------------------------------------
 # Test Fixtures
 # -----------------------------------------------------------------------------
@@ -31,8 +30,20 @@ class MockServices:
     def get(self, name: str) -> Any:
         return self._services.get(name)
 
+    def has(self, name: str) -> bool:
+        return name in self._services
+
     def register(self, name: str, value: Any) -> None:
         self._services[name] = value
+
+    def set_cwd(self, cwd: Path) -> None:
+        self._services["cwd"] = Path(cwd)
+
+    def get_permissions(self) -> Any:
+        return self._services.get("permissions")
+
+    def set_permissions(self, permissions: Any) -> None:
+        self._services["permissions"] = permissions
 
     def get_cwd(self) -> Path:
         cwd = self._services.get("cwd")
@@ -285,7 +296,7 @@ class TestPromptSymlinkDefense:
 
         # ~/prompt.md expands to symlink_home/prompt.md
         # symlink_home is a symlink, so it should be rejected
-        output = await cmd_prompt(ctx_with_agent, file="~/prompt.md")
+        _ = await cmd_prompt(ctx_with_agent, file="~/prompt.md")
 
         # Note: The check is on the expanded path, which is symlink_home/prompt.md
         # symlink_home is a symlink (directory symlink), but prompt.md itself is not

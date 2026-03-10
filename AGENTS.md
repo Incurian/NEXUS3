@@ -3941,3 +3941,28 @@ Execution update (2026-03-10, broad tool-family audit phase 5 complete):
     - full-suite 100% green validation pass
     - shell-family follow-up discussion
     - additional tool-family contract audits outside file/nexus/shell/clipboard/GitLab
+
+Execution update (2026-03-10, full-suite validation follow-up):
+- Closed the stale security-test fixture regressions that were blocking the
+  first repo-wide pytest pass after the broad audit:
+  - `tests/security/test_cli_symlink_defense.py`
+    - updated the local `MockServices` test double to match current
+      `repl_commands` expectations (`has`, `set_cwd`, `get_permissions`,
+      `set_permissions`)
+  - `tests/security/test_destroy_authorization.py`
+    - updated the local `MockServices` test double to match current
+      `destroy_unlocked` lifecycle expectations
+      (`get_permissions`, `get_child_agent_ids`, `set_child_agent_ids`,
+      `has`, `get_model`, `get_cwd`)
+    - updated the test pool scaffold with current capability lifecycle fields
+      expected by `AgentPool.destroy`
+      (`_capability_signer`, `_direct_capability_ttl_seconds`)
+- Validation passed:
+  - `.venv/bin/ruff check tests/security/test_cli_symlink_defense.py tests/security/test_destroy_authorization.py`
+  - `.venv/bin/pytest -q tests/security/test_cli_symlink_defense.py tests/security/test_destroy_authorization.py` (`28 passed`)
+  - `.venv/bin/pytest tests/ -q` (`4317 passed`, `3 skipped`, `21 warnings`)
+- Remaining validation gap:
+  - repo-wide `ruff check nexus3/ tests/` is still not 100% green due an
+    existing cross-test backlog outside this fixture-fix slice
+- Next gate:
+  - triage and reduce the remaining repo-wide lint backlog

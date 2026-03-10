@@ -18,7 +18,11 @@ from nexus3.core.authorization_kernel import (
     AuthorizationRequest,
     AuthorizationResourceType,
 )
-from nexus3.core.capabilities import InMemoryCapabilityRevocationStore
+from nexus3.core.capabilities import (
+    CapabilitySigner,
+    InMemoryCapabilityRevocationStore,
+    generate_capability_secret,
+)
 from nexus3.core.permissions import AgentPermissions, PermissionLevel
 from nexus3.core.policy import PermissionPolicy
 from nexus3.rpc.pool import AgentPool, AuthorizationError
@@ -60,6 +64,29 @@ class MockServices:
 
     def register(self, key: str, value):
         self._data[key] = value
+
+    def has(self, key: str) -> bool:
+        return key in self._data
+
+    def get_permissions(self) -> AgentPermissions | None:
+        permissions = self._data.get("permissions")
+        return permissions if isinstance(permissions, AgentPermissions) else None
+
+    def get_child_agent_ids(self) -> set[str] | None:
+        child_ids = self._data.get("child_agent_ids")
+        return set(child_ids) if isinstance(child_ids, set) else None
+
+    def set_child_agent_ids(self, child_ids: set[str] | None) -> None:
+        if child_ids is None:
+            self._data.pop("child_agent_ids", None)
+            return
+        self._data["child_agent_ids"] = set(child_ids)
+
+    def get_model(self):
+        return self._data.get("model")
+
+    def get_cwd(self):
+        return self._data.get("cwd")
 
 
 class MockAgent:
@@ -133,9 +160,11 @@ def mock_pool():
                 adapters=(TestDestroyAuthorizationAdapter(),),
                 default_allow=False,
             )
+            self._capability_signer = CapabilitySigner(generate_capability_secret())
             self._capability_revocation_store = InMemoryCapabilityRevocationStore()
             self._issued_capability_token_ids_by_subject: dict[str, set[str]] = {}
             self._issued_capability_token_ids_by_issuer: dict[str, set[str]] = {}
+            self._direct_capability_ttl_seconds = 300
 
     pool = TestPool()
     # Create lock in async context
