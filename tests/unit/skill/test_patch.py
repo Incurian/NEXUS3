@@ -42,6 +42,18 @@ def main():
 class TestInlineDiff(TestPatchSkill):
     """Tests for inline diff application."""
 
+    def test_patch_schema_avoids_top_level_combinators(self, skill):
+        """OpenAI tool schemas reject top-level anyOf/oneOf/allOf/not."""
+        params = skill.parameters
+
+        assert params["type"] == "object"
+        assert "path" in params["properties"]
+        assert "target" in params["properties"]
+        assert "anyOf" not in params
+        assert "oneOf" not in params
+        assert "allOf" not in params
+        assert "not" not in params
+
     @pytest.mark.asyncio
     async def test_patch_inline_diff(self, skill, test_file):
         """Test applying inline diff string.

@@ -250,6 +250,10 @@ Immediate tasks:
       it with the wrong mental model/parameters, so a later pass should inspect
       real transcripts/tool payloads and decide whether the fix belongs in
       prompt guidance, schema ergonomics, or tool behavior.
+    - after the current Phase 5/6 closeout, discuss whether to open a dedicated
+      follow-up plan for true Git Bash standalone ESC/multiline-paste support.
+      The current branch only fails closed and documents the limitation; it
+      does not claim a real mintty/backend input fix.
 - Completed follow-on hardening slice (2026-03-10): Plan Phase 5
   fail-closed Git Bash input handling:
   - `nexus3/core/shell_detection.py`
@@ -278,6 +282,18 @@ Immediate tasks:
   - focused validation passed:
     - `.venv/bin/ruff check nexus3/cli/prompt_support.py nexus3/core/shell_detection.py nexus3/cli/keys.py nexus3/cli/repl.py nexus3/cli/repl_runtime.py tests/unit/core/test_shell_detection.py tests/unit/cli/test_confirmation_sync.py tests/unit/cli/test_prompt_support.py`
     - `.venv/bin/pytest -q tests/unit/core/test_shell_detection.py tests/unit/cli/test_confirmation_sync.py tests/unit/cli/test_prompt_support.py` (`41 passed`)
+- Completed live-test regression fix (2026-03-10, local pending commit):
+  OpenAI tool-schema compatibility for `patch`:
+  - Windows live testing surfaced provider rejection of the `patch` tool
+    schema because its top-level parameters object used `anyOf`.
+  - updated `nexus3/skill/builtin/patch.py` to remove the top-level combinator
+    and keep the `path` vs `target` requirement enforced in runtime
+    validation instead.
+  - added regression coverage in `tests/unit/skill/test_patch.py` to keep the
+    provider-facing schema free of top-level `anyOf` / `oneOf` / `allOf` / `not`.
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py`
+    - `.venv/bin/pytest -q tests/unit/skill/test_patch.py` (`33 passed`)
   - next gate remains Windows live validation to confirm the documented
     fail-closed behavior on real hosts.
 - Completed follow-on hardening slice (2026-03-10): Plan Phase 3

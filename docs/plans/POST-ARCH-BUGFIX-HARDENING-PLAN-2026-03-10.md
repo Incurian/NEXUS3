@@ -345,6 +345,12 @@ Rationale:
 - [ ] Phase 6: update all affected docs and status files.
 - [ ] Phase 6: run final focused validation and archive results.
 
+Deferred follow-up note from Windows testing:
+- After the current Phase 5/6 closeout, explicitly decide whether to open a
+  dedicated follow-up plan for true Git Bash standalone ESC/multiline-paste
+  support. The current implementation is intentionally fail-closed and
+  documented; it is not a claim that mintty/backend input handling is fixed.
+
 ## Documentation Updates
 
 When behavior changes land, update all of the following in the same wave where practical:

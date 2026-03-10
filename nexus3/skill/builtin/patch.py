@@ -134,10 +134,11 @@ class PatchSkill(FileSkill):
                     "description": "Validate and report without applying changes",
                 },
             },
-            "anyOf": [
-                {"required": ["path"]},
-                {"required": ["target"]},
-            ],
+            "description": (
+                "Provide exactly one file selector via 'path' (preferred) or "
+                "'target' (compatibility alias). Runtime validation rejects "
+                "missing selectors or conflicting values."
+            ),
         }
 
     async def execute(
