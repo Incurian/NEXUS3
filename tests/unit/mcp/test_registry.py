@@ -3,11 +3,13 @@
 Tests registry operations including reconnection and skill refresh.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from nexus3.mcp.protocol import MCPTool
 from nexus3.mcp.registry import ConnectedServer, MCPServerConfig, MCPServerRegistry
+from nexus3.mcp.skill_adapter import MCPSkillAdapter
 
 
 class TestConnectedServerReconnect:
@@ -208,7 +210,7 @@ class TestRegistryReconnect:
         with patch("nexus3.mcp.registry.StdioTransport", return_value=mock_transport):
             with patch("nexus3.mcp.registry.MCPClient", return_value=mock_client):
                 # Connect server
-                server = await registry.connect(config)
+                await registry.connect(config)
                 assert len(registry) == 1
 
                 # Simulate connection dying
@@ -325,3 +327,43 @@ class TestGracefulToolListingFailure:
         count = await registry.retry_tools("test")
         assert count == 0
         assert server.skills == []  # Skills unchanged
+
+
+class TestRegistrySkillVisibility:
+    """Tests for visibility-aware MCP skill lookup."""
+
+    def test_find_skill_respects_agent_visibility(self) -> None:
+        registry = MCPServerRegistry()
+        tool = MCPTool(name="echo", description="Echo")
+        client = MagicMock()
+        skill = MCPSkillAdapter(client, tool, "private")
+        registry._servers["private"] = ConnectedServer(
+            config=MCPServerConfig(name="private", command=["echo", "private"]),
+            client=client,
+            skills=[skill],
+            owner_agent_id="owner-agent",
+            shared=False,
+        )
+
+        assert registry.find_skill("mcp_private_echo", agent_id="owner-agent") is not None
+        assert registry.find_skill("mcp_private_echo", agent_id="worker-agent") is None
+
+    def test_get_server_for_skill_respects_agent_visibility(self) -> None:
+        registry = MCPServerRegistry()
+        tool = MCPTool(name="echo", description="Echo")
+        client = MagicMock()
+        skill = MCPSkillAdapter(client, tool, "private")
+        registry._servers["private"] = ConnectedServer(
+            config=MCPServerConfig(name="private", command=["echo", "private"]),
+            client=client,
+            skills=[skill],
+            owner_agent_id="owner-agent",
+            shared=False,
+        )
+
+        visible = registry.get_server_for_skill("mcp_private_echo", agent_id="owner-agent")
+        hidden = registry.get_server_for_skill("mcp_private_echo", agent_id="worker-agent")
+
+        assert visible is not None
+        assert visible.config.name == "private"
+        assert hidden is None

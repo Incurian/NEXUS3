@@ -1,6 +1,7 @@
 """Focused tests for session-side authorization kernel gates."""
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -123,6 +124,34 @@ class TestSessionIntegrationLevelKernelization:
         assert confirmations[0][0] == tool_call
         assert confirmations[0][1] is None
         assert confirmations[0][2] == Path("/tmp")
+
+    @pytest.mark.asyncio
+    async def test_mcp_invisible_private_server_returns_unknown_skill(self) -> None:
+        services = ServiceContainer()
+        services.set_cwd(Path("/tmp"))
+        services.register("agent_id", "worker-agent")
+        registry = MagicMock()
+        registry.get.return_value = None
+        services.register("mcp_registry", registry)
+
+        session = Session(provider=DummyProvider(), services=services)
+        permissions = resolve_preset("trusted")
+        tool_call = ToolCall(id="tc-1", name="mcp_private_list", arguments={})
+
+        result = await handle_mcp_permissions_runtime(
+            tool_call=tool_call,
+            skill=object(),
+            server_name="private",
+            permissions=permissions,
+            authorization_kernel=session._mcp_authorization_kernel,
+            confirmation=session._confirmation,
+            services=session._services,
+            on_confirm=session.on_confirm,
+        )
+
+        assert result is not None
+        assert result.error == "Unknown skill: mcp_private_list"
+        registry.get.assert_called_once_with("private", agent_id="worker-agent")
 
     @pytest.mark.asyncio
     async def test_gitlab_confirmation_behavior_preserved_when_level_allows(self) -> None:

@@ -69,3 +69,27 @@ class TestMCPSkillAdapterSanitization:
 
         mock_client.call_tool.assert_awaited_once_with("echo", {"dynamic_key": "value"})
         assert result.success
+
+    @pytest.mark.asyncio
+    async def test_execute_returns_tool_error_for_invalid_arguments(self) -> None:
+        tool = MCPTool(
+            name="echo",
+            description="Echo",
+            input_schema={
+                "type": "object",
+                "properties": {"count": {"type": "integer"}},
+                "required": ["count"],
+                "additionalProperties": False,
+            },
+        )
+
+        mock_client = MagicMock()
+        mock_client.call_tool = AsyncMock()
+
+        adapter = MCPSkillAdapter(mock_client, tool, "test-server")
+        result = await adapter.execute(count="not-an-int")
+
+        assert result.output == ""
+        assert "Invalid parameters for mcp_test-server_echo" in result.error
+        assert "integer" in result.error
+        mock_client.call_tool.assert_not_awaited()

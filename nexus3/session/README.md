@@ -606,7 +606,9 @@ class ToolDispatcher:
 
 Resolution order:
 1. Built-in skills via SkillRegistry
-2. MCP tools (for `mcp_*` prefixed names) via `MCPServerRegistry.find_skill()`
+2. MCP tools (for `mcp_*` prefixed names) via
+   `MCPServerRegistry.find_skill(..., agent_id=requester_id)` so runtime
+   invocation respects private vs shared MCP visibility
 
 ### PermissionEnforcer
 

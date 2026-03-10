@@ -68,4 +68,6 @@ class ToolDispatcher:
         if not mcp_registry:
             return None
 
-        return mcp_registry.find_skill(tool_name)
+        agent_id = self._services.get("agent_id") if self._services else None
+        requester_id = agent_id if isinstance(agent_id, str) and agent_id else None
+        return mcp_registry.find_skill(tool_name, agent_id=requester_id)

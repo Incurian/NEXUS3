@@ -292,33 +292,49 @@ class MCPServerRegistry:
                 skills.extend(server.skills)
         return skills
 
-    def find_skill(self, tool_name: str) -> tuple[MCPSkillAdapter, str] | None:
+    def find_skill(
+        self,
+        tool_name: str,
+        *,
+        agent_id: str | None = None,
+    ) -> tuple[MCPSkillAdapter, str] | None:
         """Find MCP skill by tool name.
 
         Searches all connected servers for a skill matching the given name.
 
         Args:
             tool_name: The skill name to find (e.g., 'mcp_test_echo').
+            agent_id: If provided, only search servers visible to this agent.
 
         Returns:
             Tuple of (skill, server_name) if found, None otherwise.
         """
         for server in self._servers.values():
+            if agent_id is not None and not server.is_visible_to(agent_id):
+                continue
             for skill in server.skills:
                 if skill.name == tool_name:
                     return (skill, server.config.name)
         return None
 
-    def get_server_for_skill(self, skill_name: str) -> ConnectedServer | None:
+    def get_server_for_skill(
+        self,
+        skill_name: str,
+        *,
+        agent_id: str | None = None,
+    ) -> ConnectedServer | None:
         """Find which server provides a given skill.
 
         Args:
             skill_name: Prefixed skill name (e.g., 'mcp_test_echo').
+            agent_id: If provided, only return a server visible to this agent.
 
         Returns:
             ConnectedServer if found, None otherwise.
         """
         for server in self._servers.values():
+            if agent_id is not None and not server.is_visible_to(agent_id):
+                continue
             prefix = f"mcp_{server.config.name}_"
             if skill_name.startswith(prefix):
                 return server

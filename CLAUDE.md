@@ -181,6 +181,22 @@ Trusted caller identity propagates through `requester_id` / `X-Nexus-Agent`
 across both global and `/agent/{id}` RPC routes. `create_agent` follow-up
 `initial_message` dispatch inherits that same requester context.
 
+## Current Follow-Up Status (2026-03-10)
+
+- `read_file` now accepts `start_line` / `end_line` as compatibility aliases
+  for `offset` / `limit`.
+- The deferred `outline` follow-up remains closed pending a new concrete
+  failing payload; current local logs did not show a fresh post-hardening
+  misuse repro.
+- MCP dynamic tool audit is active:
+  - first runtime visibility bug is fixed
+  - direct MCP adapter execution now returns a normal tool error on invalid
+    arguments instead of throwing a validation exception
+  - private MCP tools can no longer be invoked by non-owner agents just by
+    knowing the `mcp_*` tool name
+  - remaining MCP audit scope is schema adaptation plus reconnect/refresh
+    boundary review
+
 #### Component Sharing
 
 | Shared (SharedComponents) | Per-Agent |

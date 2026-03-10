@@ -4003,3 +4003,41 @@ Execution update (2026-03-10, read-file ergonomics + next audit selection):
   - start the MCP dynamic tool boundary audit
   - keep the repo-wide lint backlog deferred unless we explicitly choose to
     return to 100%-green cleanup work
+
+Execution update (2026-03-10, MCP dynamic tool audit first fix):
+- Confirmed and fixed the first concrete MCP boundary bug from
+  `docs/plans/MCP-DYNAMIC-TOOL-BOUNDARY-AUDIT-PLAN-2026-03-10.md`:
+  private MCP tools were visibility-filtered for listing, but not for runtime
+  invocation if another agent knew the explicit `mcp_*` skill name.
+- Hardened runtime visibility in:
+  - `nexus3/mcp/registry.py`
+    - `find_skill(...)` and `get_server_for_skill(...)` now accept optional
+      `agent_id` visibility filtering
+  - `nexus3/session/dispatcher.py`
+    - MCP dispatch now resolves with the current `services["agent_id"]`
+  - `nexus3/session/permission_runtime.py`
+    - MCP permission checks now re-verify server visibility as defense in
+      depth and return `Unknown skill: ...` for invisible private tools
+  - `nexus3/mcp/skill_adapter.py`
+    - direct adapter execution now catches `ValidationError` and returns
+      `ToolResult(error=...)` on invalid arguments instead of letting the
+      exception escape
+- Added focused regressions in:
+  - `tests/unit/mcp/test_registry.py`
+  - `tests/unit/mcp/test_skill_adapter.py`
+  - `tests/unit/session/test_dispatcher.py`
+  - `tests/unit/session/test_session_permission_kernelization.py`
+- Focused validation passed:
+  - `.venv/bin/ruff check nexus3/mcp/skill_adapter.py nexus3/mcp/registry.py nexus3/session/dispatcher.py nexus3/session/permission_runtime.py tests/unit/mcp/test_skill_adapter.py tests/unit/mcp/test_registry.py tests/unit/session/test_dispatcher.py tests/unit/session/test_session_permission_kernelization.py`
+  - `.venv/bin/pytest -q tests/unit/mcp/test_skill_adapter.py tests/unit/mcp/test_registry.py tests/unit/session/test_dispatcher.py tests/unit/session/test_session_permission_kernelization.py` (`26 passed`)
+  - `.venv/bin/pytest -q tests/integration/test_mcp_client.py -k 'agent_visibility or shared_visibility'` (`2 passed`)
+  - `git diff --check`
+- Next gate:
+  - continue the MCP audit on schema adaptation and reconnect/refresh paths
+  - first remaining concrete watch items:
+    - top-level non-object / combinator-heavy MCP schemas at OpenAI-compatible
+      provider boundaries
+    - Anthropic outbound MCP schema normalization parity
+    - `{}` runtime-validation vs provider-normalization parity review
+  - keep the read-file aliases and outline follow-up closed unless a new
+    concrete failing repro appears

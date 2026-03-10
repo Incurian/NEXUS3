@@ -91,6 +91,40 @@ materially reduce real MCP tool boundary risk.
 - Only add integration coverage when a unit/security test cannot capture the
   boundary correctly.
 
+## Current Status
+
+- First concrete finding confirmed and fixed:
+  runtime MCP skill dispatch was not visibility-aware for private vs shared
+  server connections.
+- Second concrete finding confirmed and fixed:
+  direct MCP adapter execution was catching the wrong validation exception
+  class and could throw instead of returning `ToolResult(error=...)` on
+  invalid arguments.
+- Shipped hardening:
+  - `MCPServerRegistry.find_skill(...)` and `get_server_for_skill(...)` now
+    accept optional `agent_id` visibility filtering.
+  - `ToolDispatcher` now resolves MCP tools with the current `agent_id`.
+  - MCP permission runtime now re-checks server visibility as defense in depth
+    and returns `Unknown skill: ...` for invisible private tools.
+  - `MCPSkillAdapter.execute(...)` now catches `ValidationError` and returns a
+    normal tool error for invalid arguments instead of escaping the exception.
+- Focused validation for this slice:
+  - `tests/unit/mcp/test_registry.py`
+  - `tests/unit/mcp/test_skill_adapter.py`
+  - `tests/unit/session/test_dispatcher.py`
+  - `tests/unit/session/test_session_permission_kernelization.py`
+  - `tests/integration/test_mcp_client.py -k 'agent_visibility or shared_visibility'`
+- Remaining audit watch items:
+  - top-level non-object / combinator-heavy MCP schemas can still exceed
+    OpenAI-compatible provider constraints
+  - Anthropic outbound MCP tool shaping is not normalized the same way as the
+    OpenAI-compatible path
+  - raw `{}` MCP schemas still merit a behavior review for runtime validation
+    vs provider-side normalization parity
+- Next audit gate:
+  - schema adaptation and reconnect/refresh boundary review after the runtime
+    visibility fix
+
 ## Documentation Updates
 
 - Update `AGENTS.md` running status with the selected next audit scope.

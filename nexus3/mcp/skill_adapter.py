@@ -15,7 +15,7 @@ from typing import Any
 
 from nexus3.core.identifiers import build_mcp_skill_name
 from nexus3.core.types import ToolResult
-from nexus3.core.validation import validate_tool_arguments
+from nexus3.core.validation import ValidationError, validate_tool_arguments
 from nexus3.display.safe_sink import SafeSink
 from nexus3.mcp.client import MCPClient, MCPError
 from nexus3.mcp.error_formatter import format_timeout_error
@@ -76,8 +76,8 @@ class MCPSkillAdapter(BaseSkill):
         # Validate parameters against input_schema before calling MCP server
         try:
             validated_args = validate_tool_arguments(kwargs, self._parameters)
-        except ValueError as e:
-            return ToolResult(error=f"Invalid parameters for {self.name}: {e}")
+        except ValidationError as e:
+            return ToolResult(error=f"Invalid parameters for {self.name}: {e.message}")
 
         try:
             mcp_result = await self._client.call_tool(

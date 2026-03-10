@@ -426,8 +426,8 @@ await registry.close_all()
 | `get(name, agent_id)` | Get connected server |
 | `list_servers(agent_id)` | List server names |
 | `get_all_skills(agent_id)` | Get all skill adapters (with lazy reconnection) |
-| `find_skill(tool_name)` | Find skill by name, returns `(skill, server_name)` |
-| `get_server_for_skill(skill_name)` | Find server providing a skill |
+| `find_skill(tool_name, agent_id=None)` | Find skill by name, optionally restricted to servers visible to an agent |
+| `get_server_for_skill(skill_name, agent_id=None)` | Find server providing a skill, optionally restricted to servers visible to an agent |
 | `check_connections()` | Remove dead connections |
 | `retry_tools(name)` | Retry tool listing |
 | `close_all()` | Disconnect all servers |
@@ -436,6 +436,9 @@ await registry.close_all()
 **Visibility Model:**
 - `shared=True`: Connection visible to all agents
 - `shared=False`: Connection visible only to `owner_agent_id`
+- Runtime MCP tool invocation now follows the same visibility model as listing:
+  non-owners cannot resolve private `mcp_*` tools by explicit name at dispatch
+  time.
 
 **Graceful Degradation:**
 - Connections succeed even if `list_tools()` fails (skills will be empty)

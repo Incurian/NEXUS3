@@ -72,6 +72,7 @@ async def handle_mcp_permissions(
     mcp_level_allowed = can_use_mcp(permissions)
     requester_id = services.get("agent_id") if services else None
     principal_id = requester_id if isinstance(requester_id, str) and requester_id else "unknown"
+    mcp_registry = services.get_mcp_registry() if services else None
     kernel_request = AuthorizationRequest(
         action=AuthorizationAction.TOOL_EXECUTE,
         resource=AuthorizationResource(
@@ -87,6 +88,14 @@ async def handle_mcp_permissions(
 
     if not skill:
         return None  # Let caller handle unknown skill
+
+    if (
+        isinstance(requester_id, str)
+        and requester_id
+        and mcp_registry is not None
+        and mcp_registry.get(server_name, agent_id=requester_id) is None
+    ):
+        return ToolResult(error=f"Unknown skill: {tool_call.name}")
 
     # Check if confirmation needed for this MCP tool/server
     level = permissions.effective_policy.level
