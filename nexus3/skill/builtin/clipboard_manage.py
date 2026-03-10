@@ -1,10 +1,13 @@
 """Management skills for clipboard: list, get, update, delete, clear."""
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from nexus3.clipboard import ClipboardScope, format_entry_detail
+from nexus3.core.errors import PathSecurityError
+from nexus3.core.resolver import PathResolver
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import _wrap_with_validation
 
@@ -326,9 +329,14 @@ class ClipboardUpdateSkill(ClipboardSkillBase):
         source_lines_str: str | None = None
 
         if source is not None:
-            import asyncio
-            from pathlib import Path
-            source_path = Path(source).expanduser().resolve()
+            try:
+                source_path = PathResolver(self._services).resolve(
+                    source,
+                    tool_name=self.name,
+                    must_exist=True,
+                )
+            except (PathSecurityError, ValueError) as e:
+                return ToolResult(error=str(e))
             try:
                 file_content = await asyncio.to_thread(
                     source_path.read_text, encoding="utf-8", errors="replace"

@@ -69,6 +69,23 @@ TOOL_PATH_SEMANTICS: dict[str, ToolPathSemantics] = {
         write_keys=("path", "target"),
         display_key="path"
     ),
+    "copy": ToolPathSemantics(read_keys=("source",)),
+    "cut": ToolPathSemantics(
+        read_keys=("source",),
+        write_keys=("source",),
+        display_key="source"
+    ),
+    "paste": ToolPathSemantics(
+        read_keys=("target",),
+        write_keys=("target",),
+        display_key="target"
+    ),
+    "clipboard_export": ToolPathSemantics(
+        write_keys=("path",),
+        display_key="path"
+    ),
+    "clipboard_import": ToolPathSemantics(read_keys=("path",)),
+    "clipboard_update": ToolPathSemantics(read_keys=("source",)),
     "gitlab_artifact": ToolPathSemantics(
         write_keys=("output_path",),
         display_key="output_path"

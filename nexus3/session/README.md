@@ -644,7 +644,8 @@ AGENT_TARGET_TOOLS = frozenset({"nexus_send", "nexus_status", "nexus_cancel", "n
 PATH_TOOLS = frozenset({
     "read_file", "write_file", "edit_file", "edit_lines", "append_file", "tail",
     "file_info", "list_directory", "mkdir", "copy_file", "rename",
-    "regex_replace", "patch", "gitlab_artifact", "glob", "grep",
+    "regex_replace", "patch", "gitlab_artifact", "glob", "grep", "copy",
+    "cut", "paste", "clipboard_export", "clipboard_import", "clipboard_update",
 })
 ```
 
@@ -741,6 +742,12 @@ Registered semantics:
 | `append_file` | `path` | `path` | `path` |
 | `regex_replace` | `path` | `path` | `path` |
 | `patch` | `path`, `target`, `diff_file` | `path`, `target` | `path` |
+| `copy` | `source` | - | - |
+| `cut` | `source` | `source` | `source` |
+| `paste` | `target` | `target` | `target` |
+| `clipboard_export` | - | `path` | `path` |
+| `clipboard_import` | `path` | - | - |
+| `clipboard_update` | `source` | - | - |
 | `gitlab_artifact` | - | `output_path` | `output_path` |
 | `copy_file` | `source` | `destination` | `destination` |
 | `rename` | `source` | `destination` | `destination` |

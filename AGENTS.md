@@ -3577,6 +3577,9 @@ Planning checkpoint (2026-03-10, file-edit contract harmonization discussion):
 - Approved note/reminder items (document rather than flatten):
   - `read_file` is numbered by default; exact-match edits should usually use
     `line_numbers=false`
+  - future ergonomics follow-up: consider accepting `read_file.start_line` and
+    `read_file.end_line` as compatibility aliases for the existing
+    `offset` / `limit` paging contract
   - `edit_file(edits=[...])` batch items must be independent
   - `edit_lines(edits=[...])` uses original-file line numbers and auto-orders
     bottom-to-top
@@ -3689,3 +3692,74 @@ Execution update (2026-03-10, file-edit contract harmonization phase 3):
     slice unless the user redirects.
   - deferred hygiene reminder: return to full 100% green validation
     (not just focused touched-file passes) after the current audit/fix cycle.
+
+Execution update (2026-03-10, broad tool-family audit kickoff):
+- Added new broad follow-up plan:
+  - `docs/plans/BROAD-TOOL-FAMILY-AUDIT-AND-HARDENING-PLAN-2026-03-10.md`
+- Broad audit findings recorded for the next non-file-edit families:
+  - clipboard family has the highest-severity issues:
+    - `clipboard_update(source=...)` was reading files via raw
+      `Path(...).resolve()` instead of the shared path-validation stack
+    - clipboard file tools were not fully wired into
+      `session/path_semantics.py`
+    - TRUSTED destructive confirmation did not cover all clipboard
+      write-side file tools (`cut`, `paste`, `clipboard_export`)
+  - `nexus_*` family remains non-strict on unknown args and still has
+    doc/runtime drift around `nexus_create` knobs and request-id behavior
+  - shell/exec/git family remains non-strict on unknown args, though current
+    docs are broadly accurate after the Windows shell fixes
+  - GitLab/MCP-adjacent follow-ups remain open:
+    - GitLab top-level schemas are still non-strict
+    - shared validation currently strips valid dynamic keys from open-ended
+      MCP-style schemas by collapsing validated args back to explicit
+      `properties`
+    - GitLab autodetection still blocks the event loop with synchronous
+      subprocess calls
+- Active phase:
+  - Phase 1 from
+    `docs/plans/BROAD-TOOL-FAMILY-AUDIT-AND-HARDENING-PLAN-2026-03-10.md`:
+    clipboard security hardening
+- Phase 1 implementation target:
+  - route `clipboard_update(source=...)` through shared path validation
+  - register clipboard file tools in `session/path_semantics.py`
+  - bring clipboard file writers under the normal TRUSTED confirmation model
+  - add focused permission/path regressions before moving on to the nexus/shell
+    families
+
+Execution update (2026-03-10, broad tool-family audit phase 1 complete):
+- Completed Phase 1 from
+  `docs/plans/BROAD-TOOL-FAMILY-AUDIT-AND-HARDENING-PLAN-2026-03-10.md`:
+  clipboard security hardening
+- Hardened clipboard file-path handling and confirmation semantics in:
+  - `nexus3/skill/builtin/clipboard_manage.py`
+    - `clipboard_update(source=...)` now resolves through the shared
+      `PathResolver` path-validation stack instead of raw `Path(...).resolve()`
+  - `nexus3/session/path_semantics.py`
+    - registered explicit semantics for `copy`, `cut`, `paste`,
+      `clipboard_export`, `clipboard_import`, and `clipboard_update`
+  - `nexus3/core/policy.py`
+    - added `cut`, `paste`, and `clipboard_export` to TRUSTED destructive
+      action handling
+  - `nexus3/session/enforcer.py`
+    - updated the path-tool registry for clipboard file tools
+- Added focused regressions in:
+  - `tests/unit/skill/test_clipboard_manage.py`
+    - blocked/out-of-scope `clipboard_update(source=...)`
+  - `tests/security/test_multipath_confirmation.py`
+    - clipboard tool path semantics, write-path extraction, TRUSTED
+      confirmation, and confirmation-context coverage
+  - `tests/unit/test_permissions.py`
+    - clipboard destructive-action membership and cwd-aware confirmation checks
+- Synced plan/status/module docs in:
+  - `docs/plans/BROAD-TOOL-FAMILY-AUDIT-AND-HARDENING-PLAN-2026-03-10.md`
+  - `docs/plans/README.md`
+  - `nexus3/session/README.md`
+- Focused validation passed:
+  - `.venv/bin/ruff check nexus3/skill/builtin/clipboard_manage.py nexus3/session/path_semantics.py nexus3/session/enforcer.py nexus3/core/policy.py tests/unit/skill/test_clipboard_manage.py tests/security/test_multipath_confirmation.py tests/unit/test_permissions.py docs/plans/BROAD-TOOL-FAMILY-AUDIT-AND-HARDENING-PLAN-2026-03-10.md docs/plans/README.md AGENTS.md nexus3/session/README.md`
+  - `.venv/bin/pytest -q tests/unit/skill/test_clipboard_manage.py tests/security/test_multipath_confirmation.py tests/unit/test_permissions.py` (`183 passed`)
+  - `git diff --check`
+- Next gate:
+  - Phase 2: nexus family contract hardening
+  - keep the MCP/open-ended-schema validation hazard recorded for the later
+    shared validation slice before expanding strictness to more external-tool
+    families

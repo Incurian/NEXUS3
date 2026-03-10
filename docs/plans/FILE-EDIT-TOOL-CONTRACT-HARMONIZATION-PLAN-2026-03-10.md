@@ -67,6 +67,9 @@ These are legitimate behaviors, but they are easy for agents to misuse:
 
 - `read_file` is numbered by default; exact-match edits should usually use
   `line_numbers=false`
+- later ergonomics follow-up: consider accepting `read_file.start_line` and
+  `read_file.end_line` as compatibility aliases for the existing
+  `offset` / `limit` paging contract
 - `edit_file(edits=[...])` batch items must be independent; later edits cannot
   rely on earlier ones to create or reshape their target matches
 - `edit_lines(edits=[...])` interprets line numbers against the original file

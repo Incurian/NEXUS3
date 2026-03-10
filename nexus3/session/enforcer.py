@@ -47,7 +47,8 @@ AGENT_TARGET_TOOLS = frozenset({
 PATH_TOOLS = frozenset({
     "read_file", "write_file", "edit_file", "edit_lines", "append_file", "tail",
     "file_info", "list_directory", "mkdir", "copy_file", "rename",
-    "regex_replace", "patch", "glob", "grep",
+    "regex_replace", "patch", "glob", "grep", "copy", "cut", "paste",
+    "clipboard_export", "clipboard_import", "clipboard_update",
 })
 
 class _AgentTargetAuthorizationAdapter:

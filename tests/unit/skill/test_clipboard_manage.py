@@ -1,6 +1,8 @@
 """Unit tests for clipboard management skills."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from nexus3.clipboard import CLIPBOARD_PRESETS, ClipboardManager, ClipboardScope
@@ -330,6 +332,41 @@ class TestClipboardUpdateSkill:
         entry = clipboard_manager.get("test", ClipboardScope.AGENT)
         assert entry is not None
         assert entry.content == "new content from file"
+
+    @pytest.mark.asyncio
+    async def test_update_rejects_source_outside_allowed_paths(
+        self,
+        clipboard_manager,
+        tmp_path: Path,
+    ):
+        """Source reads use the normal path-validation stack."""
+        allowed = tmp_path / "allowed"
+        allowed.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "source.txt").write_text("blocked content", encoding="utf-8")
+
+        clipboard_manager.copy(key="test", content="old", scope=ClipboardScope.AGENT)
+
+        container = ServiceContainer()
+        container.set_cwd(str(allowed))
+        container.register("clipboard_manager", clipboard_manager)
+        container.register_runtime_compat("allowed_paths", [allowed])
+        skill = clipboard_update_factory(container)
+
+        result = await skill.execute(
+            key="test",
+            scope="agent",
+            source=str(outside / "source.txt"),
+        )
+
+        assert not result.success
+        assert result.error is not None
+        assert "outside" in result.error.lower() or "allowed" in result.error.lower()
+
+        entry = clipboard_manager.get("test", ClipboardScope.AGENT)
+        assert entry is not None
+        assert entry.content == "old"
 
     @pytest.mark.asyncio
     async def test_update_rename_key(self, update_skill, clipboard_manager):

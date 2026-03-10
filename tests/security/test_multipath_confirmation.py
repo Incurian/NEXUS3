@@ -86,6 +86,30 @@ class TestToolPathSemantics:
         )
         assert get_semantics("patch") == TOOL_PATH_SEMANTICS["patch"]
 
+    def test_clipboard_tool_semantics_registered(self) -> None:
+        """Clipboard file tools have explicit read/write semantics."""
+        assert TOOL_PATH_SEMANTICS["copy"] == ToolPathSemantics(read_keys=("source",))
+        assert TOOL_PATH_SEMANTICS["cut"] == ToolPathSemantics(
+            read_keys=("source",),
+            write_keys=("source",),
+            display_key="source",
+        )
+        assert TOOL_PATH_SEMANTICS["paste"] == ToolPathSemantics(
+            read_keys=("target",),
+            write_keys=("target",),
+            display_key="target",
+        )
+        assert TOOL_PATH_SEMANTICS["clipboard_export"] == ToolPathSemantics(
+            write_keys=("path",),
+            display_key="path",
+        )
+        assert TOOL_PATH_SEMANTICS["clipboard_import"] == ToolPathSemantics(
+            read_keys=("path",),
+        )
+        assert TOOL_PATH_SEMANTICS["clipboard_update"] == ToolPathSemantics(
+            read_keys=("source",),
+        )
+
     def test_gitlab_artifact_semantics_registered(self) -> None:
         """gitlab_artifact treats output_path as its write target."""
         assert TOOL_PATH_SEMANTICS["gitlab_artifact"] == ToolPathSemantics(
@@ -170,6 +194,24 @@ class TestExtractWritePaths:
         }
         paths = extract_write_paths("gitlab_artifact", args)
         assert paths == [Path("/tmp/artifacts.zip")]
+
+    def test_cut_returns_source_as_write_path(self) -> None:
+        """cut writes back to the source file it removes content from."""
+        args = {"source": "/repo/src/file.py", "key": "snippet"}
+        paths = extract_write_paths("cut", args)
+        assert paths == [Path("/repo/src/file.py")]
+
+    def test_paste_returns_target_as_write_path(self) -> None:
+        """paste writes to its target file."""
+        args = {"key": "snippet", "target": "/repo/src/file.py"}
+        paths = extract_write_paths("paste", args)
+        assert paths == [Path("/repo/src/file.py")]
+
+    def test_clipboard_export_returns_path_as_write_path(self) -> None:
+        """clipboard_export writes to the export file path."""
+        args = {"path": "/tmp/export.json"}
+        paths = extract_write_paths("clipboard_export", args)
+        assert paths == [Path("/tmp/export.json")]
 
     def test_read_file_returns_empty(self) -> None:
         """read_file has no write paths."""
@@ -273,6 +315,18 @@ class TestExtractToolPaths:
         }
         paths = extract_tool_paths("gitlab_artifact", args)
         assert paths == [Path("/tmp/artifacts.zip")]
+
+    def test_clipboard_copy_paths_include_source(self) -> None:
+        """copy permission checks should see its source file."""
+        args = {"source": "/repo/src/file.py", "key": "snippet"}
+        paths = extract_tool_paths("copy", args)
+        assert paths == [Path("/repo/src/file.py")]
+
+    def test_clipboard_update_paths_include_source(self) -> None:
+        """clipboard_update permission checks should see the replacement source file."""
+        args = {"key": "snippet", "scope": "agent", "source": "/repo/src/file.py"}
+        paths = extract_tool_paths("clipboard_update", args)
+        assert paths == [Path("/repo/src/file.py")]
 
     def test_read_file_returns_none(self) -> None:
         """read_file has no display path (no confirmation needed)."""
@@ -515,6 +569,108 @@ class TestEnforcerRequiresConfirmation:
 
         assert enforcer.requires_confirmation(tool_call, permissions) is True
 
+    def test_cut_no_confirm_source_in_cwd(self, tmp_path: Path) -> None:
+        """cut stays auto-approved for TRUSTED writes inside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="cut",
+            arguments={"source": str(cwd / "notes.txt"), "key": "snippet"},
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is False
+
+    def test_cut_checks_source_outside_cwd(self, tmp_path: Path) -> None:
+        """cut requires confirmation for TRUSTED writes outside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="cut",
+            arguments={"source": str(outside / "notes.txt"), "key": "snippet"},
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is True
+
+    def test_paste_no_confirm_target_in_cwd(self, tmp_path: Path) -> None:
+        """paste stays auto-approved for TRUSTED writes inside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="paste",
+            arguments={"key": "snippet", "target": str(cwd / "notes.txt")},
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is False
+
+    def test_paste_checks_target_outside_cwd(self, tmp_path: Path) -> None:
+        """paste requires confirmation for TRUSTED writes outside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="paste",
+            arguments={"key": "snippet", "target": str(outside / "notes.txt")},
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is True
+
+    def test_clipboard_export_no_confirm_path_in_cwd(self, tmp_path: Path) -> None:
+        """clipboard_export stays auto-approved for TRUSTED writes inside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="clipboard_export",
+            arguments={"path": str(cwd / "clipboard.json")},
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is False
+
+    def test_clipboard_export_checks_path_outside_cwd(self, tmp_path: Path) -> None:
+        """clipboard_export requires confirmation for TRUSTED writes outside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="clipboard_export",
+            arguments={"path": str(outside / "clipboard.json")},
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is True
+
 
 class TestEnforcerGetConfirmationContext:
     """Test the get_confirmation_context method."""
@@ -619,6 +775,51 @@ class TestEnforcerGetConfirmationContext:
 
         assert display_path == Path("/tmp/artifacts.zip")
         assert write_paths == [Path("/tmp/artifacts.zip")]
+
+    def test_cut_context(self) -> None:
+        """cut context returns the source file for display and write allowances."""
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="cut",
+            arguments={"source": "/tmp/source.txt", "key": "snippet"},
+        )
+
+        display_path, write_paths = enforcer.get_confirmation_context(tool_call)
+
+        assert display_path == Path("/tmp/source.txt")
+        assert write_paths == [Path("/tmp/source.txt")]
+
+    def test_paste_context(self) -> None:
+        """paste context returns the target file for display and write allowances."""
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="paste",
+            arguments={"key": "snippet", "target": "/tmp/target.txt"},
+        )
+
+        display_path, write_paths = enforcer.get_confirmation_context(tool_call)
+
+        assert display_path == Path("/tmp/target.txt")
+        assert write_paths == [Path("/tmp/target.txt")]
+
+    def test_clipboard_export_context(self) -> None:
+        """clipboard_export context returns the export file path."""
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="clipboard_export",
+            arguments={"path": "/tmp/clipboard.json"},
+        )
+
+        display_path, write_paths = enforcer.get_confirmation_context(tool_call)
+
+        assert display_path == Path("/tmp/clipboard.json")
+        assert write_paths == [Path("/tmp/clipboard.json")]
 
 
 class TestAllowanceAppliedToWritePaths:

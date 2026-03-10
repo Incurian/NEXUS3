@@ -363,6 +363,60 @@ class TestPermissionPolicyConfirmation:
         assert policy.requires_confirmation("patch", path=cwd / "notes.txt") is False
         assert policy.requires_confirmation("patch", path=outside / "notes.txt") is True
 
+    def test_trusted_cut_confirmation_tracks_cwd(self, tmp_path):
+        """cut requires confirmation only when the source write escapes cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        policy = PermissionPolicy(
+            level=PermissionLevel.TRUSTED,
+            cwd=cwd,
+            allowed_paths=None,
+        )
+
+        assert policy.requires_confirmation("cut", path=cwd / "notes.txt") is False
+        assert policy.requires_confirmation("cut", path=outside / "notes.txt") is True
+
+    def test_trusted_paste_confirmation_tracks_cwd(self, tmp_path):
+        """paste requires confirmation only when the target write escapes cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        policy = PermissionPolicy(
+            level=PermissionLevel.TRUSTED,
+            cwd=cwd,
+            allowed_paths=None,
+        )
+
+        assert policy.requires_confirmation("paste", path=cwd / "notes.txt") is False
+        assert policy.requires_confirmation("paste", path=outside / "notes.txt") is True
+
+    def test_trusted_clipboard_export_confirmation_tracks_cwd(self, tmp_path):
+        """clipboard_export requires confirmation only when the export path escapes cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        policy = PermissionPolicy(
+            level=PermissionLevel.TRUSTED,
+            cwd=cwd,
+            allowed_paths=None,
+        )
+
+        assert (
+            policy.requires_confirmation("clipboard_export", path=cwd / "clipboard.json")
+            is False
+        )
+        assert policy.requires_confirmation(
+            "clipboard_export",
+            path=outside / "clipboard.json",
+        ) is True
+
     def test_shell_unsafe_always_requires_confirmation(self):
         """shell_UNSAFE always requires confirmation in TRUSTED mode, even with allowances."""
         from nexus3.core.allowances import SessionAllowances
@@ -536,6 +590,12 @@ class TestActionSets:
         """edit_lines and patch are destructive write actions."""
         assert "edit_lines" in DESTRUCTIVE_ACTIONS
         assert "patch" in DESTRUCTIVE_ACTIONS
+
+    def test_clipboard_write_tools_are_destructive_actions(self):
+        """Clipboard file writers participate in TRUSTED destructive-action handling."""
+        assert "cut" in DESTRUCTIVE_ACTIONS
+        assert "paste" in DESTRUCTIVE_ACTIONS
+        assert "clipboard_export" in DESTRUCTIVE_ACTIONS
 
 
 class TestPermissionPolicyDataclass:
