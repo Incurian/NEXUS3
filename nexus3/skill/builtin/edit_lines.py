@@ -6,6 +6,7 @@ from typing import Any
 from nexus3.core.errors import PathSecurityError
 from nexus3.core.paths import atomic_write_bytes, detect_line_ending
 from nexus3.core.types import ToolResult
+from nexus3.skill.argument_normalization import normalize_empty_optional_string
 from nexus3.skill.base import FileSkill, file_skill_factory
 
 
@@ -124,12 +125,13 @@ class EditLinesSkill(FileSkill):
         batch_mode = edits is not None
 
         # Some tool-callers may send empty-string placeholders for omitted
-        # single-edit fields in batch mode. Treat the exact empty shape as omitted.
-        if batch_mode and start_line is None and end_line is None and new_content in ("", None):
-            pass
+        # single-edit fields in batch mode. Normalize the optional text field
+        # centrally instead of checking for one exact ad hoc shape.
+        if batch_mode:
+            new_content = normalize_empty_optional_string(new_content)
 
         if batch_mode:
-            if start_line is not None or end_line is not None or new_content not in ("", None):
+            if start_line is not None or end_line is not None or new_content is not None:
                 return ToolResult(
                     error=(
                         "Cannot use 'edits' array with single-edit parameters "

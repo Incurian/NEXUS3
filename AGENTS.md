@@ -3660,3 +3660,28 @@ Execution update (2026-03-10, file-edit contract harmonization phase 2):
 - Next gate:
   - Phase 3: centralize empty-placeholder normalization for file-edit tools
     instead of maintaining one-off per-tool branches.
+
+Execution update (2026-03-10, file-edit contract harmonization phase 3):
+- Completed Phase 3 from
+  `docs/plans/FILE-EDIT-TOOL-CONTRACT-HARMONIZATION-PLAN-2026-03-10.md`:
+  centralize empty-placeholder normalization for file-edit tools.
+- Added narrow shared helper module:
+  - `nexus3/skill/argument_normalization.py`
+  - provides shared optional-string omission normalization for callers that send
+    `\"\"` when they mean “parameter omitted”
+- Migrated duplicated one-off normalization branches in:
+  - `nexus3/skill/builtin/edit_file.py`
+  - `nexus3/skill/builtin/edit_lines.py`
+  - `nexus3/skill/builtin/patch.py`
+- Behavior is unchanged intentionally:
+  - `edit_file` batch placeholder single-edit fields still normalize safely
+  - `edit_lines` batch placeholder `new_content=\"\"` still means omitted
+  - `patch` placeholder `diff=\"\"` / `diff_file=\"\"` still mean omitted
+- Focused validation passed:
+  - `.venv/bin/ruff check nexus3/skill/argument_normalization.py nexus3/skill/builtin/edit_file.py nexus3/skill/builtin/edit_lines.py nexus3/skill/builtin/patch.py tests/unit/skill/test_edit_file.py tests/unit/skill/test_edit_lines.py tests/unit/skill/test_patch.py`
+  - `.venv/bin/pytest -q tests/unit/skill/test_edit_file.py tests/unit/skill/test_edit_lines.py tests/unit/skill/test_patch.py` (`84 passed`)
+- Next gate:
+  - File-edit contract harmonization plan is complete.
+  - Next sensible follow-up is the broader discussion already approved by the
+    user: which remaining cross-tool inconsistencies are appropriate vs should
+    be standardized next, and then a similar audit for other tool families.

@@ -26,6 +26,7 @@ from nexus3.patch import (
     project_patch_file_v2_to_v1,
     validate_patch,
 )
+from nexus3.skill.argument_normalization import normalize_empty_optional_string
 from nexus3.skill.base import FileSkill, file_skill_factory
 
 HunkLinePrefix = Literal[" ", "-", "+"]
@@ -175,11 +176,9 @@ class PatchSkill(FileSkill):
             ToolResult with success message or error
         """
         # Some tool-callers send empty-string placeholders for omitted alias/input
-        # fields. Normalize those exact shapes before validation.
-        if diff == "":
-            diff = None
-        if diff_file == "":
-            diff_file = None
+        # fields. Normalize those optional strings centrally before validation.
+        diff = normalize_empty_optional_string(diff)
+        diff_file = normalize_empty_optional_string(diff_file)
 
         # Keep explicit legacy rejection for callers using old migration flags.
         if fidelity_mode == "legacy":

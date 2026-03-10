@@ -205,10 +205,10 @@ Work:
 - [x] Add plan index entry.
 - [x] Phase 1: reject unknown args consistently across the file-edit family.
 - [x] Phase 2: complete canonical `path` cleanup for `patch` docs/semantics.
-- [ ] Phase 3: add shared placeholder-normalization helper and remove duplicate
+- [x] Phase 3: add shared placeholder-normalization helper and remove duplicate
       one-off branches where appropriate.
-- [ ] Phase 4: sync prompts/docs/status files.
-- [ ] Run focused validation and record results in `AGENTS.md`.
+- [x] Phase 4: sync prompts/docs/status files.
+- [x] Run focused validation and record results in `AGENTS.md`.
 
 ## Documentation Updates
 

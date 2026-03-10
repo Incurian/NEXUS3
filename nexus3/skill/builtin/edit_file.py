@@ -6,6 +6,7 @@ from typing import Any
 from nexus3.core.errors import PathSecurityError
 from nexus3.core.paths import atomic_write_bytes, detect_line_ending
 from nexus3.core.types import ToolResult
+from nexus3.skill.argument_normalization import normalize_empty_optional_string
 from nexus3.skill.base import FileSkill, file_skill_factory
 
 
@@ -129,10 +130,11 @@ class EditFileSkill(FileSkill):
         batch_mode = edits is not None and len(edits) > 0
 
         # Some tool-callers send empty-string placeholders for omitted single-edit
-        # fields when using batch mode. Treat that exact shape as "not provided".
-        if batch_mode and old_string == "" and new_string == "" and not replace_all:
-            old_string = None
-            new_string = None
+        # fields when using batch mode. Normalize those optional string placeholders
+        # centrally instead of handling each field ad hoc.
+        if batch_mode and not replace_all:
+            old_string = normalize_empty_optional_string(old_string)
+            new_string = normalize_empty_optional_string(new_string)
 
         if batch_mode:
             # Cannot mix with single-edit params
