@@ -608,6 +608,53 @@ class TestGitLabClientGetRaw:
         assert exc_info.value.status_code == 404
 
 
+class TestGitLabClientGetBytes:
+    """Tests for get_bytes() method (returns raw bytes)."""
+
+    @pytest.fixture
+    def client_with_mock_http(self) -> ClientFixture:
+        """Create client with mocked HTTP."""
+        instance = GitLabInstance(url="https://gitlab.com", token="test-token")
+        client = GitLabClient(instance)
+
+        mock_http = AsyncMock()
+        mock_http.is_closed = False
+        client._http = mock_http
+        client._token = "test-token"
+
+        return client, mock_http
+
+    @pytest.mark.asyncio
+    async def test_get_bytes_returns_content(self, client_with_mock_http: ClientFixture) -> None:
+        """get_bytes() returns response content for binary endpoints."""
+        client, mock_http = client_with_mock_http
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"ZIPDATA"
+        mock_http.request.return_value = mock_response
+
+        result = await client.get_bytes("/projects/1/jobs/1/artifacts")
+
+        assert result == b"ZIPDATA"
+
+    @pytest.mark.asyncio
+    async def test_get_bytes_error_handling(self, client_with_mock_http: ClientFixture) -> None:
+        """get_bytes() surfaces HTTP errors as GitLabAPIError."""
+        client, mock_http = client_with_mock_http
+
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.json.return_value = {"message": "Artifact not found"}
+        mock_response.text = "Not Found"
+        mock_http.request.return_value = mock_response
+
+        with pytest.raises(GitLabAPIError) as exc_info:
+            await client.get_bytes("/projects/1/jobs/999/artifacts")
+
+        assert exc_info.value.status_code == 404
+
+
 class TestGitLabClientUserLookup:
     """Tests for user lookup and caching."""
 

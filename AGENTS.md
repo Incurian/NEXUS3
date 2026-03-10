@@ -3900,3 +3900,44 @@ Execution update (2026-03-10, broad tool-family audit phase 4 complete):
   - Phase 5: GitLab operational follow-ups
   - after that, return to the broader non-file family audit backlog and the
     deferred full-suite 100% green pass
+
+Execution update (2026-03-10, broad tool-family audit phase 5 complete):
+- Completed Phase 5 from
+  `docs/plans/BROAD-TOOL-FAMILY-AUDIT-AND-HARDENING-PLAN-2026-03-10.md`:
+  GitLab operational follow-ups
+- Moved GitLab remote autodetection off the event loop in runtime paths:
+  - `nexus3/skill/vcs/gitlab/base.py`
+    - added cached origin-remote detection helpers
+    - async execute paths now prefetch remote metadata with `asyncio.to_thread`
+      before instance/project autodetection
+    - synchronous helper methods still exist for direct/test use, but normal
+      async skill execution no longer blocks on `subprocess.run(...)`
+- Moved artifact downloads onto the shared GitLab client request path:
+  - `nexus3/skill/vcs/gitlab/client.py`
+    - added `get_bytes()` for binary endpoints with shared URL validation and
+      GitLab error shaping
+  - `nexus3/skill/vcs/gitlab/artifact.py`
+    - download/browse/ref-download flows now use `client.get_bytes(...)`
+      instead of private `_ensure_client()` + raw `httpx` calls
+- Added focused regressions in:
+  - `tests/unit/skill/vcs/test_gitlab_skills.py`
+    - remote-cache prefetch off-event-loop behavior
+    - cached project resolution without a fresh subprocess
+    - artifact downloads and browsing route through `get_bytes()`
+  - `tests/unit/skill/vcs/test_gitlab_client.py`
+    - `get_bytes()` success/error behavior
+- Synced module docs in:
+  - `nexus3/skill/vcs/README.md`
+- Focused validation passed:
+  - `.venv/bin/ruff check nexus3/skill/vcs/gitlab/base.py nexus3/skill/vcs/gitlab/client.py nexus3/skill/vcs/gitlab/artifact.py tests/unit/skill/vcs/test_gitlab_skills.py tests/unit/skill/vcs/test_gitlab_client.py`
+  - `.venv/bin/pytest -q tests/unit/skill/vcs/test_gitlab_skills.py tests/unit/skill/vcs/test_gitlab_client.py` (`122 passed`)
+- Broad-audit plan status:
+  - all planned phases are now implemented
+  - remaining GitLab note is the lower-confidence nested object/provider
+    friction watch item, which stays deferred unless a concrete provider
+    failure appears
+- Next gate:
+  - return to the broader deferred backlog:
+    - full-suite 100% green validation pass
+    - shell-family follow-up discussion
+    - additional tool-family contract audits outside file/nexus/shell/clipboard/GitLab

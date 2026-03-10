@@ -212,28 +212,28 @@ class GitLabArtifactSkill(GitLabSkill):
         **kwargs: Any,
     ) -> ToolResult:
         """Download job artifacts (zip archive)."""
-        http_client = await client._ensure_client()
-        url = f"{client._base_url}/projects/{project}/jobs/{job_id}/artifacts"
-
         try:
-            response = await http_client.get(url)
-
-            if response.status_code == 404:
+            content = await client.get_bytes(f"/projects/{project}/jobs/{job_id}/artifacts")
+        except GitLabAPIError as e:
+            if e.status_code == 404:
                 return ToolResult(
                     error=f"No artifacts found for job {job_id}. "
                     "The job may not have produced artifacts or they may have expired."
                 )
-            if response.status_code >= 400:
+            if e.status_code > 0:
                 return ToolResult(
-                    error=f"Failed to download artifacts: HTTP {response.status_code}"
+                    error=f"Failed to download artifacts: HTTP {e.status_code}"
                 )
+            return ToolResult(error=f"Failed to download artifacts: {e}")
+        except Exception as e:
+            return ToolResult(error=f"Failed to download artifacts: {e}")
 
-            # Write binary content to file
+        try:
             out_path = Path(output_path)
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_bytes(response.content)
+            out_path.write_bytes(content)
 
-            size_kb = len(response.content) / 1024
+            size_kb = len(content) / 1024
             if size_kb >= 1024:
                 size_str = f"{size_kb / 1024:.1f} MB"
             else:
@@ -256,30 +256,33 @@ class GitLabArtifactSkill(GitLabSkill):
         **kwargs: Any,
     ) -> ToolResult:
         """Download a single file from job artifacts."""
-        http_client = await client._ensure_client()
         # URL-encode the artifact path (slashes become %2F)
         encoded_artifact = artifact_path.replace("/", "%2F")
-        url = f"{client._base_url}/projects/{project}/jobs/{job_id}/artifacts/{encoded_artifact}"
 
         try:
-            response = await http_client.get(url)
-
-            if response.status_code == 404:
+            content = await client.get_bytes(
+                f"/projects/{project}/jobs/{job_id}/artifacts/{encoded_artifact}"
+            )
+        except GitLabAPIError as e:
+            if e.status_code == 404:
                 return ToolResult(
                     error=f"Artifact file '{artifact_path}' not found in job {job_id}. "
                     "Use 'browse' action to list available files."
                 )
-            if response.status_code >= 400:
+            if e.status_code > 0:
                 return ToolResult(
-                    error=f"Failed to download artifact file: HTTP {response.status_code}"
+                    error=f"Failed to download artifact file: HTTP {e.status_code}"
                 )
+            return ToolResult(error=f"Failed to download artifact file: {e}")
+        except Exception as e:
+            return ToolResult(error=f"Failed to download artifact file: {e}")
 
-            # Write binary content to file
+        try:
             out_path = Path(output_path)
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_bytes(response.content)
+            out_path.write_bytes(content)
 
-            size_kb = len(response.content) / 1024
+            size_kb = len(content) / 1024
             if size_kb >= 1024:
                 size_str = f"{size_kb / 1024:.1f} MB"
             else:
@@ -323,26 +326,27 @@ class GitLabArtifactSkill(GitLabSkill):
             )
 
         # Download artifacts to temp file and list contents
-        http_client = await client._ensure_client()
-        url = f"{client._base_url}/projects/{project}/jobs/{job_id}/artifacts"
-
         try:
-            response = await http_client.get(url)
-
-            if response.status_code == 404:
+            content = await client.get_bytes(f"/projects/{project}/jobs/{job_id}/artifacts")
+        except GitLabAPIError as e:
+            if e.status_code == 404:
                 return ToolResult(
                     output=f"Job {job_id} ({job_name}) artifacts not available.\n"
                     f"Status: {job_status}\n"
                     "Artifacts may have expired or were not produced."
                 )
-            if response.status_code >= 400:
+            if e.status_code > 0:
                 return ToolResult(
-                    error=f"Failed to fetch artifacts: HTTP {response.status_code}"
+                    error=f"Failed to fetch artifacts: HTTP {e.status_code}"
                 )
+            return ToolResult(error=f"Failed to fetch artifacts: {e}")
+        except Exception as e:
+            return ToolResult(error=f"Failed to browse artifacts: {e}")
 
+        try:
             # Write to temp file and inspect
             with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
-                tmp.write(response.content)
+                tmp.write(content)
                 tmp_path = tmp.name
 
             try:
@@ -413,33 +417,34 @@ class GitLabArtifactSkill(GitLabSkill):
         **kwargs: Any,
     ) -> ToolResult:
         """Download artifacts by git ref and job name."""
-        http_client = await client._ensure_client()
         # URL-encode the ref (branches can contain slashes)
         encoded_ref = ref.replace("/", "%2F")
-        url = (
-            f"{client._base_url}/projects/{project}/jobs/artifacts/"
-            f"{encoded_ref}/download?job={job_name}"
-        )
 
         try:
-            response = await http_client.get(url)
-
-            if response.status_code == 404:
+            content = await client.get_bytes(
+                f"/projects/{project}/jobs/artifacts/{encoded_ref}/download",
+                job=job_name,
+            )
+        except GitLabAPIError as e:
+            if e.status_code == 404:
                 return ToolResult(
                     error=f"No artifacts found for job '{job_name}' on ref '{ref}'. "
                     "Check that the job name and ref are correct, and that artifacts exist."
                 )
-            if response.status_code >= 400:
+            if e.status_code > 0:
                 return ToolResult(
-                    error=f"Failed to download artifacts: HTTP {response.status_code}"
+                    error=f"Failed to download artifacts: HTTP {e.status_code}"
                 )
+            return ToolResult(error=f"Failed to download artifacts: {e}")
+        except Exception as e:
+            return ToolResult(error=f"Failed to download artifacts: {e}")
 
-            # Write binary content to file
+        try:
             out_path = Path(output_path)
             out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_bytes(response.content)
+            out_path.write_bytes(content)
 
-            size_kb = len(response.content) / 1024
+            size_kb = len(content) / 1024
             if size_kb >= 1024:
                 size_str = f"{size_kb / 1024:.1f} MB"
             else:

@@ -100,6 +100,8 @@ Key methods:
 - `_resolve_instance()` - Select GitLab instance by name or auto-detect from git remote
 - `_get_client()` - Get or create cached HTTP client for instance
 - `_resolve_project()` - Resolve project path from parameter or git remote
+- `_prime_remote_context()` - Preload git-remote autodetection off the event loop
+  for async execution paths
 - `_execute_impl()` - Override in subclasses to implement skill logic
 - `_resolve_user_ids()` - Resolve usernames (including `"me"`) to numeric user IDs
 - `_resolve_me_username()` - Resolve `"me"` to a username string for list filters
@@ -113,6 +115,7 @@ Key methods:
 - Automatic retry with exponential backoff
 - Rate limit handling (429 responses)
 - Pagination support for list endpoints
+- Shared raw helpers for text (`get_raw()`) and binary (`get_bytes()`) endpoints
 - Connection pooling and lazy initialization
 - User ID lookup with caching (`lookup_user()`, `lookup_users()`)
 
@@ -198,7 +201,9 @@ def make_factory(skill_class):
         config = svc.get_gitlab_config()
         if not config:
             raise ValueError("GitLab not configured")
-        return skill_class(svc, config)
+        skill = skill_class(svc, config)
+        _wrap_with_validation(skill)
+        return skill
     return factory
 ```
 

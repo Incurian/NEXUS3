@@ -192,6 +192,36 @@ class GitLabClient:
         except httpx.RequestError as e:
             raise GitLabAPIError(0, f"Request failed: {e}") from e
 
+    async def get_bytes(self, path: str, **params: Any) -> bytes:
+        """GET request returning raw bytes (for artifact downloads)."""
+        client = await self._ensure_client()
+        url = f"{self._base_url}{path}"
+
+        validate_url(url, allow_localhost=True, allow_private=False)
+
+        try:
+            response = await client.request(
+                method="GET",
+                url=url,
+                params=params or None,
+            )
+
+            if response.status_code >= 400:
+                try:
+                    body = response.json()
+                    message = body.get("message", body.get("error", str(body)))
+                except Exception:
+                    body = None
+                    message = response.text
+                raise GitLabAPIError(response.status_code, message, body)
+
+            return response.content
+
+        except httpx.TimeoutException as e:
+            raise GitLabAPIError(0, "Request timeout") from e
+        except httpx.RequestError as e:
+            raise GitLabAPIError(0, f"Request failed: {e}") from e
+
     async def post(self, path: str, **data: Any) -> Any:
         """POST request."""
         return await self._request("POST", path, json=data or None)

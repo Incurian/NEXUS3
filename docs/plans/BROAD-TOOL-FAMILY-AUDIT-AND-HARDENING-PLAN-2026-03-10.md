@@ -211,7 +211,7 @@ Files:
 Work:
 
 - Move blocking git autodetection off the event loop.
-- Consider moving artifact fetches onto the shared GitLab client request path.
+- Move artifact fetches onto the shared GitLab client request path.
 
 ## Testing Strategy
 

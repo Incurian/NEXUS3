@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -36,6 +37,52 @@ class GitLabSkill(BaseSkill):
         self._config = gitlab_config
         self._clients: dict[str, GitLabClient] = {}
         self._current_instance: GitLabInstance | None = None
+        self._remote_url_cache: dict[str, str | None] = {}
+
+    def _remote_cache_key(self, cwd: Path | str | None = None) -> str:
+        work_dir = Path(cwd) if cwd is not None else self._services.get_cwd()
+        return str(work_dir)
+
+    def _read_remote_origin_url(self, cwd: Path) -> str | None:
+        """Read the origin remote URL for a working tree."""
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            cwd=cwd,
+        )
+        if result.returncode != 0:
+            return None
+
+        remote_url = result.stdout.strip()
+        return remote_url or None
+
+    def _get_remote_origin_url(self, cwd: Path | str | None = None) -> str | None:
+        """Get cached origin remote URL, populating synchronously if needed."""
+        work_dir = Path(cwd) if cwd is not None else self._services.get_cwd()
+        cache_key = str(work_dir)
+        if cache_key not in self._remote_url_cache:
+            try:
+                self._remote_url_cache[cache_key] = self._read_remote_origin_url(work_dir)
+            except Exception:
+                self._remote_url_cache[cache_key] = None
+        return self._remote_url_cache[cache_key]
+
+    async def _prime_remote_context(self, cwd: Path | str | None = None) -> None:
+        """Populate origin-remote cache off the event loop when possible."""
+        work_dir = Path(cwd) if cwd is not None else self._services.get_cwd()
+        cache_key = str(work_dir)
+        if cache_key in self._remote_url_cache:
+            return
+
+        try:
+            self._remote_url_cache[cache_key] = await asyncio.to_thread(
+                self._read_remote_origin_url,
+                work_dir,
+            )
+        except Exception:
+            self._remote_url_cache[cache_key] = None
 
     def _resolve_instance(self, instance_name: str | None = None) -> GitLabInstance:
         """
@@ -71,18 +118,9 @@ class GitLabSkill(BaseSkill):
         Returns instance if a configured instance matches the remote URL.
         """
         try:
-            cwd = self._services.get_cwd()
-            result = subprocess.run(
-                ["git", "remote", "get-url", "origin"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                cwd=cwd,
-            )
-            if result.returncode != 0:
+            remote_url = self._get_remote_origin_url()
+            if not remote_url:
                 return None
-
-            remote_url = result.stdout.strip()
             remote_host = self._extract_host(remote_url)
 
             # Find matching instance
@@ -127,15 +165,9 @@ class GitLabSkill(BaseSkill):
         # Try to detect from git remote
         try:
             work_dir = Path(cwd) if cwd else self._services.get_cwd()
-            result = subprocess.run(
-                ["git", "remote", "get-url", "origin"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                cwd=work_dir,
-            )
-            if result.returncode == 0:
-                return self._extract_project_path(result.stdout.strip())
+            remote_url = self._get_remote_origin_url(work_dir)
+            if remote_url:
+                return self._extract_project_path(remote_url)
         except Exception:
             pass
 
@@ -167,6 +199,13 @@ class GitLabSkill(BaseSkill):
         Subclasses should override _execute_impl() instead of this method.
         """
         try:
+            if (
+                kwargs.get("instance") is None
+                or kwargs.get("project") is None
+                or kwargs.get("project") == "this"
+            ):
+                await self._prime_remote_context()
+
             # Resolve instance
             instance = self._resolve_instance(kwargs.get("instance"))
             self._current_instance = instance

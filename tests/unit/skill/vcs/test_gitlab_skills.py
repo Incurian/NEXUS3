@@ -3,6 +3,8 @@
 Tests a representative sample of GitLab skills with mocked client.
 """
 
+import io
+import zipfile
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -13,6 +15,7 @@ from nexus3.skill.registry import SkillRegistry
 from nexus3.skill.services import ServiceContainer
 from nexus3.skill.vcs.config import GitLabConfig, GitLabInstance
 from nexus3.skill.vcs.gitlab import register_gitlab_skills
+from nexus3.skill.vcs.gitlab.artifact import GitLabArtifactSkill
 from nexus3.skill.vcs.gitlab.branch import GitLabBranchSkill
 from nexus3.skill.vcs.gitlab.client import GitLabAPIError, GitLabClient
 from nexus3.skill.vcs.gitlab.issue import GitLabIssueSkill
@@ -774,6 +777,43 @@ class TestGitLabSkillProjectResolution(GitLabSkillTestBase):
 
             assert "No project specified" in str(exc_info.value)
 
+    @pytest.mark.asyncio
+    async def test_execute_primes_remote_cache_off_event_loop(
+        self,
+        skill: GitLabIssueSkill,
+        gitlab_instance: GitLabInstance,
+    ) -> None:
+        """Async execute path should prefetch remote context via to_thread."""
+        fake_result = MagicMock()
+
+        with (
+            patch(
+                "nexus3.skill.vcs.gitlab.base.asyncio.to_thread",
+                new=AsyncMock(return_value=None),
+            ) as mock_to_thread,
+            patch.object(skill, "_resolve_instance", return_value=gitlab_instance),
+            patch.object(skill, "_get_client", return_value=MagicMock()),
+            patch.object(skill, "_execute_impl", new=AsyncMock(return_value=fake_result)),
+        ):
+            result = await skill.execute(action="list", project="group/project")
+
+        assert result is fake_result
+        mock_to_thread.assert_awaited_once()
+
+    def test_resolve_project_uses_cached_remote_without_subprocess(
+        self,
+        skill: GitLabIssueSkill,
+        tmp_path: Path,
+    ) -> None:
+        """Cached remote info should avoid a fresh subprocess call."""
+        skill._remote_url_cache[str(tmp_path)] = "https://gitlab.com/org/project.git"
+
+        with patch("subprocess.run") as mock_run:
+            result = skill._resolve_project(None, cwd=str(tmp_path))
+
+        assert result == "org/project"
+        mock_run.assert_not_called()
+
 
 class TestGitLabSkillInstanceResolution(GitLabSkillTestBase):
     """Tests for instance resolution logic."""
@@ -814,6 +854,63 @@ class TestGitLabSkillInstanceResolution(GitLabSkillTestBase):
             skill._resolve_instance("nonexistent")
 
         assert "not configured" in str(exc_info.value)
+
+
+class TestGitLabArtifactDownloads(GitLabSkillTestBase):
+    """Focused tests for artifact download transport behavior."""
+
+    @pytest.fixture
+    def skill(
+        self, services: ServiceContainer, gitlab_config: GitLabConfig
+    ) -> GitLabArtifactSkill:
+        return GitLabArtifactSkill(services, gitlab_config)
+
+    @pytest.mark.asyncio
+    async def test_download_artifacts_uses_shared_get_bytes(
+        self,
+        skill: GitLabArtifactSkill,
+        mock_client: AsyncMock,
+        tmp_path: Path,
+    ) -> None:
+        mock_client.get_bytes.return_value = b"ZIPDATA"
+        output_path = tmp_path / "artifacts.zip"
+
+        result = await skill._download_artifacts(
+            mock_client,
+            "group%2Frepo",
+            42,
+            str(output_path),
+        )
+
+        assert result.success
+        assert output_path.read_bytes() == b"ZIPDATA"
+        mock_client.get_bytes.assert_awaited_once_with(
+            "/projects/group%2Frepo/jobs/42/artifacts"
+        )
+
+    @pytest.mark.asyncio
+    async def test_browse_artifacts_uses_shared_get_bytes(
+        self,
+        skill: GitLabArtifactSkill,
+        mock_client: AsyncMock,
+    ) -> None:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("artifact.txt", "hello")
+        mock_client.get.return_value = {
+            "name": "build",
+            "status": "success",
+            "artifacts": [{"filename": "artifacts.zip"}],
+        }
+        mock_client.get_bytes.return_value = buf.getvalue()
+
+        result = await skill._browse_artifacts(mock_client, "group%2Frepo", 42)
+
+        assert result.success
+        assert "artifact.txt" in result.output
+        mock_client.get_bytes.assert_awaited_once_with(
+            "/projects/group%2Frepo/jobs/42/artifacts"
+        )
 
 
 class TestGitLabSkillProperties:
