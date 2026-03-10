@@ -114,7 +114,10 @@ class OpenAICompatProvider(BaseProvider):
         Returns:
             Request body dict in OpenAI format.
         """
-        compiled = compile_context_messages(messages)
+        compiled = compile_context_messages(
+            messages,
+            ensure_assistant_after_tool_results=False,
+        )
 
         body: dict[str, Any] = {
             "model": self._model,

@@ -136,7 +136,10 @@ class AnthropicProvider(BaseProvider):
         Returns:
             Request body dict in Anthropic format.
         """
-        compiled = compile_context_messages(messages)
+        compiled = compile_context_messages(
+            messages,
+            ensure_assistant_after_tool_results=False,
+        )
 
         # Extract system message if present (first message with SYSTEM role)
         system: str | None = None

@@ -375,6 +375,12 @@ then maps those repaired TOOL messages into `tool_result` blocks:
 }
 ```
 
+Provider-side compile repair intentionally does **not** append the synthetic
+assistant note `Previous turn was cancelled after tool execution.` for normal
+mid-turn TOOL->ASSISTANT continuation. That role-sequence repair belongs to
+session preflight before a new USER turn is appended, not to every provider
+request during the active tool loop.
+
 **Message Conversion:**
 ```python
 # NEXUS3 Message with tool_calls

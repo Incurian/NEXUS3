@@ -341,6 +341,68 @@ Immediate tasks:
       That is a broader shared-normalization / caller-discipline issue, not
       another silent semantic bug like the fixed `edit_file` / `patch` /
       `clipboard_update` / `nexus_create` cases.
+- Ongoing Windows live-test investigation (2026-03-10, local pending commit):
+  repeated "Got it" / "Got interrupted mid-run" assistant chatter:
+  - user observed a trusted Windows REPL session repeatedly re-acknowledging a
+    single request and claiming interruptions that were not visible as normal
+    user turns in the standard transcript.
+  - confirmed:
+    - tool-call argument logs are raw provider/model arguments, not UI-invented
+      defaults:
+      - `nexus3/session/single_tool_runtime.py` validates
+        `tool_call.arguments` directly.
+      - `nexus3/session/logging.py` writes `tc.arguments` directly into session
+        logs.
+    - NEXUS has hidden context-repair / cancellation injections that can affect
+      the next provider turn without appearing as ordinary user messages:
+      - synthetic assistant note:
+        `Previous turn was cancelled after tool execution.`
+        in `nexus3/context/manager.py`
+      - synthetic cancelled tool-result content:
+        `Cancelled by user: tool execution was interrupted`
+        in `nexus3/session/tool_loop_events_runtime.py` and
+        `nexus3/context/compiler.py`
+  - important observation from this Codex session:
+    - the client/user saw both a `commentary` update and a `final` answer as
+      sequential assistant messages. From my side, those were two distinct
+      channel emissions, not duplicate final answers.
+    - this increases suspicion that some transcript/rendering layers may be
+      flattening internal channels or hidden events into ordinary assistant
+      messages, making behavior look stranger than the raw model output alone.
+  - next repro instructions:
+    - user will rerun on Windows with:
+      `.venv\\Scripts\\python.exe -m nexus3 -V --raw-log --fresh`
+    - inspect newest `.nexus3\\logs\\...` session for:
+      - `context.md`
+      - `verbose.md`
+      - `raw.jsonl`
+    - specifically search for:
+      - `Previous turn was cancelled after tool execution.`
+      - `Cancelled by user: tool execution was interrupted`
+      - `SessionCancelled`
+      - `ToolBatchHalted`
+      - repeated `run_turn.tools.iteration` preflight blocks with no matching
+        new user input
+  - current diagnosis:
+    - placeholder tool args were real model/tool-call outputs
+    - repeated interruption-like assistant chatter was traced to provider-side
+      request shaping, not just model spontaneity:
+      - `raw.jsonl` proved the provider stream itself emitted the repeated
+        `Got it ...` text.
+      - request payloads for normal mid-turn tool-loop continuation were
+        incorrectly receiving a synthetic assistant note
+        `Previous turn was cancelled after tool execution.` on every provider
+        call after a tool result.
+      - root cause: `nexus3/provider/{openai_compat,anthropic}.py` were calling
+        `compile_context_messages(...)` with
+        `ensure_assistant_after_tool_results=True`, which is only appropriate
+        for session preflight before a new USER turn, not for TOOL->ASSISTANT
+        continuation inside the same turn.
+      - fix (2026-03-10): provider request shaping now disables
+        `ensure_assistant_after_tool_results`; session preflight still owns the
+        real cancelled-tail repair before new user turns.
+      - focused regression coverage added in
+        `tests/unit/provider/test_compiler_integration.py`.
   - next gate remains Windows live validation to confirm the documented
     fail-closed behavior on real hosts.
 - Completed follow-on hardening slice (2026-03-10): Plan Phase 3

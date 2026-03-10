@@ -1950,6 +1950,20 @@ If that evidence is clean, it closes the last remaining branch-scope checkbox.
 If it surfaces a real defect, treat it as a standalone bugfix follow-up rather
 than reopening the architecture execution plan.
 
+#### Recent Debug Fix: Provider Mid-Turn Cancel-Note Injection (2026-03-10)
+
+Windows raw-log investigation confirmed that repeated `Got it` / false
+interruption chatter during file-tool smoke tests was being induced by
+provider-side request shaping, not just spontaneous model behavior.
+`nexus3/provider/openai_compat.py` and `nexus3/provider/anthropic.py` were
+running `compile_context_messages(...)` with
+`ensure_assistant_after_tool_results=True` on every provider request, which
+caused normal mid-turn TOOL->ASSISTANT continuation to receive the synthetic
+assistant note `Previous turn was cancelled after tool execution.`. That repair
+now remains session-preflight-only before new USER turns; provider request
+shaping still prunes/synthesizes tool-result invariants, but no longer injects
+that cancellation note mid-loop.
+
 ### Known Bugs
 
 - **Double spinner on concurrent RPC sends**: When two external `rpc send` requests arrive at an agent with active REPL, two spinners appear and ESC gets trapped. Root cause: missing `try/finally` for "ended" notification in `dispatcher.py:_handle_send()` + module-level spinner state variables can't handle rapid start/stop cycles. Fix planned in `DOUBLE-SPINNER-FIX-PLAN.md`.
