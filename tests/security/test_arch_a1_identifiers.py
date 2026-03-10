@@ -568,6 +568,7 @@ class TestSecurityProperties:
         outputs = {normalize_tool_name(inp) for inp in inputs}
         # Note: some may collide legitimately (e.g., space -> underscore)
         # but they should be predictable
+        assert all(isinstance(output, str) and output for output in outputs)
 
     def test_underscore_collision_awareness(self) -> None:
         """Demonstrate underscore normalization collision potential."""
@@ -591,7 +592,7 @@ class TestSecurityProperties:
         assert result == "mcp_trusted_evil_cmd"
 
         # This is the same as:
-        result2 = build_mcp_skill_name("trusted", "evil_cmd")
+        assert build_mcp_skill_name("trusted", "evil_cmd") == result
         # These WILL collide - documented limitation
         # parse_mcp_skill_name will parse as ("trusted", "evil_cmd") for both
 

@@ -294,8 +294,10 @@ class TestParentCannotCreateChildWithLessRestrictivePreset:
             assert "child" not in pool
 
     @pytest.mark.asyncio
-    async def test_sandboxed_with_disabled_tool_cannot_create_sandboxed_child(self, tmp_path: Path) -> None:
-        """Sandboxed parent with extra disabled tools cannot create sandboxed child with more tools enabled."""
+    async def test_sandboxed_with_disabled_tool_cannot_create_sandboxed_child(
+        self, tmp_path: Path
+    ) -> None:
+        """Sandboxed parent cannot re-enable a tool disabled in its own sandbox policy."""
         # Parent has write_file disabled, trying to create child with write_file enabled
         shared = create_mock_shared_components(tmp_path)
 
@@ -408,7 +410,10 @@ class TestChildInheritsCeilingFromParent:
             assert child_permissions.ceiling is not parent_permissions
             # But should be equivalent values
             assert child_permissions.ceiling.base_preset == parent_permissions.base_preset
-            assert child_permissions.ceiling.effective_policy.level == parent_permissions.effective_policy.level
+            assert (
+                child_permissions.ceiling.effective_policy.level
+                == parent_permissions.effective_policy.level
+            )
 
     @pytest.mark.asyncio
     async def test_child_parent_agent_id_is_set(self, tmp_path: Path) -> None:
@@ -530,7 +535,9 @@ class TestChildCannotEnableToolsParentDisabled:
         assert parent_permissions.can_grant(child_permissions) is False
 
     @pytest.mark.asyncio
-    async def test_trusted_parent_with_disabled_tools_cannot_be_enabled_by_sandboxed_child(self, tmp_path: Path) -> None:
+    async def test_trusted_parent_with_disabled_tools_cannot_be_enabled_by_sandboxed_child(
+        self, tmp_path: Path
+    ) -> None:
         """Trusted parent with disabled tools, sandboxed child cannot enable them."""
         shared = create_mock_shared_components(tmp_path)
 

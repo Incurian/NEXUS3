@@ -23,15 +23,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from nexus3.core.permissions import (
-    AgentPermissions,
-    PermissionLevel,
     ToolPermission,
     resolve_preset,
 )
-from nexus3.core.types import ToolCall, ToolResult
+from nexus3.core.types import ToolCall
 from nexus3.rpc.pool import AgentConfig, AgentPool, SharedComponents
 from nexus3.session.enforcer import PermissionEnforcer
-from nexus3.skill.services import ServiceContainer
 
 
 def create_mock_shared_components(tmp_path: Path) -> SharedComponents:
@@ -196,7 +193,7 @@ class TestSandboxedChildCannotSendToSibling:
                 )
             )
 
-            child2 = await pool.create(
+            await pool.create(
                 config=AgentConfig(
                     agent_id="child2",
                     preset="sandboxed",
@@ -488,7 +485,13 @@ class TestSandboxedPresetConfiguration:
         """Sandboxed preset has other nexus_* tools disabled."""
         permissions = resolve_preset("sandboxed")
 
-        for tool_name in ["nexus_create", "nexus_destroy", "nexus_shutdown", "nexus_cancel", "nexus_status"]:
+        for tool_name in [
+            "nexus_create",
+            "nexus_destroy",
+            "nexus_shutdown",
+            "nexus_cancel",
+            "nexus_status",
+        ]:
             tool_perm = permissions.tool_permissions.get(tool_name)
             assert tool_perm is not None, f"{tool_name} should be in tool_permissions"
             assert tool_perm.enabled is False, f"{tool_name} should be disabled"
@@ -499,6 +502,7 @@ class TestSandboxedPresetConfiguration:
 
         # nexus_send not in tool_permissions means unrestricted
         nexus_send = permissions.tool_permissions.get("nexus_send")
-        # Either not present (default enabled, no restrictions) or explicitly enabled without restrictions
+        # Either not present (default enabled, no restrictions) or explicitly
+        # enabled without restrictions.
         if nexus_send is not None:
             assert nexus_send.allowed_targets is None

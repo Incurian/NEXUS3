@@ -257,8 +257,9 @@ class TestRealProviderIntegration:
     @pytest.mark.asyncio
     async def test_real_streaming_response(self) -> None:
         """Test streaming with a real OpenRouter provider."""
-        from nexus3.config.schema import ProviderConfig
         from nexus3.provider.openrouter import OpenRouterProvider
+
+        from nexus3.config.schema import ProviderConfig
 
         config = ProviderConfig(
             api_key_env="OPENROUTER_API_KEY",
@@ -276,8 +277,9 @@ class TestRealProviderIntegration:
     @pytest.mark.asyncio
     async def test_real_complete_response(self) -> None:
         """Test non-streaming completion with a real OpenRouter provider."""
-        from nexus3.config.schema import ProviderConfig
         from nexus3.provider.openrouter import OpenRouterProvider
+
+        from nexus3.config.schema import ProviderConfig
 
         config = ProviderConfig(
             api_key_env="OPENROUTER_API_KEY",

@@ -1,6 +1,5 @@
 """Integration tests for MCP client with test server."""
 
-import asyncio
 import sys
 
 import pytest
@@ -9,8 +8,6 @@ from nexus3.mcp import (
     MCPClient,
     MCPServerConfig,
     MCPServerRegistry,
-    MCPSkillAdapter,
-    MCPTool,
     MCPToolResult,
 )
 from nexus3.mcp.transport import HTTPTransport, StdioTransport
@@ -174,7 +171,12 @@ class TestMCPServerRegistry:
 
         assert len(skills) == 4
         skill_names = {s.name for s in skills}
-        assert skill_names == {"mcp_test_echo", "mcp_test_get_time", "mcp_test_add", "mcp_test_slow_operation"}
+        assert skill_names == {
+            "mcp_test_echo",
+            "mcp_test_get_time",
+            "mcp_test_add",
+            "mcp_test_slow_operation",
+        }
 
         await registry.close_all()
 
@@ -294,6 +296,7 @@ class TestMCPSkillAdapter:
 async def http_server():
     """Start HTTP test server for tests."""
     from aiohttp import web
+
     from nexus3.mcp.test_server.http_server import handle_request
 
     async def handle_post(request: web.Request) -> web.Response:
