@@ -7,12 +7,14 @@ Verifies that:
 """
 
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, PropertyMock
 
 import pytest
 
 from nexus3.mcp.client import MCPClient
 from nexus3.mcp.registry import ConnectedServer, MCPServerConfig
+from nexus3.mcp.transport import MCPTransport
 
 
 class TestMCPClientIsConnected:
@@ -588,3 +590,71 @@ class TestMCPClientPagination:
         assert len(tools) == 1
         assert len(client.tools) == 1
         assert client.tools[0].name == "cached_tool"
+
+
+class _ConcurrencyRaceTransport(MCPTransport):
+    """Transport that exposes request/response pairing races deterministically."""
+
+    def __init__(self) -> None:
+        self.sent_ids: list[int] = []
+        self._connected = True
+        self._two_sends = asyncio.Event()
+        self._receive_calls = 0
+        self.max_pending_requests = 0
+
+    async def connect(self) -> None:
+        self._connected = True
+
+    async def send(self, message: dict[str, Any]) -> None:
+        request_id = message.get("id")
+        if isinstance(request_id, int):
+            self.sent_ids.append(request_id)
+            self.max_pending_requests = max(self.max_pending_requests, len(self.sent_ids))
+            if len(self.sent_ids) >= 2:
+                self._two_sends.set()
+
+    async def receive(self) -> dict[str, Any]:
+        self._receive_calls += 1
+        if self._receive_calls == 1:
+            try:
+                await asyncio.wait_for(self._two_sends.wait(), timeout=0.02)
+            except TimeoutError:
+                pass
+            response_index = 1 if len(self.sent_ids) >= 2 else 0
+        else:
+            response_index = 0
+
+        response_id = self.sent_ids.pop(response_index)
+        return {
+            "jsonrpc": "2.0",
+            "id": response_id,
+            "result": {
+                "content": [{"type": "text", "text": f"response-{response_id}"}],
+            },
+        }
+
+    async def close(self) -> None:
+        self._connected = False
+
+    @property
+    def is_connected(self) -> bool:
+        return self._connected
+
+
+class TestMCPClientConcurrency:
+    """Focused regressions for client-level request/response serialization."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_call_tool_requests_are_serialized(self) -> None:
+        transport = _ConcurrencyRaceTransport()
+        client = MCPClient(transport)
+        client._initialized = True
+
+        first, second = await asyncio.gather(
+            client.call_tool("first"),
+            client.call_tool("second"),
+        )
+
+        assert first.to_text() == "response-1"
+        assert second.to_text() == "response-2"
+        assert transport.max_pending_requests == 1

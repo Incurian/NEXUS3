@@ -447,6 +447,8 @@ await registry.close_all()
 **Lazy Reconnection:**
 - `get_all_skills()` automatically reconnects dead stdio connections
 - HTTP connections are checked on next request
+- direct `find_skill(...)` / `get_server_for_skill(...)` lookups skip dead
+  connections rather than resolving stale cached MCP tools
 
 ### ConnectedServer
 
@@ -488,9 +490,18 @@ result = await adapter.execute(owner="octocat", repo="hello-world")
 
 **Features:**
 - Validates parameters against tool's input_schema before calling server
+- Returns `ToolResult(error=...)` for invalid arguments instead of surfacing
+  validation exceptions directly
 - Sanitizes MCP output via `sanitize_for_display()` for terminal safety
 - Converts `MCPToolResult` to NEXUS3 `ToolResult` with error handling
 - Provides formatted error messages for timeout and transport errors
+
+### MCPClient (`client.py`)
+
+`MCPClient` serializes its own request/response pairs with a client-level lock.
+This prevents concurrent callers sharing one client from consuming each
+other's responses out of order on transports that expose raw `send()` /
+`receive()` semantics.
 
 ### Permission Checks (`permissions.py`)
 

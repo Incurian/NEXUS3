@@ -312,6 +312,8 @@ class MCPServerRegistry:
         for server in self._servers.values():
             if agent_id is not None and not server.is_visible_to(agent_id):
                 continue
+            if not server.is_alive():
+                continue
             for skill in server.skills:
                 if skill.name == tool_name:
                     return (skill, server.config.name)
@@ -334,6 +336,8 @@ class MCPServerRegistry:
         """
         for server in self._servers.values():
             if agent_id is not None and not server.is_visible_to(agent_id):
+                continue
+            if not server.is_alive():
                 continue
             prefix = f"mcp_{server.config.name}_"
             if skill_name.startswith(prefix):

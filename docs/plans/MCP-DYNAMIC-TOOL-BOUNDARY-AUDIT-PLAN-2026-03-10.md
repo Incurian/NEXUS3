@@ -100,6 +100,11 @@ materially reduce real MCP tool boundary risk.
   direct MCP adapter execution was catching the wrong validation exception
   class and could throw instead of returning `ToolResult(error=...)` on
   invalid arguments.
+- Third concrete findings confirmed and fixed:
+  - shared `MCPClient` callers could race request/response pairing under
+    concurrent use
+  - registry skill resolution could still return stale cached MCP tools from
+    dead connections
 - Shipped hardening:
   - `MCPServerRegistry.find_skill(...)` and `get_server_for_skill(...)` now
     accept optional `agent_id` visibility filtering.
@@ -108,7 +113,13 @@ materially reduce real MCP tool boundary risk.
     and returns `Unknown skill: ...` for invisible private tools.
   - `MCPSkillAdapter.execute(...)` now catches `ValidationError` and returns a
     normal tool error for invalid arguments instead of escaping the exception.
+  - `MCPClient` now serializes request/response pairs with a client-level lock
+    across `_call(...)` and `_notify(...)`.
+  - `MCPServerRegistry.find_skill(...)` and `get_server_for_skill(...)` now
+    skip dead connections so stale cached MCP tools do not remain resolvable
+    after connection death.
 - Focused validation for this slice:
+  - `tests/unit/mcp/test_client_encapsulation.py`
   - `tests/unit/mcp/test_registry.py`
   - `tests/unit/mcp/test_skill_adapter.py`
   - `tests/unit/session/test_dispatcher.py`
@@ -121,9 +132,11 @@ materially reduce real MCP tool boundary risk.
     OpenAI-compatible path
   - raw `{}` MCP schemas still merit a behavior review for runtime validation
     vs provider-side normalization parity
+  - MCP consent/runtime tests still lack persistent allowance coverage for
+    prompt suppression after `ALLOW_ONCE` / `ALLOW_*` transitions
 - Next audit gate:
-  - schema adaptation and reconnect/refresh boundary review after the runtime
-    visibility fix
+  - schema adaptation review for top-level provider-incompatible MCP shapes
+  - then revisit MCP consent/runtime persistence coverage
 
 ## Documentation Updates
 

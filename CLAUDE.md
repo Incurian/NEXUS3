@@ -192,6 +192,9 @@ across both global and `/agent/{id}` RPC routes. `create_agent` follow-up
   - first runtime visibility bug is fixed
   - direct MCP adapter execution now returns a normal tool error on invalid
     arguments instead of throwing a validation exception
+  - shared `MCPClient` callers are now serialized to prevent request/response
+    pairing races
+  - dead MCP connections no longer leave stale cached tools runtime-resolvable
   - private MCP tools can no longer be invoked by non-owner agents just by
     knowing the `mcp_*` tool name
   - remaining MCP audit scope is schema adaptation plus reconnect/refresh

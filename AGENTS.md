@@ -4022,22 +4022,36 @@ Execution update (2026-03-10, MCP dynamic tool audit first fix):
     - direct adapter execution now catches `ValidationError` and returns
       `ToolResult(error=...)` on invalid arguments instead of letting the
       exception escape
+  - `nexus3/mcp/client.py`
+    - added a client-level RPC lock so concurrent callers sharing one
+      `MCPClient` cannot race request ID allocation against `send()` /
+      `receive()` pairing
+    - `_notify(...)` now shares the same lock to keep notification sends from
+      interleaving across active request/response exchanges
+  - `nexus3/mcp/registry.py`
+    - `find_skill(...)` / `get_server_for_skill(...)` now skip dead
+      connections so stale cached MCP tools are not runtime-resolvable after a
+      connection dies
 - Added focused regressions in:
+  - `tests/unit/mcp/test_client_encapsulation.py`
   - `tests/unit/mcp/test_registry.py`
   - `tests/unit/mcp/test_skill_adapter.py`
   - `tests/unit/session/test_dispatcher.py`
   - `tests/unit/session/test_session_permission_kernelization.py`
 - Focused validation passed:
-  - `.venv/bin/ruff check nexus3/mcp/skill_adapter.py nexus3/mcp/registry.py nexus3/session/dispatcher.py nexus3/session/permission_runtime.py tests/unit/mcp/test_skill_adapter.py tests/unit/mcp/test_registry.py tests/unit/session/test_dispatcher.py tests/unit/session/test_session_permission_kernelization.py`
-  - `.venv/bin/pytest -q tests/unit/mcp/test_skill_adapter.py tests/unit/mcp/test_registry.py tests/unit/session/test_dispatcher.py tests/unit/session/test_session_permission_kernelization.py` (`26 passed`)
+  - `.venv/bin/ruff check nexus3/mcp/client.py nexus3/mcp/skill_adapter.py nexus3/mcp/registry.py nexus3/session/dispatcher.py nexus3/session/permission_runtime.py tests/unit/mcp/test_client_encapsulation.py tests/unit/mcp/test_skill_adapter.py tests/unit/mcp/test_registry.py tests/unit/session/test_dispatcher.py tests/unit/session/test_session_permission_kernelization.py`
+  - `.venv/bin/pytest -q tests/unit/mcp/test_client_encapsulation.py tests/unit/mcp/test_skill_adapter.py tests/unit/mcp/test_registry.py tests/unit/session/test_dispatcher.py tests/unit/session/test_session_permission_kernelization.py` (`42 passed`)
   - `.venv/bin/pytest -q tests/integration/test_mcp_client.py -k 'agent_visibility or shared_visibility'` (`2 passed`)
   - `git diff --check`
 - Next gate:
-  - continue the MCP audit on schema adaptation and reconnect/refresh paths
+  - continue the MCP audit on schema adaptation for top-level
+    provider-incompatible MCP shapes
   - first remaining concrete watch items:
     - top-level non-object / combinator-heavy MCP schemas at OpenAI-compatible
       provider boundaries
     - Anthropic outbound MCP schema normalization parity
     - `{}` runtime-validation vs provider-normalization parity review
+    - MCP consent/runtime persistence coverage for prompt suppression after
+      stored allowances
   - keep the read-file aliases and outline follow-up closed unless a new
     concrete failing repro appears

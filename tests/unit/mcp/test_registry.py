@@ -367,3 +367,35 @@ class TestRegistrySkillVisibility:
         assert visible is not None
         assert visible.config.name == "private"
         assert hidden is None
+
+    def test_find_skill_skips_dead_servers(self) -> None:
+        registry = MCPServerRegistry()
+        tool = MCPTool(name="echo", description="Echo")
+        client = MagicMock()
+        client.is_connected = False
+        skill = MCPSkillAdapter(client, tool, "dead")
+        registry._servers["dead"] = ConnectedServer(
+            config=MCPServerConfig(name="dead", command=["echo", "dead"]),
+            client=client,
+            skills=[skill],
+            owner_agent_id="owner-agent",
+            shared=True,
+        )
+
+        assert registry.find_skill("mcp_dead_echo", agent_id="worker-agent") is None
+
+    def test_get_server_for_skill_skips_dead_servers(self) -> None:
+        registry = MCPServerRegistry()
+        tool = MCPTool(name="echo", description="Echo")
+        client = MagicMock()
+        client.is_connected = False
+        skill = MCPSkillAdapter(client, tool, "dead")
+        registry._servers["dead"] = ConnectedServer(
+            config=MCPServerConfig(name="dead", command=["echo", "dead"]),
+            client=client,
+            skills=[skill],
+            owner_agent_id="owner-agent",
+            shared=True,
+        )
+
+        assert registry.get_server_for_skill("mcp_dead_echo", agent_id="worker-agent") is None

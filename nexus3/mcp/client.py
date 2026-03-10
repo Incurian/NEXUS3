@@ -83,6 +83,7 @@ class MCPClient:
         self._transport = transport
         self._client_info = client_info or MCPClientInfo()
         self._request_id = 0
+        self._rpc_lock = asyncio.Lock()
         self._server_info: MCPServerInfo | None = None
         self._tools: list[MCPTool] = []
         self._resources: list[MCPResource] = []
@@ -214,65 +215,66 @@ class MCPClient:
             MCPError: If the server returns an error, response ID mismatches,
                      or too many notifications are received.
         """
-        self._request_id += 1
-        expected_id = self._request_id
-        request: dict[str, Any] = {
-            "jsonrpc": "2.0",
-            "id": expected_id,
-            "method": method,
-        }
-        if params:
-            request["params"] = params
+        async with self._rpc_lock:
+            self._request_id += 1
+            expected_id = self._request_id
+            request: dict[str, Any] = {
+                "jsonrpc": "2.0",
+                "id": expected_id,
+                "method": method,
+            }
+            if params:
+                request["params"] = params
 
-        await self._transport.send(request)
+            await self._transport.send(request)
 
-        # P2.10 SECURITY: Loop to discard notifications and find our response
-        notifications_discarded = 0
-        while True:
-            response = await self._transport.receive()
+            # P2.10 SECURITY: Loop to discard notifications and find our response
+            notifications_discarded = 0
+            while True:
+                response = await self._transport.receive()
 
-            # P2.10 SECURITY: Discard notifications (messages without "id")
-            # Notifications have "method" but no "id" field
-            if "id" not in response and "method" in response:
-                notifications_discarded += 1
-                logger.debug(
-                    "Discarded MCP notification while waiting for response: %s",
-                    response.get("method"),
-                )
-                if notifications_discarded > MAX_NOTIFICATIONS_TO_DISCARD:
-                    raise MCPError(
-                        f"Received too many notifications ({notifications_discarded}) "
-                        f"while waiting for response to request {expected_id}. "
-                        "Server may be malfunctioning."
+                # P2.10 SECURITY: Discard notifications (messages without "id")
+                # Notifications have "method" but no "id" field
+                if "id" not in response and "method" in response:
+                    notifications_discarded += 1
+                    logger.debug(
+                        "Discarded MCP notification while waiting for response: %s",
+                        response.get("method"),
                     )
-                continue
+                    if notifications_discarded > MAX_NOTIFICATIONS_TO_DISCARD:
+                        raise MCPError(
+                            f"Received too many notifications ({notifications_discarded}) "
+                            f"while waiting for response to request {expected_id}. "
+                            "Server may be malfunctioning."
+                        )
+                    continue
 
-            # Discard error responses with null id (from non-compliant servers
-            # that respond to notifications instead of ignoring them)
-            if response.get("id") is None and "error" in response:
-                notifications_discarded += 1
-                logger.debug(
-                    "Discarded null-id error response (likely notification error): %s",
-                    response.get("error", {}).get("message", "unknown"),
-                )
-                if notifications_discarded > MAX_NOTIFICATIONS_TO_DISCARD:
-                    raise MCPError(
-                        f"Received too many spurious responses ({notifications_discarded}) "
-                        f"while waiting for response to request {expected_id}. "
-                        "Server may be malfunctioning."
+                # Discard error responses with null id (from non-compliant servers
+                # that respond to notifications instead of ignoring them)
+                if response.get("id") is None and "error" in response:
+                    notifications_discarded += 1
+                    logger.debug(
+                        "Discarded null-id error response (likely notification error): %s",
+                        response.get("error", {}).get("message", "unknown"),
                     )
-                continue
+                    if notifications_discarded > MAX_NOTIFICATIONS_TO_DISCARD:
+                        raise MCPError(
+                            f"Received too many spurious responses ({notifications_discarded}) "
+                            f"while waiting for response to request {expected_id}. "
+                            "Server may be malfunctioning."
+                        )
+                    continue
 
-            # P2.9 SECURITY: Verify response ID matches request ID
-            response_id = response.get("id")
-            if response_id != expected_id:
-                raise MCPError(
-                    f"Response ID mismatch: expected {expected_id}, got {response_id}. "
-                    "Server may be malfunctioning or malicious."
-                )
+                # P2.9 SECURITY: Verify response ID matches request ID
+                response_id = response.get("id")
+                if response_id != expected_id:
+                    raise MCPError(
+                        f"Response ID mismatch: expected {expected_id}, got {response_id}. "
+                        "Server may be malfunctioning or malicious."
+                    )
 
-            # Found our response
-            break
+                # Found our response
+                break
 
         # Handle error response
         if "error" in response:
@@ -298,7 +300,9 @@ class MCPClient:
         }
         if params:  # Only include if non-empty
             notification["params"] = params
-        await self._transport.send(notification)
+
+        async with self._rpc_lock:
+            await self._transport.send(notification)
 
     async def list_tools(self) -> list[MCPTool]:
         """Discover available tools from server.
