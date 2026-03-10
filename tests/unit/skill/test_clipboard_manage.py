@@ -3,16 +3,15 @@ from __future__ import annotations
 
 import pytest
 
-from nexus3.clipboard import ClipboardManager, ClipboardScope, CLIPBOARD_PRESETS
+from nexus3.clipboard import CLIPBOARD_PRESETS, ClipboardManager, ClipboardScope
 from nexus3.skill.builtin.clipboard_manage import (
-    clipboard_list_factory,
-    clipboard_get_factory,
-    clipboard_update_factory,
-    clipboard_delete_factory,
     clipboard_clear_factory,
+    clipboard_delete_factory,
+    clipboard_get_factory,
+    clipboard_list_factory,
+    clipboard_update_factory,
 )
 from nexus3.skill.services import ServiceContainer
-
 
 # =============================================================================
 # Fixtures
@@ -130,9 +129,15 @@ class TestClipboardListSkill:
     @pytest.mark.asyncio
     async def test_list_any_tags_filter(self, list_skill, clipboard_manager):
         """Test filtering by any_tags (OR logic)."""
-        clipboard_manager.copy(key="entry-a", content="c", scope=ClipboardScope.AGENT, tags=["tag1"])
-        clipboard_manager.copy(key="entry-b", content="c", scope=ClipboardScope.AGENT, tags=["tag2"])
-        clipboard_manager.copy(key="entry-c", content="c", scope=ClipboardScope.AGENT, tags=["other"])
+        clipboard_manager.copy(
+            key="entry-a", content="c", scope=ClipboardScope.AGENT, tags=["tag1"]
+        )
+        clipboard_manager.copy(
+            key="entry-b", content="c", scope=ClipboardScope.AGENT, tags=["tag2"]
+        )
+        clipboard_manager.copy(
+            key="entry-c", content="c", scope=ClipboardScope.AGENT, tags=["other"]
+        )
 
         result = await list_skill.execute(any_tags=["tag1", "tag2"])
 
@@ -253,7 +258,11 @@ class TestClipboardGetSkill:
     @pytest.mark.asyncio
     async def test_get_with_specific_scope(self, get_skill, clipboard_manager):
         """Test getting entry from specific scope."""
-        clipboard_manager.copy(key="project-key", content="project content", scope=ClipboardScope.PROJECT)
+        clipboard_manager.copy(
+            key="project-key",
+            content="project content",
+            scope=ClipboardScope.PROJECT,
+        )
 
         result = await get_skill.execute(key="project-key", scope="project")
 
@@ -351,9 +360,35 @@ class TestClipboardUpdateSkill:
         assert entry.expires_at is not None
 
     @pytest.mark.asyncio
+    async def test_update_ignores_empty_source_and_new_key_placeholders(
+        self, update_skill, clipboard_manager
+    ):
+        """Empty-string placeholders should be treated as omitted."""
+        clipboard_manager.copy(key="test", content="original", scope=ClipboardScope.AGENT)
+
+        result = await update_skill.execute(
+            key="test",
+            scope="agent",
+            source="",
+            new_key="",
+            content="updated",
+        )
+
+        assert result.success
+        assert clipboard_manager.get("test", ClipboardScope.AGENT) is not None
+        assert clipboard_manager.get("", ClipboardScope.AGENT) is None
+        entry = clipboard_manager.get("test", ClipboardScope.AGENT)
+        assert entry is not None
+        assert entry.content == "updated"
+
+    @pytest.mark.asyncio
     async def test_update_not_found(self, update_skill):
         """Test error when updating nonexistent entry."""
-        result = await update_skill.execute(key="nonexistent", scope="agent", short_description="desc")
+        result = await update_skill.execute(
+            key="nonexistent",
+            scope="agent",
+            short_description="desc",
+        )
 
         assert not result.success
         assert result.error is not None
@@ -550,7 +585,13 @@ class TestClipboardManageIntegration:
     """Integration tests for clipboard management workflow."""
 
     @pytest.mark.asyncio
-    async def test_create_list_get_delete_workflow(self, list_skill, get_skill, delete_skill, clipboard_manager):
+    async def test_create_list_get_delete_workflow(
+        self,
+        list_skill,
+        get_skill,
+        delete_skill,
+        clipboard_manager,
+    ):
         """Test full CRUD workflow."""
         # Create entry via manager
         clipboard_manager.copy(

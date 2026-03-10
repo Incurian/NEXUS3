@@ -308,6 +308,13 @@ class ClipboardUpdateSkill(ClipboardSkillBase):
         if manager is None:
             return ToolResult(error="Clipboard service not available")
 
+        # Some callers send empty-string placeholders for omitted optional
+        # parameters. Normalize the ones that would otherwise change behavior.
+        if source == "":
+            source = None
+        if new_key == "":
+            new_key = None
+
         try:
             clip_scope = ClipboardScope(scope)
         except ValueError:

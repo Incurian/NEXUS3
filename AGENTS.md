@@ -317,6 +317,30 @@ Immediate tasks:
   - focused validation passed:
     - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py`
     - `.venv/bin/pytest -q tests/unit/skill/test_patch.py` (`34 passed`)
+- Completed preemptive placeholder audit + follow-up fixes (2026-03-10, local pending commit):
+  audit outcome after `edit_file` / `patch` live regressions:
+  - attempted parallel subagent audit, but all three explorers were interrupted
+    before returning preserved findings; final audit was completed locally.
+  - confirmed and fixed two more high-confidence empty-string placeholder bugs:
+    - `nexus3/skill/builtin/clipboard_manage.py`
+      - `clipboard_update` now treats `source=""` and `new_key=""` as omitted
+        instead of resolving `source=""` as a real path or allowing `new_key=""`
+        to flow into a rename.
+    - `nexus3/skill/builtin/nexus_create.py`
+      - `cwd=""` is now treated as omitted so the skill does not pass an empty
+        cwd through to RPC create-agent handling.
+  - focused regression coverage added:
+    - `tests/unit/skill/test_clipboard_manage.py`
+    - `tests/unit/skill/test_nexus_create.py`
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/skill/builtin/clipboard_manage.py nexus3/skill/builtin/nexus_create.py tests/unit/skill/test_clipboard_manage.py tests/unit/skill/test_nexus_create.py`
+    - `.venv/bin/pytest -q tests/unit/skill/test_clipboard_manage.py tests/unit/skill/test_nexus_create.py` (`44 passed`)
+  - remaining audit note:
+    - optional enum selectors such as clipboard `scope` still fail at the
+      schema-validation boundary if a caller sends `scope=\"\"` placeholders.
+      That is a broader shared-normalization / caller-discipline issue, not
+      another silent semantic bug like the fixed `edit_file` / `patch` /
+      `clipboard_update` / `nexus_create` cases.
   - next gate remains Windows live validation to confirm the documented
     fail-closed behavior on real hosts.
 - Completed follow-on hardening slice (2026-03-10): Plan Phase 3

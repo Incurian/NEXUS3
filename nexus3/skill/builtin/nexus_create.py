@@ -117,6 +117,9 @@ class NexusCreateSkill(NexusSkill):
         except ValidationError as e:
             return ToolResult(error=f"Invalid agent_id: {e.message}")
 
+        if cwd == "":
+            cwd = None
+
         # Validate model parameter if provided
         if model:
             model = model.strip()
