@@ -39,58 +39,55 @@ class PasteSkill(FileSkill):
         return {
             "type": "object",
             "properties": {
-                "key": {
-                    "type": "string",
-                    "description": "Clipboard key to paste"
-                },
-                "target": {
-                    "type": "string",
-                    "description": "Target file path"
-                },
+                "key": {"type": "string", "description": "Clipboard key to paste"},
+                "target": {"type": "string", "description": "Target file path"},
                 "scope": {
                     "type": "string",
                     "enum": ["agent", "project", "system"],
                     "description": (
                         "Specific scope to search (agent, project, system). "
                         "If not specified, searches agent->project->system automatically."
-                    )
+                    ),
                 },
                 "mode": {
                     "type": "string",
                     "enum": [
-                        "after_line", "before_line", "replace_lines",
-                        "at_marker_replace", "at_marker_after", "at_marker_before",
-                        "append", "prepend"
+                        "after_line",
+                        "before_line",
+                        "replace_lines",
+                        "at_marker_replace",
+                        "at_marker_after",
+                        "at_marker_before",
+                        "append",
+                        "prepend",
                     ],
                     "description": "How to insert the content",
-                    "default": "append"
+                    "default": "append",
                 },
                 "line_number": {
                     "type": "integer",
                     "minimum": 1,
-                    "description": "Line number for after_line/before_line modes (1-indexed)"
+                    "description": "Line number for after_line/before_line modes (1-indexed)",
                 },
                 "start_line": {
                     "type": "integer",
                     "minimum": 1,
-                    "description": "Start line for replace_lines mode (1-indexed, inclusive)"
+                    "description": "Start line for replace_lines mode (1-indexed, inclusive)",
                 },
                 "end_line": {
                     "type": "integer",
                     "minimum": 1,
-                    "description": "End line for replace_lines mode (1-indexed, inclusive)"
+                    "description": "End line for replace_lines mode (1-indexed, inclusive)",
                 },
-                "marker": {
-                    "type": "string",
-                    "description": "Marker string for at_marker_* modes"
-                },
+                "marker": {"type": "string", "description": "Marker string for at_marker_* modes"},
                 "create_if_missing": {
                     "type": "boolean",
                     "description": "Create file if it doesn't exist (only valid with append mode)",
-                    "default": False
-                }
+                    "default": False,
+                },
             },
-            "required": ["key", "target"]
+            "required": ["key", "target"],
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -104,7 +101,7 @@ class PasteSkill(FileSkill):
         end_line: int | None = None,
         marker: str | None = None,
         create_if_missing: bool = False,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> ToolResult:
         """Paste clipboard content into target file.
 
@@ -165,8 +162,7 @@ class PasteSkill(FileSkill):
         if entry is None:
             if resolved_scope:
                 return ToolResult(
-                    error=f"Clipboard key '{key}' not found"
-                    f" in {resolved_scope.value} scope"
+                    error=f"Clipboard key '{key}' not found in {resolved_scope.value} scope"
                 )
             return ToolResult(error=f"Clipboard key '{key}' not found in any accessible scope")
 
@@ -183,10 +179,10 @@ class PasteSkill(FileSkill):
         try:
             if p.exists():
                 content_bytes = await asyncio.to_thread(p.read_bytes)
-                raw_content = content_bytes.decode("utf-8", errors="replace")
+                raw_content = content_bytes.decode("utf-8")
                 original_line_ending = detect_line_ending(raw_content)
                 # Normalize to LF for processing
-                content = raw_content.replace('\r\n', '\n').replace('\r', '\n')
+                content = raw_content.replace("\r\n", "\n").replace("\r", "\n")
             elif create_if_missing:
                 if insertion_mode not in (InsertionMode.APPEND, InsertionMode.PREPEND):
                     return ToolResult(
@@ -194,30 +190,36 @@ class PasteSkill(FileSkill):
                         " create_if_missing on non-existent file"
                     )
                 content = ""
-                original_line_ending = '\n'
+                original_line_ending = "\n"
             else:
                 return ToolResult(error=f"File not found: {target}")
         except PermissionError:
             return ToolResult(error=f"Permission denied: {target}")
+        except UnicodeDecodeError:
+            return ToolResult(
+                error=(
+                    f"File is not valid UTF-8 text: {target}. "
+                    "Use patch with fidelity_mode='byte_strict' for byte-sensitive edits."
+                )
+            )
 
         # Get content to paste (normalize line endings)
-        paste_content = entry.content.replace('\r\n', '\n').replace('\r', '\n')
+        paste_content = entry.content.replace("\r\n", "\n").replace("\r", "\n")
 
         # Apply insertion
         try:
             new_content = self._apply_insertion(
-                content, paste_content, insertion_mode,
-                line_number, start_line, end_line, marker
+                content, paste_content, insertion_mode, line_number, start_line, end_line, marker
             )
         except ValueError as e:
             return ToolResult(error=str(e))
 
         # Convert line endings back to original and write
-        if original_line_ending != '\n':
-            new_content = new_content.replace('\n', original_line_ending)
+        if original_line_ending != "\n":
+            new_content = new_content.replace("\n", original_line_ending)
 
         try:
-            await asyncio.to_thread(atomic_write_bytes, p, new_content.encode('utf-8'))
+            await asyncio.to_thread(atomic_write_bytes, p, new_content.encode("utf-8"))
         except PermissionError:
             return ToolResult(error=f"Permission denied writing to: {target}")
         except Exception as e:
@@ -231,7 +233,7 @@ class PasteSkill(FileSkill):
 
         return ToolResult(
             output=f"Pasted {entry.line_count} lines from clipboard key '{key}'{source_info} "
-                   f"into {target} ({mode_info})"
+            f"into {target} ({mode_info})"
         )
 
     def _validate_mode_params(
@@ -240,7 +242,7 @@ class PasteSkill(FileSkill):
         line_number: int | None,
         start_line: int | None,
         end_line: int | None,
-        marker: str | None
+        marker: str | None,
     ) -> str | None:
         """Validate mode-specific parameters. Returns error message or None."""
         if mode in (InsertionMode.AFTER_LINE, InsertionMode.BEFORE_LINE):
@@ -258,7 +260,7 @@ class PasteSkill(FileSkill):
         elif mode in (
             InsertionMode.AT_MARKER_REPLACE,
             InsertionMode.AT_MARKER_AFTER,
-            InsertionMode.AT_MARKER_BEFORE
+            InsertionMode.AT_MARKER_BEFORE,
         ):
             if marker is None:
                 return f"Mode '{mode.value}' requires marker parameter"
@@ -275,27 +277,27 @@ class PasteSkill(FileSkill):
         line_number: int | None,
         start_line: int | None,
         end_line: int | None,
-        marker: str | None
+        marker: str | None,
     ) -> str:
         """Apply the insertion based on mode. Returns new content."""
-        lines = content.split('\n') if content else []
+        lines = content.split("\n") if content else []
 
         # Ensure paste content ends with newline for line-based operations
         # (except when appending to empty file or content doesn't need trailing newline)
-        paste_lines = paste_content.rstrip('\n').split('\n')
+        paste_lines = paste_content.rstrip("\n").split("\n")
 
         if mode == InsertionMode.APPEND:
             if not content:
                 return paste_content
             # Ensure content ends with newline before appending
-            if content and not content.endswith('\n'):
-                return content + '\n' + paste_content
+            if content and not content.endswith("\n"):
+                return content + "\n" + paste_content
             return content + paste_content
 
         elif mode == InsertionMode.PREPEND:
             # Ensure paste content ends with newline before existing content
-            if paste_content and not paste_content.endswith('\n'):
-                return paste_content + '\n' + content
+            if paste_content and not paste_content.endswith("\n"):
+                return paste_content + "\n" + content
             return paste_content + content
 
         elif mode == InsertionMode.AFTER_LINE:
@@ -306,7 +308,7 @@ class PasteSkill(FileSkill):
                 )
             # Insert after the specified line
             result_lines = lines[:line_number] + paste_lines + lines[line_number:]
-            return '\n'.join(result_lines)
+            return "\n".join(result_lines)
 
         elif mode == InsertionMode.BEFORE_LINE:
             assert line_number is not None
@@ -317,7 +319,7 @@ class PasteSkill(FileSkill):
             # Insert before the specified line (1-indexed, so line 1 means at start)
             insert_idx = line_number - 1
             result_lines = lines[:insert_idx] + paste_lines + lines[insert_idx:]
-            return '\n'.join(result_lines)
+            return "\n".join(result_lines)
 
         elif mode == InsertionMode.REPLACE_LINES:
             assert start_line is not None and end_line is not None
@@ -326,14 +328,12 @@ class PasteSkill(FileSkill):
                     f"Start line {start_line} exceeds file length ({len(lines)} lines)"
                 )
             if end_line > len(lines):
-                raise ValueError(
-                    f"End line {end_line} exceeds file length ({len(lines)} lines)"
-                )
+                raise ValueError(f"End line {end_line} exceeds file length ({len(lines)} lines)")
             # Replace lines from start_line to end_line (both inclusive, 1-indexed)
             start_idx = start_line - 1
             end_idx = end_line
             result_lines = lines[:start_idx] + paste_lines + lines[end_idx:]
-            return '\n'.join(result_lines)
+            return "\n".join(result_lines)
 
         elif mode == InsertionMode.AT_MARKER_REPLACE:
             assert marker is not None
@@ -352,10 +352,8 @@ class PasteSkill(FileSkill):
                     break
             if marker_line_idx is None:
                 raise ValueError(f"Marker '{marker}' not found in file")
-            result_lines = (
-                lines[:marker_line_idx + 1] + paste_lines + lines[marker_line_idx + 1:]
-            )
-            return '\n'.join(result_lines)
+            result_lines = lines[: marker_line_idx + 1] + paste_lines + lines[marker_line_idx + 1 :]
+            return "\n".join(result_lines)
 
         elif mode == InsertionMode.AT_MARKER_BEFORE:
             assert marker is not None
@@ -367,10 +365,8 @@ class PasteSkill(FileSkill):
                     break
             if marker_line_idx is None:
                 raise ValueError(f"Marker '{marker}' not found in file")
-            result_lines = (
-                lines[:marker_line_idx] + paste_lines + lines[marker_line_idx:]
-            )
-            return '\n'.join(result_lines)
+            result_lines = lines[:marker_line_idx] + paste_lines + lines[marker_line_idx:]
+            return "\n".join(result_lines)
 
         raise ValueError(f"Unknown insertion mode: {mode}")
 
@@ -380,7 +376,7 @@ class PasteSkill(FileSkill):
         line_number: int | None,
         start_line: int | None,
         end_line: int | None,
-        marker: str | None
+        marker: str | None,
     ) -> str:
         """Format mode information for success message."""
         if mode == InsertionMode.APPEND:

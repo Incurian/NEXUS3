@@ -251,12 +251,18 @@ The `patch` skill (`nexus3/skill/builtin/patch.py`) wraps this module:
 ```python
 # Via skill
 result = await patch_skill.execute(
-    target="example.py",
+    path="example.py",
     diff=diff_text,
     mode="fuzzy",
     dry_run=True
 )
 ```
+
+The skill wrapper prefers `path=` over legacy `target=` and adds a few
+skill-level compatibility behaviors on top of this module:
+- `diff_file` is read as UTF-8 text before parsing
+- single-file hunk-only diffs (`@@ ... @@` without `---`/`+++`) are wrapped
+  with synthetic file headers when `path`/`target` is provided
 
 See the skill's parameters for full options including `diff_file` for loading patches from disk.
 
@@ -302,6 +308,7 @@ from nexus3.patch import (
     ApplyMode,
     ApplyResult,
     apply_patch,
+    apply_patch_byte_strict,
 )
 ```
 
@@ -324,4 +331,4 @@ None - this module is self-contained.
 
 ## Status
 
-Production-ready. Last updated: 2026-03-05
+Production-ready. Last updated: 2026-03-10

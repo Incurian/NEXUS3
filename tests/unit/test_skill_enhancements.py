@@ -1,9 +1,12 @@
 """Tests for skill enhancements: read_file offset/limit, glob exclude, grep include/context."""
 
+import base64
+import json
 from pathlib import Path
 
 import pytest
 
+from nexus3.skill.builtin import grep as grep_module
 from nexus3.skill.builtin.glob_search import GlobSkill, glob_factory
 from nexus3.skill.builtin.grep import GrepSkill, grep_factory
 from nexus3.skill.builtin.read_file import ReadFileSkill, read_file_factory
@@ -214,6 +217,21 @@ class TestReadFileOffsetLimit:
         assert result.error is not None
         # JSON Schema validation produces "less than the minimum of 1"
         assert "minimum" in result.error.lower() or "less than" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_invalid_utf8_returns_error(
+        self,
+        skill: ReadFileSkill,
+        tmp_path: Path,
+    ) -> None:
+        """Invalid UTF-8 input should fail closed instead of replacing bytes."""
+        test_file = tmp_path / "binary.txt"
+        test_file.write_bytes(b"\x80\x81broken")
+
+        result = await skill.execute(path=str(test_file))
+
+        assert result.error is not None
+        assert "UTF-8" in result.error
 
 
 class TestGlobExclude:
@@ -453,3 +471,95 @@ class TestGrepIncludeContext:
         # Should show context
         lines = [line for line in result.output.split("\n") if line.strip()]
         assert len(lines) > 2  # More than just match lines
+
+    @pytest.mark.asyncio
+    async def test_single_file_invalid_utf8_returns_error(self, tmp_path: Path) -> None:
+        """Single-file grep should fail closed on invalid UTF-8 in Python fallback."""
+        bad_file = tmp_path / "bad.txt"
+        bad_file.write_bytes(b"\xffmatch\n")
+
+        services = _make_services(allowed_paths=[tmp_path], cwd=tmp_path)
+        skill = grep_factory(services)
+
+        result = await skill.execute(pattern="match", path=str(bad_file))
+
+        assert result.error is not None
+        assert "UTF-8" in result.error
+
+    @pytest.mark.asyncio
+    async def test_directory_grep_skips_invalid_utf8_files(self, tmp_path: Path) -> None:
+        """Directory grep should skip invalid UTF-8 files instead of corrupting them."""
+        good_file = tmp_path / "good.txt"
+        good_file.write_text("match here\n")
+        bad_file = tmp_path / "bad.txt"
+        bad_file.write_bytes(b"\xffmatch\n")
+
+        services = _make_services(allowed_paths=[tmp_path], cwd=tmp_path)
+        skill = grep_factory(services)
+
+        result = await skill.execute(pattern="match", path=str(tmp_path), recursive=True)
+
+        assert not result.error
+        assert "good.txt" in result.output
+        assert "bad.txt" not in result.output
+        assert "invalid UTF-8 file skipped" in result.output
+
+    @pytest.mark.asyncio
+    async def test_directory_grep_skips_invalid_utf8_files_in_ripgrep_path(
+        self,
+        skill: GrepSkill,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Ripgrep JSON byte payloads should be treated as invalid UTF-8 files."""
+        good_file = tmp_path / "good.txt"
+        good_file.write_text("match here\n")
+        bad_file = tmp_path / "bad.txt"
+        bad_file.write_bytes(b"\xffmatch\n")
+
+        lines = [
+            json.dumps(
+                {
+                    "type": "match",
+                    "data": {
+                        "path": {"text": str(bad_file)},
+                        "lines": {
+                            "bytes": base64.b64encode(b"\xffmatch\n").decode("ascii")
+                        },
+                        "line_number": 1,
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "match",
+                    "data": {
+                        "path": {"text": str(good_file)},
+                        "lines": {"text": "match here\n"},
+                        "line_number": 1,
+                    },
+                }
+            ),
+            json.dumps({"type": "summary", "data": {"stats": {"searches": 2}}}),
+        ]
+
+        class _FakeProc:
+            async def communicate(self) -> tuple[bytes, bytes]:
+                return "\n".join(lines).encode("utf-8"), b""
+
+        async def _fake_create_subprocess_exec(*args, **kwargs):
+            return _FakeProc()
+
+        monkeypatch.setattr(grep_module, "RG_AVAILABLE", True)
+        monkeypatch.setattr(
+            grep_module.asyncio,
+            "create_subprocess_exec",
+            _fake_create_subprocess_exec,
+        )
+
+        result = await skill.execute(pattern="match", path=str(tmp_path), recursive=True)
+
+        assert not result.error
+        assert str(good_file) in result.output
+        assert str(bad_file) not in result.output
+        assert "invalid UTF-8 file skipped" in result.output

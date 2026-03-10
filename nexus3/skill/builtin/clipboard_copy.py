@@ -73,10 +73,21 @@ def _read_lines(
         actual_end = total_lines  # Clamp to file end
 
     # Extract (convert to 0-indexed)
-    extracted_lines = lines[actual_start - 1:actual_end]
+    extracted_lines = lines[actual_start - 1 : actual_end]
     extracted = "".join(extracted_lines)
 
     return extracted, actual_start, actual_end
+
+
+def _decode_utf8_text(content_bytes: bytes, path: str) -> str:
+    """Decode file content as strict UTF-8 for clipboard text operations."""
+    try:
+        return content_bytes.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise ValueError(
+            f"File is not valid UTF-8 text: {path}. "
+            "Use patch with fidelity_mode='byte_strict' for byte-sensitive edits."
+        ) from e
 
 
 class CopySkill(FileSkill):
@@ -109,46 +120,44 @@ class CopySkill(FileSkill):
         return {
             "type": "object",
             "properties": {
-                "source": {
-                    "type": "string",
-                    "description": "Path to the file to copy from"
-                },
+                "source": {"type": "string", "description": "Path to the file to copy from"},
                 "key": {
                     "type": "string",
-                    "description": "Clipboard key name (must be unique within scope)"
+                    "description": "Clipboard key name (must be unique within scope)",
                 },
                 "scope": {
                     "type": "string",
                     "description": "Clipboard scope: 'agent' (default), 'project', or 'system'",
                     "enum": ["agent", "project", "system"],
-                    "default": "agent"
+                    "default": "agent",
                 },
                 "start_line": {
                     "type": "integer",
                     "description": "First line to copy (1-indexed, default: beginning of file)",
-                    "minimum": 1
+                    "minimum": 1,
                 },
                 "end_line": {
                     "type": "integer",
                     "description": "Last line to copy (inclusive, default: end of file)",
-                    "minimum": 1
+                    "minimum": 1,
                 },
                 "short_description": {
                     "type": "string",
-                    "description": "Brief description of the copied content"
+                    "description": "Brief description of the copied content",
                 },
                 "tags": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Tags for organizing clipboard entries"
+                    "description": "Tags for organizing clipboard entries",
                 },
                 "ttl_seconds": {
                     "type": "integer",
                     "description": "Time-to-live in seconds (None = permanent)",
-                    "minimum": 1
-                }
+                    "minimum": 1,
+                },
             },
-            "required": ["source", "key"]
+            "required": ["source", "key"],
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -161,7 +170,7 @@ class CopySkill(FileSkill):
         short_description: str | None = None,
         tags: list[str] | None = None,
         ttl_seconds: int | None = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> ToolResult:
         """Copy file content to clipboard.
 
@@ -196,9 +205,9 @@ class CopySkill(FileSkill):
             # Read file content
             try:
                 content_bytes = await asyncio.to_thread(p.read_bytes)
-                raw_content = content_bytes.decode("utf-8", errors="replace")
+                raw_content = _decode_utf8_text(content_bytes, source)
                 # Normalize to LF for processing
-                content = raw_content.replace('\r\n', '\n').replace('\r', '\n')
+                content = raw_content.replace("\r\n", "\n").replace("\r", "\n")
             except FileNotFoundError:
                 return ToolResult(error=f"File not found: {source}")
             except PermissionError:
@@ -287,46 +296,44 @@ class CutSkill(FileSkill):
         return {
             "type": "object",
             "properties": {
-                "source": {
-                    "type": "string",
-                    "description": "Path to the file to cut from"
-                },
+                "source": {"type": "string", "description": "Path to the file to cut from"},
                 "key": {
                     "type": "string",
-                    "description": "Clipboard key name (must be unique within scope)"
+                    "description": "Clipboard key name (must be unique within scope)",
                 },
                 "scope": {
                     "type": "string",
                     "description": "Clipboard scope: 'agent' (default), 'project', or 'system'",
                     "enum": ["agent", "project", "system"],
-                    "default": "agent"
+                    "default": "agent",
                 },
                 "start_line": {
                     "type": "integer",
                     "description": "First line to cut (1-indexed, default: beginning of file)",
-                    "minimum": 1
+                    "minimum": 1,
                 },
                 "end_line": {
                     "type": "integer",
                     "description": "Last line to cut (inclusive, default: end of file)",
-                    "minimum": 1
+                    "minimum": 1,
                 },
                 "short_description": {
                     "type": "string",
-                    "description": "Brief description of the cut content"
+                    "description": "Brief description of the cut content",
                 },
                 "tags": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Tags for organizing clipboard entries"
+                    "description": "Tags for organizing clipboard entries",
                 },
                 "ttl_seconds": {
                     "type": "integer",
                     "description": "Time-to-live in seconds (None = permanent)",
-                    "minimum": 1
-                }
+                    "minimum": 1,
+                },
             },
-            "required": ["source", "key"]
+            "required": ["source", "key"],
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -339,7 +346,7 @@ class CutSkill(FileSkill):
         short_description: str | None = None,
         tags: list[str] | None = None,
         ttl_seconds: int | None = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> ToolResult:
         """Cut file content to clipboard.
 
@@ -374,10 +381,10 @@ class CutSkill(FileSkill):
             # Read file content
             try:
                 content_bytes = await asyncio.to_thread(p.read_bytes)
-                raw_content = content_bytes.decode("utf-8", errors="replace")
+                raw_content = _decode_utf8_text(content_bytes, source)
                 original_line_ending = detect_line_ending(raw_content)
                 # Normalize to LF for processing
-                content = raw_content.replace('\r\n', '\n').replace('\r', '\n')
+                content = raw_content.replace("\r\n", "\n").replace("\r", "\n")
             except FileNotFoundError:
                 return ToolResult(error=f"File not found: {source}")
             except PermissionError:
@@ -426,15 +433,15 @@ class CutSkill(FileSkill):
             else:
                 # Remove the specified lines
                 # actual_start and actual_end are 1-indexed
-                new_lines = lines[:actual_start - 1] + lines[actual_end:]
+                new_lines = lines[: actual_start - 1] + lines[actual_end:]
                 new_content = "".join(new_lines)
 
             # Convert line endings back to original and write as binary
-            if original_line_ending != '\n' and new_content:
-                new_content = new_content.replace('\n', original_line_ending)
+            if original_line_ending != "\n" and new_content:
+                new_content = new_content.replace("\n", original_line_ending)
 
             try:
-                await asyncio.to_thread(atomic_write_bytes, p, new_content.encode('utf-8'))
+                await asyncio.to_thread(atomic_write_bytes, p, new_content.encode("utf-8"))
             except PermissionError:
                 # Clipboard copy succeeded but file write failed
                 # Try to roll back by deleting the clipboard entry

@@ -114,6 +114,15 @@ async def send(
 ```
 
 This is the traditional callback-based API. Tool events are dispatched via callback functions. `send()` and `run_turn()` now share turn-entry preflight/reset through `turn_entry_runtime.prepare_turn_entry(...)` before streaming begins. Tool-loop callback adaptation is handled directly by `streaming_runtime.execute_tool_loop_streaming(...)`, which is wired to `tool_loop_events_runtime.execute_tool_loop_events(...)`. When tools are not active, `send()` delegates simple streaming to `simple_turn_runtime.execute_simple_send(...)`.
+The shared preflight currently does three important repair steps before the new
+user message is appended in context mode: it flushes any still-valid cancelled
+tool IDs into matching assistant tool batches, recompiles the existing context
+through `compile_context_messages(...)`, and records compiler/provider preflight
+diagnostics into `verbose.md` (`session.compiler_preflight` /
+`session.preflight`) when verbose logging is enabled. That compiler pass is
+what now prunes unpaired tool results, synthesizes missing cancelled tool
+results, and appends a synthetic assistant note after illegal trailing
+tool-result tails before the next user turn.
 
 #### `run_turn()` - Event-based streaming
 
@@ -158,7 +167,7 @@ Takes a list of `(tool_id, tool_name)` tuples. These are flushed as cancelled `T
 ### Session Lifecycle
 
 1. **Initialization**: Create Session with provider, context, and services
-2. **User message**: Call `send()` or `run_turn()` with user input
+2. **Turn-entry preflight**: Flush pending cancelled tools, compiler-normalize context invariants, then append the new user message
 3. **LLM streaming**: Provider streams content chunks
 4. **Tool detection**: Tool calls parsed from stream trigger events
 5. **Permission check**: PermissionEnforcer validates tool access
@@ -646,8 +655,8 @@ AGENT_TARGET_TOOLS = frozenset({"nexus_send", "nexus_status", "nexus_cancel", "n
 PATH_TOOLS = frozenset({
     "read_file", "write_file", "edit_file", "edit_lines", "append_file", "tail",
     "file_info", "list_directory", "mkdir", "copy_file", "rename",
-    "regex_replace", "patch", "gitlab_artifact", "glob", "grep", "copy",
-    "cut", "paste", "clipboard_export", "clipboard_import", "clipboard_update",
+    "regex_replace", "patch", "glob", "grep", "copy", "cut", "paste",
+    "clipboard_export", "clipboard_import", "clipboard_update", "concat_files",
 })
 ```
 
@@ -657,7 +666,12 @@ Permission checks (in order):
 3. **Target allowed** via kernel-authoritative `AGENT_TARGET` decision for nexus_* tools with `allowed_targets`
 4. Path gating decision via `PathDecisionEngine` + kernel-authoritative `TOOL_EXECUTE`/`PATH` decision (`_path_authorization_kernel`), checking ALL extracted paths in the tool call
 
-Path semantics are still determined by `PathDecisionEngine` (including blocked paths and per-tool path resolution), while final allow/deny is enforced through authorization-kernel evaluation.
+Path semantics are still determined by `PathDecisionEngine` (including blocked
+paths and per-tool path resolution), while final allow/deny is enforced
+through authorization-kernel evaluation. Path extraction is semantics-driven,
+so alias-based tool surfaces such as `patch(path=...)` and the compatibility
+alias `patch(target=...)` are gated the same way during confirmation and
+permission checks.
 Session-level MCP/GitLab level gates run through `permission_runtime.py` helpers
 invoked through single-tool runtime wiring, and remain kernel-authoritative
 `TOOL_EXECUTE` decisions before confirmation/allowance handling.
@@ -949,4 +963,4 @@ If `compaction.model` is configured, a separate provider is used for summarizati
 
 ---
 
-Updated: 2026-03-09
+Updated: 2026-03-10

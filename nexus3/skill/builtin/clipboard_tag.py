@@ -1,4 +1,5 @@
 """Tag management skill for clipboard entries."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -58,6 +59,7 @@ class ClipboardTagSkill:
                 },
             },
             "required": ["action"],
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -156,7 +158,9 @@ class ClipboardTagSkill:
         return ToolResult(output=f"Removed tag '{name}' from '{entry_key}' [{scope}]")
 
     def _create_tag(
-        self, manager: ClipboardManager, name: str | None,
+        self,
+        manager: ClipboardManager,
+        name: str | None,
         description: str | None,
     ) -> ToolResult:
         """Create a new tag."""
@@ -167,8 +171,7 @@ class ClipboardTagSkill:
         # This action is for pre-creating tags with descriptions
         # For now, just validate and confirm
         return ToolResult(
-            output=f"Tag '{name}' ready to use"
-            " (tags are auto-created when added to entries)"
+            output=f"Tag '{name}' ready to use (tags are auto-created when added to entries)"
         )
 
     def _delete_tag(self, manager: ClipboardManager, name: str | None) -> ToolResult:
@@ -180,8 +183,7 @@ class ClipboardTagSkill:
         # We need to add a delete_tag method to manager if not exists
         # For now, return not implemented
         return ToolResult(
-            error="delete_tag not yet implemented"
-            " - remove tags from entries individually"
+            error="delete_tag not yet implemented - remove tags from entries individually"
         )
 
 

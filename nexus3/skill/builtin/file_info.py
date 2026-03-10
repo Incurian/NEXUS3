@@ -52,9 +52,9 @@ def _format_windows_attributes(path: Path) -> str:
             return "????"
 
         result = []
-        result.append("R" if attrs & 0x1 else "-")   # READONLY
-        result.append("H" if attrs & 0x2 else "-")   # HIDDEN
-        result.append("S" if attrs & 0x4 else "-")   # SYSTEM
+        result.append("R" if attrs & 0x1 else "-")  # READONLY
+        result.append("H" if attrs & 0x2 else "-")  # HIDDEN
+        result.append("S" if attrs & 0x4 else "-")  # SYSTEM
         result.append("A" if attrs & 0x20 else "-")  # ARCHIVE
         return "".join(result)
     except Exception:
@@ -83,12 +83,10 @@ class FileInfoSkill(FileSkill):
         return {
             "type": "object",
             "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "The path to the file or directory"
-                }
+                "path": {"type": "string", "description": "The path to the file or directory"}
             },
-            "required": ["path"]
+            "required": ["path"],
+            "additionalProperties": False,
         }
 
     async def execute(self, path: str = "", **kwargs: Any) -> ToolResult:
@@ -134,7 +132,7 @@ class FileInfoSkill(FileSkill):
                     "size_human": _format_size(st.st_size),
                     "modified": mtime.isoformat(),
                     "permissions": _format_permissions(st.st_mode, p),
-                    "exists": True
+                    "exists": True,
                 }
 
             info = await asyncio.to_thread(do_stat)
@@ -144,10 +142,7 @@ class FileInfoSkill(FileSkill):
             return ToolResult(error=str(e))
         except FileNotFoundError:
             # Return structured response for non-existent paths
-            return ToolResult(output=json.dumps({
-                "path": path,
-                "exists": False
-            }, indent=2))
+            return ToolResult(output=json.dumps({"path": path, "exists": False}, indent=2))
         except PermissionError:
             return ToolResult(error=f"Permission denied: {path}")
         except Exception as e:

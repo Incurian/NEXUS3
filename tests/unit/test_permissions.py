@@ -409,13 +409,43 @@ class TestPermissionPolicyConfirmation:
         )
 
         assert (
-            policy.requires_confirmation("clipboard_export", path=cwd / "clipboard.json")
+            policy.requires_confirmation("clipboard_export", path=cwd / "clipboard.json") is False
+        )
+        assert (
+            policy.requires_confirmation(
+                "clipboard_export",
+                path=outside / "clipboard.json",
+            )
+            is True
+        )
+
+    def test_trusted_concat_files_confirmation_tracks_cwd(self, tmp_path):
+        """concat_files requires confirmation only for real output writes outside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        policy = PermissionPolicy(
+            level=PermissionLevel.TRUSTED,
+            cwd=cwd,
+            allowed_paths=None,
+        )
+
+        assert (
+            policy.requires_confirmation(
+                "concat_files",
+                path=cwd / "cwd-py-concat.txt",
+            )
             is False
         )
-        assert policy.requires_confirmation(
-            "clipboard_export",
-            path=outside / "clipboard.json",
-        ) is True
+        assert (
+            policy.requires_confirmation(
+                "concat_files",
+                path=outside / "outside-py-concat.txt",
+            )
+            is True
+        )
 
     def test_shell_unsafe_always_requires_confirmation(self):
         """shell_UNSAFE always requires confirmation in TRUSTED mode, even with allowances."""
@@ -430,11 +460,14 @@ class TestPermissionPolicyConfirmation:
         allowances.add_exec_directory("shell_unsafe", cwd)
 
         # shell_UNSAFE should ALWAYS require confirmation (no allowances work)
-        assert policy.requires_confirmation(
-            "shell_UNSAFE",
-            exec_cwd=cwd,
-            session_allowances=allowances,
-        ) is True
+        assert (
+            policy.requires_confirmation(
+                "shell_UNSAFE",
+                exec_cwd=cwd,
+                session_allowances=allowances,
+            )
+            is True
+        )
 
     def test_exec_tools_directory_only_allowance(self):
         """bash_safe and run_python allow directory scope but not global."""
@@ -448,27 +481,36 @@ class TestPermissionPolicyConfirmation:
             # Test 1: Global allowance should be IGNORED
             allowances_global = SessionAllowances()
             allowances_global.add_exec_global(tool)
-            assert policy.requires_confirmation(
-                tool,
-                exec_cwd=cwd,
-                session_allowances=allowances_global,
-            ) is True  # Still requires confirmation!
+            assert (
+                policy.requires_confirmation(
+                    tool,
+                    exec_cwd=cwd,
+                    session_allowances=allowances_global,
+                )
+                is True
+            )  # Still requires confirmation!
 
             # Test 2: Directory allowance should work
             allowances_dir = SessionAllowances()
             allowances_dir.add_exec_directory(tool, cwd)
-            assert policy.requires_confirmation(
-                tool,
-                exec_cwd=cwd,
-                session_allowances=allowances_dir,
-            ) is False  # Now allowed
+            assert (
+                policy.requires_confirmation(
+                    tool,
+                    exec_cwd=cwd,
+                    session_allowances=allowances_dir,
+                )
+                is False
+            )  # Now allowed
 
             # Test 3: Different directory should still require confirmation
-            assert policy.requires_confirmation(
-                tool,
-                exec_cwd=other_dir,
-                session_allowances=allowances_dir,
-            ) is True
+            assert (
+                policy.requires_confirmation(
+                    tool,
+                    exec_cwd=other_dir,
+                    session_allowances=allowances_dir,
+                )
+                is True
+            )
 
 
 class TestPermissionPolicyAllowsAction:
@@ -597,6 +639,10 @@ class TestActionSets:
         assert "paste" in DESTRUCTIVE_ACTIONS
         assert "clipboard_export" in DESTRUCTIVE_ACTIONS
 
+    def test_concat_files_is_destructive_when_writing(self):
+        """concat_files real runs participate in TRUSTED destructive-action handling."""
+        assert "concat_files" in DESTRUCTIVE_ACTIONS
+
 
 class TestPermissionPolicyDataclass:
     """Tests for PermissionPolicy as a dataclass."""
@@ -634,11 +680,13 @@ class TestCoreModuleExports:
     def test_permission_level_exported(self):
         """PermissionLevel is exported from nexus3.core."""
         from nexus3.core import PermissionLevel as CorePermissionLevel
+
         assert CorePermissionLevel is PermissionLevel
 
     def test_permission_policy_exported(self):
         """PermissionPolicy is exported from nexus3.core."""
         from nexus3.core import PermissionPolicy as CorePermissionPolicy
+
         assert CorePermissionPolicy is PermissionPolicy
 
 

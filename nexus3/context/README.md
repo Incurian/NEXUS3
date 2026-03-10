@@ -1,6 +1,6 @@
 # NEXUS3 Context Module
 
-Context management for NEXUS3 agents: layered configuration loading, conversation history, token budgeting, truncation strategies, compaction via LLM summarization, clipboard context injection, and structured prompt construction.
+Context management for NEXUS3 agents: layered configuration loading, conversation history, token budgeting, truncation strategies, compaction via LLM summarization, provider-bound message repair, and structured prompt construction.
 
 ## Overview
 
@@ -11,7 +11,7 @@ The context module is responsible for everything related to what an agent "knows
 3. **Tracking token usage** and enforcing budgets
 4. **Truncating** old messages when over budget
 5. **Compacting** via LLM summarization for longer sessions
-6. **Injecting dynamic content** (date/time, git context, clipboard) safely into prompts
+6. **Injecting dynamic session context** (date/time, git context, clipboard) at request time while keeping the static system prompt cacheable
 
 ## Architecture
 
@@ -46,18 +46,25 @@ LAYER 2: Ancestors (up to N levels above CWD)
 LAYER 3: Local (CWD/.nexus3/)
 ```
 
-Each layer can provide:
-- `NEXUS.md` - System prompt content
-- `README.md` - Documentation (fallback or included, based on config)
+Each non-default layer can provide:
+- One instruction file selected by `context.instruction_files` (defaults: `NEXUS.md`, `AGENTS.md`, `CLAUDE.md`, `README.md`)
 - `config.json` - Configuration overrides
 - `mcp.json` - MCP server definitions
+
+Instruction-file search is filename-specific:
+- `NEXUS.md`: `.nexus3/`, then project root
+- `AGENTS.md`: `.nexus3/`, `.agents/`, then project root
+- `CLAUDE.md`: `.nexus3/`, `.claude/`, `.agents/`, then project root
+- `README.md`: project root only
+
+The global layer is special-cased: package `NEXUS-DEFAULT.md` is always loaded first, then `~/.nexus3/NEXUS.md` or the packaged `NEXUS.md` template as fallback.
 
 #### Loading Rules
 
 | Content Type | Merge Strategy |
 |--------------|----------------|
-| NEXUS.md | Concatenated with labeled sections |
-| README.md | Wrapped with documentation boundaries |
+| Instruction file | First file found per layer, then concatenated with labeled sections |
+| README.md | Wrapped with documentation boundaries when it is the selected instruction file |
 | config.json | Deep merged (later layers override) |
 | mcp.json | Same name = later layer wins |
 
@@ -69,7 +76,7 @@ class ContextLayer:
     """A single layer of context (global, ancestor, or local)."""
     name: str           # "system-defaults", "global", "ancestor:dirname", "local"
     path: Path          # Directory path
-    prompt: str | None  # NEXUS.md content
+    prompt: str | None  # Selected instruction content (e.g. NEXUS/AGENTS/CLAUDE)
     readme: str | None  # README.md content
     config: dict | None # config.json content
     mcp: dict | None    # mcp.json content
@@ -113,7 +120,7 @@ from nexus3.context import ContextLoader
 loader = ContextLoader()
 context = loader.load(is_repl=True)
 
-print(context.system_prompt)        # Merged NEXUS.md content
+print(context.system_prompt)        # Merged instruction content
 print(context.merged_config)        # Deep-merged config.json
 print(context.mcp_servers)          # MCP servers with origins
 print(context.sources.prompt_sources)  # Debug: which files contributed
@@ -155,7 +162,7 @@ info = get_system_info(is_repl=True, cwd=Path.cwd())
 # Mode: Interactive REPL
 ```
 
-Note: Current date/time is NOT included here - it's injected dynamically per-request by `ContextManager.build_messages()` to ensure accuracy throughout the session.
+Note: Current date/time is NOT included here. Runtime datetime/git/clipboard state is emitted separately by `ContextManager.build_dynamic_context()` so providers can inject it at the conversation edge without mutating the cacheable system prompt.
 
 ---
 
@@ -176,9 +183,9 @@ class ContextConfig:
 #### Core Responsibilities
 
 1. **Message Management** - Add/clear user messages, assistant responses, tool results
-2. **Token Tracking** - Track usage across system prompt, tools, and messages
+2. **Token Tracking** - Track usage across static system prompt, dynamic session context, tools, and messages
 3. **Truncation** - Remove old messages when over budget (preserving tool call/result pairs)
-4. **Dynamic Injection** - Inject current date/time, git context, and clipboard context into prompts per-request
+4. **Dynamic Injection** - Build per-request `<session-context>` for current date/time, git context, and clipboard state
 
 #### Constructor Parameters
 
@@ -220,7 +227,12 @@ The manager handles three message roles:
 request shaping:
 - prune unpaired TOOL messages
 - synthesize missing tool results for assistant tool-call batches
-- append trailing assistant note when a conversation would end on TOOL messages
+- optionally append a trailing assistant note when a completed prior turn would otherwise end on TOOL messages
+
+In practice, `ensure_assistant_after_tool_results=True` is appropriate for
+session preflight before a new `USER` turn. Mid-turn TOOL -> ASSISTANT
+continuations should usually leave that repair disabled so providers do not see
+spurious cancellation notes during normal tool loops.
 
 `graph.py` (Plan E Phase 3 prototype) projects compiled messages into a typed
 graph model with:
@@ -284,13 +296,14 @@ When context exceeds budget, the manager truncates messages while preserving too
 usage = manager.get_token_usage()
 # Returns:
 # {
-#     "system": 1500,      # System prompt tokens (with dynamic content)
+#     "system": 1500,      # Static system prompt tokens
+#     "dynamic": 300,      # Dynamic session-context tokens
 #     "tools": 800,        # Tool definitions tokens
 #     "messages": 3200,    # Conversation messages tokens
-#     "total": 5500,       # Sum of above
+#     "total": 5800,       # Sum of above
 #     "budget": 8000,      # max_tokens from config
 #     "available": 6000,   # budget - reserve_tokens
-#     "remaining": 500     # available - total (space left)
+#     "remaining": 200     # available - total (space left)
 # }
 
 if manager.is_over_budget():
@@ -314,8 +327,9 @@ manager.add_session_start_message()  # Adds timestamped session marker (with opt
 
 # Conversation loop
 manager.add_user_message("Hello!")
-messages = manager.build_messages()  # Returns messages for API call
-# ... send to LLM ...
+messages = manager.build_messages()  # Static provider messages
+dynamic = manager.build_dynamic_context()  # Provider injects this into the request edge
+# ... send to LLM via provider adapter ...
 manager.add_assistant_message("Hi! How can I help?")
 
 # After tool calls
@@ -330,12 +344,20 @@ if manager.is_over_budget():
 
 #### DateTime Injection
 
-The current date/time is injected into the system prompt on every `build_messages()` call:
+The low-level `inject_datetime_into_prompt()` helper still exists for explicit
+prompt rewriting, but the runtime path uses `build_dynamic_context()` so the
+static system prompt remains cacheable:
 
 ```python
-from nexus3.context import inject_datetime_into_prompt
+from nexus3.context import ContextManager, inject_datetime_into_prompt
 
-# Finds "# Environment" section header and injects datetime after it
+manager = ContextManager()
+dynamic = manager.build_dynamic_context()
+# <session-context>
+# Current date: 2026-01-21, Current time: 14:30 (local)
+# </session-context>
+
+# Helper for explicit string rewriting when needed
 prompt = inject_datetime_into_prompt(
     prompt="# Environment\nWorking directory: /home/user",
     datetime_line="Current date: 2026-01-21, Current time: 14:30 (local)"
@@ -346,11 +368,11 @@ prompt = inject_datetime_into_prompt(
 # Working directory: /home/user
 ```
 
-This ensures the agent always knows the current time, even in long-running sessions.
+This keeps the agent's request-time clock accurate even in long-running sessions.
 
 #### Clipboard Context Injection
 
-When a `ClipboardManager` is provided and `clipboard_config.inject_into_context` is enabled, clipboard entries are automatically appended to the system prompt:
+When a `ClipboardManager` is provided and `clipboard_config.inject_into_context` is enabled, clipboard entries are appended to the `<session-context>` block returned by `build_dynamic_context()`:
 
 ```python
 from nexus3.context import ContextManager
@@ -369,19 +391,19 @@ manager = ContextManager(
 )
 ```
 
-The clipboard section is appended after the environment block during `build_messages()`.
+The clipboard section is emitted alongside datetime and git context in the same dynamic block.
 
 #### Git Context Injection
 
-When an agent's CWD is inside a git repository, git context is automatically injected into the system prompt. This gives agents awareness of branch, status, recent commit, and remote info.
+When an agent's CWD is inside a git repository, git context is added to dynamic session context. This gives agents awareness of branch, status, recent commit, and remote info without changing the static system prompt.
 
 ```python
 # Refresh git context (called on agent creation, cwd change, tool use, compaction)
 manager.refresh_git_context(Path("/home/user/project"))
 
-# Git context is automatically included in build_messages()
-messages = manager.build_messages()
-# System prompt now includes:
+# Git context is automatically included in build_dynamic_context()
+dynamic = manager.build_dynamic_context()
+# Dynamic session context now includes:
 # Git repository detected in CWD.
 #   Branch: main
 #   Status: 3 staged, 2 modified, 1 untracked, 2 stashes
@@ -677,6 +699,29 @@ from nexus3.context import (
     select_messages_for_compaction,
 )
 
+# Compiler
+from nexus3.context import (
+    CompiledContextIR,
+    CompileDiagnostics,
+    InvariantCode,
+    InvariantReport,
+    InvariantViolation,
+    ToolBatchIR,
+    check_context_invariants,
+    compile_context_messages,
+    compile_message_sequence,
+    validate_compiled_message_invariants,
+)
+
+# Graph
+from nexus3.context import (
+    ContextGraph,
+    ContextGraphEdge,
+    ContextMessageGroup,
+    GraphEdgeKind,
+    build_context_graph,
+)
+
 # Context Loader
 from nexus3.context import (
     ContextLayer,
@@ -768,10 +813,13 @@ if self.context.is_over_budget():
 
 ### Provider Module
 
-`build_messages()` output goes directly to the provider:
+`build_messages()` produces the static provider message list. Provider adapters
+then inject `build_dynamic_context()` output into the request edge when
+supported:
 
 ```python
 messages = context.build_messages()
+dynamic = context.build_dynamic_context()
 tools = context.get_tool_definitions()
 response = await provider.complete(messages, tools)
 ```
@@ -783,7 +831,7 @@ When clipboard injection is enabled, the manager integrates with `ClipboardManag
 ```python
 from nexus3.clipboard import ClipboardManager, format_clipboard_context
 
-# In build_messages(), clipboard context is appended to system prompt
+# In build_dynamic_context(), clipboard context becomes part of <session-context>
 clipboard_section = format_clipboard_context(
     clipboard_manager,
     max_entries=clipboard_config.max_injected_entries,
@@ -851,7 +899,7 @@ while True:
     user_input = input("> ")
     manager.add_user_message(user_input)
 
-    # Build messages with dynamic datetime and clipboard context
+    # Build static messages; provider layer injects build_dynamic_context()
     messages = manager.build_messages()
 
     # Send to LLM
@@ -884,4 +932,4 @@ while True:
 
 ## Status
 
-Production-ready. Last updated: 2026-02-11
+Production-ready. Last updated: 2026-03-10

@@ -16,6 +16,12 @@ This module provides robust, fail-fast configuration loading with comprehensive 
 
 Later layers override earlier layers using deep merge. Validation occurs after all layers are merged.
 
+The field tables below describe `schema.py` model defaults. In normal layered
+loading, `load_config()` usually starts from the shipped
+`nexus3/defaults/config.json` when no `~/.nexus3/config.json` exists, so the
+effective shipped baseline currently differs for some fields (for example
+`default_model="fast"`, `max_tool_iterations=100`, `skill_timeout=120.0`).
+
 ## Module Files
 
 | File | Purpose |
@@ -72,6 +78,10 @@ Load configuration with layered merging.
 **Returns:** Validated `Config` object.
 
 **Raises:** `ConfigError` if any config file contains invalid JSON or merged config fails validation.
+
+**Note:** Ancestor search depth is resolved from `context.ancestor_depth`. The
+loader peeks at `CWD/.nexus3/config.json` first so a local override can control
+how many ancestor layers are searched before the full merge happens.
 
 **Example:**
 ```python
@@ -145,6 +155,7 @@ if data is not None:
 ### `Config` (Root Model)
 
 The root configuration model containing all NEXUS3 settings.
+These defaults come from `schema.py`, not the shipped defaults file.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -209,7 +220,7 @@ Configuration for an LLM provider.
 | `max_retries` | `int` | `3` | Max retry attempts (0-10) |
 | `retry_backoff` | `float` | `1.5` | Exponential backoff multiplier (1.0-5.0) |
 | `allow_insecure_http` | `bool` | `False` | Allow HTTP for non-localhost URLs |
-| `prompt_caching` | `bool` | `True` | Enable prompt caching (~90% savings on cached tokens) |
+| `prompt_caching` | `bool` | `True` | Enable provider-specific prompt caching / cache metrics where supported |
 | `verify_ssl` | `bool` | `True` | Verify SSL certificates (false for self-signed) |
 | `ssl_ca_cert` | `str \| None` | `None` | Path to CA certificate for SSL verification |
 | `models` | `dict[str, ModelConfig]` | `{}` | Model aliases for this provider |
@@ -324,7 +335,7 @@ Configuration for the clipboard system.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `enabled` | `bool` | `True` | Enable clipboard tools |
-| `inject_into_context` | `bool` | `True` | Auto-inject clipboard index into system prompt |
+| `inject_into_context` | `bool` | `True` | Auto-inject clipboard index into dynamic session context |
 | `max_injected_entries` | `int` | `10` | Maximum entries to show per scope in context injection (0-50) |
 | `show_source_in_injection` | `bool` | `True` | Show source path/lines in context injection |
 | `max_entry_bytes` | `int` | `1048576` | Maximum size of a single clipboard entry (1KB-10MB) |
@@ -339,6 +350,12 @@ Configuration for context loading.
 |-------|------|---------|-------------|
 | `ancestor_depth` | `int` | `2` | Directory levels above CWD to search (0-10) |
 | `instruction_files` | `list[str]` | `["NEXUS.md", "AGENTS.md", "CLAUDE.md", "README.md"]` | Ordered priority list of instruction filenames to search per layer |
+
+**Validation and compatibility notes:**
+- Entries in `instruction_files` must be `.md` filenames only, not paths.
+- Path separators and `..` are rejected fail-closed.
+- Deprecated `include_readme` / `readme_as_fallback` fields are migrated to
+  `instruction_files` during config validation.
 
 ### `ServerConfig`
 
@@ -615,7 +632,7 @@ Invalid JSON: Unexpected UTF-8 BOM (decode using utf-8-sig)
 
 ## Related Modules
 
-- `nexus3/context/` - Uses `ContextConfig` for loading NEXUS.md prompts
+- `nexus3/context/` - Uses `ContextConfig` for layered instruction-file loading
 - `nexus3/provider/` - Uses `ProviderConfig` to instantiate LLM providers
 - `nexus3/session/` - Uses `PermissionsConfig` for permission enforcement
 - `nexus3/rpc/` - Uses `ServerConfig` for HTTP server settings
@@ -625,4 +642,4 @@ Invalid JSON: Unexpected UTF-8 BOM (decode using utf-8-sig)
 
 ---
 
-Last updated: 2026-02-10
+Last updated: 2026-03-10

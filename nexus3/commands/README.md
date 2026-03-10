@@ -1,12 +1,12 @@
 # nexus3.commands
 
-Unified command infrastructure for NEXUS3 CLI and REPL.
+Unified in-process command infrastructure for NEXUS3 REPL and local callers.
 
-This module provides a centralized, structured command system that works identically for both the `nexus3 rpc` CLI tool and `/slash` commands in the interactive REPL. Commands return structured `CommandOutput` objects, allowing callers to format output appropriately for their context (JSON for CLI, rich text for REPL).
+This module provides a centralized, structured command system for in-process callers such as REPL slash-command handling. Commands return structured `CommandOutput` objects so the caller can decide presentation. The external `nexus3 rpc` client surface is separate and lives in `nexus3/cli/client_commands.py`.
 
 **Key files:**
 - `protocol.py` - Core types: `CommandResult`, `CommandOutput`, `CommandContext`
-- `core.py` - Command implementations (11 commands) and helpers
+- `core.py` - Command implementations (10 commands) and helpers
 
 ---
 
@@ -14,15 +14,15 @@ This module provides a centralized, structured command system that works identic
 
 ### Why This Module Exists
 
-Before this module, command logic was duplicated between the CLI (`nexus3 rpc`) and REPL (`/commands`). This led to:
-- Inconsistent behavior between interfaces
+This module keeps the local command surface in one place instead of scattering it across REPL handlers and ad hoc helpers. That reduces:
+- Inconsistent local command behavior
 - Duplicated validation and error handling
-- Maintenance burden when adding new commands
+- Maintenance burden when adding or adjusting commands
 
 The unified command system solves this by:
 1. **Single source of truth**: One implementation per command
 2. **Structured output**: Commands return data, callers decide presentation
-3. **Context-aware**: Commands adapt behavior based on CLI vs REPL context
+3. **Context-aware**: Commands adapt behavior based on caller context
 4. **Type-safe**: Full typing with dataclasses and enums
 
 ---
@@ -39,25 +39,24 @@ nexus3/commands/
 ### Data Flow
 
 ```
-User Input (CLI or REPL)
-         │
-         ▼
-┌─────────────────┐
-│ CommandContext  │  ← pool, session_manager, current_agent_id, is_repl
-└─────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│ cmd_* function  │  ← async command implementation
-└─────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│ CommandOutput   │  ← result, message, data, special fields
-└─────────────────┘
-         │
-         ├──► CLI: JSON serialization of data
-         └──► REPL: Rich console print of message
+In-process caller (currently REPL slash command handling)
+                     │
+                     ▼
+        ┌──────────────────────────┐
+        │ CommandContext           │  ← pool, session_manager, current_agent_id, is_repl
+        └──────────────────────────┘
+                     │
+                     ▼
+        ┌──────────────────────────┐
+        │ cmd_* function           │  ← async command implementation
+        └──────────────────────────┘
+                     │
+                     ▼
+        ┌──────────────────────────┐
+        │ CommandOutput            │  ← result, message, data, special fields
+        └──────────────────────────┘
+                     │
+                     └──► Caller decides presentation / follow-up action
 ```
 
 ---
@@ -318,13 +317,15 @@ Cancel an in-progress request.
 
 **Parameters:**
 - `agent_id`: Target agent (defaults to current)
-- `request_id`: Specific request to cancel (defaults to current)
+- `request_id`: Optional request ID string. It is validated and echoed back in
+  the response for compatibility, but the current implementation cancels all
+  in-flight requests on the target agent via `dispatcher.cancel_all_requests()`.
 
 **Returns** in `data`:
 ```python
 {
     "agent_id": "worker-1",
-    "request_id": 12345,
+    "request_id": 12345,  # or None when omitted
     "cancelled": True
 }
 ```

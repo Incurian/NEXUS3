@@ -16,6 +16,8 @@ from nexus3.core.policy import PermissionLevel, PermissionPolicy
 from nexus3.core.presets import ToolPermission
 from nexus3.core.types import ToolCall
 from nexus3.session.enforcer import AGENT_TARGET_TOOLS, PermissionEnforcer
+from nexus3.skill.builtin.concat_files import derive_concat_output_path
+from nexus3.skill.services import ServiceContainer
 
 
 class TestAgentTargetToolsConstant:
@@ -329,9 +331,7 @@ class TestCheckTargetAllowedExplicitList:
     def test_explicit_list_allows_listed_agent(self):
         """Target allowed when in explicit allowlist."""
         enforcer = PermissionEnforcer()
-        permissions = self._make_permissions(
-            allowed_targets=["coordinator", "logger", "worker-1"]
-        )
+        permissions = self._make_permissions(allowed_targets=["coordinator", "logger", "worker-1"])
         tool_call = self._make_tool_call("coordinator")
 
         result = enforcer._check_target_allowed(tool_call, permissions)
@@ -340,9 +340,7 @@ class TestCheckTargetAllowedExplicitList:
     def test_explicit_list_denies_unlisted_agent(self):
         """Target denied when not in explicit allowlist."""
         enforcer = PermissionEnforcer()
-        permissions = self._make_permissions(
-            allowed_targets=["coordinator", "logger"]
-        )
+        permissions = self._make_permissions(allowed_targets=["coordinator", "logger"])
         tool_call = self._make_tool_call("hacker-agent")
 
         result = enforcer._check_target_allowed(tool_call, permissions)
@@ -699,8 +697,7 @@ class TestActionAuthorizationKernelEnforcement:
         assert result is not None
         assert result.error == "Tool 'nexus_send' is not allowed at current permission level"
         assert not any(
-            "Tool action authorization shadow mismatch" in r.message
-            for r in caplog.records
+            "Tool action authorization shadow mismatch" in r.message for r in caplog.records
         )
 
     def test_adapter_path_allows_explicitly_enabled_tool(self) -> None:
@@ -803,13 +800,16 @@ class TestPathAuthorizationKernelEnforcement:
         assert result is not None
         assert result.error is not None
 
-        expected_detail = PathDecisionEngine(
-            allowed_paths=[Path("/sandbox")],
-            blocked_paths=[],
-        ).check_access("/outside/file.txt").reason_detail
+        expected_detail = (
+            PathDecisionEngine(
+                allowed_paths=[Path("/sandbox")],
+                blocked_paths=[],
+            )
+            .check_access("/outside/file.txt")
+            .reason_detail
+        )
         assert result.error == (
-            "Tool 'read_file' cannot access path '/outside/file.txt': "
-            f"{expected_detail}"
+            f"Tool 'read_file' cannot access path '/outside/file.txt': {expected_detail}"
         )
 
     def test_forced_kernel_deny_is_authoritative_with_stable_fallback_wording(self) -> None:
@@ -878,6 +878,50 @@ class TestPatchPathExtractionAndChecks:
         assert result is not None
         assert result.error is not None
         assert "Tool 'patch' cannot access path '/outside/file.py'" in result.error
+
+
+class TestConcatFilesPathExtractionAndChecks:
+    """Tests for concat_files generated write-path handling."""
+
+    def _make_services(self, cwd: Path) -> ServiceContainer:
+        services = ServiceContainer()
+        services.set_cwd(cwd)
+        services.register_runtime_compat("allowed_paths", None)
+        services.register("blocked_paths", [])
+        return services
+
+    def test_extract_target_paths_includes_generated_output(self, tmp_path: Path) -> None:
+        enforcer = PermissionEnforcer(services=self._make_services(tmp_path))
+        tool_call = ToolCall(
+            id="call-1",
+            name="concat_files",
+            arguments={
+                "extensions": ["py"],
+                "path": str(tmp_path),
+                "dry_run": False,
+            },
+        )
+        expected_output = derive_concat_output_path(tmp_path, ["py"], "plain")
+
+        assert enforcer.extract_target_paths(tool_call) == [tmp_path, expected_output]
+
+    def test_get_confirmation_context_uses_generated_output(self, tmp_path: Path) -> None:
+        enforcer = PermissionEnforcer(services=self._make_services(tmp_path))
+        tool_call = ToolCall(
+            id="call-1",
+            name="concat_files",
+            arguments={
+                "extensions": ["py"],
+                "path": str(tmp_path),
+                "dry_run": False,
+            },
+        )
+
+        display_path, write_paths = enforcer.get_confirmation_context(tool_call)
+
+        expected = derive_concat_output_path(tmp_path, ["py"], "plain")
+        assert display_path == expected
+        assert write_paths == [expected]
 
 
 class TestCheckAllOrderingWithEnabledChecks:

@@ -1,4 +1,5 @@
 """Export skill for clipboard entries."""
+
 from __future__ import annotations
 
 import asyncio
@@ -49,6 +50,7 @@ class ClipboardExportSkill(FileSkill):
                 },
             },
             "required": ["path"],
+            "additionalProperties": False,
         }
 
     async def execute(

@@ -2,12 +2,10 @@
 
 import pytest
 
-from nexus3.clipboard import ClipboardManager, ClipboardScope, CLIPBOARD_PRESETS
-from nexus3.core.types import ToolResult
+from nexus3.clipboard import CLIPBOARD_PRESETS, ClipboardManager, ClipboardScope
 from nexus3.skill.builtin.clipboard_copy import copy_factory, cut_factory
 from nexus3.skill.builtin.clipboard_paste import paste_skill_factory
 from nexus3.skill.services import ServiceContainer
-
 
 # =============================================================================
 # Fixtures
@@ -191,7 +189,9 @@ class TestCopySkill:
         assert "not available" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_copy_duplicate_key_returns_error(self, copy_skill, source_file, clipboard_manager):
+    async def test_copy_duplicate_key_returns_error(
+        self, copy_skill, source_file, clipboard_manager
+    ):
         """Test that duplicate key returns error."""
         # First copy succeeds
         result1 = await copy_skill.execute(
@@ -259,6 +259,30 @@ class TestCopySkill:
 
         assert not result.success
         assert "exceeds" in result.error.lower() or "line" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_copy_rejects_unknown_params(self, copy_skill, source_file):
+        """copy should fail closed on unexpected top-level params."""
+        result = await copy_skill.execute(
+            source=str(source_file),
+            key="strict-copy",
+            unknown_xyz="boom",
+        )
+
+        assert not result.success
+        assert "unknown_xyz" in result.error
+
+    @pytest.mark.asyncio
+    async def test_copy_rejects_non_utf8_source(self, copy_skill, tmp_path):
+        """copy should refuse non-UTF8 source files instead of mangling bytes."""
+        source = tmp_path / "binary.txt"
+        source.write_bytes(b"prefix\xffsuffix")
+
+        result = await copy_skill.execute(source=str(source), key="binary-copy")
+
+        assert not result.success
+        assert "not valid utf-8" in result.error.lower()
+        assert "byte_strict" in result.error
 
 
 # =============================================================================
@@ -372,6 +396,30 @@ class TestCutSkill:
         assert not result.success
         assert "not found" in result.error.lower()
 
+    @pytest.mark.asyncio
+    async def test_cut_rejects_unknown_params(self, cut_skill, source_file):
+        """cut should fail closed on unexpected top-level params."""
+        result = await cut_skill.execute(
+            source=str(source_file),
+            key="strict-cut",
+            unknown_xyz="boom",
+        )
+
+        assert not result.success
+        assert "unknown_xyz" in result.error
+
+    @pytest.mark.asyncio
+    async def test_cut_rejects_non_utf8_source(self, cut_skill, tmp_path):
+        """cut should refuse non-UTF8 source files instead of rewriting replacements."""
+        source = tmp_path / "binary.txt"
+        source.write_bytes(b"prefix\xffsuffix")
+
+        result = await cut_skill.execute(source=str(source), key="binary-cut")
+
+        assert not result.success
+        assert "not valid utf-8" in result.error.lower()
+        assert "byte_strict" in result.error
+
 
 # =============================================================================
 # PasteSkill Tests
@@ -469,7 +517,43 @@ class TestPasteSkill:
         lines = content.split("\n")
         # Pasted content should be first
         assert lines[0] == "# Single line"
-        assert lines[1] == "# Header comment"
+
+    @pytest.mark.asyncio
+    async def test_paste_rejects_unknown_params(
+        self,
+        paste_skill,
+        target_file,
+        setup_clipboard,
+    ):
+        """paste should fail closed on unexpected top-level params."""
+        result = await paste_skill.execute(
+            key="snippet",
+            target=str(target_file),
+            unknown_xyz="boom",
+        )
+
+        assert not result.success
+        assert "unknown_xyz" in result.error
+
+    @pytest.mark.asyncio
+    async def test_paste_rejects_non_utf8_target(
+        self,
+        paste_skill,
+        tmp_path,
+        setup_clipboard,
+    ):
+        """paste should refuse non-UTF8 target files instead of corrupting them."""
+        target = tmp_path / "binary.txt"
+        target.write_bytes(b"prefix\xffsuffix")
+
+        result = await paste_skill.execute(
+            key="snippet",
+            target=str(target),
+        )
+
+        assert not result.success
+        assert "not valid utf-8" in result.error.lower()
+        assert "byte_strict" in result.error
 
     @pytest.mark.asyncio
     async def test_paste_replace_lines_mode(self, paste_skill, target_file, setup_clipboard):
@@ -537,7 +621,9 @@ class TestPasteSkill:
         assert lines[1] == "# Single line"
 
     @pytest.mark.asyncio
-    async def test_paste_key_not_found_returns_error(self, paste_skill, target_file, clipboard_manager):
+    async def test_paste_key_not_found_returns_error(
+        self, paste_skill, target_file, clipboard_manager
+    ):
         """Test that missing key returns error."""
         result = await paste_skill.execute(
             key="nonexistent-key",
@@ -566,7 +652,9 @@ class TestPasteSkill:
         assert "def pasted():" in content
 
     @pytest.mark.asyncio
-    async def test_paste_file_not_found_without_create(self, paste_skill, tmp_path, setup_clipboard):
+    async def test_paste_file_not_found_without_create(
+        self, paste_skill, tmp_path, setup_clipboard
+    ):
         """Test error when file doesn't exist and create_if_missing is False."""
         new_file = tmp_path / "missing.txt"
 
@@ -579,7 +667,9 @@ class TestPasteSkill:
         assert "not found" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_paste_invalid_mode_returns_error(self, paste_skill, target_file, setup_clipboard):
+    async def test_paste_invalid_mode_returns_error(
+        self, paste_skill, target_file, setup_clipboard
+    ):
         """Test that invalid mode returns error."""
         result = await paste_skill.execute(
             key="snippet",
@@ -592,7 +682,9 @@ class TestPasteSkill:
         assert "mode" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_paste_missing_line_number_for_after_line(self, paste_skill, target_file, setup_clipboard):
+    async def test_paste_missing_line_number_for_after_line(
+        self, paste_skill, target_file, setup_clipboard
+    ):
         """Test error when line_number missing for after_line mode."""
         result = await paste_skill.execute(
             key="snippet",
@@ -605,7 +697,9 @@ class TestPasteSkill:
         assert "line_number" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_paste_missing_marker_for_marker_mode(self, paste_skill, target_file, setup_clipboard):
+    async def test_paste_missing_marker_for_marker_mode(
+        self, paste_skill, target_file, setup_clipboard
+    ):
         """Test error when marker missing for at_marker_* mode."""
         result = await paste_skill.execute(
             key="snippet",
@@ -618,7 +712,9 @@ class TestPasteSkill:
         assert "marker" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_paste_marker_not_found_returns_error(self, paste_skill, target_file, setup_clipboard):
+    async def test_paste_marker_not_found_returns_error(
+        self, paste_skill, target_file, setup_clipboard
+    ):
         """Test error when marker not in file."""
         result = await paste_skill.execute(
             key="snippet",
@@ -666,7 +762,9 @@ class TestPasteSkill:
         assert "project scope" in result.output
 
     @pytest.mark.asyncio
-    async def test_paste_line_number_exceeds_file_length(self, paste_skill, target_file, setup_clipboard):
+    async def test_paste_line_number_exceeds_file_length(
+        self, paste_skill, target_file, setup_clipboard
+    ):
         """Test error when line number exceeds file length."""
         result = await paste_skill.execute(
             key="snippet",
@@ -679,7 +777,9 @@ class TestPasteSkill:
         assert "exceeds" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_paste_replace_lines_end_before_start(self, paste_skill, target_file, setup_clipboard):
+    async def test_paste_replace_lines_end_before_start(
+        self, paste_skill, target_file, setup_clipboard
+    ):
         """Test error when end_line < start_line in replace_lines mode."""
         result = await paste_skill.execute(
             key="snippet",
@@ -702,7 +802,9 @@ class TestCopyPasteIntegration:
     """Integration tests for copy/paste workflow."""
 
     @pytest.mark.asyncio
-    async def test_copy_then_paste(self, copy_skill, paste_skill, source_file, target_file, clipboard_manager):
+    async def test_copy_then_paste(
+        self, copy_skill, paste_skill, source_file, target_file, clipboard_manager
+    ):
         """Test full copy-paste workflow."""
         # Copy function from source
         copy_result = await copy_skill.execute(

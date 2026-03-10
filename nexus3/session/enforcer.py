@@ -27,7 +27,9 @@ from nexus3.session.path_semantics import (
     extract_display_path,
     extract_tool_paths,
     extract_write_paths,
+    has_explicit_semantics,
 )
+from nexus3.skill.builtin.concat_files import derive_concat_output_path
 
 if TYPE_CHECKING:
     from nexus3.core.permissions import AgentPermissions
@@ -39,17 +41,36 @@ if TYPE_CHECKING:
 EXEC_TOOLS = frozenset({"bash", "bash_safe", "shell_UNSAFE", "run_python", "git"})
 
 # Tools that take agent_id as a target (for allowed_targets enforcement)
-AGENT_TARGET_TOOLS = frozenset({
-    "nexus_send", "nexus_status", "nexus_cancel", "nexus_destroy"
-})
+AGENT_TARGET_TOOLS = frozenset({"nexus_send", "nexus_status", "nexus_cancel", "nexus_destroy"})
 
 # Tools that operate on paths
-PATH_TOOLS = frozenset({
-    "read_file", "write_file", "edit_file", "edit_lines", "append_file", "tail",
-    "file_info", "list_directory", "mkdir", "copy_file", "rename",
-    "regex_replace", "patch", "glob", "grep", "copy", "cut", "paste",
-    "clipboard_export", "clipboard_import", "clipboard_update",
-})
+PATH_TOOLS = frozenset(
+    {
+        "read_file",
+        "write_file",
+        "edit_file",
+        "edit_lines",
+        "append_file",
+        "tail",
+        "file_info",
+        "list_directory",
+        "mkdir",
+        "copy_file",
+        "rename",
+        "regex_replace",
+        "patch",
+        "glob",
+        "grep",
+        "copy",
+        "cut",
+        "paste",
+        "clipboard_export",
+        "clipboard_import",
+        "clipboard_update",
+        "concat_files",
+    }
+)
+
 
 class _AgentTargetAuthorizationAdapter:
     """Kernel adapter mirroring legacy target-restriction checks."""
@@ -258,9 +279,7 @@ class PermissionEnforcer:
         tool_perm = permissions.tool_permissions.get(tool_name)
         tool_explicitly_enabled = bool(tool_perm is not None and tool_perm.enabled)
         policy_allows_action = bool(permissions.effective_policy.allows_action(tool_name))
-        legacy_error = (
-            f"Tool '{tool_name}' is not allowed at current permission level"
-        )
+        legacy_error = f"Tool '{tool_name}' is not allowed at current permission level"
 
         requester_id = self._services.get("agent_id") if self._services else None
         principal_id = requester_id if isinstance(requester_id, str) and requester_id else "unknown"
@@ -389,8 +408,7 @@ class PermissionEnforcer:
 
         decision = engine.check_access(str(target_path))
         legacy_deny_error = (
-            f"Tool '{tool_name}' cannot access path"
-            f" '{target_path}': {decision.reason_detail}"
+            f"Tool '{tool_name}' cannot access path '{target_path}': {decision.reason_detail}"
         )
         forced_kernel_deny_error = (
             f"Tool '{tool_name}' cannot access path"
@@ -422,7 +440,11 @@ class PermissionEnforcer:
         Arch A2: Returns all read/write paths derived from the tool's path
         semantics so permission checks stay aligned with confirmation logic.
         """
-        return extract_tool_paths(tool_call.name, tool_call.arguments)
+        paths = extract_tool_paths(tool_call.name, tool_call.arguments)
+        generated_output = self._extract_generated_concat_output_path(tool_call)
+        if generated_output is not None and generated_output not in paths:
+            paths.append(generated_output)
+        return paths
 
     def extract_target_path(self, tool_call: ToolCall) -> Path | None:
         """Extract first target path from tool call arguments.
@@ -479,10 +501,13 @@ class PermissionEnforcer:
         exec_cwd = self.extract_exec_cwd(tool_call)
 
         # Get write paths (what will actually be modified)
-        write_paths = extract_write_paths(tool_call.name, tool_call.arguments)
+        write_paths = self._extract_write_paths(tool_call)
 
-        # If no write paths, fall back to old behavior (check first target path)
+        # Explicit read-only semantics mean there is no write target to confirm.
         if not write_paths:
+            if has_explicit_semantics(tool_call.name):
+                return False
+
             target_path = self.extract_target_path(tool_call)
             return permissions.effective_policy.requires_confirmation(
                 tool_call.name,
@@ -520,9 +545,58 @@ class PermissionEnforcer:
             - display_path: Path to show in confirmation UI (typically write target)
             - write_paths: All paths that allowances should be applied to
         """
-        display_path = extract_display_path(tool_call.name, tool_call.arguments)
-        write_paths = extract_write_paths(tool_call.name, tool_call.arguments)
+        generated_output = self._extract_generated_concat_output_path(tool_call)
+        display_path = generated_output or extract_display_path(tool_call.name, tool_call.arguments)
+        write_paths = self._extract_write_paths(tool_call)
         return display_path, write_paths
+
+    def _extract_write_paths(self, tool_call: ToolCall) -> list[Path]:
+        """Extract write paths, including generated targets for special cases."""
+        write_paths = extract_write_paths(tool_call.name, tool_call.arguments)
+        generated_output = self._extract_generated_concat_output_path(tool_call)
+        if generated_output is not None and generated_output not in write_paths:
+            write_paths.append(generated_output)
+        return write_paths
+
+    def _extract_generated_concat_output_path(self, tool_call: ToolCall) -> Path | None:
+        """Derive concat_files output path for confirmation and path checks."""
+        if tool_call.name != "concat_files":
+            return None
+
+        dry_run = tool_call.arguments.get("dry_run", True)
+        if not isinstance(dry_run, bool) or dry_run:
+            return None
+
+        extensions = tool_call.arguments.get("extensions")
+        if not isinstance(extensions, list):
+            return None
+        if not extensions or any(not isinstance(ext, str) or not ext for ext in extensions):
+            return None
+
+        raw_path = tool_call.arguments.get("path", ".")
+        if not isinstance(raw_path, str):
+            return None
+
+        output_format = tool_call.arguments.get("format", "plain")
+        if not isinstance(output_format, str):
+            output_format = "plain"
+
+        try:
+            if self._services:
+                engine = PathDecisionEngine.from_services(
+                    self._services,
+                    tool_name=tool_call.name,
+                )
+                decision = engine.check_access(raw_path)
+                if not decision.allowed or decision.resolved_path is None:
+                    return None
+                base_path = decision.resolved_path
+            else:
+                base_path = Path(raw_path).resolve()
+        except Exception:
+            return None
+
+        return derive_concat_output_path(base_path, extensions, output_format)
 
     def _should_skip_confirmation(self, tool_call: ToolCall) -> bool:
         """Check if confirmation should be skipped (e.g., destroying child agents)."""

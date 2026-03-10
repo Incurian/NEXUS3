@@ -33,27 +33,27 @@ class GlobSkill(FileSkill):
             "properties": {
                 "pattern": {
                     "type": "string",
-                    "description": "Glob pattern (e.g., '*.py', '**/*.txt', 'src/**/*.js')"
+                    "description": "Glob pattern (e.g., '*.py', '**/*.txt', 'src/**/*.js')",
                 },
                 "path": {
                     "type": "string",
-                    "description": "Base directory to search from (default: current directory)"
+                    "description": "Base directory to search from (default: current directory)",
                 },
                 "max_results": {
                     "type": "integer",
                     "description": "Maximum number of results to return (default: 100)",
-                    "default": 100
+                    "default": 100,
                 },
                 "exclude": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": (
-                        "Patterns to exclude (e.g.,"
-                        " ['node_modules', '.git', '__pycache__'])"
-                    )
-                }
+                        "Patterns to exclude (e.g., ['node_modules', '.git', '__pycache__'])"
+                    ),
+                },
             },
-            "required": ["pattern"]
+            "required": ["pattern"],
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -62,7 +62,7 @@ class GlobSkill(FileSkill):
         path: str = ".",
         max_results: int = 100,
         exclude: list[str] | None = None,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> ToolResult:
         """Find files matching glob pattern.
 
@@ -96,7 +96,6 @@ class GlobSkill(FileSkill):
                     must_exist=True,
                 )
                 for match in authorized_matches:
-
                     # Check exclusion patterns
                     if exclude:
                         match_str = str(match)

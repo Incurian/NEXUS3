@@ -33,20 +33,21 @@ class ListDirectorySkill(FileSkill):
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Directory path to list (default: current directory)"
+                    "description": "Directory path to list (default: current directory)",
                 },
                 "all": {
                     "type": "boolean",
                     "description": "Include hidden files (starting with .)",
-                    "default": False
+                    "default": False,
                 },
                 "long": {
                     "type": "boolean",
                     "description": "Include size, modification time, and permissions",
-                    "default": False
-                }
+                    "default": False,
+                },
             },
-            "required": []
+            "required": [],
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -54,7 +55,7 @@ class ListDirectorySkill(FileSkill):
         path: str = ".",
         all: bool = False,  # noqa: A002 - matches parameter name
         long: bool = False,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> ToolResult:
         """List directory contents.
 
@@ -107,8 +108,7 @@ class ListDirectorySkill(FileSkill):
                         size_str = _format_size(size)
 
                         lines.append(
-                            f"{type_char}{perms}  {size_str:>8}"
-                            f"  {mtime_str}  {entry.name}"
+                            f"{type_char}{perms}  {size_str:>8}  {mtime_str}  {entry.name}"
                         )
                     except (OSError, PermissionError) as e:
                         lines.append(f"?  ?  ?  {entry.name}  (error: {e})")
@@ -134,9 +134,17 @@ class ListDirectorySkill(FileSkill):
 def _format_permissions(mode: int) -> str:
     """Format file permissions as rwxrwxrwx string."""
     perms = ""
-    for who in [stat.S_IRUSR, stat.S_IWUSR, stat.S_IXUSR,
-                stat.S_IRGRP, stat.S_IWGRP, stat.S_IXGRP,
-                stat.S_IROTH, stat.S_IWOTH, stat.S_IXOTH]:
+    for who in [
+        stat.S_IRUSR,
+        stat.S_IWUSR,
+        stat.S_IXUSR,
+        stat.S_IRGRP,
+        stat.S_IWGRP,
+        stat.S_IXGRP,
+        stat.S_IROTH,
+        stat.S_IWOTH,
+        stat.S_IXOTH,
+    ]:
         if mode & who:
             if who in (stat.S_IRUSR, stat.S_IRGRP, stat.S_IROTH):
                 perms += "r"

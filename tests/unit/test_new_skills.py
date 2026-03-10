@@ -99,6 +99,17 @@ class TestTailSkill:
         assert "path" in result.error.lower()
 
     @pytest.mark.asyncio
+    async def test_invalid_utf8_file_refused(self, skill: TailSkill, tmp_path: Path) -> None:
+        """tail should fail closed on non-UTF8 files."""
+        file = tmp_path / "binary.txt"
+        file.write_bytes(b"prefix\xffsuffix")
+
+        result = await skill.execute(path=str(file))
+
+        assert result.error is not None
+        assert "not valid utf-8" in result.error.lower()
+
+    @pytest.mark.asyncio
     async def test_sandbox_enforcement(self, tmp_path: Path) -> None:
         """Sandbox is enforced when allowed_paths configured."""
         # Create file outside sandbox
@@ -117,6 +128,7 @@ class TestTailSkill:
         """Factory creates skill with proper configuration."""
         # Create mock permissions with tool_permissions to test per-tool lookup
         from unittest.mock import MagicMock
+
         services = ServiceContainer()
         mock_perms = MagicMock()
         mock_perms.tool_permissions = {}

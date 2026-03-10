@@ -1,4 +1,5 @@
 """Import skill for clipboard entries."""
+
 from __future__ import annotations
 
 import asyncio
@@ -12,6 +13,52 @@ from nexus3.skill.base import FileSkill, file_skill_factory
 
 if TYPE_CHECKING:
     pass
+
+
+def _validate_import_data(data: Any) -> tuple[str, list[dict[str, Any]]]:
+    """Validate clipboard import JSON and return normalized entries."""
+    if not isinstance(data, dict):
+        raise ValueError("Import file must contain a top-level JSON object")
+
+    version = data.get("version", "unknown")
+    if version != "1.0":
+        raise ValueError(f"Unsupported export format version: {version}")
+
+    raw_entries = data.get("entries", [])
+    if not isinstance(raw_entries, list):
+        raise ValueError("'entries' must be a JSON array")
+
+    entries: list[dict[str, Any]] = []
+    for index, raw_entry in enumerate(raw_entries, start=1):
+        if not isinstance(raw_entry, dict):
+            raise ValueError(f"Entry {index} must be a JSON object")
+
+        key = raw_entry.get("key")
+        if not isinstance(key, str) or not key:
+            raise ValueError(f"Entry {index} has invalid 'key'")
+
+        content = raw_entry.get("content", "")
+        if not isinstance(content, str):
+            raise ValueError(f"Entry {index} has non-string 'content'")
+
+        short_description = raw_entry.get("short_description")
+        if short_description is not None and not isinstance(short_description, str):
+            raise ValueError(f"Entry {index} has non-string 'short_description'")
+
+        tags = raw_entry.get("tags", [])
+        if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
+            raise ValueError(f"Entry {index} has invalid 'tags'")
+
+        entries.append(
+            {
+                "key": key,
+                "content": content,
+                "short_description": short_description,
+                "tags": tags,
+            }
+        )
+
+    return version, entries
 
 
 class ClipboardImportSkill(FileSkill):
@@ -50,12 +97,12 @@ class ClipboardImportSkill(FileSkill):
                     "type": "boolean",
                     "default": True,
                     "description": (
-                        "If true, show what would be imported"
-                        " without actually importing"
+                        "If true, show what would be imported without actually importing"
                     ),
                 },
             },
             "required": ["path"],
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -94,12 +141,11 @@ class ClipboardImportSkill(FileSkill):
         except OSError as e:
             return ToolResult(error=f"Cannot read file: {e}")
 
-        # Validate format
-        if data.get("version") != "1.0":
-            version = data.get("version", "unknown")
-            return ToolResult(error=f"Unsupported export format version: {version}")
+        try:
+            _, entries = _validate_import_data(data)
+        except ValueError as e:
+            return ToolResult(error=f"Invalid import format: {e}")
 
-        entries = data.get("entries", [])
         if not entries:
             return ToolResult(output="No entries in export file")
 
@@ -109,14 +155,10 @@ class ClipboardImportSkill(FileSkill):
         errors = []
 
         for entry_dict in entries:
-            key = entry_dict.get("key")
-            if not key:
-                errors.append("Entry missing 'key' field")
-                continue
-
-            content = entry_dict.get("content", "")
-            short_description = entry_dict.get("short_description")
-            tags = entry_dict.get("tags", [])
+            key = entry_dict["key"]
+            content = entry_dict["content"]
+            short_description = entry_dict["short_description"]
+            tags = entry_dict["tags"]
 
             # Check if exists
             existing = manager.get(key, clip_scope)

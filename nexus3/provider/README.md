@@ -10,9 +10,9 @@ This module abstracts LLM API differences behind a common `AsyncProvider` protoc
 
 | Type | API Format | Endpoint | Auth Method | Prompt Caching |
 |------|------------|----------|-------------|----------------|
-| `openrouter` | OpenAI-compatible | `/v1/chat/completions` | Bearer token | Pass-through (Anthropic models) |
-| `openai` | OpenAI-compatible | `/v1/chat/completions` | Bearer token | Automatic |
-| `azure` | OpenAI-compatible | `/openai/deployments/{name}/chat/completions` | api-key header | Automatic |
+| `openrouter` | OpenAI-compatible | `/v1/chat/completions` | Bearer token | Pass-through `cache_control` for Anthropic models |
+| `openai` | OpenAI-compatible | `/v1/chat/completions` | Bearer token | Provider-side automatic only (no request-side cache shaping here) |
+| `azure` | OpenAI-compatible | `/openai/deployments/{name}/chat/completions` | api-key header | Provider-side automatic only (no request-side cache shaping here) |
 | `anthropic` | Native Anthropic | `/v1/messages` | x-api-key header | Full support |
 | `ollama` | OpenAI-compatible | `/v1/chat/completions` | None | N/A (local) |
 | `vllm` | OpenAI-compatible | `/v1/chat/completions` | None | N/A (local) |
@@ -26,6 +26,7 @@ nexus3/provider/
 ├── registry.py        # ProviderRegistry for multi-provider management
 ├── openai_compat.py   # OpenAICompatProvider for OpenAI-format APIs
 ├── anthropic.py       # AnthropicProvider for native Anthropic API
+├── tool_schema.py     # Provider-safe tool schema normalization helpers
 └── azure.py           # AzureOpenAIProvider extending OpenAI-compat
 ```
 
@@ -729,23 +730,26 @@ await registry.aclose()
 
 ## Prompt Caching
 
-Prompt caching reduces costs by caching static portions of prompts (primarily the system prompt) for reuse across requests. NEXUS3 supports prompt caching across multiple providers.
+Prompt caching in this module is request-shaped explicitly for Anthropic and
+for OpenRouter requests targeting Anthropic models. Direct OpenAI/Azure calls
+do not add cache-control hints here, but the module still logs provider-reported
+cached-token usage when those APIs return it.
 
 ### Provider Support
 
 | Provider | Status | How It Works |
 |----------|--------|--------------|
-| Anthropic | Full | `cache_control: {"type": "ephemeral"}` on system prompt |
-| OpenAI | Automatic | Built-in caching, no special configuration needed |
-| Azure | Automatic | Same as OpenAI |
-| OpenRouter | Pass-through | Forwards `cache_control` for Anthropic models |
-| Ollama/vLLM | N/A | Local providers, no caching needed |
+| Anthropic | Full | Adds `cache_control: {"type": "ephemeral"}` on the system prompt and on the penultimate user turn cache breakpoint |
+| OpenAI | Provider-side automatic | No request-body cache shaping; logs `cached_tokens` metrics when the API returns them |
+| Azure | Provider-side automatic | Same request-shaping behavior as direct OpenAI |
+| OpenRouter | Pass-through | Forwards Anthropic-style `cache_control` only when routing to Anthropic models |
+| Ollama/vLLM | N/A | Local providers, no caching-specific request shaping |
 
 ### Cost Savings
 
-Prompt caching typically provides ~90% cost reduction on cached tokens:
-- **Anthropic**: Cache writes at 1.25x input token cost, cache reads at 0.1x
-- **OpenAI**: Automatic caching with 50% discount on cached tokens
+Actual cache savings and billing behavior are provider-specific. NEXUS3 only
+controls the request shape described above and logs cache usage metrics when
+providers include them in responses.
 
 ### Configuration
 

@@ -26,6 +26,7 @@ class PermissionLevel(Enum):
         TRUSTED: CWD auto-allowed, prompts for other paths with allow once/always.
         SANDBOXED: Immutable sandbox, no execution, no agent management.
     """
+
     YOLO = "yolo"
     TRUSTED = "trusted"
     SANDBOXED = "sandboxed"
@@ -36,77 +37,87 @@ class ConfirmationResult(Enum):
 
     Used by TRUSTED mode to implement "allow once/always" functionality.
     """
+
     DENY = "deny"
     ALLOW_ONCE = "allow_once"
     # For write operations (write_file, edit_file)
-    ALLOW_FILE = "allow_file"               # Allow always for this specific file
+    ALLOW_FILE = "allow_file"  # Allow always for this specific file
     ALLOW_WRITE_DIRECTORY = "allow_write_directory"  # Allow writes in this directory
     # For execution operations (bash, run_python)
-    ALLOW_EXEC_CWD = "allow_exec_cwd"       # Allow tool in current working directory
-    ALLOW_EXEC_GLOBAL = "allow_exec_global" # Allow tool globally (any directory)
+    ALLOW_EXEC_CWD = "allow_exec_cwd"  # Allow tool in current working directory
+    ALLOW_EXEC_GLOBAL = "allow_exec_global"  # Allow tool globally (any directory)
 
 
 # Actions that are always destructive (require confirmation or allowance check)
 # NOTE: Use lowercase - requires_confirmation() lowercases before checking
-DESTRUCTIVE_ACTIONS = frozenset({
-    "write",
-    "delete",
-    "remove",
-    "overwrite",
-    "execute",
-    "run_command",
-    "shutdown",
-    # Specific tool names
-    "write_file",
-    "edit_file",
-    "edit_lines",
-    "append_file",
-    "regex_replace",
-    "patch",
-    "cut",
-    "paste",
-    "clipboard_export",
-    "gitlab_artifact",
-    "copy_file",     # Fix 1.2: Can overwrite destination files
-    "rename",        # Fix 1.2: Can overwrite destination files
-    "mkdir",         # Fix 1.2: Creates directories
-    "bash_safe",
-    "shell_unsafe",  # Tool name is shell_UNSAFE but we check lowercase
-    "run_python",
-    "nexus_destroy",
-    "nexus_shutdown",
-})
+DESTRUCTIVE_ACTIONS = frozenset(
+    {
+        "write",
+        "delete",
+        "remove",
+        "overwrite",
+        "execute",
+        "run_command",
+        "shutdown",
+        # Specific tool names
+        "write_file",
+        "edit_file",
+        "edit_lines",
+        "append_file",
+        "regex_replace",
+        "patch",
+        "cut",
+        "paste",
+        "clipboard_export",
+        "gitlab_artifact",
+        "concat_files",
+        "copy_file",  # Fix 1.2: Can overwrite destination files
+        "rename",  # Fix 1.2: Can overwrite destination files
+        "mkdir",  # Fix 1.2: Creates directories
+        "bash_safe",
+        "shell_unsafe",  # Tool name is shell_UNSAFE but we check lowercase
+        "run_python",
+        "nexus_destroy",
+        "nexus_shutdown",
+    }
+)
 
 # Actions always allowed without confirmation
-SAFE_ACTIONS = frozenset({
-    "read",
-    "list",
-    "status",
-    "search",
-    "glob",
-    "grep",
-})
+SAFE_ACTIONS = frozenset(
+    {
+        "read",
+        "list",
+        "status",
+        "search",
+        "glob",
+        "grep",
+    }
+)
 
 # Network-related actions (restricted in SANDBOXED mode)
-NETWORK_ACTIONS = frozenset({
-    "http_request",
-    "send_message",
-    "connect",
-})
+NETWORK_ACTIONS = frozenset(
+    {
+        "http_request",
+        "send_message",
+        "connect",
+    }
+)
 
 # Tools completely disabled in SANDBOXED mode (execution and agent management)
 # NOTE: Use lowercase - allows_action() lowercases before checking
-SANDBOXED_DISABLED_TOOLS = frozenset({
-    "bash_safe",
-    "shell_unsafe",  # Tool name is shell_UNSAFE but we check lowercase
-    "run_python",
-    "nexus_send",
-    "nexus_create",
-    "nexus_destroy",
-    "nexus_shutdown",
-    "nexus_cancel",
-    "nexus_status",
-})
+SANDBOXED_DISABLED_TOOLS = frozenset(
+    {
+        "bash_safe",
+        "shell_unsafe",  # Tool name is shell_UNSAFE but we check lowercase
+        "run_python",
+        "nexus_send",
+        "nexus_create",
+        "nexus_destroy",
+        "nexus_shutdown",
+        "nexus_cancel",
+        "nexus_status",
+    }
+)
 
 
 @dataclass
@@ -126,6 +137,7 @@ class PermissionPolicy:
         cwd: The working directory at agent creation (auto-allowed for TRUSTED).
         frozen: If True, allowed_paths cannot be modified (for SANDBOXED).
     """
+
     level: PermissionLevel
     # None = unrestricted, [] = nothing allowed, [paths...] = only within these
     allowed_paths: list[Path] | None = None

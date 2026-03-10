@@ -1,6 +1,6 @@
 # nexus3.clipboard - Scoped Clipboard System
 
-**Updated: 2026-02-10**
+**Updated: 2026-03-10**
 
 The clipboard module provides a multi-scope clipboard system for NEXUS3 agents. It enables agents to copy, cut, and paste content between files with persistent storage, tagging, search, and context injection.
 
@@ -38,7 +38,7 @@ The clipboard system provides a structured way for agents to:
 - **Organize** entries with tags for categorization
 - **Search** entries by key, description, or content
 - **Import/Export** clipboard entries as JSON for backup or transfer (via skills)
-- **Auto-inject** clipboard contents into system prompt for context
+- **Auto-inject** clipboard contents into dynamic session context
 
 Key features:
 - **Three scope levels**: Agent (in-memory), Project (persistent), System (global)
@@ -150,6 +150,10 @@ paste(key, target, scope?, mode?, line_number?, start_line?, end_line?, marker?,
 | `at_marker_after` | Insert after marker text |
 | `at_marker_before` | Insert before marker text |
 
+Clipboard file operations are UTF-8 text only. `copy`, `cut`, `paste`, and
+`clipboard_update(source=...)` reject non-UTF8 or byte-sensitive file content;
+use `patch` with `fidelity_mode="byte_strict"` for byte-preserving edits.
+
 ---
 
 ## Tags
@@ -237,6 +241,14 @@ clipboard_import(path, scope?, conflict?, dry_run?)
 
 `dry_run` defaults to `True` - preview what would be imported without applying changes. Set `dry_run=false` to perform the import.
 
+Import validation is strict:
+- The export must be a top-level JSON object with `version: "1.0"` and an `entries` array.
+- Each entry must provide a non-empty string `key`; `content` must be a string; `short_description` and `tags` must have the expected shapes.
+
+Current import preserves only `key`, `content`, `short_description`, and
+`tags`. Exported scope, timestamps, source metadata, TTL fields, and other
+derived metadata are not reapplied during import.
+
 ---
 
 ## TTL (Time-to-Live)
@@ -258,12 +270,13 @@ copy(source="file.py", key="temp", ttl_seconds=3600)  # Expires in 1 hour
 
 ## Context Injection
 
-The clipboard system can inject recent entries into the agent's system prompt:
+The clipboard system can inject recent entries into the agent's dynamic
+request-time session context:
 
 ```python
 from nexus3.clipboard import format_clipboard_context
 
-# Generate clipboard section for system prompt
+# Generate clipboard section for <session-context>
 section = format_clipboard_context(
     manager,
     max_entries=10,      # Limit entries per scope (not total)
@@ -287,7 +300,9 @@ Context injection is controlled by `ClipboardConfig`:
 }
 ```
 
-When enabled, agents see their clipboard contents in the system prompt, helping them track available snippets without needing to call `clipboard_list`.
+When enabled, agents see their clipboard contents in the dynamic
+`<session-context>` block at request time, helping them track available
+snippets without needing to call `clipboard_list`.
 
 ---
 
@@ -325,12 +340,18 @@ Full configuration options in `config.json`:
 | Option | Default | Description |
 |--------|---------|-------------|
 | `enabled` | `true` | Enable clipboard system |
-| `inject_into_context` | `true` | Add clipboard to system prompt |
-| `max_injected_entries` | `10` | Max entries per scope in system prompt |
+| `inject_into_context` | `true` | Add clipboard to dynamic session context |
+| `max_injected_entries` | `10` | Max entries per scope in dynamic session context |
 | `show_source_in_injection` | `true` | Show source file in injection |
-| `max_entry_bytes` | 1MB | Hard limit per entry |
-| `warn_entry_bytes` | 100KB | Warning threshold |
-| `default_ttl_seconds` | `null` | Default TTL (null = permanent) |
+| `max_entry_bytes` | 1MB | Config schema field for per-entry hard limit; current clipboard runtime still uses built-in module constants |
+| `warn_entry_bytes` | 100KB | Config schema field for large-entry warnings; current clipboard runtime still uses built-in module constants |
+| `default_ttl_seconds` | `null` | Config schema field for default TTL; current clipboard runtime still defaults to permanent entries unless `ttl_seconds` is passed per entry |
+
+Only the context-injection settings above are currently consumed directly by
+the clipboard runtime. Size-limit and default-TTL config fields are present in
+the config schema, but `ClipboardManager` still enforces
+`MAX_ENTRY_SIZE_BYTES` / `WARN_ENTRY_SIZE_BYTES` and an unwired permanent
+default TTL path.
 
 ---
 

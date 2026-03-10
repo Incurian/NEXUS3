@@ -25,6 +25,7 @@ class ToolPathSemantics:
         write_keys: Argument names that represent paths that will be modified.
         display_key: Which path to show in confirmation UI (typically the write target).
     """
+
     read_keys: tuple[str, ...] = field(default_factory=tuple)
     write_keys: tuple[str, ...] = field(default_factory=tuple)
     display_key: str | None = None
@@ -34,75 +35,35 @@ class ToolPathSemantics:
 # Tools not listed here get sensible defaults (path as read+write)
 TOOL_PATH_SEMANTICS: dict[str, ToolPathSemantics] = {
     # Write-only tools (no read component)
-    "write_file": ToolPathSemantics(
-        write_keys=("path",),
-        display_key="path"
-    ),
-    "mkdir": ToolPathSemantics(
-        write_keys=("path",),
-        display_key="path"
-    ),
-
+    "write_file": ToolPathSemantics(write_keys=("path",), display_key="path"),
+    "mkdir": ToolPathSemantics(write_keys=("path",), display_key="path"),
     # Read+write tools (modify existing files)
-    "edit_file": ToolPathSemantics(
-        read_keys=("path",),
-        write_keys=("path",),
-        display_key="path"
-    ),
-    "edit_lines": ToolPathSemantics(
-        read_keys=("path",),
-        write_keys=("path",),
-        display_key="path"
-    ),
-    "append_file": ToolPathSemantics(
-        read_keys=("path",),
-        write_keys=("path",),
-        display_key="path"
-    ),
+    "edit_file": ToolPathSemantics(read_keys=("path",), write_keys=("path",), display_key="path"),
+    "edit_lines": ToolPathSemantics(read_keys=("path",), write_keys=("path",), display_key="path"),
+    "append_file": ToolPathSemantics(read_keys=("path",), write_keys=("path",), display_key="path"),
     "regex_replace": ToolPathSemantics(
-        read_keys=("path",),
-        write_keys=("path",),
-        display_key="path"
+        read_keys=("path",), write_keys=("path",), display_key="path"
     ),
     "patch": ToolPathSemantics(
-        read_keys=("path", "target", "diff_file"),
-        write_keys=("path", "target"),
-        display_key="path"
+        read_keys=("path", "target", "diff_file"), write_keys=("path", "target"), display_key="path"
     ),
     "copy": ToolPathSemantics(read_keys=("source",)),
-    "cut": ToolPathSemantics(
-        read_keys=("source",),
-        write_keys=("source",),
-        display_key="source"
-    ),
-    "paste": ToolPathSemantics(
-        read_keys=("target",),
-        write_keys=("target",),
-        display_key="target"
-    ),
-    "clipboard_export": ToolPathSemantics(
-        write_keys=("path",),
-        display_key="path"
-    ),
+    "cut": ToolPathSemantics(read_keys=("source",), write_keys=("source",), display_key="source"),
+    "paste": ToolPathSemantics(read_keys=("target",), write_keys=("target",), display_key="target"),
+    "clipboard_export": ToolPathSemantics(write_keys=("path",), display_key="path"),
     "clipboard_import": ToolPathSemantics(read_keys=("path",)),
     "clipboard_update": ToolPathSemantics(read_keys=("source",)),
-    "gitlab_artifact": ToolPathSemantics(
-        write_keys=("output_path",),
-        display_key="output_path"
-    ),
-
+    "gitlab_artifact": ToolPathSemantics(write_keys=("output_path",), display_key="output_path"),
+    "concat_files": ToolPathSemantics(read_keys=("path",)),
     # Multi-path tools (source=read, destination=write)
     "copy_file": ToolPathSemantics(
         read_keys=("source",),
         write_keys=("destination",),
-        display_key="destination"  # Confirmation shows write target
+        display_key="destination",  # Confirmation shows write target
     ),
     "rename": ToolPathSemantics(
-        read_keys=("source",),
-        write_keys=("destination",),
-        display_key="destination"
+        read_keys=("source",), write_keys=("destination",), display_key="destination"
     ),
-
     # Read-only tools (no write component)
     "read_file": ToolPathSemantics(read_keys=("path",)),
     "tail": ToolPathSemantics(read_keys=("path",)),
@@ -126,13 +87,13 @@ def get_semantics(tool_name: str) -> ToolPathSemantics:
         ToolPathSemantics for the tool.
     """
     return TOOL_PATH_SEMANTICS.get(
-        tool_name,
-        ToolPathSemantics(
-            read_keys=("path",),
-            write_keys=("path",),
-            display_key="path"
-        )
+        tool_name, ToolPathSemantics(read_keys=("path",), write_keys=("path",), display_key="path")
     )
+
+
+def has_explicit_semantics(tool_name: str) -> bool:
+    """Return True when a tool has a registered semantics entry."""
+    return tool_name in TOOL_PATH_SEMANTICS
 
 
 def _extract_paths_for_keys(args: dict[str, Any], keys: tuple[str, ...]) -> list[Path]:

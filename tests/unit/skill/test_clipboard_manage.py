@@ -479,6 +479,27 @@ class TestClipboardUpdateSkill:
         assert "line5" not in entry.content
 
     @pytest.mark.asyncio
+    async def test_update_rejects_invalid_utf8_source(
+        self,
+        update_skill,
+        clipboard_manager,
+        tmp_path,
+    ):
+        """Invalid UTF-8 source files should fail closed."""
+        clipboard_manager.copy(key="test", content="old", scope=ClipboardScope.AGENT)
+        source = tmp_path / "bad.txt"
+        source.write_bytes(b"\xff\xfeupdated")
+
+        result = await update_skill.execute(key="test", scope="agent", source=str(source))
+
+        assert not result.success
+        assert result.error is not None
+        assert "UTF-8" in result.error
+        entry = clipboard_manager.get("test", ClipboardScope.AGENT)
+        assert entry is not None
+        assert entry.content == "old"
+
+    @pytest.mark.asyncio
     async def test_update_invalid_scope(self, update_skill, clipboard_manager):
         """Test error on invalid scope."""
         result = await update_skill.execute(key="test", scope="invalid", short_description="desc")

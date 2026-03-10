@@ -36,7 +36,7 @@ def _tail_lines(
     line_buffer: deque[tuple[int, str]] = deque(maxlen=num_lines)
     total_lines = 0
 
-    with open(filepath, encoding="utf-8", errors="replace") as f:
+    with open(filepath, encoding="utf-8") as f:
         for line in f:
             total_lines += 1
             line_buffer.append((total_lines, line.rstrip()))
@@ -83,25 +83,18 @@ class TailSkill(FileSkill):
         return {
             "type": "object",
             "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "The path to the file to read"
-                },
+                "path": {"type": "string", "description": "The path to the file to read"},
                 "lines": {
                     "type": "integer",
                     "description": "Number of lines from end (default: 10)",
-                    "default": 10
-                }
+                    "default": 10,
+                },
             },
-            "required": ["path"]
+            "required": ["path"],
+            "additionalProperties": False,
         }
 
-    async def execute(
-        self,
-        path: str = "",
-        lines: int = 10,
-        **kwargs: Any
-    ) -> ToolResult:
+    async def execute(self, path: str = "", lines: int = 10, **kwargs: Any) -> ToolResult:
         """Read the last N lines of the file.
 
         Args:
@@ -122,9 +115,7 @@ class TailSkill(FileSkill):
             p = self._validate_path(path)
 
             # P2.5 SECURITY: Efficient tail read (deque keeps only last N lines)
-            result, total_lines, truncated = await asyncio.to_thread(
-                _tail_lines, p, lines
-            )
+            result, total_lines, truncated = await asyncio.to_thread(_tail_lines, p, lines)
 
             if not result:
                 return ToolResult(output="(File is empty)")
@@ -138,6 +129,8 @@ class TailSkill(FileSkill):
 
             return ToolResult(output=output)
 
+        except UnicodeDecodeError:
+            return ToolResult(error=f"File is not valid UTF-8 text: {path}")
         except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except FileNotFoundError:
@@ -146,8 +139,6 @@ class TailSkill(FileSkill):
             return ToolResult(error=f"Permission denied: {path}")
         except IsADirectoryError:
             return ToolResult(error=f"Path is a directory, not a file: {path}")
-        except UnicodeDecodeError:
-            return ToolResult(error=f"File is not valid UTF-8 text: {path}")
         except Exception as e:
             return ToolResult(error=f"Error reading file: {e}")
 

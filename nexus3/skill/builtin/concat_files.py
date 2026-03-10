@@ -37,34 +37,36 @@ if TYPE_CHECKING:
 # =============================================================================
 
 # Default exclusions (common non-source directories)
-DEFAULT_EXCLUDES: frozenset[str] = frozenset({
-    "node_modules",
-    ".git",
-    "__pycache__",
-    ".venv",
-    "venv",
-    ".tox",
-    ".pytest_cache",
-    ".mypy_cache",
-    ".ruff_cache",
-    "dist",
-    "build",
-    ".egg-info",
-    ".next",
-    ".nuxt",
-    "coverage",
-    ".coverage",
-    "htmlcov",
-    "target",
-    "vendor",
-    # Windows-specific
-    "Debug",
-    "Release",
-    "x64",
-    "x86",
-    ".vs",
-    "packages",
-})
+DEFAULT_EXCLUDES: frozenset[str] = frozenset(
+    {
+        "node_modules",
+        ".git",
+        "__pycache__",
+        ".venv",
+        "venv",
+        ".tox",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "dist",
+        "build",
+        ".egg-info",
+        ".next",
+        ".nuxt",
+        "coverage",
+        ".coverage",
+        "htmlcov",
+        "target",
+        "vendor",
+        # Windows-specific
+        "Debug",
+        "Release",
+        "x64",
+        "x86",
+        ".vs",
+        "packages",
+    }
+)
 
 # Extension to language mapping for markdown code fences
 EXT_TO_LANG: dict[str, str] = {
@@ -215,6 +217,7 @@ IS_WINDOWS = sys.platform == "win32"
 # Data Classes
 # =============================================================================
 
+
 @dataclass
 class FileInfo:
     """Information about a file to be concatenated."""
@@ -240,9 +243,52 @@ class DryRunResult:
     output_path: str = ""  # Generated output filename
 
 
+def derive_concat_output_path(
+    base_path: Path,
+    extensions: list[str],
+    output_format: str,
+) -> Path:
+    """Generate the concrete output path for a concat_files run."""
+    if base_path == Path("."):
+        try:
+            dir_name = Path.cwd().name
+        except OSError:
+            dir_name = "output"
+    else:
+        dir_name = base_path.name or "output"
+
+    dir_name = re.sub(r"[^\w\-]", "", dir_name.replace(" ", "-").replace("_", "-"))
+    if not dir_name:
+        dir_name = "output"
+
+    ext_str = "-".join(extensions[:3])
+    if len(extensions) > 3:
+        ext_str += f"-etc{len(extensions) - 3}"
+
+    file_ext = {"plain": "txt", "markdown": "md", "xml": "xml"}.get(output_format, "txt")
+    base_name = f"{dir_name}-{ext_str}-concat"
+
+    output_path = base_path / f"{base_name}.{file_ext}"
+    if not output_path.exists():
+        return output_path
+
+    counter = 1
+    while True:
+        output_path = base_path / f"{base_name}-{counter}.{file_ext}"
+        if not output_path.exists():
+            return output_path
+        counter += 1
+        if counter > 1000:
+            import time
+
+            ts = int(time.time())
+            return base_path / f"{base_name}-{ts}.{file_ext}"
+
+
 # =============================================================================
 # Skill Implementation
 # =============================================================================
+
 
 class ConcatFilesSkill(FileSkill):
     """Skill that finds files by extension and concatenates them.
@@ -340,6 +386,7 @@ class ConcatFilesSkill(FileSkill):
                 },
             },
             "required": ["extensions"],
+            "additionalProperties": False,
         }
 
     def _is_binary(self, path: Path) -> bool:
@@ -426,7 +473,9 @@ class ConcatFilesSkill(FileSkill):
             # Use separate code paths for Windows vs Unix for proper flag handling
             if IS_WINDOWS:
                 proc = await asyncio.create_subprocess_exec(
-                    "git", "rev-parse", "--is-inside-work-tree",
+                    "git",
+                    "rev-parse",
+                    "--is-inside-work-tree",
                     cwd=path,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
@@ -434,7 +483,9 @@ class ConcatFilesSkill(FileSkill):
                 )
             else:
                 proc = await asyncio.create_subprocess_exec(
-                    "git", "rev-parse", "--is-inside-work-tree",
+                    "git",
+                    "rev-parse",
+                    "--is-inside-work-tree",
                     cwd=path,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
@@ -482,7 +533,11 @@ class ConcatFilesSkill(FileSkill):
             # Use separate code paths for Windows vs Unix for proper flag handling
             if IS_WINDOWS:
                 proc_tracked = await asyncio.create_subprocess_exec(
-                    "git", "ls-files", "-z", "--", *patterns,
+                    "git",
+                    "ls-files",
+                    "-z",
+                    "--",
+                    *patterns,
                     cwd=base_path,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
@@ -490,20 +545,28 @@ class ConcatFilesSkill(FileSkill):
                 )
             else:
                 proc_tracked = await asyncio.create_subprocess_exec(
-                    "git", "ls-files", "-z", "--", *patterns,
+                    "git",
+                    "ls-files",
+                    "-z",
+                    "--",
+                    *patterns,
                     cwd=base_path,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     start_new_session=True,
                 )
-            stdout_tracked, _ = await asyncio.wait_for(
-                proc_tracked.communicate(), timeout=30.0
-            )
+            stdout_tracked, _ = await asyncio.wait_for(proc_tracked.communicate(), timeout=30.0)
 
             # Get untracked but not ignored files
             if IS_WINDOWS:
                 proc_untracked = await asyncio.create_subprocess_exec(
-                    "git", "ls-files", "-z", "--others", "--exclude-standard", "--", *patterns,
+                    "git",
+                    "ls-files",
+                    "-z",
+                    "--others",
+                    "--exclude-standard",
+                    "--",
+                    *patterns,
                     cwd=base_path,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
@@ -511,15 +574,19 @@ class ConcatFilesSkill(FileSkill):
                 )
             else:
                 proc_untracked = await asyncio.create_subprocess_exec(
-                    "git", "ls-files", "-z", "--others", "--exclude-standard", "--", *patterns,
+                    "git",
+                    "ls-files",
+                    "-z",
+                    "--others",
+                    "--exclude-standard",
+                    "--",
+                    *patterns,
                     cwd=base_path,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                     start_new_session=True,
                 )
-            stdout_untracked, _ = await asyncio.wait_for(
-                proc_untracked.communicate(), timeout=30.0
-            )
+            stdout_untracked, _ = await asyncio.wait_for(proc_untracked.communicate(), timeout=30.0)
 
             # Check for errors
             if proc_tracked.returncode != 0 or proc_untracked.returncode != 0:
@@ -586,6 +653,7 @@ class ConcatFilesSkill(FileSkill):
         Returns:
             List of matching file paths.
         """
+
         def do_find() -> list[Path]:
             results: list[Path] = []
 
@@ -626,6 +694,7 @@ class ConcatFilesSkill(FileSkill):
         Returns:
             Tuple of (list of FileInfo for non-binary files, count of binary files skipped).
         """
+
         def do_collect() -> tuple[list[FileInfo], int]:
             results: list[FileInfo] = []
             binary_count = 0
@@ -638,21 +707,23 @@ class ConcatFilesSkill(FileSkill):
 
                 try:
                     stat = path.stat()
-                    with open(path, encoding="utf-8", errors="replace", newline="") as f:
+                    with open(path, encoding="utf-8", newline="") as f:
                         content = f.read()
 
                     # Count lines - handle all line ending styles
                     lines = self._count_lines(content)
 
-                    results.append(FileInfo(
-                        path=path,
-                        lines=lines,
-                        chars=len(content),
-                        mtime=stat.st_mtime,
-                        size=stat.st_size,
-                    ))
-                except (OSError, PermissionError):
-                    # Treat unreadable files as binary/skipped
+                    results.append(
+                        FileInfo(
+                            path=path,
+                            lines=lines,
+                            chars=len(content),
+                            mtime=stat.st_mtime,
+                            size=stat.st_size,
+                        )
+                    )
+                except (OSError, PermissionError, UnicodeDecodeError):
+                    # Treat unreadable or non-text files as skipped.
                     binary_count += 1
                     continue
 
@@ -793,48 +864,7 @@ class ConcatFilesSkill(FileSkill):
         Returns:
             Path to the output file (with numeric suffix if file exists).
         """
-        # Get directory name
-        if base_path == Path("."):
-            try:
-                dir_name = Path.cwd().name
-            except OSError:
-                dir_name = "output"
-        else:
-            dir_name = base_path.name or "output"
-
-        # Sanitize directory name: replace spaces with dashes, remove special chars
-        dir_name = re.sub(r"[^\w\-]", "", dir_name.replace(" ", "-").replace("_", "-"))
-        if not dir_name:
-            dir_name = "output"
-
-        # Build extension string
-        ext_str = "-".join(extensions[:3])  # Limit to first 3 extensions for readability
-        if len(extensions) > 3:
-            ext_str += f"-etc{len(extensions) - 3}"
-
-        # File extension based on format
-        file_ext = {"plain": "txt", "markdown": "md", "xml": "xml"}.get(output_format, "txt")
-
-        # Build base filename
-        base_name = f"{dir_name}-{ext_str}-concat"
-
-        # Find unique filename
-        output_path = base_path / f"{base_name}.{file_ext}"
-        if not output_path.exists():
-            return output_path
-
-        # Add numeric suffix if file exists
-        counter = 1
-        while True:
-            output_path = base_path / f"{base_name}-{counter}.{file_ext}"
-            if not output_path.exists():
-                return output_path
-            counter += 1
-            if counter > 1000:  # Safety limit
-                # Fall back to timestamp
-                import time
-                ts = int(time.time())
-                return base_path / f"{base_name}-{ts}.{file_ext}"
+        return derive_concat_output_path(base_path, extensions, output_format)
 
     def _format_dry_run_output(
         self,
@@ -951,9 +981,7 @@ class ConcatFilesSkill(FileSkill):
         # This closes the CDATA, adds >, then reopens CDATA
         return content.replace("]]>", "]]]]><![CDATA[>")
 
-    def _read_file_lines(
-        self, path: Path, max_lines: int = 0
-    ) -> tuple[str, int]:
+    def _read_file_lines(self, path: Path, max_lines: int = 0) -> tuple[str, int]:
         """Read file content, optionally limiting to max_lines.
 
         Args:
@@ -963,54 +991,57 @@ class ConcatFilesSkill(FileSkill):
         Returns:
             Tuple of (content, total_line_count).
         """
-        with open(path, encoding="utf-8", errors="replace", newline="") as f:
-            if max_lines <= 0:
-                content = f.read()
-                lines = self._count_lines(content)
-                return content, lines
+        try:
+            with open(path, encoding="utf-8", newline="") as f:
+                if max_lines <= 0:
+                    content = f.read()
+                    lines = self._count_lines(content)
+                    return content, lines
 
-            # Read limited lines - handle different line endings
-            lines_read: list[str] = []
-            total_lines = 0
+                # Read limited lines - handle different line ending styles
+                lines_read: list[str] = []
+                total_lines = 0
 
-            # Read character by character to handle all line ending styles
-            buffer: list[str] = []
-            while True:
-                char = f.read(1)
-                if not char:
-                    # End of file
-                    if buffer:
+                # Read character by character to handle all line ending styles
+                buffer: list[str] = []
+                while True:
+                    char = f.read(1)
+                    if not char:
+                        # End of file
+                        if buffer:
+                            total_lines += 1
+                            if len(lines_read) < max_lines:
+                                lines_read.append("".join(buffer))
+                        break
+
+                    if char == "\r":
+                        # Could be \r or \r\n
                         total_lines += 1
                         if len(lines_read) < max_lines:
                             lines_read.append("".join(buffer))
-                    break
+                        buffer = []
+                        # Peek for \n
+                        next_char = f.read(1)
+                        if next_char and next_char != "\n":
+                            # It was just \r, put back the character we read
+                            buffer.append(next_char)
+                    elif char == "\n":
+                        total_lines += 1
+                        if len(lines_read) < max_lines:
+                            lines_read.append("".join(buffer))
+                        buffer = []
+                    else:
+                        buffer.append(char)
 
-                if char == "\r":
-                    # Could be \r or \r\n
-                    total_lines += 1
-                    if len(lines_read) < max_lines:
-                        lines_read.append("".join(buffer))
-                    buffer = []
-                    # Peek for \n
-                    next_char = f.read(1)
-                    if next_char and next_char != "\n":
-                        # It was just \r, put back the character we read
-                        buffer.append(next_char)
-                elif char == "\n":
-                    total_lines += 1
-                    if len(lines_read) < max_lines:
-                        lines_read.append("".join(buffer))
-                    buffer = []
-                else:
-                    buffer.append(char)
+                # Count remaining lines without storing them
+                remaining = f.read()
+                if remaining:
+                    total_lines += self._count_lines(remaining)
 
-            # Count remaining lines without storing them
-            remaining = f.read()
-            if remaining:
-                total_lines += self._count_lines(remaining)
-
-            # Join with Unix newlines for consistent output
-            return "\n".join(lines_read) + ("\n" if lines_read else ""), total_lines
+                # Join with Unix newlines for consistent output
+                return "\n".join(lines_read) + ("\n" if lines_read else ""), total_lines
+        except UnicodeDecodeError as e:
+            raise ValueError(f"File is not valid UTF-8 text: {path}") from e
 
     async def _write_concatenated(
         self,
@@ -1032,6 +1063,7 @@ class ConcatFilesSkill(FileSkill):
         Returns:
             Tuple of (files_written, total_lines_written).
         """
+
         def do_write() -> tuple[int, int]:
             files_written = 0
             total_lines_written = 0
@@ -1180,9 +1212,7 @@ class ConcatFilesSkill(FileSkill):
             f.write(f"      <![CDATA[{escaped_content}]]>\n")
             f.write("    </file>\n")
 
-    def _write_budget_exhausted(
-        self, f: Any, output_format: str, budget: int
-    ) -> None:
+    def _write_budget_exhausted(self, f: Any, output_format: str, budget: int) -> None:
         """Write message when line budget is exhausted.
 
         Args:
@@ -1324,7 +1354,7 @@ class ConcatFilesSkill(FileSkill):
                 lines_limit=lines,
                 max_total=max_total,
             )
-        except OSError as e:
+        except (OSError, ValueError) as e:
             return ToolResult(error=f"Failed to write output file: {e}")
 
         # Format success message

@@ -56,14 +56,18 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 ### File Operations (Read)
 | Tool | Key Parameters | Description |
 |------|----------------|-------------|
-| `read_file` | `path`, `offset`?, `limit`?, `start_line`?, `end_line`?, `line_numbers`? | Read file contents (numbered by default; set `line_numbers=false` for raw text; `start_line`/`end_line` alias `offset`/`limit`) |
+| `read_file` | `path`, `offset`?, `limit`?, `start_line`?, `end_line`?, `line_numbers`? | Read UTF-8 file contents (numbered by default; set `line_numbers=false` for raw text; `start_line`/`end_line` alias `offset`/`limit`) |
 | `tail` | `path`, `lines`? | Read last N lines (default: 10) |
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
 | `list_directory` | `path` | List directory contents |
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern |
-| `grep` | `pattern`, `path`, `include`?, `context`?, `ignore_case`? | Search file contents with regex |
-| `concat_files` | `extensions`, `path`?, `exclude`?, `dry_run`? | Concatenate files by extension (dry_run=true by default) |
-| `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Directory mode is non-recursive, but `depth` controls nested symbols within each file. `symbol` returns a source excerpt rather than structural entries. Use `file_type`/`language`/`parser` to override parser detection on files, `tokens` for estimates, and `diff` for changes. Unsupported file types should fall back to `read_file` or retry with a parser override |
+| `grep` | `pattern`, `path`, `include`?, `context`?, `ignore_case`? | Search UTF-8 file contents with regex; directory scans skip invalid UTF-8 files |
+| `concat_files` | `extensions`, `path`?, `exclude`?, `dry_run`? | Concatenate UTF-8 files by extension (`dry_run=true` by default; real writes generate an output file and skip invalid UTF-8 inputs) |
+| `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Directory mode is non-recursive, but `depth` controls nested symbols within each file. `symbol` returns a source excerpt rather than structural entries. Use `file_type`/`language`/`parser` to override parser detection on files, `tokens` for estimates, and `diff` for changes. Unsupported file types should fall back to `read_file` or retry with a parser override |
+
+Text-reading tools operate on UTF-8 files. `read_file` and single-file
+`outline` fail closed on invalid UTF-8; directory `grep` and `outline` skip
+invalid UTF-8 files instead of mangling bytes.
 
 ### File Operations (Write)
 | Tool | Key Parameters | Description | Use Case |
@@ -73,7 +77,7 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 | `edit_lines` | `path`, `start_line`, `end_line`?, `new_content`, `edits`? | UTF-8 line-range replacement with preserved file line endings; batch mode is atomic and uses original line numbers | Replacing a known block/function by line range |
 | `append_file` | `path`, `content`, `newline`? | Append UTF-8 text at end of file with exact newline bytes | Add log/changelog entries or trailing sections |
 | `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | UTF-8 regex replacement with preserved file line endings | Broad renames or format rewrites across a file |
-| `patch` | `path`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy) | Complex multi-line edits, diff-driven refactors |
+| `patch` | `path`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (`diff_file` must be UTF-8 text) | Complex multi-line edits, diff-driven refactors |
 | `copy_file` | `source`, `destination`, `overwrite`? | Copy a file | Backup before risky edits, duplicate templates |
 | `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory | File moves/renames |
 | `mkdir` | `path` | Create directory (and parents) | Prepare output directories |
@@ -184,17 +188,21 @@ Execution notes:
 ### Clipboard
 | Tool | Key Parameters | Description |
 |------|----------------|-------------|
-| `copy` | `source`, `key`, `scope`? | Copy file content to clipboard |
-| `cut` | `source`, `key`, `scope`? | Cut file content to clipboard (removes from source) |
-| `paste` | `key`, `target`, `scope`?, `mode`? | Paste clipboard content to file |
+| `copy` | `source`, `key`, `scope`? | Copy UTF-8 file content to clipboard |
+| `cut` | `source`, `key`, `scope`? | Cut UTF-8 file content to clipboard (removes from source) |
+| `paste` | `key`, `target`, `scope`?, `mode`? | Paste clipboard content to a UTF-8 file |
 | `clipboard_list` | `scope`?, `tags`? | List clipboard entries |
 | `clipboard_get` | `key`, `scope`? | Get full content of a clipboard entry |
-| `clipboard_update` | `key`, `scope`? | Update entry metadata or content |
+| `clipboard_update` | `key`, `scope`? | Update entry metadata or content (`source` must be UTF-8 text) |
 | `clipboard_delete` | `key`, `scope`? | Delete a clipboard entry |
 | `clipboard_search` | `query`, `scope`? | Search clipboard entries |
-| `clipboard_tag` | `action`, `name`? | Manage clipboard tags (list/add/remove) |
+| `clipboard_tag` | `action`, `name`? | Manage clipboard tags (`create` is currently a placeholder; `delete` is not implemented) |
 | `clipboard_export` | `path`, `scope`? | Export entries to JSON |
-| `clipboard_import` | `path`, `scope`? | Import entries from JSON |
+| `clipboard_import` | `path`, `scope`? | Import entries from JSON (malformed structures rejected) |
+
+Clipboard file tools and `clipboard_update(source=...)` operate on UTF-8 text
+files only. For byte-sensitive or non-UTF8 file changes, use `patch` with
+`fidelity_mode='byte_strict'`.
 
 ### Utility
 | Tool | Key Parameters | Description |

@@ -28,7 +28,8 @@ Primary package: `nexus3/`
 - `commands/`: command infrastructure
 - `defaults/`: default prompts/config
 
-Each module has its own `README.md`.
+Each implemented module has its own `README.md`; `nexus3/ide` remains
+intentionally deferred and does not have one yet.
 
 ## Context Files
 
@@ -230,6 +231,15 @@ Current milestone:
     (Windows Git Bash / PowerShell / Windows Terminal evidence refresh).
   - most recent completed implementation gate: Phase 5 fail-closed input
     handling for Git Bash standalone, with focused validation now green.
+- supplemental docs slice complete locally (2026-03-10):
+  - created
+    [MODULE-README-REFRESH-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/MODULE-README-REFRESH-PLAN-2026-03-10.md)
+    and refreshed the in-scope module READMEs for `core`, `context`,
+    `config`, `cli`, `session`, `commands`, `skill`, `clipboard`, `patch`,
+    and `provider`.
+  - `defaults`, `display`, `rpc`, `mcp`, and `skill/vcs` were reviewed and
+    left unchanged as already accurate enough for this slice.
+  - `nexus3/ide` remains explicitly out of scope for README coverage.
 - `Post-M4` validation campaign closeout complete: external closeout slice
   `post-m4-20260306-live1e` archived real-host Windows evidence and
   multi-emulator carriage-return verification; deterministic closeout gate
@@ -4063,3 +4073,138 @@ Execution update (2026-03-10, MCP dynamic tool audit first fix):
   - MCP dynamic tool audit can close unless a new concrete repro appears
   - keep the read-file aliases and outline follow-up closed unless a new
     concrete failing repro appears
+
+Execution update (2026-03-10, remaining built-in tool audit closeout):
+- Ran a final parallel audit pass across the last unreviewed built-ins and
+  captured the concrete findings in a dedicated plan:
+  - `docs/plans/REMAINING-BUILTIN-TOOL-AUDIT-HARDENING-PLAN-2026-03-10.md`
+- Closed the new plan phases in code:
+  - `concat_files` now participates in explicit path semantics, generated
+    output-path extraction, TRUSTED confirmation, and destructive-action
+    modeling when `dry_run=false`
+  - the remaining fixed-schema read/search/listing built-ins now reject
+    unknown top-level args:
+    - `concat_files`, `file_info`, `glob_search`, `grep`, `list_directory`,
+      `tail`
+  - the remaining clipboard wrapper/info built-ins now reject unknown
+    top-level args:
+    - `copy`, `cut`, `paste`, `clipboard_search`, `clipboard_tag`,
+      `clipboard_export`, `clipboard_import`
+  - removed the last lossy text-decoding paths in this family:
+    - `tail` now refuses invalid UTF-8
+    - `concat_files` skips invalid UTF-8 files instead of concatenating
+      replacement characters
+    - `copy`, `cut`, and `paste` now fail closed on non-UTF8 file content and
+      direct byte-sensitive workflows to `patch`
+      `fidelity_mode="byte_strict"`
+  - `clipboard_import` now validates top-level and per-entry JSON structure
+    before import and returns user-facing format errors for malformed data
+- Focused docs/status sync updated:
+  - `docs/plans/README.md`
+  - `README.md`
+  - `nexus3/skill/README.md`
+  - `AGENTS_NEXUS3SKILLSCAT.md`
+  - `CLAUDE.md`
+  - `nexus3/defaults/NEXUS-DEFAULT.md`
+- Focused validation passed:
+  - `git diff --check`
+  - `.venv/bin/ruff check nexus3/core/policy.py nexus3/session/enforcer.py nexus3/session/path_semantics.py nexus3/skill/builtin/clipboard_copy.py nexus3/skill/builtin/clipboard_export.py nexus3/skill/builtin/clipboard_import.py nexus3/skill/builtin/clipboard_paste.py nexus3/skill/builtin/clipboard_search.py nexus3/skill/builtin/clipboard_tag.py nexus3/skill/builtin/concat_files.py nexus3/skill/builtin/file_info.py nexus3/skill/builtin/glob_search.py nexus3/skill/builtin/grep.py nexus3/skill/builtin/list_directory.py nexus3/skill/builtin/tail.py tests/security/test_multipath_confirmation.py tests/unit/session/test_enforcer.py tests/unit/skill/test_clipboard_extras.py tests/unit/skill/test_clipboard_skills.py tests/unit/skill/test_concat_files.py tests/unit/skill/test_skill_validation.py tests/unit/test_new_skills.py tests/unit/test_permissions.py`
+  - `.venv/bin/pytest -q tests/unit/skill/test_skill_validation.py tests/unit/skill/test_clipboard_skills.py tests/unit/skill/test_clipboard_extras.py tests/unit/test_new_skills.py tests/unit/skill/test_concat_files.py tests/unit/session/test_enforcer.py tests/security/test_multipath_confirmation.py tests/unit/test_permissions.py` (`387 passed`)
+- Next gate:
+  - this remaining built-in audit slice is closed
+  - return to the broader deferred backlog unless a fresh transcript exposes
+    another concrete tool-family contract bug
+
+Execution update (2026-03-10, read/text fidelity hardening slice):
+- Opened and closed a dedicated follow-up plan for the remaining text-fidelity
+  gaps:
+  - `docs/plans/READ-TEXT-FIDELITY-HARDENING-PLAN-2026-03-10.md`
+- Hardened the last concrete replacement-decoding paths in read-oriented tools:
+  - `nexus3/skill/builtin/read_file.py`
+    - `read_file` now fails closed on invalid UTF-8 instead of replacement-
+      decoding bytes into misleading raw text output
+  - `nexus3/skill/builtin/outline.py`
+    - file-mode `outline` now fails closed on invalid UTF-8
+    - directory-mode `outline` now intentionally skips invalid UTF-8 files
+      instead of succeeding accidentally via replacement decoding
+  - `nexus3/skill/builtin/grep.py`
+    - Python fallback now stops searching replacement-decoded text
+    - directory searches now report invalid UTF-8 skips explicitly
+    - ripgrep JSON `lines.bytes` payloads are now treated as invalid UTF-8
+      file skips instead of rendering blank/corrupted match text
+  - `nexus3/skill/builtin/clipboard_manage.py`
+    - `clipboard_update(source=...)` now rejects invalid UTF-8 source files
+  - `nexus3/skill/builtin/patch.py`
+    - `patch(diff_file=...)` now rejects invalid UTF-8 diff files before
+      parsing
+- Added focused regressions in:
+  - `tests/unit/test_skill_enhancements.py`
+  - `tests/unit/skill/test_outline.py`
+  - `tests/unit/skill/test_clipboard_manage.py`
+  - `tests/unit/skill/test_patch.py`
+- Synced user-facing docs in:
+  - `docs/plans/README.md`
+  - `README.md`
+  - `CLAUDE.md`
+  - `AGENTS_NEXUS3SKILLSCAT.md`
+  - `nexus3/defaults/NEXUS-DEFAULT.md`
+  - `nexus3/skill/README.md`
+- Focused validation passed:
+  - `git diff --check`
+  - `.venv/bin/ruff check nexus3/skill/builtin/read_file.py nexus3/skill/builtin/outline.py nexus3/skill/builtin/grep.py nexus3/skill/builtin/clipboard_manage.py nexus3/skill/builtin/patch.py tests/unit/test_skill_enhancements.py tests/unit/skill/test_outline.py tests/unit/skill/test_clipboard_manage.py tests/unit/skill/test_patch.py`
+  - `.venv/bin/pytest -q tests/unit/test_skill_enhancements.py tests/unit/skill/test_outline.py tests/unit/skill/test_clipboard_manage.py tests/unit/skill/test_patch.py` (`272 passed`)
+- Next gate:
+  - this read/text fidelity slice is closed
+  - remaining audit work should prefer either:
+    - a fresh concrete repro/transcript-driven tool-family bug, or
+    - the deferred repo-wide `ruff check nexus3/ tests/` backlog reduction
+
+Execution update (2026-03-10, text-tool fidelity hardening):
+- Added the next bounded audit plan for the remaining lossy file-content
+  decode paths:
+  - `docs/plans/TEXT-TOOL-FIDELITY-HARDENING-PLAN-2026-03-10.md`
+- Closed the concrete findings from that plan in code:
+  - `nexus3/skill/builtin/read_file.py`
+    - now streams with strict UTF-8 decoding, so invalid single-file input
+      hits the intended fail-closed error path instead of silently replacing
+      bytes
+  - `nexus3/skill/builtin/grep.py`
+    - Python fallback now skips invalid UTF-8 files instead of searching
+      replacement characters
+    - single-file grep now fails closed on invalid UTF-8 input
+    - ripgrep JSON parsing now treats `lines.bytes` payloads as invalid-text
+      skips instead of rendering blank match lines
+  - `nexus3/skill/builtin/outline.py`
+    - single-file outline now fails closed on invalid UTF-8 input
+    - directory outline now skips invalid UTF-8 files through the existing
+      per-file guard instead of relying on lossy decoding
+  - `nexus3/skill/builtin/clipboard_manage.py`
+    - `clipboard_update(source=...)` now rejects non-UTF8 source files
+      instead of importing replacement characters
+  - `nexus3/skill/builtin/patch.py`
+    - `patch(diff_file=...)` now rejects non-UTF8 diff files before parse/apply
+- Focused regression coverage added/updated in:
+  - `tests/unit/test_skill_enhancements.py`
+  - `tests/unit/skill/test_grep_parallel.py`
+  - `tests/unit/skill/test_outline.py`
+  - `tests/unit/skill/test_clipboard_manage.py`
+  - `tests/unit/skill/test_patch.py`
+- Focused docs/status sync updated:
+  - `docs/plans/README.md`
+  - `README.md`
+  - `CLAUDE.md`
+  - `nexus3/defaults/NEXUS-DEFAULT.md`
+  - `nexus3/skill/README.md`
+  - `AGENTS_NEXUS3SKILLSCAT.md`
+- Focused validation passed:
+  - `git diff --check`
+  - `.venv/bin/ruff check nexus3/skill/builtin/read_file.py nexus3/skill/builtin/grep.py nexus3/skill/builtin/outline.py nexus3/skill/builtin/clipboard_manage.py nexus3/skill/builtin/patch.py tests/unit/test_skill_enhancements.py tests/unit/skill/test_grep_parallel.py tests/unit/skill/test_outline.py tests/unit/skill/test_clipboard_manage.py tests/unit/skill/test_patch.py`
+  - `.venv/bin/pytest -q tests/unit/test_skill_enhancements.py tests/unit/skill/test_grep_parallel.py tests/unit/skill/test_outline.py tests/unit/skill/test_clipboard_manage.py tests/unit/skill/test_patch.py` (`283 passed`)
+- Remaining decode-audit boundary after this slice:
+  - subprocess/log/provider error-body replacement decoding remains
+    intentional and was audited as acceptable for diagnostics rather than
+    user-file content handling
+- Next gate:
+  - run one more broad scan for high-confidence remaining tool-audit defects;
+    if none appear, treat the concrete local tool-audit backlog as closed and
+    leave only transcript-driven or external-evidence items deferred

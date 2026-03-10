@@ -171,7 +171,7 @@ def _resolve_parser_override(
 def _read_file_lines(p: Path, max_lines: int = _MAX_OUTLINE_LINES) -> list[str]:
     """Read file lines with a safety limit."""
     lines: list[str] = []
-    with open(p, encoding="utf-8", errors="replace") as f:
+    with open(p, encoding="utf-8") as f:
         for line in f:
             lines.append(line.rstrip("\n"))
             if len(lines) >= max_lines:
@@ -1710,14 +1710,14 @@ class OutlineSkill(FileSkill):
                 output += diff_note
             return ToolResult(output=output)
 
+        except UnicodeDecodeError:
+            return ToolResult(error=f"File is not valid UTF-8 text: {path}")
         except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except FileNotFoundError:
             return ToolResult(error=f"File not found: {path}")
         except PermissionError:
             return ToolResult(error=f"Permission denied: {path}")
-        except UnicodeDecodeError:
-            return ToolResult(error=f"File is not valid UTF-8 text: {path}")
         except Exception as e:
             return ToolResult(error=f"Error outlining file: {e}")
 

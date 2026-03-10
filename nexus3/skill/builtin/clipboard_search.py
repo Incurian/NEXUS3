@@ -1,4 +1,5 @@
 """Search skill for clipboard entries."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -49,6 +50,7 @@ class ClipboardSearchSkill:
                 },
             },
             "required": ["query"],
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -58,8 +60,8 @@ class ClipboardSearchSkill:
         max_results: int = 50,
         **kwargs: Any,
     ) -> ToolResult:
-        if not query:
-            return ToolResult(error="Query cannot be empty")
+        if not query or not query.strip():
+            return ToolResult(error="Query cannot be empty or whitespace")
 
         manager = self._services.get("clipboard_manager")  # type: ignore[union-attr]
         if manager is None:

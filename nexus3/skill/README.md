@@ -33,7 +33,9 @@ Skills are the tool system in NEXUS3. Each skill provides a single, well-defined
 - **Base class hierarchy**: Specialized base classes handle common patterns (file operations, subprocess execution, server communication)
 - **Permission integration**: Per-tool path restrictions and permission-level filtering
 - **JSON Schema validation**: Automatic parameter validation before execution;
-  explicitly open-ended schemas preserve validated dynamic top-level keys
+  explicitly open-ended schemas preserve validated dynamic top-level keys,
+  while runtime-only wrapper params such as `_parallel` are stripped before
+  validation
 - **Security hardening**: Path validation, symlink resolution, sandbox enforcement, environment sanitization
 - **Windows compatibility**: Platform-specific process handling, line ending preservation, attribute support
 
@@ -45,6 +47,7 @@ Skills are the tool system in NEXUS3. Each skill provides a single, well-defined
 nexus3/skill/
 ├── __init__.py           # Public API exports
 ├── base.py               # Skill protocol and base classes
+├── argument_normalization.py  # Shared empty-string placeholder normalization helpers
 ├── registry.py           # SkillRegistry for managing skills
 ├── services.py           # ServiceContainer for dependency injection
 ├── errors.py             # Skill-specific error classes
@@ -170,6 +173,10 @@ def parameters(self) -> dict[str, Any]:
         "required": ["path"]
     }
 ```
+
+Runtime-only execution wrapper params such as `_parallel` are removed before
+JSON Schema validation. That lets strict skill schemas use
+`additionalProperties: false` without rejecting the executor's internal flags.
 
 ---
 
@@ -612,14 +619,20 @@ NEXUS3 includes 40 core built-in skills plus 21 GitLab skills (when configured),
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `read_file` | Read file contents with streaming/size limits | `path`, `offset?`, `limit?`, `start_line?`, `end_line?`, `line_numbers?` |
+| `read_file` | Read UTF-8 file contents with streaming/size limits | `path`, `offset?`, `limit?`, `start_line?`, `end_line?`, `line_numbers?` |
 | `tail` | Read last N lines efficiently | `path`, `lines?` (default: 10) |
 | `file_info` | Get file/directory metadata (Unix perms or Windows RHSA) | `path` |
 | `list_directory` | List directory contents | `path?`, `all?`, `long?` |
 | `glob` | Find files by glob pattern | `pattern`, `path?`, `max_results?`, `exclude?` |
-| `grep` | Search file contents (regex), uses ripgrep when available | `pattern`, `path`, `recursive?`, `ignore_case?`, `max_matches?`, `include?`, `context?` |
-| `concat_files` | Find and concatenate files by extension with token estimation | `extensions`, `path?`, `exclude?`, `lines?`, `max_total?`, `format?`, `sort?`, `gitignore?`, `dry_run?` |
-| `outline` | Structural outline of file/directory (headings, classes, functions, keys; non-recursive for directories, `symbol` returns source excerpt) | `path`, `file_type?`, `language?`, `parser?`, `depth?`, `preview?`, `signatures?`, `line_numbers?`, `tokens?`, `symbol?`, `diff?`, `recursive?` |
+| `grep` | Search UTF-8 file contents (regex), uses ripgrep when available; directory scans skip invalid UTF-8 files | `pattern`, `path`, `recursive?`, `ignore_case?`, `max_matches?`, `include?`, `context?` |
+| `concat_files` | Find and concatenate UTF-8 files by extension with token estimation (`dry_run=true` by default; real writes generate an output file and skip invalid UTF-8 inputs) | `extensions`, `path?`, `exclude?`, `lines?`, `max_total?`, `format?`, `sort?`, `gitignore?`, `dry_run?` |
+| `outline` | Structural outline of UTF-8 file/directory (headings, classes, functions, keys; non-recursive for directories, `symbol` returns source excerpt) | `path`, `file_type?`, `language?`, `parser?`, `depth?`, `preview?`, `signatures?`, `line_numbers?`, `tokens?`, `symbol?`, `diff?`, `recursive?` |
+
+Fixed-schema read/search/listing tools fail closed on unexpected extra
+top-level arguments.
+Text-reading tools operate on UTF-8 files. `read_file` and single-file
+`outline` fail closed on invalid UTF-8; directory `grep` and `outline` skip
+invalid UTF-8 files instead of mangling bytes.
 
 ### File Operations (Destructive)
 
@@ -630,7 +643,7 @@ NEXUS3 includes 40 core built-in skills plus 21 GitLab skills (when configured),
 | `edit_lines` | UTF-8 line-based replacement, single or batched (preserves line endings and EOF newline state; batch mode uses original line numbers and rejects overlaps) | `path`, `start_line`, `end_line?`, `new_content`, `edits?` |
 | `append_file` | Append UTF-8 text with true append mode (exact newline bytes) | `path`, `content`, `newline?` |
 | `regex_replace` | UTF-8 pattern-based replace (`count >= 0`, preserves line endings) | `path`, `pattern`, `replacement`, `count?`, `ignore_case?`, `multiline?`, `dotall?` |
-| `patch` | Apply unified diffs with validation (canonical `path`, exact-path matching, ambiguity fail-closed, hunk-only single-file diffs auto-normalized; `target` remains a compatibility alias) | `path`, `diff?`, `diff_file?`, `mode?`, `fidelity_mode? (byte_strict only; legacy rejected)`, `fuzzy_threshold?`, `dry_run?` |
+| `patch` | Apply unified diffs with validation (canonical `path`, exact-path matching, ambiguity fail-closed, hunk-only single-file diffs auto-normalized; `target` remains a compatibility alias, and `diff_file` must be UTF-8 text) | `path`, `diff?`, `diff_file?`, `mode?`, `fidelity_mode? (byte_strict only; legacy rejected)`, `fuzzy_threshold?`, `dry_run?` |
 | `copy_file` | Copy file with metadata | `source`, `destination`, `overwrite?` |
 | `mkdir` | Create directory (and parents) | `path` |
 | `rename` | Rename/move file or directory | `source`, `destination`, `overwrite?` |
@@ -701,18 +714,22 @@ Note: `echo` skill exists in the codebase but is not registered by default (used
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `copy` | Copy file content to clipboard | `source`, `key`, `scope?`, `start_line?`, `end_line?`, `short_description?`, `tags?`, `ttl_seconds?` |
-| `cut` | Cut file content to clipboard (copy + delete) | `source`, `key`, `scope?`, `start_line?`, `end_line?`, `short_description?`, `tags?`, `ttl_seconds?` |
-| `paste` | Paste clipboard content to file | `key`, `target`, `scope?`, `mode?`, `line_number?`, `start_line?`, `end_line?`, `marker?`, `create_if_missing?` |
+| `copy` | Copy UTF-8 file content to clipboard | `source`, `key`, `scope?`, `start_line?`, `end_line?`, `short_description?`, `tags?`, `ttl_seconds?` |
+| `cut` | Cut UTF-8 file content to clipboard (copy + delete) | `source`, `key`, `scope?`, `start_line?`, `end_line?`, `short_description?`, `tags?`, `ttl_seconds?` |
+| `paste` | Paste clipboard content to a UTF-8 file | `key`, `target`, `scope?`, `mode?`, `line_number?`, `start_line?`, `end_line?`, `marker?`, `create_if_missing?` |
 | `clipboard_list` | List clipboard entries | `scope?`, `verbose?`, `tags?`, `any_tags?` |
 | `clipboard_get` | Get full content of entry | `key`, `scope?`, `start_line?`, `end_line?` |
-| `clipboard_update` | Update entry metadata/content | `key`, `scope`, `source?`, `content?`, `start_line?`, `end_line?`, `short_description?`, `new_key?`, `ttl_seconds?` |
+| `clipboard_update` | Update entry metadata/content (`source` must be UTF-8 text) | `key`, `scope`, `source?`, `content?`, `start_line?`, `end_line?`, `short_description?`, `new_key?`, `ttl_seconds?` |
 | `clipboard_delete` | Delete clipboard entry | `key`, `scope` |
 | `clipboard_clear` | Clear all entries in scope | `scope`, `confirm` |
 | `clipboard_search` | Search entries by content/description | `query`, `scope?`, `max_results?` |
-| `clipboard_tag` | Manage tags (list/add/remove/create/delete) | `action`, `name?`, `entry_key?`, `scope?`, `description?` |
+| `clipboard_tag` | Manage tags (list/add/remove; `create` is currently a placeholder and `delete` is not implemented) | `action`, `name?`, `entry_key?`, `scope?`, `description?` |
 | `clipboard_export` | Export entries to JSON file | `path`, `scope?`, `tags?` |
-| `clipboard_import` | Import entries from JSON file | `path`, `scope?`, `conflict?`, `dry_run?` |
+| `clipboard_import` | Import entries from JSON file (malformed structures rejected) | `path`, `scope?`, `conflict?`, `dry_run?` |
+
+Clipboard file tools and `clipboard_update(source=...)` operate on UTF-8 text
+files only. For byte-sensitive or non-UTF8 file changes, use `patch` with
+`fidelity_mode='byte_strict'`.
 
 **Scopes:**
 - `agent`: In-memory, session-only (default, safest)

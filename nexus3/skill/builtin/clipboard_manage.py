@@ -341,11 +341,19 @@ class ClipboardUpdateSkill(ClipboardSkillBase):
             except (PathSecurityError, ValueError) as e:
                 return ToolResult(error=str(e))
             try:
-                file_content = await asyncio.to_thread(
-                    source_path.read_text, encoding="utf-8", errors="replace"
-                )
+                source_bytes = await asyncio.to_thread(source_path.read_bytes)
             except OSError as e:
                 return ToolResult(error=f"Cannot read source file: {e}")
+            try:
+                file_content = source_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                return ToolResult(
+                    error=(
+                        f"File is not valid UTF-8 text: {source}. "
+                        "Use patch with fidelity_mode='byte_strict' for "
+                        "byte-sensitive edits."
+                    )
+                )
 
             if start_line is not None:
                 lines = file_content.splitlines(keepends=True)

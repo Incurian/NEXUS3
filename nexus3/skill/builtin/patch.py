@@ -229,11 +229,13 @@ class PatchSkill(FileSkill):
                 return ToolResult(error=f"Diff file not found: {diff_file}")
 
             try:
-                diff_content = await asyncio.to_thread(
-                    diff_path.read_text, encoding="utf-8", errors="replace"
-                )
+                diff_bytes = await asyncio.to_thread(diff_path.read_bytes)
             except OSError as e:
                 return ToolResult(error=f"Error reading diff file: {e}")
+            try:
+                diff_content = diff_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                return ToolResult(error=f"Diff file is not valid UTF-8 text: {diff_file}")
         else:
             diff_content = diff  # type: ignore[assignment]
 

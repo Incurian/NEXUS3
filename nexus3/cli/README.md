@@ -43,11 +43,12 @@ nexus3/cli/
 ├── serve.py             # Headless HTTP server mode
 ├── arg_parser.py        # CLI argument parsing with subparsers
 ├── client_commands.py   # RPC CLI command handlers
-├── repl_commands.py     # REPL slash command handlers (~2500 lines)
+├── repl_commands.py     # REPL slash command handlers
 ├── lobby.py             # Session selection lobby UI
 ├── connect_lobby.py     # Server/agent connection UI
 ├── confirmation_ui.py   # Tool action confirmation dialogs
-├── keys.py              # Keyboard input handling (ESC detection)
+├── prompt_support.py    # Prompt-session helpers for shell-specific behavior
+├── keys.py              # Keyboard input handling (ESC detection / fallback pause loop)
 ├── whisper.py           # Whisper mode state management
 ├── live_state.py        # Shared Rich Live context
 └── init_commands.py     # Configuration initialization
@@ -506,6 +507,23 @@ Allow MCP tool 'mcp_github_create_issue'?
 - Pauses Live display and KeyMonitor during prompts
 - Uses `asyncio.to_thread()` for blocking input
 - External editor popup for full tool details (`[p]` option)
+
+---
+
+### `prompt_support.py` - Prompt Backend Helpers
+
+Shared prompt-toolkit helpers for shell-specific REPL behavior.
+
+| Function | Description |
+|----------|-------------|
+| `create_prompt_session(**kwargs)` | Creates a `PromptSession` and enables prompt-toolkit's external-editor fallback when Git Bash standalone input limitations are detected |
+| `get_main_repl_command_hint()` | Returns the startup hint string, switching between `ESC to cancel` and `/cancel to cancel` based on live-cancel support |
+| `get_git_bash_input_warning_lines(include_cancel_hint)` | Returns startup warnings for Git Bash standalone, including multiline-paste and external-editor guidance |
+
+This module is the CLI-side entrypoint for the current fail-closed Git Bash
+behavior: standalone Git Bash keeps the REPL usable, but startup guidance now
+avoids promising live ESC cancellation and points users to `/cancel` and
+`C-X C-E` when prompt-toolkit's editor fallback is enabled.
 
 ---
 

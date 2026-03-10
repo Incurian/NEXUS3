@@ -10,7 +10,9 @@ The core module serves as the foundation for NEXUS3, providing:
 - **Streaming event types** - Typed events for real-time LLM response streaming
 - **Provider protocol** - Async-first interface for LLM providers
 - **Capability tokens** - Signed delegation capabilities with scope/expiry/revocation/replay guards
+- **Authorization kernel** - Typed authorization requests, resources, and adapter-based decision flow
 - **Permission system** - Multi-level access control (YOLO/TRUSTED/SANDBOXED) with per-tool overrides
+- **Request context** - Immutable per-request metadata for authorization and tracing
 - **Path security** - Sandboxing, symlink defense, and authoritative path decision engine
 - **URL validation** - SSRF protection with blocked IP ranges
 - **Input validation** - Agent ID, tool name, and argument validation
@@ -51,6 +53,19 @@ from nexus3.core import (
     CapabilityExpiredError, CapabilityScopeError,
     CapabilityRevokedError, CapabilityReplayError,
 
+    # === Authorization ===
+    AuthorizationAction,         # Canonical authorization action enum
+    AuthorizationResourceType,   # Resource type enum
+    AuthorizationResource,       # Typed authorization resource
+    AuthorizationContext,        # Scalar context map
+    AuthorizationRequest,        # Authorization input payload
+    AuthorizationDecision,       # Allow/deny result
+    AuthorizationAdapter,        # Adapter contract for legacy checks
+    AuthorizationKernel,         # Kernel protocol
+    AdapterAuthorizationKernel,  # Minimal adapter-driven kernel
+    CreateAuthorizationStage,    # Create-agent lifecycle stage enum
+    CreateAuthorizationContext,  # Typed create-agent authorization context
+
     # === Errors ===
     NexusError,        # Base exception for all NEXUS3 errors
     ConfigError,       # Configuration issues
@@ -84,10 +99,12 @@ from nexus3.core import (
     AgentPermissions,  # Runtime permission state
     get_builtin_presets,  # Get yolo/trusted/sandboxed presets
     resolve_preset,    # Resolve preset name to AgentPermissions
+    RequestContext,    # Immutable request-scoped tracing/auth metadata
 
     # === Shell Detection (Windows) ===
     WindowsShell,      # Enum: WINDOWS_TERMINAL, POWERSHELL_7, POWERSHELL_5, GIT_BASH, CMD, UNKNOWN
     detect_windows_shell,  # Detect current Windows shell environment
+    resolve_git_bash_executable,  # Resolve safe Git-for-Windows bash path
     supports_ansi,     # Check ANSI escape support
     supports_unicode,  # Check Unicode box drawing support
     check_console_codepage,  # Get Windows console code page
@@ -186,6 +203,47 @@ Signed opaque capability tokens for delegated operations.
 
 ---
 
+### authorization_kernel.py - Authorization Contracts
+
+Typed authorization request/decision models plus a small adapter-driven kernel.
+
+| Export | Description |
+|--------|-------------|
+| `AuthorizationAction` | Canonical action enum (`tool.execute`, `agent.create`, etc.) |
+| `AuthorizationResourceType` | Resource type enum (`TOOL`, `AGENT`, `SESSION`, `PATH`, `RPC`) |
+| `AuthorizationResource` | Resource identifier plus scalar attributes |
+| `AuthorizationRequest` | Full authorization input payload |
+| `AuthorizationDecision` | Allow/deny decision with reason + metadata |
+| `AuthorizationAdapter` | Protocol for adapter-backed legacy authorizers |
+| `AuthorizationKernel` | Protocol for authorization kernels |
+| `AdapterAuthorizationKernel` | Minimal implementation that queries adapters then falls back |
+| `CreateAuthorizationStage` | Canonical agent-create check stages |
+| `CreateAuthorizationContext` | Typed scalar-wire-compatible create context |
+
+```python
+from nexus3.core import (
+    AdapterAuthorizationKernel,
+    AuthorizationAction,
+    AuthorizationRequest,
+    AuthorizationResource,
+    AuthorizationResourceType,
+)
+
+request = AuthorizationRequest(
+    action=AuthorizationAction.TOOL_EXECUTE,
+    resource=AuthorizationResource(
+        resource_type=AuthorizationResourceType.TOOL,
+        identifier="read_file",
+    ),
+    principal_id="worker-1",
+)
+
+decision = AdapterAuthorizationKernel(default_allow=False).authorize(request)
+decision.raise_if_denied()
+```
+
+---
+
 ### errors.py - Exception Hierarchy
 
 Typed exception classes with optional error sanitization.
@@ -226,6 +284,30 @@ safe = sanitize_error_for_agent(error, "write_file")
 error = "C:\\Users\\alice\\secrets.txt: access denied"
 safe = sanitize_error_for_agent(error, "read_file")
 # Returns: "C:\\Users\\[user]: access denied"
+```
+
+---
+
+### request_context.py - Request-Scoped Context
+
+Immutable metadata shared across dispatch boundaries.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `requester_id` | `str \| None` | Agent id from request metadata, or `None` for external callers |
+| `capability_claims` | `CapabilityClaims \| None` | Verified capability claims when capability auth is used |
+| `request_id` | `str \| None` | JSON-RPC request id when available |
+| `trace_id` | `str \| None` | Optional correlation id for diagnostics |
+| `policy_snapshot_id` | `str \| None` | Optional identifier of the policy snapshot used |
+
+```python
+from nexus3.core import RequestContext
+
+ctx = RequestContext(
+    requester_id="worker-1",
+    request_id="42",
+    trace_id="trace-abc",
+)
 ```
 
 ---
@@ -638,7 +720,7 @@ Validation utilities for security-sensitive inputs.
 |--------|-------------|
 | `validate_agent_id()` | Validate agent ID format |
 | `is_valid_agent_id()` | Check validity without raising |
-| `validate_tool_arguments()` | Validate arguments against JSON schema, preserving dynamic top-level keys only for explicitly open-ended schemas |
+| `validate_tool_arguments()` | Validate arguments against JSON schema, stripping whitelisted internal runtime params first and preserving dynamic top-level keys only for explicitly open-ended schemas |
 | `ValidationError` | Raised when validation fails |
 | `AGENT_ID_PATTERN` | Regex for valid agent IDs |
 | `ALLOWED_INTERNAL_PARAMS` | Whitelisted internal parameters |
@@ -657,6 +739,17 @@ args = validate_tool_arguments(
     schema={"type": "object", "properties": {"path": {"type": "string"}}}
 )
 # Returns: {"path": "/file.txt"}
+
+# Internal runtime params are accepted without weakening strict schemas
+args = validate_tool_arguments(
+    {"path": "/file.txt", "_parallel": True},
+    schema={
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+        "additionalProperties": False,
+    },
+)
+# Returns: {"path": "/file.txt", "_parallel": True}
 
 # Explicitly open-ended schemas preserve validated dynamic keys
 args = validate_tool_arguments(
@@ -920,6 +1013,9 @@ Detection of Windows shell environments for appropriate terminal configuration.
 |--------|-------------|
 | `WindowsShell` | Enum: `WINDOWS_TERMINAL`, `POWERSHELL_7`, `POWERSHELL_5`, `GIT_BASH`, `CMD`, `UNKNOWN` |
 | `detect_windows_shell()` | Detect current Windows shell (cached) |
+| `resolve_git_bash_executable()` | Resolve a concrete Git-for-Windows bash executable, excluding WSL launcher shims |
+| `has_git_bash_prompt_limitations()` | Detect standalone Git Bash prompt limitations on Windows |
+| `supports_live_escape_cancel()` | Report whether live ESC cancel is supported by the current prompt backend |
 | `supports_ansi()` | Check if shell supports ANSI escape sequences |
 | `supports_unicode()` | Check if shell supports Unicode box drawing |
 | `check_console_codepage()` | Get Windows console output code page |
@@ -928,7 +1024,7 @@ Detection of Windows shell environments for appropriate terminal configuration.
 
 1. `WT_SESSION` env var -> Windows Terminal
 2. `MSYSTEM` env var -> Git Bash / MSYS2
-3. `PSModulePath` env var -> PowerShell (assumes 5.1 conservatively)
+3. `PSModulePath` env var -> PowerShell (classified conservatively as `POWERSHELL_5`)
 4. `COMSPEC` ends with `cmd.exe` -> CMD.exe
 5. Otherwise -> UNKNOWN
 
@@ -937,15 +1033,17 @@ Detection of Windows shell environments for appropriate terminal configuration.
 | Shell | ANSI Support | Unicode Support |
 |-------|--------------|-----------------|
 | Windows Terminal | Full | Full |
-| PowerShell 7+ | Full | Full |
 | Git Bash | Full | Full |
-| PowerShell 5.1 | Limited | Limited |
+| Bare PowerShell detection | Limited | Limited |
 | CMD.exe | None | None |
+
+`WindowsShell.POWERSHELL_7` exists in the enum, but `detect_windows_shell()` does not currently distinguish standalone PowerShell 7 from legacy PowerShell; Windows Terminal still takes precedence via `WT_SESSION`.
 
 ```python
 from nexus3.core import (
     WindowsShell,
     detect_windows_shell,
+    resolve_git_bash_executable,
     supports_ansi,
     supports_unicode,
     check_console_codepage,
@@ -955,6 +1053,9 @@ from nexus3.core import (
 shell = detect_windows_shell()
 if shell == WindowsShell.CMD:
     print("Running in CMD.exe - limited display capabilities")
+
+# Resolve a safe Git Bash binary on Windows
+git_bash = resolve_git_bash_executable()
 
 # Check capabilities
 if supports_ansi():

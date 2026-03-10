@@ -447,7 +447,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 
 | Skill | Parameters | Description |
 |-------|------------|-------------|
-| `read_file` | `path`, `offset`?, `limit`?, `start_line`?, `end_line`?, `line_numbers`? | Read file contents (numbered by default; use `line_numbers=false` for exact raw text; `start_line`/`end_line` alias `offset`/`limit`) |
+| `read_file` | `path`, `offset`?, `limit`?, `start_line`?, `end_line`?, `line_numbers`? | Read UTF-8 file contents (numbered by default; use `line_numbers=false` for exact raw text; invalid UTF-8 fails closed; `start_line`/`end_line` alias `offset`/`limit`) |
 | `tail` | `path`, `lines`? | Read last N lines of a file (default: 10) |
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
 | `write_file` | `path`, `content` | Write/create UTF-8 text files (exact newline bytes; read file first!) |
@@ -455,7 +455,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `edit_lines` | `path`, `start_line`, `end_line`?, `new_content`, `edits`? | Replace UTF-8 lines by number; `edits` batches use original file line numbers atomically |
 | `append_file` | `path`, `content`, `newline`? | Append UTF-8 text to a file (exact newline bytes; read file first!) |
 | `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | UTF-8 pattern-based find/replace (`count >= 0`; read file first!) |
-| `patch` | `path`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy modes; `target` remains a compatibility alias) |
+| `patch` | `path`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified UTF-8 diffs (strict/tolerant/fuzzy modes; `target` remains a compatibility alias; `diff_file` must be UTF-8 text) |
 | `copy_file` | `source`, `destination`, `overwrite`? | Copy a file to a new location |
 | `mkdir` | `path` | Create directory (and parents) |
 | `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory |
@@ -464,9 +464,9 @@ Contract rule for the file-edit family: unexpected extra arguments fail closed
 instead of being silently dropped.
 | `list_directory` | `path` | List directory contents |
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern (with exclusions) |
-| `grep` | `pattern`, `path`?, `include`?, `context`? | Search file contents with file filter and context lines |
-| `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate files by extension with token estimation (dry_run=True by default) |
-| `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of file/directory (headings, classes, functions, keys). Directory mode is non-recursive, but `depth` controls nested symbols within each file. Use `symbol` for filtered read on files, `file_type`/`language`/`parser` to override parser detection, `tokens` for estimates, and `diff` for change markers |
+| `grep` | `pattern`, `path`, `recursive`?, `ignore_case`?, `max_matches`?, `include`?, `context`? | Search UTF-8 file contents with file filter and context lines; single-file invalid UTF-8 fails closed and directory scans skip invalid UTF-8 files |
+| `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate UTF-8 files by extension with token estimation (`dry_run=True` by default; real writes generate an output file and skip invalid UTF-8 inputs) |
+| `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory (headings, classes, functions, keys). Directory mode is non-recursive, but `depth` controls nested symbols within each file and skips invalid UTF-8 files. Use `symbol` for filtered read on files, `file_type`/`language`/`parser` to override parser detection, `tokens` for estimates, and `diff` for change markers |
 | `git` | `command`, `cwd`? | Execute git commands (permission-filtered by level) |
 | `bash_safe` | `command`, `timeout`?, `cwd`? | Execute shell commands (shlex.split, no shell operators) |
 | `shell_UNSAFE` | `command`, `timeout`?, `cwd`? | Execute full shell (pipes work, injection-vulnerable; uses detected shell family on Windows when possible) |
@@ -478,18 +478,22 @@ instead of being silently dropped.
 | `nexus_status` | `agent_id`, `port`? | Get agent tokens + context |
 | `nexus_cancel` | `agent_id`, `request_id`, `port`? | Cancel in-progress request (`request_id` may be string or integer) |
 | `nexus_shutdown` | `port`? | Shutdown the entire server |
-| `copy` | `source`, `key`, `scope`?, `start_line`?, `end_line`?, `short_description`?, `tags`?, `ttl_seconds`? | Copy file content to clipboard |
-| `cut` | `source`, `key`, `scope`?, `start_line`?, `end_line`?, `short_description`?, `tags`?, `ttl_seconds`? | Cut file content to clipboard (removes from source) |
-| `paste` | `key`, `target`, `scope`?, `mode`?, `line_number`?, `start_line`?, `end_line`?, `marker`?, `create_if_missing`? | Paste clipboard content to file |
+| `copy` | `source`, `key`, `scope`?, `start_line`?, `end_line`?, `short_description`?, `tags`?, `ttl_seconds`? | Copy UTF-8 file content to clipboard |
+| `cut` | `source`, `key`, `scope`?, `start_line`?, `end_line`?, `short_description`?, `tags`?, `ttl_seconds`? | Cut UTF-8 file content to clipboard (removes from source) |
+| `paste` | `key`, `target`, `scope`?, `mode`?, `line_number`?, `start_line`?, `end_line`?, `marker`?, `create_if_missing`? | Paste clipboard content to a UTF-8 file |
 | `clipboard_list` | `scope`?, `tags`?, `any_tags`?, `verbose`? | List clipboard entries with optional tag filtering |
 | `clipboard_get` | `key`, `scope`? | Get full content of a clipboard entry |
-| `clipboard_update` | `key`, `scope`?, `new_key`?, `short_description`?, `content`?, `source`?, `start_line`?, `end_line`?, `ttl_seconds`? | Update clipboard entry metadata or content |
+| `clipboard_update` | `key`, `scope`?, `new_key`?, `short_description`?, `content`?, `source`?, `start_line`?, `end_line`?, `ttl_seconds`? | Update clipboard entry metadata or content (`source` must be UTF-8 text) |
 | `clipboard_delete` | `key`, `scope`? | Delete a clipboard entry |
 | `clipboard_clear` | `scope`?, `confirm`? | Clear all entries in a scope |
 | `clipboard_search` | `query`, `scope`?, `max_results`? | Search clipboard entries |
-| `clipboard_tag` | `action`, `entry_key`?, `name`?, `scope`?, `description`? | Manage clipboard tags (list/add/remove/create/delete) |
+| `clipboard_tag` | `action`, `entry_key`?, `name`?, `scope`?, `description`? | Manage clipboard tags (`create` is currently a placeholder; `delete` is not implemented) |
 | `clipboard_export` | `path`, `scope`?, `tags`? | Export clipboard entries to JSON file |
-| `clipboard_import` | `path`, `scope`?, `conflict`?, `dry_run`? | Import clipboard entries from JSON file |
+| `clipboard_import` | `path`, `scope`?, `conflict`?, `dry_run`? | Import clipboard entries from JSON file (malformed structures rejected) |
+
+Clipboard file tools and `clipboard_update(source=...)` operate on UTF-8 text
+files only. For byte-sensitive or non-UTF8 file changes, use `patch` with
+`fidelity_mode='byte_strict'`.
 | `gitlab_repo` | `action`, `project`?, `instance`? | Repository operations (get, list, fork, search, whoami) |
 | `gitlab_issue` | `action`, `project`?, `iid`?, `title`?, `assignees`?, `assignee_username`?, `author_username`?, ... | Issue CRUD (list, get, create, update, close, reopen, comment). Assignees/filters support 'me' shorthand. |
 | `gitlab_mr` | `action`, `project`?, `iid`?, `source_branch`?, `assignees`?, `reviewers`?, `assignee_username`?, `author_username`?, `reviewer_username`?, ... | MR operations (list, get, create, update, merge, close, diff, commits, pipelines). Assignees/reviewers/filters support 'me' shorthand. |

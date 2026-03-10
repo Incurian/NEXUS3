@@ -1,4 +1,5 @@
 """Unit tests for clipboard search, tag, export, import skills."""
+
 from __future__ import annotations
 
 import json
@@ -7,14 +8,12 @@ from typing import Any
 
 import pytest
 
-from nexus3.clipboard import ClipboardManager, ClipboardScope, CLIPBOARD_PRESETS
-from nexus3.core.types import ToolResult
-from nexus3.skill.builtin.clipboard_search import clipboard_search_factory
-from nexus3.skill.builtin.clipboard_tag import clipboard_tag_factory
+from nexus3.clipboard import CLIPBOARD_PRESETS, ClipboardManager, ClipboardScope
 from nexus3.skill.builtin.clipboard_export import clipboard_export_factory
 from nexus3.skill.builtin.clipboard_import import clipboard_import_factory
+from nexus3.skill.builtin.clipboard_search import clipboard_search_factory
+from nexus3.skill.builtin.clipboard_tag import clipboard_tag_factory
 from nexus3.skill.services import ServiceContainer
-
 
 # =============================================================================
 # Fixtures
@@ -75,9 +74,7 @@ class TestClipboardSearchSkill:
     """Tests for ClipboardSearchSkill."""
 
     @pytest.mark.asyncio
-    async def test_search_found(
-        self, search_skill, clipboard_manager: ClipboardManager
-    ) -> None:
+    async def test_search_found(self, search_skill, clipboard_manager: ClipboardManager) -> None:
         """Test search finds matching entry."""
         clipboard_manager.copy(
             key="test",
@@ -114,6 +111,14 @@ class TestClipboardSearchSkill:
 
         assert not result.success
         assert "empty" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_search_whitespace_query(self, search_skill) -> None:
+        """Whitespace-only search queries should fail closed."""
+        result = await search_skill.execute(query="   ")
+
+        assert not result.success
+        assert "whitespace" in result.error.lower()
 
     @pytest.mark.asyncio
     async def test_search_with_scope(
@@ -170,9 +175,7 @@ class TestClipboardTagSkill:
         assert "No tags" in result.output
 
     @pytest.mark.asyncio
-    async def test_tag_list_with_tags(
-        self, tag_skill, clipboard_manager: ClipboardManager
-    ) -> None:
+    async def test_tag_list_with_tags(self, tag_skill, clipboard_manager: ClipboardManager) -> None:
         """Test list action shows existing tags."""
         clipboard_manager.copy(
             key="test",
@@ -188,9 +191,7 @@ class TestClipboardTagSkill:
         assert "tag2" in result.output
 
     @pytest.mark.asyncio
-    async def test_tag_add(
-        self, tag_skill, clipboard_manager: ClipboardManager
-    ) -> None:
+    async def test_tag_add(self, tag_skill, clipboard_manager: ClipboardManager) -> None:
         """Test adding a tag to an entry."""
         clipboard_manager.copy(
             key="test",
@@ -214,9 +215,7 @@ class TestClipboardTagSkill:
         assert "newtag" in entry.tags
 
     @pytest.mark.asyncio
-    async def test_tag_remove(
-        self, tag_skill, clipboard_manager: ClipboardManager
-    ) -> None:
+    async def test_tag_remove(self, tag_skill, clipboard_manager: ClipboardManager) -> None:
         """Test removing a tag from an entry."""
         clipboard_manager.copy(
             key="test",
@@ -284,6 +283,22 @@ class TestClipboardTagSkill:
 
         assert not result.success
         assert "not available" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_tag_create_reports_current_noop(self, tag_skill) -> None:
+        """create should report its current placeholder behavior explicitly."""
+        result = await tag_skill.execute(action="create", name="planned-tag")
+
+        assert result.success
+        assert "auto-created" in result.output
+
+    @pytest.mark.asyncio
+    async def test_tag_delete_reports_unimplemented(self, tag_skill) -> None:
+        """delete currently stays fail-closed until implemented."""
+        result = await tag_skill.execute(action="delete", name="old-tag")
+
+        assert not result.success
+        assert "not yet implemented" in result.error.lower()
 
 
 # =============================================================================
@@ -588,6 +603,81 @@ class TestClipboardImportSkill:
         assert "Invalid JSON" in result.error
 
     @pytest.mark.asyncio
+    async def test_import_rejects_top_level_non_object(
+        self,
+        import_skill,
+        tmp_path: Path,
+    ) -> None:
+        """Malformed but valid JSON should return a normal tool error."""
+        import_path = tmp_path / "import.json"
+        import_path.write_text(json.dumps(["not-an-object"]))
+
+        result = await import_skill.execute(path=str(import_path))
+
+        assert not result.success
+        assert "top-level json object" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_import_rejects_non_object_entry(
+        self,
+        import_skill,
+        tmp_path: Path,
+    ) -> None:
+        """Each entry must be a JSON object."""
+        import_path = tmp_path / "import.json"
+        import_path.write_text(json.dumps({"version": "1.0", "entries": [1]}))
+
+        result = await import_skill.execute(path=str(import_path))
+
+        assert not result.success
+        assert "entry 1" in result.error.lower()
+        assert "json object" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_import_rejects_non_string_content(
+        self,
+        import_skill,
+        tmp_path: Path,
+    ) -> None:
+        """Entry content must be a string."""
+        import_path = tmp_path / "import.json"
+        import_path.write_text(
+            json.dumps(
+                {
+                    "version": "1.0",
+                    "entries": [{"key": "bad", "content": 123}],
+                }
+            )
+        )
+
+        result = await import_skill.execute(path=str(import_path))
+
+        assert not result.success
+        assert "non-string 'content'" in result.error
+
+    @pytest.mark.asyncio
+    async def test_import_rejects_invalid_tags(
+        self,
+        import_skill,
+        tmp_path: Path,
+    ) -> None:
+        """Entry tags must be a list of strings."""
+        import_path = tmp_path / "import.json"
+        import_path.write_text(
+            json.dumps(
+                {
+                    "version": "1.0",
+                    "entries": [{"key": "bad", "content": "ok", "tags": "tag"}],
+                }
+            )
+        )
+
+        result = await import_skill.execute(path=str(import_path))
+
+        assert not result.success
+        assert "invalid 'tags'" in result.error.lower()
+
+    @pytest.mark.asyncio
     async def test_import_empty_entries(
         self,
         import_skill,
@@ -647,3 +737,33 @@ class TestClipboardImportSkill:
         assert entry is not None
         assert "tag1" in entry.tags
         assert "tag2" in entry.tags
+
+
+class TestClipboardWrapperStrictValidation:
+    """Unknown-arg rejection for clipboard wrapper/info tools."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("fixture_name", "params"),
+        [
+            ("search_skill", {"query": "needle"}),
+            ("tag_skill", {"action": "list"}),
+            ("export_skill", {"path": "export.json"}),
+            ("import_skill", {"path": "import.json"}),
+        ],
+    )
+    async def test_rejects_unknown_params(
+        self,
+        request: pytest.FixtureRequest,
+        fixture_name: str,
+        params: dict[str, Any],
+    ) -> None:
+        skill = request.getfixturevalue(fixture_name)
+
+        result = await skill.execute(**params, unknown_xyz="boom")
+
+        assert not result.success
+        assert "unknown_xyz" in result.error
+        assert (
+            "unexpected" in result.error.lower() or "additional properties" in result.error.lower()
+        )

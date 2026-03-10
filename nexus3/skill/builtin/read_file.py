@@ -42,7 +42,7 @@ def _stream_read_lines(
     truncated = False
     start_idx = offset - 1  # Convert to 0-indexed
 
-    with open(filepath, encoding="utf-8", errors="replace") as f:
+    with open(filepath, encoding="utf-8") as f:
         for line in f:
             line_num += 1
 
@@ -241,6 +241,8 @@ class ReadFileSkill(FileSkill):
 
             return ToolResult(output=content)
 
+        except UnicodeDecodeError:
+            return ToolResult(error=f"File is not valid UTF-8 text: {path}")
         except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except FileNotFoundError:
@@ -249,8 +251,6 @@ class ReadFileSkill(FileSkill):
             return ToolResult(error=f"Permission denied: {path}")
         except IsADirectoryError:
             return ToolResult(error=f"Path is a directory, not a file: {path}")
-        except UnicodeDecodeError:
-            return ToolResult(error=f"File is not valid UTF-8 text: {path}")
         except Exception as e:
             return ToolResult(error=f"Error reading file: {e}")
 

@@ -26,11 +26,24 @@ RG_AVAILABLE = shutil.which("rg") is not None
 
 # Directories to exclude from Python fallback search
 # ripgrep respects .gitignore automatically, so these are only for the fallback
-EXCLUDED_DIRS = frozenset({
-    ".git", "node_modules", "__pycache__", ".venv", ".nexus3",
-    "venv", ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache",
-    "dist", "build", ".eggs", "*.egg-info",
-})
+EXCLUDED_DIRS = frozenset(
+    {
+        ".git",
+        "node_modules",
+        "__pycache__",
+        ".venv",
+        ".nexus3",
+        "venv",
+        ".tox",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "dist",
+        "build",
+        ".eggs",
+        "*.egg-info",
+    }
+)
 
 # Bounded concurrency for parallel file search
 MAX_CONCURRENT_SEARCHES = 10
@@ -108,20 +121,20 @@ def _search_file_streaming(
     context: int,
     max_matches: int,
     current_matches: int,
-) -> tuple[list[str], bool]:
+) -> tuple[list[str], bool, bool]:
     """Search a file line-by-line without loading entire file.
 
     P2.5 SECURITY: Streams file content to avoid memory issues.
 
     Returns:
-        Tuple of (matches, hit_limit)
+        Tuple of (matches, hit_limit, skipped_invalid_utf8)
     """
-    matches: list[str] = []
+    matches: list[tuple[str, str]] = []
     lines_buffer: list[str] = []  # For context
     match_indices: list[int] = []
 
     try:
-        with open(file_path, encoding="utf-8", errors="replace") as f:
+        with open(file_path, encoding="utf-8") as f:
             for line_num, line in enumerate(f, 1):
                 line = line.rstrip()
 
@@ -136,10 +149,12 @@ def _search_file_streaming(
                     if regex.search(line):
                         matches.append(f"{rel_path}:{line_num}: {line}")
                         if current_matches + len(matches) >= max_matches:
-                            return matches, True
+                            return matches, True, False
 
+    except UnicodeDecodeError:
+        return [], False, True
     except OSError:
-        return [], False
+        return [], False, False
 
     # Process context matches
     if context > 0 and match_indices:
@@ -161,7 +176,7 @@ def _search_file_streaming(
                 matches.append(f"{rel_path}:{idx + 1}:{prefix} {line}")
 
     hit_limit = current_matches + len(matches) >= max_matches
-    return matches, hit_limit
+    return matches, hit_limit, False
 
 
 async def _search_files_parallel(
@@ -170,7 +185,7 @@ async def _search_files_parallel(
     context: int,
     max_matches: int,
     max_concurrent: int = MAX_CONCURRENT_SEARCHES,
-) -> tuple[list[str], int]:
+) -> tuple[list[str], int, int]:
     """Search multiple files in parallel with bounded concurrency.
 
     Issue 6: Uses asyncio.gather with semaphore to limit concurrent threads,
@@ -184,16 +199,16 @@ async def _search_files_parallel(
         max_concurrent: Maximum concurrent file searches.
 
     Returns:
-        (all_matches, files_with_matches_count)
+        (all_matches, files_with_matches_count, files_skipped_invalid_utf8)
     """
     if not files:
-        return [], 0
+        return [], 0, 0
 
     semaphore = asyncio.Semaphore(max_concurrent)
 
-    async def search_one(file_path: Path, rel_path: Path | str) -> list[str]:
+    async def search_one(file_path: Path, rel_path: Path | str) -> tuple[list[str], bool]:
         async with semaphore:
-            matches, _ = await asyncio.to_thread(
+            matches, _, skipped_invalid_utf8 = await asyncio.to_thread(
                 _search_file_streaming,
                 file_path,
                 regex,
@@ -202,7 +217,7 @@ async def _search_files_parallel(
                 max_matches,
                 0,  # current_matches=0, we aggregate later
             )
-            return matches
+            return matches, skipped_invalid_utf8
 
     # Create all tasks upfront
     tasks = [search_one(fp, rp) for fp, rp in files]
@@ -213,13 +228,16 @@ async def _search_files_parallel(
     # Aggregate results, stopping at max_matches
     all_matches: list[str] = []
     files_with_matches = 0
+    files_skipped_invalid_utf8 = 0
 
     for result in results:
         if isinstance(result, BaseException):
             # Log silently, don't fail the whole search
             continue
-        # result is now narrowed to list[str]
-        matches = result
+        matches, skipped_invalid_utf8 = result
+        if skipped_invalid_utf8:
+            files_skipped_invalid_utf8 += 1
+            continue
         if matches:  # Non-empty matches
             files_with_matches += 1
             remaining = max_matches - len(all_matches)
@@ -228,7 +246,31 @@ async def _search_files_parallel(
             if len(all_matches) >= max_matches:
                 break
 
-    return all_matches, files_with_matches
+    return all_matches, files_with_matches, files_skipped_invalid_utf8
+
+
+def _format_skip_counts(
+    files_skipped_size: int,
+    files_skipped_invalid_utf8: int,
+) -> tuple[str, str]:
+    """Format grep skip counts for short and summary contexts."""
+    skip_items: list[str] = []
+    if files_skipped_size > 0:
+        label = "large file" if files_skipped_size == 1 else "large files"
+        skip_items.append(f"{files_skipped_size} {label} skipped")
+    if files_skipped_invalid_utf8 > 0:
+        label = (
+            "invalid UTF-8 file"
+            if files_skipped_invalid_utf8 == 1
+            else "invalid UTF-8 files"
+        )
+        skip_items.append(f"{files_skipped_invalid_utf8} {label} skipped")
+
+    if not skip_items:
+        return "", ""
+
+    joined = ", ".join(skip_items)
+    return f" ({joined})", f", {joined}"
 
 
 async def _search_with_ripgrep(
@@ -239,7 +281,7 @@ async def _search_with_ripgrep(
     max_matches: int = 100,
     include: str | None = None,
     context: int = 0,
-) -> tuple[list[str], int, int, int]:
+) -> tuple[list[str], int, int, int, int]:
     """Search using ripgrep for significantly faster results.
 
     Args:
@@ -252,7 +294,13 @@ async def _search_with_ripgrep(
         context: Lines of context before/after each match.
 
     Returns:
-        (matches, files_with_matches, files_searched, files_skipped_size)
+        (
+            matches,
+            files_with_matches,
+            files_searched,
+            files_skipped_size,
+            files_skipped_invalid_utf8,
+        )
     """
     files_skipped_size = await asyncio.to_thread(
         _count_large_files_for_search,
@@ -279,10 +327,10 @@ async def _search_with_ripgrep(
     # Handle include patterns
     if include:
         # Handle brace expansion like '*.{js,ts}'
-        if '{' in include and '}' in include:
-            prefix, rest = include.split('{', 1)
-            options, suffix = rest.split('}', 1)
-            for opt in options.split(','):
+        if "{" in include and "}" in include:
+            prefix, rest = include.split("{", 1)
+            options, suffix = rest.split("}", 1)
+            for opt in options.split(","):
                 cmd.extend(["-g", prefix + opt + suffix])
         else:
             cmd.extend(["-g", include])
@@ -296,10 +344,7 @@ async def _search_with_ripgrep(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            creationflags=(
-                subprocess.CREATE_NEW_PROCESS_GROUP |
-                subprocess.CREATE_NO_WINDOW
-            ),
+            creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW),
         )
     else:
         proc = await asyncio.create_subprocess_exec(
@@ -314,6 +359,7 @@ async def _search_with_ripgrep(
     # Parse JSON output
     matches: list[str] = []
     files_with_matches: set[str] = set()
+    invalid_utf8_files: set[str] = set()
     files_searched = 0
 
     for line in stdout.decode("utf-8", errors="replace").splitlines():
@@ -332,13 +378,18 @@ async def _search_with_ripgrep(
             file_path = path_data.get("text", "")
             line_num = match_data.get("line_number", 0)
             lines = match_data.get("lines", {})
+            if "bytes" in lines and "text" not in lines:
+                if file_path:
+                    invalid_utf8_files.add(file_path)
+                    files_with_matches.discard(file_path)
+                continue
             text = lines.get("text", "").rstrip()
 
-            if file_path:
+            if file_path and file_path not in invalid_utf8_files:
                 files_with_matches.add(file_path)
                 # Keep output markers aligned with Python fallback formatting.
                 line_prefix = ">" if context > 0 else " "
-                matches.append(f"{file_path}:{line_num}:{line_prefix} {text}")
+                matches.append((file_path, f"{file_path}:{line_num}:{line_prefix} {text}"))
 
         elif msg_type == "context":
             # Context lines around matches
@@ -347,20 +398,31 @@ async def _search_with_ripgrep(
             file_path = path_data.get("text", "")
             line_num = ctx_data.get("line_number", 0)
             lines = ctx_data.get("lines", {})
+            if "bytes" in lines and "text" not in lines:
+                if file_path:
+                    invalid_utf8_files.add(file_path)
+                    files_with_matches.discard(file_path)
+                continue
             text = lines.get("text", "").rstrip()
 
-            if file_path:
-                matches.append(f"{file_path}:{line_num}:  {text}")
+            if file_path and file_path not in invalid_utf8_files:
+                matches.append((file_path, f"{file_path}:{line_num}:  {text}"))
 
         elif msg_type == "summary":
             stats = data.get("data", {}).get("stats", {})
             files_searched = stats.get("searches", 0)
 
+    filtered_matches = [
+        rendered
+        for file_path, rendered in matches
+        if file_path not in invalid_utf8_files
+    ]
     return (
-        matches[:max_matches],
+        filtered_matches[:max_matches],
         len(files_with_matches),
         files_searched,
         files_skipped_size,
+        len(invalid_utf8_files),
     )
 
 
@@ -426,38 +488,36 @@ class GrepSkill(FileSkill):
             "properties": {
                 "pattern": {
                     "type": "string",
-                    "description": "Regular expression pattern to search for"
+                    "description": "Regular expression pattern to search for",
                 },
-                "path": {
-                    "type": "string",
-                    "description": "File or directory to search"
-                },
+                "path": {"type": "string", "description": "File or directory to search"},
                 "recursive": {
                     "type": "boolean",
                     "description": "Search subdirectories recursively (default: true)",
-                    "default": True
+                    "default": True,
                 },
                 "ignore_case": {
                     "type": "boolean",
                     "description": "Case-insensitive search (default: false)",
-                    "default": False
+                    "default": False,
                 },
                 "max_matches": {
                     "type": "integer",
                     "description": "Maximum number of matches to return (default: 100)",
-                    "default": 100
+                    "default": 100,
                 },
                 "include": {
                     "type": "string",
-                    "description": "Only search files matching pattern (e.g., '*.py', '*.{js,ts}')"
+                    "description": "Only search files matching pattern (e.g., '*.py', '*.{js,ts}')",
                 },
                 "context": {
                     "type": "integer",
                     "description": "Number of lines before and after each match (default: 0)",
-                    "default": 0
-                }
+                    "default": 0,
+                },
             },
-            "required": ["pattern", "path"]
+            "required": ["pattern", "path"],
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -469,7 +529,7 @@ class GrepSkill(FileSkill):
         max_matches: int = 100,
         include: str | None = None,
         context: int = 0,
-        **kwargs: Any
+        **kwargs: Any,
     ) -> ToolResult:
         """Search for pattern in file(s).
 
@@ -489,19 +549,18 @@ class GrepSkill(FileSkill):
         try:
             # Validate path (resolves symlinks, checks allowed_paths if set)
             search_path = self._validate_path(path)
+            is_file, _ = await asyncio.to_thread(_check_path_type, search_path)
 
             # Use ripgrep when available and not sandboxed
             # (ripgrep doesn't respect our allowed_paths, so use Python fallback for sandboxed)
-            if RG_AVAILABLE and self._allowed_paths is None:
+            if RG_AVAILABLE and self._allowed_paths is None and not is_file:
                 return await self._search_with_ripgrep(
-                    search_path, pattern, recursive, ignore_case,
-                    max_matches, include, context
+                    search_path, pattern, recursive, ignore_case, max_matches, include, context
                 )
 
             # Python fallback: compile regex and search manually
             return await self._search_with_python(
-                search_path, pattern, recursive, ignore_case,
-                max_matches, include, context
+                search_path, pattern, recursive, ignore_case, max_matches, include, context
             )
 
         except (PathSecurityError, ValueError) as e:
@@ -522,25 +581,33 @@ class GrepSkill(FileSkill):
         """Search using ripgrep (fast path)."""
         try:
             rg_result = await _search_with_ripgrep(
-                search_path, pattern, recursive, ignore_case,
-                max_matches, include, context
+                search_path, pattern, recursive, ignore_case, max_matches, include, context
             )
-            matches, files_with_matches, files_searched, files_skipped_size = rg_result
+            (
+                matches,
+                files_with_matches,
+                files_searched,
+                files_skipped_size,
+                files_skipped_invalid_utf8,
+            ) = rg_result
         except Exception:
             # Fall back to Python on any ripgrep error
             return await self._search_with_python(
-                search_path, pattern, recursive, ignore_case,
-                max_matches, include, context
+                search_path, pattern, recursive, ignore_case, max_matches, include, context
             )
 
         if not matches:
-            skip_note = ""
-            if files_skipped_size > 0:
-                skip_note = f" ({files_skipped_size} large files skipped)"
+            skip_note, _ = _format_skip_counts(
+                files_skipped_size,
+                files_skipped_invalid_utf8,
+            )
             return ToolResult(output=f"No matches for '{pattern}' in {search_path}{skip_note}")
 
         result = "\n".join(matches)
-        skip = f", {files_skipped_size} skipped" if files_skipped_size > 0 else ""
+        _, skip = _format_skip_counts(
+            files_skipped_size,
+            files_skipped_invalid_utf8,
+        )
         stats = f"{files_with_matches} files, {files_searched} files searched{skip}"
         summary = f"\n\n({len(matches)} matches in {stats})"
         if len(matches) >= max_matches:
@@ -578,9 +645,7 @@ class GrepSkill(FileSkill):
                     lambda: list(_rglob_with_exclusions(search_path))
                 )
             else:
-                files_to_search = await asyncio.to_thread(
-                    lambda: list(search_path.glob("*"))
-                )
+                files_to_search = await asyncio.to_thread(lambda: list(search_path.glob("*")))
             # Filter to files only
             files_to_search = [f for f in files_to_search if f.is_file()]
         else:
@@ -588,10 +653,7 @@ class GrepSkill(FileSkill):
 
         # Filter by include pattern if specified
         if include and len(files_to_search) > 1:
-            files_to_search = [
-                f for f in files_to_search
-                if _matches_include_pattern(f, include)
-            ]
+            files_to_search = [f for f in files_to_search if _matches_include_pattern(f, include)]
 
         # Issue 6: Pre-filter files before parallel search
         # This moves validation/size checks out of the hot loop
@@ -604,7 +666,6 @@ class GrepSkill(FileSkill):
         )
 
         for file_path in authorized_files:
-
             # P2.5 SECURITY: Skip files that are too large
             try:
                 file_size = file_path.stat().st_size
@@ -624,21 +685,28 @@ class GrepSkill(FileSkill):
 
         # Issue 6: Parallel search with bounded concurrency
         files_searched = len(valid_files)
-        matches, files_with_matches = await _search_files_parallel(
+        matches, files_with_matches, files_skipped_invalid_utf8 = await _search_files_parallel(
             valid_files,
             regex,
             context,
             max_matches,
         )
 
+        if is_file and files_skipped_invalid_utf8 > 0:
+            return ToolResult(error=f"File is not valid UTF-8 text: {search_path}")
+
         if not matches:
-            skip_note = ""
-            if files_skipped_size > 0:
-                skip_note = f" ({files_skipped_size} large files skipped)"
+            skip_note, _ = _format_skip_counts(
+                files_skipped_size,
+                files_skipped_invalid_utf8,
+            )
             return ToolResult(output=f"No matches for '{pattern}' in {search_path}{skip_note}")
 
         result = "\n".join(matches)
-        skip = f", {files_skipped_size} skipped" if files_skipped_size > 0 else ""
+        _, skip = _format_skip_counts(
+            files_skipped_size,
+            files_skipped_invalid_utf8,
+        )
         stats = f"{files_with_matches} files, {files_searched} searched{skip}"
         summary = f"\n\n({len(matches)} matches in {stats})"
         if len(matches) >= max_matches:

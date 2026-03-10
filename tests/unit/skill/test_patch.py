@@ -295,6 +295,20 @@ class TestDiffFile(TestPatchSkill):
         assert not result.success
         assert "not found" in result.error.lower()
 
+    @pytest.mark.asyncio
+    async def test_diff_file_invalid_utf8_rejected(self, skill, test_file, tmp_path):
+        """Invalid UTF-8 diff files should fail closed before parsing."""
+        diff_file = tmp_path / "bad.diff"
+        diff_file.write_bytes(b"\xff\xfe@@ -1 +1 @@\n")
+
+        result = await skill.execute(
+            target=str(test_file),
+            diff_file=str(diff_file),
+        )
+
+        assert not result.success
+        assert "UTF-8" in result.error
+
 
 class TestDryRun(TestPatchSkill):
     """Tests for dry_run mode."""

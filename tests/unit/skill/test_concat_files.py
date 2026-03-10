@@ -102,6 +102,23 @@ class TestBasicFunctionality(TestConcatFilesSkill):
         # binary.py should not be in the files list
 
     @pytest.mark.asyncio
+    async def test_invalid_utf8_files_skipped(self, skill, tmp_path):
+        """Invalid UTF-8 text-like files should be skipped instead of mangled."""
+        (tmp_path / "text.py").write_text("print('hello')\n")
+        (tmp_path / "broken.py").write_bytes(b"print('oops')\n\xff")
+
+        result = await skill.execute(
+            extensions=["py"],
+            path=str(tmp_path),
+            dry_run=True,
+        )
+
+        assert result.success
+        assert "Binary (skipped): 1" in result.output
+        assert "text.py" in result.output
+        assert "broken.py" not in result.output
+
+    @pytest.mark.asyncio
     async def test_multiple_extensions(self, skill, tmp_path):
         """Test searching for multiple file extensions."""
         (tmp_path / "code.py").write_text("def foo(): pass\n")
@@ -455,8 +472,9 @@ class TestExclusions(TestConcatFilesSkill):
 
         assert result.success
         assert "app.js" in result.output
-        assert "node_modules" not in result.output or "index.js" not in (
-            result.output.split("node_modules")[-1]
+        assert (
+            "node_modules" not in result.output
+            or "index.js" not in (result.output.split("node_modules")[-1])
         )
 
     @pytest.mark.asyncio

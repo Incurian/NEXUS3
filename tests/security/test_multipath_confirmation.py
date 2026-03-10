@@ -35,6 +35,7 @@ from nexus3.session.path_semantics import (
     extract_write_paths,
     get_semantics,
 )
+from nexus3.skill.services import ServiceContainer
 
 
 class TestToolPathSemantics:
@@ -117,6 +118,10 @@ class TestToolPathSemantics:
             display_key="output_path",
         )
         assert get_semantics("gitlab_artifact") == TOOL_PATH_SEMANTICS["gitlab_artifact"]
+
+    def test_concat_files_semantics_registered(self) -> None:
+        """concat_files tracks its search directory as an explicit read path."""
+        assert TOOL_PATH_SEMANTICS["concat_files"] == ToolPathSemantics(read_keys=("path",))
 
     def test_read_file_semantics(self) -> None:
         """read_file has path as read only."""
@@ -351,6 +356,12 @@ class TestEnforcerRequiresConfirmation:
             session_allowances=SessionAllowances(),
         )
 
+    def _make_services(self, cwd: Path) -> ServiceContainer:
+        services = ServiceContainer()
+        services.set_cwd(cwd)
+        services.register("blocked_paths", [])
+        return services
+
     def test_copy_file_checks_destination(self, tmp_path: Path) -> None:
         """copy_file triggers confirmation based on destination, not source."""
         cwd = tmp_path / "cwd"
@@ -366,9 +377,7 @@ class TestEnforcerRequiresConfirmation:
         enforcer = PermissionEnforcer()
 
         tool_call = ToolCall(
-            id="1",
-            name="copy_file",
-            arguments={"source": str(source), "destination": str(dest)}
+            id="1", name="copy_file", arguments={"source": str(source), "destination": str(dest)}
         )
 
         # Should require confirmation because DESTINATION is outside cwd
@@ -389,9 +398,7 @@ class TestEnforcerRequiresConfirmation:
         enforcer = PermissionEnforcer()
 
         tool_call = ToolCall(
-            id="1",
-            name="copy_file",
-            arguments={"source": str(source), "destination": str(dest)}
+            id="1", name="copy_file", arguments={"source": str(source), "destination": str(dest)}
         )
 
         # Should NOT require confirmation because destination is in cwd
@@ -411,9 +418,7 @@ class TestEnforcerRequiresConfirmation:
         enforcer = PermissionEnforcer()
 
         tool_call = ToolCall(
-            id="1",
-            name="rename",
-            arguments={"source": str(source), "destination": str(dest)}
+            id="1", name="rename", arguments={"source": str(source), "destination": str(dest)}
         )
 
         # Should require confirmation because destination is outside cwd
@@ -431,9 +436,7 @@ class TestEnforcerRequiresConfirmation:
 
         # File in cwd - no confirmation
         tool_call_in = ToolCall(
-            id="1",
-            name="write_file",
-            arguments={"path": str(cwd / "file.txt"), "content": "data"}
+            id="1", name="write_file", arguments={"path": str(cwd / "file.txt"), "content": "data"}
         )
         assert enforcer.requires_confirmation(tool_call_in, permissions) is False
 
@@ -441,7 +444,7 @@ class TestEnforcerRequiresConfirmation:
         tool_call_out = ToolCall(
             id="2",
             name="write_file",
-            arguments={"path": str(outside / "file.txt"), "content": "data"}
+            arguments={"path": str(outside / "file.txt"), "content": "data"},
         )
         assert enforcer.requires_confirmation(tool_call_out, permissions) is True
 
@@ -671,6 +674,52 @@ class TestEnforcerRequiresConfirmation:
 
         assert enforcer.requires_confirmation(tool_call, permissions) is True
 
+    def test_concat_files_dry_run_outside_cwd_stays_read_only(self, tmp_path: Path) -> None:
+        """concat_files dry runs stay read-only even when searching outside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer(services=self._make_services(cwd))
+
+        tool_call = ToolCall(
+            id="1",
+            name="concat_files",
+            arguments={
+                "extensions": ["py"],
+                "path": str(outside),
+                "dry_run": True,
+            },
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is False
+
+    def test_concat_files_real_write_checks_generated_output_outside_cwd(
+        self, tmp_path: Path
+    ) -> None:
+        """concat_files real runs require confirmation for generated outputs outside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer(services=self._make_services(cwd))
+
+        tool_call = ToolCall(
+            id="1",
+            name="concat_files",
+            arguments={
+                "extensions": ["py"],
+                "path": str(outside),
+                "dry_run": False,
+            },
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is True
+
 
 class TestEnforcerGetConfirmationContext:
     """Test the get_confirmation_context method."""
@@ -682,7 +731,7 @@ class TestEnforcerGetConfirmationContext:
         tool_call = ToolCall(
             id="1",
             name="copy_file",
-            arguments={"source": "/src/file.txt", "destination": "/dst/file.txt"}
+            arguments={"source": "/src/file.txt", "destination": "/dst/file.txt"},
         )
 
         display_path, write_paths = enforcer.get_confirmation_context(tool_call)
@@ -697,7 +746,7 @@ class TestEnforcerGetConfirmationContext:
         tool_call = ToolCall(
             id="1",
             name="rename",
-            arguments={"source": "/old/name.txt", "destination": "/new/name.txt"}
+            arguments={"source": "/old/name.txt", "destination": "/new/name.txt"},
         )
 
         display_path, write_paths = enforcer.get_confirmation_context(tool_call)
@@ -710,9 +759,7 @@ class TestEnforcerGetConfirmationContext:
         enforcer = PermissionEnforcer()
 
         tool_call = ToolCall(
-            id="1",
-            name="write_file",
-            arguments={"path": "/some/file.txt", "content": "data"}
+            id="1", name="write_file", arguments={"path": "/some/file.txt", "content": "data"}
         )
 
         display_path, write_paths = enforcer.get_confirmation_context(tool_call)
@@ -821,6 +868,34 @@ class TestEnforcerGetConfirmationContext:
         assert display_path == Path("/tmp/clipboard.json")
         assert write_paths == [Path("/tmp/clipboard.json")]
 
+    def test_concat_files_context_uses_generated_output(self, tmp_path: Path) -> None:
+        """concat_files confirmation context should show the generated output file."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        services = ServiceContainer()
+        services.set_cwd(cwd)
+        services.register("blocked_paths", [])
+        enforcer = PermissionEnforcer(services=services)
+
+        tool_call = ToolCall(
+            id="1",
+            name="concat_files",
+            arguments={
+                "extensions": ["py"],
+                "path": str(outside),
+                "dry_run": False,
+            },
+        )
+
+        display_path, write_paths = enforcer.get_confirmation_context(tool_call)
+
+        expected = outside / "outside-py-concat.txt"
+        assert display_path == expected
+        assert write_paths == [expected]
+
 
 class TestAllowanceAppliedToWritePaths:
     """Test that allowances are applied to write paths, not source paths."""
@@ -850,9 +925,7 @@ class TestAllowanceAppliedToWritePaths:
         enforcer = PermissionEnforcer()
 
         tool_call = ToolCall(
-            id="1",
-            name="copy_file",
-            arguments={"source": str(source), "destination": str(dest)}
+            id="1", name="copy_file", arguments={"source": str(source), "destination": str(dest)}
         )
 
         # Initially requires confirmation
@@ -888,9 +961,7 @@ class TestAllowanceAppliedToWritePaths:
         enforcer = PermissionEnforcer()
 
         tool_call = ToolCall(
-            id="1",
-            name="rename",
-            arguments={"source": str(source), "destination": str(dest)}
+            id="1", name="rename", arguments={"source": str(source), "destination": str(dest)}
         )
 
         # Initially requires confirmation
@@ -926,9 +997,7 @@ class TestAllowanceAppliedToWritePaths:
         enforcer = PermissionEnforcer()
 
         tool_call = ToolCall(
-            id="1",
-            name="copy_file",
-            arguments={"source": str(source), "destination": str(dest)}
+            id="1", name="copy_file", arguments={"source": str(source), "destination": str(dest)}
         )
 
         # Initially requires confirmation
@@ -949,9 +1018,7 @@ class TestReadOnlyToolsUnaffected:
         enforcer = PermissionEnforcer()
 
         tool_call = ToolCall(
-            id="1",
-            name="read_file",
-            arguments={"path": "/some/sensitive/file.txt"}
+            id="1", name="read_file", arguments={"path": "/some/sensitive/file.txt"}
         )
 
         # Read-only tools shouldn't trigger confirmation for write paths

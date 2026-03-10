@@ -1399,14 +1399,18 @@ NEXUS3 includes 40 built-in skills organized by category, plus 21 GitLab integra
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `read_file` | Read file contents | `path`, `offset`, `limit`, `line_numbers` |
+| `read_file` | Read UTF-8 file contents | `path`, `offset`, `limit`, `start_line`, `end_line`, `line_numbers` |
 | `tail` | Read last N lines | `path`, `lines` (default: 10) |
 | `file_info` | Get file metadata | `path` |
 | `list_directory` | List directory contents | `path`, `all`, `long` |
 | `glob` | Find files by pattern | `pattern`, `path`, `exclude` |
-| `grep` | Search file contents | `pattern`, `path`, `include`, `context`, `recursive`, `ignore_case`, `max_matches` |
-| `concat_files` | Concatenate files by extension | `extensions`, `path`, `exclude`, `lines`, `max_total`, `format`, `sort`, `gitignore`, `dry_run` |
-| `outline` | Structural outline of file/directory (non-recursive for directories) | `path`, `file_type`, `language`, `parser`, `depth`, `preview`, `signatures`, `line_numbers`, `tokens`, `symbol`, `diff`, `recursive` |
+| `grep` | Search UTF-8 file contents | `pattern`, `path`, `include`, `context`, `recursive`, `ignore_case`, `max_matches` |
+| `concat_files` | Concatenate UTF-8 files by extension (`dry_run=true` by default; `dry_run=false` writes a generated output file and skips invalid UTF-8 inputs) | `extensions`, `path`, `exclude`, `lines`, `max_total`, `format`, `sort`, `gitignore`, `dry_run` |
+| `outline` | Structural outline of UTF-8 file/directory (non-recursive for directories) | `path`, `file_type`, `language`, `parser`, `depth`, `preview`, `signatures`, `line_numbers`, `tokens`, `symbol`, `diff`, `recursive` |
+
+Text-reading tools operate on UTF-8 files. `read_file` and single-file
+`outline` fail closed on invalid UTF-8; directory `grep` and `outline` skip
+invalid UTF-8 files instead of mangling bytes.
 
 ### File Operations (Write)
 
@@ -1417,7 +1421,7 @@ NEXUS3 includes 40 built-in skills organized by category, plus 21 GitLab integra
 | `edit_lines` | Line-based replacement (single or batched) | `path`, `start_line`, `end_line`, `new_content`, `edits` |
 | `append_file` | Append to file | `path`, `content`, `newline` |
 | `regex_replace` | Regex find/replace | `path`, `pattern`, `replacement`, `count`, `ignore_case`, `multiline`, `dotall` |
-| `patch` | Apply unified diffs | `path`, `diff`, `diff_file`, `mode`, `fidelity_mode`, `fuzzy_threshold`, `dry_run` |
+| `patch` | Apply unified diffs (`diff_file` must be UTF-8 text) | `path`, `diff`, `diff_file`, `mode`, `fidelity_mode`, `fuzzy_threshold`, `dry_run` |
 | `copy_file` | Copy file | `source`, `destination`, `overwrite` |
 | `mkdir` | Create directory | `path` |
 | `rename` | Move/rename file | `source`, `destination`, `overwrite` |
@@ -1480,18 +1484,22 @@ Scoped clipboard system for sharing content between agents and sessions.
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `copy` | Copy file content to clipboard | `source`, `key`, `scope`, `start_line`, `end_line`, `short_description`, `tags`, `ttl_seconds` |
-| `cut` | Cut file content to clipboard (removes from source) | `source`, `key`, `scope`, `start_line`, `end_line`, `short_description`, `tags`, `ttl_seconds` |
-| `paste` | Paste clipboard content to file | `key`, `target`, `scope`, `mode`, `line_number`, `start_line`, `end_line`, `marker`, `create_if_missing` |
+| `copy` | Copy UTF-8 file content to clipboard | `source`, `key`, `scope`, `start_line`, `end_line`, `short_description`, `tags`, `ttl_seconds` |
+| `cut` | Cut UTF-8 file content to clipboard (removes from source) | `source`, `key`, `scope`, `start_line`, `end_line`, `short_description`, `tags`, `ttl_seconds` |
+| `paste` | Paste clipboard content to a UTF-8 file | `key`, `target`, `scope`, `mode`, `line_number`, `start_line`, `end_line`, `marker`, `create_if_missing` |
 | `clipboard_list` | List clipboard entries | `scope`, `tags`, `any_tags`, `verbose` |
 | `clipboard_get` | Get full content of an entry | `key`, `scope` |
-| `clipboard_update` | Update entry metadata or content | `key`, `scope`, `new_key`, `short_description`, `content`, `source`, `start_line`, `end_line`, `ttl_seconds` |
+| `clipboard_update` | Update entry metadata or content (`source` must be UTF-8 text) | `key`, `scope`, `new_key`, `short_description`, `content`, `source`, `start_line`, `end_line`, `ttl_seconds` |
 | `clipboard_delete` | Delete an entry | `key`, `scope` |
 | `clipboard_clear` | Clear all entries in a scope | `scope`, `confirm` |
 | `clipboard_search` | Search entries by query | `query`, `scope`, `max_results` |
-| `clipboard_tag` | Manage tags | `action`, `entry_key`, `name`, `scope`, `description` |
+| `clipboard_tag` | Manage tags (`create` is currently a placeholder; `delete` is not implemented) | `action`, `entry_key`, `name`, `scope`, `description` |
 | `clipboard_export` | Export entries to JSON | `path`, `scope`, `tags` |
-| `clipboard_import` | Import entries from JSON | `path`, `scope`, `conflict`, `dry_run` |
+| `clipboard_import` | Import entries from JSON (malformed structures rejected) | `path`, `scope`, `conflict`, `dry_run` |
+
+Clipboard file tools and `clipboard_update(source=...)` operate on UTF-8 text
+files only. For byte-sensitive or non-UTF8 file changes, use `patch` with
+`fidelity_mode='byte_strict'`.
 
 **Scopes:**
 - `agent`: Session-only (in-memory), isolated per agent

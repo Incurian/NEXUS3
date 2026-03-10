@@ -21,16 +21,11 @@ class TestValidationUniformity:
         return registry
 
     def test_all_skills_reject_unknown_parameters(self, registry_with_skills):
-        """Unknown parameters should be filtered by all skills."""
-        # This tests that validation wrapper is applied to all skills
-        # The validation filters unknown params rather than erroring
+        """All builtin skills should expose validation-driven parameter schemas."""
 
         # Get a simple skill (sleep is registered by default)
         sleep_skill = registry_with_skills.get("sleep")
         assert sleep_skill is not None
-
-        # sleep skill only accepts "seconds" and "label" parameters
-        # Unknown params should be filtered out (not cause an error)
 
         # Verify the skill has parameters defined
         assert "seconds" in sleep_skill.parameters.get("properties", {})
@@ -53,19 +48,21 @@ class TestValidationUniformity:
         assert sleep_skill.name == "sleep"
 
     @pytest.mark.asyncio
-    async def test_file_info_filters_unknown_params(self, registry_with_skills, tmp_path):
-        """File info skill should filter out unknown parameters."""
+    async def test_file_info_rejects_unknown_params(self, registry_with_skills, tmp_path):
+        """file_info should fail closed on unexpected top-level params."""
         file_info = registry_with_skills.get("file_info")
 
         # Create a test file
         test_file = tmp_path / "test.txt"
         test_file.write_text("test content")
 
-        # Call with valid path + unknown param
-        result = await file_info.execute(path=str(test_file), unknown_xyz="should_be_filtered")
+        result = await file_info.execute(path=str(test_file), unknown_xyz="boom")
 
-        # Should succeed - unknown param was filtered
-        assert result.success
+        assert not result.success
+        assert "unknown_xyz" in result.error
+        assert (
+            "unexpected" in result.error.lower() or "additional properties" in result.error.lower()
+        )
 
     @pytest.mark.asyncio
     async def test_sleep_rejects_unknown_params(self, registry_with_skills):
@@ -77,8 +74,7 @@ class TestValidationUniformity:
         assert not result.success
         assert "unknown_xyz" in result.error
         assert (
-            "unexpected" in result.error.lower()
-            or "additional properties" in result.error.lower()
+            "unexpected" in result.error.lower() or "additional properties" in result.error.lower()
         )
 
     @pytest.mark.asyncio
@@ -87,8 +83,10 @@ class TestValidationUniformity:
         [
             (
                 "read_file",
-                lambda tmp_path: _create_file(tmp_path / "read.txt", "test content")
-                or {"path": str(tmp_path / "read.txt")},
+                lambda tmp_path: (
+                    _create_file(tmp_path / "read.txt", "test content")
+                    or {"path": str(tmp_path / "read.txt")}
+                ),
             ),
             (
                 "write_file",
@@ -96,65 +94,73 @@ class TestValidationUniformity:
             ),
             (
                 "edit_file",
-                lambda tmp_path: _create_file(tmp_path / "edit.txt", "alpha\nbeta\n")
-                or {
-                    "path": str(tmp_path / "edit.txt"),
-                    "old_string": "alpha",
-                    "new_string": "ALPHA",
-                },
+                lambda tmp_path: (
+                    _create_file(tmp_path / "edit.txt", "alpha\nbeta\n")
+                    or {
+                        "path": str(tmp_path / "edit.txt"),
+                        "old_string": "alpha",
+                        "new_string": "ALPHA",
+                    }
+                ),
             ),
             (
                 "edit_lines",
-                lambda tmp_path: _create_file(tmp_path / "lines.txt", "one\ntwo\nthree\n")
-                or {
-                    "path": str(tmp_path / "lines.txt"),
-                    "start_line": 2,
-                    "new_content": "TWO\n",
-                },
+                lambda tmp_path: (
+                    _create_file(tmp_path / "lines.txt", "one\ntwo\nthree\n")
+                    or {
+                        "path": str(tmp_path / "lines.txt"),
+                        "start_line": 2,
+                        "new_content": "TWO\n",
+                    }
+                ),
             ),
             (
                 "append_file",
-                lambda tmp_path: _create_file(tmp_path / "append.txt", "tail\n")
-                or {"path": str(tmp_path / "append.txt"), "content": "more\n"},
+                lambda tmp_path: (
+                    _create_file(tmp_path / "append.txt", "tail\n")
+                    or {"path": str(tmp_path / "append.txt"), "content": "more\n"}
+                ),
             ),
             (
                 "regex_replace",
-                lambda tmp_path: _create_file(tmp_path / "regex.txt", "foo bar\n")
-                or {
-                    "path": str(tmp_path / "regex.txt"),
-                    "pattern": "foo",
-                    "replacement": "baz",
-                },
+                lambda tmp_path: (
+                    _create_file(tmp_path / "regex.txt", "foo bar\n")
+                    or {
+                        "path": str(tmp_path / "regex.txt"),
+                        "pattern": "foo",
+                        "replacement": "baz",
+                    }
+                ),
             ),
             (
                 "patch",
-                lambda tmp_path: _create_file(tmp_path / "patch.txt", "old\n")
-                or {
-                    "path": str(tmp_path / "patch.txt"),
-                    "diff": (
-                        "--- a/patch.txt\n"
-                        "+++ b/patch.txt\n"
-                        "@@ -1 +1 @@\n"
-                        "-old\n"
-                        "+new\n"
-                    ),
-                },
+                lambda tmp_path: (
+                    _create_file(tmp_path / "patch.txt", "old\n")
+                    or {
+                        "path": str(tmp_path / "patch.txt"),
+                        "diff": ("--- a/patch.txt\n+++ b/patch.txt\n@@ -1 +1 @@\n-old\n+new\n"),
+                    }
+                ),
             ),
             (
                 "copy_file",
-                lambda tmp_path: _create_file(tmp_path / "copy_src.txt", "copy me\n")
-                or {
-                    "source": str(tmp_path / "copy_src.txt"),
-                    "destination": str(tmp_path / "copy_dst.txt"),
-                },
+                lambda tmp_path: (
+                    _create_file(tmp_path / "copy_src.txt", "copy me\n")
+                    or {
+                        "source": str(tmp_path / "copy_src.txt"),
+                        "destination": str(tmp_path / "copy_dst.txt"),
+                    }
+                ),
             ),
             (
                 "rename",
-                lambda tmp_path: _create_file(tmp_path / "rename_src.txt", "rename me\n")
-                or {
-                    "source": str(tmp_path / "rename_src.txt"),
-                    "destination": str(tmp_path / "rename_dst.txt"),
-                },
+                lambda tmp_path: (
+                    _create_file(tmp_path / "rename_src.txt", "rename me\n")
+                    or {
+                        "source": str(tmp_path / "rename_src.txt"),
+                        "destination": str(tmp_path / "rename_dst.txt"),
+                    }
+                ),
             ),
             (
                 "mkdir",
@@ -177,8 +183,67 @@ class TestValidationUniformity:
         assert not result.success
         assert "unknown_xyz" in result.error
         assert (
-            "unexpected" in result.error.lower()
-            or "additional properties" in result.error.lower()
+            "unexpected" in result.error.lower() or "additional properties" in result.error.lower()
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("skill_name", "builder"),
+        [
+            (
+                "file_info",
+                lambda tmp_path: (
+                    _create_file(tmp_path / "info.txt", "hello\n")
+                    or {"path": str(tmp_path / "info.txt")}
+                ),
+            ),
+            (
+                "list_directory",
+                lambda tmp_path: {"path": str(tmp_path)},
+            ),
+            (
+                "glob",
+                lambda tmp_path: {"pattern": "*.py", "path": str(tmp_path)},
+            ),
+            (
+                "grep",
+                lambda tmp_path: (
+                    _create_file(tmp_path / "grep.txt", "hello\n")
+                    or {"pattern": "hello", "path": str(tmp_path / "grep.txt")}
+                ),
+            ),
+            (
+                "tail",
+                lambda tmp_path: (
+                    _create_file(tmp_path / "tail.txt", "hello\n")
+                    or {"path": str(tmp_path / "tail.txt")}
+                ),
+            ),
+            (
+                "concat_files",
+                lambda tmp_path: (
+                    _create_file(tmp_path / "concat.py", "print('x')\n")
+                    or {"extensions": ["py"], "path": str(tmp_path), "dry_run": True}
+                ),
+            ),
+        ],
+    )
+    async def test_remaining_read_family_rejects_unknown_params(
+        self,
+        registry_with_skills,
+        tmp_path,
+        skill_name,
+        builder,
+    ):
+        """Remaining read/search/listing tools should fail closed on unknown params."""
+        skill = registry_with_skills.get(skill_name)
+
+        result = await skill.execute(**builder(tmp_path), unknown_xyz="boom")
+
+        assert not result.success
+        assert "unknown_xyz" in result.error
+        assert (
+            "unexpected" in result.error.lower() or "additional properties" in result.error.lower()
         )
 
     @pytest.mark.asyncio
@@ -204,8 +269,7 @@ class TestValidationUniformity:
         assert not result.success
         assert "unexpected_field" in result.error
         assert (
-            "additional properties" in result.error.lower()
-            or "unexpected" in result.error.lower()
+            "additional properties" in result.error.lower() or "unexpected" in result.error.lower()
         )
 
     @pytest.mark.asyncio
@@ -231,8 +295,7 @@ class TestValidationUniformity:
         assert not result.success
         assert "unexpected_field" in result.error
         assert (
-            "additional properties" in result.error.lower()
-            or "unexpected" in result.error.lower()
+            "additional properties" in result.error.lower() or "unexpected" in result.error.lower()
         )
 
     @pytest.mark.asyncio
@@ -261,8 +324,7 @@ class TestValidationUniformity:
         assert not result.success
         assert "unknown_xyz" in result.error
         assert (
-            "unexpected" in result.error.lower()
-            or "additional properties" in result.error.lower()
+            "unexpected" in result.error.lower() or "additional properties" in result.error.lower()
         )
 
     @pytest.mark.asyncio
@@ -290,8 +352,7 @@ class TestValidationUniformity:
         assert not result.success
         assert "unknown_xyz" in result.error
         assert (
-            "unexpected" in result.error.lower()
-            or "additional properties" in result.error.lower()
+            "unexpected" in result.error.lower() or "additional properties" in result.error.lower()
         )
 
     @pytest.mark.asyncio
@@ -307,8 +368,7 @@ class TestValidationUniformity:
         assert not result.success
         assert "unknown_xyz" in result.error
         assert (
-            "unexpected" in result.error.lower()
-            or "additional properties" in result.error.lower()
+            "unexpected" in result.error.lower() or "additional properties" in result.error.lower()
         )
 
     @pytest.mark.asyncio
@@ -348,9 +408,7 @@ class TestValidationUniformity:
         for skill_name in registry_with_skills.names:
             skill = registry_with_skills.get(skill_name)
             assert skill is not None, f"Skill {skill_name} returned None"
-            assert hasattr(
-                skill, "parameters"
-            ), f"Skill {skill_name} missing parameters"
+            assert hasattr(skill, "parameters"), f"Skill {skill_name} missing parameters"
             params = skill.parameters
             assert isinstance(params, dict), f"Skill {skill_name} parameters not dict"
             assert params.get("type") == "object", f"Skill {skill_name} params not object"
@@ -360,9 +418,7 @@ class TestValidationUniformity:
         for skill_name in registry_with_skills.names:
             skill = registry_with_skills.get(skill_name)
             assert skill is not None, f"Skill {skill_name} returned None"
-            assert hasattr(
-                skill, "description"
-            ), f"Skill {skill_name} missing description"
+            assert hasattr(skill, "description"), f"Skill {skill_name} missing description"
             desc = skill.description
             assert isinstance(desc, str), f"Skill {skill_name} description not string"
             assert len(desc) > 0, f"Skill {skill_name} has empty description"

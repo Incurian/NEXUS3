@@ -166,6 +166,13 @@ class TestReadFileLines:
         assert lines[0] == "hello"
         assert lines[1] == "world"
 
+    def test_invalid_utf8_raises(self, tmp_path):
+        f = tmp_path / "binary.py"
+        f.write_bytes(b"prefix\xffsuffix")
+
+        with pytest.raises(UnicodeDecodeError):
+            _read_file_lines(f)
+
 
 class TestGetPreview:
     def test_no_preview(self):
@@ -1708,8 +1715,21 @@ class TestOutlineSkill:
         f = tmp_path / "data.py"
         f.write_bytes(b"\x80\x81\x82\x83")
         result = await skill.execute(path=str(f))
-        # Should handle gracefully (errors="replace" in read)
-        assert result.success or "UTF-8" in result.error
+        assert not result.success
+        assert "UTF-8" in result.error
+
+    @pytest.mark.asyncio
+    async def test_directory_outline_skips_invalid_utf8_files(self, skill, tmp_path):
+        good = tmp_path / "good.py"
+        good.write_text("def ok():\n    return 1\n")
+        bad = tmp_path / "bad.py"
+        bad.write_bytes(b"\xff\xfe\xfd")
+
+        result = await skill.execute(path=str(tmp_path))
+
+        assert result.success
+        assert "good.py" in result.output
+        assert "bad.py" not in result.output
 
 
 class TestParserRegistry:
