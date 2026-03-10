@@ -7,6 +7,8 @@ import asyncio
 import sys
 from collections.abc import Callable
 
+from nexus3.core.shell_detection import supports_live_escape_cancel
+
 # ESC key code
 ESC = "\x1b"
 
@@ -79,6 +81,15 @@ async def monitor_for_escape(
     except (ImportError, OSError, AttributeError):
         # Fallback for Windows or when terminal isn't available
         if sys.platform == "win32":
+            if not supports_live_escape_cancel():
+                while True:
+                    if not pause_event.is_set():
+                        pause_ack_event.set()
+                        await pause_event.wait()
+                        pause_ack_event.clear()
+                        continue
+                    await asyncio.sleep(check_interval)
+
             try:
                 import msvcrt
 

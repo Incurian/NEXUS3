@@ -12,6 +12,7 @@ The protocol is:
 """
 
 import asyncio
+from unittest.mock import patch
 
 import pytest
 
@@ -88,7 +89,7 @@ class TestKeyMonitorPauseLogic:
             try:
                 await asyncio.wait_for(pause_ack_event.wait(), timeout=0.5)
                 ack_received = True
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 ack_received = False
 
             assert ack_received, "Monitor should set pause_ack_event when paused"
@@ -179,6 +180,43 @@ class TestKeyMonitorPauseLogic:
             except asyncio.CancelledError:
                 pass
 
+    @pytest.mark.asyncio
+    async def test_windows_git_bash_falls_back_to_pause_only_monitoring(self):
+        """Git Bash standalone should keep pause/ack behavior without ESC monitoring."""
+        from nexus3.cli.keys import monitor_for_escape
+
+        pause_event = asyncio.Event()
+        pause_event.set()
+        pause_ack_event = asyncio.Event()
+        escapes_detected: list[bool] = []
+
+        def on_escape() -> None:
+            escapes_detected.append(True)
+
+        with (
+            patch("nexus3.cli.keys.sys.platform", "win32"),
+            patch("nexus3.cli.keys.supports_live_escape_cancel", return_value=False),
+        ):
+            task = asyncio.create_task(
+                monitor_for_escape(on_escape, pause_event, pause_ack_event, check_interval=0.01)
+            )
+
+            try:
+                await asyncio.sleep(0.05)
+                pause_event.clear()
+                await asyncio.wait_for(pause_ack_event.wait(), timeout=0.5)
+                assert escapes_detected == []
+
+                pause_event.set()
+                await asyncio.sleep(0.05)
+                assert not pause_ack_event.is_set()
+            finally:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
 
 class TestKeyMonitorContextManager:
     """Tests for KeyMonitor context manager with both events."""
@@ -242,7 +280,7 @@ class TestConfirmationPauseIntegration:
         try:
             await asyncio.wait_for(pause_ack_event.wait(), timeout=0.1)
             ack_received = True
-        except asyncio.TimeoutError:
+        except TimeoutError:
             ack_received = False
 
         assert not ack_received, "Should timeout when no monitor"

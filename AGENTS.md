@@ -226,11 +226,10 @@ Current milestone:
     to track the open post-arch bugfix backlog (file-editing safety/contract
     fixes, Git Bash shell bug, Git Bash ESC, Git Bash multiline paste, docs
     closeout).
-  - active execution gate: Phase 5 from that plan
-    (Git Bash ESC + multiline-paste handling).
-  - most recent completed gate: Phase 3
-    (newline / encoding / regex hardening across file-editing tools), with
-    focused validation now green.
+  - active execution gate: Phase 5 live-validation closeout from that plan
+    (Windows Git Bash / PowerShell / Windows Terminal evidence refresh).
+  - most recent completed implementation gate: Phase 5 fail-closed input
+    handling for Git Bash standalone, with focused validation now green.
 - `Post-M4` validation campaign closeout complete: external closeout slice
   `post-m4-20260306-live1e` archived real-host Windows evidence and
   multi-emulator carriage-return verification; deterministic closeout gate
@@ -243,8 +242,44 @@ Immediate tasks:
   - canonical next-work plan:
     [POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md)
   - preferred execution order from the new plan:
-    1. Phase 5: Git Bash ESC + multiline paste.
-    2. Phase 6: docs and live validation closeout.
+    1. Phase 5: Windows live validation refresh for Git Bash/Pwsh/Windows Terminal.
+    2. Phase 6: final docs and validation closeout.
+  - deferred follow-up note from user testing:
+    - revisit recurring agent misuse of `outline` later even after the Phase 2
+      contract cleanup. Current hypothesis is that agents may still be invoking
+      it with the wrong mental model/parameters, so a later pass should inspect
+      real transcripts/tool payloads and decide whether the fix belongs in
+      prompt guidance, schema ergonomics, or tool behavior.
+- Completed follow-on hardening slice (2026-03-10): Plan Phase 5
+  fail-closed Git Bash input handling:
+  - `nexus3/core/shell_detection.py`
+    - added explicit helpers for Git Bash standalone prompt limitations and
+      live ESC-cancel capability detection.
+  - `nexus3/cli/keys.py`
+    - Windows Git Bash standalone now uses the pause-only fallback loop instead
+      of attempting misleading `msvcrt` ESC monitoring.
+  - `nexus3/cli/prompt_support.py`
+    - new shared prompt helpers centralize command hints, Git Bash warnings,
+      and prompt-toolkit external-editor enablement.
+  - `nexus3/cli/repl.py`
+  - `nexus3/cli/repl_runtime.py`
+    - startup guidance now fails closed on Git Bash standalone:
+      `/cancel` is advertised instead of ESC, multiline-paste limitations are
+      warned explicitly, and prompt-toolkit external-editor fallback is enabled.
+  - focused regression coverage added/updated in:
+    - `tests/unit/core/test_shell_detection.py`
+    - `tests/unit/cli/test_confirmation_sync.py`
+    - `tests/unit/cli/test_prompt_support.py`
+  - focused doc sync updated:
+    - `nexus3/cli/README.md`
+    - `CLAUDE.md`
+    - `docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md`
+    - `docs/plans/POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md`
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/cli/prompt_support.py nexus3/core/shell_detection.py nexus3/cli/keys.py nexus3/cli/repl.py nexus3/cli/repl_runtime.py tests/unit/core/test_shell_detection.py tests/unit/cli/test_confirmation_sync.py tests/unit/cli/test_prompt_support.py`
+    - `.venv/bin/pytest -q tests/unit/core/test_shell_detection.py tests/unit/cli/test_confirmation_sync.py tests/unit/cli/test_prompt_support.py` (`41 passed`)
+  - next gate remains Windows live validation to confirm the documented
+    fail-closed behavior on real hosts.
 - Completed follow-on hardening slice (2026-03-10): Plan Phase 3
   newline / encoding / regex hardening:
   - `nexus3/core/paths.py`

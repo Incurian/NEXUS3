@@ -48,6 +48,11 @@ from nexus3.cli.connect_lobby import ConnectAction, show_connect_lobby
 from nexus3.cli.keys import KeyMonitor
 from nexus3.cli.live_state import _current_live
 from nexus3.cli.lobby import LobbyChoice, show_lobby
+from nexus3.cli.prompt_support import (
+    create_prompt_session,
+    get_git_bash_input_warning_lines,
+    get_main_repl_command_hint,
+)
 from nexus3.cli.repl_formatting import (
     _format_autosave_error_line,
     _format_client_metadata_line,
@@ -1059,9 +1064,6 @@ async def run_repl(
             ),
             style="dim",
         )
-    console.print("Commands: /help | ESC to cancel", style="dim")
-    console.print("")
-
     # Shell environment detection and warnings (Windows only)
     if sys.platform == "win32":
         from nexus3.core.shell_detection import (
@@ -1098,6 +1100,12 @@ async def run_repl(
             console.print(
                 "[dim]Run 'chcp 65001' before NEXUS3 for proper character display.[/]"
             )
+
+    for line in get_git_bash_input_warning_lines(include_cancel_hint=True):
+        console.print(line, style="dim")
+
+    console.print(get_main_repl_command_hint(), style="dim")
+    console.print("")
 
     # Toolbar state - tracks ready/active and whether there were errors
     toolbar_has_errors = False
@@ -1161,7 +1169,7 @@ async def run_repl(
         'prompt': 'reverse',
         'input-field': 'reverse',
     })
-    prompt_session: PromptSession[str] = PromptSession(
+    prompt_session: PromptSession[str] = create_prompt_session(
         lexer=lexer,
         bottom_toolbar=get_toolbar,
         style=style,

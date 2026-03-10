@@ -821,11 +821,13 @@ NEXUS3 detects the Windows shell environment at startup and adapts its output ac
 |-------|-----------|--------------|---------|-------|
 | Windows Terminal | `WT_SESSION` env var | Full | Full | Best experience |
 | PowerShell 7+ | Via Windows Terminal | Full | Full | |
-| Git Bash | `MSYSTEM` env var | Full | Full | MSYS2 environment |
+| Git Bash | `MSYSTEM` env var | Full | Full | MSYS2 environment; standalone prompt input has ESC/paste limitations |
 | PowerShell 5.1 | `PSModulePath` set | Limited | Limited | Legacy mode |
 | CMD.exe | `COMSPEC` check | None | None | Plain text only |
 
 When running in CMD.exe or PowerShell 5.1, NEXUS3 displays a warning suggesting better alternatives. Users can suppress these by running in Windows Terminal.
+
+When running in standalone Git Bash, NEXUS3 now warns that live ESC cancellation is unavailable there and that multiline paste may submit early; use Windows Terminal/PowerShell for the best interactive behavior, or use prompt-toolkit's external-editor fallback (`C-X C-E` in the default Emacs key mode).
 
 For proper UTF-8 display, the console should use code page 65001. NEXUS3 warns if a different code page is detected. Run `chcp 65001` before starting NEXUS3 to fix character display issues.
 

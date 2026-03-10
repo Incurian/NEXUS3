@@ -539,8 +539,16 @@ class KeyMonitor:
 | Platform | Implementation | Details |
 |----------|----------------|---------|
 | Unix/Linux/macOS | `termios` + `tty` + `select` | Sets terminal to cbreak mode |
-| Windows | `msvcrt` | Uses `kbhit()` and `getwch()` |
+| Windows console / Windows Terminal | `msvcrt` | Uses `kbhit()` and `getwch()` |
+| Windows Git Bash standalone | Pause-only fallback | Does not advertise live ESC cancel; warns about multiline-paste limitations |
 | Fallback | Sleep loop | No keyboard detection, respects pause protocol |
+
+#### Git Bash Standalone Notes
+
+- Standalone Git Bash commonly runs under mintty rather than a Win32 console.
+- In that backend, NEXUS3 now fails closed instead of advertising unsupported live ESC cancellation.
+- The REPL warns that multiline paste may submit the first line early.
+- When those limitations are detected, prompt-toolkit's external-editor fallback is enabled (`C-X C-E` in the default Emacs key mode).
 
 #### Exports
 

@@ -10,9 +10,11 @@ from nexus3.core.shell_detection import (
     WindowsShell,
     check_console_codepage,
     detect_windows_shell,
+    has_git_bash_prompt_limitations,
     is_windows_wsl_bash_shim,
     resolve_git_bash_executable,
     supports_ansi,
+    supports_live_escape_cancel,
     supports_unicode,
 )
 
@@ -162,6 +164,38 @@ class TestSupportsUnicode:
 
         with patch.dict(os.environ, {"COMSPEC": "C:\\Windows\\System32\\cmd.exe"}, clear=True):
             assert supports_unicode() is False
+
+
+class TestPromptInputCapabilities:
+    """Test shell-derived prompt input capability helpers."""
+
+    @pytest.mark.windows_mock
+    def test_git_bash_has_prompt_limitations(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(sys, "platform", "win32")
+        detect_windows_shell.cache_clear()
+
+        with patch.dict(os.environ, {"MSYSTEM": "MINGW64"}, clear=True):
+            assert has_git_bash_prompt_limitations() is True
+            assert supports_live_escape_cancel() is False
+
+    @pytest.mark.windows_mock
+    def test_windows_terminal_overrides_git_bash_limitations(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", "win32")
+        detect_windows_shell.cache_clear()
+
+        env = {"WT_SESSION": "session-id", "MSYSTEM": "MINGW64"}
+        with patch.dict(os.environ, env, clear=True):
+            assert has_git_bash_prompt_limitations() is False
+            assert supports_live_escape_cancel() is True
+
+    def test_unix_supports_live_escape_cancel(self) -> None:
+        if sys.platform == "win32":
+            pytest.skip("Test only runs on Unix")
+        assert has_git_bash_prompt_limitations() is False
+        assert supports_live_escape_cancel() is True
 
 
 class TestCheckConsoleCodepage:

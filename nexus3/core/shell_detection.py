@@ -150,6 +150,24 @@ def resolve_git_bash_executable(path_value: str | None = None) -> str | None:
     return None
 
 
+def has_git_bash_prompt_limitations() -> bool:
+    """Return True when Windows Git Bash standalone prompt input is limited.
+
+    In practice, Git Bash standalone usually runs under mintty, where prompt input
+    semantics differ from the Win32 console path used by `msvcrt`.
+    """
+    if sys.platform != "win32":
+        return False
+    return detect_windows_shell() == WindowsShell.GIT_BASH
+
+
+def supports_live_escape_cancel() -> bool:
+    """Return True when the current prompt backend can support live ESC cancel."""
+    if sys.platform != "win32":
+        return True
+    return not has_git_bash_prompt_limitations()
+
+
 def supports_ansi() -> bool:
     """Check if current shell supports ANSI escape sequences.
 

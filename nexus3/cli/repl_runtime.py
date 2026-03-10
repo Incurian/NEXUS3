@@ -10,6 +10,10 @@ from prompt_toolkit.lexers import SimpleLexer
 from prompt_toolkit.styles import Style
 
 from nexus3.cli.connect_lobby import ConnectAction, ConnectResult, show_connect_lobby
+from nexus3.cli.prompt_support import (
+    create_prompt_session,
+    get_git_bash_input_warning_lines,
+)
 from nexus3.cli.repl_formatting import (
     _format_client_metadata_line,
     _format_connected_tokens_line,
@@ -110,7 +114,7 @@ async def run_repl_client(url: str, agent_id: str, api_key: str | None = None) -
     # Simple prompt session with styled input (no bottom toolbar for simplicity)
     lexer = SimpleLexer("class:input-field")
     style = Style.from_dict({"prompt": "reverse", "input-field": "reverse"})
-    prompt_session: PromptSession[str] = PromptSession(
+    prompt_session: PromptSession[str] = create_prompt_session(
         lexer=lexer,
         style=style,
     )
@@ -135,6 +139,9 @@ async def run_repl_client(url: str, agent_id: str, api_key: str | None = None) -
         except ClientError as e:
             console.print(_format_repl_error_line(safe_sink, f"Connection failed: {e}"))
             return
+
+        for line in get_git_bash_input_warning_lines(include_cancel_hint=False):
+            console.print(line, style="dim")
 
         console.print("Commands: /quit | /status")
         console.print("")

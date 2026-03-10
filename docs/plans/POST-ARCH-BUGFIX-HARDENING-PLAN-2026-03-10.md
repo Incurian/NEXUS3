@@ -33,6 +33,12 @@ This plan defines the remaining post-architecture bugfix/hardening work as a foc
 - Full redesign of the REPL input system if targeted Git Bash fixes are insufficient. The preferred path is a bounded hardening pass, not an unbounded TUI rewrite.
 - Any new file-editing tool families or prompt redesign unrelated to the bugs already identified.
 - Provider keep-alive evidence work; that remains a separate deferred operational item.
+- Follow-up audit of repeated agent misuse of `outline` parameterization/contract
+  after the current hardening stream. User-observed symptom: agents often fail
+  to invoke `outline` correctly in practice even after the Phase 2 contract
+  cleanup, so a later pass should inspect real transcripts/tool calls and decide
+  whether the remaining issue is prompt guidance, schema ergonomics, or agent
+  behavior.
 
 ### Excluded
 
@@ -238,6 +244,25 @@ For text-oriented edit tools, silent corruption of non-UTF8 files is worse than 
   - real multiline paste of a 3-line block in Git Bash, PowerShell, and Windows Terminal
 - archive new Windows evidence under `docs/validation/<run-id>/windows/`
 
+### Current Progress (2026-03-10)
+
+- Completed in the current branch:
+  - shell-derived prompt-capability helpers now distinguish Git Bash standalone
+    input limitations from supported Windows console backends.
+  - `KeyMonitor` now fails closed on Git Bash standalone by using the pause-only
+    fallback loop instead of pretending `msvcrt`-backed ESC monitoring is
+    available there.
+  - main REPL startup no longer advertises `ESC to cancel` on Git Bash
+    standalone; it now points users to `/cancel` and surfaces an explicit
+    warning about multiline-paste limitations.
+  - main REPL and client REPL now enable prompt-toolkit's external-editor
+    fallback when those Git Bash limitations are detected.
+  - focused unit coverage now exercises shell capability detection, the
+    Git-Bash pause-only fallback path, and the prompt-support helpers.
+- Remaining Phase 5 gate:
+  - update live Windows evidence to confirm the new fail-closed behavior and
+    capture the Git Bash / PowerShell / Windows Terminal matrix.
+
 ## Phase 6: Documentation And Validation Closeout
 
 ### Goals
@@ -314,8 +339,8 @@ Rationale:
 - [x] Phase 2: fix or re-spec `edit_file` batch atomicity.
 - [x] Phase 3: fix newline, encoding, and regex hardening items.
 - [x] Phase 3: add fidelity/non-UTF8 regressions.
-- [ ] Phase 5: fix or explicitly fail-closed/document Git Bash ESC behavior.
-- [ ] Phase 5: fix or explicitly fail-closed/document Git Bash multiline paste behavior.
+- [x] Phase 5: fix or explicitly fail-closed/document Git Bash ESC behavior.
+- [x] Phase 5: fix or explicitly fail-closed/document Git Bash multiline paste behavior.
 - [ ] Phase 5: add/update live Git Bash validation steps and collect evidence.
 - [ ] Phase 6: update all affected docs and status files.
 - [ ] Phase 6: run final focused validation and archive results.

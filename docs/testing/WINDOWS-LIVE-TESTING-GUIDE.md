@@ -158,7 +158,7 @@ else:
 "
 ```
 
-### 2.2 Windows msvcrt Detection
+### 2.2 Windows msvcrt Capability Smoke Check
 
 ```powershell
 # Windows PowerShell - Test msvcrt availability
@@ -171,6 +171,11 @@ print(f'getwch available: {hasattr(msvcrt, \"getwch\")}')
 
 # Expected: All True
 ```
+
+Important:
+- This only proves the Python `msvcrt` APIs are importable.
+- It does **not** prove standalone Git Bash can deliver live ESC keystrokes to NEXUS3.
+- Git Bash standalone must be validated with the dedicated live test below.
 
 ### 2.3 Live REPL ESC Test
 
@@ -789,7 +794,9 @@ echo $WT_SESSION  # Should be empty
 # Verify:
 # - Colors work
 # - Unicode box drawing works
-# - No shell warnings
+# - Git Bash standalone warning appears
+# - Command hint says "/cancel to cancel" instead of "ESC to cancel"
+# - Warning mentions multiline paste limitations and C-X C-E editor fallback
 ```
 
 ### 10.0.5 CMD.exe Standalone Test
