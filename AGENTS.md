@@ -332,6 +332,9 @@ Immediate tasks:
       `glob`/`list_directory` first.
     - `diff=true` now emits an explicit note when git diff context is
       unavailable instead of silently omitting change markers.
+    - directory diff marker matching now uses paths relative to the outlined
+      directory instead of basenames, so nested same-basename changes no longer
+      falsely mark immediate child files as `[CHANGED]`.
     - outline schema now rejects unknown user-facing parameters while still
       permitting `_parallel`.
   - transcript audit findings:
@@ -357,6 +360,8 @@ Immediate tasks:
     - `.venv/bin/ruff check nexus3/core/validation.py nexus3/skill/base.py nexus3/skill/builtin/outline.py tests/unit/test_skill_validation.py tests/unit/skill/test_outline.py`
     - `.venv/bin/pytest -q tests/unit/test_skill_validation.py tests/unit/skill/test_outline.py` (`167 passed`)
     - `.venv/bin/pytest -q tests/unit/skill/test_skill_validation.py` (`16 passed`)
+    - `.venv/bin/ruff check nexus3/skill/builtin/outline.py tests/unit/skill/test_outline.py`
+    - `.venv/bin/pytest -q tests/unit/skill/test_outline.py` (`157 passed`)
 - Completed live-test regression fix (2026-03-10, local pending commit):
   OpenAI tool-schema compatibility for `patch`:
   - Windows live testing surfaced provider rejection of the `patch` tool

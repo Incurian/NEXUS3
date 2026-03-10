@@ -18,6 +18,7 @@ from nexus3.skill.builtin.outline import (
     _detect_language,
     _extract_symbol,
     _format_outline,
+    _get_diff_files,
     _get_diff_ranges,
     _get_preview,
     _read_file_lines,
@@ -1207,6 +1208,45 @@ class TestGetDiffRanges:
         assert len(ranges) == 0
 
 
+class TestGetDiffFiles:
+    def test_not_git_repo(self, tmp_path):
+        result = _get_diff_files(tmp_path)
+        assert result is None
+
+    def test_returns_paths_relative_to_outlined_directory(self, tmp_path):
+        subprocess.run(["git", "init"], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+
+        demo = tmp_path / "demo"
+        nested = demo / "sub"
+        nested.mkdir(parents=True)
+        (demo / "x.py").write_text("def top():\n    pass\n")
+        (nested / "x.py").write_text("def nested():\n    pass\n")
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "init"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+
+        (nested / "x.py").write_text("def nested_changed():\n    pass\n")
+
+        changed = _get_diff_files(demo)
+
+        assert changed is not None
+        assert "sub/x.py" in changed
+        assert "x.py" not in changed
+
+
 # =============================================================================
 # Skill-Level Tests
 # =============================================================================
@@ -1536,6 +1576,43 @@ class TestOutlineSkill:
 
         assert result.success
         assert "diff markers unavailable" in result.output
+
+    @pytest.mark.asyncio
+    async def test_directory_diff_does_not_mark_nested_same_basename(
+        self,
+        skill,
+        tmp_path,
+    ):
+        subprocess.run(["git", "init"], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+
+        demo = tmp_path / "demo"
+        nested = demo / "sub"
+        nested.mkdir(parents=True)
+        (demo / "x.py").write_text("def top():\n    pass\n")
+        (nested / "x.py").write_text("def nested():\n    pass\n")
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "init"],
+            cwd=str(tmp_path),
+            capture_output=True,
+        )
+
+        (nested / "x.py").write_text("def nested_changed():\n    pass\n")
+
+        result = await skill.execute(path=str(demo), diff=True)
+
+        assert result.success
+        assert "## x.py (python) [CHANGED]" not in result.output
 
     @pytest.mark.asyncio
     async def test_directory_respects_allowed_paths(self, tmp_path, monkeypatch):

@@ -392,8 +392,26 @@ def _annotate_diff_markers(
 
 
 def _get_diff_files(dir_path: Path) -> set[str] | None:
-    """Get set of filenames with uncommitted changes in a directory."""
+    """Get changed file paths relative to the outlined directory."""
     try:
+        top_level = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=str(dir_path),
+            capture_output=True,
+            text=True,
+            timeout=5,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if top_level.returncode != 0:
+            return None
+        repo_root = Path(top_level.stdout.strip()).resolve()
+        resolved_dir = dir_path.resolve()
+        try:
+            dir_in_repo = resolved_dir.relative_to(repo_root)
+        except ValueError:
+            return None
+
         result = subprocess.run(
             ["git", "diff", "--name-only", "HEAD", "--", str(dir_path)],
             cwd=str(dir_path),
@@ -418,7 +436,10 @@ def _get_diff_files(dir_path: Path) -> set[str] | None:
         for line in (result.stdout + "\n" + result2.stdout).splitlines():
             line = line.strip()
             if line:
-                files.add(Path(line).name)
+                rel_path = Path(line)
+                if dir_in_repo.parts and rel_path.is_relative_to(dir_in_repo):
+                    rel_path = rel_path.relative_to(dir_in_repo)
+                files.add(rel_path.as_posix())
         return files
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -1789,7 +1810,8 @@ class OutlineSkill(FileSkill):
 
             # File header
             diff_marker = ""
-            if diff and dir_diff_files is not None and fp.name in dir_diff_files:
+            relative_file = fp.relative_to(dir_path).as_posix()
+            if diff and dir_diff_files is not None and relative_file in dir_diff_files:
                 diff_marker = " [CHANGED]"
             file_header = f"## {fp.name} ({parser_key}){diff_marker}"
             parts.append(file_header)

@@ -144,6 +144,7 @@ For text-oriented edit tools, silent corruption of non-UTF8 files is worse than 
     - directory mode keeps filesystem traversal non-recursive but now respects `depth` for nested symbols within each file.
     - `recursive=true` now fails closed with explicit guidance instead of being silently ignored.
     - `diff=true` now emits an explicit note when git diff context is unavailable.
+    - directory diff marker matching now uses paths relative to the outlined directory, preventing nested same-basename changes from leaking onto immediate files.
   - `patch` now accepts `path=` as the preferred file argument while preserving
     `target=` as a compatibility alias, and mismatched `path` + `target`
     inputs fail closed.
