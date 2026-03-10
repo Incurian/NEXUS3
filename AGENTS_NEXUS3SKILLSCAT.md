@@ -19,7 +19,7 @@ closed instead of being silently dropped.
 | `edit_lines` | `path`, `start_line`, `end_line`?, `new_content`, `edits`? | Replace UTF-8 lines by number; `edits` batches are atomic, use original line numbers, and reject overlaps |
 | `append_file` | `path`, `content`, `newline`? | Append UTF-8 text to a file (exact newline bytes; read file first) |
 | `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | UTF-8 pattern-based find/replace (`count >= 0`; read file first) |
-| `patch` | `path` (preferred) or `target`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy modes; hunk-only single-file diffs auto-normalized when target is known) |
+| `patch` | `path`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy modes; `target` remains a compatibility alias, and hunk-only single-file diffs auto-normalize when the target is known) |
 | `copy_file` | `source`, `destination`, `overwrite`? | Copy a file to a new location |
 | `mkdir` | `path` | Create directory (and parents) |
 | `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory |

@@ -3633,3 +3633,30 @@ Execution update (2026-03-10, file-edit contract harmonization phase 1):
 - Next gate:
   - Phase 2: keep `patch.path` canonical and continue de-emphasizing
     `patch.target` without breaking compatibility.
+
+Execution update (2026-03-10, file-edit contract harmonization phase 2):
+- Completed Phase 2 from
+  `docs/plans/FILE-EDIT-TOOL-CONTRACT-HARMONIZATION-PLAN-2026-03-10.md`:
+  continue canonicalizing `patch.path` while preserving `target` compatibility.
+- `nexus3/skill/builtin/patch.py` now treats `path=` as the public canonical
+  target argument and emits a compatibility reminder in successful output when
+  callers still use legacy `target=`.
+- `target=` remains accepted as a non-breaking compatibility alias; no runtime
+  behavior change to patch application semantics beyond the reminder.
+- Synced canonical patch contract wording in:
+  - `nexus3/defaults/NEXUS-DEFAULT.md`
+  - `AGENTS_NEXUS3SKILLSCAT.md`
+  - `nexus3/skill/README.md`
+  - `CLAUDE.md`
+  - `README.md`
+- Added focused regressions in `tests/unit/skill/test_patch.py` for:
+  - canonical `path=` success without alias reminder
+  - legacy `target=` success with compatibility reminder
+- Focused validation passed:
+  - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py`
+  - `.venv/bin/pytest -q tests/unit/skill/test_patch.py` (`38 passed`)
+  - `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py -k patch` (`10 passed`)
+  - `git diff --check`
+- Next gate:
+  - Phase 3: centralize empty-placeholder normalization for file-edit tools
+    instead of maintaining one-off per-tool branches.

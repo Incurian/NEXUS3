@@ -72,7 +72,7 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 | `edit_lines` | `path`, `start_line`, `end_line`?, `new_content`, `edits`? | UTF-8 line-range replacement with preserved file line endings; batch mode is atomic and uses original line numbers | Replacing a known block/function by line range |
 | `append_file` | `path`, `content`, `newline`? | Append UTF-8 text at end of file with exact newline bytes | Add log/changelog entries or trailing sections |
 | `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | UTF-8 regex replacement with preserved file line endings | Broad renames or format rewrites across a file |
-| `patch` | `path` (preferred) or `target`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy) | Complex multi-line edits, diff-driven refactors |
+| `patch` | `path`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy) | Complex multi-line edits, diff-driven refactors |
 | `copy_file` | `source`, `destination`, `overwrite`? | Copy a file | Backup before risky edits, duplicate templates |
 | `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory | File moves/renames |
 | `mkdir` | `path` | Create directory (and parents) | Prepare output directories |
@@ -131,7 +131,7 @@ Quick selection flow:
 
 **`patch` (unified diff application)**
 - Preferred for complex multi-line changes and refactors.
-- Prefer `path=` for consistency with other file-editing tools; `target=` remains a compatibility alias.
+- Use `path=` for the target file. `target=` still works as a compatibility alias, but successful calls may remind you to switch.
 - When `path`/`target` is provided, single-file hunk-only diffs (`@@ ... @@` without `---`/`+++`) are normalized automatically.
 - Use `dry_run=true` before applying risky patches.
 - Use `mode="fuzzy"` only when strict matching fails due to code drift.

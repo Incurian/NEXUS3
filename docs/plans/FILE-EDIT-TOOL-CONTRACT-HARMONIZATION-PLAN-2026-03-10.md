@@ -204,7 +204,7 @@ Work:
 - [x] Record approved keep/note/harmonize decisions.
 - [x] Add plan index entry.
 - [x] Phase 1: reject unknown args consistently across the file-edit family.
-- [ ] Phase 2: complete canonical `path` cleanup for `patch` docs/semantics.
+- [x] Phase 2: complete canonical `path` cleanup for `patch` docs/semantics.
 - [ ] Phase 3: add shared placeholder-normalization helper and remove duplicate
       one-off branches where appropriate.
 - [ ] Phase 4: sync prompts/docs/status files.

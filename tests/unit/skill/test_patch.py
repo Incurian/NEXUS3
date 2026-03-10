@@ -107,8 +107,8 @@ class TestInlineDiff(TestPatchSkill):
         assert "line1\nline3\n" == content
 
     @pytest.mark.asyncio
-    async def test_patch_inline_diff_accepts_path_alias(self, skill, tmp_path):
-        """patch accepts path= for consistency with other file tools."""
+    async def test_patch_inline_diff_prefers_path_argument(self, skill, tmp_path):
+        """patch accepts the canonical path= argument without alias messaging."""
         test_file = tmp_path / "alias.py"
         test_file.write_text("old content\n")
 
@@ -121,6 +121,25 @@ class TestInlineDiff(TestPatchSkill):
         result = await skill.execute(path=str(test_file), diff=diff)
 
         assert result.success
+        assert "legacy 'target='" not in result.output
+        assert test_file.read_text() == "new content\n"
+
+    @pytest.mark.asyncio
+    async def test_patch_target_alias_reports_prefer_path_note(self, skill, tmp_path):
+        """Successful target= calls should nudge callers toward path=."""
+        test_file = tmp_path / "target-alias.py"
+        test_file.write_text("old content\n")
+
+        diff = """--- a/target-alias.py
++++ b/target-alias.py
+@@ -1 +1 @@
+-old content
++new content
+"""
+        result = await skill.execute(target=str(test_file), diff=diff)
+
+        assert result.success
+        assert "prefer 'path='" in result.output
         assert test_file.read_text() == "new content\n"
 
     @pytest.mark.asyncio

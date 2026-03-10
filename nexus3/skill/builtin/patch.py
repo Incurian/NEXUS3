@@ -64,6 +64,7 @@ class PatchSkill(FileSkill):
         return (
             "Apply a unified diff to a file (strict/tolerant/fuzzy modes). "
             "Use for complex multi-line changes and diff-driven refactors. "
+            "Prefer path= for the target file; target= remains a compatibility alias. "
             "Use dry_run=True to validate before applying and mode='fuzzy' for drifted code. "
             "Diff lines must be prefixed: ' ' context, '-' removal, '+' addition. "
             "When path/target is provided, single-file hunk-only diffs "
@@ -198,7 +199,10 @@ class PatchSkill(FileSkill):
 
         # Validate target path
         try:
-            target_input, target_path = self._resolve_target_argument(path=path, target=target)
+            target_input, target_path, target_alias_used = self._resolve_target_argument(
+                path=path,
+                target=target,
+            )
         except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
 
@@ -263,7 +267,11 @@ class PatchSkill(FileSkill):
                 f"Diff contains {len(patch_files)} files, "
                 f"applying only hunks for {target_basename}\n"
             )
-        result_prefix = normalization_note + multi_file_warning
+        result_prefix = (
+            self._format_target_alias_note(target_alias_used)
+            + normalization_note
+            + multi_file_warning
+        )
 
         if matching_error is not None:
             return ToolResult(error=matching_error)
@@ -556,7 +564,7 @@ class PatchSkill(FileSkill):
 
         return ToolResult(output=output)
 
-    def _resolve_target_argument(self, *, path: str, target: str) -> tuple[str, Path]:
+    def _resolve_target_argument(self, *, path: str, target: str) -> tuple[str, Path, bool]:
         """Resolve preferred `path` / legacy `target` arguments to one file path."""
         if path and target:
             path_resolved = self._validate_path(path)
@@ -565,10 +573,16 @@ class PatchSkill(FileSkill):
                 raise ValueError(
                     "Cannot provide both 'path' and 'target' with different values."
                 )
-            return path, path_resolved
+            return path, path_resolved, False
 
         selected = path or target
-        return selected, self._validate_path(selected)
+        return selected, self._validate_path(selected), bool(target and not path)
+
+    def _format_target_alias_note(self, target_alias_used: bool) -> str:
+        """Return a compatibility reminder when callers still use target=."""
+        if not target_alias_used:
+            return ""
+        return "Compatibility note: prefer 'path=' over legacy 'target=' for patch.\n"
 
     def _normalize_hunk_only_diff(
         self,
