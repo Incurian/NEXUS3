@@ -168,6 +168,13 @@ class PatchSkill(FileSkill):
         Returns:
             ToolResult with success message or error
         """
+        # Some tool-callers send empty-string placeholders for omitted alias/input
+        # fields. Normalize those exact shapes before validation.
+        if diff == "":
+            diff = None
+        if diff_file == "":
+            diff_file = None
+
         # Keep explicit legacy rejection for callers using old migration flags.
         if fidelity_mode == "legacy":
             return ToolResult(

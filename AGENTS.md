@@ -306,6 +306,17 @@ Immediate tasks:
   - focused validation passed:
     - `.venv/bin/ruff check nexus3/skill/builtin/edit_file.py tests/unit/skill/test_edit_file.py`
     - `.venv/bin/pytest -q tests/unit/skill/test_edit_file.py` (`21 passed`)
+- Completed live-test regression fix (2026-03-10, local pending commit):
+  `patch` empty-placeholder normalization:
+  - Windows live testing surfaced `patch` failures when a caller sent inline
+    `diff=...` alongside placeholder `diff_file=""` (and sometimes `target=""`).
+  - updated `nexus3/skill/builtin/patch.py` to treat empty-string `diff` /
+    `diff_file` placeholders as omitted before mutual-exclusion validation.
+  - added focused regression coverage in `tests/unit/skill/test_patch.py` for
+    the `path=...`, `target=""`, `diff=...`, `diff_file=""` shape.
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py`
+    - `.venv/bin/pytest -q tests/unit/skill/test_patch.py` (`34 passed`)
   - next gate remains Windows live validation to confirm the documented
     fail-closed behavior on real hosts.
 - Completed follow-on hardening slice (2026-03-10): Plan Phase 3

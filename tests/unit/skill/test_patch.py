@@ -124,6 +124,28 @@ class TestInlineDiff(TestPatchSkill):
         assert test_file.read_text() == "new content\n"
 
     @pytest.mark.asyncio
+    async def test_patch_ignores_empty_placeholder_alias_and_diff_file(self, skill, tmp_path):
+        """Empty-string placeholders should be treated as omitted."""
+        test_file = tmp_path / "placeholder.py"
+        test_file.write_text("old content\n")
+
+        diff = """--- a/placeholder.py
++++ b/placeholder.py
+@@ -1 +1 @@
+-old content
++new content
+"""
+        result = await skill.execute(
+            path=str(test_file),
+            target="",
+            diff=diff,
+            diff_file="",
+        )
+
+        assert result.success
+        assert test_file.read_text() == "new content\n"
+
+    @pytest.mark.asyncio
     async def test_patch_multiple_hunks(self, skill, tmp_path):
         """Test applying multiple hunks in one diff.
 
