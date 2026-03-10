@@ -254,11 +254,32 @@ class TestParameterValidation(TestPatchSkill):
         """Test error when target file doesn't exist."""
         result = await skill.execute(
             target=str(tmp_path / "nonexistent.py"),
-            diff="some diff",
+            diff="""--- a/nonexistent.py
++++ b/nonexistent.py
+@@ -1 +1 @@
+-old
++new
+""",
         )
 
         assert not result.success
         assert "not found" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_patch_new_file_diff_creates_missing_target(self, skill, tmp_path):
+        """New-file diffs can create a missing target file."""
+        target_file = tmp_path / "created.py"
+
+        diff = """--- /dev/null
++++ b/created.py
+@@ -0,0 +1,2 @@
++def created():
++    return 1
+"""
+        result = await skill.execute(target=str(target_file), diff=diff)
+
+        assert result.success
+        assert target_file.read_text() == "def created():\n    return 1\n"
 
     @pytest.mark.asyncio
     async def test_patch_empty_target(self, skill):

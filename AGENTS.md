@@ -249,6 +249,28 @@ Immediate tasks:
     2. Phase 3: newline / encoding / regex hardening.
     3. Phase 5: Git Bash ESC + multiline paste.
     4. Phase 6: docs and live validation closeout.
+- Completed follow-on hardening slice (2026-03-09): Plan Phase 2A
+  patch/edit contract corrections:
+  - `nexus3/skill/builtin/patch.py`
+    - valid new-file diffs can now create a missing target path when the diff
+      marks the file as new, instead of failing early on target non-existence.
+  - `nexus3/skill/builtin/edit_file.py`
+    - batch edits now fail closed if an earlier in-memory replacement causes a
+      later edit target to disappear or become ambiguous, preventing silent
+      “success” with a later no-op.
+  - focused regression coverage added/updated in:
+    - `tests/unit/skill/test_patch.py`
+    - `tests/unit/skill/test_edit_file.py`
+    - `tests/integration/test_file_editing_skills.py`
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/skill/builtin/patch.py nexus3/skill/builtin/edit_file.py tests/unit/skill/test_patch.py tests/unit/skill/test_edit_file.py tests/integration/test_file_editing_skills.py`
+    - `.venv/bin/pytest -q tests/unit/skill/test_patch.py tests/unit/skill/test_edit_file.py`
+    - `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py -k 'patch or batch_edit'`
+  - remaining Phase 2 scope:
+    - `read_file` raw-vs-numbered output contract cleanup
+    - `outline` unsupported-file / symbol-mode fallback cleanup
+    - any remaining `patch` interface ergonomics (`target` vs `path`) and
+      follow-on docs alignment
 - Completed follow-on hardening slice (2026-03-09): Plan Phase 4
   Windows `shell_UNSAFE` Git-Bash shell resolution:
   - `nexus3/core/shell_detection.py`

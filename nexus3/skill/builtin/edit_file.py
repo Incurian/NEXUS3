@@ -308,6 +308,33 @@ class EditFileSkill(FileSkill):
         # Phase 2: Apply all edits sequentially to in-memory content
         new_content = content
         for info in edit_info:
+            current_count = new_content.count(info["old_string"])
+            if current_count == 0:
+                truncated = info["old_string"][:50]
+                if len(info["old_string"]) > 50:
+                    truncated += "..."
+                return ToolResult(
+                    error=(
+                        "Batch edit failed (no changes made):\n"
+                        f"  Edit {info['index']}: \"{truncated}\" no longer matches "
+                        "the file after earlier batch edits. Split the call or "
+                        "update the later edit to match the post-edit content."
+                    )
+                )
+
+            if not info["replace_all"] and current_count > 1:
+                truncated = info["old_string"][:50]
+                if len(info["old_string"]) > 50:
+                    truncated += "..."
+                return ToolResult(
+                    error=(
+                        "Batch edit failed (no changes made):\n"
+                        f"  Edit {info['index']}: \"{truncated}\" appears "
+                        f"{current_count} times after earlier batch edits. "
+                        "Use replace_all=true or provide more context."
+                    )
+                )
+
             if info["replace_all"]:
                 new_content = new_content.replace(info["old_string"], info["new_string"])
             else:

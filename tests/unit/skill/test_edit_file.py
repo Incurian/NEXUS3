@@ -197,6 +197,25 @@ class TestBatchEdit(TestEditFileSkill):
         assert "C = 30" in content
 
     @pytest.mark.asyncio
+    async def test_batch_fails_when_earlier_edit_consumes_later_target(self, skill, tmp_path):
+        """Later edits must still match after earlier in-memory replacements."""
+        test_file = tmp_path / "consumed_target.py"
+        original_content = "value = 1\n"
+        test_file.write_text(original_content)
+
+        result = await skill.execute(
+            path=str(test_file),
+            edits=[
+                {"old_string": "value = 1", "new_string": "value = 2"},
+                {"old_string": "value = 1", "new_string": "value = 3"},
+            ],
+        )
+
+        assert not result.success
+        assert "no longer matches the file after earlier batch edits" in result.error
+        assert test_file.read_text() == original_content
+
+    @pytest.mark.asyncio
     async def test_batch_mutual_exclusion(self, skill, test_file):
         """Test that edits array cannot be mixed with single-edit params."""
         result = await skill.execute(

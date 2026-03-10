@@ -293,6 +293,29 @@ def bar():
         # File should be unchanged
         assert test_file.read_text() == original_content
 
+    @pytest.mark.asyncio
+    async def test_batch_edit_shadowed_later_edit_rolls_back(
+        self, temp_dir: Path, services: ServiceContainer
+    ) -> None:
+        """Verify later edits cannot silently no-op after earlier replacements."""
+        test_file = temp_dir / "shadowed.py"
+        original_content = "value = 1\n"
+        test_file.write_text(original_content)
+
+        skill = edit_file_factory(services)
+
+        result = await skill.execute(
+            path=str(test_file),
+            edits=[
+                {"old_string": "value = 1", "new_string": "value = 2"},
+                {"old_string": "value = 1", "new_string": "value = 3"},
+            ],
+        )
+
+        assert not result.success
+        assert "no longer matches the file after earlier batch edits" in result.error
+        assert test_file.read_text() == original_content
+
 
 class TestPatchInlineDiffIntegration:
     """P5.3: Tests for patch skill with inline diff content."""
@@ -406,6 +429,26 @@ line 2
 
         # File should be UNCHANGED
         assert test_file.read_text() == original_content
+
+    @pytest.mark.asyncio
+    async def test_patch_new_file_diff_creates_target(
+        self, temp_dir: Path, services: ServiceContainer
+    ) -> None:
+        """A new-file diff should create the missing target path."""
+        target_file = temp_dir / "created.py"
+        skill = patch_factory(services)
+
+        diff_content = """--- /dev/null
++++ b/created.py
+@@ -0,0 +1,2 @@
++def created():
++    return 1
+"""
+
+        result = await skill.execute(target=str(target_file), diff=diff_content)
+
+        assert result.success, f"Expected success, got error: {result.error}"
+        assert target_file.read_text() == "def created():\n    return 1\n"
 
 
 class TestPatchFromDiffFile:

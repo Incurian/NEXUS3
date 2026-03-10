@@ -206,10 +206,6 @@ class PatchSkill(FileSkill):
         else:
             diff_content = diff  # type: ignore[assignment]
 
-        # Verify target file exists
-        if not target_path.exists():
-            return ToolResult(error=f"Target file not found: {target}")
-
         # Parse the diff with byte-strict AST-v2 only.
         patch_files: Sequence[PatchFileV2]
         try:
@@ -242,12 +238,21 @@ class PatchSkill(FileSkill):
                 f"Files in diff: {file_list}"
             )
 
-        # Read target file content (binary to detect line endings)
-        try:
-            raw_bytes = await asyncio.to_thread(target_path.read_bytes)
-            target_content = raw_bytes.decode("utf-8", errors="surrogateescape")
-        except OSError as e:
-            return ToolResult(error=f"Error reading target file: {e}")
+        target_exists = await asyncio.to_thread(target_path.exists)
+
+        # Read target file content (binary to detect line endings). New-file diffs
+        # operate against an empty initial byte buffer when the target does not yet exist.
+        if target_exists:
+            try:
+                raw_bytes = await asyncio.to_thread(target_path.read_bytes)
+                target_content = raw_bytes.decode("utf-8", errors="surrogateescape")
+            except OSError as e:
+                return ToolResult(error=f"Error reading target file: {e}")
+        elif matching_patch.is_new_file and not matching_patch.is_deleted:
+            raw_bytes = b""
+            target_content = ""
+        else:
+            return ToolResult(error=f"Target file not found: {target}")
 
         # Convert mode string to ApplyMode enum early (needed for validation decision)
         try:

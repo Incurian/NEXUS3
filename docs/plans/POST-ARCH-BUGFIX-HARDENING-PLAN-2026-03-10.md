@@ -121,6 +121,16 @@ For text-oriented edit tools, silent corruption of non-UTF8 files is worse than 
 - `tests/integration/test_file_editing_skills.py`
 - add focused regressions for `read_file` raw/numbered behavior, patch aliasing, unsupported outline fallback, and atomic batch edit handling
 
+### Current Progress (2026-03-09)
+
+- Completed in the current branch:
+  - `patch` now accepts valid new-file diffs when the target path does not yet exist.
+  - `edit_file` batch mode now fails closed if earlier edits invalidate later edit targets in-memory.
+- Remaining Phase 2 scope:
+  - `read_file` raw-vs-numbered output contract cleanup
+  - `outline` unsupported-file and `symbol`-mode fallback cleanup
+  - any remaining `patch` interface ergonomics (`target` vs `path`) and Phase 2 doc alignment
+
 ## Phase 3: Text Fidelity, Newlines, And Regex Hardening
 
 ### Goals
