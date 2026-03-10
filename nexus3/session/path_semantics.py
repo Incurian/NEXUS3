@@ -65,9 +65,9 @@ TOOL_PATH_SEMANTICS: dict[str, ToolPathSemantics] = {
         display_key="path"
     ),
     "patch": ToolPathSemantics(
-        read_keys=("target", "diff_file"),
-        write_keys=("target",),
-        display_key="target"
+        read_keys=("path", "target", "diff_file"),
+        write_keys=("path", "target"),
+        display_key="path"
     ),
 
     # Multi-path tools (source=read, destination=write)
@@ -114,6 +114,25 @@ def get_semantics(tool_name: str) -> ToolPathSemantics:
     )
 
 
+def _extract_paths_for_keys(args: dict[str, Any], keys: tuple[str, ...]) -> list[Path]:
+    """Extract unique raw path arguments in key order."""
+    paths: list[Path] = []
+    seen: set[str] = set()
+
+    for key in keys:
+        raw_value = args.get(key)
+        if not raw_value:
+            continue
+        if not isinstance(raw_value, str):
+            continue
+        if raw_value in seen:
+            continue
+        seen.add(raw_value)
+        paths.append(Path(raw_value))
+
+    return paths
+
+
 def extract_write_paths(tool_name: str, args: dict[str, Any]) -> list[Path]:
     """Extract paths that will be written to.
 
@@ -128,13 +147,16 @@ def extract_write_paths(tool_name: str, args: dict[str, Any]) -> list[Path]:
         List of Path objects for write targets. May be empty for read-only tools.
     """
     semantics = get_semantics(tool_name)
-    paths: list[Path] = []
+    return _extract_paths_for_keys(args, semantics.write_keys)
 
-    for key in semantics.write_keys:
-        if key in args and args[key]:
-            paths.append(Path(args[key]))
 
-    return paths
+def extract_tool_paths(tool_name: str, args: dict[str, Any]) -> list[Path]:
+    """Extract all unique read/write paths for permission checks."""
+    semantics = get_semantics(tool_name)
+    ordered_keys = semantics.read_keys + tuple(
+        key for key in semantics.write_keys if key not in semantics.read_keys
+    )
+    return _extract_paths_for_keys(args, ordered_keys)
 
 
 def extract_display_path(tool_name: str, args: dict[str, Any]) -> Path | None:
@@ -155,5 +177,9 @@ def extract_display_path(tool_name: str, args: dict[str, Any]) -> Path | None:
 
     if key and key in args and args[key]:
         return Path(args[key])
+
+    write_paths = extract_write_paths(tool_name, args)
+    if write_paths:
+        return write_paths[0]
 
     return None

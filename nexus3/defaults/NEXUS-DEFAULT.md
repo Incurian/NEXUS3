@@ -72,7 +72,7 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 | `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | Replace line ranges by 1-indexed line numbers | Replacing a known block/function by line range |
 | `append_file` | `path`, `content`, `newline`? | Append content at end of file | Add log/changelog entries or trailing sections |
 | `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | Pattern-based regex replacement | Broad renames or format rewrites across a file |
-| `patch` | `target`, `diff`?, `diff_file`?, `mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy) | Complex multi-line edits, diff-driven refactors |
+| `patch` | `path` (preferred) or `target`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy) | Complex multi-line edits, diff-driven refactors |
 | `copy_file` | `source`, `destination`, `overwrite`? | Copy a file | Backup before risky edits, duplicate templates |
 | `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory | File moves/renames |
 | `mkdir` | `path` | Create directory (and parents) | Prepare output directories |
@@ -118,6 +118,7 @@ Quick selection flow:
 
 **`patch` (unified diff application)**
 - Preferred for complex multi-line changes and refactors.
+- Prefer `path=` for consistency with other file-editing tools; `target=` remains a compatibility alias.
 - Use `dry_run=true` before applying risky patches.
 - Use `mode="fuzzy"` only when strict matching fails due to code drift.
 - Diff lines must be prefixed (` ` context, `-` removal, `+` addition).
@@ -294,8 +295,8 @@ regex_replace(
 
 Validate and apply a patch safely:
 ```
-patch(target="src/utils.py", diff=patch_text, dry_run=True)
-patch(target="src/utils.py", diff=patch_text, mode="strict")
+patch(path="src/utils.py", diff=patch_text, dry_run=True)
+patch(path="src/utils.py", diff=patch_text, mode="strict")
 ```
 
 ---

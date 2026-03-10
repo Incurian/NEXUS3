@@ -226,12 +226,11 @@ Current milestone:
     to track the open post-arch bugfix backlog (file-editing safety/contract
     fixes, Git Bash shell bug, Git Bash ESC, Git Bash multiline paste, docs
     closeout).
-  - active execution gate: Phase 2 from that plan
+  - active execution gate: Phase 3 from that plan
+    (newline / encoding / regex hardening across file-editing tools).
+  - most recent completed gate: Phase 2
     (`read_file` / `outline` / `patch` contract cleanup and `edit_file`
-    batch-atomicity alignment).
-  - most recent completed gate: Phase 4
-    (`shell_UNSAFE` Windows Git-Bash WSL misrouting), with focused validation
-    now green.
+    batch-atomicity alignment), with focused validation now green.
 - `Post-M4` validation campaign closeout complete: external closeout slice
   `post-m4-20260306-live1e` archived real-host Windows evidence and
   multi-emulator carriage-return verification; deterministic closeout gate
@@ -244,11 +243,43 @@ Immediate tasks:
   - canonical next-work plan:
     [POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md)
   - preferred execution order from the new plan:
-    1. Phase 2: align `read_file` / `outline` / `patch` contracts and
-       `edit_file` batch atomicity.
-    2. Phase 3: newline / encoding / regex hardening.
-    3. Phase 5: Git Bash ESC + multiline paste.
-    4. Phase 6: docs and live validation closeout.
+    1. Phase 3: newline / encoding / regex hardening.
+    2. Phase 5: Git Bash ESC + multiline paste.
+    3. Phase 6: docs and live validation closeout.
+- Completed follow-on hardening slice (2026-03-10): Plan Phase 2C
+  patch path-alias + path-semantics closeout:
+  - `nexus3/skill/builtin/patch.py`
+    - `patch` now accepts `path=` as the preferred file argument while
+      preserving `target=` as a compatibility alias.
+    - mismatched `path` + `target` inputs now fail closed.
+  - `nexus3/session/path_semantics.py`
+    - patch semantics now recognize both `path` and `target`, and display-path
+      extraction falls back cleanly across aliases.
+    - added shared tool-path extraction so permission checks can derive all
+      relevant read/write paths from tool semantics.
+  - `nexus3/session/enforcer.py`
+    - permission checks now use semantics-driven path extraction instead of the
+      old hard-coded `path`/`source`/`destination` list, which closes the
+      existing `patch(target=...)` path-gating hole as well.
+    - aligned `PATH_TOOLS` with current file-editing coverage (`edit_lines`,
+      `patch`).
+  - focused regression coverage added/updated in:
+    - `tests/unit/skill/test_patch.py`
+    - `tests/security/test_multipath_confirmation.py`
+    - `tests/unit/session/test_enforcer.py`
+    - `tests/integration/test_file_editing_skills.py`
+  - doc sync updated:
+    - `nexus3/defaults/NEXUS-DEFAULT.md`
+    - `AGENTS_NEXUS3SKILLSCAT.md`
+    - `nexus3/skill/README.md`
+    - `nexus3/session/README.md`
+    - `CLAUDE.md`
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/skill/builtin/patch.py nexus3/session/path_semantics.py nexus3/session/enforcer.py tests/unit/skill/test_patch.py tests/security/test_multipath_confirmation.py tests/unit/session/test_enforcer.py tests/integration/test_file_editing_skills.py`
+    - `.venv/bin/pytest -q tests/unit/skill/test_patch.py tests/security/test_multipath_confirmation.py tests/unit/session/test_enforcer.py`
+    - `.venv/bin/pytest -q tests/integration/test_file_editing_skills.py -k patch`
+  - Phase 2 is now complete; next gate is Phase 3 newline / encoding / regex
+    hardening.
 - Completed follow-on hardening slice (2026-03-10): Plan Phase 2B
   read/outline contract corrections:
   - `nexus3/skill/builtin/read_file.py`
@@ -272,11 +303,6 @@ Immediate tasks:
     - `git diff --check`
     - `.venv/bin/ruff check nexus3/skill/builtin/read_file.py nexus3/skill/builtin/outline.py tests/unit/test_skill_enhancements.py tests/unit/skill/test_outline.py tests/security/test_p2_file_size_limits.py`
     - `.venv/bin/pytest -q tests/unit/test_skill_enhancements.py tests/unit/skill/test_outline.py tests/security/test_p2_file_size_limits.py`
-  - remaining Phase 2 scope:
-    - decide whether `patch` should accept `path` as a compatibility alias for
-      `target`
-    - finish any Phase 2 prompt/doc alignment around numbered views and patch
-      interface guidance
 - Completed follow-on hardening slice (2026-03-09): Plan Phase 2A
   patch/edit contract corrections:
   - `nexus3/skill/builtin/patch.py`

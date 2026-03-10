@@ -830,6 +830,56 @@ class TestPathAuthorizationKernelEnforcement:
         )
 
 
+class TestPatchPathExtractionAndChecks:
+    """Tests for patch path extraction through the enforcer."""
+
+    def _make_permissions(self) -> AgentPermissions:
+        return AgentPermissions(
+            base_preset="sandboxed",
+            effective_policy=PermissionPolicy(
+                level=PermissionLevel.SANDBOXED,
+                allowed_paths=[Path("/sandbox")],
+                blocked_paths=[],
+                cwd=Path("/sandbox"),
+            ),
+            tool_permissions={"patch": ToolPermission(enabled=True)},
+        )
+
+    def test_extract_target_paths_includes_patch_alias_and_diff_file(self) -> None:
+        enforcer = PermissionEnforcer()
+        tool_call = ToolCall(
+            id="call-1",
+            name="patch",
+            arguments={
+                "path": "/sandbox/file.py",
+                "diff_file": "/sandbox/changes.diff",
+            },
+        )
+
+        assert enforcer.extract_target_paths(tool_call) == [
+            Path("/sandbox/file.py"),
+            Path("/sandbox/changes.diff"),
+        ]
+
+    def test_check_all_rejects_patch_target_outside_sandbox(self) -> None:
+        enforcer = PermissionEnforcer()
+        permissions = self._make_permissions()
+        tool_call = ToolCall(
+            id="call-1",
+            name="patch",
+            arguments={
+                "target": "/outside/file.py",
+                "diff": "--- a/file.py\n+++ b/file.py\n",
+            },
+        )
+
+        result = enforcer.check_all(tool_call, permissions)
+
+        assert result is not None
+        assert result.error is not None
+        assert "Tool 'patch' cannot access path '/outside/file.py'" in result.error
+
+
 class TestCheckAllOrderingWithEnabledChecks:
     """Tests for check_all ordering between enabled and action checks."""
 

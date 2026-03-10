@@ -432,7 +432,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | Replace lines by number (work bottom-to-top for multiple edits) |
 | `append_file` | `path`, `content`, `newline`? | Append content to a file (read file first!) |
 | `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | Pattern-based find/replace (read file first!) |
-| `patch` | `target`, `diff`?, `diff_file`?, `mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy modes) |
+| `patch` | `path` (preferred) or `target`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy modes) |
 | `copy_file` | `source`, `destination`, `overwrite`? | Copy a file to a new location |
 | `mkdir` | `path` | Create directory (and parents) |
 | `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory |

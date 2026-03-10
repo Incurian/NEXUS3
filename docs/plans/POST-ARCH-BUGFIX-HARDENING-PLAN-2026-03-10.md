@@ -121,16 +121,21 @@ For text-oriented edit tools, silent corruption of non-UTF8 files is worse than 
 - `tests/integration/test_file_editing_skills.py`
 - add focused regressions for `read_file` raw/numbered behavior, patch aliasing, unsupported outline fallback, and atomic batch edit handling
 
-### Current Progress (2026-03-09)
+### Current Progress (2026-03-10)
 
 - Completed in the current branch:
   - `patch` now accepts valid new-file diffs when the target path does not yet exist.
   - `edit_file` batch mode now fails closed if earlier edits invalidate later edit targets in-memory.
   - `read_file` now supports `line_numbers=false` raw reads while keeping numbered output as the default.
   - `outline(symbol=...)` now honors `line_numbers=false`, and unsupported file types now explicitly direct callers to `read_file`.
-- Remaining Phase 2 scope:
-  - any remaining `patch` interface ergonomics (`target` vs `path`)
-  - any final Phase 2 prompt/doc alignment around numbered views and patch interface guidance
+  - `patch` now accepts `path=` as the preferred file argument while preserving
+    `target=` as a compatibility alias, and mismatched `path` + `target`
+    inputs fail closed.
+  - patch permission/confirmation path extraction now runs through shared tool
+    semantics, closing the previous `patch(target=...)` path-gating hole.
+- Phase 2 is complete.
+- Next gate:
+  - Phase 3 newline / encoding / regex hardening.
 
 ## Phase 3: Text Fidelity, Newlines, And Regex Hardening
 
@@ -285,8 +290,8 @@ Rationale:
 - [x] Phase 1: add focused permission/confirmation regressions.
 - [x] Phase 4: fix Windows `shell_UNSAFE` Git-Bash shell resolution.
 - [x] Phase 4: add focused Windows shell-resolution regressions.
-- [ ] Phase 2: align `read_file` / `outline` / `patch` agent-facing contract.
-- [ ] Phase 2: fix or re-spec `edit_file` batch atomicity.
+- [x] Phase 2: align `read_file` / `outline` / `patch` agent-facing contract.
+- [x] Phase 2: fix or re-spec `edit_file` batch atomicity.
 - [ ] Phase 3: fix newline, encoding, and regex hardening items.
 - [ ] Phase 3: add fidelity/non-UTF8 regressions.
 - [ ] Phase 5: fix or explicitly fail-closed/document Git Bash ESC behavior.

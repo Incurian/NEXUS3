@@ -627,7 +627,7 @@ class PermissionEnforcer:
         """Get per-tool timeout override."""
 
     def extract_target_paths(tool_call) -> list[Path]:
-        """Extract ALL target paths from tool call (source + destination)."""
+        """Extract ALL read/write paths from tool semantics."""
 
     def extract_target_path(tool_call) -> Path | None:
         """Extract first target path (legacy, prefer extract_target_paths)."""
@@ -642,9 +642,9 @@ class PermissionEnforcer:
 EXEC_TOOLS = frozenset({"bash", "bash_safe", "shell_UNSAFE", "run_python", "git"})
 AGENT_TARGET_TOOLS = frozenset({"nexus_send", "nexus_status", "nexus_cancel", "nexus_destroy"})
 PATH_TOOLS = frozenset({
-    "read_file", "write_file", "edit_file", "append_file", "tail",
+    "read_file", "write_file", "edit_file", "edit_lines", "append_file", "tail",
     "file_info", "list_directory", "mkdir", "copy_file", "rename",
-    "regex_replace", "glob", "grep",
+    "regex_replace", "patch", "glob", "grep",
 })
 ```
 
@@ -725,6 +725,7 @@ The `TOOL_PATH_SEMANTICS` dict maps tool names to their semantics. Tools not in 
 Functions:
 ```python
 get_semantics(tool_name: str) -> ToolPathSemantics
+extract_tool_paths(tool_name: str, args: dict) -> list[Path]
 extract_write_paths(tool_name: str, args: dict) -> list[Path]
 extract_display_path(tool_name: str, args: dict) -> Path | None
 ```
@@ -736,8 +737,10 @@ Registered semantics:
 | `write_file` | - | `path` | `path` |
 | `mkdir` | - | `path` | `path` |
 | `edit_file` | `path` | `path` | `path` |
+| `edit_lines` | `path` | `path` | `path` |
 | `append_file` | `path` | `path` | `path` |
 | `regex_replace` | `path` | `path` | `path` |
+| `patch` | `path`, `target`, `diff_file` | `path`, `target` | `path` |
 | `copy_file` | `source` | `destination` | `destination` |
 | `rename` | `source` | `destination` | `destination` |
 | `read_file` | `path` | - | - |

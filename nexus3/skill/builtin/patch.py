@@ -39,7 +39,7 @@ class PatchSkill(FileSkill):
 
     Example usage:
         # Apply inline diff
-        patch(target="src/foo.py", diff=\"\"\"--- a/foo.py
+        patch(path="src/foo.py", diff=\"\"\"--- a/foo.py
         +++ b/foo.py
         @@ -1,3 +1,4 @@
          import os
@@ -49,10 +49,10 @@ class PatchSkill(FileSkill):
         \"\"\")
 
         # Apply from .diff file
-        patch(target="src/foo.py", diff_file="changes.diff")
+        patch(path="src/foo.py", diff_file="changes.diff")
 
         # Use fuzzy matching for drifted code
-        patch(target="src/foo.py", diff="...", mode="fuzzy")
+        patch(path="src/foo.py", diff="...", mode="fuzzy")
     """
 
     @property
@@ -73,9 +73,19 @@ class PatchSkill(FileSkill):
         return {
             "type": "object",
             "properties": {
+                "path": {
+                    "type": "string",
+                    "description": (
+                        "Target file to patch (preferred). "
+                        "Use this for consistency with other file-editing tools."
+                    ),
+                },
                 "target": {
                     "type": "string",
-                    "description": "Target file to patch (required)",
+                    "description": (
+                        "Compatibility alias for path. "
+                        "Prefer 'path' for new tool calls."
+                    ),
                 },
                 "diff": {
                     "type": "string",
@@ -124,11 +134,15 @@ class PatchSkill(FileSkill):
                     "description": "Validate and report without applying changes",
                 },
             },
-            "required": ["target"],
+            "anyOf": [
+                {"required": ["path"]},
+                {"required": ["target"]},
+            ],
         }
 
     async def execute(
         self,
+        path: str = "",
         target: str = "",
         diff: str | None = None,
         diff_file: str | None = None,
@@ -141,7 +155,8 @@ class PatchSkill(FileSkill):
         """Apply a unified diff to the target file.
 
         Args:
-            target: Path to the file to patch
+            path: Preferred path to the file to patch
+            target: Compatibility alias for path
             diff: Inline unified diff content
             diff_file: Path to a .diff/.patch file to read
             mode: Matching strictness (strict, tolerant, fuzzy)
@@ -170,7 +185,7 @@ class PatchSkill(FileSkill):
 
         # Validate target path
         try:
-            target_path = self._validate_path(target)
+            target_input, target_path = self._resolve_target_argument(path=path, target=target)
         except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
 
@@ -252,7 +267,7 @@ class PatchSkill(FileSkill):
             raw_bytes = b""
             target_content = ""
         else:
-            return ToolResult(error=f"Target file not found: {target}")
+            return ToolResult(error=f"Target file not found: {target_input}")
 
         # Convert mode string to ApplyMode enum early (needed for validation decision)
         try:
@@ -508,6 +523,20 @@ class PatchSkill(FileSkill):
                 output += f"\n  Warning: {warning}"
 
         return ToolResult(output=output)
+
+    def _resolve_target_argument(self, *, path: str, target: str) -> tuple[str, Path]:
+        """Resolve preferred `path` / legacy `target` arguments to one file path."""
+        if path and target:
+            path_resolved = self._validate_path(path)
+            target_resolved = self._validate_path(target)
+            if path_resolved != target_resolved:
+                raise ValueError(
+                    "Cannot provide both 'path' and 'target' with different values."
+                )
+            return path, path_resolved
+
+        selected = path or target
+        return selected, self._validate_path(selected)
 
 
 # Factory for dependency injection

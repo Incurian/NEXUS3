@@ -629,7 +629,7 @@ NEXUS3 includes 40 core built-in skills plus 21 GitLab skills (when configured),
 | `edit_lines` | Line-based replacement (preserves line endings) | `path`, `start_line`, `end_line?`, `new_content` |
 | `append_file` | Append to file with true append mode (preserves line endings) | `path`, `content`, `newline?` |
 | `regex_replace` | Pattern-based replace (preserves line endings) | `path`, `pattern`, `replacement`, `count?`, `ignore_case?`, `multiline?`, `dotall?` |
-| `patch` | Apply unified diffs with validation (exact-path target preference, ambiguity fail-closed) | `target`, `diff?`, `diff_file?`, `mode?`, `fidelity_mode? (byte_strict only; legacy rejected)`, `fuzzy_threshold?`, `dry_run?` |
+| `patch` | Apply unified diffs with validation (prefer `path`, exact-path matching, ambiguity fail-closed) | `path` (preferred) or `target`, `diff?`, `diff_file?`, `mode?`, `fidelity_mode? (byte_strict only; legacy rejected)`, `fuzzy_threshold?`, `dry_run?` |
 | `copy_file` | Copy file with metadata | `source`, `destination`, `overwrite?` |
 | `mkdir` | Create directory (and parents) | `path` |
 | `rename` | Rename/move file or directory | `source`, `destination`, `overwrite?` |

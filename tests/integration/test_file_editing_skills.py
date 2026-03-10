@@ -445,7 +445,7 @@ line 2
 +    return 1
 """
 
-        result = await skill.execute(target=str(target_file), diff=diff_content)
+        result = await skill.execute(path=str(target_file), diff=diff_content)
 
         assert result.success, f"Expected success, got error: {result.error}"
         assert target_file.read_text() == "def created():\n    return 1\n"

@@ -31,6 +31,7 @@ from nexus3.session.path_semantics import (
     TOOL_PATH_SEMANTICS,
     ToolPathSemantics,
     extract_display_path,
+    extract_tool_paths,
     extract_write_paths,
     get_semantics,
 )
@@ -77,11 +78,11 @@ class TestToolPathSemantics:
         assert get_semantics("edit_lines") == TOOL_PATH_SEMANTICS["edit_lines"]
 
     def test_patch_semantics_registered(self) -> None:
-        """patch uses target as the confirmation/write path."""
+        """patch prefers path while accepting target as a compatibility alias."""
         assert TOOL_PATH_SEMANTICS["patch"] == ToolPathSemantics(
-            read_keys=("target", "diff_file"),
-            write_keys=("target",),
-            display_key="target",
+            read_keys=("path", "target", "diff_file"),
+            write_keys=("path", "target"),
+            display_key="path",
         )
         assert get_semantics("patch") == TOOL_PATH_SEMANTICS["patch"]
 
@@ -136,7 +137,16 @@ class TestExtractWritePaths:
         assert paths == [Path("/some/file.txt")]
 
     def test_patch_returns_target(self) -> None:
-        """patch returns the target path, not diff_file."""
+        """patch returns the preferred path argument, not diff_file."""
+        args = {
+            "path": "/repo/src/file.py",
+            "diff_file": "/repo/changes.diff",
+        }
+        paths = extract_write_paths("patch", args)
+        assert paths == [Path("/repo/src/file.py")]
+
+    def test_patch_returns_target_alias(self) -> None:
+        """patch still supports the legacy target alias."""
         args = {
             "target": "/repo/src/file.py",
             "diff_file": "/repo/changes.diff",
@@ -189,14 +199,45 @@ class TestExtractDisplayPath:
         path = extract_display_path("edit_lines", args)
         assert path == Path("/some/file.txt")
 
-    def test_patch_shows_target(self) -> None:
-        """patch displays the target file path."""
+    def test_patch_shows_path(self) -> None:
+        """patch displays the preferred path argument."""
+        args = {
+            "path": "/repo/src/file.py",
+            "diff": "--- a/src/file.py\n+++ b/src/file.py\n",
+        }
+        path = extract_display_path("patch", args)
+        assert path == Path("/repo/src/file.py")
+
+    def test_patch_shows_target_alias(self) -> None:
+        """patch falls back to the target alias when path is absent."""
         args = {
             "target": "/repo/src/file.py",
             "diff": "--- a/src/file.py\n+++ b/src/file.py\n",
         }
         path = extract_display_path("patch", args)
         assert path == Path("/repo/src/file.py")
+
+
+class TestExtractToolPaths:
+    """Test the extract_tool_paths helper used by permission checks."""
+
+    def test_patch_paths_include_diff_file_and_write_target(self) -> None:
+        """patch permission checks should see both the diff input and target file."""
+        args = {
+            "path": "/repo/src/file.py",
+            "diff_file": "/repo/changes.diff",
+        }
+        paths = extract_tool_paths("patch", args)
+        assert paths == [Path("/repo/src/file.py"), Path("/repo/changes.diff")]
+
+    def test_patch_paths_support_legacy_target_alias(self) -> None:
+        """patch permission checks still support the target alias."""
+        args = {
+            "target": "/repo/src/file.py",
+            "diff_file": "/repo/changes.diff",
+        }
+        paths = extract_tool_paths("patch", args)
+        assert paths == [Path("/repo/src/file.py"), Path("/repo/changes.diff")]
 
     def test_read_file_returns_none(self) -> None:
         """read_file has no display path (no confirmation needed)."""

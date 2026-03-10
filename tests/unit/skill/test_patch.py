@@ -95,6 +95,23 @@ class TestInlineDiff(TestPatchSkill):
         assert "line1\nline3\n" == content
 
     @pytest.mark.asyncio
+    async def test_patch_inline_diff_accepts_path_alias(self, skill, tmp_path):
+        """patch accepts path= for consistency with other file tools."""
+        test_file = tmp_path / "alias.py"
+        test_file.write_text("old content\n")
+
+        diff = """--- a/alias.py
++++ b/alias.py
+@@ -1 +1 @@
+-old content
++new content
+"""
+        result = await skill.execute(path=str(test_file), diff=diff)
+
+        assert result.success
+        assert test_file.read_text() == "new content\n"
+
+    @pytest.mark.asyncio
     async def test_patch_multiple_hunks(self, skill, tmp_path):
         """Test applying multiple hunks in one diff.
 
@@ -250,6 +267,14 @@ class TestParameterValidation(TestPatchSkill):
         assert "Must provide either" in result.error or "diff" in result.error
 
     @pytest.mark.asyncio
+    async def test_patch_missing_diff_with_path_alias(self, skill, test_file):
+        """Missing diff validation should work with path= too."""
+        result = await skill.execute(path=str(test_file))
+
+        assert not result.success
+        assert "Must provide either" in result.error or "diff" in result.error
+
+    @pytest.mark.asyncio
     async def test_patch_target_not_found(self, skill, tmp_path):
         """Test error when target file doesn't exist."""
         result = await skill.execute(
@@ -288,6 +313,29 @@ class TestParameterValidation(TestPatchSkill):
 
         assert not result.success
         assert "No path provided" in result.error
+
+    @pytest.mark.asyncio
+    async def test_patch_path_and_target_mismatch_fails(self, skill, tmp_path):
+        """path and target must agree when both are provided."""
+        first = tmp_path / "first.py"
+        second = tmp_path / "second.py"
+        first.write_text("old\n")
+        second.write_text("old\n")
+
+        diff = """--- a/first.py
++++ b/first.py
+@@ -1 +1 @@
+-old
++new
+"""
+        result = await skill.execute(
+            path=str(first),
+            target=str(second),
+            diff=diff,
+        )
+
+        assert not result.success
+        assert "Cannot provide both 'path' and 'target' with different values." == result.error
 
 
 class TestFuzzyMode(TestPatchSkill):

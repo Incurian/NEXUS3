@@ -25,6 +25,7 @@ from nexus3.core.presets import ToolPermission  # noqa: F401 - needed for P2
 from nexus3.core.types import ToolResult
 from nexus3.session.path_semantics import (
     extract_display_path,
+    extract_tool_paths,
     extract_write_paths,
 )
 
@@ -44,9 +45,9 @@ AGENT_TARGET_TOOLS = frozenset({
 
 # Tools that operate on paths
 PATH_TOOLS = frozenset({
-    "read_file", "write_file", "edit_file", "append_file", "tail",
+    "read_file", "write_file", "edit_file", "edit_lines", "append_file", "tail",
     "file_info", "list_directory", "mkdir", "copy_file", "rename",
-    "regex_replace", "glob", "grep",
+    "regex_replace", "patch", "glob", "grep",
 })
 
 class _AgentTargetAuthorizationAdapter:
@@ -417,22 +418,10 @@ class PermissionEnforcer:
     def extract_target_paths(self, tool_call: ToolCall) -> list[Path]:
         """Extract ALL target paths from tool call arguments.
 
-        Arch A2: Returns all paths that should be validated, including
-        both source and destination for copy/rename operations.
-
-        NOTE: Paths are returned WITHOUT .resolve() so that PathDecisionEngine
-        can resolve them consistently against the agent's CWD (not process CWD).
+        Arch A2: Returns all read/write paths derived from the tool's path
+        semantics so permission checks stay aligned with confirmation logic.
         """
-        args = tool_call.arguments
-        paths: list[Path] = []
-
-        # Common path parameter names - return raw Path objects
-        # PathDecisionEngine.check_access() will handle resolution
-        for key in ("path", "source", "destination"):
-            if key in args and args[key]:
-                paths.append(Path(args[key]))
-
-        return paths
+        return extract_tool_paths(tool_call.name, tool_call.arguments)
 
     def extract_target_path(self, tool_call: ToolCall) -> Path | None:
         """Extract first target path from tool call arguments.
