@@ -1399,7 +1399,7 @@ NEXUS3 includes 40 built-in skills organized by category, plus 21 GitLab integra
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `read_file` | Read file contents | `path`, `offset`, `limit` |
+| `read_file` | Read file contents | `path`, `offset`, `limit`, `line_numbers` |
 | `tail` | Read last N lines | `path`, `lines` (default: 10) |
 | `file_info` | Get file metadata | `path` |
 | `list_directory` | List directory contents | `path`, `all`, `long` |
@@ -1413,8 +1413,8 @@ NEXUS3 includes 40 built-in skills organized by category, plus 21 GitLab integra
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
 | `write_file` | Write/create file | `path`, `content` |
-| `edit_file` | String replacement (single or batched) | `path`, `old_string`, `new_string`, `replace_all`, `edits` |
-| `edit_lines` | Line-based replacement | `path`, `start_line`, `end_line`, `new_content` |
+| `edit_file` | Exact string replacement (single or batched) | `path`, `old_string`, `new_string`, `replace_all`, `edits` |
+| `edit_lines` | Line-based replacement (single or batched) | `path`, `start_line`, `end_line`, `new_content`, `edits` |
 | `append_file` | Append to file | `path`, `content`, `newline` |
 | `regex_replace` | Regex find/replace | `path`, `pattern`, `replacement`, `count`, `ignore_case`, `multiline`, `dotall` |
 | `patch` | Apply unified diffs | `target`, `diff`, `diff_file`, `mode`, `fuzzy_threshold`, `dry_run` |

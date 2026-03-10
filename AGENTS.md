@@ -3514,3 +3514,53 @@ Compact handoff checkpoint (2026-03-10, MCP nested-schema follow-up):
   provider error context literally; likely remaining classes are other nested
   provider-strict JSON Schema requirements rather than the old top-level empty
   schema bug.
+
+Deferred follow-up note (2026-03-10, edit_lines validation anomaly):
+- user reports a lesser agent sometimes gets:
+  - `Invalid arguments for edit_lines: Invalid argument: 'start_line' is a required property`
+- code read confirms that exact message only comes from JSON Schema validation
+  before `edit_lines.execute()` runs:
+  - `nexus3/skill/builtin/edit_lines.py` requires `start_line` in schema
+  - `nexus3/core/validation.py` / validation wrapper emit the required-property error only when the key is actually absent from the validated argument dict
+- important implication:
+  - if the same tool-call preview truly showed `start_line=...`, then preview and validated args diverged somewhere upstream
+  - otherwise the likely cause is agent misuse with a near-miss key such as
+    `startLine`, `start line`, `line`, or a different adjacent call being
+    mistaken for the failing one
+- preview path to inspect later:
+  - `nexus3/cli/confirmation_ui.py::format_tool_params`
+  - `nexus3/cli/repl.py` pending-tool trace path
+- malformed JSON is less likely here because `_raw_arguments` failures produce a
+  different error path in `nexus3/session/single_tool_runtime.py`
+
+Execution update (2026-03-10, edit-lines batch alignment slice):
+- Added new plan doc:
+  - `docs/plans/EDIT-LINES-BATCH-AND-TOOL-CONTRACT-ALIGNMENT-PLAN-2026-03-10.md`
+- Implemented batched `edit_lines(edits=[...])` support in
+  `nexus3/skill/builtin/edit_lines.py`:
+  - single-edit top-level mode remains supported
+  - batch mode now accepts `edits=[{start_line, end_line?, new_content}, ...]`
+  - batch ranges are interpreted against the original file and applied
+    bottom-to-top automatically
+  - overlapping ranges fail closed
+  - batch writes remain atomic
+- Added focused coverage in:
+  - `tests/unit/skill/test_edit_lines.py`
+  - `tests/integration/test_file_editing_skills.py`
+- Updated agent-facing docs/prompts in:
+  - `README.md`
+  - `CLAUDE.md`
+  - `nexus3/defaults/NEXUS-DEFAULT.md`
+  - `AGENTS_NEXUS3SKILLSCAT.md`
+  - `nexus3/skill/README.md`
+  - `docs/plans/README.md`
+- Focused consistency-audit follow-ups recorded in the new plan doc:
+  - permissive schemas / silent extra-arg dropping
+  - `edit_file` / `patch` runtime-only dual-shape invariants
+  - uneven batch capability across the file-edit family
+  - inconsistent empty-string semantics
+  - mixed path argument naming
+- Focused validation passed:
+  - `.venv/bin/ruff check nexus3/skill/builtin/edit_lines.py tests/unit/skill/test_edit_lines.py tests/integration/test_file_editing_skills.py README.md CLAUDE.md nexus3/defaults/NEXUS-DEFAULT.md AGENTS_NEXUS3SKILLSCAT.md nexus3/skill/README.md docs/plans/EDIT-LINES-BATCH-AND-TOOL-CONTRACT-ALIGNMENT-PLAN-2026-03-10.md docs/plans/README.md`
+  - `.venv/bin/pytest -q tests/unit/skill/test_edit_lines.py tests/integration/test_file_editing_skills.py -k edit_lines`
+  - `git diff --check`

@@ -78,7 +78,7 @@ class TestEditLinesSkill:
         )
 
         assert not result.success
-        assert "start_line must be >= 1" in result.error
+        assert "minimum" in result.error.lower() or "less than" in result.error.lower()
 
     @pytest.mark.asyncio
     async def test_start_line_validation_negative(self, skill, test_file):
@@ -90,7 +90,18 @@ class TestEditLinesSkill:
         )
 
         assert not result.success
-        assert "start_line must be >= 1" in result.error
+        assert "minimum" in result.error.lower() or "less than" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_new_content_required_in_single_mode(self, skill, test_file):
+        """Single-edit mode should still require new_content explicitly."""
+        result = await skill.execute(
+            path=str(test_file),
+            start_line=2,
+        )
+
+        assert not result.success
+        assert "new_content is required" in result.error
 
     @pytest.mark.asyncio
     async def test_end_line_validation(self, skill, test_file):
@@ -308,3 +319,92 @@ class TestEditLinesSkill:
         content = test_file.read_text()
         lines = content.splitlines()
         assert lines[2] == "replaced"
+
+    @pytest.mark.asyncio
+    async def test_batch_replaces_multiple_ranges(self, skill, test_file):
+        """Batch mode applies multiple line-range edits atomically."""
+        result = await skill.execute(
+            path=str(test_file),
+            edits=[
+                {"start_line": 2, "new_content": "batch line 2"},
+                {"start_line": 4, "end_line": 5, "new_content": "batch tail"},
+            ],
+        )
+
+        assert result.success
+        assert "Applied 2 line edit(s)" in result.output
+        assert "line 2" in result.output
+        assert "lines 4-5" in result.output
+
+        content = test_file.read_text().splitlines()
+        assert content == ["line 1", "batch line 2", "line 3", "batch tail"]
+
+    @pytest.mark.asyncio
+    async def test_batch_applies_out_of_order_ranges_without_drift(self, skill, test_file):
+        """Batch mode should use original line numbers, not caller ordering."""
+        result = await skill.execute(
+            path=str(test_file),
+            edits=[
+                {"start_line": 4, "new_content": "replace line 4"},
+                {"start_line": 2, "end_line": 3, "new_content": "replace lines 2-3"},
+            ],
+        )
+
+        assert result.success
+        content = test_file.read_text().splitlines()
+        assert content == ["line 1", "replace lines 2-3", "replace line 4", "line 5"]
+
+    @pytest.mark.asyncio
+    async def test_batch_rejects_overlapping_ranges(self, skill, test_file):
+        """Overlapping batch ranges should fail closed without changing the file."""
+        original = test_file.read_text()
+
+        result = await skill.execute(
+            path=str(test_file),
+            edits=[
+                {"start_line": 2, "end_line": 3, "new_content": "first"},
+                {"start_line": 3, "end_line": 4, "new_content": "second"},
+            ],
+        )
+
+        assert not result.success
+        assert "Batch edit failed" in result.error
+        assert "overlaps" in result.error
+        assert test_file.read_text() == original
+
+    @pytest.mark.asyncio
+    async def test_batch_rejects_empty_edits_array(self, skill, test_file):
+        """Providing an empty edits array should fail as batch mode, not single mode."""
+        result = await skill.execute(
+            path=str(test_file),
+            edits=[],
+        )
+
+        assert not result.success
+        assert "edits array cannot be empty" in result.error
+
+    @pytest.mark.asyncio
+    async def test_batch_rejects_mixed_single_edit_parameters(self, skill, test_file):
+        """Batch mode should not accept top-level line edit fields."""
+        result = await skill.execute(
+            path=str(test_file),
+            start_line=2,
+            new_content="replacement",
+            edits=[{"start_line": 3, "new_content": "other"}],
+        )
+
+        assert not result.success
+        assert "Cannot use 'edits' array" in result.error
+
+    @pytest.mark.asyncio
+    async def test_batch_allows_empty_placeholder_single_edit_fields(self, skill, test_file):
+        """Exact empty placeholder single-edit fields should not trip mixed-mode rejection."""
+        result = await skill.execute(
+            path=str(test_file),
+            new_content="",
+            edits=[{"start_line": 2, "new_content": "placeholder-safe"}],
+        )
+
+        assert result.success
+        assert "Applied 1 line edit(s)" in result.output
+        assert test_file.read_text().splitlines()[1] == "placeholder-safe"

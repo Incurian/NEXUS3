@@ -180,6 +180,60 @@ line 5
         # Should still have CRLF
         assert "\r\n" in new_content
 
+    @pytest.mark.asyncio
+    async def test_edit_lines_batch_atomic_rollback(
+        self, temp_dir: Path, services: ServiceContainer
+    ) -> None:
+        """Batch edit_lines should leave the file unchanged when validation fails."""
+        test_file = temp_dir / "batch_lines.txt"
+        original_content = """line 1
+line 2
+line 3
+line 4
+line 5
+"""
+        test_file.write_text(original_content)
+
+        skill = edit_lines_factory(services)
+
+        result = await skill.execute(
+            path=str(test_file),
+            edits=[
+                {"start_line": 2, "end_line": 3, "new_content": "batch lines 2-3"},
+                {"start_line": 3, "end_line": 4, "new_content": "overlap"},
+            ],
+        )
+
+        assert not result.success
+        assert "Batch edit failed" in result.error
+        assert "overlaps" in result.error
+        assert test_file.read_text() == original_content
+
+    @pytest.mark.asyncio
+    async def test_edit_lines_batch_preserves_original_line_numbers_and_crlf(
+        self, temp_dir: Path, services: ServiceContainer
+    ) -> None:
+        """Batch edit_lines should preserve CRLF while applying original ranges."""
+        test_file = temp_dir / "batch_crlf.txt"
+        test_file.write_bytes(b"line 1\r\nline 2\r\nline 3\r\nline 4\r\n")
+
+        skill = edit_lines_factory(services)
+
+        result = await skill.execute(
+            path=str(test_file),
+            edits=[
+                {"start_line": 3, "new_content": "tail replace"},
+                {"start_line": 1, "end_line": 2, "new_content": "head replace"},
+            ],
+        )
+
+        assert result.success
+        assert "Applied 2 line edit(s)" in result.output
+
+        new_bytes = test_file.read_bytes()
+        assert b"\r\n" in new_bytes
+        assert new_bytes.decode() == "head replace\r\ntail replace\r\nline 4\r\n"
+
 
 class TestBatchEditAtomicRollback:
     """P5.2: Tests for batch edit_file atomic rollback on failure."""

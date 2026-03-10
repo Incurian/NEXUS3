@@ -31,6 +31,7 @@ This index covers the architecture plans created during today's review/planning 
 ## Post-Architecture Hardening Plans (2026-03-10)
 
 - [POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md)
+- [EDIT-LINES-BATCH-AND-TOOL-CONTRACT-ALIGNMENT-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/EDIT-LINES-BATCH-AND-TOOL-CONTRACT-ALIGNMENT-PLAN-2026-03-10.md)
 
 ## Related Review Docs
 

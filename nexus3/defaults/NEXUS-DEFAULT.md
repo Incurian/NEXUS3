@@ -69,7 +69,7 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 |------|----------------|-------------|----------|
 | `write_file` | `path`, `content` | Create or overwrite a UTF-8 text file; preserves provided newline bytes exactly | New files, generated files, intentional full rewrites |
 | `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | UTF-8 exact string replacement; supports atomic batched edits via `edits` | Precise literal edits where old text is known exactly |
-| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | UTF-8 line-range replacement with preserved file line endings | Replacing a known block/function by line range |
+| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content`, `edits`? | UTF-8 line-range replacement with preserved file line endings; batch mode is atomic and uses original line numbers | Replacing a known block/function by line range |
 | `append_file` | `path`, `content`, `newline`? | Append UTF-8 text at end of file with exact newline bytes | Add log/changelog entries or trailing sections |
 | `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | UTF-8 regex replacement with preserved file line endings | Broad renames or format rewrites across a file |
 | `patch` | `path` (preferred) or `target`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy) | Complex multi-line edits, diff-driven refactors |
@@ -83,6 +83,7 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 |------|------------------|-----|
 | Replace a specific literal string | `edit_file` | Exact match with strong safety checks |
 | Apply multiple literal edits atomically | `edit_file` + `edits` | All edits succeed or fail together |
+| Apply multiple line-range edits atomically | `edit_lines` + `edits` | Original-file line numbers, auto-applied bottom-to-top, overlap-safe |
 | Replace a known line range | `edit_lines` | Explicit positional edit with line control |
 | Pattern-based replacement | `regex_replace` | Flexible match with regex flags |
 | Apply a complex code change from a diff | `patch` | Best for multi-line structural edits |
@@ -111,7 +112,9 @@ Quick selection flow:
 **`edit_lines` (line-number replacement)**
 - Best when line numbers are known (for example, from `outline` + `read_file`).
 - `new_content` replaces full lines; indentation must be correct.
-- For multiple edits in one file, apply from bottom to top to avoid line drift.
+- Top-level mode edits one range at a time.
+- `edits=[...]` batch mode applies multiple ranges atomically using original file line numbers and auto-applies them bottom-to-top.
+- Overlapping `edit_lines` batch ranges fail closed; merge them into one range or split into separate calls.
 - Preserves the file's line-ending style and existing trailing newline state.
 - If the file is not valid UTF-8 text, use `patch` with `fidelity_mode="byte_strict"` instead.
 
@@ -275,7 +278,7 @@ If `diff=true` cannot query git successfully, `outline` now says so explicitly i
 1. Read before write: use `read_file` (and `outline` for navigation) before any edit.
 2. Prefer the least powerful tool that can do the job safely (`edit_file` > `regex_replace` > `patch` for simple edits).
 3. For multiple literal edits, use atomic `edit_file` + `edits` only when the edits do not depend on earlier replacements changing later match targets.
-4. For `edit_lines`, preserve indentation and edit bottom-to-top for multiple ranges.
+4. For `edit_lines`, preserve indentation. For multiple separate calls, edit bottom-to-top; for `edits=[...]` batches, NEXUS3 applies ranges bottom-to-top automatically.
 5. Text-edit tools (`edit_file`, `edit_lines`, `regex_replace`) are UTF-8-only; use `patch` with `fidelity_mode="byte_strict"` for byte-sensitive or non-UTF8 files.
 6. For `regex_replace`, start with narrow patterns and optional `count` limits, but do not rely on `count` to make an expensive pattern safe.
 7. For `patch`, run `dry_run=true` before applying high-risk diffs.
@@ -288,6 +291,7 @@ If `diff=true` cannot query git successfully, `outline` now says so explicitly i
 |---------|------|-------|-----|
 | "String not found" or ambiguous match | `edit_file` | `old_string` does not match exactly, or appears multiple times | Read file first; include more surrounding context or use `replace_all=true` deliberately |
 | "Batch edit failed (no changes made)" | `edit_file` + `edits` | A later batch edit no longer matches after an earlier edit, or becomes ambiguous after earlier replacements | Split dependent edits into separate calls, add more context, or use `patch` for overlapping multi-hunk changes |
+| Overlapping line-range batch failure | `edit_lines` + `edits` | Two batch ranges touch the same original lines | Merge the overlapping ranges or split them into separate non-overlapping calls |
 | Broken indentation or block scope | `edit_lines` | `new_content` indentation does not match file style | Copy indentation pattern from nearby lines |
 | Unintended broad replacements | `regex_replace` | Pattern too permissive | Add boundaries/anchors and test with a small `count` first |
 | "File is not valid UTF-8 text" | `edit_file` / `edit_lines` / `regex_replace` | Byte-sensitive or non-UTF8 content cannot be safely rewritten as text | Use `patch` with `fidelity_mode="byte_strict"` |

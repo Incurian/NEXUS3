@@ -13,7 +13,7 @@ Derived from `CLAUDE.md` Built-in Skills section, adapted for Codex usage.
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
 | `write_file` | `path`, `content` | Write/create UTF-8 text files (exact newline bytes; read file first) |
 | `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | UTF-8 exact string replacement; batch edits are atomic and later edits must still match after earlier edits (read file first) |
-| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | Replace UTF-8 lines by number (work bottom-to-top for multiple edits) |
+| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content`, `edits`? | Replace UTF-8 lines by number; `edits` batches are atomic, use original line numbers, and reject overlaps |
 | `append_file` | `path`, `content`, `newline`? | Append UTF-8 text to a file (exact newline bytes; read file first) |
 | `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | UTF-8 pattern-based find/replace (`count >= 0`; read file first) |
 | `patch` | `path` (preferred) or `target`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy modes; hunk-only single-file diffs auto-normalized when target is known) |

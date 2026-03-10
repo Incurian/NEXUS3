@@ -626,7 +626,7 @@ NEXUS3 includes 40 core built-in skills plus 21 GitLab skills (when configured),
 |-------|-------------|----------------|
 | `write_file` | Write/create UTF-8 text file (atomic write, exact newline bytes) | `path`, `content` |
 | `edit_file` | UTF-8 exact string replacement, single or batched; batch edits fail closed if earlier edits invalidate later targets (preserves line endings) | `path`, `old_string`, `new_string`, `edits?`, `replace_all?` |
-| `edit_lines` | UTF-8 line-based replacement (preserves line endings and EOF newline state) | `path`, `start_line`, `end_line?`, `new_content` |
+| `edit_lines` | UTF-8 line-based replacement, single or batched (preserves line endings and EOF newline state; batch mode uses original line numbers and rejects overlaps) | `path`, `start_line`, `end_line?`, `new_content`, `edits?` |
 | `append_file` | Append UTF-8 text with true append mode (exact newline bytes) | `path`, `content`, `newline?` |
 | `regex_replace` | UTF-8 pattern-based replace (`count >= 0`, preserves line endings) | `path`, `pattern`, `replacement`, `count?`, `ignore_case?`, `multiline?`, `dotall?` |
 | `patch` | Apply unified diffs with validation (prefer `path`, exact-path matching, ambiguity fail-closed, hunk-only single-file diffs auto-normalized) | `path` (preferred) or `target`, `diff?`, `diff_file?`, `mode?`, `fidelity_mode? (byte_strict only; legacy rejected)`, `fuzzy_threshold?`, `dry_run?` |
