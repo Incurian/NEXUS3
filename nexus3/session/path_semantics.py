@@ -69,6 +69,10 @@ TOOL_PATH_SEMANTICS: dict[str, ToolPathSemantics] = {
         write_keys=("path", "target"),
         display_key="path"
     ),
+    "gitlab_artifact": ToolPathSemantics(
+        write_keys=("output_path",),
+        display_key="output_path"
+    ),
 
     # Multi-path tools (source=read, destination=write)
     "copy_file": ToolPathSemantics(

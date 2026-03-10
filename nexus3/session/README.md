@@ -644,7 +644,7 @@ AGENT_TARGET_TOOLS = frozenset({"nexus_send", "nexus_status", "nexus_cancel", "n
 PATH_TOOLS = frozenset({
     "read_file", "write_file", "edit_file", "edit_lines", "append_file", "tail",
     "file_info", "list_directory", "mkdir", "copy_file", "rename",
-    "regex_replace", "patch", "glob", "grep",
+    "regex_replace", "patch", "gitlab_artifact", "glob", "grep",
 })
 ```
 
@@ -741,6 +741,7 @@ Registered semantics:
 | `append_file` | `path` | `path` | `path` |
 | `regex_replace` | `path` | `path` | `path` |
 | `patch` | `path`, `target`, `diff_file` | `path`, `target` | `path` |
+| `gitlab_artifact` | - | `output_path` | `output_path` |
 | `copy_file` | `source` | `destination` | `destination` |
 | `rename` | `source` | `destination` | `destination` |
 | `read_file` | `path` | - | - |

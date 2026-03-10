@@ -86,6 +86,14 @@ class TestToolPathSemantics:
         )
         assert get_semantics("patch") == TOOL_PATH_SEMANTICS["patch"]
 
+    def test_gitlab_artifact_semantics_registered(self) -> None:
+        """gitlab_artifact treats output_path as its write target."""
+        assert TOOL_PATH_SEMANTICS["gitlab_artifact"] == ToolPathSemantics(
+            write_keys=("output_path",),
+            display_key="output_path",
+        )
+        assert get_semantics("gitlab_artifact") == TOOL_PATH_SEMANTICS["gitlab_artifact"]
+
     def test_read_file_semantics(self) -> None:
         """read_file has path as read only."""
         semantics = get_semantics("read_file")
@@ -154,6 +162,15 @@ class TestExtractWritePaths:
         paths = extract_write_paths("patch", args)
         assert paths == [Path("/repo/src/file.py")]
 
+    def test_gitlab_artifact_returns_output_path(self) -> None:
+        """gitlab_artifact returns the local output path it will write."""
+        args = {
+            "action": "download",
+            "output_path": "/tmp/artifacts.zip",
+        }
+        paths = extract_write_paths("gitlab_artifact", args)
+        assert paths == [Path("/tmp/artifacts.zip")]
+
     def test_read_file_returns_empty(self) -> None:
         """read_file has no write paths."""
         args = {"path": "/some/file.txt"}
@@ -217,6 +234,15 @@ class TestExtractDisplayPath:
         path = extract_display_path("patch", args)
         assert path == Path("/repo/src/file.py")
 
+    def test_gitlab_artifact_shows_output_path(self) -> None:
+        """gitlab_artifact displays the local output path for confirmation."""
+        args = {
+            "action": "download",
+            "output_path": "/tmp/artifacts.zip",
+        }
+        path = extract_display_path("gitlab_artifact", args)
+        assert path == Path("/tmp/artifacts.zip")
+
 
 class TestExtractToolPaths:
     """Test the extract_tool_paths helper used by permission checks."""
@@ -238,6 +264,15 @@ class TestExtractToolPaths:
         }
         paths = extract_tool_paths("patch", args)
         assert paths == [Path("/repo/src/file.py"), Path("/repo/changes.diff")]
+
+    def test_gitlab_artifact_paths_include_output_path(self) -> None:
+        """gitlab_artifact permission checks should see the local write target."""
+        args = {
+            "action": "download",
+            "output_path": "/tmp/artifacts.zip",
+        }
+        paths = extract_tool_paths("gitlab_artifact", args)
+        assert paths == [Path("/tmp/artifacts.zip")]
 
     def test_read_file_returns_none(self) -> None:
         """read_file has no display path (no confirmation needed)."""
@@ -440,6 +475,46 @@ class TestEnforcerRequiresConfirmation:
 
         assert enforcer.requires_confirmation(tool_call, permissions) is True
 
+    def test_gitlab_artifact_no_confirm_output_in_cwd(self, tmp_path: Path) -> None:
+        """gitlab_artifact stays auto-approved for TRUSTED writes inside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="gitlab_artifact",
+            arguments={
+                "action": "download",
+                "output_path": str(cwd / "artifacts.zip"),
+            },
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is False
+
+    def test_gitlab_artifact_checks_output_path_outside_cwd(self, tmp_path: Path) -> None:
+        """gitlab_artifact requires confirmation for TRUSTED writes outside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="gitlab_artifact",
+            arguments={
+                "action": "download",
+                "output_path": str(outside / "artifacts.zip"),
+            },
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is True
+
 
 class TestEnforcerGetConfirmationContext:
     """Test the get_confirmation_context method."""
@@ -526,6 +601,24 @@ class TestEnforcerGetConfirmationContext:
 
         assert display_path == Path("/repo/src/file.py")
         assert write_paths == [Path("/repo/src/file.py")]
+
+    def test_gitlab_artifact_context(self) -> None:
+        """gitlab_artifact context returns output_path for display and writes."""
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="gitlab_artifact",
+            arguments={
+                "action": "download",
+                "output_path": "/tmp/artifacts.zip",
+            },
+        )
+
+        display_path, write_paths = enforcer.get_confirmation_context(tool_call)
+
+        assert display_path == Path("/tmp/artifacts.zip")
+        assert write_paths == [Path("/tmp/artifacts.zip")]
 
 
 class TestAllowanceAppliedToWritePaths:

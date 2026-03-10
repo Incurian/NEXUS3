@@ -3423,3 +3423,41 @@ Execution checkpoint (2026-03-10, MCP/OpenAI empty-schema fix landed):
   - a deeper GitLab tool audit is still worth doing later for other boundary
     issues, per user request, but the exact MCP/OpenAI empty-schema failure did
     not reproduce in the quick built-in GitLab scan.
+
+Execution checkpoint (2026-03-10, GitLab artifact local-write path gating):
+- GitLab audit confirmed one high-severity non-schema issue:
+  - `gitlab_artifact` download actions write local files via `output_path`, but
+    the tool was not registered in generic path semantics / destructive-action
+    metadata.
+  - effect before fix:
+    - TRUSTED path confirmation and path gating did not treat
+      `gitlab_artifact.output_path` like a write target.
+    - a TRUSTED agent with GitLab enabled could download artifacts to local
+      paths outside CWD without the normal path-based confirmation flow.
+- Fix landed in:
+  - `nexus3/session/path_semantics.py`
+    - register `gitlab_artifact` with `write_keys=("output_path",)` and
+      `display_key="output_path"`.
+  - `nexus3/core/policy.py`
+    - mark `gitlab_artifact` as destructive so TRUSTED confirmation logic
+      applies to out-of-CWD local writes.
+  - `tests/security/test_multipath_confirmation.py`
+    - added semantics, display-path, extracted-path, confirmation-context, and
+      TRUSTED confirmation regressions for `gitlab_artifact`.
+  - `nexus3/session/README.md`
+    - synced path-semantics docs.
+  - `CLAUDE.md`
+    - synced recent-fix note.
+- Focused validation snapshot:
+  - passed:
+    `.venv/bin/ruff check nexus3/session/path_semantics.py nexus3/core/policy.py tests/security/test_multipath_confirmation.py`
+  - passed:
+    `.venv/bin/pytest -q tests/security/test_multipath_confirmation.py -k 'gitlab_artifact or patch or edit_lines or copy_file or rename'`
+    (`35 passed`, `16 deselected`)
+- Schema-side GitLab audit update:
+  - built-in GitLab tool schemas did not show the MCP/OpenAI top-level empty
+    object failure shape.
+  - one lower-risk observation remains for later: nested free-form object usage
+    in `gitlab_feature_flag.strategies[*].parameters` could be future provider
+    friction if any provider starts enforcing recursive object-property
+    requirements more strictly.

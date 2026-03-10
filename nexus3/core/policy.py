@@ -63,6 +63,7 @@ DESTRUCTIVE_ACTIONS = frozenset({
     "append_file",
     "regex_replace",
     "patch",
+    "gitlab_artifact",
     "copy_file",     # Fix 1.2: Can overwrite destination files
     "rename",        # Fix 1.2: Can overwrite destination files
     "mkdir",         # Fix 1.2: Creates directories

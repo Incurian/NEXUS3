@@ -1976,6 +1976,15 @@ definitions provider-compatible. Quick follow-up audit: built-in GitLab skills
 did not show the same empty-schema pattern; deeper GitLab tool auditing
 remains deferred separately.
 
+#### Recent GitLab Fix: Artifact Download Path Gating (2026-03-10)
+
+`gitlab_artifact` download actions write to a local `output_path`. That tool
+was not registered in the generic session path-semantics / destructive-action
+metadata, so TRUSTED path confirmation and path gating treated it like a
+non-path GitLab action. Session metadata now treats `output_path` as the write
+target for `gitlab_artifact`, bringing local artifact downloads back under the
+same path confirmation model as other write-capable tools.
+
 #### Recent Tooling Fix: Patch Hunk-Only Diff Normalization (2026-03-10)
 
 `nexus3/skill/builtin/patch.py` now auto-normalizes single-file hunk-only diffs
