@@ -65,7 +65,9 @@ class PatchSkill(FileSkill):
             "Apply a unified diff to a file (strict/tolerant/fuzzy modes). "
             "Use for complex multi-line changes and diff-driven refactors. "
             "Use dry_run=True to validate before applying and mode='fuzzy' for drifted code. "
-            "Diff lines must be prefixed: ' ' context, '-' removal, '+' addition."
+            "Diff lines must be prefixed: ' ' context, '-' removal, '+' addition. "
+            "When path/target is provided, single-file hunk-only diffs "
+            "(`@@ ... @@` without `---`/`+++`) are normalized automatically."
         )
 
     @property
@@ -91,7 +93,9 @@ class PatchSkill(FileSkill):
                     "type": "string",
                     "description": (
                         "Unified diff content (inline). "
-                        "Use either diff or diff_file, not both."
+                        "Use either diff or diff_file, not both. "
+                        "When path/target is provided, single-file hunk-only diffs "
+                        "without file headers are normalized automatically."
                     ),
                 },
                 "diff_file": {
@@ -229,6 +233,12 @@ class PatchSkill(FileSkill):
         else:
             diff_content = diff  # type: ignore[assignment]
 
+        original_diff_content = diff_content
+        diff_content, normalization_note = self._normalize_hunk_only_diff(
+            diff_content,
+            target_path,
+        )
+
         # Parse the diff with byte-strict AST-v2 only.
         patch_files: Sequence[PatchFileV2]
         try:
@@ -237,7 +247,9 @@ class PatchSkill(FileSkill):
             return ToolResult(error=f"Error parsing diff: {e}")
 
         if not patch_files:
-            return ToolResult(error="No patch hunks found in diff")
+            return ToolResult(
+                error=self._format_no_hunks_error(original_diff_content, target_path)
+            )
 
         # Find hunks matching the target file.
         target_basename = target_path.name
@@ -250,6 +262,7 @@ class PatchSkill(FileSkill):
                 f"Diff contains {len(patch_files)} files, "
                 f"applying only hunks for {target_basename}\n"
             )
+        result_prefix = normalization_note + multi_file_warning
 
         if matching_error is not None:
             return ToolResult(error=matching_error)
@@ -296,14 +309,18 @@ class PatchSkill(FileSkill):
             return self._format_dry_run_result(
                 validation_result,
                 matching_patch,
-                multi_file_warning,
+                result_prefix,
             )
 
         # If validation failed and no auto-fix in STRICT mode, report errors.
         # For tolerant/fuzzy modes, proceed to byte-strict applier matching logic.
         if not validation_result.valid and validation_result.fixed_patch is None:
             if apply_mode == ApplyMode.STRICT:
-                return self._format_validation_failure(validation_result, matching_patch)
+                return self._format_validation_failure(
+                    validation_result,
+                    matching_patch,
+                    result_prefix,
+                )
             # Tolerant/fuzzy proceeds to applier-level matching.
 
         # Apply the patch
@@ -315,7 +332,11 @@ class PatchSkill(FileSkill):
         )
 
         if not apply_result.success:
-            return self._format_apply_failure(apply_result, matching_patch)
+            return self._format_apply_failure(
+                apply_result,
+                matching_patch,
+                result_prefix,
+            )
 
         # Write the patched content atomically
         try:
@@ -329,7 +350,7 @@ class PatchSkill(FileSkill):
         return self._format_success(
             apply_result,
             matching_patch,
-            multi_file_warning,
+            result_prefix,
         )
 
     def _find_matching_patch(
@@ -490,9 +511,10 @@ class PatchSkill(FileSkill):
         self,
         validation_result: Any,
         patch_file: PatchFileV2,
+        warning_prefix: str,
     ) -> ToolResult:
         """Format a validation failure message."""
-        error = f"Patch validation failed on {patch_file.path}:\n"
+        error = f"{warning_prefix}Patch validation failed on {patch_file.path}:\n"
         for err in validation_result.errors:
             error += f"  - {err}\n"
         error += "No changes made."
@@ -502,9 +524,10 @@ class PatchSkill(FileSkill):
         self,
         apply_result: Any,
         patch_file: PatchFileV2,
+        warning_prefix: str,
     ) -> ToolResult:
         """Format an application failure message."""
-        error = f"Patch failed on {patch_file.path}:\n"
+        error = f"{warning_prefix}Patch failed on {patch_file.path}:\n"
 
         if apply_result.applied_hunks:
             applied_str = ", ".join(str(i + 1) for i in apply_result.applied_hunks)
@@ -545,6 +568,57 @@ class PatchSkill(FileSkill):
 
         selected = path or target
         return selected, self._validate_path(selected)
+
+    def _normalize_hunk_only_diff(
+        self,
+        diff_content: str,
+        target_path: Path,
+    ) -> tuple[str, str]:
+        """Wrap a single-file hunk-only diff with synthetic file headers."""
+        if not self._looks_like_hunk_only_diff(diff_content):
+            return diff_content, ""
+
+        diff_path = self._path_for_synthetic_diff_headers(target_path)
+        newline = "\r\n" if "\r\n" in diff_content else "\n"
+        wrapped = (
+            f"--- a/{diff_path}{newline}"
+            f"+++ b/{diff_path}{newline}"
+            f"{diff_content}"
+        )
+        note = f"Note: normalized hunk-only diff using target path '{diff_path}'.\n"
+        return wrapped, note
+
+    def _looks_like_hunk_only_diff(self, diff_content: str) -> bool:
+        """Return True for bare `@@` hunks without file headers."""
+        saw_hunk = False
+        for raw_line in diff_content.splitlines():
+            line = raw_line.lstrip("\ufeff")
+            if line.startswith("diff --git "):
+                return False
+            if line.startswith("--- ") or line.startswith("+++ "):
+                return False
+            if line.startswith("@@"):
+                saw_hunk = True
+        return saw_hunk
+
+    def _format_no_hunks_error(self, diff_content: str, target_path: Path) -> str:
+        """Return a targeted parse error for hunk-only input when possible."""
+        if self._looks_like_hunk_only_diff(diff_content):
+            diff_path = self._path_for_synthetic_diff_headers(target_path)
+            return (
+                f"Detected hunk-only diff for target '{diff_path}', but it is not a "
+                "valid unified diff hunk. Include unified diff file headers ('---' / "
+                "'+++') or provide a valid @@ hunk with leading line prefixes "
+                "(' ', '-', '+')."
+            )
+        return "No patch hunks found in diff"
+
+    def _path_for_synthetic_diff_headers(self, target_path: Path) -> str:
+        """Return the best path string to use in synthesized diff headers."""
+        relative_target = self._target_path_relative_to_cwd(target_path)
+        candidate = relative_target if relative_target is not None else str(target_path)
+        normalized = self._normalize_patch_path(candidate)
+        return normalized or target_path.name
 
 
 # Factory for dependency injection

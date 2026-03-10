@@ -146,6 +146,61 @@ class TestInlineDiff(TestPatchSkill):
         assert test_file.read_text() == "new content\n"
 
     @pytest.mark.asyncio
+    async def test_patch_hunk_only_diff_is_auto_wrapped(self, skill, tmp_path):
+        """Single-file hunk-only diffs should be normalized when a target is known."""
+        test_file = tmp_path / "single.txt"
+        test_file.write_text("one\ntwo\nthree\n")
+
+        diff = """@@ -1,3 +1,3 @@
+ one
+-two
++TWO
+ three
+"""
+        result = await skill.execute(path=str(test_file), diff=diff)
+
+        assert result.success
+        assert "normalized hunk-only diff" in result.output
+        assert test_file.read_text() == "one\nTWO\nthree\n"
+
+    @pytest.mark.asyncio
+    async def test_patch_hunk_only_diff_dry_run_reports_normalization(self, skill, tmp_path):
+        """Dry-run output should tell callers when hunk-only diffs were normalized."""
+        test_file = tmp_path / "dryrun.txt"
+        test_file.write_text("one\ntwo\nthree\n")
+
+        diff = """@@ -1,3 +1,3 @@
+ one
+-two
++TWO
+ three
+"""
+        result = await skill.execute(path=str(test_file), diff=diff, dry_run=True)
+
+        assert result.success
+        assert "normalized hunk-only diff" in result.output
+        assert "would apply" in result.output
+        assert test_file.read_text() == "one\ntwo\nthree\n"
+
+    @pytest.mark.asyncio
+    async def test_patch_malformed_hunk_only_diff_gets_targeted_error(self, skill, tmp_path):
+        """Malformed hunk-only diffs should get a specific guidance message."""
+        test_file = tmp_path / "bad.txt"
+        test_file.write_text("one\ntwo\nthree\n")
+
+        diff = """@@ not-a-real-hunk @@
+one
+-two
++TWO
+three
+"""
+        result = await skill.execute(path=str(test_file), diff=diff)
+
+        assert not result.success
+        assert "Detected hunk-only diff" in result.error
+        assert "'---' / '+++'" in result.error
+
+    @pytest.mark.asyncio
     async def test_patch_multiple_hunks(self, skill, tmp_path):
         """Test applying multiple hunks in one diff.
 

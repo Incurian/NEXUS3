@@ -405,6 +405,12 @@ Immediate tasks:
         `tests/unit/provider/test_compiler_integration.py`.
   - next gate remains Windows live validation to confirm the documented
     fail-closed behavior on real hosts.
+- Patch skill friendliness fix (2026-03-10, local pending commit):
+  - `nexus3/skill/builtin/patch.py` now auto-normalizes single-file hunk-only
+    diffs (`@@ ... @@` without `---`/`+++`) when `path`/`target` is provided.
+  - malformed hunk-only input now gets a targeted guidance error instead of the
+    misleading generic `No patch hunks found in diff`.
+  - focused regressions added in `tests/unit/skill/test_patch.py`.
 - Completed follow-on hardening slice (2026-03-10): Plan Phase 3
   newline / encoding / regex hardening:
   - `nexus3/core/paths.py`

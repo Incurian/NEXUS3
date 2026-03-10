@@ -124,6 +124,7 @@ Quick selection flow:
 **`patch` (unified diff application)**
 - Preferred for complex multi-line changes and refactors.
 - Prefer `path=` for consistency with other file-editing tools; `target=` remains a compatibility alias.
+- When `path`/`target` is provided, single-file hunk-only diffs (`@@ ... @@` without `---`/`+++`) are normalized automatically.
 - Use `dry_run=true` before applying risky patches.
 - Use `mode="fuzzy"` only when strict matching fails due to code drift.
 - Diff lines must be prefixed (` ` context, `-` removal, `+` addition).

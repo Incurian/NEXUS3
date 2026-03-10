@@ -16,7 +16,7 @@ Derived from `CLAUDE.md` Built-in Skills section, adapted for Codex usage.
 | `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | Replace UTF-8 lines by number (work bottom-to-top for multiple edits) |
 | `append_file` | `path`, `content`, `newline`? | Append UTF-8 text to a file (exact newline bytes; read file first) |
 | `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | UTF-8 pattern-based find/replace (`count >= 0`; read file first) |
-| `patch` | `path` (preferred) or `target`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy modes) |
+| `patch` | `path` (preferred) or `target`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy modes; hunk-only single-file diffs auto-normalized when target is known) |
 | `copy_file` | `source`, `destination`, `overwrite`? | Copy a file to a new location |
 | `mkdir` | `path` | Create directory (and parents) |
 | `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory |

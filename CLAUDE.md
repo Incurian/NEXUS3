@@ -1964,6 +1964,13 @@ now remains session-preflight-only before new USER turns; provider request
 shaping still prunes/synthesizes tool-result invariants, but no longer injects
 that cancellation note mid-loop.
 
+#### Recent Tooling Fix: Patch Hunk-Only Diff Normalization (2026-03-10)
+
+`nexus3/skill/builtin/patch.py` now auto-normalizes single-file hunk-only diffs
+(`@@ ... @@` without `---`/`+++`) when `path` or `target` is already provided.
+Malformed hunk-only input now returns a targeted guidance error instead of the
+misleading generic `No patch hunks found in diff`.
+
 ### Known Bugs
 
 - **Double spinner on concurrent RPC sends**: When two external `rpc send` requests arrive at an agent with active REPL, two spinners appear and ESC gets trapped. Root cause: missing `try/finally` for "ended" notification in `dispatcher.py:_handle_send()` + module-level spinner state variables can't handle rapid start/stop cycles. Fix planned in `DOUBLE-SPINNER-FIX-PLAN.md`.
