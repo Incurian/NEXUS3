@@ -105,6 +105,7 @@ class GitLabPipelineSkill(GitLabSkill):
                             "value": {"type": "string"},
                         },
                         "required": ["key", "value"],
+                        "additionalProperties": False,
                     },
                     "description": "Pipeline variables for create (array of {key, value})",
                 },
@@ -114,6 +115,7 @@ class GitLabPipelineSkill(GitLabSkill):
                 },
             },
             "required": ["action"],
+            "additionalProperties": False,
         }
 
     async def _execute_impl(

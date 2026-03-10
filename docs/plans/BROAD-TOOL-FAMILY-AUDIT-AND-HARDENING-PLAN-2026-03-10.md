@@ -89,8 +89,9 @@ problems, not just schema/docs drift.
 
 ### GitLab / MCP-Adjacent
 
-1. All built-in GitLab skill schemas are still non-strict on unknown args.
-2. Shared tool-argument validation currently strips valid keys from open-ended
+1. All built-in GitLab skill schemas were non-strict on unknown args before
+   Phase 4.
+2. Shared tool-argument validation was stripping valid keys from open-ended
    schemas by filtering validated arguments back down to explicit
    `schema["properties"]` keys only. That is safe for strict built-in tools but
    breaks MCP-exposed tools that intentionally rely on `additionalProperties`,
@@ -194,6 +195,8 @@ Work:
 - Bring GitLab top-level schemas under strict unknown-arg rejection.
 - Fix shared validation so MCP/open-ended schemas preserve validated dynamic
   keys instead of being collapsed back to only explicit property names.
+- Wrap GitLab registry-created skills with the standard validation layer so
+  direct registry usage matches the rest of the built-in families.
 - Revisit nested GitLab object fragments that are likely provider-compatibility
   hazards.
 

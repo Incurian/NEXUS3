@@ -92,6 +92,7 @@ class ClipboardListSkill(ClipboardSkillBase):
                     "description": "Filter to entries having ANY of these tags (OR logic)",
                 },
             },
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -177,6 +178,7 @@ class ClipboardGetSkill(ClipboardSkillBase):
                 },
             },
             "required": ["key"],
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -292,6 +294,7 @@ class ClipboardUpdateSkill(ClipboardSkillBase):
                 },
             },
             "required": ["key", "scope"],
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -409,6 +412,7 @@ class ClipboardDeleteSkill(ClipboardSkillBase):
                 },
             },
             "required": ["key", "scope"],
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -464,6 +468,7 @@ class ClipboardClearSkill(ClipboardSkillBase):
                 },
             },
             "required": ["scope", "confirm"],
+            "additionalProperties": False,
         }
 
     async def execute(

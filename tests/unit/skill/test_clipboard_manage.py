@@ -180,6 +180,31 @@ class TestClipboardListSkill:
         assert "not available" in result.error.lower()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("factory", "params"),
+    [
+        (clipboard_list_factory, {}),
+        (clipboard_get_factory, {"key": "entry"}),
+        (clipboard_update_factory, {"key": "entry", "scope": "agent", "content": "updated"}),
+        (clipboard_delete_factory, {"key": "entry", "scope": "agent"}),
+        (clipboard_clear_factory, {"scope": "agent", "confirm": True}),
+    ],
+)
+async def test_clipboard_family_rejects_unknown_params(services, factory, params):
+    """Clipboard management skills should fail closed on unknown params."""
+    skill = factory(services)
+
+    result = await skill.execute(**params, unknown_xyz="boom")
+
+    assert not result.success
+    assert "unknown_xyz" in result.error
+    assert (
+        "unexpected" in result.error.lower()
+        or "additional properties" in result.error.lower()
+    )
+
+
 # =============================================================================
 # ClipboardGetSkill Tests
 # =============================================================================

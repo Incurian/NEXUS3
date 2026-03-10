@@ -638,7 +638,7 @@ Validation utilities for security-sensitive inputs.
 |--------|-------------|
 | `validate_agent_id()` | Validate agent ID format |
 | `is_valid_agent_id()` | Check validity without raising |
-| `validate_tool_arguments()` | Validate arguments against JSON schema |
+| `validate_tool_arguments()` | Validate arguments against JSON schema, preserving dynamic top-level keys only for explicitly open-ended schemas |
 | `ValidationError` | Raised when validation fails |
 | `AGENT_ID_PATTERN` | Regex for valid agent IDs |
 | `ALLOWED_INTERNAL_PARAMS` | Whitelisted internal parameters |
@@ -657,6 +657,13 @@ args = validate_tool_arguments(
     schema={"type": "object", "properties": {"path": {"type": "string"}}}
 )
 # Returns: {"path": "/file.txt"}
+
+# Explicitly open-ended schemas preserve validated dynamic keys
+args = validate_tool_arguments(
+    {"x-token": "abc"},
+    schema={"type": "object", "patternProperties": {"^x-": {"type": "string"}}}
+)
+# Returns: {"x-token": "abc"}
 ```
 
 ---

@@ -88,6 +88,7 @@ class GitLabVariableSkill(GitLabSkill):
                 },
             },
             "required": ["action"],
+            "additionalProperties": False,
         }
 
     def _get_base_path(

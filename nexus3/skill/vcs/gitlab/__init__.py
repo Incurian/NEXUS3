@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from nexus3.skill.registry import SkillRegistry
     from nexus3.skill.services import ServiceContainer
 
+from nexus3.skill.base import _wrap_with_validation
 from nexus3.skill.vcs.gitlab.permissions import can_use_gitlab
 
 # Re-export for backwards compatibility
@@ -74,7 +75,9 @@ def register_gitlab_skills(
             config = svc.get_gitlab_config()
             if not config:
                 raise ValueError("GitLab not configured")
-            return skill_class(svc, config)
+            skill = skill_class(svc, config)
+            _wrap_with_validation(skill)
+            return skill
         return factory
 
     # Register all GitLab skill factories

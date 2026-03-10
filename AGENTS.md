@@ -3852,3 +3852,51 @@ Execution update (2026-03-10, broad tool-family audit phase 3 complete):
     validation repair
   - keep the broader GitLab operational follow-ups queued for the later
     bounded slice after shared validation is corrected
+
+Execution update (2026-03-10, broad tool-family audit phase 4 complete):
+- Completed Phase 4 from
+  `docs/plans/BROAD-TOOL-FAMILY-AUDIT-AND-HARDENING-PLAN-2026-03-10.md`:
+  clipboard / GitLab schema strictness and shared open-ended validation repair
+- Hardened shared validation in:
+  - `nexus3/core/validation.py`
+    - explicitly open-ended top-level schemas now preserve validated dynamic
+      keys instead of collapsing everything back to explicit `properties`
+    - built-in schemas without an explicit open-ended opt-in keep the prior
+      filtered/strict behavior
+  - `nexus3/skill/base.py`
+    - wrapper-based validation now matches the same open-ended-schema
+      preservation rules used by runtime validation
+- Hardened clipboard management schemas in:
+  - `nexus3/skill/builtin/clipboard_manage.py`
+    - all clipboard management skills now set `additionalProperties: false`
+- Hardened GitLab skill registration and schemas in:
+  - `nexus3/skill/vcs/gitlab/__init__.py`
+    - registry-created GitLab skills now use the standard validation wrapper
+  - `nexus3/skill/vcs/gitlab/*.py`
+    - all top-level GitLab skill schemas now set `additionalProperties: false`
+- Added focused regressions in:
+  - `tests/unit/test_skill_validation.py`
+    - open-ended `additionalProperties` / `patternProperties` preservation
+    - wrapper parity for explicitly open-ended schemas
+  - `tests/unit/mcp/test_skill_adapter.py`
+    - MCP adapter preserves validated dynamic arguments for open-ended tool
+      schemas
+  - `tests/unit/skill/test_clipboard_manage.py`
+    - unknown-arg rejection across clipboard management skills
+  - `tests/unit/skill/vcs/test_gitlab_skills.py`
+    - strict top-level schema coverage across registered GitLab skills
+    - unknown-arg rejection through the registry path
+- Synced module docs in:
+  - `nexus3/core/README.md`
+  - `nexus3/skill/README.md`
+- Focused validation passed:
+  - `.venv/bin/ruff check nexus3/core/validation.py nexus3/skill/base.py nexus3/skill/builtin/clipboard_manage.py nexus3/skill/vcs/gitlab/__init__.py nexus3/skill/vcs/gitlab/*.py tests/unit/test_skill_validation.py tests/unit/mcp/test_skill_adapter.py tests/unit/skill/test_clipboard_manage.py tests/unit/skill/vcs/test_gitlab_skills.py`
+  - `.venv/bin/pytest -q tests/unit/test_skill_validation.py tests/unit/mcp/test_skill_adapter.py tests/unit/skill/test_clipboard_manage.py tests/unit/skill/vcs/test_gitlab_skills.py tests/unit/skill/test_skill_validation.py` (`178 passed`)
+  - `git diff --check`
+- Remaining broad-audit follow-up inside this plan:
+  - nested GitLab object fragments that may still become provider-friction
+    points if stricter recursive provider rules appear later
+- Next gate:
+  - Phase 5: GitLab operational follow-ups
+  - after that, return to the broader non-file family audit backlog and the
+    deferred full-suite 100% green pass

@@ -9,8 +9,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from nexus3.skill.registry import SkillRegistry
 from nexus3.skill.services import ServiceContainer
 from nexus3.skill.vcs.config import GitLabConfig, GitLabInstance
+from nexus3.skill.vcs.gitlab import register_gitlab_skills
 from nexus3.skill.vcs.gitlab.branch import GitLabBranchSkill
 from nexus3.skill.vcs.gitlab.client import GitLabAPIError, GitLabClient
 from nexus3.skill.vcs.gitlab.issue import GitLabIssueSkill
@@ -55,6 +57,52 @@ class GitLabSkillTestBase:
         client = AsyncMock(spec=GitLabClient)
         client._encode_path = lambda x: x.replace("/", "%2F")
         return client
+
+    @pytest.fixture
+    def registry(self, services: ServiceContainer) -> SkillRegistry:
+        registry = SkillRegistry(services)
+        register_gitlab_skills(registry, services, permissions=None, visible=True)
+        return registry
+
+
+class TestGitLabSkillValidationContracts(GitLabSkillTestBase):
+    """Validation/contract checks for the GitLab family."""
+
+    def test_all_registered_gitlab_schemas_are_strict(self, registry: SkillRegistry) -> None:
+        for skill_name in registry.names:
+            if not skill_name.startswith("gitlab_"):
+                continue
+            skill = registry.get(skill_name)
+            assert skill is not None
+            assert skill.parameters.get("additionalProperties") is False, skill_name
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("skill_name", "params"),
+        [
+            ("gitlab_issue", {"action": "list"}),
+            ("gitlab_repo", {"action": "get"}),
+            ("gitlab_artifact", {"action": "browse"}),
+            ("gitlab_feature_flag", {"action": "list"}),
+        ],
+    )
+    async def test_gitlab_family_rejects_unknown_params(
+        self,
+        registry: SkillRegistry,
+        skill_name: str,
+        params: dict[str, Any],
+    ) -> None:
+        skill = registry.get(skill_name)
+        assert skill is not None
+
+        result = await skill.execute(**params, unknown_xyz="boom")
+
+        assert not result.success
+        assert "unknown_xyz" in result.error
+        assert (
+            "unexpected" in result.error.lower()
+            or "additional properties" in result.error.lower()
+        )
 
 
 class TestGitLabIssueSkill(GitLabSkillTestBase):

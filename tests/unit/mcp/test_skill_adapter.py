@@ -48,3 +48,24 @@ class TestMCPSkillAdapterSanitization:
         assert result.output == ""
         assert result.error == r"\[red]boom\[/red]"
         assert "\x1b[" not in result.error
+
+    @pytest.mark.asyncio
+    async def test_execute_preserves_open_ended_validated_arguments(self) -> None:
+        tool = MCPTool(
+            name="echo",
+            description="Echo",
+            input_schema={
+                "type": "object",
+                "additionalProperties": {"type": "string"},
+            },
+        )
+        mcp_result = MCPToolResult(content=[{"type": "text", "text": "ok"}], is_error=False)
+
+        mock_client = MagicMock()
+        mock_client.call_tool = AsyncMock(return_value=mcp_result)
+
+        adapter = MCPSkillAdapter(mock_client, tool, "test-server")
+        result = await adapter.execute(dynamic_key="value")
+
+        mock_client.call_tool.assert_awaited_once_with("echo", {"dynamic_key": "value"})
+        assert result.success

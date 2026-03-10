@@ -118,6 +118,7 @@ def validate_tool_arguments(
 
     # Get known properties from schema
     schema_props = set(schema.get("properties", {}).keys())
+    preserve_dynamic = schema_preserves_dynamic_top_level_keys(schema)
 
     # Check for extra properties (warn but don't reject)
     provided = set(arguments.keys())
@@ -126,8 +127,35 @@ def validate_tool_arguments(
     if extras:
         logger.warning("Unknown tool arguments (ignored): %s", extras)
 
+    # Preserve validated dynamic keys for explicitly open-ended schemas used by
+    # MCP-style adapters. Keep the historical filtering behavior for closed or
+    # implicitly-loose built-in schemas that do not opt in explicitly.
+    if preserve_dynamic:
+        return dict(arguments)
+
     # Return only known properties plus explicitly allowed internal params
     return {
         k: v for k, v in arguments.items()
         if k in schema_props or k in ALLOWED_INTERNAL_PARAMS
     }
+
+
+def schema_preserves_dynamic_top_level_keys(schema: dict[str, Any]) -> bool:
+    """Return True when validated top-level dynamic keys should be preserved.
+
+    This is intentionally narrower than raw JSON Schema defaults. Built-in
+    skills that merely omit `additionalProperties` continue to filter unknown
+    params unless they explicitly opt into open-ended top-level objects via
+    `additionalProperties`, `patternProperties`, or a schema without explicit
+    `properties`.
+    """
+    if schema.get("type") != "object":
+        return False
+
+    if schema.get("patternProperties"):
+        return True
+
+    if "additionalProperties" in schema:
+        return schema["additionalProperties"] is not False
+
+    return not schema.get("properties")

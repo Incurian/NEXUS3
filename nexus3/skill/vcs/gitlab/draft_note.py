@@ -80,6 +80,7 @@ class GitLabDraftSkill(GitLabSkill):
                 },
             },
             "required": ["action", "iid"],
+            "additionalProperties": False,
         }
 
     def _get_mr_path(self, client: GitLabClient, project: str | None) -> str:

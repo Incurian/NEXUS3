@@ -68,6 +68,7 @@ class GitLabDeployKeySkill(GitLabSkill):
                 },
             },
             "required": ["action"],
+            "additionalProperties": False,
         }
 
     def _get_base_path(self, client: GitLabClient, project: str) -> str:

@@ -78,6 +78,7 @@ class GitLabJobSkill(GitLabSkill):
                             "value": {"type": "string"},
                         },
                         "required": ["key", "value"],
+                        "additionalProperties": False,
                     },
                     "description": "Variables to pass when playing manual job",
                 },
@@ -87,6 +88,7 @@ class GitLabJobSkill(GitLabSkill):
                 },
             },
             "required": ["action"],
+            "additionalProperties": False,
         }
 
     async def _execute_impl(

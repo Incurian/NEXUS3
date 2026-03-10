@@ -99,6 +99,7 @@ class GitLabTagSkill(GitLabSkill):
                 },
             },
             "required": ["action"],
+            "additionalProperties": False,
         }
 
     async def _execute_impl(

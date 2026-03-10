@@ -310,3 +310,55 @@ class TestValidateToolArguments:
                 {"path": "/test", "unknown_xyz": "boom"},
                 schema,
             )
+
+    def test_preserves_dynamic_keys_for_explicit_additional_properties(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "fixed": {"type": "string"},
+            },
+            "additionalProperties": {"type": "integer"},
+        }
+
+        validated = validate_tool_arguments(
+            {"fixed": "ok", "dynamic_count": 3},
+            schema,
+        )
+
+        assert validated == {"fixed": "ok", "dynamic_count": 3}
+
+    def test_preserves_dynamic_keys_for_pattern_properties(self) -> None:
+        schema = {
+            "type": "object",
+            "patternProperties": {
+                "^x-": {"type": "string"},
+            },
+        }
+
+        validated = validate_tool_arguments(
+            {"x-token": "abc"},
+            schema,
+        )
+
+        assert validated == {"x-token": "abc"}
+
+    @pytest.mark.asyncio
+    async def test_open_ended_schema_preserves_dynamic_keys_in_wrapper(self) -> None:
+        schema = {
+            "type": "object",
+            "additionalProperties": {"type": "string"},
+        }
+
+        received_kwargs: dict[str, Any] = {}
+
+        class TestSkill(MockSkill):
+            @validate_skill_parameters(strict=False)
+            async def execute(self, **kwargs: Any) -> ToolResult:
+                received_kwargs.update(kwargs)
+                return ToolResult(output="ok")
+
+        skill = TestSkill(schema)
+        result = await skill.execute(dynamic_key="value")
+
+        assert result.success
+        assert received_kwargs == {"dynamic_key": "value"}

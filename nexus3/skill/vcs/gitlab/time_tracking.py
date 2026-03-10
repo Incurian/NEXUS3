@@ -72,6 +72,7 @@ class GitLabTimeSkill(GitLabSkill):
                 },
             },
             "required": ["action", "iid", "target_type"],
+            "additionalProperties": False,
         }
 
     def _get_target_path(

@@ -117,6 +117,7 @@ class GitLabEpicSkill(GitLabSkill):
                 },
             },
             "required": ["action", "group"],
+            "additionalProperties": False,
         }
 
     async def _execute_impl(

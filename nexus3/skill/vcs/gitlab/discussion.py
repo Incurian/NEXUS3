@@ -78,6 +78,7 @@ class GitLabDiscussionSkill(GitLabSkill):
                 },
             },
             "required": ["action", "target_type"],
+            "additionalProperties": False,
         }
 
     def _get_target_path(

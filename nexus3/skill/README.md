@@ -32,7 +32,8 @@ Skills are the tool system in NEXUS3. Each skill provides a single, well-defined
 - **Factory-based instantiation**: Skills are registered as factories for lazy creation with dependency injection
 - **Base class hierarchy**: Specialized base classes handle common patterns (file operations, subprocess execution, server communication)
 - **Permission integration**: Per-tool path restrictions and permission-level filtering
-- **JSON Schema validation**: Automatic parameter validation before execution
+- **JSON Schema validation**: Automatic parameter validation before execution;
+  explicitly open-ended schemas preserve validated dynamic top-level keys
 - **Security hardening**: Path validation, symlink resolution, sandbox enforcement, environment sanitization
 - **Windows compatibility**: Platform-specific process handling, line ending preservation, attribute support
 

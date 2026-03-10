@@ -26,7 +26,11 @@ from typing import TYPE_CHECKING, Any, Protocol, TypeVar, runtime_checkable
 
 from nexus3.core.constants import get_default_server_port
 from nexus3.core.types import ToolResult
-from nexus3.core.validation import ALLOWED_INTERNAL_PARAMS, ValidationError
+from nexus3.core.validation import (
+    ALLOWED_INTERNAL_PARAMS,
+    ValidationError,
+    schema_preserves_dynamic_top_level_keys,
+)
 
 if TYPE_CHECKING:
     from nexus3.client import NexusClient
@@ -116,24 +120,28 @@ def validate_skill_parameters(
 
             # Get known properties from schema
             schema_props = set(schema.get("properties", {}).keys())
+            preserve_dynamic = schema_preserves_dynamic_top_level_keys(schema)
 
             # Check for unexpected parameters
             provided = set(kwargs.keys())
             extras = provided - schema_props - ALLOWED_INTERNAL_PARAMS
 
             if extras:
-                if strict:
+                if strict and not preserve_dynamic:
                     return ToolResult(
                         error=f"Unexpected parameters for {self.name}: {sorted(extras)}"
                     )
                 # Non-strict: filter out extras (session.py logs a warning)
 
-            # Filter to known properties + allowed internal params
-            validated = {
-                k: v
-                for k, v in kwargs.items()
-                if k in schema_props or k in ALLOWED_INTERNAL_PARAMS
-            }
+            # Preserve validated dynamic keys for explicitly open-ended schemas.
+            if preserve_dynamic:
+                validated = dict(kwargs)
+            else:
+                validated = {
+                    k: v
+                    for k, v in kwargs.items()
+                    if k in schema_props or k in ALLOWED_INTERNAL_PARAMS
+                }
 
             return await func(self, **validated)
 
@@ -218,12 +226,15 @@ def _wrap_with_validation(skill: "Skill") -> None:
         # Get known properties from schema
         schema_props = set(schema.get("properties", {}).keys())
 
-        # Filter to known properties + allowed internal params
-        validated = {
-            k: v
-            for k, v in kwargs.items()
-            if k in schema_props or k in ALLOWED_INTERNAL_PARAMS
-        }
+        if schema_preserves_dynamic_top_level_keys(schema):
+            validated = dict(kwargs)
+        else:
+            # Filter to known properties + allowed internal params
+            validated = {
+                k: v
+                for k, v in kwargs.items()
+                if k in schema_props or k in ALLOWED_INTERNAL_PARAMS
+            }
 
         return await original_execute(**validated)
 
