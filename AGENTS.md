@@ -294,6 +294,18 @@ Immediate tasks:
   - focused validation passed:
     - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py`
     - `.venv/bin/pytest -q tests/unit/skill/test_patch.py` (`33 passed`)
+- Completed live-test regression fix (2026-03-10, local pending commit):
+  `edit_file` batch-mode placeholder normalization:
+  - Windows live testing surfaced `edit_file` failures when a caller sent
+    `edits=[...]` alongside placeholder `old_string=""` / `new_string=""`.
+  - updated `nexus3/skill/builtin/edit_file.py` to treat that exact empty-string
+    placeholder shape as omitted in batch mode, while still rejecting real
+    mixed-mode calls and invalid empty batch edits.
+  - added focused regression coverage in `tests/unit/skill/test_edit_file.py`
+    for the placeholder batch shape.
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/skill/builtin/edit_file.py tests/unit/skill/test_edit_file.py`
+    - `.venv/bin/pytest -q tests/unit/skill/test_edit_file.py` (`21 passed`)
   - next gate remains Windows live validation to confirm the documented
     fail-closed behavior on real hosts.
 - Completed follow-on hardening slice (2026-03-10): Plan Phase 3

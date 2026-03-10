@@ -247,6 +247,22 @@ class TestBatchEdit(TestEditFileSkill):
         assert "old_string" in result.error
 
     @pytest.mark.asyncio
+    async def test_batch_allows_empty_placeholder_single_edit_fields(self, skill, test_file):
+        """Empty-string placeholders should not trip batch-mode mutual exclusion."""
+        result = await skill.execute(
+            path=str(test_file),
+            old_string="",
+            new_string="",
+            edits=[
+                {"old_string": "def foo():", "new_string": "def foo() -> None:"}
+            ],
+        )
+
+        assert result.success
+        assert "Applied 1 edit" in result.output
+        assert "def foo() -> None:" in test_file.read_text()
+
+    @pytest.mark.asyncio
     async def test_batch_mutual_exclusion_new_string(self, skill, test_file):
         """Test that edits array cannot be mixed with new_string param."""
         result = await skill.execute(
@@ -375,7 +391,8 @@ class TestBatchEdit(TestEditFileSkill):
         )
 
         assert not result.success
-        assert "old_string cannot be empty" in result.error
+        assert "edits.0.old_string" in result.error
+        assert "non-empty" in result.error
 
     @pytest.mark.asyncio
     async def test_batch_edit_with_empty_new_string(self, skill, tmp_path):

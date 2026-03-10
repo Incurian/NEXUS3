@@ -71,6 +71,7 @@ class EditFileSkill(FileSkill):
                         "properties": {
                             "old_string": {
                                 "type": "string",
+                                "minLength": 1,
                                 "description": "Text to find"
                             },
                             "new_string": {
@@ -117,6 +118,12 @@ class EditFileSkill(FileSkill):
         """
         # Detect batch mode
         batch_mode = edits is not None and len(edits) > 0
+
+        # Some tool-callers send empty-string placeholders for omitted single-edit
+        # fields when using batch mode. Treat that exact shape as "not provided".
+        if batch_mode and old_string == "" and new_string == "" and not replace_all:
+            old_string = None
+            new_string = None
 
         if batch_mode:
             # Cannot mix with single-edit params
