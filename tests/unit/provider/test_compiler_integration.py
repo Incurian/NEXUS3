@@ -72,6 +72,121 @@ def test_openai_request_body_does_not_inject_cancel_note_mid_tool_loop() -> None
     )
 
 
+def test_openai_request_body_normalizes_empty_mcp_tool_schema() -> None:
+    """OpenAI request shaping should normalize no-arg MCP tool schemas."""
+    from nexus3.provider.openai_compat import OpenAICompatProvider
+
+    provider = OpenAICompatProvider(
+        ProviderConfig(
+            type="openai",
+            api_key_env="OPENAI_API_KEY",
+            auth_method=AuthMethod.NONE,
+        ),
+        model_id="gpt-4o",
+    )
+
+    original_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "mcp_agentbridge_list_worlds",
+                "description": "List available worlds.",
+                "parameters": {},
+            },
+        }
+    ]
+
+    body = provider._build_request_body(
+        messages=[Message(role=Role.USER, content="list worlds")],
+        tools=original_tools,
+        stream=False,
+    )
+
+    assert body["tools"][0]["function"]["parameters"] == {
+        "type": "object",
+        "properties": {},
+    }
+    # The provider should not mutate caller-owned tool definitions in place.
+    assert original_tools[0]["function"]["parameters"] == {}
+
+
+def test_openai_request_body_normalizes_object_tool_schema_without_properties() -> None:
+    """OpenAI request shaping should add missing properties for no-arg object schemas."""
+    from nexus3.provider.openai_compat import OpenAICompatProvider
+
+    provider = OpenAICompatProvider(
+        ProviderConfig(
+            type="openai",
+            api_key_env="OPENAI_API_KEY",
+            auth_method=AuthMethod.NONE,
+        ),
+        model_id="gpt-4o",
+    )
+
+    original_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "mcp_ping",
+                "description": "Ping the MCP server.",
+                "parameters": {"type": "object", "title": "PingArgs"},
+            },
+        }
+    ]
+
+    body = provider._build_request_body(
+        messages=[Message(role=Role.USER, content="ping")],
+        tools=original_tools,
+        stream=False,
+    )
+
+    assert body["tools"][0]["function"]["parameters"] == {
+        "type": "object",
+        "title": "PingArgs",
+        "properties": {},
+    }
+    assert original_tools[0]["function"]["parameters"] == {
+        "type": "object",
+        "title": "PingArgs",
+    }
+
+
+def test_openai_request_body_preserves_existing_empty_properties_schema() -> None:
+    """OpenAI request shaping should leave valid explicit empty schemas alone."""
+    from nexus3.provider.openai_compat import OpenAICompatProvider
+
+    provider = OpenAICompatProvider(
+        ProviderConfig(
+            type="openai",
+            api_key_env="OPENAI_API_KEY",
+            auth_method=AuthMethod.NONE,
+        ),
+        model_id="gpt-4o",
+    )
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "nexus_status",
+                "description": "Show agent status.",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+
+    body = provider._build_request_body(
+        messages=[Message(role=Role.USER, content="status")],
+        tools=tools,
+        stream=False,
+    )
+
+    assert body["tools"][0]["function"]["parameters"] == {
+        "type": "object",
+        "properties": {},
+    }
+
+
 def test_anthropic_convert_messages_does_not_synthesize_orphans_locally() -> None:
     """Anthropic conversion should no longer synthesize missing tool results itself."""
     from nexus3.provider.anthropic import AnthropicProvider

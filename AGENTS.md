@@ -3342,3 +3342,84 @@ Compact handover checkpoint (2026-03-09, post-Plan C test-hygiene wave 3):
      provider keep-alive real-endpoint evidence is deferred pending endpoint/model credentials and API keys in WSL.
   4. Windows host is not currently required for this gate; resume keep-alive
      Step 10 evidence once credentials/config become available.
+
+Compact handoff checkpoint (2026-03-10, MCP schema regression + follow-up audit note):
+- New live bug reported from MCP/OpenAI tool use:
+  - `API request failed (400)`
+  - provider payload error:
+    `Invalid schema for function 'mcp_agentbridge_list_worlds': In context=(), object schema missing properties.`
+- User report context:
+  - this surfaced while using MCP-backed tools.
+  - user also wants a later audit of GitLab tools for similar provider/schema compatibility issues and any related defects.
+- Investigation status before compact:
+  - bug is very likely real.
+  - likely cause is empty/no-arg MCP input schemas being passed through unchanged into OpenAI-compatible function/tool definitions.
+  - OpenAI appears to reject object schemas that omit `properties` entirely or otherwise present a provider-incompatible empty-object shape.
+- Key files inspected:
+  - `nexus3/mcp/skill_adapter.py`
+    - MCP tool schemas are forwarded into skill parameters without provider-specific normalization.
+  - `nexus3/mcp/protocol.py`
+    - `MCPTool.input_schema` defaults to `{}` and `from_dict()` preserves incoming `inputSchema` directly.
+  - `nexus3/skill/registry.py`
+    - skill/tool definitions are emitted using `spec.parameters` / `skill.parameters` directly.
+  - `nexus3/cli/repl_commands.py`
+    - MCP skill definitions appended directly with `parameters: mcp_skill.parameters`.
+  - `nexus3/rpc/pool.py` and `nexus3/rpc/pool_restore.py`
+    - also forward MCP skill parameters directly into tool definitions.
+  - `nexus3/provider/openai_compat.py`
+    - provider sends tool definitions through as-shaped; no compatibility normalization found in the inspected path.
+- Evidence / supporting observations:
+  - MCP test fixtures already include empty-object input schemas, for example in `nexus3/mcp/test_server/definitions.py` (`get_time`).
+  - ripgrep also showed empty object schemas in tests including:
+    - `tests/unit/test_pool.py`
+    - `tests/unit/skill/test_skillspec.py`
+    - `tests/unit/mcp/test_protocol.py`
+    - `tests/security/test_mcp_security.py`
+  - `nexus3/provider/anthropic.py` also uses an empty-object fallback shape (`{"type": "object", "properties": {}}`), so schema-compat normalization should be handled carefully and probably centrally rather than ad hoc per callsite.
+- Most likely implementation direction next turn:
+  1. add centralized provider-facing schema normalization for no-arg tool schemas.
+  2. cover MCP empty-schema shapes: `{}`, `{"type": "object"}`, and `{"type": "object", "properties": {}}`.
+  3. add focused regressions for the OpenAI-compatible tool-definition path.
+  4. after fixing MCP, schedule the requested GitLab-tool audit for similar schema/boundary issues.
+- Important caution:
+  - no code fix was landed yet for this MCP bug before compact.
+  - do not accidentally revert the recent outline-audit changes; this MCP work is separate.
+
+Execution checkpoint (2026-03-10, MCP/OpenAI empty-schema fix landed):
+- Fixed live MCP/OpenAI provider regression:
+  - OpenAI-compatible request shaping in `nexus3/provider/openai_compat.py`
+    now normalizes no-arg tool schemas on the outbound provider path.
+  - normalized shapes:
+    - `{}`
+    - `{"type": "object"}` (and other top-level object schemas with missing
+      `properties`)
+  - outbound normalized form:
+    - `{"type": "object", "properties": {}}`
+- Rationale:
+  - MCP servers legitimately advertise no-arg tools with empty/default
+    `inputSchema` values.
+  - OpenAI-compatible APIs rejected those raw shapes with
+    `invalid_function_parameters` / `object schema missing properties`.
+  - provider-side normalization was chosen as the narrowest safe boundary so
+    local skill/MCP contracts stay unchanged.
+- Focused regressions added in:
+  - `tests/unit/provider/test_compiler_integration.py`
+    - empty `{}` schema normalization
+    - `{"type": "object"}` normalization with non-mutating behavior
+    - pass-through of already-valid `{"type": "object", "properties": {}}`
+- Docs synced:
+  - `nexus3/provider/README.md`
+  - `CLAUDE.md`
+- Validation snapshot:
+  - passed:
+    `.venv/bin/ruff check nexus3/provider/openai_compat.py tests/unit/provider/test_compiler_integration.py`
+  - passed:
+    `.venv/bin/pytest -q tests/unit/provider/test_compiler_integration.py`
+    (`8 passed`)
+- Quick follow-up audit result:
+  - built-in GitLab skills do not appear to use the same empty top-level
+    schema pattern; their parameter schemas are explicit object schemas with
+    real properties.
+  - a deeper GitLab tool audit is still worth doing later for other boundary
+    issues, per user request, but the exact MCP/OpenAI empty-schema failure did
+    not reproduce in the quick built-in GitLab scan.

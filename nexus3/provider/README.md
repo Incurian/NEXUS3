@@ -300,6 +300,12 @@ Handles OpenAI-format APIs (OpenRouter, OpenAI, Ollama, vLLM).
 }
 ```
 
+For OpenAI-compatible providers, NEXUS3 also normalizes no-arg tool schemas
+before sending the request body. MCP or other external tools that advertise
+`{}` or `{"type": "object"}` are rewritten to
+`{"type": "object", "properties": {}}` on the outbound OpenAI path so they
+remain provider-compatible without changing the local skill contract.
+
 **Extended Thinking/Reasoning:**
 When `reasoning=True`, adds `{"reasoning": {"effort": "high"}}` to request body (supported by Grok via OpenRouter).
 

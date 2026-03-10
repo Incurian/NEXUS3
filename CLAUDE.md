@@ -1964,6 +1964,18 @@ now remains session-preflight-only before new USER turns; provider request
 shaping still prunes/synthesizes tool-result invariants, but no longer injects
 that cancellation note mid-loop.
 
+#### Recent Provider Fix: MCP No-Arg Tool Schema Normalization (2026-03-10)
+
+OpenAI-compatible providers were rejecting some MCP-backed tools with
+`invalid_function_parameters` when the MCP server advertised a no-arg
+`inputSchema` as `{}` or `{"type": "object"}`. The direct provider request
+path in `nexus3/provider/openai_compat.py` now normalizes those outbound tool
+schemas to `{"type": "object", "properties": {}}` before the API call.
+This keeps MCP/local skill contracts unchanged while making OpenAI-format tool
+definitions provider-compatible. Quick follow-up audit: built-in GitLab skills
+did not show the same empty-schema pattern; deeper GitLab tool auditing
+remains deferred separately.
+
 #### Recent Tooling Fix: Patch Hunk-Only Diff Normalization (2026-03-10)
 
 `nexus3/skill/builtin/patch.py` now auto-normalizes single-file hunk-only diffs

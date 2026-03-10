@@ -41,6 +41,52 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _normalize_tool_parameters_for_openai(
+    schema: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Normalize no-arg tool schemas for OpenAI-compatible APIs.
+
+    OpenAI tool/function schemas require an object-shaped top-level parameters
+    schema. Some MCP servers legitimately advertise no-arg tools as `{}` or as
+    `{"type": "object"}`. Those shapes are accepted locally but can be
+    rejected by OpenAI-compatible providers. Normalize only the no-arg object
+    cases here, leaving richer schemas untouched.
+    """
+    if not schema:
+        return {"type": "object", "properties": {}}
+
+    if schema.get("type") == "object" and "properties" not in schema:
+        normalized = dict(schema)
+        normalized["properties"] = {}
+        return normalized
+
+    return schema
+
+
+def _normalize_tools_for_openai(
+    tools: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return provider-safe tool definitions for OpenAI-compatible APIs."""
+    normalized_tools: list[dict[str, Any]] = []
+    for tool in tools:
+        function = tool.get("function")
+        if not isinstance(function, dict):
+            normalized_tools.append(tool)
+            continue
+
+        normalized_function = dict(function)
+        normalized_function["parameters"] = _normalize_tool_parameters_for_openai(
+            function.get("parameters")
+            if isinstance(function.get("parameters"), dict)
+            else None
+        )
+        normalized_tool = dict(tool)
+        normalized_tool["function"] = normalized_function
+        normalized_tools.append(normalized_tool)
+
+    return normalized_tools
+
+
 class OpenAICompatProvider(BaseProvider):
     """Provider for OpenAI-compatible APIs.
 
@@ -126,7 +172,7 @@ class OpenAICompatProvider(BaseProvider):
         }
 
         if tools:
-            body["tools"] = tools
+            body["tools"] = _normalize_tools_for_openai(tools)
 
         # Enable extended thinking/reasoning if configured
         if self._reasoning:
