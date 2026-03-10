@@ -33,7 +33,8 @@ class EditFileSkill(FileSkill):
         return (
             "Edit a file using exact string replacement. "
             "Use for literal find/replace and atomic multi-edit batches via 'edits'. "
-            "IMPORTANT: old_string must match exactly (including whitespace/newlines). "
+            "IMPORTANT: every old_string must match exactly (including whitespace/newlines), "
+            "and in batch mode later edits must still match after earlier edits. "
             "Use edit_lines for line-number edits and regex_replace for pattern-based edits."
         )
 
@@ -72,7 +73,10 @@ class EditFileSkill(FileSkill):
                             "old_string": {
                                 "type": "string",
                                 "minLength": 1,
-                                "description": "Text to find"
+                                "description": (
+                                    "Exact literal text to find "
+                                    "(including whitespace/newlines)"
+                                )
                             },
                             "new_string": {
                                 "type": "string",
@@ -87,7 +91,10 @@ class EditFileSkill(FileSkill):
                         "required": ["old_string", "new_string"]
                     },
                     "description": (
-                        "Array of string replacements (atomic - all or none). "
+                        "Atomic array of exact string replacements (all-or-none). "
+                        "Each edit must match the original file, and later edits "
+                        "must still match after earlier edits are applied. Split "
+                        "dependent or overlapping edits into separate calls. "
                         "Cannot be used with old_string/new_string."
                     )
                 }

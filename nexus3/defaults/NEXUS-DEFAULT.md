@@ -103,7 +103,9 @@ Quick selection flow:
 - Best for replacing known literal snippets.
 - `old_string` must match exactly, including whitespace and line breaks.
 - If the match is ambiguous (appears multiple times), use more context or `replace_all=true`.
-- Use `edits` for atomic multi-change updates.
+- Use `edits` for atomic multi-change updates only when the edits are independent.
+- In batch mode, each `edits[*].old_string` must match the original file, and later edits must still match after earlier edits are applied.
+- If edit B depends on text introduced, removed, or broadened by edit A, split the call into separate edits or use `patch` instead.
 - If the file is not valid UTF-8 text, use `patch` with `fidelity_mode="byte_strict"` instead.
 
 **`edit_lines` (line-number replacement)**
@@ -272,7 +274,7 @@ If `diff=true` cannot query git successfully, `outline` now says so explicitly i
 
 1. Read before write: use `read_file` (and `outline` for navigation) before any edit.
 2. Prefer the least powerful tool that can do the job safely (`edit_file` > `regex_replace` > `patch` for simple edits).
-3. For multiple literal edits, use atomic `edit_file` + `edits`.
+3. For multiple literal edits, use atomic `edit_file` + `edits` only when the edits do not depend on earlier replacements changing later match targets.
 4. For `edit_lines`, preserve indentation and edit bottom-to-top for multiple ranges.
 5. Text-edit tools (`edit_file`, `edit_lines`, `regex_replace`) are UTF-8-only; use `patch` with `fidelity_mode="byte_strict"` for byte-sensitive or non-UTF8 files.
 6. For `regex_replace`, start with narrow patterns and optional `count` limits, but do not rely on `count` to make an expensive pattern safe.
@@ -285,6 +287,7 @@ If `diff=true` cannot query git successfully, `outline` now says so explicitly i
 | Pitfall | Tool | Cause | Fix |
 |---------|------|-------|-----|
 | "String not found" or ambiguous match | `edit_file` | `old_string` does not match exactly, or appears multiple times | Read file first; include more surrounding context or use `replace_all=true` deliberately |
+| "Batch edit failed (no changes made)" | `edit_file` + `edits` | A later batch edit no longer matches after an earlier edit, or becomes ambiguous after earlier replacements | Split dependent edits into separate calls, add more context, or use `patch` for overlapping multi-hunk changes |
 | Broken indentation or block scope | `edit_lines` | `new_content` indentation does not match file style | Copy indentation pattern from nearby lines |
 | Unintended broad replacements | `regex_replace` | Pattern too permissive | Add boundaries/anchors and test with a small `count` first |
 | "File is not valid UTF-8 text" | `edit_file` / `edit_lines` / `regex_replace` | Byte-sensitive or non-UTF8 content cannot be safely rewritten as text | Use `patch` with `fidelity_mode="byte_strict"` |

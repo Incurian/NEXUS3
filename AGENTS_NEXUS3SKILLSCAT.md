@@ -12,7 +12,7 @@ Derived from `CLAUDE.md` Built-in Skills section, adapted for Codex usage.
 | `tail` | `path`, `lines`? | Read last N lines of a file (default: 10) |
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
 | `write_file` | `path`, `content` | Write/create UTF-8 text files (exact newline bytes; read file first) |
-| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | UTF-8 string replacement, single or batched (read file first) |
+| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | UTF-8 exact string replacement; batch edits are atomic and later edits must still match after earlier edits (read file first) |
 | `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | Replace UTF-8 lines by number (work bottom-to-top for multiple edits) |
 | `append_file` | `path`, `content`, `newline`? | Append UTF-8 text to a file (exact newline bytes; read file first) |
 | `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | UTF-8 pattern-based find/replace (`count >= 0`; read file first) |
