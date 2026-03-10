@@ -3966,3 +3966,40 @@ Execution update (2026-03-10, full-suite validation follow-up):
     existing cross-test backlog outside this fixture-fix slice
 - Next gate:
   - triage and reduce the remaining repo-wide lint backlog
+
+Execution update (2026-03-10, read-file ergonomics + next audit selection):
+- Implemented the deferred `read_file` ergonomics follow-up:
+  - `nexus3/skill/builtin/read_file.py`
+    - added `start_line` / `end_line` compatibility aliases for the existing
+      `offset` / `limit` paging contract
+    - mixed alias/canonical calls now fail closed if they disagree on the
+      requested line window
+  - focused regressions added in `tests/unit/test_skill_enhancements.py`
+  - user-facing docs updated in:
+    - `AGENTS_NEXUS3SKILLSCAT.md`
+    - `nexus3/defaults/NEXUS-DEFAULT.md`
+    - `nexus3/skill/README.md`
+    - `CLAUDE.md`
+    - `docs/plans/FILE-EDIT-TOOL-CONTRACT-HARMONIZATION-PLAN-2026-03-10.md`
+- Focused validation passed:
+  - `.venv/bin/ruff check nexus3/skill/builtin/read_file.py tests/unit/test_skill_enhancements.py AGENTS_NEXUS3SKILLSCAT.md nexus3/defaults/NEXUS-DEFAULT.md nexus3/skill/README.md CLAUDE.md docs/plans/FILE-EDIT-TOOL-CONTRACT-HARMONIZATION-PLAN-2026-03-10.md`
+  - `.venv/bin/pytest -q tests/unit/test_skill_enhancements.py -k 'ReadFileOffsetLimit'` (`13 passed`)
+  - `git diff --check`
+- Completed the deferred `outline` follow-up audit at the “fresh local evidence”
+  level:
+  - inspected current `outline` contract/code plus local `.nexus3/logs`
+    transcript examples
+  - local logs showed correct `outline(path=...)`, `depth=...`, and
+    `symbol=...` usage examples but did not surface a fresh invalid-argument
+    or schema-misuse repro after the earlier outline hardening waves
+  - conclusion: no additional outline code change is justified yet without a
+    concrete failing payload; keep the remaining concern as a transcript-driven
+    follow-up rather than guessing at more aliases
+- Selected the next additional tool-family audit scope:
+  - highest-priority next family is the MCP dynamic tool boundary
+  - new plan doc:
+    `docs/plans/MCP-DYNAMIC-TOOL-BOUNDARY-AUDIT-PLAN-2026-03-10.md`
+- Next gate:
+  - start the MCP dynamic tool boundary audit
+  - keep the repo-wide lint backlog deferred unless we explicitly choose to
+    return to 100%-green cleanup work
