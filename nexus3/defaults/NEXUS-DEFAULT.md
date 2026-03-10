@@ -62,7 +62,7 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern |
 | `grep` | `pattern`, `path`, `include`?, `context`?, `ignore_case`? | Search file contents with regex |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `dry_run`? | Concatenate files by extension (dry_run=true by default) |
-| `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Directory mode is non-recursive, but `depth` controls nested symbols within each file. Use `symbol` for filtered read on files, `file_type`/`language`/`parser` to override parser detection on files, `tokens` for estimates, and `diff` for changes. Unsupported file types should fall back to `read_file` or retry with a parser override |
+| `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Directory mode is non-recursive, but `depth` controls nested symbols within each file. `symbol` returns a source excerpt rather than structural entries. Use `file_type`/`language`/`parser` to override parser detection on files, `tokens` for estimates, and `diff` for changes. Unsupported file types should fall back to `read_file` or retry with a parser override |
 
 ### File Operations (Write)
 | Tool | Key Parameters | Description | Use Case |
@@ -210,7 +210,7 @@ read_file(path="src/auth.py", offset=120, limit=40, line_numbers=false)
 outline(path="src/auth.py", symbol="AuthManager")    # Returns full body of AuthManager class with line numbers
 outline(path="src/auth.py", symbol="AuthManager", line_numbers=false)  # Raw source excerpt
 ```
-If duplicate symbols exist, `outline(symbol=...)` fails closed instead of picking one silently. Use the reported line numbers with `read_file` or choose a more specific symbol.
+If duplicate symbols exist, `outline(symbol=...)` fails closed instead of picking one silently. `symbol` mode returns source excerpt lines (`N: ...` when numbered), not normal outline entries. If the excerpt truncates, switch to `read_file` with the reported line numbers.
 
 **Use `outline` with `depth=1` for quick orientation:**
 ```
@@ -223,7 +223,7 @@ outline(path="src/auth/")                            # Non-recursive per-file to
 outline(path="src/auth/", line_numbers=false, signatures=false, preview=1)  # Same map with lighter output
 outline(path="src/auth/", depth=2)                   # Include one nested symbol level per file (for example, methods)
 ```
-If you pass `recursive=true`, `outline` fails closed and tells you to discover nested files first with `glob` or `list_directory`.
+If you pass `recursive=true`, `outline` fails closed and tells you to discover nested files first with `glob` or `list_directory`. Directory output is capped at roughly `100` supported immediate files and about `50KB`; if you see a truncation note, narrow the path or split the scan.
 
 **Use `outline` with a parser override when extension detection is unavailable:**
 ```

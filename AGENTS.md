@@ -315,8 +315,8 @@ Immediate tasks:
   - focused validation passed:
     - `.venv/bin/ruff check nexus3/skill/builtin/outline.py tests/unit/skill/test_outline.py`
     - `.venv/bin/pytest -q tests/unit/skill/test_outline.py` (`146 passed`)
-- Ongoing follow-on hardening slice (2026-03-10, local pending commit):
-  outline tool audit second wave:
+- Completed follow-on hardening slice (2026-03-10, committed `ab4ec43`, `2e25b3c`):
+  outline tool audit second/third waves:
   - `nexus3/core/validation.py`
   - `nexus3/skill/base.py`
     - internal runtime params such as `_parallel` are now stripped before JSON
@@ -341,11 +341,10 @@ Immediate tasks:
     - current local log artifacts do not contain post-change `outline` misuse
       reproductions; the concern remains hypothesis-driven rather than tied to
       a fresh captured failure.
-    - remaining likely follow-up items after this wave:
-      - directory diff marker matching still deserves a later pass for basename
-        collision risk.
+    - remaining likely follow-up item after this wave:
       - decide whether empty/no-actionable outline states should standardize on
-        error vs structured-success signaling.
+        error vs structured-success signaling, or remain explicit success
+        sentinels.
   - focused regression coverage added/updated in:
     - `tests/unit/test_skill_validation.py`
     - `tests/unit/skill/test_outline.py`

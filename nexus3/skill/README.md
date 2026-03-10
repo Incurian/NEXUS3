@@ -618,7 +618,7 @@ NEXUS3 includes 40 core built-in skills plus 21 GitLab skills (when configured),
 | `glob` | Find files by glob pattern | `pattern`, `path?`, `max_results?`, `exclude?` |
 | `grep` | Search file contents (regex), uses ripgrep when available | `pattern`, `path`, `recursive?`, `ignore_case?`, `max_matches?`, `include?`, `context?` |
 | `concat_files` | Find and concatenate files by extension with token estimation | `extensions`, `path?`, `exclude?`, `lines?`, `max_total?`, `format?`, `sort?`, `gitignore?`, `dry_run?` |
-| `outline` | Structural outline of file/directory (headings, classes, functions, keys; non-recursive for directories) | `path`, `file_type?`, `language?`, `parser?`, `depth?`, `preview?`, `signatures?`, `line_numbers?`, `tokens?`, `symbol?`, `diff?`, `recursive?` |
+| `outline` | Structural outline of file/directory (headings, classes, functions, keys; non-recursive for directories, `symbol` returns source excerpt) | `path`, `file_type?`, `language?`, `parser?`, `depth?`, `preview?`, `signatures?`, `line_numbers?`, `tokens?`, `symbol?`, `diff?`, `recursive?` |
 
 ### File Operations (Destructive)
 

@@ -24,7 +24,7 @@ Derived from `CLAUDE.md` Built-in Skills section, adapted for Codex usage.
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern (with exclusions) |
 | `grep` | `pattern`, `path`?, `include`?, `context`? | Search file contents with file filter and context lines |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate files by extension with token estimation (`dry_run=True` by default) |
-| `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of file/directory; directory mode is non-recursive, `depth` controls nested symbols within each file, `symbol` returns a source excerpt for files only, `file_type`/`language`/`parser` can override parser detection for files, `recursive=true` fails closed, and ambiguous symbol matches fail closed |
+| `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of file/directory; directory mode is non-recursive, `depth` controls nested symbols within each file, `symbol` returns a source excerpt for files only, `file_type`/`language`/`parser` can override parser detection for files, `recursive=true` fails closed, ambiguous symbol matches fail closed, and large directory output may truncate |
 | `git` | `command`, `cwd`? | Execute git commands (permission-filtered by level) |
 | `bash_safe` | `command`, `timeout`? | Execute shell commands (`shlex.split`, no shell operators) |
 | `shell_UNSAFE` | `command`, `timeout`? | Execute `shell=True` (pipes work, injection-vulnerable) |
