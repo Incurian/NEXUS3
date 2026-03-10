@@ -3685,3 +3685,7 @@ Execution update (2026-03-10, file-edit contract harmonization phase 3):
   - Next sensible follow-up is the broader discussion already approved by the
     user: which remaining cross-tool inconsistencies are appropriate vs should
     be standardized next, and then a similar audit for other tool families.
+  - after compact/resume, start that broad audit rather than another file-edit
+    slice unless the user redirects.
+  - deferred hygiene reminder: return to full 100% green validation
+    (not just focused touched-file passes) after the current audit/fix cycle.
