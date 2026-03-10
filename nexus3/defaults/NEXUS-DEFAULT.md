@@ -62,7 +62,7 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern |
 | `grep` | `pattern`, `path`, `include`?, `context`?, `ignore_case`? | Search file contents with regex |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `dry_run`? | Concatenate files by extension (dry_run=true by default) |
-| `outline` | `path`, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`? | Structural outline of file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Use `symbol` for filtered read, `tokens` for estimates, `diff` for changes. Unsupported file types point you to `read_file` |
+| `outline` | `path`, `file_type`?, `language`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`? | Structural outline of file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Directory mode is non-recursive. Use `symbol` for filtered read on files, `file_type`/`language` to override parser detection on files, `tokens` for estimates, and `diff` for changes. Unsupported file types should fall back to `read_file` or retry with `file_type` |
 
 ### File Operations (Write)
 | Tool | Key Parameters | Description | Use Case |
@@ -210,15 +210,23 @@ read_file(path="src/auth.py", offset=120, limit=40, line_numbers=false)
 outline(path="src/auth.py", symbol="AuthManager")    # Returns full body of AuthManager class with line numbers
 outline(path="src/auth.py", symbol="AuthManager", line_numbers=false)  # Raw source excerpt
 ```
+If duplicate symbols exist, `outline(symbol=...)` fails closed instead of picking one silently. Use the reported line numbers with `read_file` or choose a more specific symbol.
 
 **Use `outline` with `depth=1` for quick orientation:**
 ```
 outline(path="src/auth.py", depth=1)                 # Top-level only: classes and module functions, no methods
 ```
 
-**Use `outline` on a directory to map a module:**
+**Use `outline` on a directory to map a module's immediate files:**
 ```
-outline(path="src/auth/")                            # Per-file top-level symbols for all supported files
+outline(path="src/auth/")                            # Non-recursive per-file top-level symbols for supported files
+outline(path="src/auth/", line_numbers=false, signatures=false, preview=1)  # Same map with lighter output
+```
+
+**Use `outline` with `file_type` when extension detection is unavailable:**
+```
+outline(path="BUILD", file_type="python")            # Force Python parser for an extensionless file
+outline(path="notes.txt", file_type="markdown")      # Treat a misnamed file as Markdown
 ```
 
 **Use `outline` with `tokens=true` to plan your reading budget:**
@@ -248,7 +256,7 @@ outline(path="src/auth.py", diff=true)               # Entries with uncommitted 
 | Scenario | Use | Why |
 |----------|-----|-----|
 | "What's in this file?" | `outline` | Structure only, cheap |
-| "What's in this directory?" | `outline` on directory | Per-file symbols, very cheap |
+| "What's in this directory?" | `outline` on directory | Immediate-file symbols only, very cheap |
 | "I need the full source of all .py files" | `concat_files` | Bulk read with token budget |
 | "How big would reading all the code be?" | `concat_files` with `dry_run=true` | Token estimate without reading |
 | "I need one specific class body" | `outline` with `symbol` | Surgical extraction |

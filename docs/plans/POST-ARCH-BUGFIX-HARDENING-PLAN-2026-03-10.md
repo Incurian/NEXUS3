@@ -134,6 +134,11 @@ For text-oriented edit tools, silent corruption of non-UTF8 files is worse than 
   - `edit_file` batch mode now fails closed if earlier edits invalidate later edit targets in-memory.
   - `read_file` now supports `line_numbers=false` raw reads while keeping numbered output as the default.
   - `outline(symbol=...)` now honors `line_numbers=false`, and unsupported file types now explicitly direct callers to `read_file`.
+  - follow-up `outline` audit first wave:
+    - `outline` now accepts `file_type=` / `language=` parser overrides for files.
+    - directory mode now honors `preview`, `signatures`, and `line_numbers`.
+    - directory mode now rejects file-only `symbol` / parser-override parameters explicitly.
+    - ambiguous `outline(symbol=...)` matches now fail closed instead of returning the first match silently.
   - `patch` now accepts `path=` as the preferred file argument while preserving
     `target=` as a compatibility alias, and mismatched `path` + `target`
     inputs fail closed.

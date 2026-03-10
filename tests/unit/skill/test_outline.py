@@ -1045,6 +1045,24 @@ class TestSymbolExtraction:
         assert "not found" in result.error
         assert "existing" in result.error
 
+    def test_ambiguous_match_fails_closed(self):
+        entries = [
+            OutlineEntry(
+                line=1, depth=0, kind="function", name="run",
+                end_line=3,
+            ),
+            OutlineEntry(
+                line=10, depth=1, kind="method", name="run",
+                end_line=12,
+            ),
+        ]
+        lines = [f"line {i}" for i in range(15)]
+        result = _extract_symbol(entries, lines, "run", "test.py")
+        assert not result.success
+        assert "ambiguous" in result.error
+        assert "function run (L1)" in result.error
+        assert "method run (L10)" in result.error
+
     def test_returns_numbered_lines(self):
         entries = [
             OutlineEntry(
@@ -1212,9 +1230,47 @@ class TestOutlineSkill:
         f = tmp_path / "photo.xyz"
         f.write_text("binary stuff")
         result = await skill.execute(path=str(f))
+        assert not result.success
+        assert "No outline parser" in result.error
+        assert "Use read_file for raw contents" in result.error
+        assert "file_type='python'" in result.error
+
+    @pytest.mark.asyncio
+    async def test_file_type_override_for_extensionless_file(self, skill, tmp_path):
+        f = tmp_path / "BUILD"
+        f.write_text("def run_task():\n    return 1\n")
+        result = await skill.execute(path=str(f), file_type="python")
         assert result.success
-        assert "No outline parser" in result.output
-        assert "Use read_file for raw contents" in result.output
+        assert "function: def run_task()" in result.output
+
+    @pytest.mark.asyncio
+    async def test_language_alias_for_file_type(self, skill, tmp_path):
+        f = tmp_path / "CONFIG"
+        f.write_text('{"name": "demo"}')
+        result = await skill.execute(path=str(f), language="json")
+        assert result.success
+        assert "key: name" in result.output
+
+    @pytest.mark.asyncio
+    async def test_invalid_file_type_returns_error(self, skill, tmp_path):
+        f = tmp_path / "data.txt"
+        f.write_text("hello\n")
+        result = await skill.execute(path=str(f), file_type="excel")
+        assert not result.success
+        assert "Unsupported outline file_type" in result.error
+        assert "python" in result.error
+
+    @pytest.mark.asyncio
+    async def test_mismatched_file_type_and_language_error(self, skill, tmp_path):
+        f = tmp_path / "module.txt"
+        f.write_text("def run_task():\n    return 1\n")
+        result = await skill.execute(
+            path=str(f),
+            file_type="python",
+            language="markdown",
+        )
+        assert not result.success
+        assert "must resolve to the same parser" in result.error
 
     @pytest.mark.asyncio
     async def test_python_file(self, skill, tmp_path):
@@ -1345,6 +1401,28 @@ class TestOutlineSkill:
         assert "c.txt" not in result.output
 
     @pytest.mark.asyncio
+    async def test_directory_mode_honors_preview_signatures_and_line_numbers(
+        self,
+        skill,
+        tmp_path,
+    ):
+        (tmp_path / "a.py").write_text(
+            "def foo(x: int) -> str:\n"
+            "    return 'ok'\n"
+        )
+        result = await skill.execute(
+            path=str(tmp_path),
+            preview=1,
+            signatures=False,
+            line_numbers=False,
+        )
+        assert result.success
+        assert "L" not in result.output
+        assert "x: int" not in result.output
+        assert "function: foo" in result.output
+        assert "|     return 'ok'" in result.output
+
+    @pytest.mark.asyncio
     async def test_directory_skips_hidden(self, skill, tmp_path):
         (tmp_path / "visible.py").write_text("def f():\n    pass\n")
         (tmp_path / ".hidden.py").write_text("def g():\n    pass\n")
@@ -1360,6 +1438,18 @@ class TestOutlineSkill:
         result = await skill.execute(path=str(sub))
         assert result.success
         assert "No supported files" in result.output
+
+    @pytest.mark.asyncio
+    async def test_directory_rejects_symbol_mode(self, skill, tmp_path):
+        result = await skill.execute(path=str(tmp_path), symbol="Example")
+        assert not result.success
+        assert "only supported for files" in result.error
+
+    @pytest.mark.asyncio
+    async def test_directory_rejects_file_type_override(self, skill, tmp_path):
+        result = await skill.execute(path=str(tmp_path), file_type="python")
+        assert not result.success
+        assert "only supported for files" in result.error
 
     @pytest.mark.asyncio
     async def test_directory_respects_allowed_paths(self, tmp_path, monkeypatch):

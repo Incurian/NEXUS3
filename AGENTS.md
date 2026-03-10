@@ -245,15 +245,24 @@ Immediate tasks:
     1. Phase 5: Windows live validation refresh for Git Bash/Pwsh/Windows Terminal.
     2. Phase 6: final docs and validation closeout.
   - deferred follow-up note from user testing:
-    - revisit recurring agent misuse of `outline` later even after the Phase 2
-      contract cleanup. Current hypothesis is that agents may still be invoking
-      it with the wrong mental model/parameters, so a later pass should inspect
-      real transcripts/tool payloads and decide whether the fix belongs in
-      prompt guidance, schema ergonomics, or tool behavior.
+    - first follow-up `outline` audit wave is now implemented locally:
+      parser override support (`file_type` / `language`), honest directory-mode
+      parameter handling, and fail-closed ambiguous `symbol` resolution. A
+      later pass should still inspect fresh transcripts/tool payloads and
+      decide whether any remaining misuse belongs in prompt guidance, schema
+      ergonomics, or deeper tool behavior.
     - after the current Phase 5/6 closeout, discuss whether to open a dedicated
       follow-up plan for true Git Bash standalone ESC/multiline-paste support.
       The current branch only fails closed and documents the limitation; it
       does not claim a real mintty/backend input fix.
+    - later planning item from user:
+      create a dedicated plan for “NEXUS3 as an MCP server” so external agents
+      can spawn and communicate with Nexus agents without needing bespoke
+      server-start choreography. Scope this plan to include an agent-facing
+      messaging-queue / inbox model (for example, a “retrieve my messages”
+      tool), because Nexus agents currently reply to inbound requests but do
+      not have a clean way to initiate asynchronous conversation with outside
+      agents.
 - Completed follow-on hardening slice (2026-03-10): Plan Phase 5
   fail-closed Git Bash input handling:
   - `nexus3/core/shell_detection.py`
@@ -282,6 +291,30 @@ Immediate tasks:
   - focused validation passed:
     - `.venv/bin/ruff check nexus3/cli/prompt_support.py nexus3/core/shell_detection.py nexus3/cli/keys.py nexus3/cli/repl.py nexus3/cli/repl_runtime.py tests/unit/core/test_shell_detection.py tests/unit/cli/test_confirmation_sync.py tests/unit/cli/test_prompt_support.py`
     - `.venv/bin/pytest -q tests/unit/core/test_shell_detection.py tests/unit/cli/test_confirmation_sync.py tests/unit/cli/test_prompt_support.py` (`41 passed`)
+- Ongoing follow-on hardening slice (2026-03-10, local pending commit):
+  outline tool audit first wave:
+  - `nexus3/skill/builtin/outline.py`
+    - added file-level parser override support via `file_type=` and
+      `language=` for extensionless or misnamed files.
+    - directory mode now honors `preview`, `signatures`, and `line_numbers`
+      instead of silently ignoring them.
+    - directory mode now rejects file-only `symbol` / parser-override usage
+      with explicit errors instead of silently dropping those parameters.
+    - ambiguous `symbol` matches now fail closed instead of returning the first
+      match silently.
+    - unsupported file types now return actionable errors pointing callers to
+      `read_file` or `file_type=...`.
+  - focused regression coverage added/updated in:
+    - `tests/unit/skill/test_outline.py`
+  - focused doc sync updated:
+    - `nexus3/defaults/NEXUS-DEFAULT.md`
+    - `AGENTS_NEXUS3SKILLSCAT.md`
+    - `nexus3/skill/README.md`
+    - `README.md`
+    - `CLAUDE.md`
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/skill/builtin/outline.py tests/unit/skill/test_outline.py`
+    - `.venv/bin/pytest -q tests/unit/skill/test_outline.py` (`146 passed`)
 - Completed live-test regression fix (2026-03-10, local pending commit):
   OpenAI tool-schema compatibility for `patch`:
   - Windows live testing surfaced provider rejection of the `patch` tool

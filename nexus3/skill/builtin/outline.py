@@ -59,6 +59,15 @@ FILENAME_TO_PARSER: dict[str, str] = {
     "Dockerfile": "dockerfile",
 }
 
+PARSER_OVERRIDE_ALIASES: dict[str, str] = {
+    "js": "javascript",
+    "ts": "typescript",
+    "md": "markdown",
+    "yml": "yaml",
+    "c++": "cpp",
+    "docker": "dockerfile",
+}
+
 
 # =============================================================================
 # Data Types
@@ -93,6 +102,31 @@ def _detect_language(p: Path) -> str | None:
     ext = p.suffix.lstrip(".")
     if ext:
         return EXT_TO_PARSER.get(ext)
+    return None
+
+
+def _supported_parser_keys() -> list[str]:
+    """Return canonical parser keys for user-facing help text."""
+    return sorted(PARSERS)
+
+
+def _normalize_parser_override(parser_hint: str) -> str | None:
+    """Normalize a user-provided parser override to a canonical parser key."""
+    normalized = parser_hint.strip()
+    if not normalized:
+        return None
+
+    key = normalized.lower().lstrip(".")
+    if key in PARSERS:
+        return key
+    if key in EXT_TO_PARSER:
+        return EXT_TO_PARSER[key]
+    if key in PARSER_OVERRIDE_ALIASES:
+        return PARSER_OVERRIDE_ALIASES[key]
+    if normalized in FILENAME_TO_PARSER:
+        return FILENAME_TO_PARSER[normalized]
+    if normalized.lower() in FILENAME_TO_PARSER:
+        return FILENAME_TO_PARSER[normalized.lower()]
     return None
 
 
@@ -195,19 +229,15 @@ def _extract_symbol(
     line_numbers: bool = True,
 ) -> ToolResult:
     """Extract the full body of a named symbol from the file."""
-    match: OutlineEntry | None = None
-    for entry in entries:
-        if entry.name == symbol_name:
-            match = entry
-            break
+    exact_matches = [entry for entry in entries if entry.name == symbol_name]
+    if exact_matches:
+        matches = exact_matches
+    else:
+        matches = [
+            entry for entry in entries if entry.name.lower() == symbol_name.lower()
+        ]
 
-    if match is None:
-        for entry in entries:
-            if entry.name.lower() == symbol_name.lower():
-                match = entry
-                break
-
-    if match is None:
+    if not matches:
         available = [e.name for e in entries if e.depth == 0]
         if len(available) > 20:
             available = available[:20] + [f"... and {len(available) - 20} more"]
@@ -216,6 +246,21 @@ def _extract_symbol(
             f"Available top-level symbols: {', '.join(available)}"
         )
 
+    if len(matches) > 1:
+        rendered_matches = [
+            f"{entry.kind} {entry.name} (L{entry.line})" for entry in matches[:10]
+        ]
+        if len(matches) > 10:
+            rendered_matches.append(f"... and {len(matches) - 10} more")
+        return ToolResult(
+            error=(
+                f"Symbol '{symbol_name}' is ambiguous in {filename}.\n"
+                f"Matches: {', '.join(rendered_matches)}\n"
+                "Use read_file with line numbers or choose a more specific symbol."
+            )
+        )
+
+    match = matches[0]
     start_idx = match.line - 1
     end_idx = min(match.end_line, len(lines))
 
@@ -1357,8 +1402,9 @@ class OutlineSkill(FileSkill):
             "Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, "
             "Markdown, HTML, CSS, SQL, Makefile, Dockerfile. "
             "Use line numbers in output to target read_file for details. "
-            "Pass a directory to get per-file top-level symbols. "
+            "Pass a directory to get a non-recursive per-file top-level map. "
             "Use symbol='ClassName' to read a specific symbol's body. "
+            "Use file_type='python' when extension detection is unavailable. "
             "Use tokens=true for token estimates, diff=true for change markers."
         )
 
@@ -1370,6 +1416,21 @@ class OutlineSkill(FileSkill):
                 "path": {
                     "type": "string",
                     "description": "Path to the file or directory to outline",
+                },
+                "file_type": {
+                    "type": "string",
+                    "description": (
+                        "Optional parser override for files when extension detection "
+                        "is unavailable (for example: python, markdown, json). "
+                        "Not used for directories."
+                    ),
+                },
+                "language": {
+                    "type": "string",
+                    "description": (
+                        "Compatibility alias for file_type. If both are provided, "
+                        "they must resolve to the same parser."
+                    ),
                 },
                 "depth": {
                     "type": "integer",
@@ -1435,6 +1496,8 @@ class OutlineSkill(FileSkill):
     async def execute(
         self,
         path: str = "",
+        file_type: str = "",
+        language: str = "",
         depth: int | None = None,
         preview: int = 0,
         signatures: bool = True,
@@ -1453,8 +1516,28 @@ class OutlineSkill(FileSkill):
             # Directory mode
             is_dir = await asyncio.to_thread(p.is_dir)
             if is_dir:
+                if symbol:
+                    return ToolResult(
+                        error=(
+                            "outline(symbol=...) is only supported for files. "
+                            "Pick a file first, then retry with symbol."
+                        )
+                    )
+                if file_type or language:
+                    return ToolResult(
+                        error=(
+                            "outline(file_type=...) is only supported for files. "
+                            "Directory mode auto-detects per-file parsers."
+                        )
+                    )
                 return await self._outline_directory(
-                    p, depth=depth, tokens=tokens, diff=diff
+                    p,
+                    depth=depth,
+                    preview=preview,
+                    signatures=signatures,
+                    line_numbers=line_numbers,
+                    tokens=tokens,
+                    diff=diff,
                 )
 
             # File mode
@@ -1473,19 +1556,43 @@ class OutlineSkill(FileSkill):
                 )
 
             # Detect language
-            parser_key = _detect_language(p)
+            if file_type and language:
+                file_type_key = _normalize_parser_override(file_type)
+                language_key = _normalize_parser_override(language)
+                if file_type_key != language_key:
+                    return ToolResult(
+                        error=(
+                            "outline file_type and language must resolve to the "
+                            "same parser when both are provided."
+                        )
+                    )
+
+            parser_hint = file_type or language
+            if parser_hint:
+                parser_key = _normalize_parser_override(parser_hint)
+                if parser_key is None:
+                    return ToolResult(
+                        error=(
+                            f"Unsupported outline file_type '{parser_hint}'.\n"
+                            f"Supported values: {', '.join(_supported_parser_keys())}"
+                        )
+                    )
+            else:
+                parser_key = _detect_language(p)
             if parser_key is None:
-                supported = sorted(set(EXT_TO_PARSER.values()) | set(FILENAME_TO_PARSER.values()))
                 return ToolResult(
-                    output=f"No outline parser for file type: {p.suffix or p.name}\n"
-                    f"Use read_file for raw contents.\n"
-                    f"Supported: {', '.join(supported)}"
+                    error=(
+                        f"No outline parser for file type: {p.suffix or p.name}\n"
+                        "Use read_file for raw contents, or pass file_type='python' "
+                        "or another supported parser to force a parse.\n"
+                        f"Supported values: {', '.join(_supported_parser_keys())}"
+                    )
                 )
 
             parser = PARSERS.get(parser_key)
             if parser is None:
                 return ToolResult(
-                    output=(
+                    error=(
                         f"No outline parser for language: {parser_key}\n"
                         "Use read_file for raw contents."
                     )
@@ -1539,6 +1646,9 @@ class OutlineSkill(FileSkill):
         self,
         dir_path: Path,
         depth: int | None = None,
+        preview: int = 0,
+        signatures: bool = True,
+        line_numbers: bool = True,
         tokens: bool = False,
         diff: bool = False,
     ) -> ToolResult:
@@ -1567,7 +1677,7 @@ class OutlineSkill(FileSkill):
                 break
 
         if not file_paths:
-            supported = sorted(set(EXT_TO_PARSER.values()))
+            supported = _supported_parser_keys()
             return ToolResult(
                 output=f"No supported files found in {dir_path.name}/\n"
                 f"Supported types: {', '.join(supported)}"
@@ -1582,6 +1692,7 @@ class OutlineSkill(FileSkill):
         total_bytes = 0
 
         for fp in file_paths:
+            section_start = len(parts)
             parser_key = _detect_language(fp)
             if parser_key is None:
                 continue
@@ -1595,7 +1706,7 @@ class OutlineSkill(FileSkill):
             except (UnicodeDecodeError, PermissionError):
                 continue
 
-            file_entries = parser(lines, depth or 1, True, 0)
+            file_entries = parser(lines, depth or 1, signatures, preview)
             if not file_entries:
                 continue
 
@@ -1614,18 +1725,23 @@ class OutlineSkill(FileSkill):
             for outline_entry in file_entries:
                 if outline_entry.depth > 0:
                     continue
-                line_part = f"  L{outline_entry.line:>5} {outline_entry.kind}: "
-                if outline_entry.signature:
+                line_prefix = f"  L{outline_entry.line:>5} " if line_numbers else "  "
+                line_part = f"{line_prefix}{outline_entry.kind}: "
+                if signatures and outline_entry.signature:
                     line_part += outline_entry.signature
                 else:
                     line_part += outline_entry.name
                 if tokens and outline_entry.token_estimate > 0:
                     line_part += f"  (~{outline_entry.token_estimate} tokens)"
                 parts.append(line_part)
+                if outline_entry.preview_lines:
+                    preview_indent = " " * len(line_prefix) + "  "
+                    for preview_line in outline_entry.preview_lines:
+                        parts.append(f"{preview_indent}| {preview_line}")
 
             parts.append("")
 
-            section_text = "\n".join(parts[-len(file_entries) - 2:])
+            section_text = "\n".join(parts[section_start:])
             total_bytes += len(section_text.encode("utf-8"))
             if total_bytes > _MAX_DIR_OUTPUT_BYTES:
                 remaining = len(file_paths) - file_paths.index(fp) - 1
