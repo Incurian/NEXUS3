@@ -62,7 +62,7 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern |
 | `grep` | `pattern`, `path`, `include`?, `context`?, `ignore_case`? | Search file contents with regex |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `dry_run`? | Concatenate files by extension (dry_run=true by default) |
-| `outline` | `path`, `file_type`?, `language`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`? | Structural outline of file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Directory mode is non-recursive. Use `symbol` for filtered read on files, `file_type`/`language` to override parser detection on files, `tokens` for estimates, and `diff` for changes. Unsupported file types should fall back to `read_file` or retry with `file_type` |
+| `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Directory mode is non-recursive, but `depth` controls nested symbols within each file. Use `symbol` for filtered read on files, `file_type`/`language`/`parser` to override parser detection on files, `tokens` for estimates, and `diff` for changes. Unsupported file types should fall back to `read_file` or retry with a parser override |
 
 ### File Operations (Write)
 | Tool | Key Parameters | Description | Use Case |
@@ -221,12 +221,15 @@ outline(path="src/auth.py", depth=1)                 # Top-level only: classes a
 ```
 outline(path="src/auth/")                            # Non-recursive per-file top-level symbols for supported files
 outline(path="src/auth/", line_numbers=false, signatures=false, preview=1)  # Same map with lighter output
+outline(path="src/auth/", depth=2)                   # Include one nested symbol level per file (for example, methods)
 ```
+If you pass `recursive=true`, `outline` fails closed and tells you to discover nested files first with `glob` or `list_directory`.
 
-**Use `outline` with `file_type` when extension detection is unavailable:**
+**Use `outline` with a parser override when extension detection is unavailable:**
 ```
 outline(path="BUILD", file_type="python")            # Force Python parser for an extensionless file
 outline(path="notes.txt", file_type="markdown")      # Treat a misnamed file as Markdown
+outline(path="BUILD", parser="python")               # Compatibility alias for file_type/language
 ```
 
 **Use `outline` with `tokens=true` to plan your reading budget:**
@@ -263,6 +266,7 @@ outline(path="src/auth.py", diff=true)               # Entries with uncommitted 
 | "Where are the changed sections?" | `outline` with `diff=true` | Focus on recent work |
 
 Rule of thumb: `outline` is for **navigating** (cheap, structural), `concat_files` is for **bulk reading** (expensive, full content). Start with `outline` to understand what you're dealing with, then use `read_file` or `concat_files` to get the content you actually need.
+If `diff=true` cannot query git successfully, `outline` now says so explicitly instead of silently omitting change markers.
 
 ### Best Practices for Editing Files
 

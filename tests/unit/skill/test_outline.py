@@ -1252,6 +1252,23 @@ class TestOutlineSkill:
         assert "key: name" in result.output
 
     @pytest.mark.asyncio
+    async def test_parser_alias_for_file_type(self, skill, tmp_path):
+        f = tmp_path / "BUILD"
+        f.write_text("def from_parser():\n    return 1\n")
+        result = await skill.execute(path=str(f), parser="python")
+        assert result.success
+        assert "function: def from_parser()" in result.output
+
+    @pytest.mark.asyncio
+    async def test_unknown_param_rejected(self, skill, tmp_path):
+        f = tmp_path / "BUILD"
+        f.write_text("def from_parser():\n    return 1\n")
+        result = await skill.execute(path=str(f), filetype="python")
+        assert not result.success
+        assert "unexpected" in result.error.lower()
+        assert "filetype" in result.error
+
+    @pytest.mark.asyncio
     async def test_invalid_file_type_returns_error(self, skill, tmp_path):
         f = tmp_path / "data.txt"
         f.write_text("hello\n")
@@ -1268,6 +1285,18 @@ class TestOutlineSkill:
             path=str(f),
             file_type="python",
             language="markdown",
+        )
+        assert not result.success
+        assert "must resolve to the same parser" in result.error
+
+    @pytest.mark.asyncio
+    async def test_mismatched_parser_alias_error(self, skill, tmp_path):
+        f = tmp_path / "module.txt"
+        f.write_text("def run_task():\n    return 1\n")
+        result = await skill.execute(
+            path=str(f),
+            file_type="python",
+            parser="markdown",
         )
         assert not result.success
         assert "must resolve to the same parser" in result.error
@@ -1396,6 +1425,7 @@ class TestOutlineSkill:
         (tmp_path / "c.txt").write_text("not parseable")
         result = await skill.execute(path=str(tmp_path))
         assert result.success
+        assert "(non-recursive; supported non-hidden files only)" in result.output
         assert "a.py" in result.output
         assert "b.py" in result.output
         assert "c.txt" not in result.output
@@ -1421,6 +1451,21 @@ class TestOutlineSkill:
         assert "x: int" not in result.output
         assert "function: foo" in result.output
         assert "|     return 'ok'" in result.output
+
+    @pytest.mark.asyncio
+    async def test_directory_depth_controls_nested_symbols(self, skill, tmp_path):
+        (tmp_path / "a.py").write_text(
+            "class A:\n"
+            "    def run(self):\n"
+            "        pass\n"
+        )
+        shallow = await skill.execute(path=str(tmp_path))
+        deep = await skill.execute(path=str(tmp_path), depth=2)
+
+        assert shallow.success
+        assert deep.success
+        assert "method: def run(self)" not in shallow.output
+        assert "method: def run(self)" in deep.output
 
     @pytest.mark.asyncio
     async def test_directory_skips_hidden(self, skill, tmp_path):
@@ -1450,6 +1495,47 @@ class TestOutlineSkill:
         result = await skill.execute(path=str(tmp_path), file_type="python")
         assert not result.success
         assert "only supported for files" in result.error
+
+    @pytest.mark.asyncio
+    async def test_directory_rejects_recursive_true(self, skill, tmp_path):
+        result = await skill.execute(path=str(tmp_path), recursive=True)
+        assert not result.success
+        assert "non-recursive" in result.error
+
+    @pytest.mark.asyncio
+    async def test_internal_parallel_param_still_allowed(self, skill, tmp_path):
+        f = tmp_path / "example.py"
+        f.write_text("def foo():\n    pass\n")
+        result = await skill.execute(path=str(f), _parallel=True)
+        assert result.success
+        assert "function: def foo()" in result.output
+
+    @pytest.mark.asyncio
+    async def test_file_diff_unavailable_adds_note(self, skill, tmp_path, monkeypatch):
+        f = tmp_path / "example.py"
+        f.write_text("def foo():\n    pass\n")
+        monkeypatch.setattr(
+            "nexus3.skill.builtin.outline._get_diff_ranges",
+            lambda _path: None,
+        )
+
+        result = await skill.execute(path=str(f), diff=True)
+
+        assert result.success
+        assert "diff markers unavailable" in result.output
+
+    @pytest.mark.asyncio
+    async def test_directory_diff_unavailable_adds_note(self, skill, tmp_path, monkeypatch):
+        (tmp_path / "a.py").write_text("def foo():\n    pass\n")
+        monkeypatch.setattr(
+            "nexus3.skill.builtin.outline._get_diff_files",
+            lambda _path: None,
+        )
+
+        result = await skill.execute(path=str(tmp_path), diff=True)
+
+        assert result.success
+        assert "diff markers unavailable" in result.output
 
     @pytest.mark.asyncio
     async def test_directory_respects_allowed_paths(self, tmp_path, monkeypatch):

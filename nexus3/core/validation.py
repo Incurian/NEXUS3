@@ -105,9 +105,14 @@ def validate_tool_arguments(
     """
     import jsonschema  # type: ignore[import-untyped]
 
+    # Internal execution flags are allowed but should not interfere with schema validation.
+    schema_arguments = {
+        k: v for k, v in arguments.items() if k not in ALLOWED_INTERNAL_PARAMS
+    }
+
     # Validate against schema (checks required fields and types)
     try:
-        jsonschema.validate(arguments, schema)
+        jsonschema.validate(schema_arguments, schema)
     except jsonschema.ValidationError as e:
         raise ValidationError(f"Invalid argument: {e.message}") from e
 

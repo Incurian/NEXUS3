@@ -103,10 +103,13 @@ def validate_skill_parameters(
         @wraps(func)
         async def wrapper(self: "Skill", **kwargs: Any) -> ToolResult:
             schema = self.parameters
+            schema_kwargs = {
+                k: v for k, v in kwargs.items() if k not in ALLOWED_INTERNAL_PARAMS
+            }
 
             # Validate against JSON Schema
             try:
-                jsonschema.validate(kwargs, schema)
+                jsonschema.validate(schema_kwargs, schema)
             except jsonschema.ValidationError as e:
                 # Format a user-friendly error message
                 return ToolResult(error=_format_validation_error(e, self.name))
@@ -202,10 +205,13 @@ def _wrap_with_validation(skill: "Skill") -> None:
     @wraps(original_execute)
     async def validated_execute(**kwargs: Any) -> ToolResult:
         schema = skill.parameters
+        schema_kwargs = {
+            k: v for k, v in kwargs.items() if k not in ALLOWED_INTERNAL_PARAMS
+        }
 
         # Validate against JSON Schema
         try:
-            jsonschema.validate(kwargs, schema)
+            jsonschema.validate(schema_kwargs, schema)
         except jsonschema.ValidationError as e:
             return ToolResult(error=_format_validation_error(e, skill.name))
 

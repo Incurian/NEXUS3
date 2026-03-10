@@ -291,7 +291,7 @@ Immediate tasks:
   - focused validation passed:
     - `.venv/bin/ruff check nexus3/cli/prompt_support.py nexus3/core/shell_detection.py nexus3/cli/keys.py nexus3/cli/repl.py nexus3/cli/repl_runtime.py tests/unit/core/test_shell_detection.py tests/unit/cli/test_confirmation_sync.py tests/unit/cli/test_prompt_support.py`
     - `.venv/bin/pytest -q tests/unit/core/test_shell_detection.py tests/unit/cli/test_confirmation_sync.py tests/unit/cli/test_prompt_support.py` (`41 passed`)
-- Ongoing follow-on hardening slice (2026-03-10, local pending commit):
+- Completed follow-on hardening slice (2026-03-10, committed `6245dfa`):
   outline tool audit first wave:
   - `nexus3/skill/builtin/outline.py`
     - added file-level parser override support via `file_type=` and
@@ -315,6 +315,48 @@ Immediate tasks:
   - focused validation passed:
     - `.venv/bin/ruff check nexus3/skill/builtin/outline.py tests/unit/skill/test_outline.py`
     - `.venv/bin/pytest -q tests/unit/skill/test_outline.py` (`146 passed`)
+- Ongoing follow-on hardening slice (2026-03-10, local pending commit):
+  outline tool audit second wave:
+  - `nexus3/core/validation.py`
+  - `nexus3/skill/base.py`
+    - internal runtime params such as `_parallel` are now stripped before JSON
+      Schema validation in both the session validator and the skill-wrapper
+      validators, so per-tool strict schemas can reject real unknown params
+      without breaking documented parallel execution flags.
+  - `nexus3/skill/builtin/outline.py`
+    - added `parser=` as a compatibility alias for parser override.
+    - directory mode remains non-recursive across the filesystem, but `depth`
+      now controls nested symbol levels within each outlined file instead of
+      being effectively ignored.
+    - `recursive=true` now fails closed with explicit guidance to use
+      `glob`/`list_directory` first.
+    - `diff=true` now emits an explicit note when git diff context is
+      unavailable instead of silently omitting change markers.
+    - outline schema now rejects unknown user-facing parameters while still
+      permitting `_parallel`.
+  - transcript audit findings:
+    - current local log artifacts do not contain post-change `outline` misuse
+      reproductions; the concern remains hypothesis-driven rather than tied to
+      a fresh captured failure.
+    - remaining likely follow-up items after this wave:
+      - directory diff marker matching still deserves a later pass for basename
+        collision risk.
+      - decide whether empty/no-actionable outline states should standardize on
+        error vs structured-success signaling.
+  - focused regression coverage added/updated in:
+    - `tests/unit/test_skill_validation.py`
+    - `tests/unit/skill/test_outline.py`
+  - focused doc sync updated:
+    - `nexus3/defaults/NEXUS-DEFAULT.md`
+    - `AGENTS_NEXUS3SKILLSCAT.md`
+    - `nexus3/skill/README.md`
+    - `README.md`
+    - `CLAUDE.md`
+    - `docs/plans/POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md`
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/core/validation.py nexus3/skill/base.py nexus3/skill/builtin/outline.py tests/unit/test_skill_validation.py tests/unit/skill/test_outline.py`
+    - `.venv/bin/pytest -q tests/unit/test_skill_validation.py tests/unit/skill/test_outline.py` (`167 passed`)
+    - `.venv/bin/pytest -q tests/unit/skill/test_skill_validation.py` (`16 passed`)
 - Completed live-test regression fix (2026-03-10, local pending commit):
   OpenAI tool-schema compatibility for `patch`:
   - Windows live testing surfaced provider rejection of the `patch` tool

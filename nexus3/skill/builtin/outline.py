@@ -130,6 +130,44 @@ def _normalize_parser_override(parser_hint: str) -> str | None:
     return None
 
 
+def _resolve_parser_override(
+    file_type: str,
+    language: str,
+    parser: str,
+) -> tuple[str | None, str | None]:
+    """Resolve parser-override aliases and detect mismatches."""
+    resolved_hints: list[tuple[str, str]] = []
+    for label, raw_value in (
+        ("file_type", file_type),
+        ("language", language),
+        ("parser", parser),
+    ):
+        if not raw_value:
+            continue
+        resolved = _normalize_parser_override(raw_value)
+        if resolved is None:
+            return None, (
+                f"Unsupported outline {label} '{raw_value}'.\n"
+                f"Supported values: {', '.join(_supported_parser_keys())}"
+            )
+        resolved_hints.append((label, resolved))
+
+    if not resolved_hints:
+        return None, None
+
+    canonical = resolved_hints[0][1]
+    mismatches = [
+        label for label, resolved in resolved_hints[1:] if resolved != canonical
+    ]
+    if mismatches:
+        labels = ", ".join(label for label, _ in resolved_hints)
+        return None, (
+            f"outline {labels} must resolve to the same parser when provided together."
+        )
+
+    return canonical, None
+
+
 def _read_file_lines(p: Path, max_lines: int = _MAX_OUTLINE_LINES) -> list[str]:
     """Read file lines with a safety limit."""
     lines: list[str] = []
@@ -1404,7 +1442,8 @@ class OutlineSkill(FileSkill):
             "Use line numbers in output to target read_file for details. "
             "Pass a directory to get a non-recursive per-file top-level map. "
             "Use symbol='ClassName' to read a specific symbol's body. "
-            "Use file_type='python' when extension detection is unavailable. "
+            "Use file_type='python' or parser='python' when extension detection "
+            "is unavailable. "
             "Use tokens=true for token estimates, diff=true for change markers."
         )
 
@@ -1430,6 +1469,14 @@ class OutlineSkill(FileSkill):
                     "description": (
                         "Compatibility alias for file_type. If both are provided, "
                         "they must resolve to the same parser."
+                    ),
+                },
+                "parser": {
+                    "type": "string",
+                    "description": (
+                        "Compatibility alias for file_type/language. If multiple "
+                        "parser hints are provided, they must resolve to the same "
+                        "parser."
                     ),
                 },
                 "depth": {
@@ -1489,8 +1536,17 @@ class OutlineSkill(FileSkill):
                     ),
                     "default": False,
                 },
+                "recursive": {
+                    "type": "boolean",
+                    "description": (
+                        "Directory mode is non-recursive. Passing recursive=true "
+                        "returns an explanatory error instead of silently ignoring it."
+                    ),
+                    "default": False,
+                },
             },
             "required": ["path"],
+            "additionalProperties": False,
         }
 
     async def execute(
@@ -1498,6 +1554,7 @@ class OutlineSkill(FileSkill):
         path: str = "",
         file_type: str = "",
         language: str = "",
+        parser: str = "",
         depth: int | None = None,
         preview: int = 0,
         signatures: bool = True,
@@ -1505,6 +1562,7 @@ class OutlineSkill(FileSkill):
         tokens: bool = False,
         symbol: str = "",
         diff: bool = False,
+        recursive: bool = False,
         **kwargs: Any,
     ) -> ToolResult:
         if not path:
@@ -1512,10 +1570,25 @@ class OutlineSkill(FileSkill):
 
         try:
             p = self._validate_path(path)
+            parser_key_override, parser_error = _resolve_parser_override(
+                file_type,
+                language,
+                parser,
+            )
+            if parser_error is not None:
+                return ToolResult(error=parser_error)
 
             # Directory mode
             is_dir = await asyncio.to_thread(p.is_dir)
             if is_dir:
+                if recursive:
+                    return ToolResult(
+                        error=(
+                            "outline directory mode is non-recursive. "
+                            "Use glob/list_directory to find nested files, then "
+                            "outline specific targets."
+                        )
+                    )
                 if symbol:
                     return ToolResult(
                         error=(
@@ -1523,7 +1596,7 @@ class OutlineSkill(FileSkill):
                             "Pick a file first, then retry with symbol."
                         )
                     )
-                if file_type or language:
+                if file_type or language or parser:
                     return ToolResult(
                         error=(
                             "outline(file_type=...) is only supported for files. "
@@ -1556,35 +1629,13 @@ class OutlineSkill(FileSkill):
                 )
 
             # Detect language
-            if file_type and language:
-                file_type_key = _normalize_parser_override(file_type)
-                language_key = _normalize_parser_override(language)
-                if file_type_key != language_key:
-                    return ToolResult(
-                        error=(
-                            "outline file_type and language must resolve to the "
-                            "same parser when both are provided."
-                        )
-                    )
-
-            parser_hint = file_type or language
-            if parser_hint:
-                parser_key = _normalize_parser_override(parser_hint)
-                if parser_key is None:
-                    return ToolResult(
-                        error=(
-                            f"Unsupported outline file_type '{parser_hint}'.\n"
-                            f"Supported values: {', '.join(_supported_parser_keys())}"
-                        )
-                    )
-            else:
-                parser_key = _detect_language(p)
+            parser_key = parser_key_override or _detect_language(p)
             if parser_key is None:
                 return ToolResult(
                     error=(
                         f"No outline parser for file type: {p.suffix or p.name}\n"
-                        "Use read_file for raw contents, or pass file_type='python' "
-                        "or another supported parser to force a parse.\n"
+                        "Use read_file for raw contents, or pass file_type='python', "
+                        "language='python', or parser='python' to force a parse.\n"
                         f"Supported values: {', '.join(_supported_parser_keys())}"
                     )
                 )
@@ -1620,15 +1671,22 @@ class OutlineSkill(FileSkill):
                 _annotate_token_estimates(entries, lines)
 
             # Diff-aware markers
+            diff_note = ""
             if diff:
                 changed_ranges = await asyncio.to_thread(_get_diff_ranges, p)
                 if changed_ranges is not None:
                     _annotate_diff_markers(entries, changed_ranges)
+                else:
+                    diff_note = (
+                        "\n\n(diff markers unavailable - not a git repo or git diff failed)"
+                    )
 
             # Format output
             output = _format_outline(
                 entries, line_numbers, p.name, parser_key, tokens, diff
             )
+            if diff_note:
+                output += diff_note
             return ToolResult(output=output)
 
         except (PathSecurityError, ValueError) as e:
@@ -1679,16 +1737,31 @@ class OutlineSkill(FileSkill):
         if not file_paths:
             supported = _supported_parser_keys()
             return ToolResult(
-                output=f"No supported files found in {dir_path.name}/\n"
-                f"Supported types: {', '.join(supported)}"
+                output=(
+                    f"No supported files found in {dir_path.name}/\n"
+                    "Directory scan is non-recursive and only includes supported, "
+                    "non-hidden files.\n"
+                    f"Supported types: {', '.join(supported)}"
+                )
             )
 
         # Diff info for directory
         dir_diff_files: set[str] | None = None
+        diff_note = ""
         if diff:
             dir_diff_files = await asyncio.to_thread(_get_diff_files, dir_path)
+            if dir_diff_files is None:
+                diff_note = (
+                    "(diff markers unavailable - not a git repo or git diff failed)"
+                )
 
-        parts: list[str] = [f"# Directory outline: {dir_path.name}/", ""]
+        parts: list[str] = [
+            f"# Directory outline: {dir_path.name}/",
+            "(non-recursive; supported non-hidden files only)",
+        ]
+        if diff_note:
+            parts.append(diff_note)
+        parts.append("")
         total_bytes = 0
 
         for fp in file_paths:
@@ -1723,10 +1796,9 @@ class OutlineSkill(FileSkill):
 
             # Top-level entries
             for outline_entry in file_entries:
-                if outline_entry.depth > 0:
-                    continue
                 line_prefix = f"  L{outline_entry.line:>5} " if line_numbers else "  "
-                line_part = f"{line_prefix}{outline_entry.kind}: "
+                indent = "  " * outline_entry.depth
+                line_part = f"{line_prefix}{indent}{outline_entry.kind}: "
                 if signatures and outline_entry.signature:
                     line_part += outline_entry.signature
                 else:
@@ -1735,7 +1807,7 @@ class OutlineSkill(FileSkill):
                     line_part += f"  (~{outline_entry.token_estimate} tokens)"
                 parts.append(line_part)
                 if outline_entry.preview_lines:
-                    preview_indent = " " * len(line_prefix) + "  "
+                    preview_indent = " " * len(line_prefix) + indent + "  "
                     for preview_line in outline_entry.preview_lines:
                         parts.append(f"{preview_indent}| {preview_line}")
 

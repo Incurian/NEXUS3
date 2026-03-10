@@ -139,6 +139,11 @@ For text-oriented edit tools, silent corruption of non-UTF8 files is worse than 
     - directory mode now honors `preview`, `signatures`, and `line_numbers`.
     - directory mode now rejects file-only `symbol` / parser-override parameters explicitly.
     - ambiguous `outline(symbol=...)` matches now fail closed instead of returning the first match silently.
+  - follow-up `outline` audit second wave:
+    - `outline` now accepts `parser=` as a compatibility alias for parser override.
+    - directory mode keeps filesystem traversal non-recursive but now respects `depth` for nested symbols within each file.
+    - `recursive=true` now fails closed with explicit guidance instead of being silently ignored.
+    - `diff=true` now emits an explicit note when git diff context is unavailable.
   - `patch` now accepts `path=` as the preferred file argument while preserving
     `target=` as a compatibility alias, and mismatched `path` + `target`
     inputs fail closed.

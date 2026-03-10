@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from nexus3.core.types import ToolResult
+from nexus3.core.validation import ValidationError, validate_tool_arguments
 from nexus3.skill.base import validate_skill_parameters
 
 
@@ -246,3 +247,66 @@ class TestValidateSkillParameters:
         result = await skill.execute()
         assert not result.success
         assert "test_skill_name" in result.error
+
+    @pytest.mark.asyncio
+    async def test_internal_param_passes_with_additional_properties_false(self) -> None:
+        """Whitelisted internal params should not trip schema strictness."""
+        schema = {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+            },
+            "required": ["path"],
+            "additionalProperties": False,
+        }
+
+        received_kwargs: dict[str, Any] = {}
+
+        class TestSkill(MockSkill):
+            @validate_skill_parameters(strict=False)
+            async def execute(self, **kwargs: Any) -> ToolResult:
+                received_kwargs.update(kwargs)
+                return ToolResult(output="ok")
+
+        skill = TestSkill(schema)
+        result = await skill.execute(path="/test", _parallel=True)
+
+        assert result.success
+        assert received_kwargs["path"] == "/test"
+        assert received_kwargs["_parallel"] is True
+
+
+class TestValidateToolArguments:
+    def test_allows_internal_param_before_schema_check(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+            },
+            "required": ["path"],
+            "additionalProperties": False,
+        }
+
+        validated = validate_tool_arguments(
+            {"path": "/test", "_parallel": True},
+            schema,
+        )
+
+        assert validated["path"] == "/test"
+        assert validated["_parallel"] is True
+
+    def test_rejects_unknown_param_when_schema_forbids_it(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+            },
+            "required": ["path"],
+            "additionalProperties": False,
+        }
+
+        with pytest.raises(ValidationError, match="unexpected"):
+            validate_tool_arguments(
+                {"path": "/test", "unknown_xyz": "boom"},
+                schema,
+            )

@@ -440,7 +440,7 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern (with exclusions) |
 | `grep` | `pattern`, `path`?, `include`?, `context`? | Search file contents with file filter and context lines |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate files by extension with token estimation (dry_run=True by default) |
-| `outline` | `path`, `file_type`?, `language`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`? | Structural outline of file/directory (headings, classes, functions, keys). Directory mode is non-recursive. Use `symbol` for filtered read on files, `file_type`/`language` to override parser detection, `tokens` for estimates, and `diff` for change markers |
+| `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of file/directory (headings, classes, functions, keys). Directory mode is non-recursive, but `depth` controls nested symbols within each file. Use `symbol` for filtered read on files, `file_type`/`language`/`parser` to override parser detection, `tokens` for estimates, and `diff` for change markers |
 | `git` | `command`, `cwd`? | Execute git commands (permission-filtered by level) |
 | `bash_safe` | `command`, `timeout`? | Execute shell commands (shlex.split, no shell operators) |
 | `shell_UNSAFE` | `command`, `timeout`? | Execute shell=True (pipes work, but injection-vulnerable) |
