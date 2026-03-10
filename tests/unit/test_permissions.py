@@ -331,6 +331,38 @@ class TestPermissionPolicyConfirmation:
         assert policy.requires_confirmation("Delete") is True
         assert policy.requires_confirmation("delete") is True
 
+    def test_trusted_edit_lines_confirmation_tracks_cwd(self, tmp_path):
+        """edit_lines requires confirmation only when the write escapes cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        policy = PermissionPolicy(
+            level=PermissionLevel.TRUSTED,
+            cwd=cwd,
+            allowed_paths=None,
+        )
+
+        assert policy.requires_confirmation("edit_lines", path=cwd / "notes.txt") is False
+        assert policy.requires_confirmation("edit_lines", path=outside / "notes.txt") is True
+
+    def test_trusted_patch_confirmation_tracks_cwd(self, tmp_path):
+        """patch requires confirmation only when the target escapes cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        policy = PermissionPolicy(
+            level=PermissionLevel.TRUSTED,
+            cwd=cwd,
+            allowed_paths=None,
+        )
+
+        assert policy.requires_confirmation("patch", path=cwd / "notes.txt") is False
+        assert policy.requires_confirmation("patch", path=outside / "notes.txt") is True
+
     def test_shell_unsafe_always_requires_confirmation(self):
         """shell_UNSAFE always requires confirmation in TRUSTED mode, even with allowances."""
         from nexus3.core.allowances import SessionAllowances
@@ -422,6 +454,14 @@ class TestPermissionPolicyAllowsAction:
         assert policy.allows_action("delete") is True
         assert policy.allows_action("write") is True
 
+    def test_sandboxed_keeps_edit_lines_and_patch_enabled(self):
+        """SANDBOXED policy treats edit_lines/patch as path-bounded write tools."""
+        policy = PermissionPolicy.from_level("sandboxed")
+
+        for action in ("edit_lines", "patch"):
+            assert action not in SANDBOXED_DISABLED_TOOLS
+            assert policy.allows_action(action) is True
+
     def test_allows_action_case_insensitive(self):
         """allows_action is case-insensitive."""
         policy = PermissionPolicy.from_level("sandboxed")
@@ -491,6 +531,11 @@ class TestActionSets:
         assert isinstance(DESTRUCTIVE_ACTIONS, frozenset)
         assert isinstance(SAFE_ACTIONS, frozenset)
         assert isinstance(NETWORK_ACTIONS, frozenset)
+
+    def test_edit_lines_and_patch_are_destructive_actions(self):
+        """edit_lines and patch are destructive write actions."""
+        assert "edit_lines" in DESTRUCTIVE_ACTIONS
+        assert "patch" in DESTRUCTIVE_ACTIONS
 
 
 class TestPermissionPolicyDataclass:

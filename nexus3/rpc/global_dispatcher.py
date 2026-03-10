@@ -392,7 +392,15 @@ class GlobalDispatcher:
         # Note: effective_preset already defined above during write_paths validation
 
         # All tools that can modify the filesystem
-        WRITE_FILE_TOOLS = ("write_file", "edit_file", "append_file", "regex_replace", "mkdir")
+        WRITE_FILE_TOOLS = (
+            "write_file",
+            "edit_file",
+            "edit_lines",
+            "append_file",
+            "regex_replace",
+            "patch",
+            "mkdir",
+        )
         MIXED_FILE_TOOLS = ("copy_file", "rename")  # Read source, write destination
 
         if effective_preset == "sandboxed":

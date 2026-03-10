@@ -18,13 +18,9 @@ Key behaviors tested:
 """
 
 from pathlib import Path
-from unittest.mock import MagicMock
-
-import pytest
 
 from nexus3.core.permissions import (
     AgentPermissions,
-    ConfirmationResult,
     PermissionLevel,
     PermissionPolicy,
     SessionAllowances,
@@ -71,6 +67,24 @@ class TestToolPathSemantics:
         assert semantics.write_keys == ("path",)
         assert semantics.display_key == "path"
 
+    def test_edit_lines_semantics_registered(self) -> None:
+        """edit_lines has explicit path semantics for confirmation handling."""
+        assert TOOL_PATH_SEMANTICS["edit_lines"] == ToolPathSemantics(
+            read_keys=("path",),
+            write_keys=("path",),
+            display_key="path",
+        )
+        assert get_semantics("edit_lines") == TOOL_PATH_SEMANTICS["edit_lines"]
+
+    def test_patch_semantics_registered(self) -> None:
+        """patch uses target as the confirmation/write path."""
+        assert TOOL_PATH_SEMANTICS["patch"] == ToolPathSemantics(
+            read_keys=("target", "diff_file"),
+            write_keys=("target",),
+            display_key="target",
+        )
+        assert get_semantics("patch") == TOOL_PATH_SEMANTICS["patch"]
+
     def test_read_file_semantics(self) -> None:
         """read_file has path as read only."""
         semantics = get_semantics("read_file")
@@ -110,6 +124,26 @@ class TestExtractWritePaths:
         assert len(paths) == 1
         assert paths[0] == Path("/some/file.txt")
 
+    def test_edit_lines_returns_path(self) -> None:
+        """edit_lines returns the path it will modify."""
+        args = {
+            "path": "/some/file.txt",
+            "start_line": 2,
+            "end_line": 2,
+            "new_text": "updated",
+        }
+        paths = extract_write_paths("edit_lines", args)
+        assert paths == [Path("/some/file.txt")]
+
+    def test_patch_returns_target(self) -> None:
+        """patch returns the target path, not diff_file."""
+        args = {
+            "target": "/repo/src/file.py",
+            "diff_file": "/repo/changes.diff",
+        }
+        paths = extract_write_paths("patch", args)
+        assert paths == [Path("/repo/src/file.py")]
+
     def test_read_file_returns_empty(self) -> None:
         """read_file has no write paths."""
         args = {"path": "/some/file.txt"}
@@ -143,6 +177,26 @@ class TestExtractDisplayPath:
         args = {"path": "/some/file.txt", "content": "data"}
         path = extract_display_path("write_file", args)
         assert path == Path("/some/file.txt")
+
+    def test_edit_lines_shows_path(self) -> None:
+        """edit_lines displays the file path being modified."""
+        args = {
+            "path": "/some/file.txt",
+            "start_line": 3,
+            "end_line": 4,
+            "new_text": "replacement",
+        }
+        path = extract_display_path("edit_lines", args)
+        assert path == Path("/some/file.txt")
+
+    def test_patch_shows_target(self) -> None:
+        """patch displays the target file path."""
+        args = {
+            "target": "/repo/src/file.py",
+            "diff": "--- a/src/file.py\n+++ b/src/file.py\n",
+        }
+        path = extract_display_path("patch", args)
+        assert path == Path("/repo/src/file.py")
 
     def test_read_file_returns_none(self) -> None:
         """read_file has no display path (no confirmation needed)."""
@@ -261,6 +315,90 @@ class TestEnforcerRequiresConfirmation:
         )
         assert enforcer.requires_confirmation(tool_call_out, permissions) is True
 
+    def test_edit_lines_no_confirm_path_in_cwd(self, tmp_path: Path) -> None:
+        """edit_lines stays auto-approved for TRUSTED writes inside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="edit_lines",
+            arguments={
+                "path": str(cwd / "notes.txt"),
+                "start_line": 1,
+                "end_line": 1,
+                "new_text": "updated",
+            },
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is False
+
+    def test_edit_lines_checks_path_outside_cwd(self, tmp_path: Path) -> None:
+        """edit_lines requires confirmation for TRUSTED writes outside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="edit_lines",
+            arguments={
+                "path": str(outside / "notes.txt"),
+                "start_line": 1,
+                "end_line": 1,
+                "new_text": "updated",
+            },
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is True
+
+    def test_patch_no_confirm_target_in_cwd(self, tmp_path: Path) -> None:
+        """patch stays auto-approved for TRUSTED targets inside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="patch",
+            arguments={
+                "target": str(cwd / "notes.txt"),
+                "diff": "--- a/notes.txt\n+++ b/notes.txt\n",
+            },
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is False
+
+    def test_patch_checks_target_outside_cwd(self, tmp_path: Path) -> None:
+        """patch requires confirmation for TRUSTED targets outside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="patch",
+            arguments={
+                "target": str(outside / "notes.txt"),
+                "diff": "--- a/notes.txt\n+++ b/notes.txt\n",
+            },
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is True
+
 
 class TestEnforcerGetConfirmationContext:
     """Test the get_confirmation_context method."""
@@ -309,6 +447,44 @@ class TestEnforcerGetConfirmationContext:
 
         assert display_path == Path("/some/file.txt")
         assert write_paths == [Path("/some/file.txt")]
+
+    def test_edit_lines_context(self) -> None:
+        """edit_lines context returns path for both display and writes."""
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="edit_lines",
+            arguments={
+                "path": "/some/file.txt",
+                "start_line": 10,
+                "end_line": 12,
+                "new_text": "replacement",
+            },
+        )
+
+        display_path, write_paths = enforcer.get_confirmation_context(tool_call)
+
+        assert display_path == Path("/some/file.txt")
+        assert write_paths == [Path("/some/file.txt")]
+
+    def test_patch_context(self) -> None:
+        """patch context returns target for both display and writes."""
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="patch",
+            arguments={
+                "target": "/repo/src/file.py",
+                "diff": "--- a/src/file.py\n+++ b/src/file.py\n",
+            },
+        )
+
+        display_path, write_paths = enforcer.get_confirmation_context(tool_call)
+
+        assert display_path == Path("/repo/src/file.py")
+        assert write_paths == [Path("/repo/src/file.py")]
 
 
 class TestAllowanceAppliedToWritePaths:
@@ -435,17 +611,6 @@ class TestReadOnlyToolsUnaffected:
 
     def test_read_file_no_confirmation(self) -> None:
         """read_file never requires confirmation (it's read-only)."""
-        policy = PermissionPolicy(
-            level=PermissionLevel.TRUSTED,
-            cwd=Path("/cwd"),
-            allowed_paths=None,
-        )
-        permissions = AgentPermissions(
-            base_preset="trusted",
-            effective_policy=policy,
-            session_allowances=SessionAllowances(),
-        )
-
         enforcer = PermissionEnforcer()
 
         tool_call = ToolCall(

@@ -59,8 +59,10 @@ DESTRUCTIVE_ACTIONS = frozenset({
     # Specific tool names
     "write_file",
     "edit_file",
+    "edit_lines",
     "append_file",
     "regex_replace",
+    "patch",
     "copy_file",     # Fix 1.2: Can overwrite destination files
     "rename",        # Fix 1.2: Can overwrite destination files
     "mkdir",         # Fix 1.2: Creates directories

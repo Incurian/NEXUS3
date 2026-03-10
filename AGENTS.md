@@ -220,6 +220,17 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
+- Post-architecture hardening planning active (2026-03-10):
+  - created
+    [POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md)
+    to track the open post-arch bugfix backlog (file-editing safety/contract
+    fixes, Git Bash shell bug, Git Bash ESC, Git Bash multiline paste, docs
+    closeout).
+  - active execution gate: Phase 4 from that plan
+    (`shell_UNSAFE` Windows Git-Bash WSL misrouting).
+  - most recent completed gate: Phase 1
+    (`edit_lines` / `patch` sandboxed+TRUSTED+path-semantics hardening),
+    with focused validation now green.
 - `Post-M4` validation campaign closeout complete: external closeout slice
   `post-m4-20260306-live1e` archived real-host Windows evidence and
   multi-emulator carriage-return verification; deterministic closeout gate
@@ -228,6 +239,272 @@ Current milestone:
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
+- Follow-on hardening execution plan (2026-03-10):
+  - canonical next-work plan:
+    [POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md)
+  - preferred execution order from the new plan:
+    1. Phase 4: fix Windows `shell_UNSAFE` Git-Bash shell resolution.
+    2. Phase 2: align `read_file` / `outline` / `patch` contracts and
+       `edit_file` batch atomicity.
+    3. Phase 3: newline / encoding / regex hardening.
+    4. Phase 5: Git Bash ESC + multiline paste.
+    5. Phase 6: docs and live validation closeout.
+- Completed follow-on hardening slice (2026-03-09): Plan Phase 1
+  `edit_lines` / `patch` sandboxed + TRUSTED + path-semantics hardening:
+  - `nexus3/rpc/global_dispatcher.py`
+    - sandboxed RPC `create_agent` no-write-path override set now disables
+      `edit_lines` and `patch` alongside the existing write tools.
+  - `nexus3/core/policy.py`
+    - `DESTRUCTIVE_ACTIONS` now includes `edit_lines` and `patch`, so
+      TRUSTED mode requires confirmation for those tools outside CWD.
+  - `nexus3/session/path_semantics.py`
+    - explicit semantics added for:
+      - `edit_lines`: `path` as read/write/display path
+      - `patch`: `target` as write/display path and `diff_file` as read path
+  - focused regression coverage added/updated in:
+    - `tests/unit/test_global_dispatcher.py`
+    - `tests/security/test_multipath_confirmation.py`
+    - `tests/unit/test_permissions.py`
+  - focused validation passed:
+    - `git diff --check`
+    - `.venv/bin/ruff check nexus3/rpc/global_dispatcher.py nexus3/core/policy.py nexus3/session/path_semantics.py tests/unit/test_global_dispatcher.py tests/security/test_multipath_confirmation.py tests/unit/test_permissions.py`
+    - `.venv/bin/pytest -q tests/unit/test_global_dispatcher.py tests/security/test_multipath_confirmation.py tests/unit/test_permissions.py`
+  - next gate: Phase 4 (`shell_UNSAFE` Windows Git-Bash WSL misrouting).
+- Compact review handoff (2026-03-09, file-editing tool/doc audit; no code
+  changes yet):
+  - user requested a deep-dive sanity check of file-editing tools, cross-OS
+    and cross-shell behavior, tool-description accuracy, and
+    `nexus3/defaults/NEXUS-DEFAULT.md` best-practice guidance while running
+    manual tests.
+  - branch/head at review time: `feat/arch-overhaul-execution` / `1522581`.
+  - confirmed local findings to pick up first:
+    - `nexus3/rpc/global_dispatcher.py`, `nexus3/core/presets.py`, and
+      `nexus3/core/policy.py`: sandboxed RPC write-tool overrides omit
+      `edit_lines` and `patch`, so sandboxed RPC agents created without
+      `allowed_write_paths` still retain those two write tools inside their
+      cwd. Local verification against the current permission merge confirmed
+      `edit_lines=True` and `patch=True` while the other write tools are
+      disabled.
+    - `nexus3/core/policy.py`: `edit_lines` and `patch` are also missing from
+      `DESTRUCTIVE_ACTIONS`, so TRUSTED-mode writes through those tools do not
+      trigger outside-CWD confirmation at all.
+    - `nexus3/skill/builtin/edit_file.py`: batched `edits` are not truly
+      atomic; validation happens against the original content, then edits are
+      applied sequentially, so later edits can silently no-op after earlier
+      edits mutate the buffer. This conflicts with current
+      `NEXUS-DEFAULT.md` wording that all edits succeed or fail together.
+    - `nexus3/session/path_semantics.py`: missing explicit semantics for
+      `edit_lines` and `patch`; `edit_lines` falls back to generic path
+      extraction, while `patch` loses path/display-path/allow-always fidelity
+      because it uses `target`, and `nexus3/cli/confirmation_ui.py` can show
+      `unknown` for patch confirmations.
+    - `nexus3/skill/builtin/edit_lines.py`: replacing the last line of a file
+      strips a previously present trailing newline. Current unit coverage
+      explicitly expects this, but it contradicts the surrounding
+      line-ending-preservation documentation.
+  - explorer findings captured:
+    - `regex_replace` timeout safety claim is not reliable:
+      `findall(...)` pre-scans before the timeout window, and the timed
+      `asyncio.to_thread(...)` replacement cannot actually be preempted once
+      running.
+    - `append_file` misdetects CR-only files as missing a trailing newline and
+      can insert an extra line break.
+    - `write_file` and `append_file` use text-mode writes with platform newline
+      translation risk on Windows, which may not match byte-fidelity or
+      "preserve line endings" expectations.
+    - `edit_file`, `edit_lines`, and `regex_replace` decode with replacement
+      and then rewrite UTF-8, so non-UTF8 files can be silently corrupted.
+    - doc drift identified:
+      - patch params/behavior are stale in user-facing catalogs
+        (`fidelity_mode`, exact-path priority, basename ambiguity fail-closed,
+        `diff`/`diff_file` exclusivity, `diff_file` path validation).
+      - sandboxed write-disable wording in `NEXUS-DEFAULT.md` is incomplete.
+      - confirmation/path-semantics docs omit `edit_lines` and `patch`.
+      - `append_file` create-if-missing behavior is undocumented.
+      - text-vs-byte-fidelity guidance for file-edit tools is incomplete; docs
+        should steer non-UTF8/byte-preserving edits toward `patch`
+        (`byte_strict`).
+  - explorer status:
+    - `Darwin` returned the cross-platform/file-fidelity audit findings above.
+    - `Poincare the 2nd` returned the doc-accuracy drift findings above.
+    - `Lorentz the 2nd` stalled and was interrupted; rerun only if more review
+      depth is needed.
+  - recommended next execution order:
+    1. Fix the sandboxed/TRUSTED permission gaps for `edit_lines` and
+       `patch` (RPC write-tool overrides, `DESTRUCTIVE_ACTIONS`,
+       `path_semantics`, confirmation UX), then add focused permission and
+       confirmation regressions.
+    2. Fix `edit_file` batch atomicity or weaken the user-facing docs if true
+       atomic multi-edit behavior is not intended.
+    3. Fix `edit_lines` trailing-newline preservation for end-of-file
+       replacements and update the focused tests/docs accordingly.
+    4. Fix `append_file` CR-only handling and decide whether `write_file` /
+       `append_file` should suppress newline translation for predictable
+       cross-platform behavior.
+    5. Revisit UTF-8-only editing semantics versus `patch` byte-strict
+       guidance; either hard-fail non-UTF8 text edits or document the lossy
+       behavior explicitly.
+    6. After behavior changes, update `NEXUS-DEFAULT.md`,
+       `AGENTS_NEXUS3SKILLSCAT.md`, `nexus3/skill/README.md`,
+       `nexus3/session/README.md`, and `nexus3/cli/README.md` together.
+- Completed follow-on audit checkpoint (2026-03-09, tool-usage failure
+  analysis for `edit_*`, `patch`, `outline`; no code changes yet):
+  - confirmed local usage-friction findings:
+    - `read_file` always prefixes returned lines with `N: ` line numbers, but
+      user-facing docs still describe it as plain file content. This likely
+      contributes to `edit_file`/`patch` misuse when agents copy numbered text
+      into exact-match tool inputs.
+    - `patch` uses inconsistent path parameter naming (`target` instead of
+      `path`), which is likely a recurrent call-shape failure source relative
+      to the rest of the file-editing tool family.
+    - `patch` currently hard-requires the target file to exist even though the
+      underlying patch engine/parser supports new-file diffs; agents using diff
+      workflows to create a new file will fail at the skill boundary.
+    - `patch` silently applies only hunks matching the requested single target
+      path when given a multi-file diff; that behavior is implementation-real
+      but under-documented and is likely confusing for agent-generated
+      multi-file patches.
+    - `outline` returns success (not error) for unsupported file types with a
+      "No outline parser" message, which likely makes fallback behavior worse.
+    - `outline(symbol=...)` returns raw numbered source lines rather than an
+      outline and interacts subtly with `depth`; this is only lightly
+      documented and may confuse retries/tool chaining.
+    - `read_file`/`outline(symbol=...)` numbered output plus the current docs
+      likely creates a recurring exact-match failure loop for `edit_file` and
+      diff-context generation, because the agent-facing contract does not warn
+      against copying numbered views directly into edit inputs.
+    - `patch` diagnostics expose parser/validation failures, but the
+      user-facing guidance still underspecifies the behaviors that matter most
+      to retries: single-target application, exact-path preference, existing-
+      file requirement at the skill boundary, and the fact that multi-file
+      diffs are only partially applied by design.
+    - `edit_file` guidance still overstates atomic batched-edit behavior, which
+      likely pushes agents toward a mode that is less reliable than described.
+  - subagent audit wave status:
+    - spawned explorers for edit-tool misuse, patch misuse, and outline misuse.
+    - all three were interrupted due context pressure before returning usable
+      summaries; no additional findings were preserved from that wave.
+  - recommended next execution order for the usage-failure track:
+    1. Update the agent-facing docs/prompts so `read_file` and
+       `outline(symbol=...)` are explicitly described as numbered views, with
+       a warning not to paste numbered lines directly into exact-match tools.
+    2. Decide whether `patch` should accept `path` as an alias for `target`
+       and whether new-file diffs should be supported at the skill boundary;
+       otherwise document both constraints prominently.
+    3. Change `outline` unsupported-file responses to a clearer fallback signal
+       (preferably an error or explicit “use read_file instead” guidance).
+    4. Reconcile `edit_file` batch-mode docs with real behavior before keeping
+       it as the preferred multi-edit recommendation.
+- Completed follow-on investigation checkpoint (2026-03-09, Windows Git
+  Bash vs WSL command-routing audit; no code changes yet):
+  - user reported a Windows-side transcript where an agent launched from Git
+    Bash concluded its command executions were running in WSL2.
+  - confirmed local code findings:
+    - there is no general-purpose WSL proxy/routing layer in the codebase.
+      Repo-wide search found no `wsl.exe` launch path in `nexus3/`.
+    - `bash_safe` executes the requested argv directly via
+      `asyncio.create_subprocess_exec(...)` on Windows, so it only runs WSL if
+      the requested executable itself is a Windows WSL shim or explicitly
+      invokes WSL.
+    - `run_python` always executes `sys.executable -c ...`, so it stays in the
+      same Python runtime family as the parent NEXUS process.
+    - the likely misrouting point is `shell_UNSAFE` on Windows:
+      `nexus3/skill/builtin/bash.py` checks parent `os.environ` for `MSYSTEM`
+      and, when set, executes bare `bash -lc <command>` instead of resolving a
+      known Git-for-Windows bash path. Because child subprocesses inherit the
+      sanitized `PATH` from `get_safe_env(...)`, whichever Windows `bash.exe`
+      wins PATH resolution is what runs.
+    - if that resolved `bash.exe` is `C:\\Windows\\System32\\bash.exe` (WSL
+      shim) instead of Git-for-Windows `bash.exe`, `shell_UNSAFE` can
+      truthfully execute inside WSL even though the visible parent terminal is
+      Git Bash.
+  - practical conclusion:
+    - this does not look like a pure hallucination path.
+    - it also does not mean "NEXUS routes everything through WSL".
+    - user-provided live Windows evidence now confirms the issue is isolated to
+      `shell_UNSAFE`, not the whole process:
+      - `run_python` reported native Windows Python and Git-for-Windows bash:
+        `sys.platform=win32`, `platform.system()=Windows`, and
+        `shutil.which("bash")=C:\\Program Files\\Git\\usr\\bin\\bash.EXE`.
+      - `bash_safe` running `where.exe bash` also reported Git-for-Windows
+        first, then `C:\\Windows\\System32\\bash.exe`.
+      - `shell_UNSAFE` reported:
+        `MSYSTEM=` (unset inside child), `/usr/bin/bash`,
+        `Linux ... microsoft-standard-WSL2 ...`, and `/mnt/d/...`.
+      - this proves the visible NEXUS process is Windows-native while the
+        Windows `shell_UNSAFE` Git-Bash branch can still launch a WSL-backed
+        shell subprocess.
+    - strongest current explanation:
+      - `shell_UNSAFE` chooses the Git-Bash-family branch based on parent
+        `os.environ["MSYSTEM"]`, but then launches bare `bash -lc ...`.
+      - child env comes from `get_safe_env(...)`, which omits `MSYSTEM`, so the
+        child shell no longer has Git-Bash identity markers.
+      - on Windows, bare executable resolution for subprocess creation appears
+        to be selecting the WSL/System32 bash shim in this path even though
+        PATH-oriented probes (`where.exe`, `shutil.which`) show Git-for-Windows
+        first.
+      - net: this is a real `shell_UNSAFE` Windows shell-selection bug.
+  - recommended confirmation steps on the real Windows host:
+    1. In the exact Git Bash session that launches NEXUS, compare
+       `where.exe bash` and
+       `.venv\\Scripts\\python.exe -c "import shutil; print(shutil.which('bash'))"`.
+       If either resolves first to `C:\\Windows\\System32\\bash.exe`, the
+       environment is primed for WSL handoff.
+    2. Inside NEXUS, compare `run_python` reporting `sys.platform` /
+       `shutil.which("bash")` against `shell_UNSAFE` reporting `uname -a` /
+       `pwd`. If `run_python` stays Windows while `shell_UNSAFE` reports WSL,
+       the issue is isolated to shell selection / PATH, not global process
+       routing.
+  - likely next fix if confirmed:
+    - harden Windows `shell_UNSAFE` Git-Bash mode to resolve and launch an
+      explicit Git-for-Windows bash path (or fail closed) instead of bare
+      `bash`.
+    - update docs because current guidance still describes `shell_UNSAFE` as
+      generic `shell=True`, which hides the Windows-specific shell-family
+      dispatch behavior and the ambiguity around bare `bash`.
+  - additional live-testing note from user (2026-03-09):
+    - in real Git Bash use, pressing `ESC` during REPL streaming did not
+      cancel.
+    - local code review strongly suggests this is a real Git-Bash/mintty
+      input-path bug, not user error:
+      - `nexus3/cli/keys.py` uses `termios` on Unix and falls back to
+        `msvcrt.kbhit()/getwch()` on Windows.
+      - Git Bash on Windows commonly runs under mintty rather than a native
+        Win32 console, so `msvcrt` can exist while still not receiving the
+        interactive keystream from the visible terminal window.
+      - the current Windows validation artifact
+        `docs/validation/post-m4-20260306-live1e/windows/live-check-output.json`
+        only recorded `msvcrt` API availability (`kbhit/getwch` present), not a
+        real live ESC cancellation pass in Git Bash. That means the
+        `post-m4-20260306-live1e` closeout overstated coverage for this case.
+    - likely follow-up:
+      1. treat Git-Bash ESC failure as a real bug / validation gap;
+      2. add a live Git Bash ESC reproduction note/test to
+         `docs/testing/WINDOWS-LIVE-TESTING-GUIDE.md`;
+      3. decide whether to implement a mintty-aware fallback or explicitly
+         document Git Bash standalone as lacking ESC cancellation support until
+         fixed.
+    - additional real Git Bash input-path bug reported by user:
+      - pasting multiline text into the REPL submits the first line
+        immediately instead of inserting the full pasted block.
+      - likely cause from local code review:
+        - `nexus3/cli/repl.py` and `nexus3/cli/repl_runtime.py` construct a
+          default single-line `PromptSession(...)` with no explicit multiline
+          mode or custom paste/keybinding handling.
+        - on terminals with working bracketed-paste support, prompt_toolkit can
+          often preserve pasted newlines as one paste event; on Git Bash/mintty
+          this support is likely absent or not wired through the Windows input
+          path, so newline characters in the paste are treated like Enter and
+          the first line is accepted/sent immediately.
+      - practical implication:
+        - this is probably another real Git Bash REPL bug / validation gap, not
+          agent behavior.
+      - likely follow-up:
+        1. reproduce explicitly in Git Bash vs PowerShell/Windows Terminal;
+        2. decide whether the REPL should support multiline input/paste
+           robustly across shells or document Git Bash standalone as limited;
+        3. if supporting it, add prompt-toolkit configuration/keybindings/tests
+           rather than relying on terminal bracketed-paste behavior alone.
 - Completed (2026-03-09, docs/status closeout wave):
   - clarified branch-scope status across `AGENTS.md`, `CLAUDE.md`, the
     milestone schedule, and the provider keep-alive plan so the remaining

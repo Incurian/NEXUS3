@@ -28,6 +28,10 @@ This index covers the architecture plans created during today's review/planning 
 - [POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-CAMPAIGN-PLAN-2026-03-05.md)
 - [POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md](/home/inc/repos/NEXUS3/docs/plans/POST-M4-VALIDATION-FOLLOWUP-TRACKER-2026-03-06.md)
 
+## Post-Architecture Hardening Plans (2026-03-10)
+
+- [POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md)
+
 ## Related Review Docs
 
 - [Reviews Index (2026-03-02)](/home/inc/repos/NEXUS3/docs/reviews/README.md)

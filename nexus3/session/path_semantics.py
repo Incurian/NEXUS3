@@ -49,6 +49,11 @@ TOOL_PATH_SEMANTICS: dict[str, ToolPathSemantics] = {
         write_keys=("path",),
         display_key="path"
     ),
+    "edit_lines": ToolPathSemantics(
+        read_keys=("path",),
+        write_keys=("path",),
+        display_key="path"
+    ),
     "append_file": ToolPathSemantics(
         read_keys=("path",),
         write_keys=("path",),
@@ -58,6 +63,11 @@ TOOL_PATH_SEMANTICS: dict[str, ToolPathSemantics] = {
         read_keys=("path",),
         write_keys=("path",),
         display_key="path"
+    ),
+    "patch": ToolPathSemantics(
+        read_keys=("target", "diff_file"),
+        write_keys=("target",),
+        display_key="target"
     ),
 
     # Multi-path tools (source=read, destination=write)

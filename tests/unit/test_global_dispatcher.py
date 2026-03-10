@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import Any
+
 import pytest
 
 from nexus3.core.authorization_kernel import AuthorizationDecision
@@ -51,6 +54,26 @@ class _CapabilityPool(_GuardPool):
             raise self._error
         assert self._claims is not None
         return self._claims
+
+
+class _CreateCapturingPool(_GuardPool):
+    def __init__(self) -> None:
+        self.last_create: dict[str, Any] | None = None
+
+    async def create(
+        self,
+        agent_id: str | None = None,
+        config: Any = None,
+        requester_id: str | None = None,
+    ) -> Any:
+        effective_id = agent_id or "auto-1"
+        self.last_create = {
+            "agent_id": agent_id,
+            "config": config,
+            "requester_id": requester_id,
+            "effective_id": effective_id,
+        }
+        return SimpleNamespace(agent_id=effective_id)
 
 
 @pytest.mark.asyncio
@@ -219,3 +242,48 @@ async def test_global_dispatch_uses_capability_subject_identity() -> None:
     assert response.result == {"agents": []}
     assert pool.verify_calls == [("cap-token", "rpc:global:list_agents")]
     assert captured_principals == ["subject-7"]
+
+
+@pytest.mark.asyncio
+async def test_global_create_agent_sandboxed_without_allowed_write_paths_disables_all_write_tools(
+) -> None:
+    pool = _CreateCapturingPool()
+    dispatcher = GlobalDispatcher(pool)
+    request = Request(
+        jsonrpc="2.0",
+        method="create_agent",
+        params={
+            "agent_id": "worker-1",
+            "preset": "sandboxed",
+        },
+        id=1,
+    )
+
+    response = await dispatcher.dispatch(request)
+
+    assert response is not None
+    assert response.error is None
+    assert response.result == {
+        "agent_id": "worker-1",
+        "url": "/agent/worker-1",
+    }
+
+    assert pool.last_create is not None
+    config = pool.last_create["config"]
+    assert config is not None
+    assert config.delta is not None
+
+    tool_overrides = config.delta.tool_overrides
+    for tool_name in (
+        "write_file",
+        "edit_file",
+        "edit_lines",
+        "append_file",
+        "regex_replace",
+        "patch",
+        "mkdir",
+        "copy_file",
+        "rename",
+    ):
+        assert tool_name in tool_overrides
+        assert tool_overrides[tool_name].enabled is False
