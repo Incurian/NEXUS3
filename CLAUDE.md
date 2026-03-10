@@ -1976,6 +1976,13 @@ definitions provider-compatible. Quick follow-up audit: built-in GitLab skills
 did not show the same empty-schema pattern; deeper GitLab tool auditing
 remains deferred separately.
 
+OpenAI-compatible providers also reject some nested MCP schema fragments when
+an external tool advertises `{"type": "object"}` without `properties` or
+`{"type": "array"}` without `items` inside a richer schema. The same outbound
+provider normalization path now fills those nested placeholders recursively
+with provider-safe empty `properties: {}` / `items: {}` stubs without mutating
+the local MCP skill contract.
+
 #### Recent GitLab Fix: Artifact Download Path Gating (2026-03-10)
 
 `gitlab_artifact` download actions write to a local `output_path`. That tool

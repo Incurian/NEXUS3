@@ -44,23 +44,41 @@ logger = logging.getLogger(__name__)
 def _normalize_tool_parameters_for_openai(
     schema: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """Normalize no-arg tool schemas for OpenAI-compatible APIs.
+    """Normalize tool schemas for OpenAI-compatible APIs.
 
     OpenAI tool/function schemas require an object-shaped top-level parameters
     schema. Some MCP servers legitimately advertise no-arg tools as `{}` or as
     `{"type": "object"}`. Those shapes are accepted locally but can be
-    rejected by OpenAI-compatible providers. Normalize only the no-arg object
-    cases here, leaving richer schemas untouched.
+    rejected by OpenAI-compatible providers.
+
+    Some OpenAI-compatible providers also reject nested object/array fragments
+    that omit provider-required placeholders like `properties` or `items`.
+    Normalize those shapes recursively on the outbound provider path without
+    mutating the original caller-owned schema.
     """
     if not schema:
         return {"type": "object", "properties": {}}
 
-    if schema.get("type") == "object" and "properties" not in schema:
-        normalized = dict(schema)
-        normalized["properties"] = {}
+    def _normalize_schema_fragment(fragment: Any) -> Any:
+        if isinstance(fragment, list):
+            return [_normalize_schema_fragment(item) for item in fragment]
+
+        if not isinstance(fragment, dict):
+            return fragment
+
+        normalized = {
+            key: _normalize_schema_fragment(value) for key, value in fragment.items()
+        }
+
+        if normalized.get("type") == "object" and "properties" not in normalized:
+            normalized["properties"] = {}
+
+        if normalized.get("type") == "array" and "items" not in normalized:
+            normalized["items"] = {}
+
         return normalized
 
-    return schema
+    return _normalize_schema_fragment(schema)
 
 
 def _normalize_tools_for_openai(

@@ -187,6 +187,105 @@ def test_openai_request_body_preserves_existing_empty_properties_schema() -> Non
     }
 
 
+def test_openai_request_body_normalizes_nested_array_schema_without_items() -> None:
+    """OpenAI request shaping should normalize nested array schemas recursively."""
+    from nexus3.provider.openai_compat import OpenAICompatProvider
+
+    provider = OpenAICompatProvider(
+        ProviderConfig(
+            type="openai",
+            api_key_env="OPENAI_API_KEY",
+            auth_method=AuthMethod.NONE,
+        ),
+        model_id="gpt-4o",
+    )
+
+    original_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "mcp_agentbridge_tempo_pawn_move_to",
+                "description": "Move a pawn to a location.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "array",
+                            "description": "Target location coordinates.",
+                        }
+                    },
+                    "required": ["location"],
+                },
+            },
+        }
+    ]
+
+    body = provider._build_request_body(
+        messages=[Message(role=Role.USER, content="move to new location")],
+        tools=original_tools,
+        stream=False,
+    )
+
+    assert body["tools"][0]["function"]["parameters"]["properties"]["location"] == {
+        "type": "array",
+        "description": "Target location coordinates.",
+        "items": {},
+    }
+    assert original_tools[0]["function"]["parameters"]["properties"]["location"] == {
+        "type": "array",
+        "description": "Target location coordinates.",
+    }
+
+
+def test_openai_request_body_normalizes_nested_object_schema_without_properties() -> None:
+    """OpenAI request shaping should normalize nested object schemas recursively."""
+    from nexus3.provider.openai_compat import OpenAICompatProvider
+
+    provider = OpenAICompatProvider(
+        ProviderConfig(
+            type="openai",
+            api_key_env="OPENAI_API_KEY",
+            auth_method=AuthMethod.NONE,
+        ),
+        model_id="gpt-4o",
+    )
+
+    original_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "mcp_agentbridge_nested_options",
+                "description": "Use nested options.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "options": {
+                            "type": "object",
+                            "title": "Options",
+                        }
+                    },
+                },
+            },
+        }
+    ]
+
+    body = provider._build_request_body(
+        messages=[Message(role=Role.USER, content="use options")],
+        tools=original_tools,
+        stream=False,
+    )
+
+    assert body["tools"][0]["function"]["parameters"]["properties"]["options"] == {
+        "type": "object",
+        "title": "Options",
+        "properties": {},
+    }
+    assert original_tools[0]["function"]["parameters"]["properties"]["options"] == {
+        "type": "object",
+        "title": "Options",
+    }
+
+
 def test_anthropic_convert_messages_does_not_synthesize_orphans_locally() -> None:
     """Anthropic conversion should no longer synthesize missing tool results itself."""
     from nexus3.provider.anthropic import AnthropicProvider

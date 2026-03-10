@@ -3461,3 +3461,56 @@ Execution checkpoint (2026-03-10, GitLab artifact local-write path gating):
     in `gitlab_feature_flag.strategies[*].parameters` could be future provider
     friction if any provider starts enforcing recursive object-property
     requirements more strictly.
+
+Compact handoff checkpoint (2026-03-10, post-MCP fix / post-GitLab audit):
+- MCP/OpenAI empty-schema regression is fixed and pushed:
+  - commit `5b83c9d` `fix(provider): normalize empty mcp tool schemas for openai`
+  - provider-side normalization in `nexus3/provider/openai_compat.py` covers:
+    - `{}`
+    - `{"type": "object"}`
+    - preserves already-valid `{"type": "object", "properties": {}}`
+- GitLab audit found and fixed a separate high-severity issue:
+  - commit `b63b704` `fix(gitlab): gate artifact downloads by output path`
+  - `gitlab_artifact.output_path` is now treated as a write target in session path semantics and TRUSTED confirmation logic.
+- Remaining GitLab follow-ups recorded for later:
+  1. `nexus3/skill/vcs/gitlab/base.py`
+     - synchronous `subprocess.run(...)` git autodetection in async execution paths (`_detect_instance_from_remote`, `_resolve_project`) still blocks the event loop up to the timeout window.
+  2. `nexus3/skill/vcs/gitlab/artifact.py`
+     - artifact download helpers still bypass shared `GitLabClient._request(...)` retry/rate-limit/error shaping by calling `client._ensure_client()` + raw `http_client.get(url)` directly.
+  3. `nexus3/skill/vcs/gitlab/feature_flag.py`
+     - nested free-form object at `strategies[*].parameters` is not a current provider break, but is the most likely future schema-friction point if providers ever enforce recursive object-property strictness.
+- Important next-turn note:
+  - user reports MCP is still having issues even after the empty-schema fix.
+  - next turn should pivot back to MCP investigation first, not continue GitLab follow-up work.
+  - likely first step: capture the new exact MCP error/transcript and compare it against the now-pushed `5b83c9d` behavior.
+
+Compact handoff checkpoint (2026-03-10, MCP nested-schema follow-up):
+- user later hit a new OpenAI-compatible provider rejection for MCP tool
+  `mcp_agentbridge_tempo_pawn_move_to`:
+  - `Invalid schema ... In context=('properties', 'location'), array schema missing items.`
+- investigated pre-arch behavior before patching:
+  - there was no earlier MCP adapter/provider normalization pass to restore.
+  - older MCP adapter versions passed `tool.input_schema` through directly.
+  - earlier `openai_compat.py` versions passed tool schemas through directly as
+    well; the previous fix (`5b83c9d`) only added top-level no-arg object
+    normalization.
+  - conclusion: this is not an arch regression that removed a sanitizer; it is
+    a newer/deeper external schema shape that now needs provider-boundary
+    normalization.
+- local fix in progress in `nexus3/provider/openai_compat.py`:
+  - recursive outbound OpenAI normalization now adds provider-safe placeholders
+    for nested fragments:
+    - `{"type": "object"}` -> add `properties: {}`
+    - `{"type": "array"}` -> add `items: {}`
+  - still preserves caller-owned tool definitions (no in-place mutation).
+- focused regressions added in
+  `tests/unit/provider/test_compiler_integration.py` for:
+  - nested array property without `items`
+  - nested object property without `properties`
+- focused validation passed locally:
+  - `.venv/bin/ruff check nexus3/provider/openai_compat.py tests/unit/provider/test_compiler_integration.py`
+  - `.venv/bin/pytest -q tests/unit/provider/test_compiler_integration.py`
+- if the user reports another MCP schema rejection after this, inspect the next
+  provider error context literally; likely remaining classes are other nested
+  provider-strict JSON Schema requirements rather than the old top-level empty
+  schema bug.
