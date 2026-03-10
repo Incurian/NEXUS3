@@ -162,6 +162,8 @@ Execution notes:
 - `bash_safe` executes binaries directly by default.
 - `source` is a shell builtin; `bash_safe` cannot execute `source` directly as a command.
 - On Windows, prefer explicit interpreters: `.venv/Scripts/python.exe script.py`.
+- On Windows, `shell_UNSAFE` tries to use the active shell family (Git Bash or
+  PowerShell) when it can be resolved safely.
 - For shell semantics (activation scripts, pipes, `&&`), use `shell_UNSAFE` with trusted input.
 - Alternatively, invoke shell semantics explicitly via command wrappers:
   `bash -c "<command>"`, `powershell -Command "<command>"`, `cmd /c "<command>"`.

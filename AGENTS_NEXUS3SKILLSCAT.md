@@ -29,9 +29,9 @@ closed instead of being silently dropped.
 | `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate files by extension with token estimation (`dry_run=True` by default) |
 | `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of file/directory; directory mode is non-recursive, `depth` controls nested symbols within each file, `symbol` returns a source excerpt for files only, `file_type`/`language`/`parser` can override parser detection for files, `recursive=true` fails closed, ambiguous symbol matches fail closed, and large directory output may truncate |
 | `git` | `command`, `cwd`? | Execute git commands (permission-filtered by level) |
-| `bash_safe` | `command`, `timeout`? | Execute shell commands (`shlex.split`, no shell operators) |
-| `shell_UNSAFE` | `command`, `timeout`? | Execute `shell=True` (pipes work, injection-vulnerable) |
-| `run_python` | `code`, `timeout`? | Execute Python code |
+| `bash_safe` | `command`, `timeout`?, `cwd`? | Execute shell commands (`shlex.split`, no shell operators) |
+| `shell_UNSAFE` | `command`, `timeout`?, `cwd`? | Execute full shell with the detected shell family on Windows when possible (pipes work, injection-vulnerable) |
+| `run_python` | `code`, `timeout`?, `cwd`? | Execute Python code |
 | `sleep` | `seconds`, `label`? | Pause execution (for testing) |
 | `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `allowed_write_paths`?, `model`?, `initial_message`?, `wait_for_initial_response`?, `port`? | Create agent (initial message queued by default; wait flag only matters when `initial_message` is set) |
 | `nexus_destroy` | `agent_id`, `port`? | Remove an agent (server keeps running) |

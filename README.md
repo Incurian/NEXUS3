@@ -1436,6 +1436,8 @@ NEXUS3 includes 40 built-in skills organized by category, plus 21 GitLab integra
 - `shell_UNSAFE` always requires confirmation (no "allow always" option)
 - On Windows, prefer explicit interpreter execution for project scripts:
   `.venv\Scripts\python.exe script.py` (or `.venv/Scripts/python.exe` in Git Bash)
+- On Windows, `shell_UNSAFE` tries to use the active shell family (Git Bash or
+  PowerShell) when it can be resolved safely.
 - If you need shell semantics from `bash_safe`, invoke a shell explicitly, for example:
   `bash -c "source .venv/Scripts/activate && python script.py"`
 - Default timeout: 30 seconds, max: 300 seconds

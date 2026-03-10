@@ -37,7 +37,8 @@ class EchoSkill:
                     "description": "The message to echo back"
                 }
             },
-            "required": ["message"]
+            "required": ["message"],
+            "additionalProperties": False,
         }
 
     async def execute(self, message: str = "", **kwargs: Any) -> ToolResult:

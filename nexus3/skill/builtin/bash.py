@@ -142,7 +142,8 @@ class BashSafeSkill(ExecutionSkill):
                     "description": "Working directory for command (default: current)"
                 }
             },
-            "required": ["command"]
+            "required": ["command"],
+            "additionalProperties": False,
         }
 
     async def _create_process(
@@ -189,7 +190,7 @@ class BashSafeSkill(ExecutionSkill):
         if error := _check_permission_level(self._services, self.name):
             return error
 
-        if not command:
+        if not command or not command.strip():
             return ToolResult(error="Command is required")
 
         # Parse command with shlex
@@ -274,7 +275,8 @@ class ShellUnsafeSkill(ExecutionSkill):
                     "description": "Working directory for command (default: current)"
                 }
             },
-            "required": ["command"]
+            "required": ["command"],
+            "additionalProperties": False,
         }
 
     async def _create_process(
@@ -350,7 +352,7 @@ class ShellUnsafeSkill(ExecutionSkill):
         if error := _check_permission_level(self._services, self.name):
             return error
 
-        if not command:
+        if not command or not command.strip():
             return ToolResult(error="Command is required")
 
         return await _execute_with_process_factory(

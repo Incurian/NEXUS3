@@ -43,6 +43,7 @@ class SleepSkill:
                 },
             },
             "required": ["seconds"],
+            "additionalProperties": False,
         }
 
     async def execute(

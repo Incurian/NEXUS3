@@ -82,7 +82,7 @@ problems, not just schema/docs drift.
 ### Shell / Exec / Git
 
 1. `bash_safe`, `shell_UNSAFE`, `run_python`, `git`, `echo`, and `sleep` are
-   still non-strict on unknown args.
+   were non-strict on unknown args before Phase 3.
 2. The shell-family docs are broadly accurate after recent Windows work, but
    still rely on prompt guidance rather than schema enforcement for malformed
    calls.
@@ -176,6 +176,8 @@ Files:
 Work:
 
 - Add strict unknown-arg rejection.
+- Reject blank/whitespace-only `command` and `code` payloads before subprocess
+  launch.
 - Re-check prompt/docs wording against current Windows shell-selection behavior.
 
 ### Phase 4: Clipboard / GitLab Schema Strictness And Docs

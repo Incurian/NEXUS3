@@ -93,7 +93,8 @@ class RunPythonSkill(ExecutionSkill):
                     "description": "Working directory (default: current)"
                 }
             },
-            "required": ["code"]
+            "required": ["code"],
+            "additionalProperties": False,
         }
 
     async def _create_process(
@@ -145,7 +146,7 @@ class RunPythonSkill(ExecutionSkill):
                 " not be registered for sandboxed agents."
             )
 
-        if not code:
+        if not code or not code.strip():
             return ToolResult(error="Code is required")
 
         return await _execute_with_process_factory(

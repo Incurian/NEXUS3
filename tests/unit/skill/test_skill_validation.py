@@ -68,15 +68,18 @@ class TestValidationUniformity:
         assert result.success
 
     @pytest.mark.asyncio
-    async def test_sleep_filters_unknown_params(self, registry_with_skills):
-        """Sleep skill should filter out unknown parameters."""
+    async def test_sleep_rejects_unknown_params(self, registry_with_skills):
+        """Sleep should fail closed on unexpected top-level params."""
         sleep_skill = registry_with_skills.get("sleep")
 
-        # Call with valid seconds + unknown param
         result = await sleep_skill.execute(seconds=0.01, unknown_xyz="should_be_filtered")
 
-        # Should succeed - unknown param was filtered
-        assert result.success
+        assert not result.success
+        assert "unknown_xyz" in result.error
+        assert (
+            "unexpected" in result.error.lower()
+            or "additional properties" in result.error.lower()
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -254,6 +257,52 @@ class TestValidationUniformity:
         skill = registry_with_skills.get(skill_name)
 
         result = await skill.execute(**params, unknown_xyz="boom")
+
+        assert not result.success
+        assert "unknown_xyz" in result.error
+        assert (
+            "unexpected" in result.error.lower()
+            or "additional properties" in result.error.lower()
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("skill_name", "params"),
+        [
+            ("bash_safe", {"command": "echo hello"}),
+            ("shell_UNSAFE", {"command": "echo hello"}),
+            ("run_python", {"code": "print('hello')"}),
+            ("git", {"command": "status"}),
+            ("sleep", {"seconds": 0.01}),
+        ],
+    )
+    async def test_shell_exec_family_rejects_unknown_params(
+        self,
+        registry_with_skills,
+        skill_name,
+        params,
+    ):
+        """Shell/exec/git-family tools should fail closed on unknown params."""
+        skill = registry_with_skills.get(skill_name)
+
+        result = await skill.execute(**params, unknown_xyz="boom")
+
+        assert not result.success
+        assert "unknown_xyz" in result.error
+        assert (
+            "unexpected" in result.error.lower()
+            or "additional properties" in result.error.lower()
+        )
+
+    @pytest.mark.asyncio
+    async def test_echo_rejects_unknown_params(self):
+        """Echo should fail closed on unexpected top-level params."""
+        from nexus3.skill.builtin.echo import echo_skill_factory
+
+        services = ServiceContainer()
+        skill = echo_skill_factory(services)
+
+        result = await skill.execute(message="hello", unknown_xyz="boom")
 
         assert not result.success
         assert "unknown_xyz" in result.error

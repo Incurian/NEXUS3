@@ -106,7 +106,8 @@ class GitSkill(FilteredCommandSkill):
                     "description": "Working directory (default: current directory)"
                 }
             },
-            "required": ["command"]
+            "required": ["command"],
+            "additionalProperties": False,
         }
 
     def _validate_command(self, command: str) -> tuple[bool, list[str] | None, str | None]:

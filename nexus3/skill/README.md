@@ -643,7 +643,7 @@ batch item fields.
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
 | `bash_safe` | Safe command execution (shlex.split, no shell operators) | `command`, `timeout?`, `cwd?` |
-| `shell_UNSAFE` | Full shell execution (pipes work, injection-vulnerable) | `command`, `timeout?`, `cwd?` |
+| `shell_UNSAFE` | Full shell execution (pipes work, injection-vulnerable; uses detected shell family on Windows when possible) | `command`, `timeout?`, `cwd?` |
 | `run_python` | Execute Python code | `code`, `timeout?`, `cwd?` |
 
 ### Version Control

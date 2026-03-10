@@ -445,9 +445,9 @@ instead of being silently dropped.
 | `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate files by extension with token estimation (dry_run=True by default) |
 | `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of file/directory (headings, classes, functions, keys). Directory mode is non-recursive, but `depth` controls nested symbols within each file. Use `symbol` for filtered read on files, `file_type`/`language`/`parser` to override parser detection, `tokens` for estimates, and `diff` for change markers |
 | `git` | `command`, `cwd`? | Execute git commands (permission-filtered by level) |
-| `bash_safe` | `command`, `timeout`? | Execute shell commands (shlex.split, no shell operators) |
-| `shell_UNSAFE` | `command`, `timeout`? | Execute shell=True (pipes work, but injection-vulnerable) |
-| `run_python` | `code`, `timeout`? | Execute Python code |
+| `bash_safe` | `command`, `timeout`?, `cwd`? | Execute shell commands (shlex.split, no shell operators) |
+| `shell_UNSAFE` | `command`, `timeout`?, `cwd`? | Execute full shell (pipes work, injection-vulnerable; uses detected shell family on Windows when possible) |
+| `run_python` | `code`, `timeout`?, `cwd`? | Execute Python code |
 | `sleep` | `seconds`, `label`? | Pause execution (for testing) |
 | `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `allowed_write_paths`?, `model`?, `initial_message`?, `wait_for_initial_response`?, `port`? | Create agent (initial_message queued by default; wait flag only matters when `initial_message` is set) |
 | `nexus_destroy` | `agent_id`, `port`? | Remove an agent (server keeps running) |

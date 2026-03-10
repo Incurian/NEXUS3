@@ -3811,3 +3811,44 @@ Execution update (2026-03-10, broad tool-family audit phase 2 complete):
   - Phase 3: shell / exec family contract hardening
   - keep the MCP/open-ended-schema validation hazard queued for the later
     shared validation slice rather than mixing it into the shell-family work
+
+Execution update (2026-03-10, broad tool-family audit phase 3 complete):
+- Completed Phase 3 from
+  `docs/plans/BROAD-TOOL-FAMILY-AUDIT-AND-HARDENING-PLAN-2026-03-10.md`:
+  shell / exec / git family contract hardening
+- Hardened the shell/exec/git family in:
+  - `nexus3/skill/builtin/bash.py`
+    - top-level schemas for `bash_safe` and `shell_UNSAFE` are now strict
+      (`additionalProperties: false`)
+    - blank or whitespace-only `command` payloads now fail fast instead of
+      being passed to a subprocess
+  - `nexus3/skill/builtin/run_python.py`
+    - top-level schema is now strict
+    - blank or whitespace-only `code` payloads now fail fast instead of
+      spawning a no-op interpreter process
+  - `nexus3/skill/builtin/git.py`
+    - top-level schema is now strict
+  - `nexus3/skill/builtin/echo.py`
+    - top-level schema is now strict
+  - `nexus3/skill/builtin/sleep.py`
+    - top-level schema is now strict
+- Added focused regressions in:
+  - `tests/unit/skill/test_skill_validation.py`
+    - unknown-arg rejection across `bash_safe`, `shell_UNSAFE`, `run_python`,
+      `git`, `echo`, and `sleep`
+    - updated strictness expectation for `sleep`
+- Synced user-facing docs in:
+  - `nexus3/defaults/NEXUS-DEFAULT.md`
+  - `README.md`
+  - `nexus3/skill/README.md`
+  - `AGENTS_NEXUS3SKILLSCAT.md`
+  - `CLAUDE.md`
+- Focused validation passed:
+  - `.venv/bin/ruff check nexus3/skill/builtin/bash.py nexus3/skill/builtin/run_python.py nexus3/skill/builtin/git.py nexus3/skill/builtin/echo.py nexus3/skill/builtin/sleep.py tests/unit/skill/test_skill_validation.py AGENTS_NEXUS3SKILLSCAT.md CLAUDE.md nexus3/defaults/NEXUS-DEFAULT.md README.md nexus3/skill/README.md`
+  - `.venv/bin/pytest -q tests/unit/skill/test_skill_validation.py tests/unit/test_skill_validation.py tests/unit/test_git_skill.py tests/unit/skill/test_bash_windows_behavior.py` (`84 passed`)
+  - `git diff --check`
+- Next gate:
+  - Phase 4: clipboard / GitLab schema strictness and shared MCP/open-ended
+    validation repair
+  - keep the broader GitLab operational follow-ups queued for the later
+    bounded slice after shared validation is corrected
