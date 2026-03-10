@@ -170,6 +170,26 @@ For text-oriented edit tools, silent corruption of non-UTF8 files is worse than 
 - `tests/unit/test_regex_replace_skill.py`
 - add non-UTF8 refusal regressions for text-edit tools
 
+### Current Progress (2026-03-10)
+
+- Completed in the current branch:
+  - `edit_lines` now preserves EOF newline state when replacing the last line of
+    a file that already ended with a newline.
+  - `append_file` now detects CR-only trailing newlines correctly and appends
+    exact UTF-8 bytes without platform newline translation.
+  - `write_file` now writes caller-provided newline bytes exactly through the
+    shared atomic text-write helper.
+  - `edit_file`, `edit_lines`, and `regex_replace` now fail closed on
+    undecodable/non-UTF8 input and steer byte-sensitive edits to `patch`
+    `fidelity_mode="byte_strict"`.
+  - `regex_replace` now rejects negative `count` and softens its timeout claim
+    to a best-effort local wait window.
+  - focused regressions now cover non-UTF8 refusal, CR-only append handling,
+    exact newline-write semantics, and the `regex_replace` negative-count path.
+- Phase 3 is complete.
+- Next gate:
+  - Phase 5 Git Bash ESC + multiline-paste handling.
+
 ## Phase 4: Windows Git Bash Shell Correctness
 
 ### Goals
@@ -292,8 +312,8 @@ Rationale:
 - [x] Phase 4: add focused Windows shell-resolution regressions.
 - [x] Phase 2: align `read_file` / `outline` / `patch` agent-facing contract.
 - [x] Phase 2: fix or re-spec `edit_file` batch atomicity.
-- [ ] Phase 3: fix newline, encoding, and regex hardening items.
-- [ ] Phase 3: add fidelity/non-UTF8 regressions.
+- [x] Phase 3: fix newline, encoding, and regex hardening items.
+- [x] Phase 3: add fidelity/non-UTF8 regressions.
 - [ ] Phase 5: fix or explicitly fail-closed/document Git Bash ESC behavior.
 - [ ] Phase 5: fix or explicitly fail-closed/document Git Bash multiline paste behavior.
 - [ ] Phase 5: add/update live Git Bash validation steps and collect evidence.

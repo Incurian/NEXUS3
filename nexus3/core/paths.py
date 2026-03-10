@@ -158,6 +158,7 @@ def atomic_write_text(path: Path, content: str, encoding: str = "utf-8") -> None
 
     This ensures the file is never left in a partial state on crash or interruption.
     The temp file is created in the same directory to ensure same-filesystem rename.
+    Newlines are written exactly as provided; no platform translation is applied.
 
     Args:
         path: Path to write to.
@@ -170,7 +171,7 @@ def atomic_write_text(path: Path, content: str, encoding: str = "utf-8") -> None
     # Create temp file in same directory for atomic rename (same filesystem)
     fd, tmp_path = tempfile.mkstemp(dir=path.parent, prefix=".tmp_", suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding=encoding) as f:
+        with os.fdopen(fd, "w", encoding=encoding, newline="") as f:
             f.write(content)
         # Atomic rename (on POSIX; Windows may not be truly atomic)
         os.replace(tmp_path, str(path))

@@ -200,6 +200,28 @@ class TestNeedsNewlineHelper:
         assert needs_nl is True
         assert line_ending == "\r\n"
 
+    def test_cr_only_file_detection(self, tmp_path: Path) -> None:
+        """CR-only file ending is detected correctly."""
+        from nexus3.skill.builtin.append_file import _needs_newline_prefix
+
+        test_file = tmp_path / "cr_only.txt"
+        test_file.write_bytes(b"line1\rline2\r")
+
+        needs_nl, line_ending = _needs_newline_prefix(test_file)
+        assert needs_nl is False
+        assert line_ending == "\r"
+
+    def test_cr_only_file_no_trailing_newline(self, tmp_path: Path) -> None:
+        """CR-only file without trailing newline needs a CR prefix."""
+        from nexus3.skill.builtin.append_file import _needs_newline_prefix
+
+        test_file = tmp_path / "cr_only.txt"
+        test_file.write_bytes(b"line1\rline2")
+
+        needs_nl, line_ending = _needs_newline_prefix(test_file)
+        assert needs_nl is True
+        assert line_ending == "\r"
+
 
 class TestAppendFileTrueAppend:
     """Test that append_file uses true append mode (P2.6 fix)."""
@@ -259,3 +281,23 @@ class TestAppendFileTrueAppend:
         content = test_file.read_text()
         for i in range(5):
             assert f"line{i}" in content
+
+    @pytest.mark.asyncio
+    async def test_cr_only_file_with_trailing_newline_does_not_double_prefix(
+        self, tmp_path: Path
+    ) -> None:
+        """CR-only newline files should not get an extra separator prefix."""
+        from nexus3.skill.builtin.append_file import AppendFileSkill
+        from nexus3.skill.services import ServiceContainer
+
+        test_file = tmp_path / "cr_only.txt"
+        test_file.write_bytes(b"line1\rline2\r")
+
+        services = ServiceContainer()
+        services.set_cwd(tmp_path)
+
+        skill = AppendFileSkill(services)
+        result = await skill.execute(path=str(test_file), content="line3")
+
+        assert not result.error
+        assert test_file.read_bytes() == b"line1\rline2\rline3"

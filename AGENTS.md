@@ -226,11 +226,11 @@ Current milestone:
     to track the open post-arch bugfix backlog (file-editing safety/contract
     fixes, Git Bash shell bug, Git Bash ESC, Git Bash multiline paste, docs
     closeout).
-  - active execution gate: Phase 3 from that plan
-    (newline / encoding / regex hardening across file-editing tools).
-  - most recent completed gate: Phase 2
-    (`read_file` / `outline` / `patch` contract cleanup and `edit_file`
-    batch-atomicity alignment), with focused validation now green.
+  - active execution gate: Phase 5 from that plan
+    (Git Bash ESC + multiline-paste handling).
+  - most recent completed gate: Phase 3
+    (newline / encoding / regex hardening across file-editing tools), with
+    focused validation now green.
 - `Post-M4` validation campaign closeout complete: external closeout slice
   `post-m4-20260306-live1e` archived real-host Windows evidence and
   multi-emulator carriage-return verification; deterministic closeout gate
@@ -243,9 +243,45 @@ Immediate tasks:
   - canonical next-work plan:
     [POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md)
   - preferred execution order from the new plan:
-    1. Phase 3: newline / encoding / regex hardening.
-    2. Phase 5: Git Bash ESC + multiline paste.
-    3. Phase 6: docs and live validation closeout.
+    1. Phase 5: Git Bash ESC + multiline paste.
+    2. Phase 6: docs and live validation closeout.
+- Completed follow-on hardening slice (2026-03-10): Plan Phase 3
+  newline / encoding / regex hardening:
+  - `nexus3/core/paths.py`
+    - `atomic_write_text()` now writes caller-provided newline bytes exactly
+      (`newline=""`) instead of relying on platform translation.
+  - `nexus3/skill/builtin/append_file.py`
+    - CR-only trailing-newline detection now behaves correctly.
+    - append path now writes exact UTF-8 bytes with binary O_APPEND semantics,
+      preserving the chosen newline bytes cross-platform.
+  - `nexus3/skill/builtin/write_file.py`
+    - success reporting now reflects the real UTF-8 byte count written.
+  - `nexus3/skill/builtin/edit_file.py`
+  - `nexus3/skill/builtin/edit_lines.py`
+  - `nexus3/skill/builtin/regex_replace.py`
+    - text-edit tools now fail closed on undecodable/non-UTF8 input and direct
+      byte-sensitive edits to `patch` `fidelity_mode="byte_strict"`.
+    - `edit_lines` now preserves EOF newline state when replacing the last line
+      of a file that already ended with a newline.
+    - `regex_replace` now rejects negative `count`, avoids materializing an
+      unbounded `findall()` list, and softens timeout messaging to a
+      best-effort local wait window.
+  - focused regression coverage added/updated in:
+    - `tests/unit/core/test_paths_windows.py`
+    - `tests/security/test_p2_append_file.py`
+    - `tests/unit/skill/test_edit_lines.py`
+    - `tests/unit/skill/test_edit_file.py`
+    - `tests/unit/test_regex_replace_skill.py`
+  - focused doc sync updated:
+    - `nexus3/defaults/NEXUS-DEFAULT.md`
+    - `nexus3/skill/README.md`
+    - `AGENTS_NEXUS3SKILLSCAT.md`
+    - `CLAUDE.md`
+    - `docs/plans/POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md`
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/core/paths.py nexus3/skill/builtin/append_file.py nexus3/skill/builtin/write_file.py nexus3/skill/builtin/edit_file.py nexus3/skill/builtin/edit_lines.py nexus3/skill/builtin/regex_replace.py tests/unit/core/test_paths_windows.py tests/security/test_p2_append_file.py tests/unit/skill/test_edit_lines.py tests/unit/skill/test_edit_file.py tests/unit/test_regex_replace_skill.py`
+    - `.venv/bin/pytest -q tests/unit/core/test_paths_windows.py tests/security/test_p2_append_file.py tests/unit/skill/test_edit_lines.py tests/unit/skill/test_edit_file.py tests/unit/test_regex_replace_skill.py` (`92 passed`)
+  - Phase 3 is now complete; next gate is Phase 5 Git Bash input handling.
 - Completed follow-on hardening slice (2026-03-10): Plan Phase 2C
   patch path-alias + path-semantics closeout:
   - `nexus3/skill/builtin/patch.py`

@@ -137,7 +137,7 @@ class EditFileSkill(FileSkill):
             # Read current content (binary to preserve line endings)
             try:
                 content_bytes = await asyncio.to_thread(p.read_bytes)
-                raw_content = content_bytes.decode("utf-8", errors="replace")
+                raw_content = content_bytes.decode("utf-8")
                 original_line_ending = detect_line_ending(raw_content)
                 # Normalize to LF for processing
                 content = raw_content.replace('\r\n', '\n').replace('\r', '\n')
@@ -145,6 +145,13 @@ class EditFileSkill(FileSkill):
                 return ToolResult(error=f"File not found: {path}")
             except PermissionError:
                 return ToolResult(error=f"Permission denied: {path}")
+            except UnicodeDecodeError:
+                return ToolResult(
+                    error=(
+                        f"File is not valid UTF-8 text: {path}. "
+                        "Use patch with fidelity_mode='byte_strict' for byte-sensitive edits."
+                    )
+                )
 
             if batch_mode:
                 # Batch edit mode

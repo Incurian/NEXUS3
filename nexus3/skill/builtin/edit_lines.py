@@ -91,7 +91,7 @@ class EditLinesSkill(FileSkill):
             # Read current content (binary to preserve line endings)
             try:
                 content_bytes = await asyncio.to_thread(p.read_bytes)
-                raw_content = content_bytes.decode("utf-8", errors="replace")
+                raw_content = content_bytes.decode("utf-8")
                 original_line_ending = detect_line_ending(raw_content)
                 # Normalize to LF for processing
                 content = raw_content.replace('\r\n', '\n').replace('\r', '\n')
@@ -99,9 +99,22 @@ class EditLinesSkill(FileSkill):
                 return ToolResult(error=f"File not found: {path}")
             except PermissionError:
                 return ToolResult(error=f"Permission denied: {path}")
+            except UnicodeDecodeError:
+                return ToolResult(
+                    error=(
+                        f"File is not valid UTF-8 text: {path}. "
+                        "Use patch with fidelity_mode='byte_strict' for byte-sensitive edits."
+                    )
+                )
 
             # Perform the line replacement
-            result = self._line_replace(content, start_line, end_line, new_content)
+            result = self._line_replace(
+                content,
+                start_line,
+                end_line,
+                new_content,
+                had_trailing_newline=content.endswith("\n"),
+            )
 
             if result.error:
                 return result
@@ -129,7 +142,9 @@ class EditLinesSkill(FileSkill):
         content: str,
         start_line: int,
         end_line: int | None,
-        new_content: str
+        new_content: str,
+        *,
+        had_trailing_newline: bool = False,
     ) -> ToolResult:
         """Perform line-based replacement.
 
@@ -168,7 +183,11 @@ class EditLinesSkill(FileSkill):
         end_idx = end_line  # exclusive, so end_line is correct for slicing
 
         # Ensure new_content ends with newline if we're not at end of file
-        if new_content and not new_content.endswith("\n") and end_idx < total_lines:
+        if (
+            new_content
+            and not new_content.endswith("\n")
+            and (end_idx < total_lines or had_trailing_newline)
+        ):
             new_content += "\n"
 
         # Build new content

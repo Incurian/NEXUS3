@@ -11,11 +11,11 @@ Derived from `CLAUDE.md` Built-in Skills section, adapted for Codex usage.
 | `read_file` | `path`, `offset`?, `limit`?, `line_numbers`? | Read file contents (numbered by default; raw mode available with `line_numbers=false`) |
 | `tail` | `path`, `lines`? | Read last N lines of a file (default: 10) |
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
-| `write_file` | `path`, `content` | Write/create files (read file first) |
-| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | String replacement, single or batched (read file first) |
-| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | Replace lines by number (work bottom-to-top for multiple edits) |
-| `append_file` | `path`, `content`, `newline`? | Append content to a file (read file first) |
-| `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | Pattern-based find/replace (read file first) |
+| `write_file` | `path`, `content` | Write/create UTF-8 text files (exact newline bytes; read file first) |
+| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | UTF-8 string replacement, single or batched (read file first) |
+| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | Replace UTF-8 lines by number (work bottom-to-top for multiple edits) |
+| `append_file` | `path`, `content`, `newline`? | Append UTF-8 text to a file (exact newline bytes; read file first) |
+| `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | UTF-8 pattern-based find/replace (`count >= 0`; read file first) |
 | `patch` | `path` (preferred) or `target`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy modes) |
 | `copy_file` | `source`, `destination`, `overwrite`? | Copy a file to a new location |
 | `mkdir` | `path` | Create directory (and parents) |

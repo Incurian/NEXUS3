@@ -146,7 +146,7 @@ class TestEditLinesSkill:
 
     @pytest.mark.asyncio
     async def test_newline_handling_end(self, skill, tmp_path):
-        """Test that newline is preserved when replacing at end of file."""
+        """Test that trailing newline state is preserved at end of file."""
         # Create file with trailing newline
         test_file = tmp_path / "trailing.txt"
         test_file.write_text("line 1\nline 2\nline 3\n")
@@ -161,8 +161,23 @@ class TestEditLinesSkill:
 
         assert result.success
         content = test_file.read_text()
-        # When replacing the last line, we don't force add a newline
-        assert content == "line 1\nline 2\nreplaced last"
+        assert content == "line 1\nline 2\nreplaced last\n"
+
+    @pytest.mark.asyncio
+    async def test_non_utf8_file_rejected_with_patch_guidance(self, skill, tmp_path):
+        """Non-UTF8 files should fail closed with byte-strict patch guidance."""
+        test_file = tmp_path / "non_utf8.txt"
+        test_file.write_bytes(b"prefix\xffsuffix\n")
+
+        result = await skill.execute(
+            path=str(test_file),
+            start_line=1,
+            new_content="replacement",
+        )
+
+        assert not result.success
+        assert "valid UTF-8 text" in result.error
+        assert "byte_strict" in result.error
 
     @pytest.mark.asyncio
     async def test_newline_content_preserved(self, skill, test_file):

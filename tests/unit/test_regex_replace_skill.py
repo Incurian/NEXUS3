@@ -234,6 +234,24 @@ class TestRegexReplaceSafety:
         assert "Invalid regex" in result.error
 
     @pytest.mark.asyncio
+    async def test_negative_count_rejected(
+        self, skill: RegexReplaceSkill, tmp_path: Path
+    ) -> None:
+        """Negative count values should fail validation."""
+        file = tmp_path / "test.txt"
+        file.write_text("hello")
+
+        result = await skill.execute(
+            path=str(file),
+            pattern="hello",
+            replacement="hi",
+            count=-1,
+        )
+
+        assert result.error
+        assert "count must be >= 0" in result.error
+
+    @pytest.mark.asyncio
     async def test_file_not_found(self, skill: RegexReplaceSkill) -> None:
         """Returns error for non-existent file."""
         result = await skill.execute(
@@ -296,6 +314,24 @@ class TestRegexReplaceSafety:
         )
         assert not result.error
         assert "no changes" in result.output.lower()
+
+    @pytest.mark.asyncio
+    async def test_non_utf8_file_rejected_with_patch_guidance(
+        self, skill: RegexReplaceSkill, tmp_path: Path
+    ) -> None:
+        """Non-UTF8 files should fail closed with byte-strict patch guidance."""
+        file = tmp_path / "non_utf8.txt"
+        file.write_bytes(b"prefix\xffsuffix\n")
+
+        result = await skill.execute(
+            path=str(file),
+            pattern="prefix",
+            replacement="replacement",
+        )
+
+        assert result.error
+        assert "valid UTF-8 text" in result.error
+        assert "byte_strict" in result.error
 
 
 class TestRegexReplaceFactory:

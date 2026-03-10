@@ -67,11 +67,11 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 ### File Operations (Write)
 | Tool | Key Parameters | Description | Use Case |
 |------|----------------|-------------|----------|
-| `write_file` | `path`, `content` | Create or overwrite a file (entire file content replaced) | New files, generated files, intentional full rewrites |
-| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | Exact string replacement; supports atomic batched edits via `edits` | Precise literal edits where old text is known exactly |
-| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | Replace line ranges by 1-indexed line numbers | Replacing a known block/function by line range |
-| `append_file` | `path`, `content`, `newline`? | Append content at end of file | Add log/changelog entries or trailing sections |
-| `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | Pattern-based regex replacement | Broad renames or format rewrites across a file |
+| `write_file` | `path`, `content` | Create or overwrite a UTF-8 text file; preserves provided newline bytes exactly | New files, generated files, intentional full rewrites |
+| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | UTF-8 exact string replacement; supports atomic batched edits via `edits` | Precise literal edits where old text is known exactly |
+| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | UTF-8 line-range replacement with preserved file line endings | Replacing a known block/function by line range |
+| `append_file` | `path`, `content`, `newline`? | Append UTF-8 text at end of file with exact newline bytes | Add log/changelog entries or trailing sections |
+| `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | UTF-8 regex replacement with preserved file line endings | Broad renames or format rewrites across a file |
 | `patch` | `path` (preferred) or `target`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy) | Complex multi-line edits, diff-driven refactors |
 | `copy_file` | `source`, `destination`, `overwrite`? | Copy a file | Backup before risky edits, duplicate templates |
 | `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory | File moves/renames |
@@ -104,17 +104,22 @@ Quick selection flow:
 - `old_string` must match exactly, including whitespace and line breaks.
 - If the match is ambiguous (appears multiple times), use more context or `replace_all=true`.
 - Use `edits` for atomic multi-change updates.
+- If the file is not valid UTF-8 text, use `patch` with `fidelity_mode="byte_strict"` instead.
 
 **`edit_lines` (line-number replacement)**
 - Best when line numbers are known (for example, from `outline` + `read_file`).
 - `new_content` replaces full lines; indentation must be correct.
 - For multiple edits in one file, apply from bottom to top to avoid line drift.
+- Preserves the file's line-ending style and existing trailing newline state.
+- If the file is not valid UTF-8 text, use `patch` with `fidelity_mode="byte_strict"` instead.
 
 **`regex_replace` (pattern replacement)**
 - Use for controlled broad updates.
 - Prefer specific patterns (`\bname\b` instead of `name`) to avoid accidental matches.
-- Use `count` to cap replacements when testing risky patterns.
+- Use `count` to limit applied substitutions while narrowing scope; it does not make an expensive pattern cheap.
+- `count` must be `>= 0`.
 - Supports `ignore_case`, `multiline`, and `dotall`.
+- If the file is not valid UTF-8 text, use `patch` with `fidelity_mode="byte_strict"` instead.
 
 **`patch` (unified diff application)**
 - Preferred for complex multi-line changes and refactors.
@@ -125,11 +130,13 @@ Quick selection flow:
 
 **`append_file` (append-only)**
 - Appends content to the end of an existing file.
-- `newline=true` adds a leading newline if file does not already end with one.
+- `newline=true` adds a leading newline in the file's existing line-ending style if the file does not already end with one.
+- Appended newline bytes are written exactly as provided; no platform newline translation is applied.
 - Avoid for structured formats that require internal edits (JSON/YAML often need in-place edits instead).
 
 **`write_file` (create/overwrite)**
 - Creates a file or overwrites all existing content.
+- Writes UTF-8 bytes exactly as provided; no platform newline translation is applied.
 - Destructive for existing files; read first if unsure.
 - Use `copy_file` first when you want a rollback point.
 
@@ -254,10 +261,11 @@ Rule of thumb: `outline` is for **navigating** (cheap, structural), `concat_file
 2. Prefer the least powerful tool that can do the job safely (`edit_file` > `regex_replace` > `patch` for simple edits).
 3. For multiple literal edits, use atomic `edit_file` + `edits`.
 4. For `edit_lines`, preserve indentation and edit bottom-to-top for multiple ranges.
-5. For `regex_replace`, start with narrow patterns and optional `count` limits.
-6. For `patch`, run `dry_run=true` before applying high-risk diffs.
-7. Use `copy_file` to back up critical files before destructive changes.
-8. Validate syntax-sensitive files (JSON/YAML/Python) after editing.
+5. Text-edit tools (`edit_file`, `edit_lines`, `regex_replace`) are UTF-8-only; use `patch` with `fidelity_mode="byte_strict"` for byte-sensitive or non-UTF8 files.
+6. For `regex_replace`, start with narrow patterns and optional `count` limits, but do not rely on `count` to make an expensive pattern safe.
+7. For `patch`, run `dry_run=true` before applying high-risk diffs.
+8. Use `copy_file` to back up critical files before destructive changes.
+9. Validate syntax-sensitive files (JSON/YAML/Python) after editing.
 
 ### Common Pitfalls with File Editing
 
@@ -266,6 +274,7 @@ Rule of thumb: `outline` is for **navigating** (cheap, structural), `concat_file
 | "String not found" or ambiguous match | `edit_file` | `old_string` does not match exactly, or appears multiple times | Read file first; include more surrounding context or use `replace_all=true` deliberately |
 | Broken indentation or block scope | `edit_lines` | `new_content` indentation does not match file style | Copy indentation pattern from nearby lines |
 | Unintended broad replacements | `regex_replace` | Pattern too permissive | Add boundaries/anchors and test with a small `count` first |
+| "File is not valid UTF-8 text" | `edit_file` / `edit_lines` / `regex_replace` | Byte-sensitive or non-UTF8 content cannot be safely rewritten as text | Use `patch` with `fidelity_mode="byte_strict"` |
 | Patch application failure | `patch` | Context drift or malformed diff | Use `dry_run=true`; then `mode="fuzzy"` when appropriate |
 | Invalid structured file after append | `append_file` | Appending to formats that require interior edits | Use `edit_file`, `edit_lines`, or `patch` instead |
 | Accidental data loss | `write_file` | Entire file overwritten unintentionally | Read first and create backup via `copy_file` |

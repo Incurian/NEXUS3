@@ -32,15 +32,14 @@ def _needs_newline_prefix(filepath: os.PathLike[str]) -> tuple[bool, str]:
             tail_bytes = f.read()
 
             # Detect line ending from tail
-            tail_str = tail_bytes.decode("utf-8", errors="replace")
-            if '\r\n' in tail_str:
+            if b"\r\n" in tail_bytes:
                 line_ending = '\r\n'
-            elif '\r' in tail_str:
+            elif b"\r" in tail_bytes:
                 line_ending = '\r'
             else:
                 line_ending = '\n'
 
-            needs_prefix = not tail_bytes.endswith(b"\n")
+            needs_prefix = not tail_bytes.endswith((b"\n", b"\r"))
             return needs_prefix, line_ending
     except OSError:
         return False, "\n"
@@ -132,9 +131,10 @@ class AppendFileSkill(FileSkill):
                         to_write = line_ending + content
 
                 # P2.6 FIX: Use true append mode instead of read+rewrite
-                # This is atomic at the OS level and avoids race conditions
-                with open(p, "a", encoding="utf-8") as f:
-                    f.write(to_write)
+                # This is atomic at the OS level and avoids race conditions.
+                # Use binary append to preserve exact newline bytes cross-platform.
+                with open(p, "ab") as f:
+                    f.write(to_write.encode("utf-8"))
 
                 return len(to_write)
 

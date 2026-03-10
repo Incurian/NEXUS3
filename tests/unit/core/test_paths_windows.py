@@ -1,9 +1,11 @@
 """Tests for Windows-specific path handling in nexus3/core/paths.py."""
 
-import pytest
 from pathlib import Path
 
-from nexus3.core.paths import detect_line_ending, atomic_write_bytes
+import pytest
+
+import nexus3.core.paths as paths_module
+from nexus3.core.paths import atomic_write_bytes, atomic_write_text, detect_line_ending
 
 
 class TestDetectLineEnding:
@@ -102,3 +104,34 @@ class TestAtomicWriteBytes:
         data = b"\x00\x01\x02\xff\xfe\xfd"
         atomic_write_bytes(test_file, data)
         assert test_file.read_bytes() == data
+
+
+class TestAtomicWriteText:
+    """Tests for atomic text writing without newline translation."""
+
+    def test_writes_exact_newline_bytes(self, tmp_path: Path) -> None:
+        """Text writes should preserve caller-provided newline bytes exactly."""
+        test_file = tmp_path / "text.txt"
+        content = "line1\r\nline2\r\n"
+
+        atomic_write_text(test_file, content)
+
+        assert test_file.read_bytes() == content.encode("utf-8")
+
+    def test_disables_platform_newline_translation(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Text writes should pass newline='' to the text writer."""
+        test_file = tmp_path / "translated.txt"
+        captured: dict[str, object] = {}
+        original_fdopen = paths_module.os.fdopen
+
+        def recording_fdopen(fd: int, *args: object, **kwargs: object):
+            captured["newline"] = kwargs.get("newline")
+            return original_fdopen(fd, *args, **kwargs)
+
+        monkeypatch.setattr(paths_module.os, "fdopen", recording_fdopen)
+
+        atomic_write_text(test_file, "line1\nline2\n")
+
+        assert captured["newline"] == ""

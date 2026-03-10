@@ -100,6 +100,22 @@ class TestSingleEdit(TestEditFileSkill):
         assert content.count("RETURN") == 2
         assert content.count("return") == 0
 
+    @pytest.mark.asyncio
+    async def test_non_utf8_file_rejected_with_patch_guidance(self, skill, tmp_path):
+        """Non-UTF8 files should fail closed with byte-strict patch guidance."""
+        test_file = tmp_path / "non_utf8.txt"
+        test_file.write_bytes(b"prefix\xffsuffix\n")
+
+        result = await skill.execute(
+            path=str(test_file),
+            old_string="prefix",
+            new_string="replacement",
+        )
+
+        assert not result.success
+        assert "valid UTF-8 text" in result.error
+        assert "byte_strict" in result.error
+
 
 class TestBatchEdit(TestEditFileSkill):
     """Tests for batch edit mode (new functionality)."""

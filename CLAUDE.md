@@ -427,11 +427,11 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `read_file` | `path`, `offset`?, `limit`? | Read file contents (with optional line range) |
 | `tail` | `path`, `lines`? | Read last N lines of a file (default: 10) |
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
-| `write_file` | `path`, `content` | Write/create files (read file first!) |
-| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | String replacement, single or batched (read file first!) |
-| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | Replace lines by number (work bottom-to-top for multiple edits) |
-| `append_file` | `path`, `content`, `newline`? | Append content to a file (read file first!) |
-| `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | Pattern-based find/replace (read file first!) |
+| `write_file` | `path`, `content` | Write/create UTF-8 text files (exact newline bytes; read file first!) |
+| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | UTF-8 string replacement, single or batched (read file first!) |
+| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | Replace UTF-8 lines by number (work bottom-to-top for multiple edits) |
+| `append_file` | `path`, `content`, `newline`? | Append UTF-8 text to a file (exact newline bytes; read file first!) |
+| `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | UTF-8 pattern-based find/replace (`count >= 0`; read file first!) |
 | `patch` | `path` (preferred) or `target`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy modes) |
 | `copy_file` | `source`, `destination`, `overwrite`? | Copy a file to a new location |
 | `mkdir` | `path` | Create directory (and parents) |
@@ -1117,7 +1117,7 @@ GitLab tools require pre-configured instances in `~/.nexus3/config.json` or `.ne
 | Type Everything | No `Optional[Any]`. Use Protocols for interfaces. |
 | Fail Fast | Errors surface immediately. No `pass`. No swallowed exceptions. |
 | One Way | Features go in skills or CLI flags, not scripts. |
-| Explicit Encoding | Always `encoding='utf-8', errors='replace'`. |
+| Explicit Encoding | Use explicit UTF-8 encoding. Text-edit tools must fail closed on undecodable input; use `patch` byte-strict for byte-sensitive edits. |
 | Test E2E | Every feature gets an integration test. |
 | **Live Test** | **Automated tests are not sufficient. Always live test with real NEXUS3 agents before committing changes.** |
 | Document | Each phase updates this file and module READMEs. |

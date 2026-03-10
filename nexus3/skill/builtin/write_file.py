@@ -61,12 +61,13 @@ class WriteFileSkill(FileSkill):
         try:
             # Validate path (resolves symlinks, checks allowed_paths if set)
             p = self._validate_path(path)
+            bytes_written = len(content.encode("utf-8"))
 
             # Use async file I/O to avoid blocking
             await asyncio.to_thread(p.parent.mkdir, parents=True, exist_ok=True)
             # Atomic write: temp file + rename to prevent partial writes on crash
             await asyncio.to_thread(atomic_write_text, p, content)
-            return ToolResult(output=f"Successfully wrote {len(content)} bytes to {path}")
+            return ToolResult(output=f"Successfully wrote {bytes_written} bytes to {path}")
         except (PathSecurityError, ValueError) as e:
             return ToolResult(error=str(e))
         except PermissionError:

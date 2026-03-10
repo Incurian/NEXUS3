@@ -9,15 +9,30 @@ from nexus3.core.paths import atomic_write_bytes, detect_line_ending
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
 
-# Safety limits
+# Guardrails
 MAX_REPLACEMENTS = 10000
-REGEX_TIMEOUT = 5.0  # seconds
+REGEX_TIMEOUT = 5.0  # Best-effort local wait window in seconds.
+
+
+def _count_matches_up_to_limit(
+    regex: re.Pattern[str],
+    content: str,
+    stop_after: int | None = None,
+) -> int:
+    """Count regex matches without materializing an unbounded match list."""
+    match_count = 0
+    for _ in regex.finditer(content):
+        match_count += 1
+        if stop_after is not None and match_count >= stop_after:
+            break
+    return match_count
 
 
 class RegexReplaceSkill(FileSkill):
     """Skill that performs regex-based find/replace in files.
 
-    Uses Python's re.sub() with safety limits for catastrophic backtracking.
+    Uses Python's re.subn() with replacement-volume guardrails and a
+    best-effort local wait window.
     Supports backreferences in replacement strings (\\1, \\2, \\g<name>).
 
     This is separate from edit_file to keep APIs clean:
@@ -111,6 +126,8 @@ class RegexReplaceSkill(FileSkill):
             return ToolResult(error="Path is required")
         if not pattern:
             return ToolResult(error="Pattern is required")
+        if count < 0:
+            return ToolResult(error="count must be >= 0")
 
         # Build regex flags
         flags = 0
@@ -134,7 +151,7 @@ class RegexReplaceSkill(FileSkill):
             # Read file
             try:
                 content_bytes = await asyncio.to_thread(p.read_bytes)
-                raw_content = content_bytes.decode("utf-8", errors="replace")
+                raw_content = content_bytes.decode("utf-8")
                 original_line_ending = detect_line_ending(raw_content)
                 # Normalize to LF for processing
                 content = raw_content.replace('\r\n', '\n').replace('\r', '\n')
@@ -142,15 +159,22 @@ class RegexReplaceSkill(FileSkill):
                 return ToolResult(error=f"File not found: {path}")
             except PermissionError:
                 return ToolResult(error=f"Permission denied: {path}")
+            except UnicodeDecodeError:
+                return ToolResult(
+                    error=(
+                        f"File is not valid UTF-8 text: {path}. "
+                        "Use patch with fidelity_mode='byte_strict' for byte-sensitive edits."
+                    )
+                )
 
             # Count matches first (for reporting)
-            matches = regex.findall(content)
-            match_count = len(matches)
+            precheck_limit = 1 if count > 0 else MAX_REPLACEMENTS + 1
+            match_count = _count_matches_up_to_limit(regex, content, precheck_limit)
 
             if match_count == 0:
                 return ToolResult(output=f"No matches for pattern in {path}")
 
-            # Safety check
+            # Guardrail against unbounded broad replacements.
             if match_count > MAX_REPLACEMENTS and count == 0:
                 return ToolResult(
                     error=f"Pattern matches {match_count} times (max {MAX_REPLACEMENTS}). "
@@ -160,12 +184,7 @@ class RegexReplaceSkill(FileSkill):
             # Perform replacement with timeout
             try:
                 def do_replace() -> tuple[str, int]:
-                    if count == 0:
-                        new_content = regex.sub(replacement, content)
-                        return new_content, match_count
-                    else:
-                        new_content = regex.sub(replacement, content, count=count)
-                        return new_content, min(match_count, count)
+                    return regex.subn(replacement, content, count=count)
 
                 new_content, actual_count = await asyncio.wait_for(
                     asyncio.to_thread(do_replace),
@@ -173,8 +192,10 @@ class RegexReplaceSkill(FileSkill):
                 )
             except TimeoutError:
                 return ToolResult(
-                    error=f"Regex replacement timed out ({REGEX_TIMEOUT}s). "
-                    "Pattern may have catastrophic backtracking."
+                    error=(
+                        f"Regex replacement exceeded the {REGEX_TIMEOUT}s local wait "
+                        "window. Narrow the pattern or limit the edit scope and retry."
+                    )
                 )
 
             # Check if anything changed

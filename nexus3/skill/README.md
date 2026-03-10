@@ -624,11 +624,11 @@ NEXUS3 includes 40 core built-in skills plus 21 GitLab skills (when configured),
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `write_file` | Write/create file (atomic write) | `path`, `content` |
-| `edit_file` | String replacement, single or batched (preserves line endings) | `path`, `old_string`, `new_string`, `edits?`, `replace_all?` |
-| `edit_lines` | Line-based replacement (preserves line endings) | `path`, `start_line`, `end_line?`, `new_content` |
-| `append_file` | Append to file with true append mode (preserves line endings) | `path`, `content`, `newline?` |
-| `regex_replace` | Pattern-based replace (preserves line endings) | `path`, `pattern`, `replacement`, `count?`, `ignore_case?`, `multiline?`, `dotall?` |
+| `write_file` | Write/create UTF-8 text file (atomic write, exact newline bytes) | `path`, `content` |
+| `edit_file` | UTF-8 string replacement, single or batched (preserves line endings) | `path`, `old_string`, `new_string`, `edits?`, `replace_all?` |
+| `edit_lines` | UTF-8 line-based replacement (preserves line endings and EOF newline state) | `path`, `start_line`, `end_line?`, `new_content` |
+| `append_file` | Append UTF-8 text with true append mode (exact newline bytes) | `path`, `content`, `newline?` |
+| `regex_replace` | UTF-8 pattern-based replace (`count >= 0`, preserves line endings) | `path`, `pattern`, `replacement`, `count?`, `ignore_case?`, `multiline?`, `dotall?` |
 | `patch` | Apply unified diffs with validation (prefer `path`, exact-path matching, ambiguity fail-closed) | `path` (preferred) or `target`, `diff?`, `diff_file?`, `mode?`, `fidelity_mode? (byte_strict only; legacy rejected)`, `fuzzy_threshold?`, `dry_run?` |
 | `copy_file` | Copy file with metadata | `source`, `destination`, `overwrite?` |
 | `mkdir` | Create directory (and parents) | `path` |
@@ -865,9 +865,13 @@ Several skills have been updated for Windows-native compatibility:
 
 File editing skills preserve the original line ending style (CRLF/LF/CR):
 
-- **edit_file.py**: Detects and preserves line endings during string/line replacement
-- **regex_replace.py**: Normalizes to LF for processing, restores original on write
-- **append_file.py**: Detects existing file's line ending style for prepended newlines
+- **edit_file.py**: Detects and preserves line endings during string replacement; fails closed on non-UTF8 input
+- **edit_lines.py**: Preserves line endings and existing EOF-newline state; fails closed on non-UTF8 input
+- **regex_replace.py**: Normalizes to LF for processing, restores original on write, and fails closed on non-UTF8 input
+- **append_file.py**: Detects existing file's line ending style for prepended newlines and appends exact bytes
+- **write_file.py** / `atomic_write_text()`: Write provided newline bytes exactly with no platform translation
+
+For byte-sensitive or non-UTF8 edits, use `patch` with `fidelity_mode="byte_strict"` instead of the text-editing skills.
 
 ### Process Group Handling
 
