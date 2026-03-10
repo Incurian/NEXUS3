@@ -3564,3 +3564,72 @@ Execution update (2026-03-10, edit-lines batch alignment slice):
   - `.venv/bin/ruff check nexus3/skill/builtin/edit_lines.py tests/unit/skill/test_edit_lines.py tests/integration/test_file_editing_skills.py README.md CLAUDE.md nexus3/defaults/NEXUS-DEFAULT.md AGENTS_NEXUS3SKILLSCAT.md nexus3/skill/README.md docs/plans/EDIT-LINES-BATCH-AND-TOOL-CONTRACT-ALIGNMENT-PLAN-2026-03-10.md docs/plans/README.md`
   - `.venv/bin/pytest -q tests/unit/skill/test_edit_lines.py tests/integration/test_file_editing_skills.py -k edit_lines`
   - `git diff --check`
+
+
+Planning checkpoint (2026-03-10, file-edit contract harmonization discussion):
+- Approved keep-as-is differences:
+  - semantic content names remain tool-specific where they reflect the edit
+    model (`content`, `new_content`, `new_string`, `replacement`)
+  - two-path operations keep `source` / `destination`
+  - patch-specific diff controls (`diff`, `diff_file`, `mode`, `dry_run`) stay
+    patch-specific
+  - `edit_file.replace_all` remains specific to literal-match disambiguation
+- Approved note/reminder items (document rather than flatten):
+  - `read_file` is numbered by default; exact-match edits should usually use
+    `line_numbers=false`
+  - `edit_file(edits=[...])` batch items must be independent
+  - `edit_lines(edits=[...])` uses original-file line numbers and auto-orders
+    bottom-to-top
+  - text-edit tools stay UTF-8-only; byte-sensitive work should use `patch`
+- Approved harmonization targets:
+  1. reject unknown args consistently across the file-edit family
+  2. keep `path` as the canonical single-target file-edit argument
+  3. keep `edits=[...]` as the shared batch convention where batching exists
+  4. centralize empty-placeholder normalization instead of patching it tool by
+     tool forever
+- Added follow-on implementation plan:
+  - `docs/plans/FILE-EDIT-TOOL-CONTRACT-HARMONIZATION-PLAN-2026-03-10.md`
+- Deferred adjacent follow-up for later:
+  - run a similar contract audit across other tool families, not just file-edit
+    tools (for example: GitLab, MCP-exposed tools, clipboard, nexus_*, exec/
+    shell, and other high-misuse tool groups)
+  - talk with the user specifically about the shell tool family again later
+    (`bash_safe`, `shell_UNSAFE`, `run_python`) and decide which contract
+    differences are intentional vs worth harmonizing
+
+Execution update (2026-03-10, file-edit contract harmonization phase 1):
+- Completed Phase 1 from
+  `docs/plans/FILE-EDIT-TOOL-CONTRACT-HARMONIZATION-PLAN-2026-03-10.md`:
+  reject unknown args consistently across the file-edit family.
+- Hardened these file-edit tools with `additionalProperties: false` so malformed
+  extra args now fail closed instead of being silently dropped:
+  - `nexus3/skill/builtin/read_file.py`
+  - `nexus3/skill/builtin/write_file.py`
+  - `nexus3/skill/builtin/edit_file.py`
+  - `nexus3/skill/builtin/edit_lines.py`
+  - `nexus3/skill/builtin/append_file.py`
+  - `nexus3/skill/builtin/regex_replace.py`
+  - `nexus3/skill/builtin/patch.py`
+  - `nexus3/skill/builtin/copy_file.py`
+  - `nexus3/skill/builtin/rename.py`
+  - `nexus3/skill/builtin/mkdir.py`
+- Nested batch items are now strict as well for:
+  - `edit_file.edits[*]`
+  - `edit_lines.edits[*]`
+- Focused validation coverage added in
+  `tests/unit/skill/test_skill_validation.py`:
+  - top-level unknown-arg rejection across the file-edit family
+  - nested unknown-field rejection for `edit_file.edits[*]` and
+    `edit_lines.edits[*]`
+- Agent-facing docs synced with the new contract rule:
+  - `nexus3/defaults/NEXUS-DEFAULT.md`
+  - `AGENTS_NEXUS3SKILLSCAT.md`
+  - `nexus3/skill/README.md`
+  - `CLAUDE.md`
+- Focused validation passed:
+  - `.venv/bin/ruff check nexus3/skill/builtin/read_file.py nexus3/skill/builtin/write_file.py nexus3/skill/builtin/append_file.py nexus3/skill/builtin/regex_replace.py nexus3/skill/builtin/copy_file.py nexus3/skill/builtin/rename.py nexus3/skill/builtin/mkdir.py nexus3/skill/builtin/edit_file.py nexus3/skill/builtin/edit_lines.py nexus3/skill/builtin/patch.py tests/unit/skill/test_skill_validation.py`
+  - `.venv/bin/pytest -q tests/unit/test_skill_validation.py tests/unit/skill/test_skill_validation.py` (`40 passed`)
+  - `git diff --check`
+- Next gate:
+  - Phase 2: keep `patch.path` canonical and continue de-emphasizing
+    `patch.target` without breaking compatibility.

@@ -4,6 +4,9 @@ Full built-in skills reference.
 
 Derived from `CLAUDE.md` Built-in Skills section, adapted for Codex usage.
 
+Contract rule for the file-edit family: unexpected extra arguments now fail
+closed instead of being silently dropped.
+
 ## Built-in Skills
 
 | Skill | Parameters | Description |

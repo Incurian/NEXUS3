@@ -143,6 +143,7 @@ class PatchSkill(FileSkill):
                 "'target' (compatibility alias). Runtime validation rejects "
                 "missing selectors or conflicting values."
             ),
+            "additionalProperties": False,
         }
 
     async def execute(

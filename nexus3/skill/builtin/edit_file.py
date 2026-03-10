@@ -88,7 +88,8 @@ class EditFileSkill(FileSkill):
                                 "description": "Replace all occurrences"
                             }
                         },
-                        "required": ["old_string", "new_string"]
+                        "required": ["old_string", "new_string"],
+                        "additionalProperties": False,
                     },
                     "description": (
                         "Atomic array of exact string replacements (all-or-none). "
@@ -99,7 +100,8 @@ class EditFileSkill(FileSkill):
                     )
                 }
             },
-            "required": ["path"]
+            "required": ["path"],
+            "additionalProperties": False,
         }
 
     async def execute(

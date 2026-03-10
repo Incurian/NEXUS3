@@ -436,6 +436,9 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 | `copy_file` | `source`, `destination`, `overwrite`? | Copy a file to a new location |
 | `mkdir` | `path` | Create directory (and parents) |
 | `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory |
+
+Contract rule for the file-edit family: unexpected extra arguments fail closed
+instead of being silently dropped.
 | `list_directory` | `path` | List directory contents |
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern (with exclusions) |
 | `grep` | `pattern`, `path`?, `include`?, `context`? | Search file contents with file filter and context lines |

@@ -86,6 +86,7 @@ class EditLinesSkill(FileSkill):
                             },
                         },
                         "required": ["start_line", "new_content"],
+                        "additionalProperties": False,
                     },
                     "description": (
                         "Atomic array of line-range replacements. Line numbers are "
@@ -95,7 +96,8 @@ class EditLinesSkill(FileSkill):
                     ),
                 }
             },
-            "required": ["path"]
+            "required": ["path"],
+            "additionalProperties": False,
         }
 
     async def execute(

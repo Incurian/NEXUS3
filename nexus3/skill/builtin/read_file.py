@@ -122,7 +122,8 @@ class ReadFileSkill(FileSkill):
                     "default": True,
                 }
             },
-            "required": ["path"]
+            "required": ["path"],
+            "additionalProperties": False,
         }
 
     async def execute(

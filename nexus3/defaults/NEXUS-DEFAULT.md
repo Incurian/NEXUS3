@@ -77,6 +77,9 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 | `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory | File moves/renames |
 | `mkdir` | `path` | Create directory (and parents) | Prepare output directories |
 
+Contract rule: file-edit tools fail closed on unexpected extra arguments. Do not
+invent wrapper fields or nested shapes that are not in the tool schema.
+
 ### Choosing the Right Edit Tool
 
 | Goal | Recommended Tool | Why |

@@ -35,7 +35,8 @@ class MkdirSkill(FileSkill):
                     "description": "Path of the directory to create"
                 }
             },
-            "required": ["path"]
+            "required": ["path"],
+            "additionalProperties": False,
         }
 
     async def execute(self, path: str = "", **kwargs: Any) -> ToolResult:

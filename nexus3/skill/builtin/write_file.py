@@ -43,7 +43,8 @@ class WriteFileSkill(FileSkill):
                     "description": "The content to write to the file"
                 }
             },
-            "required": ["path", "content"]
+            "required": ["path", "content"],
+            "additionalProperties": False,
         }
 
     async def execute(self, path: str = "", content: str = "", **kwargs: Any) -> ToolResult:

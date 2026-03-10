@@ -88,7 +88,8 @@ class AppendFileSkill(FileSkill):
                     "default": True
                 }
             },
-            "required": ["path", "content"]
+            "required": ["path", "content"],
+            "additionalProperties": False,
         }
 
     async def execute(

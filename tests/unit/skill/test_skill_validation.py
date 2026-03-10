@@ -79,20 +79,158 @@ class TestValidationUniformity:
         assert result.success
 
     @pytest.mark.asyncio
-    async def test_read_file_filters_unknown_params(self, registry_with_skills, tmp_path):
-        """Read file skill should filter out unknown parameters."""
-        read_skill = registry_with_skills.get("read_file")
+    @pytest.mark.parametrize(
+        ("skill_name", "builder"),
+        [
+            (
+                "read_file",
+                lambda tmp_path: _create_file(tmp_path / "read.txt", "test content")
+                or {"path": str(tmp_path / "read.txt")},
+            ),
+            (
+                "write_file",
+                lambda tmp_path: {"path": str(tmp_path / "write.txt"), "content": "hello\n"},
+            ),
+            (
+                "edit_file",
+                lambda tmp_path: _create_file(tmp_path / "edit.txt", "alpha\nbeta\n")
+                or {
+                    "path": str(tmp_path / "edit.txt"),
+                    "old_string": "alpha",
+                    "new_string": "ALPHA",
+                },
+            ),
+            (
+                "edit_lines",
+                lambda tmp_path: _create_file(tmp_path / "lines.txt", "one\ntwo\nthree\n")
+                or {
+                    "path": str(tmp_path / "lines.txt"),
+                    "start_line": 2,
+                    "new_content": "TWO\n",
+                },
+            ),
+            (
+                "append_file",
+                lambda tmp_path: _create_file(tmp_path / "append.txt", "tail\n")
+                or {"path": str(tmp_path / "append.txt"), "content": "more\n"},
+            ),
+            (
+                "regex_replace",
+                lambda tmp_path: _create_file(tmp_path / "regex.txt", "foo bar\n")
+                or {
+                    "path": str(tmp_path / "regex.txt"),
+                    "pattern": "foo",
+                    "replacement": "baz",
+                },
+            ),
+            (
+                "patch",
+                lambda tmp_path: _create_file(tmp_path / "patch.txt", "old\n")
+                or {
+                    "path": str(tmp_path / "patch.txt"),
+                    "diff": (
+                        "--- a/patch.txt\n"
+                        "+++ b/patch.txt\n"
+                        "@@ -1 +1 @@\n"
+                        "-old\n"
+                        "+new\n"
+                    ),
+                },
+            ),
+            (
+                "copy_file",
+                lambda tmp_path: _create_file(tmp_path / "copy_src.txt", "copy me\n")
+                or {
+                    "source": str(tmp_path / "copy_src.txt"),
+                    "destination": str(tmp_path / "copy_dst.txt"),
+                },
+            ),
+            (
+                "rename",
+                lambda tmp_path: _create_file(tmp_path / "rename_src.txt", "rename me\n")
+                or {
+                    "source": str(tmp_path / "rename_src.txt"),
+                    "destination": str(tmp_path / "rename_dst.txt"),
+                },
+            ),
+            (
+                "mkdir",
+                lambda tmp_path: {"path": str(tmp_path / "created-dir")},
+            ),
+        ],
+    )
+    async def test_file_edit_family_rejects_unknown_params(
+        self,
+        registry_with_skills,
+        tmp_path,
+        skill_name,
+        builder,
+    ):
+        """File-edit tools should fail closed on unknown top-level params."""
+        skill = registry_with_skills.get(skill_name)
 
-        # Create a test file
-        test_file = tmp_path / "test.txt"
-        test_file.write_text("test content")
+        result = await skill.execute(**builder(tmp_path), unknown_xyz="boom")
 
-        # Call with valid path + unknown param
-        result = await read_skill.execute(path=str(test_file), unknown_xyz="filtered")
+        assert not result.success
+        assert "unknown_xyz" in result.error
+        assert (
+            "unexpected" in result.error.lower()
+            or "additional properties" in result.error.lower()
+        )
 
-        # Should succeed - unknown param was filtered
-        assert result.success
-        assert "test content" in result.output
+    @pytest.mark.asyncio
+    async def test_edit_file_rejects_unknown_batch_item_fields(
+        self, registry_with_skills, tmp_path
+    ):
+        """edit_file should reject unexpected keys inside batch edit items."""
+        edit_skill = registry_with_skills.get("edit_file")
+        test_file = tmp_path / "edit-batch.txt"
+        test_file.write_text("alpha\nbeta\n")
+
+        result = await edit_skill.execute(
+            path=str(test_file),
+            edits=[
+                {
+                    "old_string": "alpha",
+                    "new_string": "ALPHA",
+                    "unexpected_field": True,
+                }
+            ],
+        )
+
+        assert not result.success
+        assert "unexpected_field" in result.error
+        assert (
+            "additional properties" in result.error.lower()
+            or "unexpected" in result.error.lower()
+        )
+
+    @pytest.mark.asyncio
+    async def test_edit_lines_rejects_unknown_batch_item_fields(
+        self, registry_with_skills, tmp_path
+    ):
+        """edit_lines should reject unexpected keys inside batch edit items."""
+        edit_skill = registry_with_skills.get("edit_lines")
+        test_file = tmp_path / "lines-batch.txt"
+        test_file.write_text("one\ntwo\nthree\n")
+
+        result = await edit_skill.execute(
+            path=str(test_file),
+            edits=[
+                {
+                    "start_line": 2,
+                    "new_content": "TWO\n",
+                    "unexpected_field": True,
+                }
+            ],
+        )
+
+        assert not result.success
+        assert "unexpected_field" in result.error
+        assert (
+            "additional properties" in result.error.lower()
+            or "unexpected" in result.error.lower()
+        )
 
     @pytest.mark.asyncio
     async def test_file_info_validates_required_params(self, registry_with_skills):
@@ -209,3 +347,9 @@ class TestValidationWrapperApplication:
 
         assert hasattr(skill, "execute")
         assert skill.name == "sleep"
+
+
+def _create_file(path, content):
+    """Create a text file and return None for lambda chaining."""
+    path.write_text(content)
+    return None

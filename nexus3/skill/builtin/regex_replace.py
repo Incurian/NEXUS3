@@ -94,7 +94,8 @@ class RegexReplaceSkill(FileSkill):
                     "default": False
                 }
             },
-            "required": ["path", "pattern", "replacement"]
+            "required": ["path", "pattern", "replacement"],
+            "additionalProperties": False,
         }
 
     async def execute(

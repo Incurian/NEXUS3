@@ -634,6 +634,10 @@ NEXUS3 includes 40 core built-in skills plus 21 GitLab skills (when configured),
 | `mkdir` | Create directory (and parents) | `path` |
 | `rename` | Rename/move file or directory | `source`, `destination`, `overwrite?` |
 
+File-edit contract rule: unexpected extra arguments fail closed instead of
+being silently dropped. Use only documented top-level parameters and documented
+batch item fields.
+
 ### Execution
 
 | Skill | Description | Key Parameters |

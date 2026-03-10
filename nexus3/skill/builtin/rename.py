@@ -45,7 +45,8 @@ class RenameSkill(FileSkill):
                     "default": False
                 }
             },
-            "required": ["source", "destination"]
+            "required": ["source", "destination"],
+            "additionalProperties": False,
         }
 
     async def execute(
