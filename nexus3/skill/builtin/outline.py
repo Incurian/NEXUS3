@@ -192,6 +192,7 @@ def _extract_symbol(
     lines: list[str],
     symbol_name: str,
     filename: str,
+    line_numbers: bool = True,
 ) -> ToolResult:
     """Extract the full body of a named symbol from the file."""
     match: OutlineEntry | None = None
@@ -222,12 +223,13 @@ def _extract_symbol(
     total_bytes = 0
     truncated = False
     for i in range(start_idx, end_idx):
-        numbered_line = f"{i + 1}: {lines[i]}\n"
-        line_bytes = len(numbered_line.encode("utf-8"))
+        rendered_line = f"{i + 1}: {lines[i]}" if line_numbers else lines[i]
+        rendered_line += "\n"
+        line_bytes = len(rendered_line.encode("utf-8"))
         if total_bytes + line_bytes > MAX_OUTPUT_BYTES:
             truncated = True
             break
-        extracted_lines.append(numbered_line)
+        extracted_lines.append(rendered_line)
         total_bytes += line_bytes
 
     header = f"# {match.kind}: {match.name} ({filename}, L{match.line}-{match.end_line})\n\n"
@@ -1476,12 +1478,18 @@ class OutlineSkill(FileSkill):
                 supported = sorted(set(EXT_TO_PARSER.values()) | set(FILENAME_TO_PARSER.values()))
                 return ToolResult(
                     output=f"No outline parser for file type: {p.suffix or p.name}\n"
+                    f"Use read_file for raw contents.\n"
                     f"Supported: {', '.join(supported)}"
                 )
 
             parser = PARSERS.get(parser_key)
             if parser is None:
-                return ToolResult(output=f"No outline parser for language: {parser_key}")
+                return ToolResult(
+                    output=(
+                        f"No outline parser for language: {parser_key}\n"
+                        "Use read_file for raw contents."
+                    )
+                )
 
             # Read file
             lines = await asyncio.to_thread(_read_file_lines, p)
@@ -1498,7 +1506,7 @@ class OutlineSkill(FileSkill):
 
             # Filtered read mode
             if symbol:
-                return _extract_symbol(entries, lines, symbol, p.name)
+                return _extract_symbol(entries, lines, symbol, p.name, line_numbers)
 
             # Token estimates
             if tokens:

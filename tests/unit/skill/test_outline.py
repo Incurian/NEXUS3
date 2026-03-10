@@ -1053,9 +1053,22 @@ class TestSymbolExtraction:
             ),
         ]
         lines = ["def foo():", "    return 1", ""]
-        result = _extract_symbol(entries, lines, "foo", "test.py")
+        result = _extract_symbol(entries, lines, "foo", "test.py", line_numbers=True)
         assert "1: def foo():" in result.output
         assert "2:     return 1" in result.output
+
+    def test_line_numbers_can_be_disabled(self):
+        entries = [
+            OutlineEntry(
+                line=1, depth=0, kind="function", name="foo",
+                end_line=2,
+            ),
+        ]
+        lines = ["def foo():", "    return 1"]
+        result = _extract_symbol(entries, lines, "foo", "test.py", line_numbers=False)
+        assert "1: def foo():" not in result.output
+        assert "def foo():" in result.output
+        assert "    return 1" in result.output
 
 
 # =============================================================================
@@ -1201,6 +1214,7 @@ class TestOutlineSkill:
         result = await skill.execute(path=str(f))
         assert result.success
         assert "No outline parser" in result.output
+        assert "Use read_file for raw contents" in result.output
 
     @pytest.mark.asyncio
     async def test_python_file(self, skill, tmp_path):
@@ -1266,6 +1280,17 @@ class TestOutlineSkill:
         )
         assert result.success
         assert "L" not in result.output.split("\n")[2]
+
+    @pytest.mark.asyncio
+    async def test_symbol_respects_line_numbers_off(self, skill, tmp_path):
+        f = tmp_path / "test.py"
+        f.write_text("def foo():\n    return 1\n")
+        result = await skill.execute(
+            path=str(f), symbol="foo", line_numbers=False,
+        )
+        assert result.success
+        assert "1: def foo():" not in result.output
+        assert "def foo():" in result.output
 
     @pytest.mark.asyncio
     async def test_signatures_off(self, skill, tmp_path):

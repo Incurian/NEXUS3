@@ -611,7 +611,7 @@ NEXUS3 includes 40 core built-in skills plus 21 GitLab skills (when configured),
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `read_file` | Read file contents with streaming/size limits | `path`, `offset?`, `limit?` |
+| `read_file` | Read file contents with streaming/size limits | `path`, `offset?`, `limit?`, `line_numbers?` |
 | `tail` | Read last N lines efficiently | `path`, `lines?` (default: 10) |
 | `file_info` | Get file/directory metadata (Unix perms or Windows RHSA) | `path` |
 | `list_directory` | List directory contents | `path?`, `all?`, `long?` |

@@ -126,10 +126,11 @@ For text-oriented edit tools, silent corruption of non-UTF8 files is worse than 
 - Completed in the current branch:
   - `patch` now accepts valid new-file diffs when the target path does not yet exist.
   - `edit_file` batch mode now fails closed if earlier edits invalidate later edit targets in-memory.
+  - `read_file` now supports `line_numbers=false` raw reads while keeping numbered output as the default.
+  - `outline(symbol=...)` now honors `line_numbers=false`, and unsupported file types now explicitly direct callers to `read_file`.
 - Remaining Phase 2 scope:
-  - `read_file` raw-vs-numbered output contract cleanup
-  - `outline` unsupported-file and `symbol`-mode fallback cleanup
-  - any remaining `patch` interface ergonomics (`target` vs `path`) and Phase 2 doc alignment
+  - any remaining `patch` interface ergonomics (`target` vs `path`)
+  - any final Phase 2 prompt/doc alignment around numbered views and patch interface guidance
 
 ## Phase 3: Text Fidelity, Newlines, And Regex Hardening
 

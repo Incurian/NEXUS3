@@ -249,6 +249,34 @@ Immediate tasks:
     2. Phase 3: newline / encoding / regex hardening.
     3. Phase 5: Git Bash ESC + multiline paste.
     4. Phase 6: docs and live validation closeout.
+- Completed follow-on hardening slice (2026-03-10): Plan Phase 2B
+  read/outline contract corrections:
+  - `nexus3/skill/builtin/read_file.py`
+    - added `line_numbers=false` raw output mode while preserving numbered
+      output as the default.
+    - raw mode now preserves trailing spaces and final-line newline state
+      instead of stripping line text via unconditional `rstrip()`.
+  - `nexus3/skill/builtin/outline.py`
+    - `symbol` extraction now honors `line_numbers=false`.
+    - unsupported file types still return a non-error fallback, but now
+      explicitly direct callers to `read_file`.
+  - focused regression coverage added/updated in:
+    - `tests/unit/test_skill_enhancements.py`
+    - `tests/unit/skill/test_outline.py`
+    - `tests/security/test_p2_file_size_limits.py`
+  - minimal doc sync landed in:
+    - `nexus3/defaults/NEXUS-DEFAULT.md`
+    - `AGENTS_NEXUS3SKILLSCAT.md`
+    - `nexus3/skill/README.md`
+  - focused validation passed:
+    - `git diff --check`
+    - `.venv/bin/ruff check nexus3/skill/builtin/read_file.py nexus3/skill/builtin/outline.py tests/unit/test_skill_enhancements.py tests/unit/skill/test_outline.py tests/security/test_p2_file_size_limits.py`
+    - `.venv/bin/pytest -q tests/unit/test_skill_enhancements.py tests/unit/skill/test_outline.py tests/security/test_p2_file_size_limits.py`
+  - remaining Phase 2 scope:
+    - decide whether `patch` should accept `path` as a compatibility alias for
+      `target`
+    - finish any Phase 2 prompt/doc alignment around numbered views and patch
+      interface guidance
 - Completed follow-on hardening slice (2026-03-09): Plan Phase 2A
   patch/edit contract corrections:
   - `nexus3/skill/builtin/patch.py`

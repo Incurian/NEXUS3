@@ -55,14 +55,14 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 ### File Operations (Read)
 | Tool | Key Parameters | Description |
 |------|----------------|-------------|
-| `read_file` | `path`, `offset`?, `limit`? | Read file contents (with optional line range) |
+| `read_file` | `path`, `offset`?, `limit`?, `line_numbers`? | Read file contents (numbered by default; set `line_numbers=false` for raw text) |
 | `tail` | `path`, `lines`? | Read last N lines (default: 10) |
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
 | `list_directory` | `path` | List directory contents |
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern |
 | `grep` | `pattern`, `path`, `include`?, `context`?, `ignore_case`? | Search file contents with regex |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `dry_run`? | Concatenate files by extension (dry_run=true by default) |
-| `outline` | `path`, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`? | Structural outline of file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Use `symbol` for filtered read, `tokens` for estimates, `diff` for changes |
+| `outline` | `path`, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`? | Structural outline of file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Use `symbol` for filtered read, `tokens` for estimates, `diff` for changes. Unsupported file types point you to `read_file` |
 
 ### File Operations (Write)
 | Tool | Key Parameters | Description | Use Case |
@@ -191,9 +191,15 @@ outline(path="src/auth.py")                          # ~200 tokens: see classes,
 read_file(path="src/auth.py", offset=120, limit=40)  # ~400 tokens: read just the function you need
 ```
 
+If you need exact raw text for literal edits or diff construction, disable numbering:
+```
+read_file(path="src/auth.py", offset=120, limit=40, line_numbers=false)
+```
+
 **Use `outline` with `symbol` to jump directly to a definition:**
 ```
 outline(path="src/auth.py", symbol="AuthManager")    # Returns full body of AuthManager class with line numbers
+outline(path="src/auth.py", symbol="AuthManager", line_numbers=false)  # Raw source excerpt
 ```
 
 **Use `outline` with `depth=1` for quick orientation:**

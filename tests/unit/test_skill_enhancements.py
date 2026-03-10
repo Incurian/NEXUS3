@@ -89,7 +89,11 @@ class TestReadFileOffsetLimit:
         assert "5: Line 5" not in result.output
 
     @pytest.mark.asyncio
-    async def test_offset_beyond_file_returns_empty(self, skill: ReadFileSkill, test_file: Path) -> None:
+    async def test_offset_beyond_file_returns_empty(
+        self,
+        skill: ReadFileSkill,
+        test_file: Path,
+    ) -> None:
         """Offset beyond file length returns helpful message."""
         result = await skill.execute(path=str(test_file), offset=100)
         assert not result.error
@@ -97,7 +101,39 @@ class TestReadFileOffsetLimit:
         assert "beyond end of file" in result.output or "empty" in result.output
 
     @pytest.mark.asyncio
-    async def test_invalid_offset_returns_error(self, skill: ReadFileSkill, test_file: Path) -> None:
+    async def test_line_numbers_false_returns_raw_text(
+        self,
+        skill: ReadFileSkill,
+        test_file: Path,
+    ) -> None:
+        """line_numbers=false returns raw lines without numeric prefixes."""
+        result = await skill.execute(path=str(test_file), line_numbers=False)
+
+        assert not result.error
+        assert result.output.startswith("Line 1\nLine 2\n")
+        assert "1: Line 1" not in result.output
+
+    @pytest.mark.asyncio
+    async def test_line_numbers_false_preserves_trailing_spaces_and_final_line(
+        self,
+        skill: ReadFileSkill,
+        tmp_path: Path,
+    ) -> None:
+        """Raw mode should preserve line text instead of stripping whitespace."""
+        test_file = tmp_path / "spacing.txt"
+        test_file.write_text("keep  \nfinal line")
+
+        result = await skill.execute(path=str(test_file), line_numbers=False)
+
+        assert not result.error
+        assert result.output == "keep  \nfinal line"
+
+    @pytest.mark.asyncio
+    async def test_invalid_offset_returns_error(
+        self,
+        skill: ReadFileSkill,
+        test_file: Path,
+    ) -> None:
         """Offset less than 1 returns error."""
         result = await skill.execute(path=str(test_file), offset=0)
         assert result.error is not None
@@ -340,5 +376,5 @@ class TestGrepIncludeContext:
         # Should have Python file matches with context
         assert "code.py" in result.output
         # Should show context
-        lines = [l for l in result.output.split("\n") if l.strip()]
+        lines = [line for line in result.output.split("\n") if line.strip()]
         assert len(lines) > 2  # More than just match lines

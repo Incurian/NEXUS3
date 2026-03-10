@@ -19,6 +19,7 @@ def _stream_read_lines(
     offset: int = 1,
     limit: int | None = None,
     max_bytes: int = MAX_OUTPUT_BYTES,
+    line_numbers: bool = True,
 ) -> tuple[list[str], bool]:
     """Stream-read lines from a file with limits.
 
@@ -29,6 +30,7 @@ def _stream_read_lines(
         offset: 1-indexed line number to start from
         limit: Maximum lines to read (None = use MAX_READ_LINES)
         max_bytes: Maximum total bytes to read
+        line_numbers: Whether to prefix each line with its original line number
 
     Returns:
         Tuple of (lines with line numbers, was_truncated)
@@ -48,14 +50,18 @@ def _stream_read_lines(
             if line_num <= start_idx:
                 continue
 
-            # Check byte limit
-            line_bytes = len(line.encode("utf-8"))
+            line_text = line.removesuffix("\n")
+            rendered_line = f"{line_num}: {line_text}" if line_numbers else line_text
+            if line.endswith("\n"):
+                rendered_line += "\n"
+
+            # Check byte limit against the actual rendered output
+            line_bytes = len(rendered_line.encode("utf-8"))
             if total_bytes + line_bytes > max_bytes:
                 truncated = True
                 break
 
-            # Add line with number
-            lines.append(f"{line_num}: {line.rstrip()}\n")
+            lines.append(rendered_line)
             total_bytes += line_bytes
 
             # Check line limit
@@ -106,6 +112,14 @@ class ReadFileSkill(FileSkill):
                 "limit": {
                     "type": "integer",
                     "description": "Maximum number of lines to read (default: 10000)"
+                },
+                "line_numbers": {
+                    "type": "boolean",
+                    "description": (
+                        "Prefix each returned line with its original line number. "
+                        "Default: true"
+                    ),
+                    "default": True,
                 }
             },
             "required": ["path"]
@@ -116,6 +130,7 @@ class ReadFileSkill(FileSkill):
         path: str = "",
         offset: int = 1,
         limit: int | None = None,
+        line_numbers: bool = True,
         **kwargs: Any
     ) -> ToolResult:
         """Read the file and return its contents.
@@ -145,7 +160,7 @@ class ReadFileSkill(FileSkill):
 
             # P2.5 SECURITY: Stream-read with limits
             lines, truncated = await asyncio.to_thread(
-                _stream_read_lines, p, offset, limit
+                _stream_read_lines, p, offset, limit, MAX_OUTPUT_BYTES, line_numbers
             )
 
             if not lines:

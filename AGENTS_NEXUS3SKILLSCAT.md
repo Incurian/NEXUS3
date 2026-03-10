@@ -8,7 +8,7 @@ Derived from `CLAUDE.md` Built-in Skills section, adapted for Codex usage.
 
 | Skill | Parameters | Description |
 |-------|------------|-------------|
-| `read_file` | `path`, `offset`?, `limit`? | Read file contents (with optional line range) |
+| `read_file` | `path`, `offset`?, `limit`?, `line_numbers`? | Read file contents (numbered by default; raw mode available with `line_numbers=false`) |
 | `tail` | `path`, `lines`? | Read last N lines of a file (default: 10) |
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
 | `write_file` | `path`, `content` | Write/create files (read file first) |
@@ -24,7 +24,7 @@ Derived from `CLAUDE.md` Built-in Skills section, adapted for Codex usage.
 | `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern (with exclusions) |
 | `grep` | `pattern`, `path`?, `include`?, `context`? | Search file contents with file filter and context lines |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate files by extension with token estimation (`dry_run=True` by default) |
-| `outline` | `path`, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`? | Structural outline of file/directory (headings, classes, functions, keys) |
+| `outline` | `path`, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`? | Structural outline of file/directory; `symbol` returns a source excerpt and unsupported file types point callers to `read_file` |
 | `git` | `command`, `cwd`? | Execute git commands (permission-filtered by level) |
 | `bash_safe` | `command`, `timeout`? | Execute shell commands (`shlex.split`, no shell operators) |
 | `shell_UNSAFE` | `command`, `timeout`? | Execute `shell=True` (pipes work, injection-vulnerable) |
