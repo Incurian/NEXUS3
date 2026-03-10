@@ -31,6 +31,23 @@ class TestMCPSkillAdapterSanitization:
         assert "\x1b[" not in result.output
 
     @pytest.mark.asyncio
+    async def test_empty_input_schema_treats_tool_as_no_arg_contract(self) -> None:
+        tool = MCPTool(name="echo", description="Echo", input_schema={})
+        mcp_result = MCPToolResult(
+            content=[{"type": "text", "text": "ok"}],
+            is_error=False,
+        )
+
+        mock_client = MagicMock()
+        mock_client.call_tool = AsyncMock(return_value=mcp_result)
+
+        adapter = MCPSkillAdapter(mock_client, tool, "test-server")
+        result = await adapter.execute(unexpected="value")
+
+        mock_client.call_tool.assert_awaited_once_with("echo", {})
+        assert result.success
+
+    @pytest.mark.asyncio
     async def test_execute_sanitizes_error_payload(self) -> None:
         tool = MCPTool(name="echo", description="Echo", input_schema={})
         mcp_result = MCPToolResult(

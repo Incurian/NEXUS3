@@ -195,10 +195,14 @@ across both global and `/agent/{id}` RPC routes. `create_agent` follow-up
   - shared `MCPClient` callers are now serialized to prevent request/response
     pairing races
   - dead MCP connections no longer leave stale cached tools runtime-resolvable
+  - OpenAI-compatible and Anthropic outbound MCP tool schemas now share the
+    same provider-safe top-level normalization rules
   - private MCP tools can no longer be invoked by non-owner agents just by
     knowing the `mcp_*` tool name
-  - remaining MCP audit scope is schema adaptation plus reconnect/refresh
-    boundary review
+  - MCP consent/runtime persistence coverage is now exercised at the session
+    runtime level
+  - raw `{}` MCP schemas are explicitly covered as a no-arg contract at
+    runtime, matching the provider-safe outbound shape
 
 #### Component Sharing
 

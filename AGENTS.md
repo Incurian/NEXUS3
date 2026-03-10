@@ -4032,26 +4032,34 @@ Execution update (2026-03-10, MCP dynamic tool audit first fix):
     - `find_skill(...)` / `get_server_for_skill(...)` now skip dead
       connections so stale cached MCP tools are not runtime-resolvable after a
       connection dies
+  - `nexus3/provider/tool_schema.py`
+    - added shared outbound tool-schema normalization for provider adapters
+  - `nexus3/provider/openai_compat.py`
+    - OpenAI-compatible outbound MCP/tool schemas now force top-level
+      object-shaped parameters and strip top-level provider-incompatible
+      combinators in addition to the existing nested-fragment normalization
+  - `nexus3/provider/anthropic.py`
+    - Anthropic outbound tool conversion now uses the same provider-safe
+      normalization rules as the OpenAI-compatible path
 - Added focused regressions in:
   - `tests/unit/mcp/test_client_encapsulation.py`
   - `tests/unit/mcp/test_registry.py`
   - `tests/unit/mcp/test_skill_adapter.py`
   - `tests/unit/session/test_dispatcher.py`
   - `tests/unit/session/test_session_permission_kernelization.py`
+  - `tests/unit/provider/test_compiler_integration.py`
 - Focused validation passed:
   - `.venv/bin/ruff check nexus3/mcp/client.py nexus3/mcp/skill_adapter.py nexus3/mcp/registry.py nexus3/session/dispatcher.py nexus3/session/permission_runtime.py tests/unit/mcp/test_client_encapsulation.py tests/unit/mcp/test_skill_adapter.py tests/unit/mcp/test_registry.py tests/unit/session/test_dispatcher.py tests/unit/session/test_session_permission_kernelization.py`
   - `.venv/bin/pytest -q tests/unit/mcp/test_client_encapsulation.py tests/unit/mcp/test_skill_adapter.py tests/unit/mcp/test_registry.py tests/unit/session/test_dispatcher.py tests/unit/session/test_session_permission_kernelization.py` (`42 passed`)
   - `.venv/bin/pytest -q tests/integration/test_mcp_client.py -k 'agent_visibility or shared_visibility'` (`2 passed`)
+  - `.venv/bin/ruff check nexus3/provider/tool_schema.py nexus3/provider/openai_compat.py nexus3/provider/anthropic.py tests/unit/provider/test_compiler_integration.py`
+  - `.venv/bin/pytest -q tests/unit/provider/test_compiler_integration.py -k 'openai_request_body_normalizes or anthropic_convert_tools_normalizes or anthropic_request_body or openai_request_body_strips'` (`9 passed`)
+  - `.venv/bin/ruff check tests/unit/session/test_session_permission_kernelization.py`
+  - `.venv/bin/pytest -q tests/unit/session/test_session_permission_kernelization.py` (`7 passed`)
+  - `.venv/bin/ruff check tests/unit/mcp/test_skill_adapter.py`
+  - `.venv/bin/pytest -q tests/unit/mcp/test_skill_adapter.py` (`5 passed`)
   - `git diff --check`
 - Next gate:
-  - continue the MCP audit on schema adaptation for top-level
-    provider-incompatible MCP shapes
-  - first remaining concrete watch items:
-    - top-level non-object / combinator-heavy MCP schemas at OpenAI-compatible
-      provider boundaries
-    - Anthropic outbound MCP schema normalization parity
-    - `{}` runtime-validation vs provider-normalization parity review
-    - MCP consent/runtime persistence coverage for prompt suppression after
-      stored allowances
+  - MCP dynamic tool audit can close unless a new concrete repro appears
   - keep the read-file aliases and outline follow-up closed unless a new
     concrete failing repro appears

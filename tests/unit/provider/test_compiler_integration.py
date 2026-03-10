@@ -286,6 +286,96 @@ def test_openai_request_body_normalizes_nested_object_schema_without_properties(
     }
 
 
+def test_openai_request_body_normalizes_top_level_array_schema() -> None:
+    """OpenAI request shaping should force top-level tool schemas to objects."""
+    from nexus3.provider.openai_compat import OpenAICompatProvider
+
+    provider = OpenAICompatProvider(
+        ProviderConfig(
+            type="openai",
+            api_key_env="OPENAI_API_KEY",
+            auth_method=AuthMethod.NONE,
+        ),
+        model_id="gpt-4o",
+    )
+
+    original_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "mcp_array_args",
+                "description": "Weird array-shaped args.",
+                "parameters": {
+                    "type": "array",
+                    "title": "ArrayArgs",
+                    "items": {"type": "string"},
+                },
+            },
+        }
+    ]
+
+    body = provider._build_request_body(
+        messages=[Message(role=Role.USER, content="use weird tool")],
+        tools=original_tools,
+        stream=False,
+    )
+
+    assert body["tools"][0]["function"]["parameters"] == {
+        "type": "object",
+        "title": "ArrayArgs",
+        "properties": {},
+    }
+    assert original_tools[0]["function"]["parameters"] == {
+        "type": "array",
+        "title": "ArrayArgs",
+        "items": {"type": "string"},
+    }
+
+
+def test_openai_request_body_strips_top_level_combinators() -> None:
+    """OpenAI request shaping should remove top-level provider-incompatible combinators."""
+    from nexus3.provider.openai_compat import OpenAICompatProvider
+
+    provider = OpenAICompatProvider(
+        ProviderConfig(
+            type="openai",
+            api_key_env="OPENAI_API_KEY",
+            auth_method=AuthMethod.NONE,
+        ),
+        model_id="gpt-4o",
+    )
+
+    original_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "mcp_combinator_args",
+                "description": "Weird combinator args.",
+                "parameters": {
+                    "title": "CombinatorArgs",
+                    "oneOf": [
+                        {"type": "object", "properties": {"a": {"type": "string"}}},
+                        {"type": "object", "properties": {"b": {"type": "integer"}}},
+                    ],
+                },
+            },
+        }
+    ]
+
+    body = provider._build_request_body(
+        messages=[Message(role=Role.USER, content="use combinator tool")],
+        tools=original_tools,
+        stream=False,
+    )
+
+    assert body["tools"][0]["function"]["parameters"] == {
+        "type": "object",
+        "title": "CombinatorArgs",
+        "properties": {},
+    }
+    assert "oneOf" in original_tools[0]["function"]["parameters"]
+
+
 def test_anthropic_convert_messages_does_not_synthesize_orphans_locally() -> None:
     """Anthropic conversion should no longer synthesize missing tool results itself."""
     from nexus3.provider.anthropic import AnthropicProvider
@@ -394,3 +484,51 @@ def test_anthropic_request_body_does_not_inject_cancel_note_mid_tool_loop() -> N
         for block in msg.get("content", [])
         if isinstance(block, dict)
     )
+
+
+def test_anthropic_convert_tools_normalizes_provider_incompatible_top_level_shapes() -> None:
+    """Anthropic tool conversion should use the same provider-safe schema normalization."""
+    from nexus3.provider.anthropic import AnthropicProvider
+
+    provider = object.__new__(AnthropicProvider)
+
+    converted = provider._convert_tools(
+        [
+            {
+                "type": "function",
+                "function": {
+                    "name": "mcp_array_args",
+                    "description": "Array args.",
+                    "parameters": {
+                        "type": "array",
+                        "title": "ArrayArgs",
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "mcp_combinator_args",
+                    "description": "Combinator args.",
+                    "parameters": {
+                        "title": "CombinatorArgs",
+                        "anyOf": [
+                            {"type": "object", "properties": {"x": {"type": "string"}}},
+                            {"type": "object", "properties": {"y": {"type": "integer"}}},
+                        ],
+                    },
+                },
+            },
+        ]
+    )
+
+    assert converted[0]["input_schema"] == {
+        "type": "object",
+        "title": "ArrayArgs",
+        "properties": {},
+    }
+    assert converted[1]["input_schema"] == {
+        "type": "object",
+        "title": "CombinatorArgs",
+        "properties": {},
+    }

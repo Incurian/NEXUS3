@@ -300,14 +300,15 @@ Handles OpenAI-format APIs (OpenRouter, OpenAI, Ollama, vLLM).
 }
 ```
 
-For OpenAI-compatible providers, NEXUS3 also normalizes external tool schemas
-before sending the request body. MCP or other external tools that advertise
-`{}` or `{"type": "object"}` are rewritten to
-`{"type": "object", "properties": {}}` on the outbound OpenAI path, and nested
-`{"type": "object"}` / `{"type": "array"}` fragments are filled with
-provider-safe placeholder `properties: {}` / `items: {}` when missing. This
-keeps external tool contracts provider-compatible without mutating the local
-skill contract.
+For provider tool-calling APIs, NEXUS3 normalizes external tool schemas before
+sending the request body. MCP or other external tools that advertise `{}` or
+`{"type": "object"}` are rewritten to
+`{"type": "object", "properties": {}}`, nested `{"type": "object"}` /
+`{"type": "array"}` fragments are filled with provider-safe placeholder
+`properties: {}` / `items: {}` when missing, and top-level non-object or
+combinator-heavy schemas are coerced to provider-safe object-shaped schemas.
+This keeps external tool contracts provider-compatible without mutating the
+local skill contract.
 
 **Extended Thinking/Reasoning:**
 When `reasoning=True`, adds `{"reasoning": {"effort": "high"}}` to request body (supported by Grok via OpenRouter).
@@ -413,6 +414,11 @@ Message(role=Role.ASSISTANT, content="Let me check...", tool_calls=[...])
 # Anthropic format (converted)
 {"name": "...", "description": "...", "input_schema": {...}}
 ```
+
+Anthropic conversion uses the same outbound tool-schema normalization rules as
+the OpenAI-compatible path so dynamic MCP tool definitions do not diverge
+between providers just because one backend is stricter about top-level schema
+shape.
 
 **SSE Stream Events:**
 - `message_start` - Initial metadata (includes cache metrics in `usage`)

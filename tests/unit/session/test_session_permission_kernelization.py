@@ -126,6 +126,111 @@ class TestSessionIntegrationLevelKernelization:
         assert confirmations[0][2] == Path("/tmp")
 
     @pytest.mark.asyncio
+    async def test_mcp_allow_file_persists_only_for_confirmed_tool(self) -> None:
+        services = ServiceContainer()
+        services.set_cwd(Path("/tmp"))
+        confirmations: list[str] = []
+
+        async def on_confirm(
+            tool_call: ToolCall,
+            target_path: Path | None,
+            agent_cwd: Path,
+        ) -> ConfirmationResult:
+            confirmations.append(tool_call.name)
+            return ConfirmationResult.ALLOW_FILE
+
+        session = Session(provider=DummyProvider(), services=services, on_confirm=on_confirm)
+        permissions = resolve_preset("trusted")
+
+        first_tool = ToolCall(id="tc-1", name="mcp_demo_list", arguments={})
+        second_tool = ToolCall(id="tc-2", name="mcp_demo_other", arguments={})
+
+        first_result = await handle_mcp_permissions_runtime(
+            tool_call=first_tool,
+            skill=object(),
+            server_name="demo",
+            permissions=permissions,
+            authorization_kernel=session._mcp_authorization_kernel,
+            confirmation=session._confirmation,
+            services=session._services,
+            on_confirm=session.on_confirm,
+        )
+        repeat_result = await handle_mcp_permissions_runtime(
+            tool_call=first_tool,
+            skill=object(),
+            server_name="demo",
+            permissions=permissions,
+            authorization_kernel=session._mcp_authorization_kernel,
+            confirmation=session._confirmation,
+            services=session._services,
+            on_confirm=session.on_confirm,
+        )
+        second_result = await handle_mcp_permissions_runtime(
+            tool_call=second_tool,
+            skill=object(),
+            server_name="demo",
+            permissions=permissions,
+            authorization_kernel=session._mcp_authorization_kernel,
+            confirmation=session._confirmation,
+            services=session._services,
+            on_confirm=session.on_confirm,
+        )
+
+        assert first_result is None
+        assert repeat_result is None
+        assert second_result is None
+        assert confirmations == ["mcp_demo_list", "mcp_demo_other"]
+        assert permissions.session_allowances.is_mcp_tool_allowed("mcp_demo_list") is True
+        assert permissions.session_allowances.is_mcp_tool_allowed("mcp_demo_other") is True
+        assert permissions.session_allowances.is_mcp_server_allowed("demo") is False
+
+    @pytest.mark.asyncio
+    async def test_mcp_allow_exec_global_skips_future_prompts_for_server(self) -> None:
+        services = ServiceContainer()
+        services.set_cwd(Path("/tmp"))
+        confirmations: list[str] = []
+
+        async def on_confirm(
+            tool_call: ToolCall,
+            target_path: Path | None,
+            agent_cwd: Path,
+        ) -> ConfirmationResult:
+            confirmations.append(tool_call.name)
+            return ConfirmationResult.ALLOW_EXEC_GLOBAL
+
+        session = Session(provider=DummyProvider(), services=services, on_confirm=on_confirm)
+        permissions = resolve_preset("trusted")
+
+        first_tool = ToolCall(id="tc-1", name="mcp_demo_list", arguments={})
+        second_tool = ToolCall(id="tc-2", name="mcp_demo_other", arguments={})
+
+        first_result = await handle_mcp_permissions_runtime(
+            tool_call=first_tool,
+            skill=object(),
+            server_name="demo",
+            permissions=permissions,
+            authorization_kernel=session._mcp_authorization_kernel,
+            confirmation=session._confirmation,
+            services=session._services,
+            on_confirm=session.on_confirm,
+        )
+        second_result = await handle_mcp_permissions_runtime(
+            tool_call=second_tool,
+            skill=object(),
+            server_name="demo",
+            permissions=permissions,
+            authorization_kernel=session._mcp_authorization_kernel,
+            confirmation=session._confirmation,
+            services=session._services,
+            on_confirm=session.on_confirm,
+        )
+
+        assert first_result is None
+        assert second_result is None
+        assert confirmations == ["mcp_demo_list"]
+        assert permissions.session_allowances.is_mcp_server_allowed("demo") is True
+
+    @pytest.mark.asyncio
     async def test_mcp_invisible_private_server_returns_unknown_skill(self) -> None:
         services = ServiceContainer()
         services.set_cwd(Path("/tmp"))

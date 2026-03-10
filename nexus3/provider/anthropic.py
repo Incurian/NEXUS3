@@ -32,6 +32,7 @@ from nexus3.core.types import (
     ToolCallStarted,
 )
 from nexus3.provider.base import BaseProvider
+from nexus3.provider.tool_schema import normalize_tool_parameters_for_provider
 
 if TYPE_CHECKING:
     from nexus3.config.schema import ProviderConfig
@@ -331,8 +332,10 @@ class AnthropicProvider(BaseProvider):
             result.append({
                 "name": func.get("name", ""),
                 "description": func.get("description", ""),
-                "input_schema": func.get(
-                    "parameters", {"type": "object", "properties": {}}
+                "input_schema": normalize_tool_parameters_for_provider(
+                    func.get("parameters")
+                    if isinstance(func.get("parameters"), dict)
+                    else None
                 ),
             })
         return result

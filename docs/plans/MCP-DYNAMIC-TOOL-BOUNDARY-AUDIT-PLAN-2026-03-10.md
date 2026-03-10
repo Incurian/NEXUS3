@@ -105,6 +105,11 @@ materially reduce real MCP tool boundary risk.
     concurrent use
   - registry skill resolution could still return stale cached MCP tools from
     dead connections
+- Fourth concrete findings confirmed and fixed:
+  - OpenAI-compatible outbound MCP tool schemas still allowed provider-invalid
+    top-level array/combinator shapes through request shaping
+  - Anthropic outbound MCP tool shaping did not normalize the same top-level
+    shapes, creating provider-parity drift
 - Shipped hardening:
   - `MCPServerRegistry.find_skill(...)` and `get_server_for_skill(...)` now
     accept optional `agent_id` visibility filtering.
@@ -118,6 +123,12 @@ materially reduce real MCP tool boundary risk.
   - `MCPServerRegistry.find_skill(...)` and `get_server_for_skill(...)` now
     skip dead connections so stale cached MCP tools do not remain resolvable
     after connection death.
+  - added shared outbound tool-schema normalization in
+    `nexus3/provider/tool_schema.py`
+  - OpenAI-compatible and Anthropic providers now both:
+    - fill missing nested `properties` / `items`
+    - force top-level tool schemas to object-shaped parameters
+    - strip top-level provider-incompatible combinators before request shaping
 - Focused validation for this slice:
   - `tests/unit/mcp/test_client_encapsulation.py`
   - `tests/unit/mcp/test_registry.py`
@@ -125,18 +136,14 @@ materially reduce real MCP tool boundary risk.
   - `tests/unit/session/test_dispatcher.py`
   - `tests/unit/session/test_session_permission_kernelization.py`
   - `tests/integration/test_mcp_client.py -k 'agent_visibility or shared_visibility'`
+  - `tests/unit/provider/test_compiler_integration.py`
 - Remaining audit watch items:
-  - top-level non-object / combinator-heavy MCP schemas can still exceed
-    OpenAI-compatible provider constraints
-  - Anthropic outbound MCP tool shaping is not normalized the same way as the
-    OpenAI-compatible path
-  - raw `{}` MCP schemas still merit a behavior review for runtime validation
-    vs provider-side normalization parity
-  - MCP consent/runtime tests still lack persistent allowance coverage for
-    prompt suppression after `ALLOW_ONCE` / `ALLOW_*` transitions
+  - none currently active; raw `{}` MCP schemas are now explicitly covered as a
+    no-arg contract at runtime, matching the provider-safe outbound shape
+- MCP consent/runtime persistence coverage is now added at the session runtime;
+  no behavior bug was confirmed there.
 - Next audit gate:
-  - schema adaptation review for top-level provider-incompatible MCP shapes
-  - then revisit MCP consent/runtime persistence coverage
+  - MCP dynamic tool audit can close unless a new concrete repro appears
 
 ## Documentation Updates
 

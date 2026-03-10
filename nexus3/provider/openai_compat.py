@@ -33,52 +33,13 @@ from nexus3.core.types import (
     ToolCallStarted,
 )
 from nexus3.provider.base import BaseProvider
+from nexus3.provider.tool_schema import normalize_tool_parameters_for_provider
 
 if TYPE_CHECKING:
     from nexus3.config.schema import ProviderConfig
     from nexus3.core.interfaces import RawLogCallback
 
 logger = logging.getLogger(__name__)
-
-
-def _normalize_tool_parameters_for_openai(
-    schema: dict[str, Any] | None,
-) -> dict[str, Any]:
-    """Normalize tool schemas for OpenAI-compatible APIs.
-
-    OpenAI tool/function schemas require an object-shaped top-level parameters
-    schema. Some MCP servers legitimately advertise no-arg tools as `{}` or as
-    `{"type": "object"}`. Those shapes are accepted locally but can be
-    rejected by OpenAI-compatible providers.
-
-    Some OpenAI-compatible providers also reject nested object/array fragments
-    that omit provider-required placeholders like `properties` or `items`.
-    Normalize those shapes recursively on the outbound provider path without
-    mutating the original caller-owned schema.
-    """
-    if not schema:
-        return {"type": "object", "properties": {}}
-
-    def _normalize_schema_fragment(fragment: Any) -> Any:
-        if isinstance(fragment, list):
-            return [_normalize_schema_fragment(item) for item in fragment]
-
-        if not isinstance(fragment, dict):
-            return fragment
-
-        normalized = {
-            key: _normalize_schema_fragment(value) for key, value in fragment.items()
-        }
-
-        if normalized.get("type") == "object" and "properties" not in normalized:
-            normalized["properties"] = {}
-
-        if normalized.get("type") == "array" and "items" not in normalized:
-            normalized["items"] = {}
-
-        return normalized
-
-    return _normalize_schema_fragment(schema)
 
 
 def _normalize_tools_for_openai(
@@ -93,7 +54,7 @@ def _normalize_tools_for_openai(
             continue
 
         normalized_function = dict(function)
-        normalized_function["parameters"] = _normalize_tool_parameters_for_openai(
+        normalized_function["parameters"] = normalize_tool_parameters_for_provider(
             function.get("parameters")
             if isinstance(function.get("parameters"), dict)
             else None
