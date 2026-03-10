@@ -14,6 +14,7 @@ from nexus3.skill.vcs.config import GitLabConfig, GitLabInstance
 # Test domains that need to bypass DNS resolution
 TEST_DOMAINS = frozenset(
     {
+        "gitlab.com",
         "gitlab.work.com",
         "work.gitlab.com",
         "gitlab.example.com",
@@ -45,7 +46,7 @@ def mock_dns_for_test_domains(monkeypatch: pytest.MonkeyPatch) -> None:
     ) -> list[tuple[Any, ...]]:
         # For test domains, return a fake successful resolution
         if host in TEST_DOMAINS:
-            return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", port or 443))]
+            return [(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", port or 443))]
         # For real domains (gitlab.com, localhost, 127.0.0.1), use actual resolution
         return original_getaddrinfo(host, port, family, type, proto, flags)
 

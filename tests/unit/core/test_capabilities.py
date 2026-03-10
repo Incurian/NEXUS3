@@ -1,5 +1,7 @@
 """Unit tests for capability token primitives."""
 
+import base64
+
 import pytest
 
 from nexus3.core.capabilities import (
@@ -43,7 +45,11 @@ def test_verify_rejects_tampered_signature() -> None:
         now=1_700_000_000,
     )
 
-    tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
+    parts = token.split(".")
+    tampered_signature = bytearray(base64.urlsafe_b64decode(parts[3] + "=="))
+    tampered_signature[0] ^= 0x01
+    parts[3] = base64.urlsafe_b64encode(bytes(tampered_signature)).decode("ascii").rstrip("=")
+    tampered = ".".join(parts)
     with pytest.raises(CapabilitySignatureError):
         signer.verify(tampered, now=1_700_000_001)
 
