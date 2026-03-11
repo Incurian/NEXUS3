@@ -706,6 +706,35 @@ class TestGrepIncludeContext:
         assert "good.txt" in result.output
 
     @pytest.mark.asyncio
+    async def test_bad_path_returns_explicit_error_before_ripgrep(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Nonexistent paths should fail clearly instead of surfacing fake empty results."""
+        services = _make_services(allowed_paths=None, cwd=tmp_path)
+        skill = search_text_factory(services)
+        missing_path = tmp_path / "missing-dir"
+
+        async def _unexpected_create_subprocess_exec(*args, **kwargs):
+            raise AssertionError("ripgrep should not run for nonexistent paths")
+
+        monkeypatch.setattr(
+            grep_module,
+            "resolve_ripgrep",
+            lambda search_config: ExternalToolResolution("/tmp/fake-rg", source="PATH"),
+        )
+        monkeypatch.setattr(
+            grep_module.asyncio,
+            "create_subprocess_exec",
+            _unexpected_create_subprocess_exec,
+        )
+
+        result = await skill.execute(pattern="match", path=str(missing_path), recursive=True)
+
+        assert result.error == f"Path not found: {missing_path}"
+
+    @pytest.mark.asyncio
     async def test_directory_grep_require_ripgrep_errors_when_unavailable(
         self,
         tmp_path: Path,

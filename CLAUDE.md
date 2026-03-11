@@ -841,6 +841,9 @@ Comprehensive security hardening completed January 2026:
   - Session ID validation (alphanumeric only, 256 char max)
 - **Windows compatibility** (added 2026-01-28):
   - Error path sanitization for Windows paths (C:\Users\..., UNC, domain\user)
+  - Shared path resolver prefers forward-slash drive-letter tool paths on
+    native Windows (`D:/...`) and also accepts `/d/...` and `/mnt/d/...`
+    compatibility input there
   - Cross-platform process tree termination (taskkill /T /F fallback)
   - Environment variable sanitization includes Windows-specific vars
   - CREATE_NO_WINDOW subprocess flag prevents window flashing

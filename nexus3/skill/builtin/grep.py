@@ -547,7 +547,10 @@ class SearchTextSkill(FileSkill):
         try:
             # Validate path (resolves symlinks, checks allowed_paths if set)
             search_path = self._validate_path(path)
-            is_file, _ = await asyncio.to_thread(_check_path_type, search_path)
+            is_file, is_dir = await asyncio.to_thread(_check_path_type, search_path)
+
+            if not is_file and not is_dir:
+                return ToolResult(error=f"Path not found: {search_path}")
 
             if not is_file:
                 ripgrep_resolution = self._resolve_ripgrep()

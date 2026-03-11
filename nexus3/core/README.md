@@ -558,6 +558,9 @@ Universal path validation with sandboxing, plus cross-platform utilities.
 **Cross-Platform Support:**
 
 - Path normalization handles both Windows backslashes (`\`) and forward slashes (`/`)
+- On native Windows, the shared resolver also accepts Git Bash `/c/...` and
+  WSL-style `/mnt/c/...` compatibility input, but the preferred external
+  format remains `C:/...`
 - `detect_line_ending()` returns `"\r\n"` (CRLF), `"\n"` (LF), or `"\r"` (CR)
 - `atomic_write_bytes()` preserves exact byte content for binary files
 

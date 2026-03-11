@@ -5,7 +5,12 @@ from pathlib import Path
 import pytest
 
 import nexus3.core.paths as paths_module
-from nexus3.core.paths import atomic_write_bytes, atomic_write_text, detect_line_ending
+from nexus3.core.paths import (
+    _normalize_input_path_string,
+    atomic_write_bytes,
+    atomic_write_text,
+    detect_line_ending,
+)
 
 
 class TestDetectLineEnding:
@@ -135,3 +140,49 @@ class TestAtomicWriteText:
         atomic_write_text(test_file, "line1\nline2\n")
 
         assert captured["newline"] == ""
+
+
+class TestWindowsPathInputNormalization:
+    """Tests for narrow Windows path-shape normalization."""
+
+    def test_backslashes_become_forward_slashes(self) -> None:
+        """Backslash input should normalize regardless of host platform."""
+        assert _normalize_input_path_string(r"D:\Repo\file.txt") == "D:/Repo/file.txt"
+
+    def test_non_windows_does_not_rewrite_git_bash_drive_paths(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Git Bash-style paths are only rewritten on native Windows hosts."""
+        monkeypatch.setattr(paths_module.sys, "platform", "linux")
+
+        assert _normalize_input_path_string("/d/Repo/file.txt") == "/d/Repo/file.txt"
+
+    def test_windows_rewrites_git_bash_drive_paths(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Native Windows should accept Git Bash /d/... compatibility input."""
+        monkeypatch.setattr(paths_module.sys, "platform", "win32")
+
+        assert _normalize_input_path_string("/d/Repo/file.txt") == "D:/Repo/file.txt"
+        assert _normalize_input_path_string("/d") == "D:/"
+
+    def test_windows_rewrites_wsl_mount_paths(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Native Windows should accept WSL-style /mnt/d/... compatibility input."""
+        monkeypatch.setattr(paths_module.sys, "platform", "win32")
+
+        assert _normalize_input_path_string("/mnt/d/Repo/file.txt") == "D:/Repo/file.txt"
+        assert _normalize_input_path_string("/mnt/d") == "D:/"
+
+    def test_windows_preserves_unc_paths(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """UNC share paths should not be mistaken for drive-root rewrites."""
+        monkeypatch.setattr(paths_module.sys, "platform", "win32")
+
+        assert _normalize_input_path_string("//server/share/file.txt") == "//server/share/file.txt"

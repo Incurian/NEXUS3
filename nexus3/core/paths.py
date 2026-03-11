@@ -1,6 +1,7 @@
 """Path normalization and validation utilities for cross-platform path handling."""
 
 import os
+import sys
 import tempfile
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -37,6 +38,52 @@ class _PathDecisionInternal:
     matched_rule: Path | None = None
 
 
+def _normalize_input_path_string(path: str) -> str:
+    """Normalize caller-supplied path text before Path() resolution.
+
+    This keeps the conversion intentionally narrow:
+    - backslashes become forward slashes everywhere
+    - native Windows additionally accepts Git Bash `/c/...` and WSL-style
+      `/mnt/c/...` forms as compatibility input
+
+    Preferred user-facing format remains host-native absolute paths with
+    forward slashes (for example `D:/repo/file.py` on native Windows).
+    """
+    normalized = path.replace("\\", "/")
+
+    if sys.platform != "win32":
+        return normalized
+
+    # Preserve UNC paths like //server/share.
+    if normalized.startswith("//"):
+        return normalized
+
+    # Accept Git Bash drive roots like /c/Users/... on native Windows.
+    if (
+        len(normalized) >= 2
+        and normalized.startswith("/")
+        and normalized[1].isalpha()
+        and (len(normalized) == 2 or normalized[2] == "/")
+    ):
+        drive = normalized[1].upper()
+        remainder = normalized[2:].lstrip("/")
+        return f"{drive}:/" if not remainder else f"{drive}:/{remainder}"
+
+    # Accept WSL-style mounts like /mnt/c/Users/... on native Windows.
+    lower = normalized.lower()
+    if (
+        lower.startswith("/mnt/")
+        and len(normalized) >= 6
+        and normalized[5].isalpha()
+        and (len(normalized) == 6 or normalized[6] == "/")
+    ):
+        drive = normalized[5].upper()
+        remainder = normalized[6:].lstrip("/")
+        return f"{drive}:/" if not remainder else f"{drive}:/{remainder}"
+
+    return normalized
+
+
 def _decide_path(
     path: str | Path,
     allowed_paths: list[Path] | None = None,
@@ -67,7 +114,7 @@ def _decide_path(
 
     # Normalize and expand
     if isinstance(path, str):
-        path = path.replace("\\", "/")
+        path = _normalize_input_path_string(path)
         path = Path(path)
 
     p = path.expanduser()
@@ -260,6 +307,8 @@ def normalize_path(path: str) -> Path:
 
     Handles:
     - Windows backslashes (\\) converted to forward slashes
+    - On native Windows, Git Bash `/c/...` and WSL `/mnt/c/...` path forms
+      converted to `C:/...`
     - Tilde expansion (~) for home directory
     - Resolves to absolute path (follows symlinks)
 

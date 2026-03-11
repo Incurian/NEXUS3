@@ -2113,7 +2113,7 @@ In Unreal + AgentBridge workflows, commands that previously worked in an interac
 **Problem: Relative paths resolve unexpectedly**
 
 Execution `cwd` and relative paths are resolved from the agent's working directory, not your host shell's current tab.
-Pass explicit `cwd` and prefer absolute paths (Windows: `D:/...`) when troubleshooting.
+Pass explicit `cwd` and prefer absolute paths (native Windows: `D:/...`) when troubleshooting. On native Windows, the shared resolver also accepts `/d/...` and `/mnt/d/...` as compatibility input, but `D:/...` is the preferred format for tool arguments.
 
 ### WSL-Specific Issues
 

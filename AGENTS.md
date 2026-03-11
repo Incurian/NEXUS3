@@ -404,6 +404,23 @@ Current milestone:
   - deferred backlog note:
     - later discussion item: add an on-demand way to inspect the full previous
       tool result(s) instead of only the default collapsed preview
+- Windows path-format slice complete (2026-03-11):
+  - executed
+    [WINDOWS-PATH-FORMAT-AND-NORMALIZATION-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/WINDOWS-PATH-FORMAT-AND-NORMALIZATION-PLAN-2026-03-11.md)
+    to tighten the preferred Windows tool-path standard and add narrow shared
+    compatibility rewrites.
+  - shipped behavior:
+    - current-facing docs now explicitly prefer host-native absolute paths with
+      forward slashes
+    - native Windows keeps `D:/...` as the canonical tool-path format
+    - the shared path kernel now also accepts Git Bash `/d/...` and WSL-style
+      `/mnt/d/...` compatibility input on native Windows
+    - file-path tools and `resolve_cwd()` inherit the same normalization
+      because they share the same path decision kernel
+  - validation:
+    - `.venv/bin/ruff check nexus3/core/paths.py tests/unit/core/test_paths_windows.py tests/security/test_p2_exec_cwd_normalization.py tests/security/test_p2_blocked_paths.py README.md CLAUDE.md AGENTS.md nexus3/core/README.md nexus3/defaults/NEXUS-DEFAULT.md docs/plans/README.md docs/plans/WINDOWS-PATH-FORMAT-AND-NORMALIZATION-PLAN-2026-03-11.md`
+    - `.venv/bin/pytest -q tests/unit/core/test_paths_windows.py tests/security/test_p2_exec_cwd_normalization.py tests/security/test_p2_blocked_paths.py` (`40 passed`)
+    - `git diff --check`
 - Shell tool redesign implementation active (2026-03-11):
   - created
     [EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md)

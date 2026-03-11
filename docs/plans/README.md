@@ -55,6 +55,10 @@ This index covers the architecture plans created during today's review/planning 
 
 - [MCP-RESULT-VISIBILITY-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/MCP-RESULT-VISIBILITY-PLAN-2026-03-11.md)
 
+## Path Format Plans (2026-03-11)
+
+- [WINDOWS-PATH-FORMAT-AND-NORMALIZATION-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/WINDOWS-PATH-FORMAT-AND-NORMALIZATION-PLAN-2026-03-11.md)
+
 ## Parser Correctness Audit Plans (2026-03-11)
 
 - [GIT-AND-OUTLINE-CORRECTNESS-AUDIT-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/GIT-AND-OUTLINE-CORRECTNESS-AUDIT-PLAN-2026-03-11.md)

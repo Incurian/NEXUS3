@@ -790,7 +790,17 @@ sqlite3 session.db "SELECT * FROM messages WHERE content LIKE '%error%'"
 
 **CRITICAL: Always use forward slashes (`/`) in all tool path arguments**, regardless of platform. Backslashes break JSON parsing (e.g., `\U` in `D:\UEProjects` is an invalid JSON escape sequence, causing tool call failures).
 
-### Windows (Git Bash, PowerShell, CMD)
+### Preferred Standard
+
+Use host-native absolute paths with forward slashes:
+
+- Native Windows: `D:/Repo/file.txt`
+- WSL/Linux: `/mnt/d/Repo/file.txt` or other normal POSIX paths
+
+If you are on native Windows, prefer drive-letter paths in tool arguments even
+if your shell shows Git Bash-style paths.
+
+### Native Windows (Git Bash, PowerShell, CMD)
 
 Windows accepts forward slashes in paths. Always use them:
 
@@ -800,9 +810,19 @@ Windows accepts forward slashes in paths. Always use them:
 ✓ GOOD: read_file(path="D:/UEProjects/MyPlugin/Source/main.cpp")    ← always works
 ```
 
-### WSL
+NEXUS also accepts a narrow set of compatibility inputs on native Windows and
+normalizes them through the shared path resolver:
 
-Convert Windows paths to Linux-native format:
+| Compatibility Input | Normalized To |
+|---------------------|---------------|
+| `/d/Repo/file.txt` | `D:/Repo/file.txt` |
+| `/mnt/d/Repo/file.txt` | `D:/Repo/file.txt` |
+
+UNC paths like `//server/share/file.txt` are preserved.
+
+### WSL / Linux
+
+Use Linux-native paths instead of Windows drive letters:
 
 | Source | Example | Convert To |
 |--------|---------|------------|
@@ -811,7 +831,8 @@ Convert Windows paths to Linux-native format:
 
 ### Git Bash Path Mapping
 
-Git Bash maps drives to POSIX-style paths. Either format works:
+Git Bash maps drives to POSIX-style paths. In tool arguments on native Windows,
+prefer drive-letter paths; `/d/...` remains compatibility input:
 
 | Windows Path | Git Bash Path |
 |-------------|---------------|
