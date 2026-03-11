@@ -253,6 +253,13 @@ Current milestone:
         RPC or slash-command compaction cannot mutate context mid-turn
       - in-turn auto-compaction now routes through `compact_locked()` so the
         tool loop can compact safely without re-entering that lock
+    - follow-up streamed-content reconciliation:
+      - if a provider only exposes assistant text on the final
+        `StreamComplete.message.content`, NEXUS now emits that text to the
+        caller instead of only persisting it in context
+      - the tool-loop path now flushes that reconciled pre-tool text before
+        `ToolBatchStarted`, so user-visible narration is no longer lost behind
+        the first tool call
   - focused validation passed:
     - `.venv/bin/pytest -q tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py` (`93 passed`)
     - `.venv/bin/ruff check nexus3/display/safe_sink.py nexus3/display/spinner.py nexus3/display/theme.py nexus3/display/__init__.py nexus3/cli/repl.py nexus3/cli/repl_formatting.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py`
@@ -264,13 +271,16 @@ Current milestone:
       - live spinner smoke completed without dropped lines or duplicate reset fragments
       - `.venv/bin/pytest -q tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/session/test_session_cancellation.py tests/unit/skill/test_nexus_skills.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py tests/unit/test_display.py` (`323 passed`)
       - `.venv/bin/pytest -q tests/unit/test_rpc_dispatcher.py tests/unit/session/test_session_cancellation.py tests/unit/skill/test_nexus_skills.py` (`49 passed`)
+      - `.venv/bin/pytest -q tests/unit/session/test_session_cancellation.py tests/integration/test_chat.py tests/integration/test_skill_execution.py` (`40 passed, 2 skipped`)
       - `.venv/bin/ruff check nexus3/session/session.py nexus3/rpc/dispatcher.py nexus3/skill/builtin/nexus_send.py nexus3/display/safe_sink.py nexus3/display/spinner.py nexus3/display/theme.py nexus3/display/__init__.py nexus3/cli/repl.py nexus3/cli/repl_formatting.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/session/test_session_cancellation.py tests/unit/skill/test_nexus_skills.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py tests/unit/test_display.py`
       - `.venv/bin/mypy nexus3/session/session.py nexus3/rpc/dispatcher.py nexus3/skill/builtin/nexus_send.py nexus3/display/safe_sink.py nexus3/display/spinner.py nexus3/display/theme.py nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
   - next gate:
     - branch is locally ready for another live retest of incoming RPC /
-      `nexus_send` / external `compact` while a REPL tool turn is active;
-      visible color still needs confirmation in a color-enabled terminal
-      because this shell currently reports `no_color=True`
+      `nexus_send` / external `compact` while a REPL tool turn is active, and
+      for pre-tool narration where the provider only supplies text on the
+      final assembled assistant message; visible color still needs
+      confirmation in a color-enabled terminal because this shell currently
+      reports `no_color=True`
 - Trace subagent scope complete locally (2026-03-11):
   - executed
     [TRACE-SUBAGENT-SCOPE-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-SUBAGENT-SCOPE-PLAN-2026-03-11.md)

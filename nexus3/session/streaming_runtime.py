@@ -37,6 +37,19 @@ ExecuteToolLoopEvents = Callable[
 ]
 
 
+def get_unstreamed_content_tail(streamed_content: str, final_content: str) -> str:
+    """Return assistant text present in the final message but not yet streamed."""
+    if not final_content:
+        return ""
+    if not streamed_content:
+        return final_content
+    if final_content == streamed_content:
+        return ""
+    if final_content.startswith(streamed_content):
+        return final_content[len(streamed_content):]
+    return ""
+
+
 def _dispatch_streaming_event(
     event: SessionEvent,
     *,

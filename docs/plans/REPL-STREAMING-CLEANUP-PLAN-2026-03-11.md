@@ -199,6 +199,13 @@ Implementation status (in progress):
     slot as `send()` / `run_turn()`
   - in-turn auto-compaction now uses `compact_locked()` so tool-loop
     compaction remains safe without re-entering that lock
+- follow-up streamed-content fix:
+  - simple-turn and tool-loop runtimes now reconcile assistant text that only
+    appears on the final `StreamComplete.message.content`
+  - pre-tool narration is now emitted before tool execution even when the
+    provider never sent earlier `ContentDelta` chunks for that text
+  - plain final-only assistant responses now still surface to the caller
+    instead of silently appearing only in persisted context
 
 ## Interaction Inventory
 

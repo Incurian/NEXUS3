@@ -13,6 +13,7 @@ from nexus3.session.events import (
     SessionEvent,
     ToolDetected,
 )
+from nexus3.session.streaming_runtime import get_unstreamed_content_tail
 
 if TYPE_CHECKING:
     from nexus3.context.manager import ContextManager
@@ -51,6 +52,7 @@ async def execute_simple_send(
 ) -> AsyncIterator[str]:
     """Stream a simple non-tool response for Session.send()."""
     final_message: Message | None = None
+    streamed_content = ""
 
     session._log_provider_preflight(
         messages,
@@ -66,6 +68,7 @@ async def execute_simple_send(
         if cancel_token and cancel_token.is_cancelled:
             return
         if isinstance(event, ContentDelta):
+            streamed_content += event.text
             yield event.text
             if cancel_token and cancel_token.is_cancelled:
                 return
@@ -85,7 +88,16 @@ async def execute_simple_send(
     if final_message:
         if not final_message.content and not final_message.tool_calls:
             yield "[Provider returned an empty response]"
-        elif session.context:
+            return
+
+        trailing_content = get_unstreamed_content_tail(
+            streamed_content,
+            final_message.content,
+        )
+        if trailing_content:
+            yield trailing_content
+
+        if session.context:
             session.context.add_assistant_message(
                 final_message.content,
                 list(final_message.tool_calls),
@@ -109,6 +121,7 @@ async def execute_simple_run_turn(
         raise RuntimeError("execute_simple_run_turn() requires context mode")
 
     final_message: Message | None = None
+    streamed_content = ""
     session._log_provider_preflight(
         messages,
         tools,
@@ -124,6 +137,7 @@ async def execute_simple_run_turn(
             yield SessionCancelled()
             return
         if isinstance(stream_event, ContentDelta):
+            streamed_content += stream_event.text
             yield ContentChunk(text=stream_event.text)
             if cancel_token and cancel_token.is_cancelled:
                 yield SessionCancelled()
@@ -142,6 +156,12 @@ async def execute_simple_run_turn(
         if not final_message.content and not final_message.tool_calls:
             yield ContentChunk(text="[Provider returned an empty response]")
         else:
+            trailing_content = get_unstreamed_content_tail(
+                streamed_content,
+                final_message.content,
+            )
+            if trailing_content:
+                yield ContentChunk(text=trailing_content)
             context.add_assistant_message(
                 final_message.content,
                 list(final_message.tool_calls),

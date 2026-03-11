@@ -131,6 +131,31 @@ class MockProviderWithTools:
         yield StreamComplete(message=response)
 
 
+class MockProviderWithFinalMessageOnly(MockProviderWithTools):
+    """Mock provider that only exposes content on the final assembled message."""
+
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+        dynamic_context: str | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        self.last_messages = messages
+        self.last_tools = tools
+        self.all_messages_history.append(list(messages))
+        self.call_count += 1
+
+        if self.call_count <= len(self.responses):
+            response = self.responses[self.call_count - 1]
+        else:
+            response = Message(role=Role.ASSISTANT, content="Hello there")
+
+        for idx, tc in enumerate(response.tool_calls):
+            yield ToolCallStarted(index=idx, id=tc.id, name=tc.name)
+
+        yield StreamComplete(message=response)
+
+
 class EchoSkill(BaseSkill):
     """Simple test skill that echoes back the message."""
 
@@ -338,6 +363,55 @@ class TestSessionWithEchoTool:
         assert provider.last_tools is not None
         assert len(provider.last_tools) == 1
         assert provider.last_tools[0]["function"]["name"] == "echo"
+
+    @pytest.mark.asyncio
+    async def test_pre_tool_final_content_emits_before_tool_batch(self) -> None:
+        """Pre-tool text from StreamComplete should surface before tool callbacks."""
+        responses = [
+            Message(
+                role=Role.ASSISTANT,
+                content="Calling tool",
+                tool_calls=(
+                    ToolCall(id="call_1", name="echo", arguments={"message": "hello"}),
+                ),
+            ),
+            Message(
+                role=Role.ASSISTANT,
+                content="Done",
+            ),
+        ]
+        provider = MockProviderWithFinalMessageOnly(responses)
+
+        context = ContextManager(config=ContextConfig())
+        services = create_services_with_permissions()
+        registry = SkillRegistry(services)
+        echo_skill = EchoSkill()
+        registry.register("echo", lambda _: echo_skill)
+
+        event_order: list[str] = []
+
+        def on_batch_start(tool_calls: tuple[ToolCall, ...]) -> None:
+            assert len(tool_calls) == 1
+            event_order.append("batch_start")
+
+        session = Session(
+            provider,
+            context=context,
+            registry=registry,
+            services=services,
+            on_batch_start=on_batch_start,
+        )
+
+        chunks: list[str] = []
+        async for chunk in session.send("Test"):
+            chunks.append(chunk)
+            event_order.append(f"chunk:{chunk}")
+
+        assert chunks == ["Calling tool", "Done"]
+        assert event_order[0] == "chunk:Calling tool"
+        assert "batch_start" in event_order
+        assert event_order.index("batch_start") > event_order.index("chunk:Calling tool")
+        assert echo_skill.call_count == 1
 
 
 class TestToolLoopCompletes:

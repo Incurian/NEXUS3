@@ -97,6 +97,23 @@ class MockProvider:
         return Message(role=Role.ASSISTANT, content=self.complete_content)
 
 
+class MockProviderFinalOnly(MockProvider):
+    """Mock provider that only supplies assistant text in StreamComplete."""
+
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+        dynamic_context: str | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        self.last_messages = messages
+        self.last_dynamic_context = dynamic_context
+        self.stream_call_count += 1
+        yield StreamComplete(
+            message=Message(role=Role.ASSISTANT, content=self.complete_content)
+        )
+
+
 class TestSessionStreaming:
     """Tests for Session.send() streaming functionality."""
 
@@ -211,6 +228,30 @@ class TestSessionStreaming:
         chunks = [chunk async for chunk in session.send("Say hi in Japanese")]
 
         assert "".join(chunks) == "Hello world! Emoji: test"
+
+    @pytest.mark.asyncio
+    async def test_send_emits_final_only_content(self) -> None:
+        """Final StreamComplete content should still reach the caller."""
+        provider = MockProviderFinalOnly(complete_content="Final only response")
+        session = Session(provider)
+
+        chunks = [chunk async for chunk in session.send("test")]
+
+        assert chunks == ["Final only response"]
+
+    @pytest.mark.asyncio
+    async def test_run_turn_emits_final_only_content(self) -> None:
+        """run_turn() should surface final-only content before completion."""
+        provider = MockProviderFinalOnly(complete_content="Final only response")
+        context = ContextManager(config=ContextConfig())
+        session = Session(provider, context=context)
+
+        events = [event async for event in session.run_turn("test")]
+
+        assert len(events) == 2
+        assert events[0].__class__.__name__ == "ContentChunk"
+        assert getattr(events[0], "text", None) == "Final only response"
+        assert events[1].__class__.__name__ == "SessionCompleted"
 
 
 class TestMockProvider:

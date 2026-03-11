@@ -118,6 +118,10 @@ This is the traditional callback-based API. Tool events are dispatched via callb
 `send()`, `run_turn()`, and external `compact()` also serialize through a
 shared per-session turn slot, so direct REPL turns, RPC sends, `nexus_send`,
 and slash/RPC compaction cannot overlap against the same session.
+If a provider only exposes assistant text on the final `StreamComplete`
+message instead of earlier `ContentDelta` chunks, `send()` now still emits
+that final-only text to the caller before completing the turn or starting a
+tool batch.
 The shared preflight currently does three important repair steps before the new
 user message is appended in context mode: it flushes any still-valid cancelled
 tool IDs into matching assistant tool batches, recompiles the existing context
@@ -146,6 +150,9 @@ Like `send()`, `run_turn()` enters through
 preflight/reset handling.
 It shares the same per-session turn slot as `send()`, so callback-based and
 event-based turn entrypoints cannot run concurrently on one session.
+Like `send()`, it also reconciles any assistant text that only appears on the
+final `StreamComplete` message so pre-tool narration is not lost from the
+event stream.
 Internally this routes directly to
 `tool_loop_events_runtime.execute_tool_loop_events(...)`.
 When tools are not active, `run_turn()` delegates simple event streaming to

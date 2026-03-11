@@ -35,6 +35,7 @@ from nexus3.session.events import (
     ToolDetected,
     ToolStarted,
 )
+from nexus3.session.streaming_runtime import get_unstreamed_content_tail
 
 if TYPE_CHECKING:
     from nexus3.config.schema import Config
@@ -95,6 +96,7 @@ async def execute_tool_loop_events(
     consecutive_empty = 0
     for iteration_num in range(session.max_tool_iterations):
         session._last_iteration_count = iteration_num + 1
+        streamed_content = ""
 
         # Check for compaction BEFORE build_messages() to avoid truncation
         if session._should_compact():
@@ -139,6 +141,7 @@ async def execute_tool_loop_events(
                 if show_reasoning and is_reasoning:
                     yield ReasoningEnded()
                 is_reasoning = False
+                streamed_content += event.text
                 yield ContentChunk(text=event.text)
                 if cancel_token and cancel_token.is_cancelled:
                     yield SessionCancelled()
@@ -168,8 +171,15 @@ async def execute_tool_loop_events(
             yield SessionCancelled()
             return
 
+        trailing_content = get_unstreamed_content_tail(
+            streamed_content,
+            final_message.content,
+        )
+
         if final_message.tool_calls:
             consecutive_empty = 0
+            if trailing_content:
+                yield ContentChunk(text=trailing_content)
             # Add assistant message with tool calls
             session.context.add_assistant_message(
                 final_message.content, list(final_message.tool_calls)
@@ -318,6 +328,8 @@ async def execute_tool_loop_events(
                 continue
 
             consecutive_empty = 0
+            if trailing_content:
+                yield ContentChunk(text=trailing_content)
             session.context.add_assistant_message(final_message.content)
             session._last_action_at = datetime.now()
 
