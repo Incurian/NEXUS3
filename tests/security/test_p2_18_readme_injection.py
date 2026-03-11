@@ -39,7 +39,9 @@ class TestReadmeDefaultPosition:
         assert "Agent instructions" in context.system_prompt
         assert "DOCUMENTATION (README.md" not in context.system_prompt
 
-    def test_readme_not_loaded_by_default_when_no_other_instruction_files(self, tmp_path: Path) -> None:
+    def test_readme_not_loaded_by_default_when_no_other_instruction_files(
+        self, tmp_path: Path
+    ) -> None:
         """With default config, README.md IS used as last fallback."""
         nexus_dir = tmp_path / ".nexus3"
         nexus_dir.mkdir()

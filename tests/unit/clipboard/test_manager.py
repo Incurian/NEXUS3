@@ -8,7 +8,6 @@ from nexus3.clipboard.manager import ClipboardManager
 from nexus3.clipboard.types import (
     CLIPBOARD_PRESETS,
     ClipboardEntry,
-    ClipboardPermissions,
     ClipboardScope,
 )
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from nexus3.config.load_utils import load_json_file, load_json_file_optional
+from nexus3.config.load_utils import load_json_file_optional
 from nexus3.config.loader import load_config
 from nexus3.config.schema import Config
 from nexus3.core.errors import ConfigError, LoadError
@@ -150,9 +150,7 @@ class TestAncestorDiscovery:
         assert global_dir in ancestors
 
         # With exclusion - global_dir is excluded
-        ancestors = find_ancestor_config_dirs(
-            project, max_depth=3, exclude_paths=[global_dir]
-        )
+        ancestors = find_ancestor_config_dirs(project, max_depth=3, exclude_paths=[global_dir])
         assert global_dir not in ancestors
 
     def test_exclusion_uses_resolved_paths(self, tmp_path: Path) -> None:
@@ -187,27 +185,33 @@ class TestLayeredConfigLoading:
         # (needs default_model and matching provider since defaults aren't merged)
         global_nexus = home / ".nexus3"
         global_nexus.mkdir()
-        (global_nexus / "config.json").write_text(json.dumps({
-            "default_model": "test",
-            "providers": {
-                "test": {
-                    "type": "openrouter",
-                    "models": {
-                        "test": {"id": "test/model", "context_window": 4096}
-                    }
+        (global_nexus / "config.json").write_text(
+            json.dumps(
+                {
+                    "default_model": "test",
+                    "providers": {
+                        "test": {
+                            "type": "openrouter",
+                            "models": {"test": {"id": "test/model", "context_window": 4096}},
+                        }
+                    },
+                    "stream_output": True,
+                    "max_tool_iterations": 5,
                 }
-            },
-            "stream_output": True,
-            "max_tool_iterations": 5,
-        }))
+            )
+        )
 
         # Create local config
         project = tmp_path / "project"
         local_nexus = project / ".nexus3"
         local_nexus.mkdir(parents=True)
-        (local_nexus / "config.json").write_text(json.dumps({
-            "max_tool_iterations": 10,
-        }))
+        (local_nexus / "config.json").write_text(
+            json.dumps(
+                {
+                    "max_tool_iterations": 10,
+                }
+            )
+        )
 
         config = load_config(cwd=project)
 
@@ -225,31 +229,27 @@ class TestLayeredConfigLoading:
         # Global with provider config
         global_nexus = home / ".nexus3"
         global_nexus.mkdir()
-        (global_nexus / "config.json").write_text(json.dumps({
-            "default_model": "test",
-            "providers": {
-                "openrouter": {
-                    "type": "openrouter",
-                    "models": {
-                        "test": {"id": "global-model", "context_window": 100000}
-                    }
+        (global_nexus / "config.json").write_text(
+            json.dumps(
+                {
+                    "default_model": "test",
+                    "providers": {
+                        "openrouter": {
+                            "type": "openrouter",
+                            "models": {"test": {"id": "global-model", "context_window": 100000}},
+                        }
+                    },
                 }
-            }
-        }))
+            )
+        )
 
         # Local overrides the model id
         project = tmp_path / "project"
         local_nexus = project / ".nexus3"
         local_nexus.mkdir(parents=True)
-        (local_nexus / "config.json").write_text(json.dumps({
-            "providers": {
-                "openrouter": {
-                    "models": {
-                        "test": {"id": "local-model"}
-                    }
-                }
-            }
-        }))
+        (local_nexus / "config.json").write_text(
+            json.dumps({"providers": {"openrouter": {"models": {"test": {"id": "local-model"}}}}})
+        )
 
         config = load_config(cwd=project)
 
@@ -270,18 +270,26 @@ class TestLayeredConfigLoading:
         company = tmp_path / "company"
         company_nexus = company / ".nexus3"
         company_nexus.mkdir(parents=True)
-        (company_nexus / "config.json").write_text(json.dumps({
-            "max_tool_iterations": 8,
-            "stream_output": False,
-        }))
+        (company_nexus / "config.json").write_text(
+            json.dumps(
+                {
+                    "max_tool_iterations": 8,
+                    "stream_output": False,
+                }
+            )
+        )
 
         # Project level
         project = company / "project"
         project_nexus = project / ".nexus3"
         project_nexus.mkdir(parents=True)
-        (project_nexus / "config.json").write_text(json.dumps({
-            "skill_timeout": 45.0,
-        }))
+        (project_nexus / "config.json").write_text(
+            json.dumps(
+                {
+                    "skill_timeout": 45.0,
+                }
+            )
+        )
 
         config = load_config(cwd=project)
 
@@ -322,23 +330,24 @@ class TestLayeredConfigLoading:
     def test_explicit_path_skips_layering(self, tmp_path: Path) -> None:
         """Test explicit path bypasses layered loading."""
         config_file = tmp_path / "explicit.json"
-        config_file.write_text(json.dumps({
-            "max_tool_iterations": 99,
-            "default_model": "test",
-            "providers": {
-                "test": {
-                    "type": "openrouter",
-                    "models": {
-                        "test": {"id": "test/model"}
-                    }
+        config_file.write_text(
+            json.dumps(
+                {
+                    "max_tool_iterations": 99,
+                    "default_model": "test",
+                    "providers": {
+                        "test": {"type": "openrouter", "models": {"test": {"id": "test/model"}}}
+                    },
                 }
-            }
-        }))
+            )
+        )
 
         config = load_config(path=config_file)
         assert config.max_tool_iterations == 99
 
-    def test_no_user_configs_uses_package_defaults(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_no_user_configs_uses_package_defaults(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Test missing user configs uses package defaults."""
         # Point to empty home (no ~/.nexus3/)
         home = tmp_path / "empty_home"

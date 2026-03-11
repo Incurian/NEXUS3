@@ -379,14 +379,14 @@ class TestContextConfigInstructionFiles:
         """Paths in instruction_files are rejected."""
         from nexus3.config.schema import ContextConfig
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             ContextConfig(instruction_files=["../NEXUS.md"])
 
     def test_rejects_non_md_instruction_files(self) -> None:
         """Non-.md files in instruction_files are rejected."""
         from nexus3.config.schema import ContextConfig
 
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             ContextConfig(instruction_files=["NEXUS.txt"])
 
     def test_deprecated_include_readme_migration(self) -> None:

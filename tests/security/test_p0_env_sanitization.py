@@ -7,12 +7,10 @@ and other secrets.
 The fix uses a minimal safe environment allowlist.
 """
 
-import os
 
 import pytest
 
 from nexus3.skill.builtin.env import (
-    DEFAULT_PATH,
     SAFE_ENV_VARS,
     filter_env,
     get_full_env,

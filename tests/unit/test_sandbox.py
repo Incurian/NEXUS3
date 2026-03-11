@@ -1,6 +1,5 @@
 """Unit tests for nexus3.core.paths sandbox functionality."""
 
-import os
 from pathlib import Path
 
 import pytest

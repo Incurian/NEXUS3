@@ -10,8 +10,6 @@ Tests cover:
 
 from pathlib import Path
 
-import pytest
-
 from nexus3.context.manager import inject_datetime_into_prompt
 from nexus3.context.prompt_builder import (
     EnvironmentBlock,

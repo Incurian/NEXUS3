@@ -8,7 +8,6 @@ Tests cover:
 - Stripping of dangerous C0 control characters
 """
 
-import pytest
 
 from nexus3.core.text_safety import (
     ANSI_ESCAPE_PATTERN,

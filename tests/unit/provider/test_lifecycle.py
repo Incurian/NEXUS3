@@ -72,7 +72,7 @@ class TestProviderClientLifecycle:
     async def test_provider_aclose_closes_client(self, provider: OpenRouterProvider) -> None:
         """aclose() closes the httpx client."""
         # Create client
-        client = await provider._ensure_client()
+        await provider._ensure_client()
         assert provider._client is not None
 
         # Close should set _client to None

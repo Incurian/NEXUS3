@@ -59,7 +59,7 @@ class TestHttpHeaderLimits:
 
     async def test_too_many_headers_rejected(self) -> None:
         """Requests with more than MAX_HEADERS_COUNT headers should be rejected."""
-        from nexus3.rpc.http import HttpParseError, MAX_HEADERS_COUNT, read_http_request
+        from nexus3.rpc.http import MAX_HEADERS_COUNT, HttpParseError, read_http_request
 
         # Build a request with too many headers
         lines = [b"POST / HTTP/1.1\r\n"]
@@ -77,7 +77,7 @@ class TestHttpHeaderLimits:
 
     async def test_header_name_too_long_rejected(self) -> None:
         """Headers with names exceeding MAX_HEADER_NAME_LEN should be rejected."""
-        from nexus3.rpc.http import HttpParseError, MAX_HEADER_NAME_LEN, read_http_request
+        from nexus3.rpc.http import MAX_HEADER_NAME_LEN, HttpParseError, read_http_request
 
         # Create a header with a very long name
         long_name = "X" * (MAX_HEADER_NAME_LEN + 100)
@@ -96,7 +96,7 @@ class TestHttpHeaderLimits:
 
     async def test_header_value_too_long_rejected(self) -> None:
         """Headers with values exceeding MAX_HEADER_VALUE_LEN should be rejected."""
-        from nexus3.rpc.http import HttpParseError, MAX_HEADER_VALUE_LEN, read_http_request
+        from nexus3.rpc.http import MAX_HEADER_VALUE_LEN, HttpParseError, read_http_request
 
         # Create a header with a very long value
         long_value = "x" * (MAX_HEADER_VALUE_LEN + 100)
@@ -115,7 +115,7 @@ class TestHttpHeaderLimits:
 
     async def test_total_headers_size_exceeded(self) -> None:
         """Total headers size exceeding MAX_TOTAL_HEADERS_SIZE should be rejected."""
-        from nexus3.rpc.http import HttpParseError, MAX_TOTAL_HEADERS_SIZE, read_http_request
+        from nexus3.rpc.http import HttpParseError, read_http_request
 
         # Create many headers that together exceed the total size limit
         # Use headers close to the individual limits but lots of them
@@ -137,7 +137,7 @@ class TestHttpHeaderLimits:
 
     async def test_request_line_too_long_rejected(self) -> None:
         """Request lines exceeding MAX_REQUEST_LINE_LEN should be rejected."""
-        from nexus3.rpc.http import HttpParseError, MAX_REQUEST_LINE_LEN, read_http_request
+        from nexus3.rpc.http import MAX_REQUEST_LINE_LEN, HttpParseError, read_http_request
 
         # Create a very long request path
         long_path = "/" + "x" * (MAX_REQUEST_LINE_LEN + 100)

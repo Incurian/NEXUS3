@@ -7,13 +7,12 @@ These tests verify:
 - P2.12: Stdio line length limits (prevent memory exhaustion)
 """
 
-import asyncio
-from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from nexus3.core.permissions import AgentPermissions, PermissionLevel, PermissionPolicy
 from nexus3.mcp.client import MAX_NOTIFICATIONS_TO_DISCARD, MCPClient, MCPError
 from nexus3.mcp.permissions import can_use_mcp, requires_mcp_confirmation
 from nexus3.mcp.transport import (
@@ -22,7 +21,6 @@ from nexus3.mcp.transport import (
     MCPTransportError,
     StdioTransport,
 )
-from nexus3.core.permissions import AgentPermissions, PermissionLevel, PermissionPolicy
 
 
 class MockTransport(MCPTransport):
@@ -62,10 +60,16 @@ class TestResponseIdMatching:
     async def test_matching_response_id_succeeds(self) -> None:
         """Response with matching ID is accepted."""
         # Initialize handshake response + test response
-        transport = MockTransport([
-            {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}}},
-            {"jsonrpc": "2.0", "id": 2, "result": {"tools": []}},
-        ])
+        transport = MockTransport(
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}},
+                },
+                {"jsonrpc": "2.0", "id": 2, "result": {"tools": []}},
+            ]
+        )
 
         client = MCPClient(transport)
         await client.connect()
@@ -78,10 +82,16 @@ class TestResponseIdMatching:
     async def test_mismatched_response_id_raises(self) -> None:
         """Response with wrong ID raises MCPError."""
         # Initialize handshake response + wrong ID response
-        transport = MockTransport([
-            {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}}},
-            {"jsonrpc": "2.0", "id": 999, "result": {"tools": []}},  # Wrong ID
-        ])
+        transport = MockTransport(
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}},
+                },
+                {"jsonrpc": "2.0", "id": 999, "result": {"tools": []}},  # Wrong ID
+            ]
+        )
 
         client = MCPClient(transport)
         await client.connect()
@@ -96,10 +106,16 @@ class TestResponseIdMatching:
     @pytest.mark.asyncio
     async def test_null_response_id_raises(self) -> None:
         """Response with null ID raises MCPError."""
-        transport = MockTransport([
-            {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}}},
-            {"jsonrpc": "2.0", "id": None, "result": {"tools": []}},  # Null ID
-        ])
+        transport = MockTransport(
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}},
+                },
+                {"jsonrpc": "2.0", "id": None, "result": {"tools": []}},  # Null ID
+            ]
+        )
 
         client = MCPClient(transport)
         await client.connect()
@@ -116,14 +132,24 @@ class TestNotificationDiscarding:
     @pytest.mark.asyncio
     async def test_discards_notifications_before_response(self) -> None:
         """Notifications are discarded while waiting for response."""
-        transport = MockTransport([
-            {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}}},
-            # Notifications before actual response
-            {"jsonrpc": "2.0", "method": "notifications/progress", "params": {"progress": 50}},
-            {"jsonrpc": "2.0", "method": "notifications/log", "params": {"message": "working..."}},
-            # Actual response
-            {"jsonrpc": "2.0", "id": 2, "result": {"tools": [{"name": "test_tool"}]}},
-        ])
+        transport = MockTransport(
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}},
+                },
+                # Notifications before actual response
+                {"jsonrpc": "2.0", "method": "notifications/progress", "params": {"progress": 50}},
+                {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/log",
+                    "params": {"message": "working..."},
+                },
+                # Actual response
+                {"jsonrpc": "2.0", "id": 2, "result": {"tools": [{"name": "test_tool"}]}},
+            ]
+        )
 
         client = MCPClient(transport)
         await client.connect()
@@ -138,7 +164,11 @@ class TestNotificationDiscarding:
         """Raises error if too many notifications received."""
         # Initialize response + too many notifications
         responses: list[dict[str, Any]] = [
-            {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}}},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}},
+            },
         ]
         # Add more than MAX_NOTIFICATIONS_TO_DISCARD notifications
         for i in range(MAX_NOTIFICATIONS_TO_DISCARD + 1):
@@ -159,10 +189,19 @@ class TestNotificationDiscarding:
     async def test_notification_without_method_not_discarded(self) -> None:
         """Messages without 'id' but also without 'method' are not notifications."""
         # A malformed response without id or method
-        transport = MockTransport([
-            {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}}},
-            {"jsonrpc": "2.0", "result": {}},  # No id AND no method - malformed but not a notification
-        ])
+        transport = MockTransport(
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}},
+                },
+                {
+                    "jsonrpc": "2.0",
+                    "result": {},
+                },  # No id AND no method - malformed but not a notification
+            ]
+        )
 
         client = MCPClient(transport)
         await client.connect()
@@ -185,14 +224,24 @@ class TestNullIdErrorDiscarding:
     @pytest.mark.asyncio
     async def test_null_id_error_discarded(self) -> None:
         """Error responses with id=null are discarded."""
-        transport = MockTransport([
-            # Initialize succeeds
-            {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}}},
-            # Server incorrectly returns error for notifications/initialized
-            {"jsonrpc": "2.0", "id": None, "error": {"code": -32601, "message": "Method not found"}},
-            # Then tools/list succeeds
-            {"jsonrpc": "2.0", "id": 2, "result": {"tools": []}},
-        ])
+        transport = MockTransport(
+            [
+                # Initialize succeeds
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}},
+                },
+                # Server incorrectly returns error for notifications/initialized
+                {
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": -32601, "message": "Method not found"},
+                },
+                # Then tools/list succeeds
+                {"jsonrpc": "2.0", "id": 2, "result": {"tools": []}},
+            ]
+        )
 
         client = MCPClient(transport)
         await client.connect()
@@ -204,14 +253,20 @@ class TestNullIdErrorDiscarding:
     @pytest.mark.asyncio
     async def test_null_id_error_with_matching_result_still_works(self) -> None:
         """Multiple null-id errors can be discarded before finding the real response."""
-        transport = MockTransport([
-            {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}}},
-            # Multiple spurious null-id errors
-            {"jsonrpc": "2.0", "id": None, "error": {"code": -32601, "message": "Error 1"}},
-            {"jsonrpc": "2.0", "id": None, "error": {"code": -32601, "message": "Error 2"}},
-            # Real response
-            {"jsonrpc": "2.0", "id": 2, "result": {"tools": [{"name": "test_tool"}]}},
-        ])
+        transport = MockTransport(
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}},
+                },
+                # Multiple spurious null-id errors
+                {"jsonrpc": "2.0", "id": None, "error": {"code": -32601, "message": "Error 1"}},
+                {"jsonrpc": "2.0", "id": None, "error": {"code": -32601, "message": "Error 2"}},
+                # Real response
+                {"jsonrpc": "2.0", "id": 2, "result": {"tools": [{"name": "test_tool"}]}},
+            ]
+        )
 
         client = MCPClient(transport)
         await client.connect()
@@ -384,10 +439,16 @@ class TestMcpErrorMessages:
     @pytest.mark.asyncio
     async def test_id_mismatch_error_is_actionable(self) -> None:
         """ID mismatch error message helps diagnose issues."""
-        transport = MockTransport([
-            {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}}},
-            {"jsonrpc": "2.0", "id": 42, "result": {}},
-        ])
+        transport = MockTransport(
+            [
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}},
+                },
+                {"jsonrpc": "2.0", "id": 42, "result": {}},
+            ]
+        )
 
         client = MCPClient(transport)
         await client.connect()
@@ -404,7 +465,11 @@ class TestMcpErrorMessages:
     async def test_too_many_notifications_error_is_actionable(self) -> None:
         """Too many notifications error message helps diagnose issues."""
         responses: list[dict[str, Any]] = [
-            {"jsonrpc": "2.0", "id": 1, "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}}},
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {"protocolVersion": "2024-11-05", "serverInfo": {"name": "test"}},
+            },
         ]
         for i in range(MAX_NOTIFICATIONS_TO_DISCARD + 1):
             responses.append({"jsonrpc": "2.0", "method": f"notification_{i}", "params": {}})
@@ -422,7 +487,7 @@ class TestMcpErrorMessages:
 
     def test_line_length_error_is_actionable(self) -> None:
         """Line length error message helps diagnose issues."""
-        from nexus3.mcp.transport import MCPTransportError, MAX_STDIO_LINE_LENGTH
+        from nexus3.mcp.transport import MAX_STDIO_LINE_LENGTH, MCPTransportError
 
         error = MCPTransportError(
             f"MCP server line exceeds maximum length ({MAX_STDIO_LINE_LENGTH} bytes). "

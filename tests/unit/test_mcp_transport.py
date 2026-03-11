@@ -1,6 +1,5 @@
 """Unit tests for MCP transport module."""
 
-import asyncio
 import os
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch

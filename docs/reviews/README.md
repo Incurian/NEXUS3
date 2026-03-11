@@ -14,6 +14,10 @@ This index covers the review documents created during today's review/planning cy
 - [CODEX-NEXUS3-STATIC-TOPICS-2026-03-02.md](/home/inc/repos/NEXUS3/docs/reviews/archive/CODEX-NEXUS3-STATIC-TOPICS-2026-03-02.md)
 - [CODEX-NEXUS3-VALIDATION-SWARM-2026-03-02.md](/home/inc/repos/NEXUS3/docs/reviews/archive/CODEX-NEXUS3-VALIDATION-SWARM-2026-03-02.md)
 
+## Current Topical Audits
+
+- [DEPENDENCY-LICENSE-AND-TELEMETRY-AUDIT-2026-03-10.md](/home/inc/repos/NEXUS3/docs/reviews/DEPENDENCY-LICENSE-AND-TELEMETRY-AUDIT-2026-03-10.md)
+
 ## Related Planning Docs
 
 - [Plans Index (2026-03-02)](/home/inc/repos/NEXUS3/docs/plans/README.md)

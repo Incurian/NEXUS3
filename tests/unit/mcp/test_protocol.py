@@ -1,6 +1,5 @@
 """Unit tests for MCP protocol types."""
 
-import pytest
 
 from nexus3.mcp.protocol import (
     MCPPrompt,

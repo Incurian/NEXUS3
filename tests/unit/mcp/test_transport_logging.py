@@ -12,7 +12,7 @@ Covered locations:
 import asyncio
 import logging
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -90,10 +90,14 @@ class TestClientTimeoutCleanupLogging:
             and record.levelno == logging.WARNING
             for record in caplog.records
         )
-        assert warning_logged, f"Expected warning not found in logs: {[r.message for r in caplog.records]}"
+        assert warning_logged, (
+            f"Expected warning not found in logs: {[r.message for r in caplog.records]}"
+        )
 
     @pytest.mark.asyncio
-    async def test_cleanup_failure_includes_error_details(self, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_cleanup_failure_includes_error_details(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """Cleanup failure log includes the error details."""
         cleanup_error = ValueError("Connection already closed")
         transport = MockTransport(
@@ -109,10 +113,9 @@ class TestClientTimeoutCleanupLogging:
                 await client.connect(timeout=0.01)
 
         # Check error details are in the log
-        assert any(
-            "Connection already closed" in record.message
-            for record in caplog.records
-        ), f"Error details not found in logs: {[r.message for r in caplog.records]}"
+        assert any("Connection already closed" in record.message for record in caplog.records), (
+            f"Error details not found in logs: {[r.message for r in caplog.records]}"
+        )
 
     @pytest.mark.asyncio
     async def test_successful_cleanup_no_warning(self, caplog: pytest.LogCaptureFixture) -> None:
@@ -155,33 +158,37 @@ class TestStderrReaderLogging:
 
         # Check that debug message was logged
         assert any(
-            "Stderr reader stopped" in record.message
-            and record.levelno == logging.DEBUG
+            "Stderr reader stopped" in record.message and record.levelno == logging.DEBUG
             for record in caplog.records
         ), f"Expected debug log not found: {[r.message for r in caplog.records]}"
 
     @pytest.mark.asyncio
-    async def test_stderr_reader_includes_error_details(self, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_stderr_reader_includes_error_details(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """Stderr reader log includes the error details."""
         transport = StdioTransport(["echo", "test"])
 
         mock_process = MagicMock()
         mock_stderr = AsyncMock()
 
-        mock_stderr.readline = AsyncMock(side_effect=ConnectionResetError("Connection reset by peer"))
+        mock_stderr.readline = AsyncMock(
+            side_effect=ConnectionResetError("Connection reset by peer")
+        )
         mock_process.stderr = mock_stderr
         transport._process = mock_process
 
         with caplog.at_level(logging.DEBUG, logger="nexus3.mcp.transport"):
             await transport._read_stderr()
 
-        assert any(
-            "Connection reset by peer" in record.message
-            for record in caplog.records
-        ), f"Error details not found in logs: {[r.message for r in caplog.records]}"
+        assert any("Connection reset by peer" in record.message for record in caplog.records), (
+            f"Error details not found in logs: {[r.message for r in caplog.records]}"
+        )
 
     @pytest.mark.asyncio
-    async def test_stderr_reader_normal_eof_no_error_log(self, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_stderr_reader_normal_eof_no_error_log(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """Normal EOF (empty line) does not log an error."""
         transport = StdioTransport(["echo", "test"])
 
@@ -197,10 +204,9 @@ class TestStderrReaderLogging:
             await transport._read_stderr()
 
         # EOF should not trigger the exception handler
-        assert not any(
-            "Stderr reader stopped" in record.message
-            for record in caplog.records
-        ), f"Unexpected error log on normal EOF: {[r.message for r in caplog.records]}"
+        assert not any("Stderr reader stopped" in record.message for record in caplog.records), (
+            f"Unexpected error log on normal EOF: {[r.message for r in caplog.records]}"
+        )
 
 
 class TestStdinCloseLogging:
@@ -229,13 +235,14 @@ class TestStdinCloseLogging:
             await transport.close()
 
         assert any(
-            "Stdin close error" in record.message
-            and record.levelno == logging.DEBUG
+            "Stdin close error" in record.message and record.levelno == logging.DEBUG
             for record in caplog.records
         ), f"Expected debug log not found: {[r.message for r in caplog.records]}"
 
     @pytest.mark.asyncio
-    async def test_stdin_close_includes_error_details(self, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_stdin_close_includes_error_details(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """Stdin close log includes error details."""
         transport = StdioTransport(["echo", "test"])
 
@@ -255,13 +262,14 @@ class TestStdinCloseLogging:
         with caplog.at_level(logging.DEBUG, logger="nexus3.mcp.transport"):
             await transport.close()
 
-        assert any(
-            "Stream is closed" in record.message
-            for record in caplog.records
-        ), f"Error details not found in logs: {[r.message for r in caplog.records]}"
+        assert any("Stream is closed" in record.message for record in caplog.records), (
+            f"Error details not found in logs: {[r.message for r in caplog.records]}"
+        )
 
     @pytest.mark.asyncio
-    async def test_stdin_close_indicates_expected_during_shutdown(self, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_stdin_close_indicates_expected_during_shutdown(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """Stdin close log message indicates this is expected during shutdown."""
         transport = StdioTransport(["echo", "test"])
 
@@ -281,13 +289,14 @@ class TestStdinCloseLogging:
         with caplog.at_level(logging.DEBUG, logger="nexus3.mcp.transport"):
             await transport.close()
 
-        assert any(
-            "expected during shutdown" in record.message
-            for record in caplog.records
-        ), f"Expected 'expected during shutdown' not found: {[r.message for r in caplog.records]}"
+        assert any("expected during shutdown" in record.message for record in caplog.records), (
+            f"Expected 'expected during shutdown' not found: {[r.message for r in caplog.records]}"
+        )
 
     @pytest.mark.asyncio
-    async def test_successful_stdin_close_no_error_log(self, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_successful_stdin_close_no_error_log(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """Successful stdin close does not log error."""
         transport = StdioTransport(["echo", "test"])
 
@@ -308,7 +317,6 @@ class TestStdinCloseLogging:
             await transport.close()
 
         # No stdin close error should be logged when it succeeds
-        assert not any(
-            "Stdin close error" in record.message
-            for record in caplog.records
-        ), f"Unexpected error log on successful close: {[r.message for r in caplog.records]}"
+        assert not any("Stdin close error" in record.message for record in caplog.records), (
+            f"Unexpected error log on successful close: {[r.message for r in caplog.records]}"
+        )

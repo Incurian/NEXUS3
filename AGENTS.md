@@ -240,6 +240,42 @@ Current milestone:
   - `defaults`, `display`, `rpc`, `mcp`, and `skill/vcs` were reviewed and
     left unchanged as already accurate enough for this slice.
   - `nexus3/ide` remains explicitly out of scope for README coverage.
+- dependency audit slice complete locally (2026-03-10):
+  - created
+    [DEPENDENCY-LICENSE-AND-TELEMETRY-AUDIT-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/DEPENDENCY-LICENSE-AND-TELEMETRY-AUDIT-PLAN-2026-03-10.md)
+    and wrote
+    [DEPENDENCY-LICENSE-AND-TELEMETRY-AUDIT-2026-03-10.md](/home/inc/repos/NEXUS3/docs/reviews/DEPENDENCY-LICENSE-AND-TELEMETRY-AUDIT-2026-03-10.md).
+  - audit conclusion:
+    - current Python dependency set appears compatible with keeping NEXUS3
+      MIT-licensed, with normal notice obligations for MPL/PSF/Apache/BSD
+      components.
+    - no unsolicited telemetry / analytics behavior was found in the installed
+      Python dependency sources; the main caveat is theoretical `jsonschema`
+      remote-ref retrieval, which does not appear reachable in current NEXUS
+      usage.
+  - concrete follow-up items from the audit:
+    - stale editable metadata still declares `websockets` even though the
+      current repo no longer references it.
+    - `aiohttp` was confirmed as the intentional MCP HTTP test-server
+      dependency and has now been restored to the `dev` / `ci` extras in
+      `pyproject.toml`; the editable-environment refresh is intentionally
+      deferred for now, but should happen later so installed metadata matches
+      the manifest again.
+- repo-wide Ruff backlog closeout complete locally (2026-03-10):
+  - created
+    [RUFF-BACKLOG-CLOSEOUT-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/RUFF-BACKLOG-CLOSEOUT-PLAN-2026-03-10.md)
+    and completed the repo-wide lint cleanup for `nexus3/` and `tests/`
+  - cleanup summary:
+    - safe `.venv/bin/ruff check nexus3/ tests/ --fix` reduced the backlog
+      from 156 findings to 74 manual issues
+    - parallel cleanup plus small manual test-only edits removed the remaining
+      `E501` / `F841` / `B017` residue without changing runtime code
+  - validation:
+    - `.venv/bin/ruff check nexus3/ tests/` now passes
+    - `git diff --check` passes
+    - no pytest rerun was needed for this slice because the remaining changes
+      were lint-only test cleanups and the full suite had already passed
+      earlier in the session
 - `Post-M4` validation campaign closeout complete: external closeout slice
   `post-m4-20260306-live1e` archived real-host Windows evidence and
   multi-emulator carriage-return verification; deterministic closeout gate

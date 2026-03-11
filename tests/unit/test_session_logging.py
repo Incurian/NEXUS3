@@ -15,7 +15,7 @@ from time import time
 
 import pytest
 
-from nexus3.core.types import Message, Role, ToolCall, ToolResult
+from nexus3.core.types import Role, ToolCall, ToolResult
 from nexus3.session.logging import SessionLogger
 from nexus3.session.markdown import MarkdownWriter, RawWriter
 from nexus3.session.storage import (
@@ -24,7 +24,6 @@ from nexus3.session.storage import (
     SessionStorage,
 )
 from nexus3.session.types import LogConfig, LogStream, SessionInfo
-
 
 # ============================================================================
 # LogStream Tests
@@ -264,7 +263,7 @@ class TestSessionStorage:
     def test_get_messages_in_context_only(self, storage):
         """get_messages with in_context_only=True filters correctly."""
         id1 = storage.insert_message(role="user", content="In context")
-        id2 = storage.insert_message(role="assistant", content="Also in context")
+        storage.insert_message(role="assistant", content="Also in context")
 
         # Mark one as out of context
         storage.update_context_status([id1], in_context=False)

@@ -10,9 +10,6 @@ The fix:
 - No write-then-chmod TOCTOU races
 """
 
-import os
-import stat
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -20,8 +17,6 @@ import pytest
 from nexus3.core.secure_io import (
     SECURE_DIR_MODE,
     SECURE_FILE_MODE,
-    ensure_secure_dir,
-    ensure_secure_file,
     secure_mkdir,
     secure_write_atomic,
     secure_write_new,

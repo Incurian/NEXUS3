@@ -6,7 +6,6 @@ Tests cover:
 - Schema migration from v1 to v2
 """
 
-from pathlib import Path
 from time import time
 
 import pytest
@@ -18,7 +17,6 @@ from nexus3.session.storage import (
     SessionStorage,
 )
 from nexus3.session.types import LogConfig, LogStream
-
 
 # ============================================================================
 # SessionMarkers Dataclass Tests
@@ -123,7 +121,7 @@ class TestSessionStorageMarkers:
     def test_get_session_markers_before_init(self, storage):
         """get_session_markers returns None before init."""
         # Fresh DB without explicit init
-        markers = storage.get_session_markers()
+        storage.get_session_markers()
         # Might be None or might have been auto-initialized by migration
         # Both are acceptable
 
@@ -298,7 +296,8 @@ class TestSchemaMigration:
 
         # Check indexes created
         cursor = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_session_markers_status'"
+            "SELECT name FROM sqlite_master WHERE type='index' "
+            "AND name='idx_session_markers_status'"
         )
         assert cursor.fetchone() is not None
 

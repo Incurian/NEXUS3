@@ -13,7 +13,6 @@ The fix ensures that more specific configuration (local) completely replaces
 less specific configuration (global) for list values.
 """
 
-import pytest
 
 from nexus3.core.utils import deep_merge
 

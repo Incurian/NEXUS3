@@ -3,17 +3,15 @@
 import time
 from unittest.mock import patch
 
-import pytest
-
 from nexus3.clipboard.types import (
     CLIPBOARD_PRESETS,
+    MAX_ENTRY_SIZE_BYTES,
+    WARN_ENTRY_SIZE_BYTES,
     ClipboardEntry,
     ClipboardPermissions,
     ClipboardScope,
     ClipboardTag,
     InsertionMode,
-    MAX_ENTRY_SIZE_BYTES,
-    WARN_ENTRY_SIZE_BYTES,
 )
 
 

@@ -65,7 +65,7 @@ class TestSecureAppend:
         secure_append(target, "cafe\u0301", encoding="utf-8")
 
         # Should be UTF-8 encoded
-        assert target.read_bytes() == "cafe\u0301".encode("utf-8")
+        assert target.read_bytes() == "cafe\u0301".encode()
 
     def test_append_refuses_symlink(self, tmp_path: Path) -> None:
         """secure_append raises SymlinkError for symlinks."""

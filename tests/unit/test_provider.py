@@ -10,8 +10,8 @@ from nexus3.core.errors import ProviderError
 from nexus3.core.types import Message, Role
 from nexus3.provider import OpenRouterProvider
 from nexus3.provider.base import (
-    MAX_RETRY_DELAY,
     MAX_RETRIES,
+    MAX_RETRY_DELAY,
     RETRYABLE_STATUS_CODES,
 )
 

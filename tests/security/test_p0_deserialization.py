@@ -12,8 +12,6 @@ The semantic distinction:
 
 from pathlib import Path
 
-import pytest
-
 from nexus3.core.policy import PermissionLevel, PermissionPolicy
 from nexus3.core.presets import ToolPermission
 

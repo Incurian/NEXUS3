@@ -5,10 +5,8 @@ rather than failing immediately with "Request failed unexpectedly".
 """
 
 import os
-from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
 
 from nexus3.config.schema import ProviderConfig

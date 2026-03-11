@@ -6,14 +6,12 @@ escaped before display in Rich console output.
 Fix 2.5 in REMEDIATION-PLAN.md addresses H8: Rich markup injection.
 """
 
-import pytest
 
+from nexus3.cli.confirmation_ui import format_tool_params
 from nexus3.core.text_safety import (
     escape_rich_markup,
     sanitize_for_display,
-    strip_terminal_escapes,
 )
-from nexus3.cli.confirmation_ui import format_tool_params
 
 
 class TestEscapeRichMarkup:
@@ -186,6 +184,8 @@ class TestConfirmationUIEscaping:
 
         # This just tests format_tool_params; the tool name escaping is in
         # confirm_tool_action which we can't easily unit test without mocking
+        assert "path=" in result
+        assert "/normal/path" in result
 
     def test_empty_arguments(self) -> None:
         """Empty arguments should return empty string."""

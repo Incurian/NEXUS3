@@ -9,7 +9,7 @@ These tests verify:
 
 import asyncio
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -132,7 +132,6 @@ class TestStdioTransportLock:
 
         # Track lock acquisition
         lock_acquired_during_send = False
-        original_send = transport.send
 
         async def tracked_send(message: dict[str, Any]) -> None:
             nonlocal lock_acquired_during_send
@@ -253,7 +252,9 @@ class TestStdioTransportRequest:
         mock_stdin.drain = AsyncMock()
 
         mock_stdout = AsyncMock()
-        mock_stdout.read = AsyncMock(return_value=b'{"jsonrpc": "2.0", "id": 1, "result": {"data": "test"}}\n')
+        mock_stdout.read = AsyncMock(
+            return_value=b'{"jsonrpc": "2.0", "id": 1, "result": {"data": "test"}}\n'
+        )
 
         mock_process = MagicMock()
         mock_process.stdin = mock_stdin
@@ -284,20 +285,25 @@ class TestHTTPConcurrentRequests:
         async def mock_post(url: str, content: str, headers: Any = None) -> MagicMock:
             nonlocal call_count
             call_count += 1
-            current_id = call_count
 
             # Simulate network delay
             await asyncio.sleep(0.01)
 
             # Parse request to get ID
             import json
+
             request = json.loads(content)
             request_id = request.get("id")
 
             response = MagicMock()
             response.status_code = 200
-            response.content = f'{{"jsonrpc": "2.0", "id": {request_id}, "result": {{"data": "response_{request_id}"}}}}'.encode()
-            response.json.return_value = {"jsonrpc": "2.0", "id": request_id, "result": {"data": f"response_{request_id}"}}
+            response_payload = {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {"data": f"response_{request_id}"},
+            }
+            response.content = json.dumps(response_payload).encode()
+            response.json.return_value = response_payload
             response.raise_for_status = MagicMock()
             response.headers = {}  # P1.8: Session management expects headers
             return response
@@ -308,8 +314,7 @@ class TestHTTPConcurrentRequests:
 
         # Make multiple concurrent requests
         messages = [
-            {"jsonrpc": "2.0", "id": i, "method": "test", "params": {}}
-            for i in range(1, 6)
+            {"jsonrpc": "2.0", "id": i, "method": "test", "params": {}} for i in range(1, 6)
         ]
 
         responses = await asyncio.gather(*[transport.request(msg) for msg in messages])
@@ -332,6 +337,7 @@ class TestHTTPConcurrentRequests:
             pending_checks.append(transport._pending_response is not None)
 
             import json
+
             request = json.loads(content)
             request_id = request.get("id")
 

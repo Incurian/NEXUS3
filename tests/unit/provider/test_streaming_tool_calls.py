@@ -5,16 +5,12 @@ These tests verify:
 2. BL-3: Invalid JSON arguments are logged and preserved, not silently replaced with {}
 """
 
-import json
 import logging
 import os
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from nexus3.config.schema import ProviderConfig
-from nexus3.core.types import Message, Role, ToolCall
 from nexus3.provider import OpenRouterProvider
 
 
@@ -32,6 +28,21 @@ class TestToolCallIdNameSetOnce:
             os.environ.pop("TEST_STREAMING_KEY", None)
         return provider
 
+    async def _consume_stream_event(
+        self,
+        provider: OpenRouterProvider,
+        event: dict[str, object],
+        tool_calls_by_index: dict[int, dict[str, str]],
+        seen_tool_indices: set[int],
+    ) -> None:
+        """Drain the async generator for a single streaming event."""
+        async for _ in provider._process_stream_event(
+            event,
+            tool_calls_by_index,
+            seen_tool_indices,
+        ):
+            pass
+
     @pytest.mark.asyncio
     async def test_tool_call_id_set_once(self, provider: OpenRouterProvider) -> None:
         """Tool call id is not duplicated if sent twice in deltas."""
@@ -40,35 +51,51 @@ class TestToolCallIdNameSetOnce:
 
         # First delta with id
         event1 = {
-            "choices": [{
-                "delta": {
-                    "tool_calls": [{
-                        "index": 0,
-                        "id": "call_abc123",
-                        "function": {"name": "test_tool", "arguments": ""}
-                    }]
+            "choices": [
+                {
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_abc123",
+                                "function": {"name": "test_tool", "arguments": ""},
+                            }
+                        ]
+                    }
                 }
-            }]
+            ]
         }
 
         # Second delta repeating the same id (some providers do this)
         event2 = {
-            "choices": [{
-                "delta": {
-                    "tool_calls": [{
-                        "index": 0,
-                        "id": "call_abc123",  # Duplicate!
-                        "function": {"arguments": '{"foo": '}
-                    }]
+            "choices": [
+                {
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_abc123",  # Duplicate!
+                                "function": {"arguments": '{"foo": '},
+                            }
+                        ]
+                    }
                 }
-            }]
+            ]
         }
 
         # Process both events
-        async for _ in provider._process_stream_event(event1, tool_calls_by_index, seen_tool_indices):
-            pass
-        async for _ in provider._process_stream_event(event2, tool_calls_by_index, seen_tool_indices):
-            pass
+        await self._consume_stream_event(
+            provider,
+            event1,
+            tool_calls_by_index,
+            seen_tool_indices,
+        )
+        await self._consume_stream_event(
+            provider,
+            event2,
+            tool_calls_by_index,
+            seen_tool_indices,
+        )
 
         # ID should be set once, not "call_abc123call_abc123"
         assert tool_calls_by_index[0]["id"] == "call_abc123"
@@ -81,34 +108,50 @@ class TestToolCallIdNameSetOnce:
 
         # First delta with name
         event1 = {
-            "choices": [{
-                "delta": {
-                    "tool_calls": [{
-                        "index": 0,
-                        "id": "call_xyz",
-                        "function": {"name": "read_file", "arguments": ""}
-                    }]
+            "choices": [
+                {
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_xyz",
+                                "function": {"name": "read_file", "arguments": ""},
+                            }
+                        ]
+                    }
                 }
-            }]
+            ]
         }
 
         # Second delta repeating the same name (some providers do this)
         event2 = {
-            "choices": [{
-                "delta": {
-                    "tool_calls": [{
-                        "index": 0,
-                        "function": {"name": "read_file", "arguments": '{"path": '}
-                    }]
+            "choices": [
+                {
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "function": {"name": "read_file", "arguments": '{"path": '},
+                            }
+                        ]
+                    }
                 }
-            }]
+            ]
         }
 
         # Process both events
-        async for _ in provider._process_stream_event(event1, tool_calls_by_index, seen_tool_indices):
-            pass
-        async for _ in provider._process_stream_event(event2, tool_calls_by_index, seen_tool_indices):
-            pass
+        await self._consume_stream_event(
+            provider,
+            event1,
+            tool_calls_by_index,
+            seen_tool_indices,
+        )
+        await self._consume_stream_event(
+            provider,
+            event2,
+            tool_calls_by_index,
+            seen_tool_indices,
+        )
 
         # Name should be set once, not "read_fileread_file"
         assert tool_calls_by_index[0]["name"] == "read_file"
@@ -121,15 +164,72 @@ class TestToolCallIdNameSetOnce:
 
         # Arguments come in chunks during streaming
         events = [
-            {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "call_1", "function": {"name": "bash", "arguments": ""}}]}}]},
-            {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": '{"com'}}]}}]},
-            {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": 'mand": '}}]}}]},
-            {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": '"ls -la"}'}}]}}]},
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_1",
+                                    "function": {"name": "bash", "arguments": ""},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": '{"com'},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": 'mand": '},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": '"ls -la"}'},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
         ]
 
         for event in events:
-            async for _ in provider._process_stream_event(event, tool_calls_by_index, seen_tool_indices):
-                pass
+            await self._consume_stream_event(
+                provider,
+                event,
+                tool_calls_by_index,
+                seen_tool_indices,
+            )
 
         # Arguments should be concatenated
         assert tool_calls_by_index[0]["arguments"] == '{"command": "ls -la"}'
@@ -142,15 +242,78 @@ class TestToolCallIdNameSetOnce:
 
         # Real-world pattern: first chunk has id+name, subsequent have arguments
         events = [
-            {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "call_abc", "function": {"name": "write_file", "arguments": ""}}]}}]},
-            {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "call_abc", "function": {"name": "write_file", "arguments": '{"path'}}]}}]},  # Duplicates!
-            {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": '": "/tmp/test",'}}]}}]},
-            {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": ' "content": "hello"}'}}]}}]},
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_abc",
+                                    "function": {"name": "write_file", "arguments": ""},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_abc",
+                                    "function": {
+                                        "name": "write_file",
+                                        "arguments": '{"path',
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },  # Duplicates!
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"arguments": '": "/tmp/test",'},
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {
+                                        "arguments": ' "content": "hello"}',
+                                    },
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
         ]
 
         for event in events:
-            async for _ in provider._process_stream_event(event, tool_calls_by_index, seen_tool_indices):
-                pass
+            await self._consume_stream_event(
+                provider,
+                event,
+                tool_calls_by_index,
+                seen_tool_indices,
+            )
 
         # ID and name set once (not duplicated)
         assert tool_calls_by_index[0]["id"] == "call_abc"
@@ -180,10 +343,7 @@ class TestInvalidJsonArgumentsPreserved:
         tool_calls_data = [
             {
                 "id": "call_123",
-                "function": {
-                    "name": "test_tool",
-                    "arguments": "this is not { valid json"
-                }
+                "function": {"name": "test_tool", "arguments": "this is not { valid json"},
             }
         ]
 
@@ -194,15 +354,13 @@ class TestInvalidJsonArgumentsPreserved:
         assert "_raw_arguments" in result[0].arguments
         assert result[0].arguments["_raw_arguments"] == "this is not { valid json"
 
-    def test_invalid_json_arguments_preserved_streaming(
-        self, provider: OpenRouterProvider
-    ) -> None:
+    def test_invalid_json_arguments_preserved_streaming(self, provider: OpenRouterProvider) -> None:
         """Invalid JSON in streaming response preserves raw arguments."""
         tool_calls_by_index = {
             0: {
                 "id": "call_456",
                 "name": "bash",
-                "arguments": '{"command": unquoted}'  # Invalid JSON
+                "arguments": '{"command": unquoted}',  # Invalid JSON
             }
         }
 
@@ -214,17 +372,15 @@ class TestInvalidJsonArgumentsPreserved:
         assert "_raw_arguments" in tc.arguments
         assert tc.arguments["_raw_arguments"] == '{"command": unquoted}'
 
-    def test_valid_json_arguments_parsed_normally(
-        self, provider: OpenRouterProvider
-    ) -> None:
+    def test_valid_json_arguments_parsed_normally(self, provider: OpenRouterProvider) -> None:
         """Valid JSON arguments are parsed normally (sanity check)."""
         tool_calls_data = [
             {
                 "id": "call_789",
                 "function": {
                     "name": "read_file",
-                    "arguments": '{"path": "/etc/passwd", "limit": 100}'
-                }
+                    "arguments": '{"path": "/etc/passwd", "limit": 100}',
+                },
             }
         ]
 
@@ -234,15 +390,13 @@ class TestInvalidJsonArgumentsPreserved:
         assert result[0].arguments == {"path": "/etc/passwd", "limit": 100}
         assert "_raw_arguments" not in result[0].arguments
 
-    def test_empty_arguments_default_to_empty_dict(
-        self, provider: OpenRouterProvider
-    ) -> None:
+    def test_empty_arguments_default_to_empty_dict(self, provider: OpenRouterProvider) -> None:
         """Empty arguments string results in empty dict (not error)."""
         tool_calls_by_index = {
             0: {
                 "id": "call_empty",
                 "name": "no_args_tool",
-                "arguments": ""  # Empty
+                "arguments": "",  # Empty
             }
         }
 
@@ -256,20 +410,17 @@ class TestInvalidJsonArgumentsPreserved:
     ) -> None:
         """Invalid JSON in non-streaming logs a warning."""
         tool_calls_data = [
-            {
-                "id": "call_log_test",
-                "function": {
-                    "name": "test",
-                    "arguments": "broken json {"
-                }
-            }
+            {"id": "call_log_test", "function": {"name": "test", "arguments": "broken json {"}}
         ]
 
         with caplog.at_level(logging.WARNING, logger="nexus3.provider.openai_compat"):
             provider._parse_tool_calls(tool_calls_data)
 
         # Should have logged a warning about the invalid JSON
-        assert any("Failed to parse tool arguments JSON" in record.message for record in caplog.records)
+        assert any(
+            "Failed to parse tool arguments JSON" in record.message
+            for record in caplog.records
+        )
         # Warning should contain truncated JSON (%.100s format)
         assert any("broken json" in record.message for record in caplog.records)
 
@@ -278,29 +429,26 @@ class TestInvalidJsonArgumentsPreserved:
     ) -> None:
         """Invalid JSON in streaming logs a warning."""
         tool_calls_by_index = {
-            0: {
-                "id": "call_stream_log",
-                "name": "test",
-                "arguments": "not valid { json"
-            }
+            0: {"id": "call_stream_log", "name": "test", "arguments": "not valid { json"}
         }
 
         with caplog.at_level(logging.WARNING, logger="nexus3.provider.openai_compat"):
             provider._build_stream_complete("", tool_calls_by_index)
 
         # Should have logged a warning
-        assert any("Failed to parse tool arguments JSON" in record.message for record in caplog.records)
+        assert any(
+            "Failed to parse tool arguments JSON" in record.message
+            for record in caplog.records
+        )
 
-    def test_truncated_json_preserved_in_raw(
-        self, provider: OpenRouterProvider
-    ) -> None:
+    def test_truncated_json_preserved_in_raw(self, provider: OpenRouterProvider) -> None:
         """Truncated JSON (incomplete streaming) is preserved."""
         # Simulate truncated stream - JSON was cut off
         tool_calls_by_index = {
             0: {
                 "id": "call_truncated",
                 "name": "write_file",
-                "arguments": '{"path": "/tmp/test", "content": "hello'  # Missing closing
+                "arguments": '{"path": "/tmp/test", "content": "hello',  # Missing closing
             }
         }
 
@@ -317,13 +465,7 @@ class TestInvalidJsonArgumentsPreserved:
         long_invalid_json = "x" * 500  # 500 chars of invalid JSON (use x to avoid counting in msg)
 
         tool_calls_data = [
-            {
-                "id": "call_long",
-                "function": {
-                    "name": "test",
-                    "arguments": long_invalid_json
-                }
-            }
+            {"id": "call_long", "function": {"name": "test", "arguments": long_invalid_json}}
         ]
 
         with caplog.at_level(logging.WARNING, logger="nexus3.provider.openai_compat"):

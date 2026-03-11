@@ -73,7 +73,9 @@ class TestSafeWriteText:
 class TestInitGlobalSymlinkDefense:
     """Test init_global refuses symlinks."""
 
-    def test_refuses_symlink_in_nexus_md(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_refuses_symlink_in_nexus_md(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """init_global should refuse if NEXUS.md is a symlink."""
         from nexus3.cli.init_commands import init_global
 
@@ -187,7 +189,9 @@ class TestInitLocalSymlinkDefense:
 class TestSymlinkAttackScenarios:
     """Test specific attack scenarios that the fix prevents."""
 
-    def test_prevents_etc_passwd_overwrite(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_prevents_etc_passwd_overwrite(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Attacker cannot overwrite /etc/passwd by symlinking NEXUS.md."""
         from nexus3.cli.init_commands import init_global
 

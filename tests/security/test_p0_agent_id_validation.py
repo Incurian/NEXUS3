@@ -140,13 +140,12 @@ class TestIntegrationWithAgentPool:
     async def test_create_rejects_path_traversal(self) -> None:
         """AgentPool.create() should reject path traversal IDs."""
         # Import here to avoid circular imports in test collection
-        from unittest.mock import AsyncMock, MagicMock, patch
+        from unittest.mock import MagicMock
 
         # Create a minimal mock pool
         mock_shared = MagicMock()
         mock_shared.base_log_dir = MagicMock()
 
-        from nexus3.rpc.pool import AgentPool
 
         # We can't easily create a real AgentPool without all deps,
         # so we test the validation function is called correctly

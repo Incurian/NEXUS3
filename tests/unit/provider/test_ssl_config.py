@@ -33,7 +33,9 @@ class TestSSLCaCertNormalization:
         assert os.path.isabs(config.ssl_ca_cert)
         assert config.ssl_ca_cert == str(cert_file)
 
-    def test_ssl_ca_cert_expands_tilde(self, tmp_path: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_ssl_ca_cert_expands_tilde(
+        self, tmp_path: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """ssl_ca_cert expands ~ to home directory."""
         monkeypatch.setenv("HOME", str(tmp_path))
         cert_file = tmp_path / "my-cert.pem"  # type: ignore[operator]

@@ -9,8 +9,6 @@ Verifies:
 
 import json
 import os
-import time
-from typing import Any
 from unittest.mock import MagicMock
 
 import httpx
@@ -73,14 +71,13 @@ class TestOpenAIEmptyStream:
 
         assert len(events) == 1
         from nexus3.core.types import StreamComplete
+
         assert isinstance(events[0], StreamComplete)
         assert events[0].message.content == ""
         assert events[0].message.tool_calls == ()
 
     @pytest.mark.asyncio
-    async def test_completely_empty_stream(
-        self, openai_provider: OpenRouterProvider
-    ) -> None:
+    async def test_completely_empty_stream(self, openai_provider: OpenRouterProvider) -> None:
         """Completely empty body (no [DONE]) still yields StreamComplete."""
         response = _make_sse_response([])
         events = []
@@ -89,28 +86,27 @@ class TestOpenAIEmptyStream:
 
         assert len(events) == 1
         from nexus3.core.types import StreamComplete
+
         assert isinstance(events[0], StreamComplete)
         assert events[0].message.content == ""
 
     @pytest.mark.asyncio
-    async def test_event_count_tracked(
-        self, openai_provider: OpenRouterProvider
-    ) -> None:
+    async def test_event_count_tracked(self, openai_provider: OpenRouterProvider) -> None:
         """Events are counted correctly."""
         raw_log = MagicMock()
         openai_provider._raw_log = raw_log
 
-        chunk1 = json.dumps({
-            "choices": [{"delta": {"content": "Hello"}, "finish_reason": None}]
-        })
-        chunk2 = json.dumps({
-            "choices": [{"delta": {"content": " world"}, "finish_reason": "stop"}]
-        })
-        response = _make_sse_response([
-            f"data: {chunk1}",
-            f"data: {chunk2}",
-            "data: [DONE]",
-        ])
+        chunk1 = json.dumps({"choices": [{"delta": {"content": "Hello"}, "finish_reason": None}]})
+        chunk2 = json.dumps(
+            {"choices": [{"delta": {"content": " world"}, "finish_reason": "stop"}]}
+        )
+        response = _make_sse_response(
+            [
+                f"data: {chunk1}",
+                f"data: {chunk2}",
+                "data: [DONE]",
+            ]
+        )
 
         events = []
         async for event in openai_provider._parse_stream(response):
@@ -127,16 +123,12 @@ class TestOpenAIEmptyStream:
         assert summary["duration_ms"] >= 0
 
     @pytest.mark.asyncio
-    async def test_finish_reason_extracted(
-        self, openai_provider: OpenRouterProvider
-    ) -> None:
+    async def test_finish_reason_extracted(self, openai_provider: OpenRouterProvider) -> None:
         """finish_reason is extracted from the final chunk."""
         raw_log = MagicMock()
         openai_provider._raw_log = raw_log
 
-        chunk = json.dumps({
-            "choices": [{"delta": {"content": "done"}, "finish_reason": "length"}]
-        })
+        chunk = json.dumps({"choices": [{"delta": {"content": "done"}, "finish_reason": "length"}]})
         response = _make_sse_response([f"data: {chunk}", "data: [DONE]"])
 
         async for _ in openai_provider._parse_stream(response):
@@ -170,16 +162,12 @@ class TestOpenAIEmptyStream:
         assert not any("Empty stream response" in r.message for r in caplog.records)
 
     @pytest.mark.asyncio
-    async def test_no_done_marker_still_logs(
-        self, openai_provider: OpenRouterProvider
-    ) -> None:
+    async def test_no_done_marker_still_logs(self, openai_provider: OpenRouterProvider) -> None:
         """Stream ending without [DONE] still gets logged."""
         raw_log = MagicMock()
         openai_provider._raw_log = raw_log
 
-        chunk = json.dumps({
-            "choices": [{"delta": {"content": "hi"}, "finish_reason": None}]
-        })
+        chunk = json.dumps({"choices": [{"delta": {"content": "hi"}, "finish_reason": None}]})
         response = _make_sse_response([f"data: {chunk}"])
 
         async for _ in openai_provider._parse_stream(response):
@@ -198,15 +186,11 @@ class TestSSENoSpaceFormat:
     """
 
     @pytest.mark.asyncio
-    async def test_data_no_space_parsed(
-        self, openai_provider: OpenRouterProvider
-    ) -> None:
+    async def test_data_no_space_parsed(self, openai_provider: OpenRouterProvider) -> None:
         """'data:{json}' (no space) is parsed correctly."""
         from nexus3.core.types import StreamComplete
 
-        chunk = json.dumps({
-            "choices": [{"delta": {"content": "Hello!"}, "finish_reason": "stop"}]
-        })
+        chunk = json.dumps({"choices": [{"delta": {"content": "Hello!"}, "finish_reason": "stop"}]})
         # No space after "data:"
         response = _make_sse_response([f"data:{chunk}"])
 
@@ -219,15 +203,11 @@ class TestSSENoSpaceFormat:
         assert complete.message.content == "Hello!"
 
     @pytest.mark.asyncio
-    async def test_data_no_space_with_done(
-        self, openai_provider: OpenRouterProvider
-    ) -> None:
+    async def test_data_no_space_with_done(self, openai_provider: OpenRouterProvider) -> None:
         """'data:[DONE]' (no space) is recognized as stream end."""
         from nexus3.core.types import StreamComplete
 
-        chunk = json.dumps({
-            "choices": [{"delta": {"content": "Hi"}, "finish_reason": "stop"}]
-        })
+        chunk = json.dumps({"choices": [{"delta": {"content": "Hi"}, "finish_reason": "stop"}]})
         response = _make_sse_response([f"data:{chunk}", "data:[DONE]"])
 
         events = []
@@ -238,22 +218,22 @@ class TestSSENoSpaceFormat:
         assert complete.message.content == "Hi"
 
     @pytest.mark.asyncio
-    async def test_data_no_space_reasoning_field(
-        self, openai_provider: OpenRouterProvider
-    ) -> None:
+    async def test_data_no_space_reasoning_field(self, openai_provider: OpenRouterProvider) -> None:
         """'reasoning' field (no space format) yields ReasoningDelta."""
-        from nexus3.core.types import ContentDelta, ReasoningDelta, StreamComplete
+        from nexus3.core.types import ContentDelta, ReasoningDelta
 
-        reasoning_chunk = json.dumps({
-            "choices": [{"delta": {"reasoning": "thinking..."}, "finish_reason": None}]
-        })
-        content_chunk = json.dumps({
-            "choices": [{"delta": {"content": "done"}, "finish_reason": "stop"}]
-        })
-        response = _make_sse_response([
-            f"data:{reasoning_chunk}",
-            f"data:{content_chunk}",
-        ])
+        reasoning_chunk = json.dumps(
+            {"choices": [{"delta": {"reasoning": "thinking..."}, "finish_reason": None}]}
+        )
+        content_chunk = json.dumps(
+            {"choices": [{"delta": {"content": "done"}, "finish_reason": "stop"}]}
+        )
+        response = _make_sse_response(
+            [
+                f"data:{reasoning_chunk}",
+                f"data:{content_chunk}",
+            ]
+        )
 
         events = []
         async for event in openai_provider._parse_stream(response):
@@ -265,18 +245,14 @@ class TestSSENoSpaceFormat:
         assert events[1].text == "done"
 
     @pytest.mark.asyncio
-    async def test_mixed_space_no_space(
-        self, openai_provider: OpenRouterProvider
-    ) -> None:
+    async def test_mixed_space_no_space(self, openai_provider: OpenRouterProvider) -> None:
         """Mix of 'data: ' and 'data:' lines in same stream works."""
         from nexus3.core.types import StreamComplete
 
-        chunk1 = json.dumps({
-            "choices": [{"delta": {"content": "Hello"}, "finish_reason": None}]
-        })
-        chunk2 = json.dumps({
-            "choices": [{"delta": {"content": " world"}, "finish_reason": "stop"}]
-        })
+        chunk1 = json.dumps({"choices": [{"delta": {"content": "Hello"}, "finish_reason": None}]})
+        chunk2 = json.dumps(
+            {"choices": [{"delta": {"content": " world"}, "finish_reason": "stop"}]}
+        )
         # Mix formats
         response = _make_sse_response([f"data: {chunk1}", f"data:{chunk2}", "data: [DONE]"])
 
@@ -288,9 +264,7 @@ class TestSSENoSpaceFormat:
         assert complete.message.content == "Hello world"
 
     @pytest.mark.asyncio
-    async def test_corporate_server_format_exact(
-        self, openai_provider: OpenRouterProvider
-    ) -> None:
+    async def test_corporate_server_format_exact(self, openai_provider: OpenRouterProvider) -> None:
         """Exact replica of corporate gpt-oss-120b SSE format.
 
         Characteristics:
@@ -306,58 +280,99 @@ class TestSSENoSpaceFormat:
         openai_provider._raw_log = raw_log
 
         # Chunk 0: role + empty content (server warmup)
-        chunk0 = json.dumps({
-            "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}}],
-            "model": "gpt-oss-120b", "object": "chat.completion.chunk",
-        })
+        chunk0 = json.dumps(
+            {
+                "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}}],
+                "model": "gpt-oss-120b",
+                "object": "chat.completion.chunk",
+            }
+        )
         # Chunk 1: empty reasoning (reasoning warmup)
-        chunk1 = json.dumps({
-            "choices": [{"index": 0, "delta": {
-                "reasoning": "",
-                "reasoning_details": [{"index": 0, "type": "reasoning.text", "text": ""}],
-            }}],
-            "model": "gpt-oss-120b", "object": "chat.completion.chunk",
-        })
+        chunk1 = json.dumps(
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "reasoning": "",
+                            "reasoning_details": [
+                                {"index": 0, "type": "reasoning.text", "text": ""}
+                            ],
+                        },
+                    }
+                ],
+                "model": "gpt-oss-120b",
+                "object": "chat.completion.chunk",
+            }
+        )
         # Chunk 2: actual reasoning
-        chunk2 = json.dumps({
-            "choices": [{"index": 0, "delta": {
-                "reasoning": "User wants exactly:",
-                "reasoning_details": [{"index": 0, "type": "reasoning.text", "text": "User wants exactly:"}],
-            }}],
-            "model": "gpt-oss-120b", "object": "chat.completion.chunk",
-        })
+        chunk2 = json.dumps(
+            {
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "reasoning": "User wants exactly:",
+                            "reasoning_details": [
+                                {
+                                    "index": 0,
+                                    "type": "reasoning.text",
+                                    "text": "User wants exactly:",
+                                }
+                            ],
+                        },
+                    }
+                ],
+                "model": "gpt-oss-120b",
+                "object": "chat.completion.chunk",
+            }
+        )
         # Chunk 3: empty content (transition from reasoning to content)
-        chunk3 = json.dumps({
-            "choices": [{"index": 0, "delta": {"content": ""}}],
-            "model": "gpt-oss-120b", "object": "chat.completion.chunk",
-        })
+        chunk3 = json.dumps(
+            {
+                "choices": [{"index": 0, "delta": {"content": ""}}],
+                "model": "gpt-oss-120b",
+                "object": "chat.completion.chunk",
+            }
+        )
         # Chunk 4-5: actual content
-        chunk4 = json.dumps({
-            "choices": [{"index": 0, "delta": {"content": "Hello, diagnostic"}}],
-            "model": "gpt-oss-120b", "object": "chat.completion.chunk",
-        })
-        chunk5 = json.dumps({
-            "choices": [{"index": 0, "delta": {"content": " test passed."}}],
-            "model": "gpt-oss-120b", "object": "chat.completion.chunk",
-        })
+        chunk4 = json.dumps(
+            {
+                "choices": [{"index": 0, "delta": {"content": "Hello, diagnostic"}}],
+                "model": "gpt-oss-120b",
+                "object": "chat.completion.chunk",
+            }
+        )
+        chunk5 = json.dumps(
+            {
+                "choices": [{"index": 0, "delta": {"content": " test passed."}}],
+                "model": "gpt-oss-120b",
+                "object": "chat.completion.chunk",
+            }
+        )
         # Chunk 6: finish_reason with empty delta, no [DONE]
-        chunk6 = json.dumps({
-            "choices": [{"index": 0, "finish_reason": "stop", "delta": {}}],
-            "model": "gpt-oss-120b", "object": "chat.completion.chunk",
-            "usage": {"prompt_tokens": 75, "completion_tokens": 54, "total_tokens": 129},
-        })
+        chunk6 = json.dumps(
+            {
+                "choices": [{"index": 0, "finish_reason": "stop", "delta": {}}],
+                "model": "gpt-oss-120b",
+                "object": "chat.completion.chunk",
+                "usage": {"prompt_tokens": 75, "completion_tokens": 54, "total_tokens": 129},
+            }
+        )
 
         # All lines use "data:" with NO space (corporate server format)
-        response = _make_sse_response([
-            f"data:{chunk0}",
-            f"data:{chunk1}",
-            f"data:{chunk2}",
-            f"data:{chunk3}",
-            f"data:{chunk4}",
-            f"data:{chunk5}",
-            f"data:{chunk6}",
-            # No [DONE] marker
-        ])
+        response = _make_sse_response(
+            [
+                f"data:{chunk0}",
+                f"data:{chunk1}",
+                f"data:{chunk2}",
+                f"data:{chunk3}",
+                f"data:{chunk4}",
+                f"data:{chunk5}",
+                f"data:{chunk6}",
+                # No [DONE] marker
+            ]
+        )
 
         events = []
         async for event in openai_provider._parse_stream(response):
@@ -396,17 +411,23 @@ class TestReasoningContentField:
         """reasoning_content field in delta yields ReasoningDelta events."""
         from nexus3.core.types import ContentDelta, ReasoningDelta, StreamComplete
 
-        reasoning_chunk = json.dumps({
-            "choices": [{"delta": {"reasoning_content": "Let me think..."}, "finish_reason": None}]
-        })
-        content_chunk = json.dumps({
-            "choices": [{"delta": {"content": "Hello!"}, "finish_reason": "stop"}]
-        })
-        response = _make_sse_response([
-            f"data: {reasoning_chunk}",
-            f"data: {content_chunk}",
-            "data: [DONE]",
-        ])
+        reasoning_chunk = json.dumps(
+            {
+                "choices": [
+                    {"delta": {"reasoning_content": "Let me think..."}, "finish_reason": None}
+                ]
+            }
+        )
+        content_chunk = json.dumps(
+            {"choices": [{"delta": {"content": "Hello!"}, "finish_reason": "stop"}]}
+        )
+        response = _make_sse_response(
+            [
+                f"data: {reasoning_chunk}",
+                f"data: {content_chunk}",
+                "data: [DONE]",
+            ]
+        )
 
         events = []
         async for event in openai_provider._parse_stream(response):
@@ -422,19 +443,19 @@ class TestReasoningContentField:
         assert events[2].message.content == "Hello!"
 
     @pytest.mark.asyncio
-    async def test_reasoning_field_still_works(
-        self, openai_provider: OpenRouterProvider
-    ) -> None:
+    async def test_reasoning_field_still_works(self, openai_provider: OpenRouterProvider) -> None:
         """Legacy 'reasoning' field (Grok/xAI) still yields ReasoningDelta."""
-        from nexus3.core.types import ReasoningDelta, StreamComplete
+        from nexus3.core.types import ReasoningDelta
 
-        chunk = json.dumps({
-            "choices": [{"delta": {"reasoning": "thinking..."}, "finish_reason": None}]
-        })
-        response = _make_sse_response([
-            f"data: {chunk}",
-            "data: [DONE]",
-        ])
+        chunk = json.dumps(
+            {"choices": [{"delta": {"reasoning": "thinking..."}, "finish_reason": None}]}
+        )
+        response = _make_sse_response(
+            [
+                f"data: {chunk}",
+                "data: [DONE]",
+            ]
+        )
 
         events = []
         async for event in openai_provider._parse_stream(response):
@@ -450,17 +471,26 @@ class TestReasoningContentField:
         """reasoning_content is NOT accumulated into the final message content."""
         from nexus3.core.types import StreamComplete
 
-        reasoning_chunk = json.dumps({
-            "choices": [{"delta": {"reasoning_content": "Thinking about the answer"}, "finish_reason": None}]
-        })
-        content_chunk = json.dumps({
-            "choices": [{"delta": {"content": "42"}, "finish_reason": "stop"}]
-        })
-        response = _make_sse_response([
-            f"data: {reasoning_chunk}",
-            f"data: {content_chunk}",
-            "data: [DONE]",
-        ])
+        reasoning_chunk = json.dumps(
+            {
+                "choices": [
+                    {
+                        "delta": {"reasoning_content": "Thinking about the answer"},
+                        "finish_reason": None,
+                    }
+                ]
+            }
+        )
+        content_chunk = json.dumps(
+            {"choices": [{"delta": {"content": "42"}, "finish_reason": "stop"}]}
+        )
+        response = _make_sse_response(
+            [
+                f"data: {reasoning_chunk}",
+                f"data: {content_chunk}",
+                "data: [DONE]",
+            ]
+        )
 
         events = []
         async for event in openai_provider._parse_stream(response):
@@ -479,33 +509,40 @@ class TestNonStreamingReasoningContent:
     ) -> None:
         """Non-streaming response with reasoning_content emits DEBUG log."""
         response_data = {
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": "The answer is 42.",
-                    "reasoning_content": "Let me think about this carefully...",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "The answer is 42.",
+                        "reasoning_content": "Let me think about this carefully...",
+                    }
                 }
-            }]
+            ]
         }
 
         with caplog.at_level("DEBUG", logger="nexus3.provider.openai_compat"):
             message = openai_provider._parse_response(response_data)
 
         assert message.content == "The answer is 42."
-        assert any("reasoning" in r.message.lower() and "36 chars" in r.message for r in caplog.records)
+        assert any(
+            "reasoning" in r.message.lower() and "36 chars" in r.message
+            for r in caplog.records
+        )
 
     def test_reasoning_field_logged(
         self, openai_provider: OpenRouterProvider, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Non-streaming response with legacy 'reasoning' field also logs."""
         response_data = {
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": "Hello!",
-                    "reasoning": "Thinking...",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "Hello!",
+                        "reasoning": "Thinking...",
+                    }
                 }
-            }]
+            ]
         }
 
         with caplog.at_level("DEBUG", logger="nexus3.provider.openai_compat"):
@@ -519,12 +556,14 @@ class TestNonStreamingReasoningContent:
     ) -> None:
         """Non-streaming response without reasoning does not emit reasoning log."""
         response_data = {
-            "choices": [{
-                "message": {
-                    "role": "assistant",
-                    "content": "Just content.",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "Just content.",
+                    }
                 }
-            }]
+            ]
         }
 
         with caplog.at_level("DEBUG", logger="nexus3.provider.openai_compat"):
@@ -549,6 +588,7 @@ class TestAnthropicEmptyStream:
 
         assert len(events) == 1
         from nexus3.core.types import StreamComplete
+
         assert isinstance(events[0], StreamComplete)
         assert events[0].message.content == ""
 
@@ -561,22 +601,25 @@ class TestAnthropicEmptyStream:
         anthropic_provider._raw_log = raw_log
 
         lines = [
-            'event: message_start',
+            "event: message_start",
             'data: {"type": "message_start", "message": {"usage": {}}}',
-            '',
-            'event: content_block_start',
+            "",
+            "event: content_block_start",
             'data: {"type": "content_block_start", "content_block": {"type": "text", "text": ""}}',
-            '',
-            'event: content_block_delta',
-            'data: {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hello"}}',
-            '',
-            'event: content_block_stop',
+            "",
+            "event: content_block_delta",
+            (
+                'data: {"type": "content_block_delta", "delta": '
+                '{"type": "text_delta", "text": "Hello"}}'
+            ),
+            "",
+            "event: content_block_stop",
             'data: {"type": "content_block_stop"}',
-            '',
-            'event: message_delta',
+            "",
+            "event: message_delta",
             'data: {"type": "message_delta", "delta": {"stop_reason": "end_turn"}}',
-            '',
-            'event: message_stop',
+            "",
+            "event: message_stop",
             'data: {"type": "message_stop"}',
         ]
         response = _make_sse_response(lines)
@@ -595,13 +638,15 @@ class TestAnthropicEmptyStream:
         self, anthropic_provider: AnthropicProvider, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Completed empty Anthropic stream triggers a warning log."""
-        response = _make_sse_response([
-            'event: message_start',
-            'data: {"type": "message_start", "message": {"usage": {}}}',
-            '',
-            'event: message_stop',
-            'data: {"type": "message_stop"}',
-        ])
+        response = _make_sse_response(
+            [
+                "event: message_start",
+                'data: {"type": "message_start", "message": {"usage": {}}}',
+                "",
+                "event: message_stop",
+                'data: {"type": "message_stop"}',
+            ]
+        )
         with caplog.at_level("WARNING", logger="nexus3.provider.anthropic"):
             async for _ in anthropic_provider._parse_stream(response):
                 pass
@@ -621,18 +666,16 @@ class TestAnthropicEmptyStream:
         assert not any("Empty stream response" in r.message for r in caplog.records)
 
     @pytest.mark.asyncio
-    async def test_event_count_tracked(
-        self, anthropic_provider: AnthropicProvider
-    ) -> None:
+    async def test_event_count_tracked(self, anthropic_provider: AnthropicProvider) -> None:
         """Events are counted correctly for Anthropic."""
         raw_log = MagicMock()
         anthropic_provider._raw_log = raw_log
 
         lines = [
-            'event: message_start',
+            "event: message_start",
             'data: {"type": "message_start", "message": {"usage": {}}}',
-            '',
-            'event: message_stop',
+            "",
+            "event: message_stop",
             'data: {"type": "message_stop"}',
         ]
         response = _make_sse_response(lines)
@@ -651,22 +694,22 @@ class TestAnthropicEmptyStream:
         from nexus3.core.types import StreamComplete
 
         lines = [
-            'event:message_start',
+            "event:message_start",
             'data:{"type": "message_start", "message": {"usage": {}}}',
-            '',
-            'event:content_block_start',
+            "",
+            "event:content_block_start",
             'data:{"type": "content_block_start", "content_block": {"type": "text", "text": ""}}',
-            '',
-            'event:content_block_delta',
+            "",
+            "event:content_block_delta",
             'data:{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hi"}}',
-            '',
-            'event:content_block_stop',
+            "",
+            "event:content_block_stop",
             'data:{"type": "content_block_stop"}',
-            '',
-            'event:message_delta',
+            "",
+            "event:message_delta",
             'data:{"type": "message_delta", "delta": {"stop_reason": "end_turn"}}',
-            '',
-            'event:message_stop',
+            "",
+            "event:message_stop",
             'data:{"type": "message_stop"}',
         ]
         response = _make_sse_response(lines)

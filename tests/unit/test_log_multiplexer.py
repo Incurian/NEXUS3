@@ -202,7 +202,6 @@ class TestLogMultiplexerAsync:
 
         async def simulate_request(agent_id: str, n: int):
             """Simulate multiple log calls with interleaved awaits."""
-            callback = multiplexer._callbacks[agent_id]
             with multiplexer.agent_context(agent_id):
                 for i in range(n):
                     multiplexer.on_request(f"/{agent_id}/req{i}", {"i": i})

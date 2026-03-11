@@ -8,9 +8,6 @@ The fix holds the lock for the entire operation: ID generation + agent creation.
 """
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 
 class TestCreateTempRaceCondition:
@@ -59,7 +56,6 @@ class TestCreateTempRaceCondition:
 
         # Simulate the OLD buggy behavior
         existing_ids: set[str] = set()
-        generated_ids: list[str] = []
         lock = asyncio.Lock()
 
         async def buggy_create_temp() -> str:
@@ -112,10 +108,6 @@ class TestCreateTempLockBehavior:
         # This is a behavioral test - we verify that:
         # 1. The lock is acquired
         # 2. It's not released until the agent is stored
-
-        lock_held_during_create = False
-
-        from nexus3.rpc.pool import AgentPool
 
         # We can't easily mock the internals, but we can verify
         # the behavior indirectly through the race test above.

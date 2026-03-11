@@ -14,7 +14,6 @@ import pytest
 
 from nexus3.rpc.detection import DetectionResult, detect_server, wait_for_server
 
-
 # -----------------------------------------------------------------------------
 # DetectionResult Enum Tests
 # -----------------------------------------------------------------------------

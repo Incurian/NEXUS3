@@ -9,16 +9,16 @@ Tests for:
 - resolve_preset(): Resolves preset names to AgentPermissions
 """
 
+
 import pytest
-from pathlib import Path
 
 from nexus3.core.permissions import (
+    AgentPermissions,
+    PermissionDelta,
     PermissionLevel,
     PermissionPolicy,
-    ToolPermission,
     PermissionPreset,
-    PermissionDelta,
-    AgentPermissions,
+    ToolPermission,
     get_builtin_presets,
     resolve_preset,
 )

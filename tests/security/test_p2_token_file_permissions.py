@@ -117,7 +117,9 @@ class TestServerTokenManagerLoad:
         token = manager.load()
         assert token == expected_token
 
-    def test_load_insecure_file_warns_nonstrict(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    def test_load_insecure_file_warns_nonstrict(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """Loading a 0644 file in non-strict mode warns but succeeds."""
         manager = ServerTokenManager(port=9999, nexus_dir=tmp_path, strict_permissions=False)
         expected_token = generate_api_key()
@@ -128,6 +130,7 @@ class TestServerTokenManagerLoad:
         os.chmod(token_file, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)  # 0644
 
         import logging
+
         with caplog.at_level(logging.WARNING):
             token = manager.load()
 
@@ -183,6 +186,7 @@ class TestDiscoverRpcToken:
         os.chmod(token_file, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)  # 0644
 
         import logging
+
         with caplog.at_level(logging.WARNING):
             token = discover_rpc_token(nexus_dir=tmp_path, strict_permissions=False)
 
@@ -218,9 +222,13 @@ class TestDiscoverRpcToken:
             f.write(expected_token)
 
         token = discover_rpc_token(port=9999, nexus_dir=tmp_path, strict_permissions=True)
-        assert token == expected_token  # Should get the secure default, not the insecure port-specific
+        assert (
+            token == expected_token
+        )  # Should get the secure default, not the insecure port-specific
 
-    def test_discover_env_var_bypasses_file_check(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_discover_env_var_bypasses_file_check(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Environment variable token bypasses file permission checks."""
         expected_token = generate_api_key()
         monkeypatch.setenv("NEXUS3_API_KEY", expected_token)
@@ -277,6 +285,7 @@ class TestWindowsPermissionSkip:
         """On Windows, permission check always returns True."""
         # Mock sys.platform to simulate Windows
         import sys
+
         monkeypatch.setattr(sys, "platform", "win32")
 
         # Create token file - permissions don't matter on Windows
@@ -293,6 +302,7 @@ class TestWindowsPermissionSkip:
     ) -> None:
         """On Windows, 'insecure' permissions don't trigger warnings."""
         import sys
+
         monkeypatch.setattr(sys, "platform", "win32")
 
         token_file = tmp_path / "token"

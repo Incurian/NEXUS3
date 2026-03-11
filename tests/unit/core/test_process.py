@@ -19,9 +19,9 @@ import pytest
 from nexus3.core.process import (
     GRACEFUL_TIMEOUT,
     WINDOWS_CREATIONFLAGS,
-    terminate_process_tree,
     _terminate_unix,
     _terminate_windows,
+    terminate_process_tree,
 )
 
 
@@ -75,7 +75,9 @@ class TestTerminateProcessTree:
 
         with patch("nexus3.core.process.sys") as mock_sys:
             mock_sys.platform = "win32"
-            with patch("nexus3.core.process._terminate_windows", new_callable=AsyncMock) as mock_windows:
+            with patch(
+                "nexus3.core.process._terminate_windows", new_callable=AsyncMock
+            ) as mock_windows:
                 await terminate_process_tree(process, graceful_timeout=1.0)
                 mock_windows.assert_called_once_with(process, 1234, 1.0)
 
@@ -203,7 +205,7 @@ class TestTerminateUnix:
         with patch("nexus3.core.process.os.getpgid", return_value=5678) as mock_getpgid:
             # First call succeeds (for SIGTERM), second fails (for SIGKILL)
             mock_getpgid.side_effect = [5678, ProcessLookupError]
-            with patch("nexus3.core.process.os.killpg") as mock_killpg:
+            with patch("nexus3.core.process.os.killpg"):
                 await _terminate_unix(process, 1234, 0.01)
 
                 process.kill.assert_called_once()
@@ -271,12 +273,17 @@ class TestTerminateWindowsMocked:
         with patch("nexus3.core.process.os.kill"):
             with patch("nexus3.core.process.signal") as mock_signal:
                 mock_signal.CTRL_BREAK_EVENT = 1
-                with patch("nexus3.core.process.asyncio.create_subprocess_exec",
-                           return_value=taskkill_proc) as mock_exec:
+                with patch(
+                    "nexus3.core.process.asyncio.create_subprocess_exec", return_value=taskkill_proc
+                ) as mock_exec:
                     await _terminate_windows(process, 1234, 0.01)
 
                     mock_exec.assert_called_once_with(
-                        "taskkill", "/T", "/F", "/PID", "1234",
+                        "taskkill",
+                        "/T",
+                        "/F",
+                        "/PID",
+                        "1234",
                         stdout=asyncio.subprocess.DEVNULL,
                         stderr=asyncio.subprocess.DEVNULL,
                         creationflags=WINDOWS_CREATIONFLAGS,
@@ -303,8 +310,9 @@ class TestTerminateWindowsMocked:
         with patch("nexus3.core.process.os.kill"):
             with patch("nexus3.core.process.signal") as mock_signal:
                 mock_signal.CTRL_BREAK_EVENT = 1
-                with patch("nexus3.core.process.asyncio.create_subprocess_exec",
-                           return_value=taskkill_proc):
+                with patch(
+                    "nexus3.core.process.asyncio.create_subprocess_exec", return_value=taskkill_proc
+                ):
                     await _terminate_windows(process, 1234, 0.01)
 
                     process.kill.assert_called_once()
@@ -363,8 +371,10 @@ class TestTerminateWindowsMocked:
         with patch("nexus3.core.process.os.kill"):
             with patch("nexus3.core.process.signal") as mock_signal:
                 mock_signal.CTRL_BREAK_EVENT = 1
-                with patch("nexus3.core.process.asyncio.create_subprocess_exec",
-                           side_effect=FileNotFoundError):
+                with patch(
+                    "nexus3.core.process.asyncio.create_subprocess_exec",
+                    side_effect=FileNotFoundError,
+                ):
                     await _terminate_windows(process, 1234, 0.01)
 
                     process.kill.assert_called_once()
@@ -387,8 +397,9 @@ class TestTerminateWindowsMocked:
         with patch("nexus3.core.process.os.kill"):
             with patch("nexus3.core.process.signal") as mock_signal:
                 mock_signal.CTRL_BREAK_EVENT = 1
-                with patch("nexus3.core.process.asyncio.create_subprocess_exec",
-                           side_effect=OSError):
+                with patch(
+                    "nexus3.core.process.asyncio.create_subprocess_exec", side_effect=OSError
+                ):
                     await _terminate_windows(process, 1234, 0.01)
 
                     process.kill.assert_called_once()
@@ -412,8 +423,10 @@ class TestTerminateWindowsMocked:
         with patch("nexus3.core.process.os.kill"):
             with patch("nexus3.core.process.signal") as mock_signal:
                 mock_signal.CTRL_BREAK_EVENT = 1
-                with patch("nexus3.core.process.asyncio.create_subprocess_exec",
-                           side_effect=FileNotFoundError):
+                with patch(
+                    "nexus3.core.process.asyncio.create_subprocess_exec",
+                    side_effect=FileNotFoundError,
+                ):
                     # Should not raise
                     await _terminate_windows(process, 1234, 0.01)
 
@@ -433,8 +446,9 @@ class TestCustomTimeout:
             mock_sys.platform = "linux"
             with patch("nexus3.core.process.os.getpgid", return_value=5678):
                 with patch("nexus3.core.process.os.killpg"):
-                    with patch("nexus3.core.process.asyncio.wait_for",
-                               wraps=asyncio.wait_for) as mock_wait_for:
+                    with patch(
+                        "nexus3.core.process.asyncio.wait_for", wraps=asyncio.wait_for
+                    ) as mock_wait_for:
                         await terminate_process_tree(process, graceful_timeout=5.0)
 
                         # Check that wait_for was called with the custom timeout

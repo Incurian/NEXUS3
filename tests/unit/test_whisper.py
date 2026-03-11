@@ -3,7 +3,6 @@
 Tests for WhisperMode state management class.
 """
 
-import pytest
 
 from nexus3.cli.whisper import WhisperMode
 

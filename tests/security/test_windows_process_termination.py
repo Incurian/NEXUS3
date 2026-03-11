@@ -17,9 +17,9 @@ import pytest
 
 from nexus3.core.process import (
     GRACEFUL_TIMEOUT,
-    terminate_process_tree,
     _terminate_unix,
     _terminate_windows,
+    terminate_process_tree,
 )
 
 

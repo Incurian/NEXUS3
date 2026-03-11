@@ -8,16 +8,13 @@ These tests ensure that:
 """
 
 import re
-from typing import Set
-
-import pytest
 
 
 class TestMainHelpCompleteness:
     """Tests for the main HELP_TEXT containing all commands."""
 
     # All implemented REPL commands
-    IMPLEMENTED_COMMANDS: Set[str] = {
+    IMPLEMENTED_COMMANDS: set[str] = {
         # Agent management
         "agent", "whisper", "over", "list", "create", "destroy",
         "send", "status", "cancel", "shutdown",
@@ -186,7 +183,7 @@ class TestCommandImplementationExists:
     }
 
     # Commands implemented in core.py (via commands module)
-    CORE_COMMANDS: Set[str] = {
+    CORE_COMMANDS: set[str] = {
         "list", "create", "destroy", "send", "status", "cancel",
         "save", "clone", "rename", "delete", "shutdown",
     }

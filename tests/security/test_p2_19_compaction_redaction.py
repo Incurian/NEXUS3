@@ -8,7 +8,6 @@ This prevents secrets from being leaked to the summarization model, which
 may have different security properties than the main conversation model.
 """
 
-import pytest
 
 from nexus3.config.schema import CompactionConfig
 from nexus3.context.compaction import format_messages_for_summary
@@ -259,7 +258,12 @@ class TestJWTRedaction:
     def test_redacts_jwt_token(self) -> None:
         """JWT token is redacted."""
         # Standard JWT format: header.payload.signature (all base64url)
-        text = "token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+        text = (
+            "token: "
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+            "eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ."
+            "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+        )
         result = redact_secrets(text)
         assert "eyJhbGciOiJIUzI1NiI" not in result
         assert REDACTED in result
@@ -579,7 +583,12 @@ class TestEdgeCases:
         messages = [
             Message(
                 role=Role.USER,
-                content="Line 1\nLine 2\nKey: sk-abcdefghijklmnopqrstuvwxyz123456789012345678\nLine 4",
+                content=(
+                    "Line 1\n"
+                    "Line 2\n"
+                    "Key: sk-abcdefghijklmnopqrstuvwxyz123456789012345678\n"
+                    "Line 4"
+                ),
             )
         ]
         result = format_messages_for_summary(messages)

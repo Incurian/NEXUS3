@@ -1,7 +1,5 @@
 """Tests for prompt caching support across providers."""
 
-import pytest
-from unittest.mock import MagicMock
 
 from nexus3.config.schema import AuthMethod, ProviderConfig
 from nexus3.core.types import Message, Role

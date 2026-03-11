@@ -7,8 +7,6 @@ the sessions directory.
 The fix adds O_NOFOLLOW to os.open() which causes ELOOP error on symlinks.
 """
 
-import os
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -94,10 +92,12 @@ class TestSecureWriteFileSymlinkDefense:
 class TestSessionManagerSymlinkDefense:
     """Test SessionManager operations refuse symlinks at session paths."""
 
-    def test_save_session_refuses_symlink(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_save_session_refuses_symlink(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """save_session should refuse if session path is a symlink."""
-        from nexus3.session.session_manager import SessionManager, SessionManagerError
         from nexus3.session.persistence import SavedSession
+        from nexus3.session.session_manager import SessionManager, SessionManagerError
 
         # Patch get_nexus_dir to use our temp path
         monkeypatch.setattr(
@@ -120,6 +120,7 @@ class TestSessionManagerSymlinkDefense:
 
         # Create a saved session to save
         from datetime import datetime
+
         saved = SavedSession(
             agent_id="malicious-session",
             created_at=datetime.now(),

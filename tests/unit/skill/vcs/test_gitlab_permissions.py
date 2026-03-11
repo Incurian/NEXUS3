@@ -51,61 +51,67 @@ class TestCanUseGitlab:
 class TestIsGitlabReadOnly:
     """Tests for is_gitlab_read_only() function."""
 
-    @pytest.mark.parametrize("action", [
-        "list",
-        "get",
-        "search",
-        "diff",
-        "commits",
-        "pipelines",
-        "jobs",
-        "variables",
-        "log",
-        "status",
-        "browse",
-        "list-protected",
-        "list-user-lists",
-        "cadences",
-    ])
+    @pytest.mark.parametrize(
+        "action",
+        [
+            "list",
+            "get",
+            "search",
+            "diff",
+            "commits",
+            "pipelines",
+            "jobs",
+            "variables",
+            "log",
+            "status",
+            "browse",
+            "list-protected",
+            "list-user-lists",
+            "cadences",
+        ],
+    )
     def test_read_only_actions(self, action: str) -> None:
         """Read-only actions are correctly identified."""
         assert is_gitlab_read_only(action) is True
 
-    @pytest.mark.parametrize("action", [
-        "create",
-        "update",
-        "delete",
-        "close",
-        "reopen",
-        "merge",
-        "approve",
-        "unapprove",
-        "comment",
-        "reply",
-        "resolve",
-        "unresolve",
-        "publish",
-        "add",
-        "remove",
-        "spend",
-        "estimate",
-        "reset",
-        "retry",
-        "cancel",
-        "play",
-        "erase",
-        "download",
-        "download-file",
-        "download-ref",
-        "keep",
-        "protect",
-        "unprotect",
-        "enable",
-        "create-user-list",
-        "update-user-list",
-        "delete-user-list",
-        "fork",
-    ])
+    @pytest.mark.parametrize(
+        "action",
+        [
+            "create",
+            "update",
+            "delete",
+            "close",
+            "reopen",
+            "merge",
+            "approve",
+            "unapprove",
+            "comment",
+            "reply",
+            "resolve",
+            "unresolve",
+            "publish",
+            "add",
+            "remove",
+            "spend",
+            "estimate",
+            "reset",
+            "retry",
+            "cancel",
+            "play",
+            "erase",
+            "download",
+            "download-file",
+            "download-ref",
+            "keep",
+            "protect",
+            "unprotect",
+            "enable",
+            "create-user-list",
+            "update-user-list",
+            "delete-user-list",
+            "fork",
+        ],
+    )
     def test_destructive_actions(self, action: str) -> None:
         """Destructive actions are not read-only."""
         assert is_gitlab_read_only(action) is False
@@ -127,26 +133,77 @@ class TestReadOnlyDestructiveConsistency:
     def test_all_read_only_are_documented(self) -> None:
         """All read-only actions should be in the frozenset."""
         expected = {
-            "list", "get", "search", "diff", "commits", "pipelines",
-            "jobs", "variables", "log", "status", "browse",
-            "list-protected", "list-user-lists", "cadences", "list-cadences",
-            "issues", "merge-requests", "list-issues", "list-lists",
-            "stats", "rules", "whoami",
+            "list",
+            "get",
+            "search",
+            "diff",
+            "commits",
+            "pipelines",
+            "jobs",
+            "variables",
+            "log",
+            "status",
+            "browse",
+            "list-protected",
+            "list-user-lists",
+            "cadences",
+            "list-cadences",
+            "issues",
+            "merge-requests",
+            "list-issues",
+            "list-lists",
+            "stats",
+            "rules",
+            "whoami",
         }
         assert GITLAB_READ_ONLY_ACTIONS == expected
 
     def test_all_destructive_are_documented(self) -> None:
         """All destructive actions should be in the frozenset."""
         expected = {
-            "create", "update", "delete", "close", "reopen", "merge",
-            "approve", "unapprove", "comment", "reply", "resolve",
-            "unresolve", "publish", "add", "remove", "spend", "estimate",
-            "reset", "retry", "cancel", "play", "erase", "download",
-            "download-file", "download-ref", "keep", "protect", "unprotect",
-            "enable", "create-user-list", "update-user-list", "delete-user-list",
-            "fork", "create-rule", "delete-rule", "create-cadence",
-            "reset-estimate", "reset-spent", "add-issue", "remove-issue",
-            "create-list", "update-list", "delete-list",
+            "create",
+            "update",
+            "delete",
+            "close",
+            "reopen",
+            "merge",
+            "approve",
+            "unapprove",
+            "comment",
+            "reply",
+            "resolve",
+            "unresolve",
+            "publish",
+            "add",
+            "remove",
+            "spend",
+            "estimate",
+            "reset",
+            "retry",
+            "cancel",
+            "play",
+            "erase",
+            "download",
+            "download-file",
+            "download-ref",
+            "keep",
+            "protect",
+            "unprotect",
+            "enable",
+            "create-user-list",
+            "update-user-list",
+            "delete-user-list",
+            "fork",
+            "create-rule",
+            "delete-rule",
+            "create-cadence",
+            "reset-estimate",
+            "reset-spent",
+            "add-issue",
+            "remove-issue",
+            "create-list",
+            "update-list",
+            "delete-list",
         }
         assert GITLAB_DESTRUCTIVE_ACTIONS == expected
 
@@ -178,123 +235,159 @@ class TestRequiresGitlabConfirmation:
 
     def test_none_permissions_requires_confirmation(self) -> None:
         """None permissions require confirmation (defense in depth)."""
-        assert requires_gitlab_confirmation(
-            permissions=None,
-            skill_name="gitlab_issue",
-            instance_host="gitlab.com",
-            action="create",
-        ) is True
+        assert (
+            requires_gitlab_confirmation(
+                permissions=None,
+                skill_name="gitlab_issue",
+                instance_host="gitlab.com",
+                action="create",
+            )
+            is True
+        )
 
     def test_yolo_never_requires_confirmation(self, yolo_permissions: AgentPermissions) -> None:
         """YOLO mode never requires confirmation."""
         # Read-only action
-        assert requires_gitlab_confirmation(
-            permissions=yolo_permissions,
-            skill_name="gitlab_issue",
-            instance_host="gitlab.com",
-            action="list",
-        ) is False
+        assert (
+            requires_gitlab_confirmation(
+                permissions=yolo_permissions,
+                skill_name="gitlab_issue",
+                instance_host="gitlab.com",
+                action="list",
+            )
+            is False
+        )
 
         # Destructive action
-        assert requires_gitlab_confirmation(
-            permissions=yolo_permissions,
-            skill_name="gitlab_issue",
-            instance_host="gitlab.com",
-            action="create",
-        ) is False
+        assert (
+            requires_gitlab_confirmation(
+                permissions=yolo_permissions,
+                skill_name="gitlab_issue",
+                instance_host="gitlab.com",
+                action="create",
+            )
+            is False
+        )
 
     def test_trusted_read_only_no_confirmation(self, trusted_permissions: AgentPermissions) -> None:
         """TRUSTED mode doesn't require confirmation for read-only actions."""
-        assert requires_gitlab_confirmation(
-            permissions=trusted_permissions,
-            skill_name="gitlab_issue",
-            instance_host="gitlab.com",
-            action="list",
-        ) is False
+        assert (
+            requires_gitlab_confirmation(
+                permissions=trusted_permissions,
+                skill_name="gitlab_issue",
+                instance_host="gitlab.com",
+                action="list",
+            )
+            is False
+        )
 
-        assert requires_gitlab_confirmation(
-            permissions=trusted_permissions,
-            skill_name="gitlab_mr",
-            instance_host="gitlab.com",
-            action="get",
-        ) is False
+        assert (
+            requires_gitlab_confirmation(
+                permissions=trusted_permissions,
+                skill_name="gitlab_mr",
+                instance_host="gitlab.com",
+                action="get",
+            )
+            is False
+        )
 
-    def test_trusted_destructive_requires_confirmation(self, trusted_permissions: AgentPermissions) -> None:
+    def test_trusted_destructive_requires_confirmation(
+        self, trusted_permissions: AgentPermissions
+    ) -> None:
         """TRUSTED mode requires confirmation for destructive actions."""
-        assert requires_gitlab_confirmation(
-            permissions=trusted_permissions,
-            skill_name="gitlab_issue",
-            instance_host="gitlab.com",
-            action="create",
-        ) is True
+        assert (
+            requires_gitlab_confirmation(
+                permissions=trusted_permissions,
+                skill_name="gitlab_issue",
+                instance_host="gitlab.com",
+                action="create",
+            )
+            is True
+        )
 
-        assert requires_gitlab_confirmation(
-            permissions=trusted_permissions,
-            skill_name="gitlab_mr",
-            instance_host="gitlab.com",
-            action="merge",
-        ) is True
+        assert (
+            requires_gitlab_confirmation(
+                permissions=trusted_permissions,
+                skill_name="gitlab_mr",
+                instance_host="gitlab.com",
+                action="merge",
+            )
+            is True
+        )
 
     def test_trusted_with_session_allowance(self, trusted_permissions: AgentPermissions) -> None:
         """TRUSTED mode skips confirmation if skill@instance is allowed in session."""
         # Add allowance
-        trusted_permissions.session_allowances.add_gitlab_skill(
-            "gitlab_issue", "gitlab.com"
-        )
+        trusted_permissions.session_allowances.add_gitlab_skill("gitlab_issue", "gitlab.com")
 
         # Now destructive action doesn't require confirmation
-        assert requires_gitlab_confirmation(
-            permissions=trusted_permissions,
-            skill_name="gitlab_issue",
-            instance_host="gitlab.com",
-            action="create",
-        ) is False
+        assert (
+            requires_gitlab_confirmation(
+                permissions=trusted_permissions,
+                skill_name="gitlab_issue",
+                instance_host="gitlab.com",
+                action="create",
+            )
+            is False
+        )
 
-    def test_session_allowance_is_skill_specific(self, trusted_permissions: AgentPermissions) -> None:
+    def test_session_allowance_is_skill_specific(
+        self, trusted_permissions: AgentPermissions
+    ) -> None:
         """Session allowance for one skill doesn't apply to another."""
         # Allow gitlab_issue
-        trusted_permissions.session_allowances.add_gitlab_skill(
-            "gitlab_issue", "gitlab.com"
-        )
+        trusted_permissions.session_allowances.add_gitlab_skill("gitlab_issue", "gitlab.com")
 
         # gitlab_issue doesn't need confirmation
-        assert requires_gitlab_confirmation(
-            permissions=trusted_permissions,
-            skill_name="gitlab_issue",
-            instance_host="gitlab.com",
-            action="create",
-        ) is False
-
-        # gitlab_mr still needs confirmation
-        assert requires_gitlab_confirmation(
-            permissions=trusted_permissions,
-            skill_name="gitlab_mr",
-            instance_host="gitlab.com",
-            action="create",
-        ) is True
-
-    def test_session_allowance_is_instance_specific(self, trusted_permissions: AgentPermissions) -> None:
-        """Session allowance for one instance doesn't apply to another."""
-        # Allow gitlab_issue on gitlab.com
-        trusted_permissions.session_allowances.add_gitlab_skill(
-            "gitlab_issue", "gitlab.com"
+        assert (
+            requires_gitlab_confirmation(
+                permissions=trusted_permissions,
+                skill_name="gitlab_issue",
+                instance_host="gitlab.com",
+                action="create",
+            )
+            is False
         )
 
+        # gitlab_mr still needs confirmation
+        assert (
+            requires_gitlab_confirmation(
+                permissions=trusted_permissions,
+                skill_name="gitlab_mr",
+                instance_host="gitlab.com",
+                action="create",
+            )
+            is True
+        )
+
+    def test_session_allowance_is_instance_specific(
+        self, trusted_permissions: AgentPermissions
+    ) -> None:
+        """Session allowance for one instance doesn't apply to another."""
+        # Allow gitlab_issue on gitlab.com
+        trusted_permissions.session_allowances.add_gitlab_skill("gitlab_issue", "gitlab.com")
+
         # gitlab.com doesn't need confirmation
-        assert requires_gitlab_confirmation(
-            permissions=trusted_permissions,
-            skill_name="gitlab_issue",
-            instance_host="gitlab.com",
-            action="create",
-        ) is False
+        assert (
+            requires_gitlab_confirmation(
+                permissions=trusted_permissions,
+                skill_name="gitlab_issue",
+                instance_host="gitlab.com",
+                action="create",
+            )
+            is False
+        )
 
         # work.gitlab.com still needs confirmation
-        assert requires_gitlab_confirmation(
-            permissions=trusted_permissions,
-            skill_name="gitlab_issue",
-            instance_host="work.gitlab.com",
-            action="create",
-        ) is True
+        assert (
+            requires_gitlab_confirmation(
+                permissions=trusted_permissions,
+                skill_name="gitlab_issue",
+                instance_host="work.gitlab.com",
+                action="create",
+            )
+            is True
+        )
 
 
 class TestSessionAllowancesGitlab:

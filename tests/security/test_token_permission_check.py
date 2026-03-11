@@ -15,7 +15,7 @@ from unittest.mock import patch
 import pytest
 
 from nexus3.cli.client_commands import _get_api_key
-from nexus3.rpc.auth import discover_rpc_token, generate_api_key
+from nexus3.rpc.auth import generate_api_key
 
 
 class TestGetApiKeyUsesDiscoverRpcToken:

@@ -292,7 +292,7 @@ class TestDnsRebindingProtection:
         # Simulate DNS returning public IP first, then private IP
         mock_result = [
             (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 80)),  # Public
-            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("10.0.0.50", 80)),      # Private
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("10.0.0.50", 80)),  # Private
         ]
         with patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = mock_result
@@ -305,8 +305,8 @@ class TestDnsRebindingProtection:
     def test_blocks_if_any_address_is_cloud_metadata(self):
         """If DNS returns cloud metadata IP as any address, block."""
         mock_result = [
-            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),         # Public
-            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("169.254.169.254", 80)), # Metadata
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("8.8.8.8", 80)),  # Public
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("169.254.169.254", 80)),  # Metadata
         ]
         with patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = mock_result
@@ -320,7 +320,7 @@ class TestDnsRebindingProtection:
         """If DNS returns IPv6 private address among others, block."""
         mock_result = [
             (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 80)),  # Public IPv4
-            (socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("fc00::1", 80, 0, 0)), # Private IPv6
+            (socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("fc00::1", 80, 0, 0)),  # Private IPv6
         ]
         with patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = mock_result
@@ -335,7 +335,13 @@ class TestDnsRebindingProtection:
         mock_result = [
             (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 80)),  # Public
             (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.35", 80)),  # Public
-            (socket.AF_INET6, socket.SOCK_STREAM, 0, "", ("2606:2800:220:1:248:1893:25c8:1946", 80, 0, 0)),  # Public IPv6
+            (
+                socket.AF_INET6,
+                socket.SOCK_STREAM,
+                0,
+                "",
+                ("2606:2800:220:1:248:1893:25c8:1946", 80, 0, 0),
+            ),  # Public IPv6
         ]
         with patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = mock_result
@@ -347,7 +353,7 @@ class TestDnsRebindingProtection:
         """If DNS returns localhost among others and localhost not allowed, block."""
         mock_result = [
             (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 80)),  # Public
-            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 80)),      # Localhost
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("127.0.0.1", 80)),  # Localhost
         ]
         with patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = mock_result
@@ -398,7 +404,7 @@ class TestMulticastBlocking:
         """If DNS returns multicast among other addresses, block."""
         mock_result = [
             (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("93.184.216.34", 80)),  # Public
-            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("224.0.0.251", 80)),    # mDNS multicast
+            (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("224.0.0.251", 80)),  # mDNS multicast
         ]
         with patch("socket.getaddrinfo") as mock_dns:
             mock_dns.return_value = mock_result

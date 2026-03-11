@@ -5,8 +5,6 @@ import stat
 import string
 from pathlib import Path
 
-import pytest
-
 from nexus3.rpc.auth import (
     API_KEY_PREFIX,
     ServerTokenManager,

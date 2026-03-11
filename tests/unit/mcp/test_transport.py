@@ -11,8 +11,10 @@ both Windows (CRLF) and Unix (LF) line endings.
 """
 
 import asyncio
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from nexus3.mcp.transport import HTTPTransport, StdioTransport, resolve_command
 
 
@@ -96,7 +98,9 @@ class TestHTTPTransportIsConnected:
             assert transport.is_connected is False
 
     @pytest.mark.asyncio
-    async def test_is_connected_with_stale_client_reference(self, mock_session_class: MagicMock) -> None:
+    async def test_is_connected_with_stale_client_reference(
+        self, mock_session_class: MagicMock
+    ) -> None:
         """HTTPTransport.is_connected returns False when client is closed but reference exists."""
         transport = HTTPTransport("http://example.com")
         transport._session_class = mock_session_class
@@ -137,7 +141,9 @@ class TestResolveCommand:
     def test_resolve_command_preserves_arguments(self) -> None:
         """resolve_command() preserves all arguments when resolving on Windows."""
         with patch("nexus3.mcp.transport.sys.platform", "win32"):
-            with patch("nexus3.mcp.transport.shutil.which", return_value="C:\\Program Files\\node\\npx.cmd"):
+            with patch(
+                "nexus3.mcp.transport.shutil.which", return_value="C:\\Program Files\\node\\npx.cmd"
+            ):
                 result = resolve_command(["npx", "mcp-server", "--port", "8080", "--verbose"])
                 assert result == [
                     "C:\\Program Files\\node\\npx.cmd",
@@ -310,8 +316,7 @@ class TestStdioTransportCRLF:
 
         # Two messages in buffer: first with CRLF, second with LF
         transport._read_buffer = (
-            b'{"jsonrpc":"2.0","id":1,"result":"a"}\r\n'
-            b'{"jsonrpc":"2.0","id":2,"result":"b"}\n'
+            b'{"jsonrpc":"2.0","id":1,"result":"a"}\r\n{"jsonrpc":"2.0","id":2,"result":"b"}\n'
         )
 
         # First receive gets first message
