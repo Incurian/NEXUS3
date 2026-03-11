@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from nexus3.cli.trace_palette import TRACE_BODY_STYLES, TRACE_HEADER_STYLES
 from nexus3.display import get_console
 from nexus3.display.safe_sink import SafeSink
 from nexus3.session.storage import MessageRow, SessionStorage
@@ -22,18 +23,8 @@ from nexus3.session.trace import (
 TRACE_PRESETS = ("execution", "debug")
 TRACE_SCOPES = ("active", "subagents")
 DEFAULT_MAX_TOOL_LINES = 50
-_TRACE_HEADER_STYLES = {
-    "user": "bold bright_blue",
-    "assistant": "bold bright_magenta",
-    "tool_call": "bold bright_cyan",
-    "tool_result": "bold bright_green",
-}
-_TRACE_BODY_STYLES = {
-    "user": "blue",
-    "assistant": "magenta",
-    "tool_call": "cyan",
-    "tool_result": "#2c7a4b",
-}
+_TRACE_HEADER_STYLES = TRACE_HEADER_STYLES
+_TRACE_BODY_STYLES = TRACE_BODY_STYLES
 
 
 @dataclass(frozen=True)

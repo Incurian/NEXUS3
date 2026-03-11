@@ -95,7 +95,10 @@ def test_tool_call_trace_line_sanitizes_untrusted_name_and_params() -> None:
         params="path=\\[bold]/tmp/x\\[/bold]\x1b]8;;https://evil\x07x\x1b]8;;\x07",
     )
 
-    assert line == "  [cyan]●[/] \\[red]exec\\[/red]: path=\\[bold]/tmp/x\\[/bold]x"
+    assert line == (
+        "  [bold bright_cyan]●[/] [bold bright_cyan]\\[red]exec\\[/red][/]: "
+        "[cyan]path=\\[bold]/tmp/x\\[/bold]x[/]"
+    )
     assert "\x1b" not in line
 
 
@@ -132,7 +135,10 @@ def test_tool_call_trace_line_omits_inline_visible_tool_id() -> None:
         tool_id="toolu_abc12345",
     )
 
-    assert line == "  [cyan]●[/] search_text: path=README.md"
+    assert (
+        line
+        == "  [bold bright_cyan]●[/] [bold bright_cyan]search_text[/]: [cyan]path=README.md[/]"
+    )
 
 
 def test_sanitize_prompt_html_text_strips_terminal_escapes_and_escapes_html() -> None:
@@ -156,8 +162,10 @@ def test_tool_result_trace_line_sanitizes_preview_and_preserves_done_fallback() 
         duration_str="",
     )
 
-    assert preview_line == "      [green]→[/] \\[bold]ok\\[/bold] (1.2s)"
-    assert done_line == "      [green]→[/] done"
+    assert preview_line == (
+        "      [bold bright_green]→[/] [#2c7a4b]\\[bold]ok\\[/bold][/] (1.2s)"
+    )
+    assert done_line == "      [bold bright_green]→[/] [#2c7a4b]done[/]"
 
 
 def test_tool_result_trace_line_omits_inline_visible_tool_id() -> None:
@@ -170,7 +178,7 @@ def test_tool_result_trace_line_omits_inline_visible_tool_id() -> None:
         tool_id="toolu_abc12345",
     )
 
-    assert line == "      [green]→[/] 2 lines"
+    assert line == "      [bold bright_green]→[/] [#2c7a4b]2 lines[/]"
 
 
 def test_tool_response_trace_line_sanitizes_preview_with_wrapper_parity() -> None:
@@ -182,7 +190,10 @@ def test_tool_response_trace_line_sanitizes_preview_with_wrapper_parity() -> Non
         ellipsis="...",
     )
 
-    assert line == "      [dim cyan]↳ Response: \\[cyan]reply\\[/cyan]...[/]"
+    assert (
+        line
+        == "      [bold bright_green]↳ Response:[/] [#2c7a4b]\\[cyan]reply\\[/cyan]...[/]"
+    )
     assert "\x1b" not in line
 
 
@@ -197,10 +208,10 @@ def test_mcp_result_preview_lines_sanitize_and_truncate_preview_block() -> None:
     )
 
     assert lines == [
-        "      [dim cyan]↳ MCP result preview:[/]",
-        "        \\[cyan]line1\\[/cyan]",
-        "        line2",
-        "      [dim cyan]↳ Preview truncated at 2 lines / 200 chars[/]",
+        "      [bold bright_green]↳ MCP result preview:[/]",
+        "        [#2c7a4b]\\[cyan]line1\\[/cyan][/]",
+        "        [#2c7a4b]line2[/]",
+        "      [dim]↳ Preview truncated at 2 lines / 200 chars[/]",
     ]
     assert all("\x1b" not in line for line in lines)
 
@@ -254,8 +265,10 @@ def test_incoming_started_line_sanitizes_preview_and_source_agent_route() -> Non
         preview="[bold]hello[/bold]\x1b[2J",
     )
 
-    assert line == (
-        "[bold cyan]▶ INCOMING from \\[cyan]agent-2\\[/cyan]:[/] \\[bold]hello\\[/bold]..."
+    assert (
+        line
+        == "[bold bright_magenta]▶ INCOMING from \\[cyan]agent-2\\[/cyan]:[/] "
+        "[magenta]\\[bold]hello\\[/bold]...[/]"
     )
     assert "\x1b" not in line
 
@@ -270,7 +283,11 @@ def test_incoming_started_line_sanitizes_source_for_non_agent_route() -> None:
         preview="preview",
     )
 
-    assert line == "[bold cyan]▶ INCOMING (\\[magenta]rpc\\[/magenta]x):[/] preview..."
+    assert (
+        line
+        == "[bold bright_magenta]▶ INCOMING (\\[magenta]rpc\\[/magenta]x):[/] "
+        "[magenta]preview...[/]"
+    )
     assert "\x1b" not in line
 
 
@@ -283,7 +300,10 @@ def test_incoming_response_sent_line_sanitizes_preview_and_keeps_ellipsis() -> N
         ellipsis="...",
     )
 
-    assert line == "[bold green]✓ Response sent:[/] \\[green]sent\\[/green]..."
+    assert (
+        line
+        == "[bold bright_green]✓ Response sent:[/] [#2c7a4b]\\[green]sent\\[/green]...[/]"
+    )
     assert "\x1b" not in line
 
 
@@ -315,7 +335,10 @@ def test_thought_duration_line_sanitizes_dynamic_duration() -> None:
         duration_seconds="[red]3[/red]\x1b[31m",
     )
 
-    assert line == "  [dim cyan]●[/] [dim]Thought for \\[red]3\\[/red]s[/]"
+    assert (
+        line
+        == "  [bold bright_magenta]●[/] [dim magenta]Thought for \\[red]3\\[/red]s[/]"
+    )
     assert "\x1b" not in line
 
 

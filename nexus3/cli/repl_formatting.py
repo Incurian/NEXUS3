@@ -5,9 +5,17 @@ from __future__ import annotations
 from html import escape as html_escape
 from pathlib import Path
 
+from nexus3.cli.trace_palette import trace_body_style, trace_header_style
 from nexus3.core.text_safety import strip_terminal_escapes
 from nexus3.display.safe_sink import SafeSink
 from nexus3.session.trace import tool_display_id
+
+_ASSISTANT_HEADER_STYLE = trace_header_style("assistant")
+_ASSISTANT_BODY_STYLE = trace_body_style("assistant") or "magenta"
+_TOOL_CALL_HEADER_STYLE = trace_header_style("tool_call")
+_TOOL_CALL_BODY_STYLE = trace_body_style("tool_call") or "cyan"
+_TOOL_RESULT_HEADER_STYLE = trace_header_style("tool_result")
+_TOOL_RESULT_BODY_STYLE = trace_body_style("tool_result") or "green"
 
 
 def _sanitize_tool_trace_text(
@@ -44,8 +52,12 @@ def _format_tool_call_trace_line(
         safe_params = _sanitize_tool_trace_text(
             safe_sink, params, markup_already_escaped=True
         )
-        return f"  [cyan]●[/] {safe_name}: {safe_params}"
-    return f"  [cyan]●[/] {safe_name}"
+        return (
+            f"  [{_TOOL_CALL_HEADER_STYLE}]●[/] "
+            f"[{_TOOL_CALL_HEADER_STYLE}]{safe_name}[/]: "
+            f"[{_TOOL_CALL_BODY_STYLE}]{safe_params}[/]"
+        )
+    return f"  [{_TOOL_CALL_HEADER_STYLE}]●[/] [{_TOOL_CALL_HEADER_STYLE}]{safe_name}[/]"
 
 
 def _format_tool_result_trace_line(
@@ -54,14 +66,23 @@ def _format_tool_result_trace_line(
     """Format a tool success line while preserving trusted Rich wrapper markup."""
     if result_preview:
         safe_preview = _sanitize_tool_trace_text(safe_sink, result_preview)
-        return f"      [green]→[/] {safe_preview}{duration_str}"
-    return f"      [green]→[/] done{duration_str}"
+        return (
+            f"      [{_TOOL_RESULT_HEADER_STYLE}]→[/] "
+            f"[{_TOOL_RESULT_BODY_STYLE}]{safe_preview}[/]{duration_str}"
+        )
+    return (
+        f"      [{_TOOL_RESULT_HEADER_STYLE}]→[/] "
+        f"[{_TOOL_RESULT_BODY_STYLE}]done[/]{duration_str}"
+    )
 
 
 def _format_tool_response_trace_line(safe_sink: SafeSink, preview: str, ellipsis: str) -> str:
     """Format nexus_send response preview line with SafeSink sanitization."""
     safe_preview = _sanitize_tool_trace_text(safe_sink, preview)
-    return f"      [dim cyan]↳ Response: {safe_preview}{ellipsis}[/]"
+    return (
+        f"      [{_TOOL_RESULT_HEADER_STYLE}]↳ Response:[/] "
+        f"[{_TOOL_RESULT_BODY_STYLE}]{safe_preview}{ellipsis}[/]"
+    )
 
 
 def _format_mcp_result_preview_lines(
@@ -84,14 +105,14 @@ def _format_mcp_result_preview_lines(
         lines = lines[:max_lines]
         truncated = True
 
-    formatted = ["      [dim cyan]↳ MCP result preview:[/]"]
+    formatted = [f"      [{_TOOL_RESULT_HEADER_STYLE}]↳ MCP result preview:[/]"]
     for line in lines:
         safe_line = _sanitize_tool_trace_text(safe_sink, line)
-        formatted.append(f"        {safe_line}")
+        formatted.append(f"        [{_TOOL_RESULT_BODY_STYLE}]{safe_line}[/]")
 
     if truncated:
         formatted.append(
-            f"      [dim cyan]↳ Preview truncated at {max_lines} lines / {max_chars} chars[/]"
+            f"      [dim]↳ Preview truncated at {max_lines} lines / {max_chars} chars[/]"
         )
 
     return formatted
@@ -129,9 +150,15 @@ def _format_incoming_started_line(
     safe_preview = _sanitize_tool_trace_text(safe_sink, preview)
     if source_agent:
         safe_source_agent = _sanitize_tool_trace_text(safe_sink, source_agent)
-        return f"[bold cyan]▶ INCOMING from {safe_source_agent}:[/] {safe_preview}..."
+        return (
+            f"[{_ASSISTANT_HEADER_STYLE}]▶ INCOMING from {safe_source_agent}:[/] "
+            f"[{_ASSISTANT_BODY_STYLE}]{safe_preview}...[/]"
+        )
     safe_source = _sanitize_tool_trace_text(safe_sink, source)
-    return f"[bold cyan]▶ INCOMING ({safe_source}):[/] {safe_preview}..."
+    return (
+        f"[{_ASSISTANT_HEADER_STYLE}]▶ INCOMING ({safe_source}):[/] "
+        f"[{_ASSISTANT_BODY_STYLE}]{safe_preview}...[/]"
+    )
 
 
 def _format_incoming_response_sent_line(
@@ -139,7 +166,10 @@ def _format_incoming_response_sent_line(
 ) -> str:
     """Format incoming-end success notification with SafeSink sanitization."""
     safe_preview = _sanitize_tool_trace_text(safe_sink, preview)
-    return f"[bold green]✓ Response sent:[/] {safe_preview}{ellipsis}"
+    return (
+        f"[{_TOOL_RESULT_HEADER_STYLE}]✓ Response sent:[/] "
+        f"[{_TOOL_RESULT_BODY_STYLE}]{safe_preview}{ellipsis}[/]"
+    )
 
 
 def _format_turn_cancelled_status_line(safe_sink: SafeSink, cancel_reason: str) -> str:
@@ -158,7 +188,10 @@ def _format_turn_completed_status_line(safe_sink: SafeSink, turn_duration: float
 def _format_thought_duration_line(safe_sink: SafeSink, duration_seconds: object) -> str:
     """Format reasoning-duration trace line while preserving trusted Rich wrapper markup."""
     safe_duration = _sanitize_tool_trace_text(safe_sink, str(duration_seconds))
-    return f"  [dim cyan]●[/] [dim]Thought for {safe_duration}s[/]"
+    return (
+        f"  [{_ASSISTANT_HEADER_STYLE}]●[/] "
+        f"[dim {_ASSISTANT_BODY_STYLE}]Thought for {safe_duration}s[/]"
+    )
 
 
 def _format_repl_error_line(safe_sink: SafeSink, message: str) -> str:
