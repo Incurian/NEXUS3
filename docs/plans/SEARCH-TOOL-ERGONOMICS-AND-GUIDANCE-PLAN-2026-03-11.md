@@ -163,17 +163,52 @@ Work:
 
 ## Implementation Checklist
 
-- [ ] Finalize the upgraded `glob` contract (`recursive`, `kind`, true
+- [x] Finalize the upgraded `glob` contract (`recursive`, `kind`, true
       exclude semantics).
-- [ ] Implement the `glob` runtime changes with preserved path-gateway
+- [x] Implement the `glob` runtime changes with preserved path-gateway
       protections.
-- [ ] Add/update regression tests for recursive search, kind filtering, and
+- [x] Add/update regression tests for recursive search, kind filtering, and
       exclusion behavior.
-- [ ] Sync prompt guidance and tool-reference docs.
-- [ ] Run focused validation and live validation.
+- [x] Sync prompt guidance and tool-reference docs.
+- [x] Run focused validation and live validation.
+
+## Closeout
+
+Completed work:
+
+- `nexus3/skill/builtin/glob_search.py`
+  - added explicit `recursive` and `kind` parameters
+  - changed `exclude` from substring filtering to relative-path glob/segment
+    matching
+  - preserved old `**`-driven recursive behavior while making
+    `recursive=true` the clearer contract
+- focused regression coverage expanded in:
+  - `tests/unit/test_skill_enhancements.py`
+  - `tests/unit/skill/test_glob_search.py`
+- prompt/docs guidance now explicitly prefer built-in search tools over shell
+  search in:
+  - `nexus3/defaults/NEXUS-DEFAULT.md`
+  - `README.md`
+  - `nexus3/skill/README.md`
+  - `AGENTS_NEXUS3SKILLSCAT.md`
+  - `CLAUDE.md`
 
 ## Documentation Updates
 
 - Update `docs/plans/README.md` to index this plan.
 - Update `AGENTS.md` running status to reference this follow-on plan and its
   execution order.
+
+## Validation
+
+- Focused Ruff:
+  - `.venv/bin/ruff check nexus3/skill/builtin/glob_search.py tests/unit/test_skill_enhancements.py tests/unit/skill/test_glob_search.py`
+- Focused pytest:
+  - `.venv/bin/pytest -q tests/unit/test_skill_enhancements.py tests/unit/skill/test_glob_search.py` (`36 passed`)
+- Repo-wide Ruff:
+  - `.venv/bin/ruff check nexus3/ tests/`
+- Full pytest:
+  - `.venv/bin/pytest tests/ -q` (`4408 passed, 3 skipped, 22 warnings`)
+- Live validation:
+  - trusted RPC agent `search-check` described the new `glob` guidance and
+    used built-in `glob` recursively instead of shell path search

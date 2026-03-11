@@ -12,6 +12,7 @@ from nexus3.config.schema import (
     ModelConfig,
     PermissionPresetConfig,
     ProviderConfig,
+    SearchConfig,
     ServerConfig,
     ToolPermissionConfig,
 )
@@ -126,6 +127,40 @@ class TestServerConfig:
             ServerConfig(log_level="INVALID")
 
 
+class TestSearchConfig:
+    """Tests for SearchConfig schema."""
+
+    def test_search_config_defaults(self) -> None:
+        """SearchConfig has expected defaults."""
+        cfg = SearchConfig()
+
+        assert cfg.ripgrep_path is None
+        assert cfg.require_ripgrep is False
+
+    def test_search_config_normalizes_ripgrep_path(self, tmp_path) -> None:
+        """SearchConfig normalizes ripgrep_path to an absolute path."""
+        fake_rg = tmp_path / "rg"
+        fake_rg.write_text("")
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            cfg = SearchConfig(ripgrep_path="rg")
+        finally:
+            os.chdir(old_cwd)
+
+        assert cfg.ripgrep_path == str(fake_rg)
+
+    def test_search_config_warns_for_missing_ripgrep_path(self) -> None:
+        """SearchConfig warns when ripgrep_path does not exist."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            SearchConfig(ripgrep_path="/no/such/rg")
+
+        assert len(caught) == 1
+        assert "ripgrep executable path does not exist" in str(caught[0].message)
+
+
 class TestPathValidation:
     """Tests for path normalization in permission configs."""
 
@@ -226,6 +261,8 @@ class TestConfig:
         assert cfg.stream_output is True
         assert cfg.default_model == "test/haiku"
         assert isinstance(cfg.server, ServerConfig)
+        assert isinstance(cfg.search, SearchConfig)
+        assert cfg.search.require_ripgrep is False
 
     def test_config_validates_default_model_exists(self):
         """Config validates default_model references existing alias."""

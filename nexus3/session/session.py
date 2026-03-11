@@ -182,6 +182,9 @@ class Session:
         self._context_loader = context_loader
         self._is_repl = is_repl
 
+        if self._services is not None and self._config is not None:
+            self._services.register("config", self._config)
+
         # Tool execution components
         self._dispatcher = ToolDispatcher(registry=registry, services=services)
         self._enforcer = PermissionEnforcer(services=services)

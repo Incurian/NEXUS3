@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from nexus3.config.schema import Config, ModelConfig, ProviderConfig
+from nexus3.core.external_tools import ExternalToolResolution
 from nexus3.skill.builtin import grep as grep_module
 from nexus3.skill.builtin.glob_search import GlobSkill, glob_factory
 from nexus3.skill.builtin.grep import GrepSkill, grep_factory
@@ -31,6 +33,22 @@ def _make_services(
     if cwd is not None:
         services.set_cwd(cwd)
     return services
+
+
+def _make_config(*, require_ripgrep: bool = False, ripgrep_path: str | None = None) -> Config:
+    """Build a minimal valid Config for search-related tests."""
+    return Config(
+        default_model="test/m",
+        providers={
+            "test": ProviderConfig(
+                models={"m": ModelConfig(id="test/model")}
+            )
+        },
+        search={
+            "require_ripgrep": require_ripgrep,
+            "ripgrep_path": ripgrep_path,
+        },
+    )
 
 
 class TestReadFileOffsetLimit:
@@ -234,8 +252,8 @@ class TestReadFileOffsetLimit:
         assert "UTF-8" in result.error
 
 
-class TestGlobExclude:
-    """Tests for glob exclude parameter."""
+class TestGlobBehavior:
+    """Tests for glob exclusion and traversal behavior."""
 
     @pytest.fixture
     def skill(self) -> GlobSkill:
@@ -249,6 +267,9 @@ class TestGlobExclude:
         # Create files
         (tmp_path / "file1.py").write_text("content")
         (tmp_path / "file2.py").write_text("content")
+        nested = tmp_path / "nested"
+        nested.mkdir()
+        (nested / "nested.py").write_text("content")
         # Create node_modules dir
         nm = tmp_path / "node_modules"
         nm.mkdir()
@@ -266,9 +287,10 @@ class TestGlobExclude:
     @pytest.mark.asyncio
     async def test_without_exclude_finds_all(self, skill: GlobSkill, test_dir: Path) -> None:
         """Without exclude, finds all matching files."""
-        result = await skill.execute(pattern="**/*.py", path=str(test_dir))
+        result = await skill.execute(pattern="*.py", path=str(test_dir), recursive=True)
         assert not result.error
         assert "file1.py" in result.output
+        assert "nested/nested.py" in result.output
         assert "node_modules" in result.output or "pkg.py" in result.output
 
     @pytest.mark.asyncio
@@ -310,6 +332,87 @@ class TestGlobExclude:
         assert not result.error
         # Should find node_modules file
         assert "pkg.py" in result.output or "node_modules" in result.output
+
+    @pytest.mark.asyncio
+    async def test_recursive_false_limits_to_direct_children(
+        self,
+        skill: GlobSkill,
+        test_dir: Path,
+    ) -> None:
+        """Recursive=false should not descend into nested directories."""
+        result = await skill.execute(pattern="*.py", path=str(test_dir))
+
+        assert not result.error
+        assert "file1.py" in result.output
+        assert "nested/nested.py" not in result.output
+
+    @pytest.mark.asyncio
+    async def test_recursive_true_finds_nested_matches_without_double_star(
+        self,
+        skill: GlobSkill,
+        test_dir: Path,
+    ) -> None:
+        """Recursive=true should search nested paths with ordinary basename patterns."""
+        result = await skill.execute(pattern="*.py", path=str(test_dir), recursive=True)
+
+        assert not result.error
+        assert "nested/nested.py" in result.output
+
+    @pytest.mark.asyncio
+    async def test_kind_directory_returns_directories(
+        self,
+        skill: GlobSkill,
+        test_dir: Path,
+    ) -> None:
+        """kind=directory should only return directory matches."""
+        result = await skill.execute(
+            pattern="*",
+            path=str(test_dir),
+            recursive=True,
+            kind="directory",
+        )
+
+        assert not result.error
+        assert "nested" in result.output
+        assert "node_modules" in result.output
+        assert "file1.py" not in result.output
+
+    @pytest.mark.asyncio
+    async def test_kind_any_includes_files_and_directories(
+        self,
+        skill: GlobSkill,
+        test_dir: Path,
+    ) -> None:
+        """kind=any should include both file and directory matches."""
+        result = await skill.execute(
+            pattern="*",
+            path=str(test_dir),
+            recursive=False,
+            kind="any",
+        )
+
+        assert not result.error
+        assert "file1.py" in result.output
+        assert "nested" in result.output
+
+    @pytest.mark.asyncio
+    async def test_exclude_glob_pattern_matches_nested_relative_paths(
+        self,
+        skill: GlobSkill,
+        test_dir: Path,
+    ) -> None:
+        """Glob-style exclusions should match nested relative paths."""
+        result = await skill.execute(
+            pattern="*.py",
+            path=str(test_dir),
+            recursive=True,
+            exclude=["**/node_modules/**", "nested/**"],
+        )
+
+        assert not result.error
+        assert "file1.py" in result.output
+        assert "pkg.py" not in result.output
+        assert "nested/nested.py" not in result.output
 
 
 class TestGrepIncludeContext:
@@ -550,7 +653,11 @@ class TestGrepIncludeContext:
         async def _fake_create_subprocess_exec(*args, **kwargs):
             return _FakeProc()
 
-        monkeypatch.setattr(grep_module, "RG_AVAILABLE", True)
+        monkeypatch.setattr(
+            grep_module,
+            "resolve_ripgrep",
+            lambda search_config: ExternalToolResolution("/tmp/fake-rg", source="PATH"),
+        )
         monkeypatch.setattr(
             grep_module.asyncio,
             "create_subprocess_exec",
@@ -563,3 +670,83 @@ class TestGrepIncludeContext:
         assert str(good_file) in result.output
         assert str(bad_file) not in result.output
         assert "invalid UTF-8 file skipped" in result.output
+
+    @pytest.mark.asyncio
+    async def test_directory_grep_falls_back_to_python_when_ripgrep_unavailable(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Unrestricted directory grep should still work when ripgrep is unavailable."""
+        good_file = tmp_path / "good.txt"
+        good_file.write_text("match here\n")
+
+        services = _make_services(allowed_paths=None, cwd=tmp_path)
+        skill = grep_factory(services)
+
+        monkeypatch.setattr(
+            grep_module,
+            "resolve_ripgrep",
+            lambda search_config: ExternalToolResolution(
+                None,
+                reason="ripgrep executable 'rg' was not found on PATH",
+            ),
+        )
+
+        result = await skill.execute(pattern="match", path=str(tmp_path), recursive=True)
+
+        assert not result.error
+        assert "good.txt" in result.output
+
+    @pytest.mark.asyncio
+    async def test_directory_grep_require_ripgrep_errors_when_unavailable(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Required ripgrep mode should fail closed when ripgrep cannot be resolved."""
+        (tmp_path / "good.txt").write_text("match here\n")
+
+        services = _make_services(allowed_paths=None, cwd=tmp_path)
+        services.register("config", _make_config(require_ripgrep=True))
+        skill = grep_factory(services)
+
+        monkeypatch.setattr(
+            grep_module,
+            "resolve_ripgrep",
+            lambda search_config: ExternalToolResolution(
+                None,
+                reason="ripgrep executable 'rg' was not found on PATH",
+            ),
+        )
+
+        result = await skill.execute(pattern="match", path=str(tmp_path), recursive=True)
+
+        assert result.error is not None
+        assert "ripgrep is required" in result.error
+        assert "not found on PATH" in result.error
+
+    @pytest.mark.asyncio
+    async def test_directory_grep_require_ripgrep_errors_when_path_scoped(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Required ripgrep mode should fail closed for restricted path-scoped searches."""
+        (tmp_path / "good.txt").write_text("match here\n")
+
+        services = _make_services(allowed_paths=[tmp_path], cwd=tmp_path)
+        services.register("config", _make_config(require_ripgrep=True))
+        skill = grep_factory(services)
+
+        monkeypatch.setattr(
+            grep_module,
+            "resolve_ripgrep",
+            lambda search_config: ExternalToolResolution("/tmp/fake-rg", source="PATH"),
+        )
+
+        result = await skill.execute(pattern="match", path=str(tmp_path), recursive=True)
+
+        assert result.error is not None
+        assert "ripgrep is required" in result.error
+        assert "permission mode restricts external ripgrep execution" in result.error

@@ -9,7 +9,6 @@ import asyncio
 import fnmatch
 import json
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -17,12 +16,10 @@ from typing import Any
 
 from nexus3.core.constants import MAX_GREP_FILE_SIZE
 from nexus3.core.errors import PathSecurityError
+from nexus3.core.external_tools import ExternalToolResolution, resolve_ripgrep
 from nexus3.core.filesystem_access import FilesystemAccessGateway
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
-
-# Detect ripgrep at module load
-RG_AVAILABLE = shutil.which("rg") is not None
 
 # Directories to exclude from Python fallback search
 # ripgrep respects .gitignore automatically, so these are only for the fallback
@@ -274,6 +271,7 @@ def _format_skip_counts(
 
 
 async def _search_with_ripgrep(
+    rg_executable: str,
     search_path: Path,
     pattern: str,
     recursive: bool = True,
@@ -300,7 +298,7 @@ async def _search_with_ripgrep(
             files_searched,
             files_skipped_size,
             files_skipped_invalid_utf8,
-        )
+    )
     """
     files_skipped_size = await asyncio.to_thread(
         _count_large_files_for_search,
@@ -310,7 +308,7 @@ async def _search_with_ripgrep(
     )
 
     # Build ripgrep command
-    cmd = ["rg", "--json"]
+    cmd = [rg_executable, "--json"]
 
     # Map parameters to rg flags
     if ignore_case:
@@ -551,12 +549,27 @@ class GrepSkill(FileSkill):
             search_path = self._validate_path(path)
             is_file, _ = await asyncio.to_thread(_check_path_type, search_path)
 
-            # Use ripgrep when available and not sandboxed
-            # (ripgrep doesn't respect our allowed_paths, so use Python fallback for sandboxed)
-            if RG_AVAILABLE and self._allowed_paths is None and not is_file:
-                return await self._search_with_ripgrep(
-                    search_path, pattern, recursive, ignore_case, max_matches, include, context
-                )
+            if not is_file:
+                ripgrep_resolution = self._resolve_ripgrep()
+                if ripgrep_resolution.available and self._allowed_paths is None:
+                    return await self._search_with_ripgrep(
+                        search_path,
+                        pattern,
+                        recursive,
+                        ignore_case,
+                        max_matches,
+                        include,
+                        context,
+                        ripgrep_resolution,
+                    )
+
+                if self._require_ripgrep():
+                    return ToolResult(
+                        error=_format_ripgrep_requirement_error(
+                            ripgrep_resolution,
+                            restricted=(self._allowed_paths is not None),
+                        )
+                    )
 
             # Python fallback: compile regex and search manually
             return await self._search_with_python(
@@ -577,11 +590,19 @@ class GrepSkill(FileSkill):
         max_matches: int,
         include: str | None,
         context: int,
+        resolution: ExternalToolResolution,
     ) -> ToolResult:
         """Search using ripgrep (fast path)."""
         try:
             rg_result = await _search_with_ripgrep(
-                search_path, pattern, recursive, ignore_case, max_matches, include, context
+                resolution.executable or "rg",
+                search_path,
+                pattern,
+                recursive,
+                ignore_case,
+                max_matches,
+                include,
+                context,
             )
             (
                 matches,
@@ -591,6 +612,13 @@ class GrepSkill(FileSkill):
                 files_skipped_invalid_utf8,
             ) = rg_result
         except Exception:
+            if self._require_ripgrep():
+                return ToolResult(
+                    error=(
+                        "ripgrep is required for directory search, but the configured "
+                        "ripgrep invocation failed"
+                    )
+                )
             # Fall back to Python on any ripgrep error
             return await self._search_with_python(
                 search_path, pattern, recursive, ignore_case, max_matches, include, context
@@ -614,6 +642,17 @@ class GrepSkill(FileSkill):
             summary = f"\n\n(Limited to {max_matches}, {files_with_matches}+ matched, {stats})"
 
         return ToolResult(output=result + summary)
+
+    def _resolve_ripgrep(self) -> ExternalToolResolution:
+        """Resolve ripgrep according to current config and host state."""
+        config = self._services.get_config()
+        search_config = config.search if config is not None else None
+        return resolve_ripgrep(search_config)
+
+    def _require_ripgrep(self) -> bool:
+        """Return True when config requires ripgrep for directory grep."""
+        config = self._services.get_config()
+        return bool(config is not None and config.search.require_ripgrep)
 
     async def _search_with_python(
         self,
@@ -717,3 +756,19 @@ class GrepSkill(FileSkill):
 
 # Factory for dependency injection
 grep_factory = file_skill_factory(GrepSkill)
+
+
+def _format_ripgrep_requirement_error(
+    resolution: ExternalToolResolution,
+    *,
+    restricted: bool,
+) -> str:
+    """Build a user-facing error when ripgrep is required but unusable."""
+    if restricted:
+        return (
+            "ripgrep is required for directory search, but the current permission "
+            "mode restricts external ripgrep execution for path-scoped searches"
+        )
+
+    reason = resolution.reason or "ripgrep is unavailable"
+    return f"ripgrep is required for directory search, but it cannot be used: {reason}"

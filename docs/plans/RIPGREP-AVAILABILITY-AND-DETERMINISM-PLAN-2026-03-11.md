@@ -177,16 +177,62 @@ Work:
 
 ## Implementation Checklist
 
-- [ ] Add a top-level ripgrep policy/path config surface.
-- [ ] Replace import-time `RG_AVAILABLE` checks with runtime resolution.
-- [ ] Implement required-ripgrep fail-closed behavior for directory search.
-- [ ] Add/update regression coverage for backend selection and config-driven
+- [x] Add a top-level ripgrep policy/path config surface.
+- [x] Replace import-time `RG_AVAILABLE` checks with runtime resolution.
+- [x] Implement required-ripgrep fail-closed behavior for directory search.
+- [x] Add/update regression coverage for backend selection and config-driven
       behavior.
-- [ ] Sync docs for the explicit ripgrep contract and deferred vendoring
+- [x] Sync docs for the explicit ripgrep contract and deferred vendoring
       decision.
+
+## Closeout
+
+Completed work:
+
+- `nexus3/config/schema.py`
+  - added `SearchConfig` with `ripgrep_path` and `require_ripgrep`
+- `nexus3/core/external_tools.py`
+  - added shared runtime ripgrep resolution
+- `nexus3/skill/builtin/grep.py`
+  - removed import-time `RG_AVAILABLE`
+  - resolves ripgrep at execution time
+  - keeps Python fallback in default mode
+  - fails closed for directory search when `require_ripgrep=true` and ripgrep
+    is unavailable or disallowed by the current path-restriction model
+- `nexus3/skill/services.py`
+- `nexus3/session/session.py`
+  - made root config available to skill runtime through `ServiceContainer`
+- focused regression coverage added/updated in:
+  - `tests/unit/core/test_external_tools.py`
+  - `tests/unit/skill/test_grep_parallel.py`
+  - `tests/unit/test_skill_enhancements.py`
+  - `tests/unit/test_config.py`
+  - `tests/unit/session/test_session_permission_kernelization.py`
+- docs/operator guidance synced in:
+  - `README.md`
+  - `nexus3/defaults/NEXUS-DEFAULT.md`
+  - `nexus3/skill/README.md`
+  - `nexus3/config/README.md`
+  - `CLAUDE.md`
+  - `AGENTS.md`
 
 ## Documentation Updates
 
 - Update `docs/plans/README.md` to index this plan.
 - Update `AGENTS.md` running status to reference the plan and keep regex/fuzzy
   work deferred in backlog rather than mixing it into this slice.
+
+## Validation
+
+- Focused Ruff:
+  - `.venv/bin/ruff check nexus3/config/schema.py nexus3/core/external_tools.py nexus3/skill/services.py nexus3/session/session.py nexus3/skill/builtin/grep.py tests/unit/core/test_external_tools.py tests/unit/skill/test_grep_parallel.py tests/unit/test_skill_enhancements.py tests/unit/test_config.py tests/unit/session/test_session_permission_kernelization.py`
+- Focused pytest:
+  - `.venv/bin/pytest -q tests/unit/core/test_external_tools.py tests/unit/skill/test_grep_parallel.py tests/unit/test_skill_enhancements.py tests/unit/test_config.py tests/unit/skill/test_glob_search.py tests/unit/session/test_session_permission_kernelization.py` (`105 passed, 2 warnings`)
+- Repo-wide Ruff:
+  - `.venv/bin/ruff check nexus3/ tests/`
+- Full pytest:
+  - `.venv/bin/pytest tests/ -q` (`4408 passed, 3 skipped, 22 warnings`)
+- Live validation:
+  - trusted RPC agent `search-check` described built-in `grep` as the
+    preferred content-search tool and used built-in `grep` instead of shell
+    search; response also reflected the new `search.ripgrep_path` config name

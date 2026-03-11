@@ -221,20 +221,37 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
-- Search-tool follow-on planning active (2026-03-11):
-  - created:
+- Search-tool follow-on implementation complete (2026-03-11):
+  - executed:
     - [SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md)
     - [RIPGREP-AVAILABILITY-AND-DETERMINISM-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/RIPGREP-AVAILABILITY-AND-DETERMINISM-PLAN-2026-03-11.md)
-  - approved execution priorities from user:
-    1. improve built-in search ergonomics and prompt guidance, especially
-       `glob`
-    2. make ripgrep-backed directory search availability more deterministic
-       without immediately bundling binaries
-  - backlog-only follow-ups from the same discussion:
+  - shipped behavior:
+    - `glob` now supports explicit `recursive`, `kind`, and real relative-path
+      glob exclusion while preserving older `**` recursive patterns
+    - prompt/docs now explicitly prefer built-in `glob` and `grep` over shell
+      `find`, `Get-ChildItem`, `grep`, or `rg` unless shell composition or
+      exact external CLI semantics are required
+    - new top-level `search` config supports `ripgrep_path` and
+      `require_ripgrep`
+    - `grep` now resolves ripgrep at runtime instead of import time and fails
+      closed for directory search when `require_ripgrep=true` but ripgrep
+      cannot be used
+  - validation:
+    - `.venv/bin/ruff check nexus3/ tests/`
+    - `.venv/bin/pytest tests/ -q` (`4408 passed, 3 skipped, 22 warnings`)
+    - live RPC validation on port `9000`:
+      - trusted agent `search-check` described the new built-in search
+        guidance correctly
+      - the same agent used built-in `glob` recursively and built-in `grep`
+        against `nexus3/` without falling back to shell search
+  - backlog-only follow-ups retained from the same discussion:
     - investigate Python fallback regex-engine alternatives later rather than
       mixing that into the current search-tool work
     - treat fuzzy search as a separate later feature track; fuzzy path search
       may be moderate, but fuzzy content search is a larger ranking/UX task
+    - later naming/design question to revisit:
+      - whether built-in `grep` should eventually be renamed to something less
+        shell-priming (for example `search_text`)
 - Shell tool redesign implementation active (2026-03-11):
   - created
     [EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md)
@@ -341,24 +358,6 @@ Historical naming note:
   as current status.
 
 Immediate tasks:
-- Search-tool follow-on planning (2026-03-11):
-  - canonical next-work plans:
-    - [SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md)
-    - [RIPGREP-AVAILABILITY-AND-DETERMINISM-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/RIPGREP-AVAILABILITY-AND-DETERMINISM-PLAN-2026-03-11.md)
-  - preferred execution order from the user-approved priorities:
-    1. execute the search-tool ergonomics/guidance plan first, with `glob`
-       improvements and explicit built-in search preference guidance
-    2. execute the ripgrep availability/determinism plan second, focusing on
-       explicit contract/config/runtime behavior rather than immediate binary
-       bundling
-  - backlog-only follow-ups from the same discussion:
-    - benchmark/evaluate Python fallback regex-engine alternatives only after
-      the first two search-tool slices land
-    - treat fuzzy search as a separate later feature track rather than mixing
-      it into the current glob/ripgrep work
-  - deferred naming/design question retained for later:
-    - whether built-in `grep` should eventually be renamed to something less
-      shell-priming (for example `search_text`)
 - Follow-on hardening execution plan (2026-03-10):
   - canonical next-work plan:
     [POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md)

@@ -406,6 +406,34 @@ class ServerConfig(BaseModel):
     """Logging level for server operations."""
 
 
+class SearchConfig(BaseModel):
+    """Configuration for optional external search acceleration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ripgrep_path: str | None = None
+    """Explicit path to ripgrep. If omitted, PATH lookup is used."""
+
+    require_ripgrep: bool = False
+    """Fail closed for directory grep when ripgrep cannot be used."""
+
+    @field_validator("ripgrep_path", mode="before")
+    @classmethod
+    def normalize_ripgrep_path(cls, v: str | None) -> str | None:
+        """Normalize ripgrep_path to an absolute path with warnings."""
+        if v is None:
+            return None
+        expanded = os.path.expanduser(v)
+        absolute = os.path.abspath(expanded)
+        if not os.path.isfile(absolute):
+            warnings.warn(
+                f"ripgrep executable path does not exist: {v!r} -> {absolute}",
+                UserWarning,
+                stacklevel=4,
+            )
+        return absolute
+
+
 class GitLabInstanceConfig(BaseModel):
     """Configuration for a single GitLab instance.
 
@@ -691,6 +719,7 @@ class Config(BaseModel):
     max_concurrent_tools: int = 10
     permissions: PermissionsConfig = PermissionsConfig()
     compaction: CompactionConfig = CompactionConfig()
+    search: SearchConfig = SearchConfig()
     clipboard: ClipboardConfig = ClipboardConfig()
     context: ContextConfig = ContextConfig()
     mcp_servers: list[MCPServerConfig] = []

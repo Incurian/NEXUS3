@@ -168,6 +168,7 @@ These defaults come from `schema.py`, not the shipped defaults file.
 | `max_concurrent_tools` | `int` | `10` | Maximum concurrent tool executions |
 | `permissions` | `PermissionsConfig` | `PermissionsConfig()` | Permission system configuration |
 | `compaction` | `CompactionConfig` | `CompactionConfig()` | Context compaction settings |
+| `search` | `SearchConfig` | `SearchConfig()` | Optional search backend configuration |
 | `clipboard` | `ClipboardConfig` | `ClipboardConfig()` | Clipboard system configuration |
 | `context` | `ContextConfig` | `ContextConfig()` | Context loading settings |
 | `mcp_servers` | `list[MCPServerConfig]` | `[]` | MCP server configurations |
@@ -200,6 +201,24 @@ models = config.get_model_guidance_table()
 **Validation:**
 - Ensures model aliases are globally unique across all providers
 - Validates that `default_model` references a valid alias
+
+---
+
+### `SearchConfig`
+
+Optional configuration for external search acceleration.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `ripgrep_path` | `str \| None` | `None` | Explicit path to ripgrep. If omitted, NEXUS uses PATH lookup |
+| `require_ripgrep` | `bool` | `False` | Fail closed for directory `grep` when ripgrep cannot be used |
+
+Notes:
+- Unrestricted directory `grep` uses ripgrep when it is configured or found on
+  PATH.
+- Path-restricted directory `grep` still uses the Python fallback today.
+- If `require_ripgrep=true`, directory `grep` returns an explicit error instead
+  of silently switching backends when ripgrep is unavailable or disallowed.
 
 ---
 

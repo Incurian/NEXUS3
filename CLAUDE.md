@@ -463,8 +463,8 @@ When loading a saved session (`--resume`, `--session`, or via lobby):
 Contract rule for the file-edit family: unexpected extra arguments fail closed
 instead of being silently dropped.
 | `list_directory` | `path` | List directory contents |
-| `glob` | `pattern`, `path`?, `exclude`? | Find files matching glob pattern (with exclusions) |
-| `grep` | `pattern`, `path`, `recursive`?, `ignore_case`?, `max_matches`?, `include`?, `context`? | Search UTF-8 file contents with file filter and context lines; single-file invalid UTF-8 fails closed and directory scans skip invalid UTF-8 files |
+| `glob` | `pattern`, `path`?, `max_results`?, `recursive`?, `kind`?, `exclude`? | Find files or directories by glob pattern; `recursive=true` searches nested paths, `kind` filters files/directories, and `exclude` uses relative-path glob rules |
+| `grep` | `pattern`, `path`, `recursive`?, `ignore_case`?, `max_matches`?, `include`?, `context`? | Search UTF-8 file contents with file filter and context lines; unrestricted directory scans may use ripgrep when configured/available, single-file invalid UTF-8 fails closed, and directory scans skip invalid UTF-8 files |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate UTF-8 files by extension with token estimation (`dry_run=True` by default; real writes generate an output file and skip invalid UTF-8 inputs) |
 | `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory (headings, classes, functions, keys). Directory mode is non-recursive, but `depth` controls nested symbols within each file and skips invalid UTF-8 files. Use `symbol` for filtered read on files, `file_type`/`language`/`parser` to override parser detection, `tokens` for estimates, and `diff` for change markers |
 | `git` | `command`, `cwd`? | Execute git commands (permission-filtered by level) |
@@ -472,6 +472,11 @@ instead of being silently dropped.
 | `shell_UNSAFE` | `command`, `shell`?, `timeout`?, `cwd`? | Execute full shell syntax (pipes work, injection-vulnerable; `shell` selects auto/bash/gitbash/powershell/pwsh/cmd) |
 | `run_python` | `code`, `timeout`?, `cwd`? | Execute Python code |
 | `sleep` | `seconds`, `label`? | Pause execution (for testing) |
+
+Search guidance:
+- Prefer `glob` for path discovery and built-in `grep` for content search.
+- Avoid shell `find`, `Get-ChildItem`, `grep`, or `rg` unless you need shell
+  composition or exact external CLI semantics.
 | `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `allowed_write_paths`?, `model`?, `initial_message`?, `wait_for_initial_response`?, `port`? | Create agent (initial_message queued by default; wait flag only matters when `initial_message` is set) |
 | `nexus_destroy` | `agent_id`, `port`? | Remove an agent (server keeps running) |
 | `nexus_send` | `agent_id`, `content`, `port`? | Send message to an agent |

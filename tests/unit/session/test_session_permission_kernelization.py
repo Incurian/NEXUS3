@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from nexus3.config.schema import Config, ModelConfig, ProviderConfig
 from nexus3.core.authorization_kernel import AuthorizationDecision
 from nexus3.core.permissions import ConfirmationResult, resolve_preset
 from nexus3.core.types import ToolCall
@@ -34,6 +35,18 @@ def _make_gitlab_config() -> GitLabConfig:
 
 class TestSessionIntegrationLevelKernelization:
     """Tests for MCP/GitLab level gates routed through authorization kernels."""
+
+    def test_session_registers_config_in_services(self) -> None:
+        """Session should expose Config through ServiceContainer for tool runtime access."""
+        services = ServiceContainer()
+        config = Config(
+            default_model="test/m",
+            providers={"test": ProviderConfig(models={"m": ModelConfig(id="test/model")})},
+        )
+
+        Session(provider=DummyProvider(), services=services, config=config)
+
+        assert services.get_config() is config
 
     @pytest.mark.asyncio
     async def test_mcp_kernel_deny_preserves_legacy_wording(self) -> None:

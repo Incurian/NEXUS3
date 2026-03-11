@@ -1108,6 +1108,7 @@ If `~/.nexus3/config.json` exists, it's used as the base. If not, the shipped de
 | `skill_timeout` | float | `30.0` | Default tool timeout in seconds |
 | `max_concurrent_tools` | int | `10` | Parallel tool execution limit |
 | `compaction` | object | see below | Context compaction — see [Compaction Configuration](#compaction-configuration) |
+| `search` | object | see below | Search backend options — see [Search Configuration](#search-configuration) |
 | `context` | object | see below | Context loading — see [Context Configuration](#context-configuration) |
 | `clipboard` | object | see below | Clipboard system — see [Clipboard Configuration](#clipboard-configuration) |
 | `mcp_servers` | array | `[]` | MCP servers (in config.json) — see [MCP Configuration](#mcp-configuration) |
@@ -1116,6 +1117,29 @@ If `~/.nexus3/config.json` exists, it's used as the base. If not, the shipped de
 | `gitlab` | object | see below | GitLab instances — see [GitLab Configuration](#gitlab-configuration) |
 
 **Note:** The shipped `defaults/config.json` uses more permissive values: `max_tool_iterations: 100`, `skill_timeout: 120.0`, and `default_model: "fast"`. If you create a global config with `nexus3 --init-global`, it copies these shipped defaults.
+
+### Search Configuration
+
+```json
+{
+  "search": {
+    "ripgrep_path": "/usr/bin/rg",
+    "require_ripgrep": false
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `ripgrep_path` | `null` | Explicit path to ripgrep. If omitted, NEXUS falls back to PATH lookup |
+| `require_ripgrep` | `false` | Fail closed for directory `grep` when ripgrep cannot be used, instead of silently using the Python fallback |
+
+Notes:
+- Unrestricted directory `grep` uses ripgrep when it is available.
+- Path-restricted/sandbox-style search still uses the Python fallback today.
+- If `require_ripgrep=true` and the current permission mode disallows safe
+  external ripgrep execution for the search scope, directory `grep` returns an
+  explicit error instead of silently changing backend.
 
 ### Compaction Configuration
 
@@ -1417,7 +1441,7 @@ NEXUS3 includes 40 built-in skills organized by category, plus 21 GitLab integra
 | `tail` | Read last N lines | `path`, `lines` (default: 10) |
 | `file_info` | Get file metadata | `path` |
 | `list_directory` | List directory contents | `path`, `all`, `long` |
-| `glob` | Find files by pattern | `pattern`, `path`, `exclude` |
+| `glob` | Find files or directories by pattern | `pattern`, `path`, `max_results`, `recursive`, `kind`, `exclude` |
 | `grep` | Search UTF-8 file contents | `pattern`, `path`, `include`, `context`, `recursive`, `ignore_case`, `max_matches` |
 | `concat_files` | Concatenate UTF-8 files by extension (`dry_run=true` by default; `dry_run=false` writes a generated output file and skips invalid UTF-8 inputs) | `extensions`, `path`, `exclude`, `lines`, `max_total`, `format`, `sort`, `gitignore`, `dry_run` |
 | `outline` | Structural outline of UTF-8 file/directory (non-recursive for directories) | `path`, `file_type`, `language`, `parser`, `depth`, `preview`, `signatures`, `line_numbers`, `tokens`, `symbol`, `diff`, `recursive` |
@@ -1425,6 +1449,17 @@ NEXUS3 includes 40 built-in skills organized by category, plus 21 GitLab integra
 Text-reading tools operate on UTF-8 files. `read_file` and single-file
 `outline` fail closed on invalid UTF-8; directory `grep` and `outline` skip
 invalid UTF-8 files instead of mangling bytes.
+
+**Search notes:**
+- Prefer `glob` for path/file discovery instead of shell `find`, `dir`, or
+  PowerShell `Get-ChildItem`.
+- Prefer built-in `grep` for content search instead of shell `grep` / `rg`
+  unless you actually need shell composition or exact external CLI behavior.
+- `glob` still honors `**` patterns, but `recursive=true` is the clearer
+  contract for nested traversal.
+- Unrestricted directory `grep` may use ripgrep when available. Configure
+  `search.ripgrep_path` to pin the executable or `search.require_ripgrep=true`
+  to fail closed when the fast path cannot be used.
 
 ### File Operations (Write)
 

@@ -243,6 +243,7 @@ class TestRipgrepJsonHandling:
 
         matches, files_with_matches, files_searched, files_skipped_size, invalid_utf8 = (
             await _search_with_ripgrep(
+                "rg",
                 tmp_path,
                 "needle",
                 recursive=True,

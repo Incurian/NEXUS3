@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 if TYPE_CHECKING:
-    from nexus3.config.schema import ResolvedModel
+    from nexus3.config.schema import Config, ResolvedModel
     from nexus3.core.permissions import AgentPermissions, PermissionLevel
     from nexus3.rpc.agent_api import DirectAgentAPI
     from nexus3.skill.vcs.config import GitLabConfig
@@ -365,6 +365,15 @@ class ServiceContainer:
 
         config = self.get("gitlab_config")
         if isinstance(config, GitLabConfig):
+            return config
+        return None
+
+    def get_config(self) -> "Config | None":
+        """Get the root Config if available."""
+        from nexus3.config.schema import Config
+
+        config = self.get("config")
+        if isinstance(config, Config):
             return config
         return None
 

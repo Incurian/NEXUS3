@@ -632,8 +632,8 @@ NEXUS3 includes 40 core built-in skills plus 21 GitLab skills (when configured),
 | `tail` | Read last N lines efficiently | `path`, `lines?` (default: 10) |
 | `file_info` | Get file/directory metadata (Unix perms or Windows RHSA) | `path` |
 | `list_directory` | List directory contents | `path?`, `all?`, `long?` |
-| `glob` | Find files by glob pattern | `pattern`, `path?`, `max_results?`, `exclude?` |
-| `grep` | Search UTF-8 file contents (regex), uses ripgrep when available; directory scans skip invalid UTF-8 files | `pattern`, `path`, `recursive?`, `ignore_case?`, `max_matches?`, `include?`, `context?` |
+| `glob` | Find files or directories by glob pattern; `recursive=true` searches nested paths, `kind` filters files/directories, and `exclude` uses relative-path glob rules | `pattern`, `path?`, `max_results?`, `recursive?`, `kind?`, `exclude?` |
+| `grep` | Search UTF-8 file contents (regex); unrestricted directory scans use ripgrep when configured/available, and directory scans skip invalid UTF-8 files | `pattern`, `path`, `recursive?`, `ignore_case?`, `max_matches?`, `include?`, `context?` |
 | `concat_files` | Find and concatenate UTF-8 files by extension with token estimation (`dry_run=true` by default; real writes generate an output file and skip invalid UTF-8 inputs) | `extensions`, `path?`, `exclude?`, `lines?`, `max_total?`, `format?`, `sort?`, `gitignore?`, `dry_run?` |
 | `outline` | Structural outline of UTF-8 file/directory (headings, classes, functions, keys; non-recursive for directories, `symbol` returns source excerpt) | `path`, `file_type?`, `language?`, `parser?`, `depth?`, `preview?`, `signatures?`, `line_numbers?`, `tokens?`, `symbol?`, `diff?`, `recursive?` |
 
@@ -642,6 +642,9 @@ top-level arguments.
 Text-reading tools operate on UTF-8 files. `read_file` and single-file
 `outline` fail closed on invalid UTF-8; directory `grep` and `outline` skip
 invalid UTF-8 files instead of mangling bytes.
+Prefer built-in `glob` for path discovery and built-in `grep` for content
+search instead of shell `find`, `Get-ChildItem`, `grep`, or `rg` unless shell
+composition or exact external CLI semantics are required.
 
 ### File Operations (Destructive)
 
