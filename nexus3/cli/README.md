@@ -124,6 +124,8 @@ async def run_repl(
 - **Session Callbacks**: Attaches streaming callbacks to Session for rich display
 - **Callback Leak Prevention**: `_set_display_session()` detaches callbacks when switching agents
 - **Incoming Turn Notifications**: RPC messages interrupt prompt and show spinner
+- **MCP Result Previews**: Successful `mcp_*` tool calls show bounded inline
+  return previews by default, with truncation for longer results
 - **Token Toolbar**: Bottom toolbar shows token usage and ready/error state
 - **Auto-Save**: Saves session after each interaction for resume capability
 

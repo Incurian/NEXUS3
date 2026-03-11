@@ -260,9 +260,6 @@ Current milestone:
         - trusted agent confirmed markdown `outline` ignored fenced-code
           pseudo-headings
   - backlog notes captured from follow-up discussion:
-    - later UX pass: evaluate displaying MCP tool-call return data to the user
-      in the normal session/UI flow instead of only logging or surfacing it
-      indirectly
     - later tool-design pass: plan a built-in process inspection/management
       tool so agents can list running processes, inspect by PID/name, and
       terminate explicitly selected processes without falling back to shell
@@ -383,6 +380,30 @@ Current milestone:
       - trusted agent described `search_text` with the new public name
       - trusted agent successfully called `search_text(...)` against the new
         plan doc and reported a real match
+- MCP result visibility slice complete (2026-03-11):
+  - executed
+    [MCP-RESULT-VISIBILITY-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/MCP-RESULT-VISIBILITY-PLAN-2026-03-11.md)
+    for default-on bounded inline MCP result previews in the REPL.
+  - shipped behavior:
+    - successful `mcp_*` tool calls now show a sanitized inline preview block
+      in the normal REPL tool trace
+    - longer MCP results stay collapsed by default and render an explicit
+      truncation note instead of dumping full payloads into the terminal
+    - MCP success summary lines now use line/size summaries so the preview
+      block carries the visible content instead of duplicating the first line
+  - validation:
+    - `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py tests/unit/cli/test_repl_safe_sink.py README.md CLAUDE.md nexus3/defaults/NEXUS-DEFAULT.md nexus3/cli/README.md nexus3/mcp/README.md docs/plans/README.md docs/plans/MCP-RESULT-VISIBILITY-PLAN-2026-03-11.md AGENTS.md`
+    - `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
+    - `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py tests/integration/test_mcp_client.py -k 'test_skill_execute or test_call_echo'` (`2 passed, 67 deselected`)
+    - unsandboxed local MCP harness confirmed a real `mcp_test_echo` result
+      rendered the new summary line plus bounded preview block
+    - unsandboxed live REPL check confirmed `/mcp connect test --allow-all --private`
+      succeeded in a fresh session; the follow-up provider turn stalled before
+      issuing a tool call, so full model-loop preview rendering remains only
+      partially live-validated
+  - deferred backlog note:
+    - later discussion item: add an on-demand way to inspect the full previous
+      tool result(s) instead of only the default collapsed preview
 - Shell tool redesign implementation active (2026-03-11):
   - created
     [EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md)

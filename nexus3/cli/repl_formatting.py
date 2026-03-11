@@ -50,6 +50,39 @@ def _format_tool_response_trace_line(safe_sink: SafeSink, preview: str, ellipsis
     return f"      [dim cyan]↳ Response: {safe_preview}{ellipsis}[/]"
 
 
+def _format_mcp_result_preview_lines(
+    safe_sink: SafeSink,
+    output: str,
+    *,
+    max_lines: int,
+    max_chars: int,
+) -> list[str]:
+    """Format a bounded inline MCP result preview block."""
+    trimmed = output.strip("\n")
+    if not trimmed:
+        return []
+
+    clipped = trimmed[:max_chars]
+    lines = clipped.splitlines()
+    truncated = len(trimmed) > max_chars
+
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        truncated = True
+
+    formatted = ["      [dim cyan]↳ MCP result preview:[/]"]
+    for line in lines:
+        safe_line = _sanitize_tool_trace_text(safe_sink, line)
+        formatted.append(f"        {safe_line}")
+
+    if truncated:
+        formatted.append(
+            f"      [dim cyan]↳ Preview truncated at {max_lines} lines / {max_chars} chars[/]"
+        )
+
+    return formatted
+
+
 def _format_tool_error_trace_line(safe_sink: SafeSink, error: str, duration_str: str) -> str:
     """Format a tool error line while preserving trusted Rich wrapper markup."""
     error_preview = error[:120] + ("..." if len(error) > 120 else "")

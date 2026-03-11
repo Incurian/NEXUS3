@@ -19,6 +19,7 @@ from nexus3.cli.repl import (
     _format_incoming_response_sent_line,
     _format_incoming_started_line,
     _format_invalid_port_spec_line,
+    _format_mcp_result_preview_lines,
     _format_plain_message_line,
     _format_port_in_use_by_other_service_line,
     _format_provider_initialization_failed_line,
@@ -50,6 +51,7 @@ from nexus3.cli.repl import (
     _format_whisper_mode_line,
     _format_whisper_return_line,
     _sanitize_prompt_html_text,
+    _summarize_tool_output,
 )
 from nexus3.cli.repl_commands import print_yolo_warning
 from nexus3.display.safe_sink import SafeSink
@@ -132,6 +134,31 @@ def test_tool_response_trace_line_sanitizes_preview_with_wrapper_parity() -> Non
 
     assert line == "      [dim cyan]↳ Response: \\[cyan]reply\\[/cyan]...[/]"
     assert "\x1b" not in line
+
+
+def test_mcp_result_preview_lines_sanitize_and_truncate_preview_block() -> None:
+    sink = _make_sink()
+
+    lines = _format_mcp_result_preview_lines(
+        sink,
+        output="[cyan]line1[/cyan]\x1b[31m\nline2\nline3",
+        max_lines=2,
+        max_chars=200,
+    )
+
+    assert lines == [
+        "      [dim cyan]↳ MCP result preview:[/]",
+        "        \\[cyan]line1\\[/cyan]",
+        "        line2",
+        "      [dim cyan]↳ Preview truncated at 2 lines / 200 chars[/]",
+    ]
+    assert all("\x1b" not in line for line in lines)
+
+
+def test_summarize_tool_output_uses_line_count_summary_for_mcp_tools() -> None:
+    summary = _summarize_tool_output("mcp_test_echo", "alpha\nbeta\n")
+
+    assert summary == "2 lines"
 
 
 def test_tool_error_trace_line_truncates_and_sanitizes_error_text() -> None:

@@ -452,6 +452,8 @@ NEXUS3 supports the Model Context Protocol (MCP) for connecting external tools. 
 - Use `/mcp` in the REPL to see connected servers
 - Use `/mcp connect <name>` to connect to a configured server
 - Use `/mcp tools` to list available MCP tools
+- Successful MCP tool calls surface a bounded inline preview to the user;
+  longer results are truncated by default
 
 MCP servers are configured in `~/.nexus3/mcp.json` (global) or `.nexus3/mcp.json` (project-local).
 

@@ -65,6 +65,7 @@ from nexus3.cli.repl_formatting import (
     _format_incoming_response_sent_line,
     _format_incoming_started_line,
     _format_invalid_port_spec_line,
+    _format_mcp_result_preview_lines,
     _format_plain_message_line,
     _format_port_in_use_by_other_service_line,
     _format_provider_initialization_failed_line,
@@ -160,6 +161,38 @@ load_dotenv()
 
 
 # NOTE: parse_args() is imported from nexus3.cli.arg_parser
+
+_TOOL_OUTPUT_SUMMARY_MAX_CHARS = 60
+_MCP_RESULT_PREVIEW_MAX_LINES = 6
+_MCP_RESULT_PREVIEW_MAX_CHARS = 600
+
+
+def _count_tool_output_lines(output: str) -> int:
+    """Count logical output lines, including a final non-newline-terminated line."""
+    if not output:
+        return 0
+    return output.count("\n") + (1 if not output.endswith("\n") else 0)
+
+
+def _summarize_tool_output(name: str, output: str) -> str:
+    """Create a brief summary of tool output."""
+    if not output:
+        return ""
+
+    if name == "read_file" or name.startswith("mcp_"):
+        lines = _count_tool_output_lines(output)
+        size_kb = len(output) / 1024
+        if size_kb >= 1:
+            return f"{lines} lines, {size_kb:.1f}KB"
+        return f"{lines} lines"
+
+    first_line = output.split("\n")[0].strip()[:_TOOL_OUTPUT_SUMMARY_MAX_CHARS]
+    if first_line:
+        original_first_line = output.split("\n")[0]
+        if len(original_first_line) > _TOOL_OUTPUT_SUMMARY_MAX_CHARS:
+            return first_line + "..."
+        return first_line
+    return ""
 
 
 async def run_repl(
@@ -857,6 +890,15 @@ async def run_repl(
                         )
                 except (_json.JSONDecodeError, KeyError):
                     pass
+
+            if name.startswith("mcp_") and output:
+                for line in _format_mcp_result_preview_lines(
+                    safe_sink,
+                    output,
+                    max_lines=_MCP_RESULT_PREVIEW_MAX_LINES,
+                    max_chars=_MCP_RESULT_PREVIEW_MAX_CHARS,
+                ):
+                    spinner.print_trusted(line)
         else:
             _had_errors = True
             # Error - show error message
@@ -871,23 +913,6 @@ async def run_repl(
     def on_batch_complete() -> None:
         """Batch finished - transition spinner to waiting for next response."""
         spinner.update(activity=Activity.WAITING)
-
-    def _summarize_tool_output(name: str, output: str) -> str:
-        """Create a brief summary of tool output."""
-        if not output:
-            return ""
-        # For read_file, show line count
-        if name == "read_file":
-            lines = output.count("\n") + (1 if output and not output.endswith("\n") else 0)
-            size_kb = len(output) / 1024
-            if size_kb >= 1:
-                return f"{lines} lines, {size_kb:.1f}KB"
-            return f"{lines} lines"
-        # For other tools, first non-empty line (truncated)
-        first_line = output.split("\n")[0].strip()[:60]
-        if first_line:
-            return first_line + ("..." if len(output.split("\n")[0]) > 60 else "")
-        return ""
 
     # =============================================================
     # Session callback attachment (leak-prevention)
