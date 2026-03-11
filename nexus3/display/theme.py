@@ -43,7 +43,7 @@ class Theme:
     # Text styles (Rich style strings)
     thinking: str = "dim italic"
     thinking_collapsed: str = "dim"
-    response: str = "magenta"
+    response: str = ""
     error: str = "bold red"
     user_input: str = "bold"
 
