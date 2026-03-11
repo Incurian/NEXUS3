@@ -1,15 +1,19 @@
-"""Helpers for reconstructing persisted tool records from session storage."""
+"""Helpers for persisted tool records and trace-session coordination."""
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
+from time import time
 from typing import Any, cast
 
+from nexus3.core.secure_io import secure_mkdir, secure_write_atomic
 from nexus3.session.storage import EventRow, MessageRow
 
 TOOL_ID_DISPLAY_WIDTH = 8
+ACTIVE_TRACE_SESSION_FILENAME = ".active-session.json"
 
 
 def tool_display_id(tool_call_id: str, width: int = TOOL_ID_DISPLAY_WIDTH) -> str:
@@ -51,6 +55,170 @@ class ToolRecord:
     @property
     def result_text(self) -> str:
         return self.error if self.error else self.output
+
+
+@dataclass(frozen=True)
+class ActiveTraceSession:
+    """The current REPL-selected session published in a shared log root."""
+
+    session_id: str
+    session_dir: Path
+    agent_id: str
+    server_pid: int
+    server_instance_id: str
+    updated_at: float
+
+    def to_payload(self) -> dict[str, object]:
+        """Convert to JSON payload for the shared active-session pointer file."""
+        return {
+            "version": 1,
+            "session_id": self.session_id,
+            "session_dir": str(self.session_dir),
+            "agent_id": self.agent_id,
+            "server_pid": self.server_pid,
+            "server_instance_id": self.server_instance_id,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: dict[str, object],
+        *,
+        base_log_dir: Path,
+    ) -> ActiveTraceSession | None:
+        """Validate and construct an active-session pointer payload."""
+        try:
+            session_id_value = payload["session_id"]
+            session_dir_value = payload["session_dir"]
+            agent_id_value = payload["agent_id"]
+            server_pid_value = payload["server_pid"]
+            server_instance_id_value = payload["server_instance_id"]
+            updated_at_value = payload["updated_at"]
+        except KeyError:
+            return None
+
+        if not isinstance(session_id_value, str):
+            return None
+        if not isinstance(session_dir_value, str):
+            return None
+        if not isinstance(agent_id_value, str):
+            return None
+        if not isinstance(server_instance_id_value, str):
+            return None
+        if not isinstance(server_pid_value, int):
+            return None
+        if not isinstance(updated_at_value, int | float):
+            return None
+
+        session_id = session_id_value
+        session_dir = Path(session_dir_value).expanduser().resolve()
+        agent_id = agent_id_value
+        server_pid = server_pid_value
+        server_instance_id = server_instance_id_value
+        updated_at = float(updated_at_value)
+
+        log_root = base_log_dir.expanduser().resolve()
+        try:
+            if not session_dir.is_relative_to(log_root):
+                return None
+        except ValueError:
+            return None
+
+        if not session_dir.is_dir() or not (session_dir / "session.db").exists():
+            return None
+
+        if not session_id or not agent_id or not server_instance_id or server_pid <= 0:
+            return None
+
+        return cls(
+            session_id=session_id,
+            session_dir=session_dir,
+            agent_id=agent_id,
+            server_pid=server_pid,
+            server_instance_id=server_instance_id,
+            updated_at=updated_at,
+        )
+
+
+def active_trace_session_path(base_log_dir: Path) -> Path:
+    """Return the shared active-session pointer path for a log root."""
+    return base_log_dir.expanduser().resolve() / ACTIVE_TRACE_SESSION_FILENAME
+
+
+def write_active_trace_session(
+    *,
+    base_log_dir: Path,
+    session_dir: Path,
+    agent_id: str,
+    server_instance_id: str,
+    server_pid: int,
+) -> ActiveTraceSession:
+    """Write the shared active-session pointer for the current REPL session."""
+    log_root = base_log_dir.expanduser().resolve()
+    secure_mkdir(log_root)
+
+    active_session = ActiveTraceSession(
+        session_id=session_dir.resolve().name,
+        session_dir=session_dir.resolve(),
+        agent_id=agent_id,
+        server_pid=server_pid,
+        server_instance_id=server_instance_id,
+        updated_at=time(),
+    )
+
+    pointer_path = active_trace_session_path(log_root)
+    secure_write_atomic(
+        pointer_path,
+        json.dumps(active_session.to_payload(), sort_keys=True, ensure_ascii=False),
+    )
+    return active_session
+
+
+def read_active_trace_session(base_log_dir: Path) -> ActiveTraceSession | None:
+    """Read the shared active-session pointer for a log root."""
+    pointer_path = active_trace_session_path(base_log_dir)
+    if not pointer_path.exists():
+        return None
+
+    try:
+        raw = pointer_path.read_text(encoding="utf-8")
+        payload = json.loads(raw)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    return ActiveTraceSession.from_payload(payload, base_log_dir=base_log_dir)
+
+
+def clear_active_trace_session(
+    *,
+    base_log_dir: Path,
+    server_instance_id: str | None = None,
+) -> bool:
+    """Clear the shared active-session pointer if it exists and ownership matches."""
+    pointer_path = active_trace_session_path(base_log_dir)
+    if not pointer_path.exists():
+        return False
+
+    if server_instance_id is not None:
+        active_session = read_active_trace_session(base_log_dir)
+        if active_session is None:
+            try:
+                pointer_path.unlink()
+            except FileNotFoundError:
+                return False
+            return True
+        if active_session.server_instance_id != server_instance_id:
+            return False
+
+    try:
+        pointer_path.unlink()
+        return True
+    except FileNotFoundError:
+        return False
 
 
 def build_tool_records(messages: list[MessageRow], events: list[EventRow]) -> list[ToolRecord]:

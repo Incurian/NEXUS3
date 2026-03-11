@@ -223,6 +223,29 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
+- Trace active-session follow complete locally (2026-03-11):
+  - executed
+    [TRACE-ACTIVE-SESSION-FOLLOW-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-ACTIVE-SESSION-FOLLOW-PLAN-2026-03-11.md)
+    for the “follow the active REPL session by default” trace follow-up.
+  - local pending commit:
+    - added a shared `.active-session.json` pointer in the selected log root
+      so the REPL can publish the currently displayed session for trace
+      auto-follow
+    - `nexus3 trace` now follows that active-session pointer by default when
+      no explicit target is provided, falling back to the newest session only
+      when no valid pointer exists
+    - explicit trace targets remain pinned instead of auto-retargeting
+    - both `execution` and `debug` presets now retarget with a visible
+      session-switch notice when the active REPL session changes
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/session/trace.py nexus3/cli/trace.py nexus3/cli/repl.py nexus3/cli/arg_parser.py tests/unit/session/test_trace.py tests/unit/cli/test_trace.py`
+    - `.venv/bin/mypy nexus3/session/trace.py nexus3/cli/trace.py nexus3/cli/repl.py nexus3/cli/arg_parser.py`
+    - `.venv/bin/pytest -q tests/unit/session/test_trace.py tests/unit/cli/test_trace.py` (`18 passed`)
+    - practical smoke:
+      - started `nexus3 trace --log-dir /tmp/nexus3-trace-follow --preset debug --history 1 --poll-interval 0.1`
+      - trace initially followed the active `agent-a` session
+      - after publishing a new active-session pointer for `agent-b`, the
+        viewer printed a session-switch notice and retargeted to `agent-b`
 - Trace presentation polish complete locally (2026-03-11):
   - executed
     [TRACE-PRESENTATION-POLISH-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-PRESENTATION-POLISH-PLAN-2026-03-11.md)

@@ -235,12 +235,18 @@ def parse_args() -> argparse.Namespace:
     trace_parser.add_argument(
         "target",
         nargs="?",
-        help="Session directory path or session-id prefix (default: latest)",
+        help=(
+            "Session directory path or session-id prefix "
+            "(default: active session in log root, otherwise latest)"
+        ),
     )
     trace_parser.add_argument(
         "--latest",
         action="store_true",
-        help="Explicitly follow the latest session (same as omitting TARGET)",
+        help=(
+            "Explicitly use the default trace target selection "
+            "(active session in log root when available, otherwise latest)"
+        ),
     )
     trace_parser.add_argument(
         "--preset",

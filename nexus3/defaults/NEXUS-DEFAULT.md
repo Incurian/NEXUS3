@@ -872,8 +872,9 @@ For simple Python entrypoints, direct interpreter invocation is usually more rel
 - `-v` / `--verbose`: Enable verbose diagnostics for REPL trace/logs instead of dumping extra output into the main REPL
 - `-V` / `--log-verbose`: Write debug output to `verbose.md` log file
 - `--raw-log`: Log raw API JSON to `raw.jsonl`
-- `nexus3 trace --latest`: Follow the latest session's execution trace in another terminal
-- `nexus3 trace --latest --preset debug`: Follow `verbose.md` in real time when verbose diagnostics are enabled
+- `nexus3 trace`: Follow the active session's execution trace in another terminal when the same log root is in use; otherwise fall back to the newest session
+- `nexus3 trace --latest`: Explicitly use the default trace selection (`active when available, otherwise latest`)
+- `nexus3 trace --latest --preset debug`: Follow the active session's `verbose.md` in real time when verbose diagnostics are enabled
 - `nexus3 trace --latest --max-tool-lines 0`: Disable default execution-trace truncation for tool-call/result bodies
 
 ---

@@ -914,10 +914,12 @@ For proper UTF-8 display, the console should use code page 65001. NEXUS3 warns i
     └── raw.jsonl    # Raw API JSON (if --raw-log enabled)
 ```
 
-Use `nexus3 trace --latest` for execution-first live viewing, or
+Use `nexus3 trace` for execution-first live viewing when you want the trace to
+follow the active REPL session in the same log root by default, or
 `nexus3 trace --latest --preset debug` when running REPL sessions with `-v`
 or `-V`. Use `--max-tool-lines 0` if you want unbounded tool-call/result
-bodies in execution trace output.
+bodies in execution trace output. Pass an explicit trace target if you want a
+pinned historical session instead of active-session follow behavior.
 
 ### Server Logging
 

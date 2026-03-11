@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from nexus3.session.storage import EventRow, MessageRow
 from nexus3.session.trace import (
+    active_trace_session_path,
     build_tool_records,
+    clear_active_trace_session,
     format_tool_record_details,
+    read_active_trace_session,
     resolve_tool_record,
     tool_display_id,
+    write_active_trace_session,
 )
 
 
@@ -138,3 +144,62 @@ def test_format_tool_record_details_includes_ids_status_and_result() -> None:
     assert "Status: done" in details
     assert '"program": "echo"' in details
     assert "hello" in details
+
+
+def test_active_trace_session_round_trips_and_clears_by_owner(tmp_path: Path) -> None:
+    base_log_dir = tmp_path / "logs"
+    session_dir = base_log_dir / "main" / "2026-03-11_agent_abc123"
+    session_dir.mkdir(parents=True)
+    (session_dir / "session.db").write_text("", encoding="utf-8")
+
+    written = write_active_trace_session(
+        base_log_dir=base_log_dir,
+        session_dir=session_dir,
+        agent_id="main",
+        server_instance_id="srv-1",
+        server_pid=1234,
+    )
+    loaded = read_active_trace_session(base_log_dir)
+
+    assert written.session_dir == session_dir.resolve()
+    assert loaded is not None
+    assert loaded.agent_id == "main"
+    assert loaded.server_instance_id == "srv-1"
+    assert loaded.session_dir == session_dir.resolve()
+
+    assert (
+        clear_active_trace_session(
+            base_log_dir=base_log_dir,
+            server_instance_id="other",
+        )
+        is False
+    )
+    assert active_trace_session_path(base_log_dir).exists()
+    assert (
+        clear_active_trace_session(
+            base_log_dir=base_log_dir,
+            server_instance_id="srv-1",
+        )
+        is True
+    )
+    assert not active_trace_session_path(base_log_dir).exists()
+
+
+def test_read_active_trace_session_ignores_malformed_or_outside_pointer(tmp_path: Path) -> None:
+    base_log_dir = tmp_path / "logs"
+    base_log_dir.mkdir()
+    pointer_path = active_trace_session_path(base_log_dir)
+
+    pointer_path.write_text("{not json", encoding="utf-8")
+    assert read_active_trace_session(base_log_dir) is None
+
+    pointer_path.write_text(
+        (
+            '{"session_id":"x","session_dir":"'
+            + str((tmp_path / "outside").resolve())
+            + '","agent_id":"main","server_pid":1234,'
+            '"server_instance_id":"srv-1","updated_at":1.0}'
+        ),
+        encoding="utf-8",
+    )
+    assert read_active_trace_session(base_log_dir) is None

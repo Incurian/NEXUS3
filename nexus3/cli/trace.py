@@ -11,7 +11,7 @@ from pathlib import Path
 from nexus3.display import get_console
 from nexus3.display.safe_sink import SafeSink
 from nexus3.session.storage import MessageRow, SessionStorage
-from nexus3.session.trace import tool_display_id
+from nexus3.session.trace import read_active_trace_session, tool_display_id
 
 TRACE_PRESETS = ("execution", "debug")
 DEFAULT_MAX_TOOL_LINES = 50
@@ -41,22 +41,22 @@ class ExecutionTraceEntry:
     truncation_note: str | None = None
 
 
-def resolve_trace_session_dir(base_log_dir: Path, target: str | None = None) -> Path:
-    """Resolve a trace target to a session directory containing `session.db`."""
-    if target == "latest":
-        target = None
+@dataclass(frozen=True)
+class TraceSessionBinding:
+    """Resolved trace session plus whether default active-follow is enabled."""
 
-    if target:
-        candidate = Path(target).expanduser()
-        if candidate.is_file() and candidate.name == "session.db":
-            return candidate.parent.resolve()
-        if candidate.is_dir() and (candidate / "session.db").exists():
-            return candidate.resolve()
+    session_dir: Path
+    follow_active: bool
+
+
+def _resolve_latest_trace_session_dir(base_log_dir: Path) -> Path:
+    """Resolve the newest traceable session directory under the selected log root."""
+    log_root = base_log_dir.expanduser().resolve()
 
     session_dbs = sorted(
         (
             path.resolve()
-            for path in base_log_dir.expanduser().resolve().rglob("session.db")
+            for path in log_root.rglob("session.db")
         ),
         key=lambda path: path.stat().st_mtime,
         reverse=True,
@@ -70,19 +70,70 @@ def resolve_trace_session_dir(base_log_dir: Path, target: str | None = None) -> 
     if not candidates:
         raise FileNotFoundError(f"No session.db files found under {base_log_dir}")
 
-    if not target:
-        return candidates[0]
+    return candidates[0]
 
-    matches = [path for path in candidates if path.name.startswith(target)]
-    if len(matches) == 1:
-        return matches[0]
-    if not matches:
-        raise FileNotFoundError(
-            f"No session directory matches '{target}' under {base_log_dir}"
+
+def resolve_trace_session_binding(
+    base_log_dir: Path,
+    target: str | None = None,
+) -> TraceSessionBinding:
+    """Resolve a trace target and whether follow-active retargeting should run."""
+    if target == "latest":
+        target = None
+
+    log_root = base_log_dir.expanduser().resolve()
+
+    if target:
+        candidate = Path(target).expanduser()
+        if candidate.is_file() and candidate.name == "session.db":
+            return TraceSessionBinding(session_dir=candidate.parent.resolve(), follow_active=False)
+        if candidate.is_dir() and (candidate / "session.db").exists():
+            return TraceSessionBinding(session_dir=candidate.resolve(), follow_active=False)
+
+        session_dbs = sorted(
+            (
+                path.resolve()
+                for path in log_root.rglob("session.db")
+            ),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        candidates: list[Path] = []
+        for session_db in session_dbs:
+            session_dir = session_db.parent
+            if session_dir not in candidates:
+                candidates.append(session_dir)
+
+        if not candidates:
+            raise FileNotFoundError(f"No session.db files found under {base_log_dir}")
+
+        matches = [path for path in candidates if path.name.startswith(target)]
+        if len(matches) == 1:
+            return TraceSessionBinding(session_dir=matches[0], follow_active=False)
+        if not matches:
+            raise FileNotFoundError(
+                f"No session directory matches '{target}' under {base_log_dir}"
+            )
+
+        names = ", ".join(path.name for path in matches[:5])
+        raise ValueError(f"Ambiguous session target '{target}'. Matches: {names}")
+
+    active_session = read_active_trace_session(log_root)
+    if active_session is not None:
+        return TraceSessionBinding(
+            session_dir=active_session.session_dir,
+            follow_active=True,
         )
 
-    names = ", ".join(path.name for path in matches[:5])
-    raise ValueError(f"Ambiguous session target '{target}'. Matches: {names}")
+    return TraceSessionBinding(
+        session_dir=_resolve_latest_trace_session_dir(log_root),
+        follow_active=True,
+    )
+
+
+def resolve_trace_session_dir(base_log_dir: Path, target: str | None = None) -> Path:
+    """Resolve a trace target to a session directory containing `session.db`."""
+    return resolve_trace_session_binding(base_log_dir, target).session_dir
 
 
 def _truncate_tool_body(
@@ -213,7 +264,7 @@ async def run_trace(
     safe_sink = SafeSink(console)
 
     try:
-        session_dir = resolve_trace_session_dir(log_dir, target)
+        binding = resolve_trace_session_binding(log_dir, target)
     except (FileNotFoundError, ValueError) as e:
         console.print(f"[red]Error:[/] {safe_sink.sanitize_print_value(e)}")
         return 1
@@ -224,26 +275,36 @@ async def run_trace(
 
     console.print("[bold]NEXUS3 Trace[/]")
     console.print(f"[dim]Preset:[/] {safe_sink.sanitize_print_value(preset)}")
-    console.print(f"[dim]Session:[/] {safe_sink.sanitize_print_value(session_dir)}")
+    if binding.follow_active:
+        console.print(
+            "[dim]Session:[/] following active session in selected log root "
+            f"(currently {safe_sink.sanitize_print_value(binding.session_dir)})"
+        )
+    else:
+        console.print(f"[dim]Session:[/] {safe_sink.sanitize_print_value(binding.session_dir)}")
     console.print("")
 
     try:
         if preset == "execution":
             await _run_execution_trace(
-                session_dir=session_dir,
+                session_dir=binding.session_dir,
                 follow=follow,
                 history=history,
                 poll_interval=poll_interval,
                 safe_sink=safe_sink,
                 max_tool_lines=max_tool_lines,
+                base_log_dir=log_dir,
+                follow_active=binding.follow_active,
             )
         else:
             await _run_debug_trace(
-                session_dir=session_dir,
+                session_dir=binding.session_dir,
                 follow=follow,
                 history=history,
                 poll_interval=poll_interval,
                 safe_sink=safe_sink,
+                base_log_dir=log_dir,
+                follow_active=binding.follow_active,
             )
     except KeyboardInterrupt:
         console.print("")
@@ -260,22 +321,41 @@ async def _run_execution_trace(
     poll_interval: float,
     safe_sink: SafeSink,
     max_tool_lines: int,
+    base_log_dir: Path,
+    follow_active: bool,
 ) -> None:
-    storage = SessionStorage(session_dir / "session.db")
+    current_session_dir = session_dir
+    storage: SessionStorage | None = None
+
     try:
-        entries = build_execution_entries(
-            storage.get_messages(in_context_only=False),
-            max_tool_lines=max_tool_lines,
-        )
-        for entry in entries[-history:]:
-            _print_trace_entry(safe_sink, entry)
-
-        if not follow:
-            return
-
-        last_message_id = max((entry.source_message_id for entry in entries), default=0)
         while True:
+            if storage is None:
+                storage = SessionStorage(current_session_dir / "session.db")
+                entries = build_execution_entries(
+                    storage.get_messages(in_context_only=False),
+                    max_tool_lines=max_tool_lines,
+                )
+                for entry in entries[-history:]:
+                    _print_trace_entry(safe_sink, entry)
+                last_message_id = max((entry.source_message_id for entry in entries), default=0)
+                if not follow:
+                    return
+
             await asyncio.sleep(poll_interval)
+            if follow_active:
+                updated_session_dir = _resolve_follow_active_session_dir(
+                    base_log_dir=base_log_dir,
+                    current_session_dir=current_session_dir,
+                )
+                if updated_session_dir != current_session_dir:
+                    if storage is not None:
+                        storage.close()
+                        storage = None
+                    current_session_dir = updated_session_dir
+                    _print_trace_session_switch_notice(safe_sink, current_session_dir)
+                    continue
+
+            assert storage is not None
             try:
                 messages = storage.get_messages(in_context_only=False)
             except Exception:
@@ -294,7 +374,8 @@ async def _run_execution_trace(
 
             last_message_id = max(row.id for row in new_rows)
     finally:
-        storage.close()
+        if storage is not None:
+            storage.close()
 
 
 async def _run_debug_trace(
@@ -304,25 +385,31 @@ async def _run_debug_trace(
     history: int,
     poll_interval: float,
     safe_sink: SafeSink,
+    base_log_dir: Path,
+    follow_active: bool,
 ) -> None:
-    verbose_path = session_dir / "verbose.md"
-    position = 0
-
-    if verbose_path.exists():
-        lines = verbose_path.read_text(encoding="utf-8").splitlines()
-        for line in lines[-history:]:
-            safe_sink.print_untrusted(line)
-        position = verbose_path.stat().st_size
-    else:
-        safe_sink.print_untrusted(
-            "verbose.md not present yet. Start the REPL with -v or -V for debug trace output."
-        )
+    current_session_dir = session_dir
+    verbose_path = current_session_dir / "verbose.md"
+    position = _print_debug_trace_snapshot(safe_sink, verbose_path, history)
 
     if not follow:
         return
 
     while True:
         await asyncio.sleep(poll_interval)
+        if follow_active:
+            updated_session_dir = _resolve_follow_active_session_dir(
+                base_log_dir=base_log_dir,
+                current_session_dir=current_session_dir,
+            )
+            if updated_session_dir != current_session_dir:
+                current_session_dir = updated_session_dir
+                verbose_path = current_session_dir / "verbose.md"
+                position = 0
+                _print_trace_session_switch_notice(safe_sink, current_session_dir)
+                position = _print_debug_trace_snapshot(safe_sink, verbose_path, history)
+                continue
+
         if not verbose_path.exists():
             continue
 
@@ -348,6 +435,45 @@ def _print_trace_entry(safe_sink: SafeSink, entry: ExecutionTraceEntry) -> None:
     if entry.truncation_note:
         safe_sink.print_untrusted(f"  {entry.truncation_note}", style="dim")
     safe_sink.print_trusted("")
+
+
+def _print_trace_session_switch_notice(safe_sink: SafeSink, session_dir: Path) -> None:
+    """Print a visible notice when trace retargets to a different active session."""
+    safe_sink.print_untrusted(
+        f"Switched trace to active session: {session_dir}",
+        style="dim",
+    )
+    safe_sink.print_trusted("")
+
+
+def _print_debug_trace_snapshot(
+    safe_sink: SafeSink,
+    verbose_path: Path,
+    history: int,
+) -> int:
+    """Print the initial debug-trace snapshot and return the next file offset."""
+    if verbose_path.exists():
+        lines = verbose_path.read_text(encoding="utf-8").splitlines()
+        for line in lines[-history:]:
+            safe_sink.print_untrusted(line)
+        return verbose_path.stat().st_size
+
+    safe_sink.print_untrusted(
+        "verbose.md not present yet. Start the REPL with -v or -V for debug trace output."
+    )
+    return 0
+
+
+def _resolve_follow_active_session_dir(
+    *,
+    base_log_dir: Path,
+    current_session_dir: Path,
+) -> Path:
+    """Resolve the current active-follow target for a trace log root."""
+    active_session = read_active_trace_session(base_log_dir)
+    if active_session is not None:
+        return active_session.session_dir
+    return current_session_dir
 
 
 def _format_timestamp(timestamp: float) -> str:

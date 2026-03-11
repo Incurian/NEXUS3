@@ -33,6 +33,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from secrets import token_hex
 from typing import Any
 
 from dotenv import load_dotenv
@@ -137,6 +138,10 @@ from nexus3.session.persistence import (
     deserialize_messages,
     serialize_clipboard_entries,
     serialize_session,
+)
+from nexus3.session.trace import (
+    clear_active_trace_session,
+    write_active_trace_session,
 )
 
 logger = logging.getLogger(__name__)
@@ -380,6 +385,7 @@ async def run_repl(
 
     # Base log directory
     base_log_dir = log_dir or Path(".nexus3/logs")
+    trace_server_instance_id = token_hex(8)
 
     # Configure server lifecycle logging (non-destructive, adds file handler only)
     # This ensures embedded HTTP server events are logged to server.log
@@ -580,6 +586,23 @@ async def run_repl(
     current_agent_id = agent_name
     pool.set_repl_connected(agent_name, True)
     whisper = WhisperMode()
+
+    def publish_active_trace_session(agent_id: str, agent_session_dir: Path) -> None:
+        """Publish the currently displayed REPL session for trace auto-follow."""
+        try:
+            write_active_trace_session(
+                base_log_dir=base_log_dir,
+                session_dir=agent_session_dir,
+                agent_id=agent_id,
+                server_instance_id=trace_server_instance_id,
+                server_pid=os.getpid(),
+            )
+        except Exception as e:
+            logger.debug(
+                "Failed to publish active trace session: %s: %s",
+                type(e).__name__,
+                e,
+            )
 
     # Helper to create command context (captures current state)
     def make_ctx() -> CommandContext:
@@ -977,6 +1000,7 @@ async def run_repl(
 
     # Attach callbacks to the initial session
     _set_display_session(session)
+    publish_active_trace_session(current_agent_id, session_logger.session_dir)
 
     # =============================================================
     # Incoming turn notifications (for RPC messages while at prompt)
@@ -1497,6 +1521,10 @@ async def run_repl(
                             session.on_confirm = confirm_with_pause
                             # Update last session on switch
                             save_as_last_session(current_agent_id)
+                            publish_active_trace_session(
+                                current_agent_id,
+                                session_logger.session_dir,
+                            )
                             if not was_whisper:
                                 console.print(
                                     _format_switched_agent_line(safe_sink, current_agent_id),
@@ -1566,6 +1594,10 @@ async def run_repl(
                                         session.on_confirm = confirm_with_pause
                                         # Update last session on restore
                                         save_as_last_session(current_agent_id)
+                                        publish_active_trace_session(
+                                            current_agent_id,
+                                            session_logger.session_dir,
+                                        )
                                         console.print(
                                             _format_switched_agent_line(
                                                 safe_sink, agent_name_to_restore
@@ -1627,6 +1659,10 @@ async def run_repl(
                                         session.on_confirm = confirm_with_pause
                                         # Update last session on create+switch
                                         save_as_last_session(current_agent_id)
+                                        publish_active_trace_session(
+                                            current_agent_id,
+                                            session_logger.session_dir,
+                                        )
                                         console.print(
                                             _format_switched_agent_line(
                                                 safe_sink, agent_name_to_create
@@ -1831,6 +1867,15 @@ async def run_repl(
 
     # 3. Delete the API key file
     token_manager.delete()
+
+    # 3.5. Clear active trace pointer if this REPL still owns it
+    try:
+        clear_active_trace_session(
+            base_log_dir=base_log_dir,
+            server_instance_id=trace_server_instance_id,
+        )
+    except Exception as e:
+        logger.debug("Failed to clear active trace session: %s: %s", type(e).__name__, e)
 
     # 4. Clear REPL connection state before destroying agents
     pool.set_repl_connected(current_agent_id, False)

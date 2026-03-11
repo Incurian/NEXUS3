@@ -415,6 +415,10 @@ class SessionInfo:
 `session.db` also powers execution trace viewing (`nexus3 trace`) and the
 REPL-side persisted tool inspection commands (`/tools`, `/tool`).
 
+The shared log root may also contain `.active-session.json`, a small pointer
+used by `nexus3 trace` to follow the currently active REPL session by default
+when no explicit trace target is provided.
+
 ### Properties
 
 | Property | Type | Description |

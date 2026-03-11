@@ -12,10 +12,13 @@ import pytest
 from nexus3.cli.arg_parser import parse_args
 from nexus3.cli.trace import (
     DEFAULT_MAX_TOOL_LINES,
+    _resolve_follow_active_session_dir,
     build_execution_entries,
+    resolve_trace_session_binding,
     resolve_trace_session_dir,
 )
 from nexus3.session.storage import MessageRow
+from nexus3.session.trace import write_active_trace_session
 
 
 def test_resolve_trace_session_dir_uses_latest_when_no_target(tmp_path: Path) -> None:
@@ -53,6 +56,32 @@ def test_resolve_trace_session_dir_supports_latest_alias(tmp_path: Path) -> None
     assert resolved == target.resolve()
 
 
+def test_resolve_trace_session_binding_prefers_active_pointer_when_target_omitted(
+    tmp_path: Path,
+) -> None:
+    newest = tmp_path / "newest"
+    active_parent = tmp_path / "main"
+    active = active_parent / "2026-03-11_agent_active"
+    newest.mkdir()
+    active.mkdir(parents=True)
+    (newest / "session.db").write_text("", encoding="utf-8")
+    (active / "session.db").write_text("", encoding="utf-8")
+    os.utime(newest / "session.db", (20, 20))
+
+    write_active_trace_session(
+        base_log_dir=tmp_path,
+        session_dir=active,
+        agent_id="main",
+        server_instance_id="srv-1",
+        server_pid=1234,
+    )
+
+    binding = resolve_trace_session_binding(tmp_path)
+
+    assert binding.session_dir == active.resolve()
+    assert binding.follow_active is True
+
+
 def test_parse_args_supports_trace_latest_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sys,
@@ -79,6 +108,44 @@ def test_parse_args_supports_trace_max_tool_lines(monkeypatch: pytest.MonkeyPatc
 
     assert args.command == "trace"
     assert args.max_tool_lines == 25
+
+
+def test_resolve_follow_active_session_dir_keeps_current_without_pointer(tmp_path: Path) -> None:
+    current = tmp_path / "current"
+    current.mkdir()
+    (current / "session.db").write_text("", encoding="utf-8")
+
+    resolved = _resolve_follow_active_session_dir(
+        base_log_dir=tmp_path,
+        current_session_dir=current.resolve(),
+    )
+
+    assert resolved == current.resolve()
+
+
+def test_resolve_follow_active_session_dir_switches_when_pointer_changes(tmp_path: Path) -> None:
+    current = tmp_path / "current"
+    active_parent = tmp_path / "main"
+    active = active_parent / "2026-03-11_agent_active"
+    current.mkdir()
+    active.mkdir(parents=True)
+    (current / "session.db").write_text("", encoding="utf-8")
+    (active / "session.db").write_text("", encoding="utf-8")
+
+    write_active_trace_session(
+        base_log_dir=tmp_path,
+        session_dir=active,
+        agent_id="main",
+        server_instance_id="srv-1",
+        server_pid=1234,
+    )
+
+    resolved = _resolve_follow_active_session_dir(
+        base_log_dir=tmp_path,
+        current_session_dir=current.resolve(),
+    )
+
+    assert resolved == active.resolve()
 
 
 def test_build_execution_entries_renders_typed_message_previews_and_tool_blocks() -> None:
