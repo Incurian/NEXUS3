@@ -206,6 +206,16 @@ Implementation status (in progress):
     provider never sent earlier `ContentDelta` chunks for that text
   - plain final-only assistant responses now still surface to the caller
     instead of silently appearing only in persisted context
+- live-test watchpoint:
+  - reviewed Windows/AgentBridge session
+    `D:/tempofresh/TempoSample/Plugins/AgentBridge/.nexus3/logs/.1/2026-03-11_170309_agent_c9f25f`
+    after the streamed-content fix
+  - `raw.jsonl` and `context.md` agreed: some contrived
+    `message -> tool -> message` prompts ended as text-only final responses
+    or tool-only turns with no hidden dropped tool calls
+  - treat this as an ongoing provider/model behavior watchpoint until broader
+    live usage shows whether it occurs in normal workflows or only under
+    artificial ordering prompts
 
 ## Interaction Inventory
 

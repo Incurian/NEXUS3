@@ -1849,7 +1849,24 @@ Architecture execution running status (2026-03-09, Plan C hygiene closeout + kee
 
 ### Known Failures
 
-None. If any test or lint failure is introduced and cannot be immediately resolved, document it here with:
+No deterministic test or lint failures currently.
+
+Watchpoint:
+- Live behavior to keep watching on `feat/repl-streaming-cleanup`: some
+  provider/model combinations (observed with `openai/gpt-5.3-codex` via
+  OpenRouter) may still choose either text-only final responses or tool-only
+  turns under contrived `message -> tool -> message` prompts instead of mixed
+  `content + tool_calls` responses.
+- In the reviewed Windows/AgentBridge session
+  `D:/tempofresh/TempoSample/Plugins/AgentBridge/.nexus3/logs/.1/2026-03-11_170309_agent_c9f25f`,
+  `raw.jsonl` and `context.md` matched: the provider summaries themselves
+  showed `tool_call_count=0` on the “speak first, then use a tool” turns, so
+  this was not a trace/render mismatch.
+- If users report message/tool ordering problems, inspect `raw.jsonl`
+  `stream_complete` summaries before assuming the REPL dropped a tool call or
+  lost streamed content.
+
+If any test or lint failure is introduced and cannot be immediately resolved, document it here with:
 - **What** fails (exact test name or lint rule)
 - **Why** it fails (root cause)
 - **Plan** to fix (who, when, how)

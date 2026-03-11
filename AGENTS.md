@@ -260,6 +260,17 @@ Current milestone:
       - the tool-loop path now flushes that reconciled pre-tool text before
         `ToolBatchStarted`, so user-visible narration is no longer lost behind
         the first tool call
+    - live diagnostic watchpoint from Windows/AgentBridge log review:
+      - with `openai/gpt-5.3-codex` via OpenRouter, contrived
+        `message -> tool -> message` prompts still sometimes end as either
+        text-only final responses or tool-only turns instead of mixed
+        `content + tool_calls`
+      - reviewed `raw.jsonl` vs `context.md` for
+        `D:/tempofresh/TempoSample/Plugins/AgentBridge/.nexus3/logs/.1/2026-03-11_170309_agent_c9f25f`
+        and found no trace/render mismatch; the provider summaries themselves
+        showed `tool_call_count=0` on the “speak first, then use a tool” turns
+      - keep watching this in real workflows before treating remaining
+        message/tool ordering complaints as a REPL streaming bug
   - focused validation passed:
     - `.venv/bin/pytest -q tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py` (`93 passed`)
     - `.venv/bin/ruff check nexus3/display/safe_sink.py nexus3/display/spinner.py nexus3/display/theme.py nexus3/display/__init__.py nexus3/cli/repl.py nexus3/cli/repl_formatting.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py`
@@ -278,9 +289,11 @@ Current milestone:
     - branch is locally ready for another live retest of incoming RPC /
       `nexus_send` / external `compact` while a REPL tool turn is active, and
       for pre-tool narration where the provider only supplies text on the
-      final assembled assistant message; visible color still needs
-      confirmation in a color-enabled terminal because this shell currently
-      reports `no_color=True`
+      final assembled assistant message; also watch for model/provider turns
+      that choose text-only or tool-only responses instead of mixed
+      `content + tool_calls`; visible color still needs confirmation in a
+      color-enabled terminal because this shell currently reports
+      `no_color=True`
 - Trace subagent scope complete locally (2026-03-11):
   - executed
     [TRACE-SUBAGENT-SCOPE-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-SUBAGENT-SCOPE-PLAN-2026-03-11.md)
