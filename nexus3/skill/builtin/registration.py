@@ -22,7 +22,7 @@ from nexus3.skill.builtin.edit_lines import edit_lines_factory
 from nexus3.skill.builtin.file_info import file_info_factory
 from nexus3.skill.builtin.git import git_factory
 from nexus3.skill.builtin.glob_search import glob_factory
-from nexus3.skill.builtin.grep import grep_factory
+from nexus3.skill.builtin.grep import search_text_factory
 from nexus3.skill.builtin.kill_process import kill_process_factory
 from nexus3.skill.builtin.list_directory import list_directory_factory
 from nexus3.skill.builtin.mkdir import mkdir_factory
@@ -62,7 +62,7 @@ def register_builtin_skills(registry: SkillRegistry) -> None:
     registry.register("file_info", file_info_factory)
     registry.register("list_directory", list_directory_factory)
     registry.register("glob", glob_factory)
-    registry.register("grep", grep_factory)
+    registry.register("search_text", search_text_factory)
     registry.register("concat_files", concat_files_factory)
     registry.register("outline", outline_factory)
     registry.register("list_processes", list_processes_factory)

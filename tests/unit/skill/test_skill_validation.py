@@ -206,7 +206,7 @@ class TestValidationUniformity:
                 lambda tmp_path: {"pattern": "*.py", "path": str(tmp_path)},
             ),
             (
-                "grep",
+                "search_text",
                 lambda tmp_path: (
                     _create_file(tmp_path / "grep.txt", "hello\n")
                     or {"pattern": "hello", "path": str(tmp_path / "grep.txt")}

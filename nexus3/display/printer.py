@@ -65,7 +65,7 @@ class InlinePrinter:
         """Print task starting (e.g., '  [cyan]●[/] read_file: src/main.py').
 
         Args:
-            task_type: Type of task (read_file, grep, etc.)
+            task_type: Type of task (read_file, search_text, etc.)
             label: Task details
             indent: Indentation level
         """

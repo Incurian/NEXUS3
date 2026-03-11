@@ -61,7 +61,7 @@ PATH_TOOLS = frozenset(
         "regex_replace",
         "patch",
         "glob",
-        "grep",
+        "search_text",
         "copy",
         "cut",
         "paste",

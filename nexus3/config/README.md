@@ -211,13 +211,13 @@ Optional configuration for external search acceleration.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `ripgrep_path` | `str \| None` | `None` | Explicit path to ripgrep. If omitted, NEXUS uses PATH lookup |
-| `require_ripgrep` | `bool` | `False` | Fail closed for directory `grep` when ripgrep cannot be used |
+| `require_ripgrep` | `bool` | `False` | Fail closed for directory `search_text` when ripgrep cannot be used |
 
 Notes:
-- Unrestricted directory `grep` uses ripgrep when it is configured or found on
+- Unrestricted directory `search_text` uses ripgrep when it is configured or found on
   PATH.
-- Path-restricted directory `grep` still uses the Python fallback today.
-- If `require_ripgrep=true`, directory `grep` returns an explicit error instead
+- Path-restricted directory `search_text` still uses the Python fallback today.
+- If `require_ripgrep=true`, directory `search_text` returns an explicit error instead
   of silently switching backends when ripgrep is unavailable or disallowed.
 
 ---

@@ -410,7 +410,7 @@ with Live(display, refresh_per_second=10) as live:
     # Track tool batch
     display.start_batch([
         ("read_file", "tc1", "path=/src/main.py"),
-        ("grep", "tc2", "pattern=TODO"),
+        ("search_text", "tc2", "pattern=TODO"),
     ])
 
     display.set_tool_active("tc1")

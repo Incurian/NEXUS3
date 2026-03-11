@@ -14,7 +14,7 @@ Key behaviors tested:
 2. rename destination triggers confirmation
 3. Allowance is applied to destination, not source
 4. Single-path tools (edit_file, write_file) still work correctly
-5. Read-only tools (read_file, grep) don't trigger confirmation
+5. Read-only tools (read_file, search_text) don't trigger confirmation
 """
 
 from pathlib import Path
@@ -1027,9 +1027,9 @@ class TestReadOnlyToolsUnaffected:
         assert write_paths == []
 
     def test_grep_no_write_paths(self) -> None:
-        """grep has no write paths."""
+        """search_text has no write paths."""
         args = {"pattern": "test", "path": "/search/dir"}
-        paths = extract_write_paths("grep", args)
+        paths = extract_write_paths("search_text", args)
         assert paths == []
 
     def test_list_directory_no_write_paths(self) -> None:

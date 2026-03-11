@@ -1,29 +1,29 @@
-"""Unit tests for grep fallback filesystem gateway enforcement."""
+"""Unit tests for search_text fallback filesystem gateway enforcement."""
 
 import asyncio
 from pathlib import Path
 
 import pytest
 
-from nexus3.skill.builtin.grep import GrepSkill, grep_factory
+from nexus3.skill.builtin.grep import SearchTextSkill, search_text_factory
 from nexus3.skill.services import ServiceContainer
 
 
-def _build_grep_skill(
+def _build_search_text_skill(
     *,
     cwd: Path,
     allowed_paths: list[Path] | None,
     blocked_paths: list[Path] | None = None,
-) -> GrepSkill:
+) -> SearchTextSkill:
     services = ServiceContainer()
     services.set_cwd(cwd)
     services.register_runtime_compat("allowed_paths", allowed_paths)
     services.register("blocked_paths", blocked_paths or [])
-    return grep_factory(services)
+    return search_text_factory(services)
 
 
-class TestGrepGatewayEnforcement:
-    """Grep fallback path filtering behavior through FilesystemAccessGateway."""
+class TestSearchTextGatewayEnforcement:
+    """search_text fallback path filtering behavior through FilesystemAccessGateway."""
 
     @pytest.mark.asyncio
     async def test_grep_fallback_skips_blocked_paths(
@@ -43,7 +43,7 @@ class TestGrepGatewayEnforcement:
         (allowed / "inside.txt").write_text("needle\n")
         (blocked / "hidden.txt").write_text("needle\n")
 
-        skill = _build_grep_skill(
+        skill = _build_search_text_skill(
             cwd=tmp_path,
             allowed_paths=[allowed],
             blocked_paths=[blocked],
@@ -79,7 +79,7 @@ class TestGrepGatewayEnforcement:
         except OSError as exc:
             pytest.skip(f"symlink creation not supported: {exc}")
 
-        skill = _build_grep_skill(cwd=tmp_path, allowed_paths=[allowed])
+        skill = _build_search_text_skill(cwd=tmp_path, allowed_paths=[allowed])
         result = await skill.execute(pattern="needle", path=str(allowed), recursive=True)
 
         assert not result.error
@@ -112,7 +112,7 @@ class TestGrepGatewayEnforcement:
         except OSError as exc:
             pytest.skip(f"symlink creation not supported: {exc}")
 
-        skill = _build_grep_skill(cwd=tmp_path, allowed_paths=[allowed])
+        skill = _build_search_text_skill(cwd=tmp_path, allowed_paths=[allowed])
         result = await skill.execute(pattern="needle", path=str(allowed), recursive=True)
 
         assert not result.error

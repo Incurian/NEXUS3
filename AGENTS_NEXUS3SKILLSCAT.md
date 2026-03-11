@@ -26,7 +26,7 @@ instead of being silently dropped.
 | `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory |
 | `list_directory` | `path` | List directory contents |
 | `glob` | `pattern`, `path`?, `max_results`?, `recursive`?, `kind`?, `exclude`? | Find files or directories by glob pattern; `recursive=true` searches nested paths, `kind` filters files/directories, and `exclude` uses relative-path glob rules |
-| `grep` | `pattern`, `path`, `recursive`?, `ignore_case`?, `max_matches`?, `include`?, `context`? | Search UTF-8 file contents with file filter and context lines; unrestricted directory scans may use ripgrep when configured/available, single-file invalid UTF-8 fails closed, and directory scans skip invalid UTF-8 files |
+| `search_text` | `pattern`, `path`, `recursive`?, `ignore_case`?, `max_matches`?, `include`?, `context`? | Search UTF-8 file contents with file filter and context lines; unrestricted directory scans may use ripgrep when configured/available, single-file invalid UTF-8 fails closed, and directory scans skip invalid UTF-8 files |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate UTF-8 files by extension with token estimation (`dry_run=True` by default; real writes generate an output file and skip invalid UTF-8 inputs) |
 | `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory; directory mode is non-recursive, `depth` controls nested symbols within each file, markdown heading detection ignores fenced code blocks, invalid UTF-8 directory entries are skipped, `symbol` returns a source excerpt for files only, `file_type`/`language`/`parser` can override parser detection for files, `recursive=true` fails closed, ambiguous symbol matches fail closed, and large directory output may truncate |
 | `list_processes` | `query`?, `match`?, `user`?, `port`?, `limit`?, `offset`? | List running processes with paginated results, exact/contains/regex discovery, and redacted command previews |
@@ -43,7 +43,7 @@ instead of being silently dropped.
 | `nexus_status` | `agent_id`, `port`? | Get agent tokens and context |
 
 Search guidance:
-- Prefer `glob` for path discovery and built-in `grep` for content search
+- Prefer `glob` for path discovery and built-in `search_text` for content search
   before reaching for shell `find`, `Get-ChildItem`, `grep`, or `rg`.
 Process guidance:
 - Prefer built-in `list_processes`, `get_process`, and `kill_process` before

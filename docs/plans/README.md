@@ -49,6 +49,7 @@ This index covers the architecture plans created during today's review/planning 
 
 - [SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md)
 - [RIPGREP-AVAILABILITY-AND-DETERMINISM-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/RIPGREP-AVAILABILITY-AND-DETERMINISM-PLAN-2026-03-11.md)
+- [SEARCH-TEXT-RENAME-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/SEARCH-TEXT-RENAME-PLAN-2026-03-11.md)
 
 ## Parser Correctness Audit Plans (2026-03-11)
 

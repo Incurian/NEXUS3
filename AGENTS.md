@@ -339,13 +339,14 @@ Current milestone:
   - shipped behavior:
     - `glob` now supports explicit `recursive`, `kind`, and real relative-path
       glob exclusion while preserving older `**` recursive patterns
-    - prompt/docs now explicitly prefer built-in `glob` and `grep` over shell
+    - prompt/docs now explicitly prefer built-in `glob` and `search_text` over shell
       `find`, `Get-ChildItem`, `grep`, or `rg` unless shell composition or
       exact external CLI semantics are required
     - new top-level `search` config supports `ripgrep_path` and
       `require_ripgrep`
-    - `grep` now resolves ripgrep at runtime instead of import time and fails
-      closed for directory search when `require_ripgrep=true` but ripgrep
+    - the content-search tool now resolves ripgrep at runtime instead of import
+      time and fails closed for directory search when
+      `require_ripgrep=true` but ripgrep
       cannot be used
   - validation:
     - `.venv/bin/ruff check nexus3/ tests/`
@@ -353,16 +354,35 @@ Current milestone:
     - live RPC validation on port `9000`:
       - trusted agent `search-check` described the new built-in search
         guidance correctly
-      - the same agent used built-in `glob` recursively and built-in `grep`
-        against `nexus3/` without falling back to shell search
+      - the same agent used built-in `glob` recursively and the built-in
+        content-search tool against `nexus3/` without falling back to shell
+        search
   - backlog-only follow-ups retained from the same discussion:
     - investigate Python fallback regex-engine alternatives later rather than
       mixing that into the current search-tool work
     - treat fuzzy search as a separate later feature track; fuzzy path search
       may be moderate, but fuzzy content search is a larger ranking/UX task
-    - later naming/design question to revisit:
-      - whether built-in `grep` should eventually be renamed to something less
-        shell-priming (for example `search_text`)
+    - bundled-ripgrep strategy remains deferred; current direction is explicit
+      runtime resolution/config rather than vendoring binaries
+- Search-tool naming follow-up complete (2026-03-11):
+  - executed
+    [SEARCH-TEXT-RENAME-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/SEARCH-TEXT-RENAME-PLAN-2026-03-11.md)
+    to rename the canonical built-in content-search tool from `grep` to
+    `search_text` without changing its behavior.
+  - shipped behavior:
+    - canonical public tool name is now `search_text`
+    - the current single-path file-or-directory contract is unchanged
+    - registration, path semantics, policy wiring, tests, and current-facing
+      docs now use `search_text`
+    - there is no backward-compat alias for `grep`
+  - validation:
+    - `.venv/bin/ruff check nexus3/skill/builtin/grep.py nexus3/skill/builtin/registration.py nexus3/session/path_semantics.py nexus3/core/policy.py nexus3/session/enforcer.py nexus3/config/schema.py nexus3/skill/base.py README.md CLAUDE.md AGENTS.md AGENTS_NEXUS3SKILLSCAT.md nexus3/defaults/NEXUS-DEFAULT.md nexus3/skill/README.md nexus3/config/README.md nexus3/session/README.md nexus3/display/README.md nexus3/display/printer.py tests/unit/test_skill_enhancements.py tests/unit/skill/test_grep_parallel.py tests/unit/skill/test_grep_gateway.py tests/unit/skill/test_skill_validation.py tests/unit/test_git_context.py tests/unit/test_error_sanitization.py tests/security/test_multipath_confirmation.py tests/security/test_p2_file_size_limits.py`
+    - `.venv/bin/mypy nexus3/skill/builtin/grep.py`
+    - `.venv/bin/pytest -q tests/unit/test_skill_enhancements.py tests/unit/skill/test_grep_parallel.py tests/unit/skill/test_grep_gateway.py tests/unit/skill/test_skill_validation.py tests/unit/test_git_context.py tests/unit/test_error_sanitization.py tests/security/test_multipath_confirmation.py tests/security/test_p2_file_size_limits.py` (`257 passed`)
+    - live RPC validation on port `9000`:
+      - trusted agent described `search_text` with the new public name
+      - trusted agent successfully called `search_text(...)` against the new
+        plan doc and reported a real match
 - Shell tool redesign implementation active (2026-03-11):
   - created
     [EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md)

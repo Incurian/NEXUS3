@@ -166,7 +166,7 @@ class TestSanitizeErrorForAgent:
     def test_path_not_found_still_sanitized(self):
         """Path not found errors should still be sanitized."""
         error = "Path not found: /etc/secret.conf"
-        result = sanitize_error_for_agent(error, "grep")
+        result = sanitize_error_for_agent(error, "search_text")
         assert result == "File or directory not found"
 
     def test_source_not_found_still_sanitized(self):

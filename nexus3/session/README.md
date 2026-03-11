@@ -655,7 +655,7 @@ AGENT_TARGET_TOOLS = frozenset({"nexus_send", "nexus_status", "nexus_cancel", "n
 PATH_TOOLS = frozenset({
     "read_file", "write_file", "edit_file", "edit_lines", "append_file", "tail",
     "file_info", "list_directory", "mkdir", "copy_file", "rename",
-    "regex_replace", "patch", "glob", "grep", "copy", "cut", "paste",
+    "regex_replace", "patch", "glob", "search_text", "copy", "cut", "paste",
     "clipboard_export", "clipboard_import", "clipboard_update", "concat_files",
 })
 ```
@@ -772,7 +772,7 @@ Registered semantics:
 | `file_info` | `path` | - | - |
 | `list_directory` | `path` | - | - |
 | `glob` | `path` | - | - |
-| `grep` | `path` | - | - |
+| `search_text` | `path` | - | - |
 
 ---
 

@@ -1,4 +1,4 @@
-"""Tests for grep parallel search optimization (Issue 6)."""
+"""Tests for search_text parallel search optimization (Issue 6)."""
 
 import json
 import re

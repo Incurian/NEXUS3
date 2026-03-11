@@ -515,7 +515,7 @@ class FileSkill(ABC):
 
         Resolves per-tool path overrides via ServiceContainer.
         This property is provided for skills that need raw access to
-        allowed_paths (e.g., glob/grep that check many paths in a loop).
+        allowed_paths (e.g., glob/search_text that check many paths in a loop).
 
         Returns:
             List of allowed Path objects, or None for unrestricted access.

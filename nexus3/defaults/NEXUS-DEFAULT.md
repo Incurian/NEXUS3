@@ -62,25 +62,25 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
 | `list_directory` | `path` | List directory contents |
 | `glob` | `pattern`, `path`?, `max_results`?, `recursive`?, `kind`?, `exclude`? | Find files or directories by glob pattern; `recursive=true` searches nested paths, `kind` filters files/directories, and `exclude` uses relative-path glob rules |
-| `grep` | `pattern`, `path`, `include`?, `context`?, `ignore_case`?, `recursive`?, `max_matches`? | Search UTF-8 file contents with regex; directory scans skip invalid UTF-8 files and may use ripgrep when configured/available |
+| `search_text` | `pattern`, `path`, `include`?, `context`?, `ignore_case`?, `recursive`?, `max_matches`? | Search UTF-8 file contents with regex; directory scans skip invalid UTF-8 files and may use ripgrep when configured/available |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `dry_run`? | Concatenate UTF-8 files by extension (`dry_run=true` by default; real writes generate an output file and skip invalid UTF-8 inputs) |
 | `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Directory mode is non-recursive, but `depth` controls nested symbols within each file. Markdown heading detection ignores fenced code blocks. `symbol` returns a source excerpt rather than structural entries. Use `file_type`/`language`/`parser` to override parser detection on files, `tokens` for estimates, and `diff` for changes. Unsupported file types should fall back to `read_file` or retry with a parser override |
 
 Text-reading tools operate on UTF-8 files. `read_file` and single-file
-`outline` fail closed on invalid UTF-8; directory `grep` and `outline` skip
+`outline` fail closed on invalid UTF-8; directory `search_text` and `outline` skip
 invalid UTF-8 files instead of mangling bytes.
 
 Search guidance:
 - Prefer `glob` for file/path discovery instead of shell `find`, `dir`, or
   PowerShell `Get-ChildItem`.
-- Prefer built-in `grep` for content search instead of shell `grep` / `rg`
+- Prefer built-in `search_text` for content search instead of shell `grep` / `rg`
   unless you specifically need shell composition or exact external CLI
   behavior.
 - `glob` still accepts `**` patterns, but `recursive=true` is the clearer way
   to request nested traversal.
-- `grep` may use ripgrep for unrestricted directory scans when available.
+- `search_text` may use ripgrep for unrestricted directory scans when available.
   `search.ripgrep_path` can pin the executable, and `search.require_ripgrep`
-  can make directory grep fail closed instead of silently using the Python
+  can make directory search_text fail closed instead of silently using the Python
   fallback.
 
 ### File Operations (Write)
@@ -303,7 +303,7 @@ outline(path="src/auth.py", diff=true)               # Entries with uncommitted 
 | Read specific lines | `read_file` with `offset`/`limit` | Precise — use line numbers from outline |
 | Read full file | `read_file` | Expensive — use only when you need everything |
 | Read many files of same type | `concat_files` | Bulk read with token budgeting and dry-run |
-| Search for a pattern | `grep` | When you know what to look for but not where |
+| Search for a pattern | `search_text` | When you know what to look for but not where |
 | Find files by name | `glob` | When you know the filename pattern |
 
 **`outline` vs `concat_files` — when to use which:**
@@ -858,8 +858,8 @@ If you are a NEXUS3 agent working on the NEXUS3 codebase itself:
 
 ### Searching the Codebase
 - **Always search `./nexus3/`** instead of the repository root
-- The root contains logs, test artifacts, and other large directories that will cause grep/glob to timeout
-- Example: `grep(pattern="SessionLogger", path="./nexus3/")` NOT `grep(pattern="SessionLogger", path=".")`
+- The root contains logs, test artifacts, and other large directories that will cause search_text/glob to timeout
+- Example: `search_text(pattern="SessionLogger", path="./nexus3/")` NOT `search_text(pattern="SessionLogger", path=".")`
 
 ### Key Directories
 - `nexus3/` — All source code (see module READMEs below)

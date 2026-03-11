@@ -416,7 +416,7 @@ class SearchConfig(BaseModel):
     """Explicit path to ripgrep. If omitted, PATH lookup is used."""
 
     require_ripgrep: bool = False
-    """Fail closed for directory grep when ripgrep cannot be used."""
+    """Fail closed for directory search_text when ripgrep cannot be used."""
 
     @field_validator("ripgrep_path", mode="before")
     @classmethod

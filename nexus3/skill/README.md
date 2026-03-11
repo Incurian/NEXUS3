@@ -67,7 +67,7 @@ nexus3/skill/
 │   ├── mkdir.py          # Directory creation skill
 │   ├── rename.py         # File/directory renaming skill
 │   ├── glob_search.py    # Glob pattern file search
-│   ├── grep.py           # Regex content search (CREATE_NO_WINDOW on Windows)
+│   ├── grep.py           # search_text regex content search (CREATE_NO_WINDOW on Windows)
 │   ├── concat_files.py   # Find and concatenate files by extension
 │   ├── outline.py        # Structural file/directory outline (16 language parsers)
 │   ├── regex_replace.py  # Regex find/replace (line ending preservation)
@@ -635,16 +635,16 @@ NEXUS3 includes 43 core built-in skills plus 21 GitLab skills (when configured),
 | `file_info` | Get file/directory metadata (Unix perms or Windows RHSA) | `path` |
 | `list_directory` | List directory contents | `path?`, `all?`, `long?` |
 | `glob` | Find files or directories by glob pattern; `recursive=true` searches nested paths, `kind` filters files/directories, and `exclude` uses relative-path glob rules | `pattern`, `path?`, `max_results?`, `recursive?`, `kind?`, `exclude?` |
-| `grep` | Search UTF-8 file contents (regex); unrestricted directory scans use ripgrep when configured/available, and directory scans skip invalid UTF-8 files | `pattern`, `path`, `recursive?`, `ignore_case?`, `max_matches?`, `include?`, `context?` |
+| `search_text` | Search UTF-8 file contents (regex); unrestricted directory scans use ripgrep when configured/available, and directory scans skip invalid UTF-8 files | `pattern`, `path`, `recursive?`, `ignore_case?`, `max_matches?`, `include?`, `context?` |
 | `concat_files` | Find and concatenate UTF-8 files by extension with token estimation (`dry_run=true` by default; real writes generate an output file and skip invalid UTF-8 inputs) | `extensions`, `path?`, `exclude?`, `lines?`, `max_total?`, `format?`, `sort?`, `gitignore?`, `dry_run?` |
 | `outline` | Structural outline of UTF-8 file/directory (headings, classes, functions, keys; non-recursive for directories, markdown ignores fenced code blocks, `symbol` returns source excerpt) | `path`, `file_type?`, `language?`, `parser?`, `depth?`, `preview?`, `signatures?`, `line_numbers?`, `tokens?`, `symbol?`, `diff?`, `recursive?` |
 
 Fixed-schema read/search/listing tools fail closed on unexpected extra
 top-level arguments.
 Text-reading tools operate on UTF-8 files. `read_file` and single-file
-`outline` fail closed on invalid UTF-8; directory `grep` and `outline` skip
+`outline` fail closed on invalid UTF-8; directory `search_text` and `outline` skip
 invalid UTF-8 files instead of mangling bytes.
-Prefer built-in `glob` for path discovery and built-in `grep` for content
+Prefer built-in `glob` for path discovery and built-in `search_text` for content
 search instead of shell `find`, `Get-ChildItem`, `grep`, or `rg` unless shell
 composition or exact external CLI semantics are required.
 
@@ -953,7 +953,7 @@ Skills with CREATE_NO_WINDOW support:
 - `exec`, `shell_UNSAFE`
 - `run_python`
 - `git`
-- `grep` (for ripgrep subprocess)
+- `search_text` (for ripgrep subprocess)
 - `concat_files` (for git and wc subprocesses)
 
 ### File Attributes

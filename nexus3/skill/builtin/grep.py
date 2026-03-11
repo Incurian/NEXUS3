@@ -1,4 +1,4 @@
-"""Grep skill for searching file contents with regex.
+"""Content-search skill for searching file contents with regex.
 
 P2.5 SECURITY: Implements file size limits and streaming search.
 Issue 6: Optimized with parallel file search using asyncio.gather + semaphore.
@@ -126,7 +126,7 @@ def _search_file_streaming(
     Returns:
         Tuple of (matches, hit_limit, skipped_invalid_utf8)
     """
-    matches: list[tuple[str, str]] = []
+    matches: list[str] = []
     lines_buffer: list[str] = []  # For context
     match_indices: list[int] = []
 
@@ -355,7 +355,7 @@ async def _search_with_ripgrep(
     stdout, stderr = await proc.communicate()
 
     # Parse JSON output
-    matches: list[str] = []
+    matches: list[tuple[str, str]] = []
     files_with_matches: set[str] = set()
     invalid_utf8_files: set[str] = set()
     files_searched = 0
@@ -458,7 +458,7 @@ def _rglob_with_exclusions(root: Path) -> list[Path]:
     return results
 
 
-class GrepSkill(FileSkill):
+class SearchTextSkill(FileSkill):
     """Skill that searches file contents using regular expressions.
 
     Supports searching a single file or recursively searching a directory.
@@ -473,11 +473,11 @@ class GrepSkill(FileSkill):
 
     @property
     def name(self) -> str:
-        return "grep"
+        return "search_text"
 
     @property
     def description(self) -> str:
-        return "Search file contents using regex pattern"
+        return "Search UTF-8 file contents using regex pattern"
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -650,7 +650,7 @@ class GrepSkill(FileSkill):
         return resolve_ripgrep(search_config)
 
     def _require_ripgrep(self) -> bool:
-        """Return True when config requires ripgrep for directory grep."""
+        """Return True when config requires ripgrep for directory search_text."""
         config = self._services.get_config()
         return bool(config is not None and config.search.require_ripgrep)
 
@@ -755,7 +755,7 @@ class GrepSkill(FileSkill):
 
 
 # Factory for dependency injection
-grep_factory = file_skill_factory(GrepSkill)
+search_text_factory = file_skill_factory(SearchTextSkill)
 
 
 def _format_ripgrep_requirement_error(

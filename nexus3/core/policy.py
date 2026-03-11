@@ -91,7 +91,7 @@ SAFE_ACTIONS = frozenset(
         "status",
         "search",
         "glob",
-        "grep",
+        "search_text",
     }
 )
 

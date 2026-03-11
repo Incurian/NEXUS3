@@ -70,7 +70,7 @@ TOOL_PATH_SEMANTICS: dict[str, ToolPathSemantics] = {
     "file_info": ToolPathSemantics(read_keys=("path",)),
     "list_directory": ToolPathSemantics(read_keys=("path",)),
     "glob": ToolPathSemantics(read_keys=("path",)),
-    "grep": ToolPathSemantics(read_keys=("path",)),
+    "search_text": ToolPathSemantics(read_keys=("path",)),
 }
 
 

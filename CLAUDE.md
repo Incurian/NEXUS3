@@ -79,7 +79,7 @@ Skill (Protocol)
 
 | Base Class | Purpose | Skills Using It |
 |------------|---------|-----------------|
-| `FileSkill` | Path validation, symlink resolution, allowed_paths | read_file, write_file, edit_file, append_file, tail, file_info, list_directory, mkdir, copy_file, rename, regex_replace, glob, grep |
+| `FileSkill` | Path validation, symlink resolution, allowed_paths | read_file, write_file, edit_file, append_file, tail, file_info, list_directory, mkdir, copy_file, rename, regex_replace, glob, search_text |
 | `NexusSkill` | Server URL building, API key discovery, client error handling | nexus_create, nexus_destroy, nexus_send, nexus_status, nexus_cancel, nexus_shutdown |
 | `ExecutionSkill` | Timeout enforcement, working dir resolution, output formatting | exec, shell_UNSAFE, run_python |
 | `FilteredCommandSkill` | Read-only command filtering, blocked pattern matching | git |
@@ -464,7 +464,7 @@ Contract rule for the file-edit family: unexpected extra arguments fail closed
 instead of being silently dropped.
 | `list_directory` | `path` | List directory contents |
 | `glob` | `pattern`, `path`?, `max_results`?, `recursive`?, `kind`?, `exclude`? | Find files or directories by glob pattern; `recursive=true` searches nested paths, `kind` filters files/directories, and `exclude` uses relative-path glob rules |
-| `grep` | `pattern`, `path`, `recursive`?, `ignore_case`?, `max_matches`?, `include`?, `context`? | Search UTF-8 file contents with file filter and context lines; unrestricted directory scans may use ripgrep when configured/available, single-file invalid UTF-8 fails closed, and directory scans skip invalid UTF-8 files |
+| `search_text` | `pattern`, `path`, `recursive`?, `ignore_case`?, `max_matches`?, `include`?, `context`? | Search UTF-8 file contents with file filter and context lines; unrestricted directory scans may use ripgrep when configured/available, single-file invalid UTF-8 fails closed, and directory scans skip invalid UTF-8 files |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate UTF-8 files by extension with token estimation (`dry_run=True` by default; real writes generate an output file and skip invalid UTF-8 inputs) |
 | `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory (headings, classes, functions, keys). Directory mode is non-recursive, `depth` controls nested symbols within each file, markdown heading detection ignores fenced code blocks, and invalid UTF-8 directory files are skipped. Use `symbol` for filtered read on files, `file_type`/`language`/`parser` to override parser detection, `tokens` for estimates, and `diff` for change markers |
 | `list_processes` | `query`?, `match`?, `user`?, `port`?, `limit`?, `offset`? | List running processes without shelling out; paginated by default and returns redacted command previews |
@@ -477,7 +477,7 @@ instead of being silently dropped.
 | `sleep` | `seconds`, `label`? | Pause execution (for testing) |
 
 Search guidance:
-- Prefer `glob` for path discovery and built-in `grep` for content search.
+- Prefer `glob` for path discovery and built-in `search_text` for content search.
 - Avoid shell `find`, `Get-ChildItem`, `grep`, or `rg` unless you need shell
   composition or exact external CLI semantics.
 Process guidance:

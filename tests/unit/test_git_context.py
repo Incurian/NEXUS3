@@ -36,7 +36,7 @@ class TestShouldRefreshGitContext:
         assert should_refresh_git_context("gitlab_pipeline") is True
 
     def test_read_tools_do_not_trigger(self):
-        for tool in ("read_file", "list_directory", "glob", "grep",
+        for tool in ("read_file", "list_directory", "glob", "search_text",
                       "file_info", "tail", "clipboard_list"):
             assert should_refresh_git_context(tool) is False, f"{tool} should not trigger refresh"
 

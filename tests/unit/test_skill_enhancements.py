@@ -1,4 +1,7 @@
-"""Tests for skill enhancements: read_file offset/limit, glob exclude, grep include/context."""
+"""Tests for skill enhancements.
+
+Covers read_file offset/limit, glob exclude, and search_text include/context.
+"""
 
 import base64
 import json
@@ -10,7 +13,7 @@ from nexus3.config.schema import Config, ModelConfig, ProviderConfig
 from nexus3.core.external_tools import ExternalToolResolution
 from nexus3.skill.builtin import grep as grep_module
 from nexus3.skill.builtin.glob_search import GlobSkill, glob_factory
-from nexus3.skill.builtin.grep import GrepSkill, grep_factory
+from nexus3.skill.builtin.grep import SearchTextSkill, search_text_factory
 from nexus3.skill.builtin.read_file import ReadFileSkill, read_file_factory
 from nexus3.skill.services import ServiceContainer
 
@@ -416,13 +419,13 @@ class TestGlobBehavior:
 
 
 class TestGrepIncludeContext:
-    """Tests for grep include and context parameters."""
+    """Tests for search_text include and context parameters."""
 
     @pytest.fixture
-    def skill(self) -> GrepSkill:
+    def skill(self) -> SearchTextSkill:
         # Use factory to get validation wrapper
         services = _make_services(allowed_paths=None)
-        return grep_factory(services)
+        return search_text_factory(services)
 
     @pytest.fixture
     def test_dir(self, tmp_path: Path) -> Path:
@@ -463,12 +466,16 @@ class TestGrepIncludeContext:
         return file
 
     @pytest.mark.asyncio
-    async def test_include_filters_by_extension(self, skill: GrepSkill, test_dir: Path) -> None:
+    async def test_include_filters_by_extension(
+        self,
+        skill: SearchTextSkill,
+        test_dir: Path,
+    ) -> None:
         """Include filter limits search to matching files."""
         result = await skill.execute(
             pattern="hello",
             path=str(test_dir),
-            include="*.py"
+            include="*.py",
         )
         assert not result.error
         # Should find in .py file
@@ -478,7 +485,7 @@ class TestGrepIncludeContext:
         assert "util.js" not in result.output
 
     @pytest.mark.asyncio
-    async def test_include_brace_expansion(self, skill: GrepSkill, test_dir: Path) -> None:
+    async def test_include_brace_expansion(self, skill: SearchTextSkill, test_dir: Path) -> None:
         """Include supports brace expansion like *.{js,ts}."""
         result = await skill.execute(
             pattern="hello|console",
@@ -493,7 +500,7 @@ class TestGrepIncludeContext:
 
     @pytest.mark.asyncio
     async def test_context_shows_surrounding_lines(
-        self, skill: GrepSkill, context_file: Path
+        self, skill: SearchTextSkill, context_file: Path
     ) -> None:
         """Context parameter shows lines before and after match."""
         result = await skill.execute(
@@ -509,7 +516,7 @@ class TestGrepIncludeContext:
 
     @pytest.mark.asyncio
     async def test_context_marks_match_lines(
-        self, skill: GrepSkill, context_file: Path
+        self, skill: SearchTextSkill, context_file: Path
     ) -> None:
         """Match lines are marked with > prefix."""
         result = await skill.execute(
@@ -525,7 +532,7 @@ class TestGrepIncludeContext:
 
     @pytest.mark.asyncio
     async def test_context_deduplicates_overlapping(
-        self, skill: GrepSkill, tmp_path: Path
+        self, skill: SearchTextSkill, tmp_path: Path
     ) -> None:
         """Adjacent matches don't duplicate shared context lines."""
         file = tmp_path / "adjacent.txt"
@@ -544,9 +551,9 @@ class TestGrepIncludeContext:
 
     @pytest.mark.asyncio
     async def test_context_zero_is_default_behavior(
-        self, skill: GrepSkill, context_file: Path
+        self, skill: SearchTextSkill, context_file: Path
     ) -> None:
-        """Context=0 gives default grep behavior."""
+        """Context=0 gives default search_text behavior."""
         result = await skill.execute(
             pattern="TARGET",
             path=str(context_file),
@@ -559,7 +566,7 @@ class TestGrepIncludeContext:
 
     @pytest.mark.asyncio
     async def test_include_and_context_together(
-        self, skill: GrepSkill, test_dir: Path
+        self, skill: SearchTextSkill, test_dir: Path
     ) -> None:
         """Include and context can be used together."""
         result = await skill.execute(
@@ -577,12 +584,12 @@ class TestGrepIncludeContext:
 
     @pytest.mark.asyncio
     async def test_single_file_invalid_utf8_returns_error(self, tmp_path: Path) -> None:
-        """Single-file grep should fail closed on invalid UTF-8 in Python fallback."""
+        """Single-file search_text should fail closed on invalid UTF-8 in Python fallback."""
         bad_file = tmp_path / "bad.txt"
         bad_file.write_bytes(b"\xffmatch\n")
 
         services = _make_services(allowed_paths=[tmp_path], cwd=tmp_path)
-        skill = grep_factory(services)
+        skill = search_text_factory(services)
 
         result = await skill.execute(pattern="match", path=str(bad_file))
 
@@ -591,14 +598,14 @@ class TestGrepIncludeContext:
 
     @pytest.mark.asyncio
     async def test_directory_grep_skips_invalid_utf8_files(self, tmp_path: Path) -> None:
-        """Directory grep should skip invalid UTF-8 files instead of corrupting them."""
+        """Directory search_text should skip invalid UTF-8 files instead of corrupting them."""
         good_file = tmp_path / "good.txt"
         good_file.write_text("match here\n")
         bad_file = tmp_path / "bad.txt"
         bad_file.write_bytes(b"\xffmatch\n")
 
         services = _make_services(allowed_paths=[tmp_path], cwd=tmp_path)
-        skill = grep_factory(services)
+        skill = search_text_factory(services)
 
         result = await skill.execute(pattern="match", path=str(tmp_path), recursive=True)
 
@@ -610,7 +617,7 @@ class TestGrepIncludeContext:
     @pytest.mark.asyncio
     async def test_directory_grep_skips_invalid_utf8_files_in_ripgrep_path(
         self,
-        skill: GrepSkill,
+        skill: SearchTextSkill,
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -677,12 +684,12 @@ class TestGrepIncludeContext:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Unrestricted directory grep should still work when ripgrep is unavailable."""
+        """Unrestricted directory search_text should still work when ripgrep is unavailable."""
         good_file = tmp_path / "good.txt"
         good_file.write_text("match here\n")
 
         services = _make_services(allowed_paths=None, cwd=tmp_path)
-        skill = grep_factory(services)
+        skill = search_text_factory(services)
 
         monkeypatch.setattr(
             grep_module,
@@ -709,7 +716,7 @@ class TestGrepIncludeContext:
 
         services = _make_services(allowed_paths=None, cwd=tmp_path)
         services.register("config", _make_config(require_ripgrep=True))
-        skill = grep_factory(services)
+        skill = search_text_factory(services)
 
         monkeypatch.setattr(
             grep_module,
@@ -737,7 +744,7 @@ class TestGrepIncludeContext:
 
         services = _make_services(allowed_paths=[tmp_path], cwd=tmp_path)
         services.register("config", _make_config(require_ripgrep=True))
-        skill = grep_factory(services)
+        skill = search_text_factory(services)
 
         monkeypatch.setattr(
             grep_module,

@@ -6,7 +6,7 @@ memory DoS attacks from reading huge files.
 The fix:
 - read_file: Rejects files > MAX_FILE_SIZE_BYTES, streams line-by-line
 - tail: Uses deque to only keep last N lines in memory
-- grep: Skips files > MAX_GREP_FILE_SIZE, streams search
+- search_text: Skips files > MAX_GREP_FILE_SIZE, streams search
 """
 
 from pathlib import Path
@@ -192,18 +192,18 @@ class TestTailSizeLimits:
 
 
 class TestGrepSizeLimits:
-    """Test grep file size limits."""
+    """Test search_text file size limits."""
 
     @pytest.mark.asyncio
     async def test_grep_skips_large_files(self, tmp_path: Path) -> None:
         """Grep should skip files larger than MAX_GREP_FILE_SIZE."""
-        from nexus3.skill.builtin.grep import GrepSkill
+        from nexus3.skill.builtin.grep import SearchTextSkill
         from nexus3.skill.services import ServiceContainer
 
         # Create a large file
         large_file = tmp_path / "large.txt"
         with open(large_file, "w") as f:
-            # Write content larger than grep limit
+            # Write content larger than search_text limit
             for i in range(MAX_GREP_FILE_SIZE // 100 + 1000):
                 f.write("x" * 100 + f" FINDME line {i}\n")
 
@@ -214,7 +214,7 @@ class TestGrepSizeLimits:
         services = ServiceContainer()
         services.set_cwd(tmp_path)
 
-        skill = GrepSkill(services)
+        skill = SearchTextSkill(services)
         result = await skill.execute(pattern="FINDME", path=str(tmp_path))
 
         assert result.output is not None
@@ -226,7 +226,7 @@ class TestGrepSizeLimits:
     @pytest.mark.asyncio
     async def test_grep_stops_at_max_matches(self, tmp_path: Path) -> None:
         """Grep should stop at max_matches."""
-        from nexus3.skill.builtin.grep import GrepSkill
+        from nexus3.skill.builtin.grep import SearchTextSkill
         from nexus3.skill.services import ServiceContainer
 
         test_file = tmp_path / "many_matches.txt"
@@ -237,7 +237,7 @@ class TestGrepSizeLimits:
         services = ServiceContainer()
         services.set_cwd(tmp_path)
 
-        skill = GrepSkill(services)
+        skill = SearchTextSkill(services)
         result = await skill.execute(
             pattern="MATCH", path=str(test_file), max_matches=10
         )
@@ -248,8 +248,8 @@ class TestGrepSizeLimits:
 
     @pytest.mark.asyncio
     async def test_grep_streaming_preserves_correctness(self, tmp_path: Path) -> None:
-        """Streaming grep should produce correct results."""
-        from nexus3.skill.builtin.grep import GrepSkill
+        """Streaming search_text should produce correct results."""
+        from nexus3.skill.builtin.grep import SearchTextSkill
         from nexus3.skill.services import ServiceContainer
 
         test_file = tmp_path / "test.txt"
@@ -258,7 +258,7 @@ class TestGrepSizeLimits:
         services = ServiceContainer()
         services.set_cwd(tmp_path)
 
-        skill = GrepSkill(services)
+        skill = SearchTextSkill(services)
         result = await skill.execute(pattern="MATCH", path=str(test_file))
 
         assert result.output is not None
