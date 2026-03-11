@@ -5,7 +5,6 @@ to prevent terminal injection from malicious/buggy LLM output.
 """
 
 import io
-import sys
 from collections.abc import Callable
 from unittest.mock import MagicMock
 
@@ -340,16 +339,30 @@ class TestInlinePrinterRichOutputSanitization:
 class TestSpinnerStreamingSanitization:
     """Focused sanitizer routing tests for Spinner streaming output."""
 
-    def test_print_streaming_sanitizes_untrusted_chunk(self, mock_stdout: MockStdout) -> None:
-        spinner = Spinner(console=MagicMock(spec=Console), theme=Theme())
-        original_stdout = sys.stdout
-        try:
-            sys.stdout = mock_stdout
-            spinner.print_streaming("safe \x1b[31mred\x1b[0m\n")
-        finally:
-            sys.stdout = original_stdout
+    def test_print_streaming_sanitizes_untrusted_chunk(self) -> None:
+        console = MagicMock(spec=Console)
+        spinner = Spinner(console=console, theme=Theme())
 
-        assert mock_stdout.getvalue() == "safe red\n"
+        spinner.print_streaming("safe \x1b[31m[bold]red[/bold]\x1b[0m\n")
+
+        console.print.assert_called_once_with(
+            r"safe \[bold]red\[/bold]",
+            style="magenta",
+            end="\n",
+        )
+
+    def test_flush_stream_sanitizes_partial_chunk_and_uses_response_style(self) -> None:
+        console = MagicMock(spec=Console)
+        spinner = Spinner(console=console, theme=Theme())
+
+        spinner.print_streaming("partial \x1b[31m[bold]line[/bold]\x1b[0m")
+        spinner.flush_stream()
+
+        console.print.assert_called_once_with(
+            r"partial \[bold]line\[/bold]",
+            style="magenta",
+            end="",
+        )
 
     def test_rich_render_sanitizes_dynamic_status_text(self) -> None:
         spinner = Spinner(console=MagicMock(spec=Console), theme=Theme())

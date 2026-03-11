@@ -172,12 +172,12 @@ class Spinner:
         """Print a streaming chunk (no newline, sanitized).
 
         Buffers text until a complete line (ending with newline) is available,
-        then prints directly to stdout. Partial lines are buffered until complete.
+        then prints it via the spinner console using the configured response
+        style. Partial lines are buffered until complete.
 
         Args:
             chunk: Text chunk to print (will be sanitized).
         """
-        import sys
         sanitized = SafeSink.sanitize_stream_content(chunk)
         if not sanitized:
             return
@@ -188,19 +188,19 @@ class Spinner:
         # Print complete lines (those ending with newline)
         while "\n" in self._stream_buffer:
             line, self._stream_buffer = self._stream_buffer.split("\n", 1)
-            # Bypass Rich entirely - write directly to stdout
-            sys.stdout.write(line + "\n")
-            sys.stdout.flush()
+            self.print_untrusted(line, style=self.theme.response)
 
     def flush_stream(self) -> None:
         """Flush any remaining buffered streaming content.
 
         Call this when streaming ends to ensure partial lines are displayed.
         """
-        import sys
         if self._stream_buffer:
-            sys.stdout.write(self._stream_buffer)
-            sys.stdout.flush()
+            self.print_untrusted(
+                self._stream_buffer,
+                style=self.theme.response,
+                end="",
+            )
             self._stream_buffer = ""
 
     def __rich__(self) -> Text:
