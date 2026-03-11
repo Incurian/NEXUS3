@@ -63,7 +63,7 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 | `glob` | `pattern`, `path`?, `max_results`?, `recursive`?, `kind`?, `exclude`? | Find files or directories by glob pattern; `recursive=true` searches nested paths, `kind` filters files/directories, and `exclude` uses relative-path glob rules |
 | `grep` | `pattern`, `path`, `include`?, `context`?, `ignore_case`?, `recursive`?, `max_matches`? | Search UTF-8 file contents with regex; directory scans skip invalid UTF-8 files and may use ripgrep when configured/available |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `dry_run`? | Concatenate UTF-8 files by extension (`dry_run=true` by default; real writes generate an output file and skip invalid UTF-8 inputs) |
-| `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Directory mode is non-recursive, but `depth` controls nested symbols within each file. `symbol` returns a source excerpt rather than structural entries. Use `file_type`/`language`/`parser` to override parser detection on files, `tokens` for estimates, and `diff` for changes. Unsupported file types should fall back to `read_file` or retry with a parser override |
+| `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Directory mode is non-recursive, but `depth` controls nested symbols within each file. Markdown heading detection ignores fenced code blocks. `symbol` returns a source excerpt rather than structural entries. Use `file_type`/`language`/`parser` to override parser detection on files, `tokens` for estimates, and `diff` for changes. Unsupported file types should fall back to `read_file` or retry with a parser override |
 
 Text-reading tools operate on UTF-8 files. `read_file` and single-file
 `outline` fail closed on invalid UTF-8; directory `grep` and `outline` skip
@@ -173,7 +173,7 @@ Quick selection flow:
 | `exec` | `program`, `args`?, `timeout`?, `cwd`? | Direct program execution — no shell operators, shell builtins, or expansion |
 | `shell_UNSAFE` | `command`, `shell`?, `timeout`?, `cwd`? | Full shell syntax with explicit shell-family selection — pipes and redirects work, but injection-vulnerable |
 | `run_python` | `code`, `timeout`?, `cwd`? | Execute Python code |
-| `git` | `command`, `cwd`? | Git commands (permission-filtered by level) |
+| `git` | `command`, `cwd`? | Git commands (permission-filtered by level; `status` includes parsed branch/staged/unstaged/untracked data for normal and short output) |
 
 Execution notes:
 - `exec` executes binaries directly by default.

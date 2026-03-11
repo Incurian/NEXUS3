@@ -361,6 +361,35 @@ class TestMarkdownParser:
         assert len(entries) == 1
         assert entries[0].name == "Real heading"
 
+    def test_fenced_code_blocks_do_not_create_headings(self):
+        lines = [
+            "# Title",
+            "```bash",
+            "# Kill editor first for full builds...",
+            "## Full build",
+            "```",
+            "## Real section",
+        ]
+        entries = parse_markdown(lines, 999, True, 0)
+        assert [entry.name for entry in entries] == ["Title", "Real section"]
+
+    def test_tilde_fences_do_not_create_headings(self):
+        lines = [
+            "# Title",
+            "~~~powershell",
+            "# Start editor (GUI)",
+            "## Full build",
+            "~~~",
+            "## Real section",
+        ]
+        entries = parse_markdown(lines, 999, True, 0)
+        assert [entry.name for entry in entries] == ["Title", "Real section"]
+
+    def test_trailing_heading_hashes_are_trimmed(self):
+        lines = ["## Heading text ##", "### Another ###   "]
+        entries = parse_markdown(lines, 999, True, 0)
+        assert [entry.name for entry in entries] == ["Heading text", "Another"]
+
 
 class TestPythonParser:
     def test_class_and_methods(self):

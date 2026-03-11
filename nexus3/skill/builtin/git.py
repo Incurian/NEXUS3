@@ -57,6 +57,8 @@ DANGEROUS_FLAGS: dict[str, dict[str, str]] = {
 # Timeout for git commands
 GIT_TIMEOUT = 30.0
 
+_GIT_SHORT_STATUS_RE = re.compile(r"^([ MADRCU?!])([ MADRCU?!]) (.+)$")
+
 
 class GitSkill(FilteredCommandSkill):
     """Skill for git operations with permission-based command filtering.
@@ -197,7 +199,11 @@ class GitSkill(FilteredCommandSkill):
         return None
 
     def _parse_status_output(self, stdout: str) -> dict[str, Any]:
-        """Parse git status output into structured format."""
+        """Parse git status output into structured format.
+
+        Supports both the default human-readable `git status` output and
+        short/porcelain-style variants such as `git status --short`.
+        """
         result: dict[str, Any] = {
             "branch": None,
             "ahead": 0,
@@ -207,9 +213,19 @@ class GitSkill(FilteredCommandSkill):
             "untracked": [],
         }
 
+        section: str | None = None
         for line in stdout.splitlines():
+            short_branch = self._parse_short_status_branch_line(line, result)
+            if short_branch:
+                continue
+
+            short_entry = self._parse_short_status_entry(line, result)
+            if short_entry:
+                continue
+
             # Branch info
             if line.startswith("On branch "):
+                section = None
                 result["branch"] = line[10:].strip()
             elif "ahead of" in line:
                 match = re.search(r"ahead of .+ by (\d+)", line)
@@ -219,22 +235,110 @@ class GitSkill(FilteredCommandSkill):
                 match = re.search(r"behind .+ by (\d+)", line)
                 if match:
                     result["behind"] = int(match.group(1))
-            # Staged files
-            elif line.startswith("\tnew file:"):
-                result["staged"].append(line.split(":", 1)[1].strip())
-            elif (
-                line.startswith("\tmodified:")
-                and "Changes to be committed" in stdout[:stdout.find(line)]
-            ):
-                result["staged"].append(line.split(":", 1)[1].strip())
-            # Unstaged files
-            elif line.startswith("\tmodified:"):
-                result["unstaged"].append(line.split(":", 1)[1].strip())
-            # Untracked
-            elif line.startswith("\t") and "Untracked files:" in stdout[:stdout.find(line)]:
-                result["untracked"].append(line.strip())
+            elif line.startswith("Changes to be committed:"):
+                section = "staged"
+            elif line.startswith("Changes not staged for commit:"):
+                section = "unstaged"
+            elif line.startswith("Untracked files:"):
+                section = "untracked"
+            elif not line.strip():
+                section = None
+            elif line.startswith("\t"):
+                self._parse_long_status_entry(line, section, result)
 
         return result
+
+    def _supports_structured_status_output(self, args: list[str]) -> bool:
+        """Return whether the given `git status` args have a supported format."""
+        for arg in args[1:]:
+            if arg == "--":
+                break
+
+            if arg == "-z":
+                return False
+
+            if arg in {"--short", "--porcelain", "--porcelain=v1"}:
+                continue
+
+            if arg.startswith("--porcelain="):
+                version = arg.split("=", 1)[1].strip().lower()
+                if version in {"", "v1"}:
+                    continue
+                return False
+
+            if arg.startswith("-") and not arg.startswith("--"):
+                flags = arg[1:]
+                if "z" in flags:
+                    return False
+
+        return True
+
+    def _parse_short_status_branch_line(self, line: str, result: dict[str, Any]) -> bool:
+        """Parse a short/porcelain branch header line like `## main...origin/main`."""
+        if not line.startswith("## "):
+            return False
+
+        branch_info = line[3:].strip()
+        if branch_info.startswith("No commits yet on "):
+            result["branch"] = branch_info.removeprefix("No commits yet on ").strip()
+        else:
+            branch_name = branch_info.split("...", 1)[0].strip()
+            if branch_name:
+                result["branch"] = branch_name
+
+        ahead_match = re.search(r"\bahead (\d+)\b", branch_info)
+        if ahead_match:
+            result["ahead"] = int(ahead_match.group(1))
+
+        behind_match = re.search(r"\bbehind (\d+)\b", branch_info)
+        if behind_match:
+            result["behind"] = int(behind_match.group(1))
+
+        return True
+
+    def _parse_short_status_entry(self, line: str, result: dict[str, Any]) -> bool:
+        """Parse a short/porcelain status line like `?? file` or `MM file`."""
+        match = _GIT_SHORT_STATUS_RE.match(line)
+        if not match:
+            return False
+
+        index_status, worktree_status, path = match.groups()
+        if index_status == "!" and worktree_status == "!":
+            return True
+
+        if index_status == "?" and worktree_status == "?":
+            result["untracked"].append(path)
+            return True
+
+        if index_status != " ":
+            result["staged"].append(path)
+        if worktree_status != " ":
+            result["unstaged"].append(path)
+        return True
+
+    def _parse_long_status_entry(
+        self,
+        line: str,
+        section: str | None,
+        result: dict[str, Any],
+    ) -> None:
+        """Parse a tab-indented entry from human-readable `git status` output."""
+        entry = line.strip()
+        if not entry or entry.startswith("("):
+            return
+
+        if section == "untracked":
+            result["untracked"].append(entry)
+            return
+
+        if ":" not in entry:
+            return
+
+        path = entry.split(":", 1)[1].strip()
+        if section == "staged":
+            result["staged"].append(path)
+        elif section == "unstaged":
+            result["unstaged"].append(path)
 
     def _parse_log_output(self, stdout: str) -> list[dict[str, str]]:
         """Parse git log output into structured format."""
@@ -341,7 +445,7 @@ class GitSkill(FilteredCommandSkill):
                 "output": stdout_str,
             }
 
-            if base_cmd == "status":
+            if base_cmd == "status" and self._supports_structured_status_output(parsed_args):
                 output_data["parsed"] = self._parse_status_output(stdout_str)
             elif base_cmd == "log":
                 output_data["parsed"] = {"commits": self._parse_log_output(stdout_str)}

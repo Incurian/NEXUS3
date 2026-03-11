@@ -1444,7 +1444,7 @@ NEXUS3 includes 40 built-in skills organized by category, plus 21 GitLab integra
 | `glob` | Find files or directories by pattern | `pattern`, `path`, `max_results`, `recursive`, `kind`, `exclude` |
 | `grep` | Search UTF-8 file contents | `pattern`, `path`, `include`, `context`, `recursive`, `ignore_case`, `max_matches` |
 | `concat_files` | Concatenate UTF-8 files by extension (`dry_run=true` by default; `dry_run=false` writes a generated output file and skips invalid UTF-8 inputs) | `extensions`, `path`, `exclude`, `lines`, `max_total`, `format`, `sort`, `gitignore`, `dry_run` |
-| `outline` | Structural outline of UTF-8 file/directory (non-recursive for directories) | `path`, `file_type`, `language`, `parser`, `depth`, `preview`, `signatures`, `line_numbers`, `tokens`, `symbol`, `diff`, `recursive` |
+| `outline` | Structural outline of UTF-8 file/directory (non-recursive for directories; markdown ignores fenced code blocks) | `path`, `file_type`, `language`, `parser`, `depth`, `preview`, `signatures`, `line_numbers`, `tokens`, `symbol`, `diff`, `recursive` |
 
 Text-reading tools operate on UTF-8 files. `read_file` and single-file
 `outline` fail closed on invalid UTF-8; directory `grep` and `outline` skip
@@ -1502,7 +1502,7 @@ invalid UTF-8 files instead of mangling bytes.
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `git` | Execute git commands | `command`, `cwd` |
+| `git` | Execute git commands (`status` includes parsed branch/staged/unstaged/untracked data for normal and short output) | `command`, `cwd` |
 
 Git commands are filtered by permission level:
 - **SANDBOXED**: Read-only (`status`, `diff`, `log`, `show`, `branch`, `blame`, etc.)

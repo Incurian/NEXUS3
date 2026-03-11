@@ -450,6 +450,34 @@ def _get_diff_files(dir_path: Path) -> set[str] | None:
 # =============================================================================
 
 _MD_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
+_MD_FENCE_RE = re.compile(r"^[ ]{0,3}(?P<fence>`{3,}|~{3,})(?P<rest>.*)$")
+_MD_TRAILING_HASH_RE = re.compile(r"\s+#+\s*$")
+
+
+def _parse_markdown_fence_transition(
+    line: str,
+    active_fence: tuple[str, int] | None,
+) -> tuple[tuple[str, int] | None, bool]:
+    """Track fenced code blocks so heading parsing skips fenced content."""
+    fence_match = _MD_FENCE_RE.match(line)
+    if active_fence is None:
+        if not fence_match:
+            return None, False
+        fence = fence_match.group("fence")
+        return (fence[0], len(fence)), True
+
+    if not fence_match:
+        return active_fence, True
+
+    fence_char, fence_len = active_fence
+    current_fence = fence_match.group("fence")
+    if current_fence[0] != fence_char or len(current_fence) < fence_len:
+        return active_fence, True
+
+    rest = fence_match.group("rest").strip()
+    if rest:
+        return active_fence, True
+    return None, True
 
 
 def parse_markdown(
@@ -457,13 +485,17 @@ def parse_markdown(
 ) -> list[OutlineEntry]:
     """Parse markdown headings."""
     entries: list[OutlineEntry] = []
+    active_fence: tuple[str, int] | None = None
     for i, line in enumerate(lines):
+        active_fence, in_fence = _parse_markdown_fence_transition(line, active_fence)
+        if in_fence:
+            continue
         m = _MD_HEADING_RE.match(line)
         if m:
             level = len(m.group(1))
             if level > max_depth:
                 continue
-            heading_text = m.group(2).strip()
+            heading_text = _MD_TRAILING_HASH_RE.sub("", m.group(2)).strip()
             entries.append(OutlineEntry(
                 line=i + 1,
                 depth=level - 1,

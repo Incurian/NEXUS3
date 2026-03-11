@@ -221,6 +221,44 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
+- Follow-on parser correctness audit complete (2026-03-11):
+  - executed
+    [GIT-AND-OUTLINE-CORRECTNESS-AUDIT-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/GIT-AND-OUTLINE-CORRECTNESS-AUDIT-PLAN-2026-03-11.md)
+    for the bounded `git status` / markdown `outline` correctness pass.
+  - local pending commit:
+    - `nexus3/skill/builtin/git.py`
+      - `git status` structured parsing now understands short/porcelain-v1
+        output (`??`, `MM`, `## branch`) instead of only long-form status, so
+        `parsed.untracked` / staged / unstaged data stays aligned with raw
+        `status --short` output
+      - unsupported status formats (`--porcelain=v2`, `-z`) now omit
+        misleading structured `parsed` output instead of pretending to parse
+        them
+    - `nexus3/skill/builtin/outline.py`
+      - markdown heading detection now ignores fenced code blocks instead of
+        misclassifying fenced shell/comment lines as headings
+      - markdown heading normalization now trims closing `#` markers from ATX
+        headings
+    - focused regression coverage added in:
+      - `tests/unit/test_git_skill.py`
+      - `tests/unit/skill/test_outline.py`
+    - focused doc sync updated:
+      - `README.md`
+      - `nexus3/skill/README.md`
+      - `nexus3/defaults/NEXUS-DEFAULT.md`
+      - `CLAUDE.md`
+      - `AGENTS_NEXUS3SKILLSCAT.md`
+      - `docs/plans/README.md`
+      - `docs/plans/GIT-AND-OUTLINE-CORRECTNESS-AUDIT-PLAN-2026-03-11.md`
+    - focused validation passed:
+      - `.venv/bin/ruff check nexus3/skill/builtin/git.py nexus3/skill/builtin/outline.py tests/unit/test_git_skill.py tests/unit/skill/test_outline.py README.md nexus3/skill/README.md nexus3/defaults/NEXUS-DEFAULT.md CLAUDE.md AGENTS_NEXUS3SKILLSCAT.md AGENTS.md docs/plans/README.md docs/plans/GIT-AND-OUTLINE-CORRECTNESS-AUDIT-PLAN-2026-03-11.md`
+      - `.venv/bin/pytest -q tests/unit/test_git_skill.py tests/unit/skill/test_outline.py` (`193 passed`)
+      - live RPC validation on port `9000`:
+        - trusted agent confirmed parsed untracked entries for
+          `git status --short`
+        - trusted agent confirmed `git status --porcelain=v2` omitted `parsed`
+        - trusted agent confirmed markdown `outline` ignored fenced-code
+          pseudo-headings
 - Search-tool follow-on implementation complete (2026-03-11):
   - executed:
     - [SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md)

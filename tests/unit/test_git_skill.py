@@ -257,6 +257,35 @@ class TestGitSkillExecution:
         assert "branch" in output.get("parsed", {}) or "output" in output
 
     @pytest.mark.asyncio
+    async def test_git_status_short_includes_parsed_untracked(self, tmp_path: Path) -> None:
+        """Short status output still includes structured untracked entries."""
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+        (tmp_path / "scratch.txt").write_text("hello", encoding="utf-8")
+
+        services = _make_services()
+        skill = GitSkill(services)
+        result = await skill.execute(command="status --short", cwd=str(tmp_path))
+
+        assert not result.error
+        output = json.loads(result.output)
+        assert output["parsed"]["untracked"] == ["scratch.txt"]
+
+    @pytest.mark.asyncio
+    async def test_git_status_porcelain_v2_omits_parsed(self, tmp_path: Path) -> None:
+        """Unsupported status formats do not emit misleading structured data."""
+        subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+        (tmp_path / "scratch.txt").write_text("hello", encoding="utf-8")
+
+        services = _make_services()
+        skill = GitSkill(services)
+        result = await skill.execute(command="status --porcelain=v2", cwd=str(tmp_path))
+
+        assert not result.error
+        output = json.loads(result.output)
+        assert "parsed" not in output
+        assert "? scratch.txt" in output["output"]
+
+    @pytest.mark.asyncio
     async def test_git_not_a_repo(self, tmp_path: Path) -> None:
         """Git returns error when not in a repo."""
         services = _make_services()
@@ -287,6 +316,65 @@ class TestGitSkillOutputParsing:
         output = "On branch main\nYour branch is ahead of 'origin/main' by 3 commits."
         parsed = skill._parse_status_output(output)
         assert parsed["ahead"] == 3
+
+    def test_parse_status_short_untracked_and_modified(self, skill: GitSkill) -> None:
+        """Parses short status output into staged/unstaged/untracked buckets."""
+        output = "\n".join([
+            "## main...origin/main [ahead 2, behind 1]",
+            "A  staged.txt",
+            " M unstaged.txt",
+            "MM both.txt",
+            "R  old.py -> new.py",
+            "?? scratch.txt",
+        ])
+        parsed = skill._parse_status_output(output)
+        assert parsed["branch"] == "main"
+        assert parsed["ahead"] == 2
+        assert parsed["behind"] == 1
+        assert parsed["staged"] == [
+            "staged.txt",
+            "both.txt",
+            "old.py -> new.py",
+        ]
+        assert parsed["unstaged"] == ["unstaged.txt", "both.txt"]
+        assert parsed["untracked"] == ["scratch.txt"]
+
+    def test_parse_status_long_form_untracked_section(self, skill: GitSkill) -> None:
+        """Parses long-form status sections without dropping untracked entries."""
+        output = "\n".join([
+            "On branch main",
+            "",
+            "Changes to be committed:",
+            '  (use "git restore --staged <file>..." to unstage)',
+            "\tmodified:   staged.txt",
+            "",
+            "Changes not staged for commit:",
+            '  (use "git add <file>..." to update what will be committed)',
+            "\tdeleted:    unstaged.txt",
+            "",
+            "Untracked files:",
+            '  (use "git add <file>..." to include in what will be committed)',
+            "\talpha.txt",
+            "\tbeta.txt",
+        ])
+        parsed = skill._parse_status_output(output)
+        assert parsed["branch"] == "main"
+        assert parsed["staged"] == ["staged.txt"]
+        assert parsed["unstaged"] == ["unstaged.txt"]
+        assert parsed["untracked"] == ["alpha.txt", "beta.txt"]
+
+    def test_short_status_ignores_ignored_entries(self, skill: GitSkill) -> None:
+        """Ignores `!!` entries instead of misclassifying them."""
+        parsed = skill._parse_status_output("!! ignored.txt\n?? tracked-later.txt")
+        assert parsed["untracked"] == ["tracked-later.txt"]
+
+    def test_status_parsing_support_rejects_porcelain_v2_and_z(self, skill: GitSkill) -> None:
+        """Structured parsing is only advertised for supported status formats."""
+        assert skill._supports_structured_status_output(["status"])
+        assert skill._supports_structured_status_output(["status", "--short"])
+        assert skill._supports_structured_status_output(["status", "-sb"])
+        assert not skill._supports_structured_status_output(["status", "--porcelain=v2"])
+        assert not skill._supports_structured_status_output(["status", "--short", "-z"])
 
     def test_parse_log_commits(self, skill: GitSkill) -> None:
         """Parses commit info from log output."""

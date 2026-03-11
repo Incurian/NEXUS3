@@ -635,7 +635,7 @@ NEXUS3 includes 40 core built-in skills plus 21 GitLab skills (when configured),
 | `glob` | Find files or directories by glob pattern; `recursive=true` searches nested paths, `kind` filters files/directories, and `exclude` uses relative-path glob rules | `pattern`, `path?`, `max_results?`, `recursive?`, `kind?`, `exclude?` |
 | `grep` | Search UTF-8 file contents (regex); unrestricted directory scans use ripgrep when configured/available, and directory scans skip invalid UTF-8 files | `pattern`, `path`, `recursive?`, `ignore_case?`, `max_matches?`, `include?`, `context?` |
 | `concat_files` | Find and concatenate UTF-8 files by extension with token estimation (`dry_run=true` by default; real writes generate an output file and skip invalid UTF-8 inputs) | `extensions`, `path?`, `exclude?`, `lines?`, `max_total?`, `format?`, `sort?`, `gitignore?`, `dry_run?` |
-| `outline` | Structural outline of UTF-8 file/directory (headings, classes, functions, keys; non-recursive for directories, `symbol` returns source excerpt) | `path`, `file_type?`, `language?`, `parser?`, `depth?`, `preview?`, `signatures?`, `line_numbers?`, `tokens?`, `symbol?`, `diff?`, `recursive?` |
+| `outline` | Structural outline of UTF-8 file/directory (headings, classes, functions, keys; non-recursive for directories, markdown ignores fenced code blocks, `symbol` returns source excerpt) | `path`, `file_type?`, `language?`, `parser?`, `depth?`, `preview?`, `signatures?`, `line_numbers?`, `tokens?`, `symbol?`, `diff?`, `recursive?` |
 
 Fixed-schema read/search/listing tools fail closed on unexpected extra
 top-level arguments.
@@ -676,7 +676,7 @@ batch item fields.
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `git` | Git operations with permission-based filtering | `command`, `cwd?` |
+| `git` | Git operations with permission-based filtering; `status` includes parsed branch/staged/unstaged/untracked data for normal and short output | `command`, `cwd?` |
 
 ### Agent Management
 
