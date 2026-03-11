@@ -56,7 +56,7 @@ def add_verbose_arg(parser: argparse.ArgumentParser) -> None:
         action=_StoreTrueNoDefault,
         nargs=0,
         default=argparse.SUPPRESS,
-        help="Show debug output in terminal (HTTP headers, timing)",
+        help="Enable verbose diagnostics (terminal for RPC/serve; trace/logs for REPL)",
     )
 
 
@@ -227,6 +227,50 @@ def parse_args() -> argparse.Namespace:
     add_verbose_arg(shutdown_parser)
     add_port_arg(shutdown_parser)
     add_api_key_arg(shutdown_parser)
+
+    trace_parser = subparsers.add_parser(
+        "trace",
+        help="Follow persisted session traces in another terminal",
+    )
+    trace_parser.add_argument(
+        "target",
+        nargs="?",
+        help="Session directory path or session-id prefix (default: latest)",
+    )
+    trace_parser.add_argument(
+        "--latest",
+        action="store_true",
+        help="Explicitly follow the latest session (same as omitting TARGET)",
+    )
+    trace_parser.add_argument(
+        "--preset",
+        choices=["execution", "debug"],
+        default="execution",
+        help="Trace preset to render (default: execution)",
+    )
+    trace_parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Print the current snapshot and exit instead of following",
+    )
+    trace_parser.add_argument(
+        "--history",
+        type=int,
+        default=10,
+        help="Number of existing entries/lines to show before follow mode (default: 10)",
+    )
+    trace_parser.add_argument(
+        "--poll-interval",
+        type=float,
+        default=0.5,
+        help="Polling interval in seconds while following (default: 0.5)",
+    )
+    trace_parser.add_argument(
+        "--log-dir",
+        type=Path,
+        default=Path(".nexus3/logs"),
+        help="Directory containing session logs (default: .nexus3/logs)",
+    )
 
     # ==========================================================================
     # Main mode flags (only apply when no subcommand)

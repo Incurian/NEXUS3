@@ -98,6 +98,19 @@ def test_tool_call_trace_line_sanitizes_untrusted_name_and_params() -> None:
     assert "\x1b" not in line
 
 
+def test_tool_call_trace_line_includes_visible_tool_id() -> None:
+    sink = _make_sink()
+
+    line = _format_tool_call_trace_line(
+        sink,
+        name="search_text",
+        params="path=README.md",
+        tool_id="toolu_abc12345",
+    )
+
+    assert line == "  [cyan]●[/] [abc12345] search_text: path=README.md"
+
+
 def test_sanitize_prompt_html_text_strips_terminal_escapes_and_escapes_html() -> None:
     sanitized = _sanitize_prompt_html_text("</style><b>x</b>&\x1b[31m")
 
@@ -121,6 +134,19 @@ def test_tool_result_trace_line_sanitizes_preview_and_preserves_done_fallback() 
 
     assert preview_line == "      [green]→[/] \\[bold]ok\\[/bold] (1.2s)"
     assert done_line == "      [green]→[/] done"
+
+
+def test_tool_result_trace_line_includes_visible_tool_id() -> None:
+    sink = _make_sink()
+
+    line = _format_tool_result_trace_line(
+        sink,
+        result_preview="2 lines",
+        duration_str="",
+        tool_id="toolu_abc12345",
+    )
+
+    assert line == "      [green]→[/] [abc12345] 2 lines"
 
 
 def test_tool_response_trace_line_sanitizes_preview_with_wrapper_parity() -> None:

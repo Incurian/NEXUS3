@@ -31,6 +31,7 @@ nexus3/session/
 ├── types.py             # LogConfig, LogStream, SessionInfo
 ├── logging.py           # SessionLogger - multi-stream logging
 ├── storage.py           # SessionStorage - SQLite operations
+├── trace.py             # Persisted tool-record reconstruction helpers
 ├── persistence.py       # SavedSession, message serialization
 ├── markdown.py          # MarkdownWriter, RawWriter
 ├── dispatcher.py        # ToolDispatcher - skill resolution
@@ -410,6 +411,9 @@ class SessionInfo:
 ├── verbose.md      # Timing, thinking, events (if VERBOSE)
 └── raw.jsonl       # Raw API JSON (if RAW)
 ```
+
+`session.db` also powers execution trace viewing (`nexus3 trace`) and the
+REPL-side persisted tool inspection commands (`/tools`, `/tool`).
 
 ### Properties
 

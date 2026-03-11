@@ -29,12 +29,15 @@ from nexus3.cli.repl_commands import (
     cmd_permissions,
     cmd_prompt,
     cmd_quit,
+    cmd_tool,
+    cmd_tools,
     cmd_whisper,
 )
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands.protocol import CommandContext, CommandResult
 from nexus3.core.executable_identity import resolve_executable_identity
 from nexus3.core.permissions import ToolPermission, resolve_preset
+from nexus3.session.storage import EventRow, MessageRow
 
 # -----------------------------------------------------------------------------
 # Test Fixtures and Helpers
@@ -122,6 +125,10 @@ class MockAgent:
 
         # Mock session
         self.session = MagicMock()
+        self.logger = MagicMock()
+        self.logger.storage = MagicMock()
+        self.logger.storage.get_messages.return_value = []
+        self.logger.storage.get_events.return_value = []
 
         # Mock dispatcher
         self.dispatcher = MagicMock()
@@ -261,6 +268,102 @@ class TestCmdAgentNoArgs:
 
         assert output.result == CommandResult.SUCCESS
         assert output.data["agent_id"] == "main"
+
+
+class TestToolInspectionCommands:
+    @pytest.mark.asyncio
+    async def test_cmd_tools_lists_recent_records(self, ctx_with_agent: CommandContext):
+        agent = ctx_with_agent.pool.get("main")
+        assert agent is not None
+        agent.logger.storage.get_messages.return_value = [
+            MessageRow(
+                id=1,
+                role="assistant",
+                content="",
+                meta=None,
+                name=None,
+                tool_call_id=None,
+                tool_calls=[{"id": "toolu_abc12345", "name": "search_text", "arguments": {}}],
+                tokens=None,
+                timestamp=100.0,
+                in_context=True,
+                summary_of=None,
+            )
+        ]
+        agent.logger.storage.get_events.return_value = [
+            EventRow(
+                id=1,
+                message_id=None,
+                event_type="toolcompleted",
+                data={"tool_id": "toolu_abc12345", "success": True, "output": "ok", "error": ""},
+                timestamp=101.0,
+            )
+        ]
+
+        output = await cmd_tools(ctx_with_agent, args="5")
+
+        assert output.result == CommandResult.SUCCESS
+        assert "[abc12345] search_text ok" in output.message
+
+    @pytest.mark.asyncio
+    async def test_cmd_tool_opens_editor_for_matching_record(
+        self,
+        ctx_with_agent: CommandContext,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        agent = ctx_with_agent.pool.get("main")
+        assert agent is not None
+        agent.logger.storage.get_messages.return_value = [
+            MessageRow(
+                id=1,
+                role="assistant",
+                content="",
+                meta=None,
+                name=None,
+                tool_call_id=None,
+                tool_calls=[
+                    {
+                        "id": "toolu_abc12345",
+                        "name": "search_text",
+                        "arguments": {"path": "README.md"},
+                    }
+                ],
+                tokens=None,
+                timestamp=100.0,
+                in_context=True,
+                summary_of=None,
+            ),
+            MessageRow(
+                id=2,
+                role="tool",
+                content="match line",
+                meta=None,
+                name="search_text",
+                tool_call_id="toolu_abc12345",
+                tool_calls=None,
+                tokens=None,
+                timestamp=101.0,
+                in_context=True,
+                summary_of=None,
+            ),
+        ]
+        agent.logger.storage.get_events.return_value = []
+
+        opened: dict[str, str] = {}
+
+        def _open(content: str, title: str) -> bool:
+            opened["content"] = content
+            opened["title"] = title
+            return True
+
+        monkeypatch.setattr("nexus3.cli.repl_commands.open_in_editor", _open)
+
+        output = await cmd_tool(ctx_with_agent, args="abc12345")
+
+        assert output.result == CommandResult.SUCCESS
+        assert opened["title"] == "Tool abc12345 - search_text"
+        assert '"path": "README.md"' in opened["content"]
+        assert "match line" in opened["content"]
 
     @pytest.mark.asyncio
     async def test_error_when_no_current_agent(self, ctx: CommandContext):

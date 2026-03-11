@@ -54,6 +54,7 @@ This index covers the architecture plans created during today's review/planning 
 ## MCP UX Plans (2026-03-11)
 
 - [MCP-RESULT-VISIBILITY-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/MCP-RESULT-VISIBILITY-PLAN-2026-03-11.md)
+- [TRACE-VIEWER-AND-DIAGNOSTIC-ROUTING-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-VIEWER-AND-DIAGNOSTIC-ROUTING-PLAN-2026-03-11.md)
 
 ## Path Format Plans (2026-03-11)
 

@@ -8,15 +8,11 @@ for tools that require user approval based on permission level (TRUSTED mode).
 """
 
 import asyncio
-import os
-import shutil
-import subprocess
 import sys
-import tempfile
-import time
 from pathlib import Path
 from typing import Any
 
+from nexus3.cli.editor_preview import open_in_editor
 from nexus3.cli.live_state import _current_live
 from nexus3.core.permissions import ConfirmationResult
 from nexus3.core.types import ToolCall
@@ -107,38 +103,6 @@ def format_tool_params(arguments: dict[str, Any], max_length: int = 140) -> str:
     return result
 
 
-def _is_wsl() -> bool:
-    """Detect if running in Windows Subsystem for Linux."""
-    try:
-        with open("/proc/version") as f:
-            return "microsoft" in f.read().lower()
-    except (FileNotFoundError, PermissionError):
-        return False
-
-
-def _get_system_editor() -> list[str]:
-    """Get the appropriate editor command for the current platform.
-
-    Returns:
-        Command list to open a text file (append filename to use).
-    """
-    # Check environment variables first (works on all platforms)
-    for env in ["VISUAL", "EDITOR"]:
-        if editor := os.environ.get(env):
-            return [editor]
-
-    # Windows or WSL - use notepad which opens a GUI window
-    if sys.platform == "win32" or _is_wsl():
-        return ["notepad.exe"]
-
-    # Unix fallbacks
-    for cmd in ["less", "more", "cat"]:
-        if shutil.which(cmd):
-            return [cmd]
-
-    return ["cat"]
-
-
 def _open_in_editor(content: str, title: str) -> bool:
     """Open content in external editor.
 
@@ -149,47 +113,7 @@ def _open_in_editor(content: str, title: str) -> bool:
     Returns:
         True if successfully opened, False on failure.
     """
-    temp_dir = Path.home() / ".nexus3" / "temp"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-
-    fd, tmp_path = tempfile.mkstemp(suffix=".txt", prefix="nexus_tool_", dir=temp_dir)
-    try:
-        editor_cmd = _get_system_editor()
-        is_wsl = _is_wsl()
-        is_pager = editor_cmd[0] in ("less", "more", "cat")
-
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            # Add navigation instructions for terminal pagers
-            if is_pager:
-                f.write("Navigation: q=quit  Space=next page  b=back  /=search\n")
-                f.write("-" * 50 + "\n\n")
-            f.write(f"=== {title} ===\n\n{content}\n")
-
-        if sys.platform == "win32":
-            # Windows: run in background, no window flash
-            subprocess.Popen(
-                editor_cmd + [tmp_path],
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            # Give notepad time to read the file before we delete it
-            time.sleep(0.5)
-        elif is_wsl and "notepad" in editor_cmd[0].lower():
-            # WSL with notepad: run in background (opens Windows GUI)
-            subprocess.Popen(editor_cmd + [tmp_path])
-            # Give notepad time to read the file before we delete it
-            time.sleep(0.5)
-        else:
-            # Unix: run in foreground, wait for user to close
-            subprocess.run(editor_cmd + [tmp_path])
-
-        return True
-    except Exception:
-        return False
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+    return open_in_editor(content, title)
 
 
 def _format_full_tool_details(

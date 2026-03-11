@@ -176,9 +176,10 @@ Defines CLI arguments using argparse with subparsers for `rpc` commands.
 |------|-------------|
 | `--serve [PORT]` | Run HTTP JSON-RPC server (requires `NEXUS_DEV=1`) |
 | `--connect [URL]` | Connect to server (no URL = discover mode) |
+| `trace [TARGET] [--latest]` | Follow persisted execution/debug traces |
 | `--agent ID` | Agent to connect to (default: main) |
 | `--scan PORTSPEC` | Additional ports to scan |
-| `-v, --verbose` | DEBUG output to console |
+| `-v, --verbose` | Verbose diagnostics (trace/log focused in REPL) |
 | `-V, --log-verbose` | Verbose logging to file |
 | `--raw-log` | Raw API JSON logging |
 | `--log-dir PATH` | Session log directory |
@@ -537,6 +538,19 @@ Allow MCP tool 'mcp_github_create_issue'?
 - Pauses Live display and KeyMonitor during prompts
 - Uses `asyncio.to_thread()` for blocking input
 - External editor popup for full tool details (`[p]` option)
+
+### `trace.py` - Non-Interactive Live Trace Viewer
+
+Separate CLI surface for execution-first and debug-first live viewing.
+
+Current preset support:
+- `execution`: short user/assistant previews, full tool calls, full tool results
+- `debug`: tails `verbose.md` in real time for sessions started with `-v` or `-V`
+
+Examples:
+- `nexus3 trace --latest`
+- `nexus3 trace --latest --preset debug`
+- `nexus3 trace /path/to/.nexus3/logs/<session-id> --once`
 
 ---
 

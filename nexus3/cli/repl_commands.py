@@ -21,9 +21,11 @@ Commands:
 from __future__ import annotations
 
 import copy
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from nexus3.cli.editor_preview import open_in_editor
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands.protocol import CommandContext, CommandOutput, CommandResult
 from nexus3.core.authorization_kernel import (
@@ -47,6 +49,12 @@ from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.display import get_console
 from nexus3.display.safe_sink import SafeSink
 from nexus3.rpc.pool import is_temp_agent
+from nexus3.session.trace import (
+    build_tool_records,
+    format_tool_record_details,
+    resolve_tool_record,
+    select_recent_tool_records,
+)
 
 if TYPE_CHECKING:
     from nexus3.mcp.registry import MCPServerRegistry
@@ -207,6 +215,8 @@ Session Management:
   /clone <src> <dest> Clone agent or saved session
   /rename <old> <new> Rename agent or saved session
   /delete <name>      Delete saved session from disk
+  /tools [n]          List recent tool calls with visible IDs
+  /tool last|<id>     Open full persisted tool call + result in external editor
 
 Configuration:
   /cwd [path]         Show or change working directory
@@ -544,6 +554,42 @@ Examples:
   /prompt ~/prompts/coding.md     # Load prompt from file
   /prompt ./NEXUS.md              # Load project-specific prompt""",
 
+    "tools": """/tools [n]
+
+List recent tool calls for the current agent's persisted session log.
+
+Arguments:
+  n           Optional. Number of recent tool calls to list (default: 10).
+
+Output includes:
+  - visible short tool ID
+  - tool name
+  - status
+  - request timestamp
+
+Examples:
+  /tools                          # Show the 10 most recent tool calls
+  /tools 25                       # Show the 25 most recent tool calls""",
+
+    "tool": """/tool last | /tool <id>
+
+Open the full persisted tool call and full result in the external editor/pager.
+
+Arguments:
+  last        Open the most recent tool call record.
+  id          Full tool_call_id, unique prefix, unique suffix, or the visible
+              short ID shown in REPL tool traces and /tools output.
+
+Behavior:
+  - opens a temp text file in the same external editor flow used by permission
+    popup [p] previews
+  - resolves records from persisted session logs, so it still works after
+    context compaction
+
+Examples:
+  /tool last                      # Open the most recent tool record
+  /tool 57d0b5c1                  # Open a visible short-ID match""",
+
     "compact": """/compact
 
 Force context compaction, summarizing older messages to reclaim token space.
@@ -706,6 +752,18 @@ def get_command_help(cmd_name: str) -> str | None:
     canonical = COMMAND_ALIASES.get(name, name)
 
     return COMMAND_HELP.get(canonical)
+
+
+def _get_current_agent(ctx: CommandContext) -> tuple[Any | None, CommandOutput | None]:
+    """Resolve the current agent for REPL-only commands."""
+    if ctx.current_agent_id is None:
+        return None, CommandOutput.error("No current agent")
+
+    agent = ctx.pool.get(ctx.current_agent_id)
+    if agent is None:
+        return None, CommandOutput.error(f"Agent not found: {ctx.current_agent_id}")
+
+    return agent, None
 
 
 async def cmd_agent(
@@ -1410,6 +1468,73 @@ async def cmd_prompt(
         return CommandOutput.error(f"Permission denied: {file}")
     except OSError as e:
         return CommandOutput.error(f"Error reading file: {e}")
+
+
+async def cmd_tools(
+    ctx: CommandContext,
+    args: str | None = None,
+) -> CommandOutput:
+    """List recent persisted tool calls for the current agent."""
+    agent, error = _get_current_agent(ctx)
+    if error is not None:
+        return error
+    assert agent is not None
+
+    limit = 10
+    if args and args.strip():
+        try:
+            limit = int(args.strip())
+        except ValueError:
+            return CommandOutput.error("Usage: /tools [n]")
+        if limit <= 0:
+            return CommandOutput.error("Limit must be > 0")
+
+    messages = agent.logger.storage.get_messages(in_context_only=False)
+    events = agent.logger.storage.get_events()
+    records = select_recent_tool_records(build_tool_records(messages, events), limit)
+    if not records:
+        return CommandOutput.success(message="No tool calls recorded for this session yet.")
+
+    lines = ["Recent tools:"]
+    for record in records:
+        lines.append(
+            f"  [{record.display_id}] {record.name} {record.status} "
+            f"({datetime.fromtimestamp(record.call_timestamp).strftime('%H:%M:%S')})"
+        )
+
+    return CommandOutput.success(message="\n".join(lines), data={"count": len(records)})
+
+
+async def cmd_tool(
+    ctx: CommandContext,
+    args: str | None = None,
+) -> CommandOutput:
+    """Open a persisted tool record in the external editor."""
+    agent, error = _get_current_agent(ctx)
+    if error is not None:
+        return error
+    assert agent is not None
+
+    query = (args or "").strip()
+    if not query:
+        return CommandOutput.error("Usage: /tool last | /tool <id>")
+
+    messages = agent.logger.storage.get_messages(in_context_only=False)
+    events = agent.logger.storage.get_events()
+    records = build_tool_records(messages, events)
+    record, resolve_error = resolve_tool_record(records, query)
+    if resolve_error is not None:
+        return CommandOutput.error(resolve_error)
+    assert record is not None
+
+    content = SafeSink.sanitize_stream_content(format_tool_record_details(record))
+    title = f"Tool {record.display_id} - {record.name}"
+    if not open_in_editor(content, title):
+        return CommandOutput.error("Failed to open external editor")
+
+    return CommandOutput.success(
+        message=f"Opened tool [{record.display_id}] {record.name} in external editor."
+    )
 
 
 async def cmd_help(ctx: CommandContext, args: str | None = None) -> CommandOutput:

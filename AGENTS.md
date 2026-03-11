@@ -112,6 +112,8 @@ Known sandbox caveat (Codex CLI environment):
 - In this repo, sandboxed runs may hang on tests that execute file I/O via `asyncio.to_thread(...)` (for example, `Path.read_bytes` inside file-edit skills).
 - Symptom: pytest collects tests, starts first test, then stalls without pass/fail output.
 - Workaround: rerun the same pytest command unsandboxed/escalated to verify real pass/fail status.
+- In this repo, sandbox networking also blocks `git push` reliably in Codex CLI.
+- Workaround: when the user explicitly asks to push, skip the sandboxed push attempt and run the push unsandboxed/escalated immediately.
 
 Live validation is required for changes that affect agent behavior, RPC, skills, or permissions:
 
@@ -221,6 +223,37 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
+- Trace viewer and diagnostic routing v1 complete locally (2026-03-11):
+  - executed
+    [TRACE-VIEWER-AND-DIAGNOSTIC-ROUTING-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-VIEWER-AND-DIAGNOSTIC-ROUTING-PLAN-2026-03-11.md)
+    for the first non-interactive live trace / tool-result retrieval slice.
+  - local pending commit:
+    - added new CLI surfaces:
+      - `nexus3 trace [TARGET] [--latest]` with `execution` and `debug`
+        presets
+      - REPL `/tools [n]` and `/tool last|<id>` for persisted tool lookup
+    - added visible short tool IDs in normal REPL tool-trace lines so the
+      retrieval flow has stable user-facing handles
+    - added shared external-editor preview helper reused by both permission
+      previews and persisted tool-record viewing
+    - REPL `-v` now enables verbose diagnostics capture for trace/log use
+      instead of dumping opt-in debug chatter into the main REPL terminal
+    - `debug` trace preset follows `verbose.md`; `execution` trace reads
+      persisted session SQLite messages and renders short message previews plus
+      full tool calls/results
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/cli/editor_preview.py nexus3/session/trace.py nexus3/cli/trace.py nexus3/cli/confirmation_ui.py nexus3/cli/arg_parser.py nexus3/cli/repl.py nexus3/cli/repl_commands.py nexus3/cli/repl_formatting.py tests/unit/session/test_trace.py tests/unit/cli/test_trace.py tests/unit/test_repl_commands.py tests/unit/cli/test_repl_safe_sink.py`
+    - `.venv/bin/mypy nexus3/cli/editor_preview.py nexus3/session/trace.py nexus3/cli/trace.py nexus3/cli/confirmation_ui.py nexus3/cli/arg_parser.py nexus3/cli/repl.py nexus3/cli/repl_commands.py nexus3/cli/repl_formatting.py`
+    - `.venv/bin/pytest -q tests/unit/session/test_trace.py tests/unit/cli/test_trace.py tests/unit/test_repl_commands.py tests/unit/cli/test_repl_safe_sink.py` (`112 passed`)
+    - practical smoke checks:
+      - `/home/inc/repos/NEXUS3/.venv/bin/python -m nexus3 trace --latest --once --history 2`
+      - `nexus3 trace /tmp/nexus3-trace-smoke --once`
+      - `nexus3 trace /tmp/nexus3-trace-live`
+      - `nexus3 trace /tmp/nexus3-trace-live --preset debug`
+  - recent committed checkpoints before this local slice:
+    - `d57be69` Normalize Windows tool paths and harden search_text
+    - `ab0d5b6` Show MCP result previews in REPL
+    - `0e5a71d` Rename grep tool to search_text
 - Follow-on parser correctness audit complete (2026-03-11):
   - executed
     [GIT-AND-OUTLINE-CORRECTNESS-AUDIT-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/GIT-AND-OUTLINE-CORRECTNESS-AUDIT-PLAN-2026-03-11.md)
@@ -401,9 +434,19 @@ Current milestone:
       succeeded in a fresh session; the follow-up provider turn stalled before
       issuing a tool call, so full model-loop preview rendering remains only
       partially live-validated
-  - deferred backlog note:
-    - later discussion item: add an on-demand way to inspect the full previous
-      tool result(s) instead of only the default collapsed preview
+  - trace/retrieval follow-up status:
+    - the planned on-demand persisted tool-result retrieval path is now
+      implemented locally via `/tool last|<id>` and `/tools [n]`
+    - the planned first live trace viewer is also now implemented locally via
+      `nexus3 trace`
+    - broader follow-up plan remains relevant for future expansion beyond v1:
+      [TRACE-VIEWER-AND-DIAGNOSTIC-ROUTING-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-VIEWER-AND-DIAGNOSTIC-ROUTING-PLAN-2026-03-11.md)
+      to cover later:
+      - multiple future trace presets beyond the shipped `execution` /
+        `debug` pair
+      - possible convenience helpers for launching a second terminal window
+      - broader structured trace/event plumbing beyond the current persisted
+        session-data sources
 - Windows path-format slice complete (2026-03-11):
   - executed
     [WINDOWS-PATH-FORMAT-AND-NORMALIZATION-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/WINDOWS-PATH-FORMAT-AND-NORMALIZATION-PLAN-2026-03-11.md)

@@ -663,6 +663,7 @@ nexus3 [OPTIONS]
 |------|-------------|
 | `--serve [PORT]` | Run headless HTTP server (requires `NEXUS_DEV=1`) |
 | `--connect [URL]` | Connect to existing server (auto-discovers if no URL) |
+| `trace [TARGET] [--latest]` | Follow persisted execution/debug traces in another terminal |
 | `--agent ID` | Agent to connect to (default: `main`, requires `--connect`) |
 | `--reload` | Auto-reload on code changes (serve mode only, requires watchfiles) |
 
@@ -672,7 +673,7 @@ nexus3 [OPTIONS]
 |------|---------|-------------|
 | `-m, --model NAME` | Config default | Model alias or full ID |
 | `--template PATH` | - | Custom system prompt file |
-| `-v, --verbose` | false | Enable debug logging to terminal |
+| `-v, --verbose` | false | Enable verbose diagnostics (trace/log focused in REPL) |
 | `-V, --log-verbose` | false | Write debug output to verbose.md log file |
 | `--raw-log` | false | Log raw API JSON |
 | `--log-dir PATH` | `.nexus3/logs` | Log directory |
@@ -721,6 +722,8 @@ Available when running interactively.
 | `/clone SRC DEST` | Clone session |
 | `/rename OLD NEW` | Rename session |
 | `/delete NAME` | Delete saved session |
+| `/tools [N]` | List recent tool calls with visible IDs |
+| `/tool last\|ID` | Open full persisted tool call + result in external editor |
 
 #### Configuration
 
@@ -1090,7 +1093,7 @@ If `~/.nexus3/config.json` exists, it's used as the base. If not, the shipped de
     └── {session-id}/
         ├── session.db              # SQLite message history
         ├── context.md              # Markdown transcript
-        ├── verbose.md              # Debug output (if -V enabled)
+        ├── verbose.md              # Debug output (if verbose diagnostics enabled)
         └── raw.jsonl               # Raw API JSON (if --raw-log enabled)
 ```
 
@@ -1867,7 +1870,7 @@ Sessions use schema version 1 with backwards-compatible field defaults.
 .nexus3/logs/{session-id}/    # Session logs
 ├── session.db                # SQLite message history
 ├── context.md                # Markdown transcript
-├── verbose.md                # Debug output (if -V enabled)
+├── verbose.md                # Debug output (if verbose diagnostics enabled)
 └── raw.jsonl                 # Raw API JSON (if --raw-log enabled)
 ```
 
@@ -2130,10 +2133,17 @@ tail -f .nexus3/logs/server.log
 
 **Enable verbose logging:**
 ```bash
-nexus3 -v                 # Debug output to terminal (short form)
-nexus3 --verbose          # Debug output to terminal (long form)
+nexus3 -v                 # Enable verbose diagnostics for REPL trace/logs
+nexus3 --verbose          # Same as above (long form)
 nexus3 -V                 # Debug output to verbose.md log file
 nexus3 --log-verbose      # Debug output to verbose.md log file (long form)
+```
+
+**Follow live traces in another terminal:**
+```bash
+nexus3 trace --latest                 # Follow latest session execution trace
+nexus3 trace --latest --preset debug  # Follow verbose.md in real time
+nexus3 trace /path/to/session --once  # Print a snapshot and exit
 ```
 
 **Check if server is running:**
@@ -2156,6 +2166,7 @@ tail -f .nexus3/logs/server.log
 ```bash
 ls -la .nexus3/logs/
 cat .nexus3/logs/{session-id}/context.md
+nexus3 trace --latest
 ```
 
 **Enable raw API logging:**

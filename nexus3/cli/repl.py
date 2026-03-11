@@ -219,7 +219,7 @@ async def run_repl(
     rich display. External clients can connect via HTTP on the same port.
 
     Args:
-        verbose: Enable DEBUG output to console (-v).
+        verbose: Enable verbose diagnostics (-v).
         log_verbose: Enable verbose logging to file (-V).
         raw_log: Enable raw API logging stream.
         log_dir: Directory for session logs.
@@ -369,7 +369,7 @@ async def run_repl(
 
     # Configure logging streams based on CLI flags
     log_streams = LogStream.CONTEXT  # Always on for basic functionality
-    if log_verbose:
+    if verbose or log_verbose:
         log_streams |= LogStream.VERBOSE
         # Configure HTTP debug logging to verbose.md
         from nexus3.session import configure_http_logging
@@ -838,7 +838,7 @@ async def run_repl(
             _, params = _pending_tools[tool_id]
 
         # Print tool call line
-        spinner.print_trusted(_format_tool_call_trace_line(safe_sink, name, params))
+        spinner.print_trusted(_format_tool_call_trace_line(safe_sink, name, params, tool_id))
 
         # Track start time and active state
         _tool_start_times[tool_id] = _time.monotonic()
@@ -874,7 +874,7 @@ async def run_repl(
             # Success - show result summary
             result_preview = _summarize_tool_output(name, output)
             spinner.print_trusted(
-                _format_tool_result_trace_line(safe_sink, result_preview, duration_str)
+                _format_tool_result_trace_line(safe_sink, result_preview, duration_str, tool_id)
             )
 
             # Special handling for nexus_send - show response content
@@ -902,12 +902,14 @@ async def run_repl(
         else:
             _had_errors = True
             # Error - show error message
-            spinner.print_trusted(_format_tool_error_trace_line(safe_sink, error, duration_str))
+            spinner.print_trusted(
+                _format_tool_error_trace_line(safe_sink, error, duration_str, tool_id)
+            )
 
     def on_batch_halt() -> None:
         """Sequential batch halted - print halted for remaining pending tools."""
         for _tool_id, (name, params) in list(_pending_tools.items()):
-            spinner.print_trusted(_format_tool_halt_trace_line(safe_sink, name, params))
+            spinner.print_trusted(_format_tool_halt_trace_line(safe_sink, name, params, _tool_id))
         _pending_tools.clear()
 
     def on_batch_complete() -> None:
@@ -1252,6 +1254,10 @@ async def run_repl(
             return await repl_commands.cmd_permissions(ctx, cmd_args or None)
         elif cmd_name == "prompt":
             return await repl_commands.cmd_prompt(ctx, cmd_args or None)
+        elif cmd_name == "tools":
+            return await repl_commands.cmd_tools(ctx, cmd_args or None)
+        elif cmd_name == "tool":
+            return await repl_commands.cmd_tool(ctx, cmd_args or None)
         elif cmd_name == "compact":
             return await repl_commands.cmd_compact(ctx)
         elif cmd_name == "model":
@@ -1833,8 +1839,12 @@ def main() -> None:
     console = get_console()
     safe_sink = SafeSink(console)
 
-    # Configure logging based on verbosity
-    log_level = logging.DEBUG if getattr(args, "verbose", False) else logging.WARNING
+    # REPL trace/log routing keeps opt-in diagnostics out of the main REPL.
+    # Keep terminal DEBUG for RPC/serve flows, but not for interactive REPL/connect.
+    terminal_debug = bool(getattr(args, "verbose", False)) and (
+        args.command == "rpc" or args.serve is not None
+    )
+    log_level = logging.DEBUG if terminal_debug else logging.WARNING
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -1900,6 +1910,30 @@ def main() -> None:
             else:
                 console.print(_format_unknown_rpc_command_line(safe_sink, rpc_cmd))
                 exit_code = 1
+            raise SystemExit(exit_code)
+
+        if args.command == "trace":
+            from nexus3.cli.trace import run_trace
+
+            if args.latest and args.target:
+                console.print(
+                    _format_repl_error_line(
+                        safe_sink,
+                        "trace accepts either TARGET or --latest, not both",
+                    )
+                )
+                raise SystemExit(1)
+
+            exit_code = asyncio.run(
+                run_trace(
+                    log_dir=args.log_dir,
+                    target=None if args.latest else args.target,
+                    preset=args.preset,
+                    follow=not args.once,
+                    history=args.history,
+                    poll_interval=args.poll_interval,
+                )
+            )
             raise SystemExit(exit_code)
 
         # Handle init-global command

@@ -269,7 +269,7 @@ nexus3 --init-global-force        # Overwrite existing global config
 | `--agent ID` | Agent ID to connect to (with --connect) |
 | `--scan PORTS` | Additional ports to scan (e.g., "9000" or "8765,9000-9050") |
 | `--api-key KEY` | Explicit API key (auto-discovered by default) |
-| `-v, --verbose` | Show debug output in terminal |
+| `-v, --verbose` | Enable verbose diagnostics (trace/log focused in REPL) |
 | `-V, --log-verbose` | Write debug output to verbose.md log |
 | `--raw-log` | Enable raw API JSON logging |
 | `--log-dir PATH` | Directory for session logs |
@@ -910,9 +910,13 @@ For proper UTF-8 display, the console should use code page 65001. NEXUS3 warns i
 └── <session-id>/    # Per-session conversation logs
     ├── session.db   # SQLite database of messages
     ├── context.md   # Markdown transcript
-    ├── verbose.md   # Debug output (if -V enabled)
+    ├── verbose.md   # Debug output (if verbose diagnostics enabled)
     └── raw.jsonl    # Raw API JSON (if --raw-log enabled)
 ```
+
+Use `nexus3 trace --latest` for execution-first live viewing, or
+`nexus3 trace --latest --preset debug` when running REPL sessions with `-v`
+or `-V`.
 
 ### Server Logging
 
@@ -1396,6 +1400,10 @@ Every implementation checklist MUST include a documentation phase. Documentation
 ```
 
 **Never use bare `python` or `pytest` commands** - they will likely fail with "command not found" or use the wrong Python version.
+
+**Codex CLI sandbox caveats for this repo:**
+- sandboxed pytest runs may hang on some `asyncio.to_thread(...)` file-I/O cases; rerun those unsandboxed/escalated if they stall
+- sandbox networking reliably blocks `git push`; when the user explicitly asks to push, skip the sandboxed push attempt and run it unsandboxed/escalated immediately
 
 ### Current Status
 

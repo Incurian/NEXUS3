@@ -765,7 +765,7 @@ Server lifecycle events logged to `server.log` with rotation (5MB max, 3 backups
 .nexus3/logs/YYYY-MM-DD_HHMMSS_{mode}_{suffix}/
 ├── session.db    # SQLite structured history
 ├── context.md    # Markdown conversation transcript
-├── verbose.md    # Debug output (if -V enabled)
+├── verbose.md    # Debug output (if verbose diagnostics enabled)
 └── raw.jsonl     # Raw API JSON (if --raw-log enabled)
 ```
 
@@ -869,9 +869,11 @@ For simple Python entrypoints, direct interpreter invocation is usually more rel
 - `.venv/Scripts/python.exe your_script.py`
 
 ### Debug Flags
-- `-v` / `--verbose`: Show debug output in terminal (HTTP headers, timing, cache metrics)
+- `-v` / `--verbose`: Enable verbose diagnostics for REPL trace/logs instead of dumping extra output into the main REPL
 - `-V` / `--log-verbose`: Write debug output to `verbose.md` log file
 - `--raw-log`: Log raw API JSON to `raw.jsonl`
+- `nexus3 trace --latest`: Follow the latest session's execution trace in another terminal
+- `nexus3 trace --latest --preset debug`: Follow `verbose.md` in real time when verbose diagnostics are enabled
 
 ---
 
