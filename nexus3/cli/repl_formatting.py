@@ -24,10 +24,15 @@ def _sanitize_prompt_html_text(value: object) -> str:
     return html_escape(strip_terminal_escapes(str(value)), quote=False)
 
 
-def _format_tool_id_header_line(safe_sink: SafeSink, tool_id: str) -> str:
+def _format_tool_id_header_line(
+    safe_sink: SafeSink,
+    tool_id: str,
+    *,
+    indent: int = 2,
+) -> str:
     """Format the visible tool-id header line for REPL tool blocks."""
     safe_tool_id = _sanitize_tool_trace_text(safe_sink, tool_display_id(tool_id))
-    return f"  [{safe_tool_id}]"
+    return f"{' ' * indent}[{safe_tool_id}]"
 
 
 def _format_tool_call_trace_line(

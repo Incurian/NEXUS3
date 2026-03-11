@@ -198,6 +198,47 @@ def test_build_execution_entries_supports_unlimited_tool_bodies() -> None:
     assert entries[0].truncation_note is None
 
 
+def test_build_execution_entries_reports_user_and_assistant_preview_truncation() -> None:
+    long_text = "word " * 40
+    messages = [
+        MessageRow(
+            id=1,
+            role="user",
+            content=long_text,
+            meta=None,
+            name=None,
+            tool_call_id=None,
+            tool_calls=None,
+            tokens=None,
+            timestamp=100.0,
+            in_context=True,
+            summary_of=None,
+        ),
+        MessageRow(
+            id=2,
+            role="assistant",
+            content=long_text,
+            meta=None,
+            name=None,
+            tool_call_id=None,
+            tool_calls=None,
+            tokens=None,
+            timestamp=101.0,
+            in_context=True,
+            summary_of=None,
+        ),
+    ]
+
+    entries = build_execution_entries(messages)
+
+    assert entries[0].body_lines[0].endswith("...")
+    assert entries[0].truncation_note == "User message preview truncated at 120 chars"
+    assert entries[1].body_lines[0].endswith("...")
+    assert entries[1].truncation_note == (
+        "Assistant message preview truncated at 120 chars"
+    )
+
+
 def test_resolve_trace_session_dir_errors_on_ambiguous_prefix(tmp_path: Path) -> None:
     first = tmp_path / "2026-03-11_repl_one"
     second = tmp_path / "2026-03-11_repl_two"

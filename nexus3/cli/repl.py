@@ -879,7 +879,7 @@ async def run_repl(
             # Success - show result summary
             result_preview = _summarize_tool_output(name, output)
             spinner.print_untrusted(
-                _format_tool_id_header_line(safe_sink, tool_id),
+                _format_tool_id_header_line(safe_sink, tool_id, indent=6),
                 style="bright_black",
             )
             spinner.print_trusted(
@@ -912,7 +912,7 @@ async def run_repl(
             _had_errors = True
             # Error - show error message
             spinner.print_untrusted(
-                _format_tool_id_header_line(safe_sink, tool_id),
+                _format_tool_id_header_line(safe_sink, tool_id, indent=6),
                 style="bright_black",
             )
             spinner.print_trusted(

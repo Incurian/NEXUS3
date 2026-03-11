@@ -25,7 +25,7 @@ _TRACE_BODY_STYLES = {
     "user": "blue",
     "assistant": "magenta",
     "tool_call": "cyan",
-    "tool_result": "green",
+    "tool_result": "#2c7a4b",
 }
 
 
@@ -107,26 +107,38 @@ def build_execution_entries(
     for row in messages:
         timestamp = _format_timestamp(row.timestamp)
         if row.role == "user":
+            preview, truncated = _preview_text(row.content)
             entries.append(
                 ExecutionTraceEntry(
                     source_message_id=row.id,
                     timestamp=row.timestamp,
                     kind="user",
                     header=f"[{timestamp}] USER",
-                    body_lines=(_preview_text(row.content),),
+                    body_lines=(preview,),
+                    truncation_note=(
+                        "User message preview truncated at 120 chars"
+                        if truncated
+                        else None
+                    ),
                 )
             )
             continue
 
         if row.role == "assistant":
             if row.content.strip():
+                preview, truncated = _preview_text(row.content)
                 entries.append(
                     ExecutionTraceEntry(
                         source_message_id=row.id,
                         timestamp=row.timestamp,
                         kind="assistant",
                         header=f"[{timestamp}] ASSISTANT",
-                        body_lines=(_preview_text(row.content),),
+                        body_lines=(preview,),
+                        truncation_note=(
+                            "Assistant message preview truncated at 120 chars"
+                            if truncated
+                            else None
+                        ),
                     )
                 )
             if row.tool_calls:
@@ -342,8 +354,8 @@ def _format_timestamp(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp).strftime("%H:%M:%S")
 
 
-def _preview_text(text: str, max_chars: int = 120) -> str:
+def _preview_text(text: str, max_chars: int = 120) -> tuple[str, bool]:
     collapsed = " ".join(text.split())
     if len(collapsed) <= max_chars:
-        return collapsed
-    return collapsed[: max_chars - 3] + "..."
+        return collapsed, False
+    return collapsed[: max_chars - 3] + "...", True

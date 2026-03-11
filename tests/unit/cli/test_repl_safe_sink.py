@@ -110,6 +110,18 @@ def test_tool_id_header_line_formats_visible_tool_id() -> None:
     assert line == "  [abc12345]"
 
 
+def test_tool_id_header_line_supports_custom_indent() -> None:
+    sink = _make_sink()
+
+    line = _format_tool_id_header_line(
+        sink,
+        tool_id="toolu_abc12345",
+        indent=6,
+    )
+
+    assert line == "      [abc12345]"
+
+
 def test_tool_call_trace_line_omits_inline_visible_tool_id() -> None:
     sink = _make_sink()
 
