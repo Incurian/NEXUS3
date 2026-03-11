@@ -259,6 +259,79 @@ Current milestone:
         - trusted agent confirmed `git status --porcelain=v2` omitted `parsed`
         - trusted agent confirmed markdown `outline` ignored fenced-code
           pseudo-headings
+  - backlog notes captured from follow-up discussion:
+    - later UX pass: evaluate displaying MCP tool-call return data to the user
+      in the normal session/UI flow instead of only logging or surfacing it
+      indirectly
+    - later tool-design pass: plan a built-in process inspection/management
+      tool so agents can list running processes, inspect by PID/name, and
+      terminate explicitly selected processes without falling back to shell
+      `ps`/`tasklist`/`kill` commands
+- Process-tool implementation complete (2026-03-11):
+  - executed
+    [PROCESS-INSPECTION-AND-KILL-TOOLS-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/PROCESS-INSPECTION-AND-KILL-TOOLS-PLAN-2026-03-11.md)
+    for a cross-platform built-in `processes` + `kill_process` slice.
+  - shipped behavior:
+    - adopted `psutil` as the cross-platform backend for host process
+      inspection and termination
+    - added new built-in tools:
+      - `processes` for paginated list/get discovery with exact / contains /
+        regex matching, optional username/port filters, and redacted command
+        previews
+      - `kill_process` for explicit PID termination with `tree=true` default
+        and graceful-first behavior
+    - sandboxed presets and policy now disable both host process tools
+    - TRUSTED destructive confirmation UI now renders `kill_process` with
+      explicit PID/tree/force context instead of a fake file path
+    - tree termination now fails closed if it would reach protected NEXUS
+      runtime descendants, and PID+query validation uses raw process match
+      text rather than redacted `command_preview`
+  - dependency note closed:
+    - `psutil` is now recorded in the dependency audit as BSD-3-Clause with no
+      evidence of unsolicited telemetry / phone-home behavior
+  - validation:
+    - `.venv/bin/ruff check nexus3/core/process_tools.py nexus3/skill/builtin/processes.py nexus3/skill/builtin/kill_process.py nexus3/skill/builtin/registration.py nexus3/core/policy.py nexus3/core/presets.py nexus3/config/schema.py nexus3/cli/confirmation_ui.py tests/unit/skill/test_process_tools.py tests/unit/cli/test_confirmation_ui_safe_sink.py tests/unit/test_permission_presets.py README.md nexus3/skill/README.md nexus3/defaults/NEXUS-DEFAULT.md CLAUDE.md AGENTS_NEXUS3SKILLSCAT.md AGENTS.md docs/plans/PROCESS-INSPECTION-AND-KILL-TOOLS-PLAN-2026-03-11.md docs/reviews/DEPENDENCY-LICENSE-AND-TELEMETRY-AUDIT-2026-03-10.md nexus3/cli/README.md nexus3/config/README.md`
+    - `.venv/bin/mypy nexus3/core/process_tools.py nexus3/skill/builtin/processes.py nexus3/skill/builtin/kill_process.py`
+    - `.venv/bin/pytest -q tests/unit/skill/test_process_tools.py tests/unit/cli/test_confirmation_ui_safe_sink.py tests/unit/test_permission_presets.py tests/unit/test_permissions.py` (`203 passed`)
+    - `.venv/bin/pytest tests/ -q` (`4433 passed, 3 skipped, 22 warnings`)
+    - live validation:
+      - trusted RPC agent reached `processes`; repeated model-injected invalid
+        `port` parameters failed closed with explicit errors instead of
+        returning misleading process data
+      - direct runtime harness against a detached live process confirmed
+        process inspection returned expected fields and termination succeeded
+  - next gate:
+    - no immediate follow-up required for this slice; keep the later MCP
+      return-data display note and any future process-tool ergonomics ideas in
+      backlog
+- Process-tool split follow-up complete (2026-03-11):
+  - executed
+    [PROCESS-TOOL-SPLIT-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/PROCESS-TOOL-SPLIT-PLAN-2026-03-11.md)
+    to replace overloaded `processes(action=...)` with explicit
+    `list_processes` / `get_process` tools.
+  - shipped behavior:
+    - no backward-compat alias for `processes`
+    - `list_processes` / `get_process` become the canonical read-only process
+      tools
+    - `list_processes` is now discovery-only and no longer accepts `pid`;
+      exact PID lookup belongs to `get_process`
+    - `port=0` now normalizes to omitted for the read-only process tools
+    - `pid` remains strict; `pid <= 0` still fails closed
+    - current-facing docs and skill counts were updated for the split
+  - validation:
+    - `.venv/bin/ruff check nexus3/skill/builtin/processes.py nexus3/skill/builtin/registration.py nexus3/core/policy.py nexus3/core/presets.py tests/unit/skill/test_process_tools.py tests/unit/test_permission_presets.py README.md nexus3/defaults/NEXUS-DEFAULT.md CLAUDE.md AGENTS_NEXUS3SKILLSCAT.md nexus3/skill/README.md AGENTS.md docs/plans/PROCESS-TOOL-SPLIT-PLAN-2026-03-11.md docs/reviews/DEPENDENCY-LICENSE-AND-TELEMETRY-AUDIT-2026-03-10.md`
+    - `.venv/bin/mypy nexus3/skill/builtin/processes.py`
+    - `.venv/bin/pytest -q tests/unit/skill/test_process_tools.py tests/unit/test_permission_presets.py tests/unit/cli/test_confirmation_ui_safe_sink.py tests/unit/test_permissions.py` (`208 passed`)
+    - live validation:
+      - trusted RPC agent described `list_processes` without a `pid` parameter
+        and `get_process` with explicit PID support
+      - trusted RPC agent successfully executed
+        `list_processes(query='python', match='contains', limit=1)` and
+        returned a real first result without inventing `pid`
+  - residual note:
+    - if live agent misuse persists, the next likely issue is prompt wording or
+      over-eager optional `port` materialization rather than PID/list contract
+      confusion.
 - Search-tool follow-on implementation complete (2026-03-11):
   - executed:
     - [SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md)

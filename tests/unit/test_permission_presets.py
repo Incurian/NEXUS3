@@ -784,6 +784,9 @@ class TestResolvePreset:
         assert perms.tool_permissions["nexus_send"].allowed_targets == "parent"
         # Other nexus tools remain disabled
         assert perms.tool_permissions["nexus_create"].enabled is False
+        assert perms.tool_permissions["list_processes"].enabled is False
+        assert perms.tool_permissions["get_process"].enabled is False
+        assert perms.tool_permissions["kill_process"].enabled is False
 
 
 class TestGetBuiltinPresets:

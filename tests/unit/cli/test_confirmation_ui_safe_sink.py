@@ -185,6 +185,42 @@ async def test_confirm_tool_action_shell_unsafe_shows_shell_choice(monkeypatch) 
 
 
 @pytest.mark.asyncio
+async def test_confirm_tool_action_kill_process_shows_pid(monkeypatch) -> None:
+    fake_console = _FakeConsole(response="4")
+    fake_stdout = _FakeStdout()
+    monkeypatch.setattr(confirmation_ui, "get_console", lambda: fake_console)
+    monkeypatch.setattr(confirmation_ui.asyncio, "to_thread", _to_thread_inline)
+    monkeypatch.setattr(confirmation_ui.sys, "stdout", fake_stdout)
+
+    pause_event = asyncio.Event()
+    pause_event.set()
+    pause_ack_event = asyncio.Event()
+    pause_ack_event.set()
+
+    tool_call = ToolCall(
+        id="call_kill",
+        name="kill_process",
+        arguments={"pid": 4242},
+    )
+
+    result = await confirmation_ui.confirm_tool_action(
+        tool_call=tool_call,
+        target_path=None,
+        agent_cwd=Path("/tmp"),
+        pause_event=pause_event,
+        pause_ack_event=pause_ack_event,
+    )
+
+    rendered = "\n".join(fake_console.print_calls)
+
+    assert result == ConfirmationResult.DENY
+    assert "  [dim]PID:[/] " in rendered
+    assert "  [dim]Tree:[/] " in rendered
+    assert "  [dim]Force:[/] " in rendered
+    assert "4242" in rendered
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("tool_call", "target_path", "response", "expected_result", "expected_text"),
     [
@@ -214,6 +250,13 @@ async def test_confirm_tool_action_shell_unsafe_shows_shell_choice(monkeypatch) 
             "Allow nexus_send?",
         ),
         (
+            ToolCall(id="call_kill", name="kill_process", arguments={"pid": 4242}),
+            None,
+            "4",
+            ConfirmationResult.DENY,
+            "Allow kill_process?",
+        ),
+        (
             ToolCall(id="call_file", name="read_file", arguments={"path": "/tmp/example.txt"}),
             Path("/tmp/example.txt"),
             "4",
@@ -221,7 +264,7 @@ async def test_confirm_tool_action_shell_unsafe_shows_shell_choice(monkeypatch) 
             "Allow read_file?",
         ),
     ],
-    ids=["mcp", "exec", "nexus", "file"],
+    ids=["mcp", "exec", "nexus", "kill", "file"],
 )
 async def test_confirm_tool_action_header_markup_renders_with_real_rich_console(
     monkeypatch,

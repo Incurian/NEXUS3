@@ -71,6 +71,8 @@ nexus3/skill/
 │   ├── concat_files.py   # Find and concatenate files by extension
 │   ├── outline.py        # Structural file/directory outline (16 language parsers)
 │   ├── regex_replace.py  # Regex find/replace (line ending preservation)
+│   ├── processes.py      # list_processes + get_process host process inspection
+│   ├── kill_process.py   # Explicit PID-based process termination
 │   ├── bash.py           # exec + shell_UNSAFE execution (CREATE_NO_WINDOW on Windows)
 │   ├── run_python.py     # Python code execution (CREATE_NO_WINDOW on Windows)
 │   ├── git.py            # Git version control (asyncio subprocess, CREATE_NO_WINDOW on Windows)
@@ -622,7 +624,7 @@ definitions = registry.get_definitions_for_permissions(agent_permissions)
 
 ## Built-in Skills
 
-NEXUS3 includes 40 core built-in skills plus 21 GitLab skills (when configured), organized by category:
+NEXUS3 includes 43 core built-in skills plus 21 GitLab skills (when configured), organized by category:
 
 ### File Operations (Read-Only)
 
@@ -663,6 +665,26 @@ composition or exact external CLI semantics are required.
 File-edit contract rule: unexpected extra arguments fail closed instead of
 being silently dropped. Use only documented top-level parameters and documented
 batch item fields.
+
+### Host Processes
+
+| Skill | Description | Key Parameters |
+|-------|-------------|----------------|
+| `list_processes` | List running processes with paginated results and sanitized command previews | `query?`, `match?`, `user?`, `port?`, `limit?`, `offset?` |
+| `get_process` | Inspect one running process by exact PID or unique query match | `pid?`, `query?`, `match?`, `user?`, `port?` |
+| `kill_process` | Terminate a running process by explicit PID (tree=true by default, graceful-first) | `pid`, `tree?`, `force?`, `timeout_seconds?` |
+
+Process guidance:
+- Prefer built-in `list_processes`, `get_process`, and `kill_process` instead
+  of shell `ps`, `pgrep`, `tasklist`, `kill`, or `taskkill`.
+- `list_processes` is paginated by default (`limit=50`, `offset=0`) and
+  returns `truncated` / `next_offset` metadata.
+- `get_process` accepts exact PID or unique query resolution; `port=0` is
+  normalized to omitted for the read-only process tools.
+- `list_processes` is discovery-only; use `get_process(pid=...)` for exact PID
+  lookup.
+- Discovery can use exact, contains, or regex matching; destructive
+  termination remains explicit-PID only.
 
 ### Execution
 
@@ -760,7 +782,7 @@ from nexus3.skill.builtin.registration import register_builtin_skills
 from nexus3.skill.vcs import register_vcs_skills
 
 registry = SkillRegistry(services)
-register_builtin_skills(registry)  # Registers 40 core skills
+register_builtin_skills(registry)  # Registers 43 core skills
 
 # VCS skills are registered separately (requires config + TRUSTED+ permissions)
 count = register_vcs_skills(registry, services, permissions)  # Up to 21 GitLab skills
@@ -1074,7 +1096,7 @@ async def main():
 
     # Create registry and register skills
     registry = SkillRegistry(services)
-    register_builtin_skills(registry)  # 40 core skills
+    register_builtin_skills(registry)  # 43 core skills
 
     # Register VCS skills if configured (requires gitlab_config in services)
     # vcs_count = register_vcs_skills(registry, services, permissions)

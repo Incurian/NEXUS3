@@ -467,6 +467,9 @@ instead of being silently dropped.
 | `grep` | `pattern`, `path`, `recursive`?, `ignore_case`?, `max_matches`?, `include`?, `context`? | Search UTF-8 file contents with file filter and context lines; unrestricted directory scans may use ripgrep when configured/available, single-file invalid UTF-8 fails closed, and directory scans skip invalid UTF-8 files |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate UTF-8 files by extension with token estimation (`dry_run=True` by default; real writes generate an output file and skip invalid UTF-8 inputs) |
 | `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory (headings, classes, functions, keys). Directory mode is non-recursive, `depth` controls nested symbols within each file, markdown heading detection ignores fenced code blocks, and invalid UTF-8 directory files are skipped. Use `symbol` for filtered read on files, `file_type`/`language`/`parser` to override parser detection, `tokens` for estimates, and `diff` for change markers |
+| `list_processes` | `query`?, `match`?, `user`?, `port`?, `limit`?, `offset`? | List running processes without shelling out; paginated by default and returns redacted command previews |
+| `get_process` | `pid`?, `query`?, `match`?, `user`?, `port`? | Inspect one running process by exact PID or a unique query match |
+| `kill_process` | `pid`, `tree`?, `force`?, `timeout_seconds`? | Terminate a running process by explicit PID (tree=true by default, graceful-first) |
 | `git` | `command`, `cwd`? | Execute git commands (permission-filtered by level; `status` includes parsed branch/staged/unstaged/untracked data for normal and short output) |
 | `exec` | `program`, `args`?, `timeout`?, `cwd`? | Execute a program directly without shell interpretation |
 | `shell_UNSAFE` | `command`, `shell`?, `timeout`?, `cwd`? | Execute full shell syntax (pipes work, injection-vulnerable; `shell` selects auto/bash/gitbash/powershell/pwsh/cmd) |
@@ -477,6 +480,12 @@ Search guidance:
 - Prefer `glob` for path discovery and built-in `grep` for content search.
 - Avoid shell `find`, `Get-ChildItem`, `grep`, or `rg` unless you need shell
   composition or exact external CLI semantics.
+Process guidance:
+- Prefer built-in `list_processes`, `get_process`, and `kill_process` instead
+  of shell `ps`, `pgrep`, `tasklist`, `kill`, or `taskkill`.
+- Use `list_processes(...)` for discovery, `get_process(pid=...)` for exact
+  lookup, and pass an explicit PID to `kill_process`; destructive termination
+  should not rely on fuzzy matching.
 | `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `allowed_write_paths`?, `model`?, `initial_message`?, `wait_for_initial_response`?, `port`? | Create agent (initial_message queued by default; wait flag only matters when `initial_message` is set) |
 | `nexus_destroy` | `agent_id`, `port`? | Remove an agent (server keeps running) |
 | `nexus_send` | `agent_id`, `content`, `port`? | Send message to an agent |
@@ -777,7 +786,7 @@ This is used by `nexus_send`, `nexus_status`, `nexus_cancel`, and `nexus_destroy
 
 7. **Trusted agents can only create sandboxed subagents**: A trusted agent cannot spawn another trusted agent - all subagents are sandboxed (ceiling enforcement).
 
-8. **Sandboxed agents have limited nexus tools**: Most nexus tools (`nexus_create`, `nexus_destroy`, `nexus_status`, `nexus_cancel`, `nexus_shutdown`) are disabled for sandboxed agents. However, **`nexus_send` IS enabled with `allowed_targets="parent"`** - sandboxed agents can send messages back to their parent agent to report results. They cannot message any other agent.
+8. **Sandboxed agents have limited host-management tools**: Most nexus tools (`nexus_create`, `nexus_destroy`, `nexus_status`, `nexus_cancel`, `nexus_shutdown`) and host process tools (`list_processes`, `get_process`, `kill_process`) are disabled for sandboxed agents. However, **`nexus_send` IS enabled with `allowed_targets="parent"`** - sandboxed agents can send messages back to their parent agent to report results. They cannot message any other agent.
 
 9. **Subagent cwd restrictions depend on parent level**: For SANDBOXED parents, the child's `cwd` must be within the parent's `cwd` (prevents privilege escalation). TRUSTED and YOLO parents can create subagents at any CWD since they already have potential access to all paths.
 

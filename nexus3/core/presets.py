@@ -150,6 +150,9 @@ def _create_builtin_presets() -> dict[str, PermissionPreset]:
                 "exec": ToolPermission(enabled=False),
                 "shell_UNSAFE": ToolPermission(enabled=False),
                 "run_python": ToolPermission(enabled=False),
+                "list_processes": ToolPermission(enabled=False),
+                "get_process": ToolPermission(enabled=False),
+                "kill_process": ToolPermission(enabled=False),
                 # Agent management disabled
                 "nexus_send": ToolPermission(enabled=True, allowed_targets="parent"),
                 "nexus_create": ToolPermission(enabled=False),

@@ -74,6 +74,7 @@ DESTRUCTIVE_ACTIONS = frozenset(
         "copy_file",  # Fix 1.2: Can overwrite destination files
         "rename",  # Fix 1.2: Can overwrite destination files
         "mkdir",  # Fix 1.2: Creates directories
+        "kill_process",
         "exec",
         "shell_unsafe",  # Tool name is shell_UNSAFE but we check lowercase
         "run_python",
@@ -110,6 +111,9 @@ SANDBOXED_DISABLED_TOOLS = frozenset(
         "exec",
         "shell_unsafe",  # Tool name is shell_UNSAFE but we check lowercase
         "run_python",
+        "list_processes",
+        "get_process",
+        "kill_process",
         "nexus_send",
         "nexus_create",
         "nexus_destroy",

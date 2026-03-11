@@ -367,6 +367,20 @@ async def confirm_tool_action(
             sink.print_trusted("  [dim]Agent:[/] ", end="")
             sink.print_untrusted(str(agent_id))
             lines_printed += 3  # empty + header + agent
+        elif tool_name == "kill_process":
+            pid = tool_call.arguments.get("pid", "unknown")
+            tree = bool(tool_call.arguments.get("tree", True))
+            force = bool(tool_call.arguments.get("force", False))
+            sink.print_trusted("\n[yellow]Allow [/]", end="")
+            sink.print_untrusted(tool_name, end="")
+            sink.print_trusted("[yellow]?[/]")
+            sink.print_trusted("  [dim]PID:[/] ", end="")
+            sink.print_untrusted(str(pid))
+            sink.print_trusted("  [dim]Tree:[/] ", end="")
+            sink.print_untrusted("yes" if tree else "no")
+            sink.print_trusted("  [dim]Force:[/] ", end="")
+            sink.print_untrusted("yes" if force else "no")
+            lines_printed += 5  # empty + header + pid + tree + force
         else:
             path_str = str(target_path) if target_path else tool_call.arguments.get(
                 "path", "unknown"

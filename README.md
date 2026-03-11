@@ -35,7 +35,7 @@ Create teams of agents with structured parent-child relationships. A trusted coo
 
 ### Security by Default
 
-RPC-created agents are sandboxed automatically: restricted to their working directory, no shell execution, no network access. Three built-in presets (yolo, trusted, sandboxed) with per-tool enable/disable, per-tool path restrictions, and timeout controls. YOLO access is only available in the interactive REPL — it cannot be granted programmatically. Token-authenticated RPC, localhost-only binding, symlink-aware path validation, and process isolation round out the security model.
+RPC-created agents are sandboxed automatically: restricted to their working directory, no shell execution or host-process tools, no network access. Three built-in presets (yolo, trusted, sandboxed) with per-tool enable/disable, per-tool path restrictions, and timeout controls. YOLO access is only available in the interactive REPL — it cannot be granted programmatically. Token-authenticated RPC, localhost-only binding, symlink-aware path validation, and process isolation round out the security model.
 
 ### Managed Agent Lifecycles
 
@@ -59,7 +59,7 @@ A three-tier clipboard system (agent, project, system) lets agents store, retrie
 
 ### 60+ Built-in Skills
 
-39 core skills covering file operations, shell execution, git, unified diff patching, and inter-agent communication. 21 GitLab integration skills for issues, merge requests, pipelines, epics, approvals, time tracking, draft reviews, and more. Skills are permission-aware — what's available depends on the agent's preset, and file skills enforce per-tool path restrictions.
+43 core skills covering file operations, host process inspection/termination, shell execution, git, unified diff patching, and inter-agent communication. 21 GitLab integration skills for issues, merge requests, pipelines, epics, approvals, time tracking, draft reviews, and more. Skills are permission-aware — what's available depends on the agent's preset, and file skills enforce per-tool path restrictions.
 
 ### Layered Configuration
 
@@ -996,6 +996,20 @@ Execute shell_UNSAFE?
   [p] View full details
 ```
 
+**Process termination** (`kill_process`) — explicit PID approval:
+```
+Allow kill_process?
+  PID: 4242
+  Tree: yes
+  Force: no
+
+  [1] Allow once
+  [2] Allow always for this file
+  [3] Allow always in this directory
+  [4] Deny
+  [p] View full details
+```
+
 **MCP tools**:
 ```
 Allow MCP tool 'mcp_github_create_issue'?
@@ -1342,7 +1356,7 @@ See [Security & Permissions](#security--permissions) for behavior details.
 {
   "permissions": {
     "default_preset": "sandboxed",
-    "destructive_tools": ["write_file", "edit_file", "exec", "shell_UNSAFE", "run_python", "nexus_destroy", "nexus_shutdown"],
+    "destructive_tools": ["write_file", "edit_file", "exec", "shell_UNSAFE", "run_python", "kill_process", "nexus_destroy", "nexus_shutdown"],
     "presets": {
       "researcher": {
         "extends": "sandboxed",
@@ -1431,7 +1445,7 @@ For configuration loading internals and validation, see `nexus3/config/README.md
 
 ## Built-in Skills
 
-NEXUS3 includes 40 built-in skills organized by category, plus 21 GitLab integration skills (see [GitLab Integration](#gitlab-integration)).
+NEXUS3 includes 43 built-in skills organized by category, plus 21 GitLab integration skills (see [GitLab Integration](#gitlab-integration)).
 
 ### File Operations (Read)
 
@@ -1474,6 +1488,28 @@ invalid UTF-8 files instead of mangling bytes.
 | `copy_file` | Copy file | `source`, `destination`, `overwrite` |
 | `mkdir` | Create directory | `path` |
 | `rename` | Move/rename file | `source`, `destination`, `overwrite` |
+
+### Host Processes
+
+| Skill | Description | Key Parameters |
+|-------|-------------|----------------|
+| `list_processes` | List running processes with paginated results and redacted command previews | `query`, `match`, `user`, `port`, `limit`, `offset` |
+| `get_process` | Inspect one running process by PID or unique query match | `pid`, `query`, `match`, `user`, `port` |
+| `kill_process` | Terminate a running process by explicit PID (tree=true by default, graceful-first) | `pid`, `tree`, `force`, `timeout_seconds` |
+
+**Process notes:**
+- Prefer built-in `list_processes`, `get_process`, and `kill_process` over
+  shell `ps`, `pgrep`, `tasklist`, `kill`, or `taskkill`.
+- `list_processes` defaults to `limit=50`, `offset=0`, and returns
+  `truncated` / `next_offset` metadata for follow-up paging.
+- `list_processes` is discovery-only; use `get_process(pid=...)` for exact PID
+  lookup.
+- `get_process` supports exact, contains, and regex discovery when using
+  `query`, but `kill_process` still requires an explicit PID.
+- `port=0` on the read-only process tools is treated as omitted to absorb
+  placeholder model calls; negative ports still fail closed.
+- Command lines are returned as sanitized `command_preview` values rather than
+  raw unredacted argv dumps.
 
 ### Execution
 

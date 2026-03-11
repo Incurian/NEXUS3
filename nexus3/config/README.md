@@ -300,7 +300,8 @@ Top-level permissions configuration.
 | `destructive_tools` | `list[str]` | See below | Tools that require confirmation |
 
 **Default Destructive Tools:**
-- `write_file`, `edit_file`, `exec`, `shell_UNSAFE`, `run_python`, `nexus_destroy`, `nexus_shutdown`
+- `write_file`, `edit_file`, `exec`, `shell_UNSAFE`, `run_python`,
+  `kill_process`, `nexus_destroy`, `nexus_shutdown`
 
 ### `PermissionPresetConfig`
 

@@ -54,6 +54,11 @@ This index covers the architecture plans created during today's review/planning 
 
 - [GIT-AND-OUTLINE-CORRECTNESS-AUDIT-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/GIT-AND-OUTLINE-CORRECTNESS-AUDIT-PLAN-2026-03-11.md)
 
+## Process Tool Plans (2026-03-11)
+
+- [PROCESS-INSPECTION-AND-KILL-TOOLS-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/PROCESS-INSPECTION-AND-KILL-TOOLS-PLAN-2026-03-11.md)
+- [PROCESS-TOOL-SPLIT-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/PROCESS-TOOL-SPLIT-PLAN-2026-03-11.md)
+
 ## Related Review Docs
 
 - [Reviews Index (2026-03-02)](/home/inc/repos/NEXUS3/docs/reviews/README.md)

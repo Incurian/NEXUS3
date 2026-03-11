@@ -23,6 +23,7 @@ from nexus3.skill.builtin.file_info import file_info_factory
 from nexus3.skill.builtin.git import git_factory
 from nexus3.skill.builtin.glob_search import glob_factory
 from nexus3.skill.builtin.grep import grep_factory
+from nexus3.skill.builtin.kill_process import kill_process_factory
 from nexus3.skill.builtin.list_directory import list_directory_factory
 from nexus3.skill.builtin.mkdir import mkdir_factory
 from nexus3.skill.builtin.nexus_cancel import nexus_cancel_factory
@@ -33,6 +34,7 @@ from nexus3.skill.builtin.nexus_shutdown import nexus_shutdown_factory
 from nexus3.skill.builtin.nexus_status import nexus_status_factory
 from nexus3.skill.builtin.outline import outline_factory
 from nexus3.skill.builtin.patch import patch_factory
+from nexus3.skill.builtin.processes import get_process_factory, list_processes_factory
 from nexus3.skill.builtin.read_file import read_file_factory
 from nexus3.skill.builtin.regex_replace import regex_replace_factory
 from nexus3.skill.builtin.rename import rename_factory
@@ -63,6 +65,8 @@ def register_builtin_skills(registry: SkillRegistry) -> None:
     registry.register("grep", grep_factory)
     registry.register("concat_files", concat_files_factory)
     registry.register("outline", outline_factory)
+    registry.register("list_processes", list_processes_factory)
+    registry.register("get_process", get_process_factory)
 
     # File operations (destructive)
     registry.register("write_file", write_file_factory)
@@ -74,6 +78,7 @@ def register_builtin_skills(registry: SkillRegistry) -> None:
     registry.register("copy_file", copy_file_factory)
     registry.register("mkdir", mkdir_factory)
     registry.register("rename", rename_factory)
+    registry.register("kill_process", kill_process_factory)
 
     # Version control (permission-filtered internally)
     registry.register("git", git_factory)

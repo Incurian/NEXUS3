@@ -481,6 +481,20 @@ Execute shell_UNSAFE?
   [p] View full details
 ```
 
+**Process termination** (`kill_process`) explicit PID approval:
+```
+Allow kill_process?
+  PID: 4242
+  Tree: yes
+  Force: no
+
+  [1] Allow once
+  [2] Allow always for this file
+  [3] Allow always in this directory
+  [4] Deny
+  [p] View full details
+```
+
 **Nexus tools** (nexus_create, nexus_send, etc.):
 ```
 Allow nexus_create?

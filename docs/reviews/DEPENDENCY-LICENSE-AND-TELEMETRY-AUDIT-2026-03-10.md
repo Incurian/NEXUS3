@@ -18,6 +18,10 @@ High-confidence findings:
   - `pathspec` (`MPL-2.0`, dev transitive)
   - `typing_extensions` (`PSF-2.0`, runtime + dev transitive)
   - `aiohappyeyeballs` (`PSF-2.0`, dev transitive)
+- `psutil` is now an intentional runtime dependency for the built-in
+  `list_processes` / `get_process` / `kill_process` tools and currently audits
+  clean:
+  `BSD-3-Clause`, no evidence of unsolicited telemetry.
 - I found no analytics SDKs, no hardcoded telemetry vendors, and no
   import/startup update checks in the installed dependency sources.
 - The most important non-license issue is **dependency drift**:
@@ -78,8 +82,8 @@ Important limitation:
 
 Tracked direct dependencies from [pyproject.toml](/home/inc/repos/NEXUS3/pyproject.toml):
 
-- runtime: `httpx`, `jsonschema`, `rich`, `prompt-toolkit`, `pydantic`,
-  `python-dotenv`
+- runtime: `httpx`, `jsonschema`, `psutil`, `rich`, `prompt-toolkit`,
+  `pydantic`, `python-dotenv`
 - dev: `aiohttp`, `pytest`, `pytest-asyncio`, `pytest-cov`, `pytest-xdist`,
   `ruff`, `mypy`, `watchfiles`
 - CI: same as dev minus `watchfiles`
@@ -142,6 +146,7 @@ jsonschema-specifications 2025.9.1  MIT
 markdown-it-py            4.0.0     MIT
 mdurl                     0.1.2     MIT
 prompt_toolkit            3.0.52    BSD-3-Clause
+psutil                    7.2.2     BSD-3-Clause
 pydantic                  2.12.5    MIT
 pydantic_core             2.41.5    MIT
 Pygments                  2.19.2    BSD-2-Clause
@@ -241,6 +246,28 @@ transport primitives:
 
 These can obviously open network connections when NEXUS or a caller uses them,
 but I found no evidence that they phone home on their own.
+
+#### `psutil`
+
+`psutil` is now used intentionally for cross-platform host process inspection
+and termination in the built-in `list_processes` / `get_process` /
+`kill_process` tools.
+
+What I checked:
+
+- local installed metadata reports `BSD-3-Clause` in
+  [METADATA](/home/inc/repos/NEXUS3/.venv/lib/python3.11/site-packages/psutil-7.2.2.dist-info/METADATA)
+- local source grep found no telemetry / analytics vendor strings or hidden
+  update-check patterns under the installed `psutil` package tree
+- official PyPI metadata currently describes it as a cross-platform process and
+  system monitoring library and lists `BSD-3-Clause`:
+  <https://pypi.org/project/psutil/>
+
+Assessment:
+
+- license compatibility: fine for an MIT-licensed NEXUS3 project
+- telemetry / phone-home risk: low, with no evidence of unsolicited outbound
+  behavior in the installed package
 
 ### Notable Caveats
 
@@ -364,6 +391,7 @@ Primary caveat:
 
 - `httpx` PyPI: <https://pypi.org/project/httpx/>
 - `jsonschema` PyPI: <https://pypi.org/project/jsonschema/>
+- `psutil` PyPI: <https://pypi.org/project/psutil/>
 - `rich` PyPI: <https://pypi.org/project/rich/>
 - `prompt-toolkit` PyPI: <https://pypi.org/project/prompt-toolkit/>
 - `python-dotenv` PyPI: <https://pypi.org/project/python-dotenv/>

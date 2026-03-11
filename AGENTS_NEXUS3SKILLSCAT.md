@@ -29,6 +29,9 @@ instead of being silently dropped.
 | `grep` | `pattern`, `path`, `recursive`?, `ignore_case`?, `max_matches`?, `include`?, `context`? | Search UTF-8 file contents with file filter and context lines; unrestricted directory scans may use ripgrep when configured/available, single-file invalid UTF-8 fails closed, and directory scans skip invalid UTF-8 files |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate UTF-8 files by extension with token estimation (`dry_run=True` by default; real writes generate an output file and skip invalid UTF-8 inputs) |
 | `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory; directory mode is non-recursive, `depth` controls nested symbols within each file, markdown heading detection ignores fenced code blocks, invalid UTF-8 directory entries are skipped, `symbol` returns a source excerpt for files only, `file_type`/`language`/`parser` can override parser detection for files, `recursive=true` fails closed, ambiguous symbol matches fail closed, and large directory output may truncate |
+| `list_processes` | `query`?, `match`?, `user`?, `port`?, `limit`?, `offset`? | List running processes with paginated results, exact/contains/regex discovery, and redacted command previews |
+| `get_process` | `pid`?, `query`?, `match`?, `user`?, `port`? | Inspect one running process by exact PID or a unique query match; `port=0` is treated as omitted |
+| `kill_process` | `pid`, `tree`?, `force`?, `timeout_seconds`? | Terminate a running process by explicit PID; tree termination defaults on, graceful-first unless `force=true` |
 | `git` | `command`, `cwd`? | Execute git commands (permission-filtered by level; `status` includes parsed branch/staged/unstaged/untracked data for normal and short output) |
 | `exec` | `program`, `args`?, `timeout`?, `cwd`? | Execute a program directly with no shell interpretation (no pipes, redirects, or shell builtins) |
 | `shell_UNSAFE` | `command`, `shell`?, `timeout`?, `cwd`? | Execute full shell syntax with explicit shell-family selection (pipes work, injection-vulnerable) |
@@ -42,6 +45,11 @@ instead of being silently dropped.
 Search guidance:
 - Prefer `glob` for path discovery and built-in `grep` for content search
   before reaching for shell `find`, `Get-ChildItem`, `grep`, or `rg`.
+Process guidance:
+- Prefer built-in `list_processes`, `get_process`, and `kill_process` before
+  reaching for shell `ps`, `pgrep`, `tasklist`, `kill`, or `taskkill`.
+- `list_processes` is discovery-only; use `get_process(pid=...)` for exact PID
+  lookup.
 | `nexus_cancel` | `agent_id`, `request_id`, `port`? | Cancel in-progress request (`request_id` may be string or integer) |
 | `nexus_shutdown` | `port`? | Shutdown the entire server |
 | `copy` | `source`, `key`, `scope`?, `start_line`?, `end_line`?, `short_description`?, `tags`?, `ttl_seconds`? | Copy UTF-8 file content to clipboard |
