@@ -10,10 +10,11 @@ from time import time
 from typing import Any, cast
 
 from nexus3.core.secure_io import secure_mkdir, secure_write_atomic
-from nexus3.session.storage import EventRow, MessageRow
+from nexus3.session.storage import EventRow, MessageRow, SessionStorage
 
 TOOL_ID_DISPLAY_WIDTH = 8
 ACTIVE_TRACE_SESSION_FILENAME = ".active-session.json"
+ACTIVE_AGENT_SESSIONS_FILENAME = ".active-agent-sessions.json"
 
 
 def tool_display_id(tool_call_id: str, width: int = TOOL_ID_DISPLAY_WIDTH) -> str:
@@ -141,9 +142,91 @@ class ActiveTraceSession:
         )
 
 
+@dataclass(frozen=True)
+class ActiveAgentSession:
+    """A live pool agent session registered in a shared log root."""
+
+    agent_id: str
+    session_id: str
+    session_dir: Path
+    parent_agent_id: str | None
+    server_pid: int
+    updated_at: float
+
+    def to_payload(self) -> dict[str, object]:
+        """Convert to JSON payload for the shared active-agent registry."""
+        return {
+            "agent_id": self.agent_id,
+            "session_id": self.session_id,
+            "session_dir": str(self.session_dir),
+            "parent_agent_id": self.parent_agent_id,
+            "server_pid": self.server_pid,
+            "updated_at": self.updated_at,
+        }
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: dict[str, object],
+        *,
+        base_log_dir: Path,
+    ) -> ActiveAgentSession | None:
+        """Validate and construct an active-agent registry entry."""
+        try:
+            agent_id_value = payload["agent_id"]
+            session_id_value = payload["session_id"]
+            session_dir_value = payload["session_dir"]
+            parent_agent_id_value = payload.get("parent_agent_id")
+            server_pid_value = payload["server_pid"]
+            updated_at_value = payload["updated_at"]
+        except KeyError:
+            return None
+
+        if not isinstance(agent_id_value, str):
+            return None
+        if not isinstance(session_id_value, str):
+            return None
+        if not isinstance(session_dir_value, str):
+            return None
+        if parent_agent_id_value is not None and not isinstance(parent_agent_id_value, str):
+            return None
+        if not isinstance(server_pid_value, int):
+            return None
+        if not isinstance(updated_at_value, int | float):
+            return None
+
+        session_dir = Path(session_dir_value).expanduser().resolve()
+        log_root = base_log_dir.expanduser().resolve()
+        try:
+            if not session_dir.is_relative_to(log_root):
+                return None
+        except ValueError:
+            return None
+
+        if not session_dir.is_dir() or not (session_dir / "session.db").exists():
+            return None
+
+        if not agent_id_value or not session_id_value or server_pid_value <= 0:
+            return None
+
+        return cls(
+            agent_id=agent_id_value,
+            session_id=session_id_value,
+            session_dir=session_dir,
+            parent_agent_id=parent_agent_id_value,
+            server_pid=server_pid_value,
+            updated_at=float(updated_at_value),
+        )
+
+
 def active_trace_session_path(base_log_dir: Path) -> Path:
     """Return the shared active-session pointer path for a log root."""
     return base_log_dir.expanduser().resolve() / ACTIVE_TRACE_SESSION_FILENAME
+
+
+def active_agent_sessions_path(base_log_dir: Path) -> Path:
+    """Return the shared active-agent registry path for a log root."""
+    return base_log_dir.expanduser().resolve() / ACTIVE_AGENT_SESSIONS_FILENAME
 
 
 def write_active_trace_session(
@@ -219,6 +302,122 @@ def clear_active_trace_session(
         return True
     except FileNotFoundError:
         return False
+
+
+def read_active_agent_sessions(base_log_dir: Path) -> list[ActiveAgentSession]:
+    """Read the shared active-agent session registry for a log root."""
+    registry_path = active_agent_sessions_path(base_log_dir)
+    if not registry_path.exists():
+        return []
+
+    try:
+        raw = registry_path.read_text(encoding="utf-8")
+        payload = json.loads(raw)
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    if not isinstance(payload, list):
+        return []
+
+    sessions: list[ActiveAgentSession] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        session = ActiveAgentSession.from_payload(item, base_log_dir=base_log_dir)
+        if session is not None:
+            sessions.append(session)
+    return sessions
+
+
+def write_active_agent_session(
+    *,
+    base_log_dir: Path,
+    session_dir: Path,
+    agent_id: str,
+    parent_agent_id: str | None,
+    server_pid: int,
+) -> ActiveAgentSession:
+    """Register or refresh a live agent session in the shared log-root registry."""
+    log_root = base_log_dir.expanduser().resolve()
+    secure_mkdir(log_root)
+
+    active_session = ActiveAgentSession(
+        agent_id=agent_id,
+        session_id=session_dir.resolve().name,
+        session_dir=session_dir.resolve(),
+        parent_agent_id=parent_agent_id,
+        server_pid=server_pid,
+        updated_at=time(),
+    )
+
+    existing = read_active_agent_sessions(log_root)
+    updated = [
+        session
+        for session in existing
+        if session.session_dir != active_session.session_dir
+    ]
+    updated.append(active_session)
+    updated.sort(key=lambda session: session.updated_at)
+
+    secure_write_atomic(
+        active_agent_sessions_path(log_root),
+        json.dumps(
+            [session.to_payload() for session in updated],
+            sort_keys=True,
+            ensure_ascii=False,
+        ),
+    )
+    return active_session
+
+
+def remove_active_agent_session(
+    *,
+    base_log_dir: Path,
+    session_dir: Path,
+) -> bool:
+    """Remove a live agent session from the shared active-agent registry."""
+    log_root = base_log_dir.expanduser().resolve()
+    registry_path = active_agent_sessions_path(log_root)
+    if not registry_path.exists():
+        return False
+
+    existing = read_active_agent_sessions(log_root)
+    updated = [
+        session
+        for session in existing
+        if session.session_dir != session_dir.expanduser().resolve()
+    ]
+
+    if len(updated) == len(existing):
+        return False
+
+    if updated:
+        secure_write_atomic(
+            registry_path,
+            json.dumps(
+                [session.to_payload() for session in updated],
+                sort_keys=True,
+                ensure_ascii=False,
+            ),
+        )
+    else:
+        registry_path.unlink(missing_ok=True)
+    return True
+
+
+def read_session_agent_metadata(session_dir: Path) -> tuple[str | None, str | None]:
+    """Read persisted agent identity metadata from a session directory."""
+    session_db = session_dir / "session.db"
+    if not session_db.exists():
+        return None, None
+
+    storage = SessionStorage(session_db)
+    try:
+        agent_id = storage.get_metadata("agent_id")
+        parent_agent_id = storage.get_metadata("parent_agent_id")
+        return agent_id, parent_agent_id
+    finally:
+        storage.close()
 
 
 def build_tool_records(messages: list[MessageRow], events: list[EventRow]) -> list[ToolRecord]:

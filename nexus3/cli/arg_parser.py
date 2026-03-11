@@ -255,6 +255,12 @@ def parse_args() -> argparse.Namespace:
         help="Trace preset to render (default: execution)",
     )
     trace_parser.add_argument(
+        "--scope",
+        choices=["active", "subagents"],
+        default="active",
+        help="Which sessions to follow (default: active)",
+    )
+    trace_parser.add_argument(
         "--once",
         action="store_true",
         help="Print the current snapshot and exit instead of following",

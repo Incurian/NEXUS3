@@ -916,10 +916,14 @@ For proper UTF-8 display, the console should use code page 65001. NEXUS3 warns i
 
 Use `nexus3 trace` for execution-first live viewing when you want the trace to
 follow the active REPL session in the same log root by default, or
+`nexus3 trace --scope subagents` when you want to watch only the active child
+agents of that REPL agent in a second terminal, or
 `nexus3 trace --latest --preset debug` when running REPL sessions with `-v`
 or `-V`. Use `--max-tool-lines 0` if you want unbounded tool-call/result
 bodies in execution trace output. Pass an explicit trace target if you want a
-pinned historical session instead of active-session follow behavior.
+pinned historical session instead of active-session follow behavior; with
+`--scope subagents`, the explicit target is treated as the pinned parent
+session.
 
 ### Server Logging
 

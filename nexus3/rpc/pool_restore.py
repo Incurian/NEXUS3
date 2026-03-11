@@ -8,6 +8,7 @@ not coupled to pool internals beyond explicit dependencies passed by the caller.
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import MutableMapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -30,6 +31,7 @@ from nexus3.rpc.log_multiplexer import LogMultiplexer
 from nexus3.rpc.pool_visibility import _convert_gitlab_config
 from nexus3.session import LogConfig, LogStream, SavedSession, Session, SessionLogger
 from nexus3.session.persistence import deserialize_clipboard_entries, deserialize_messages
+from nexus3.session.trace import write_active_agent_session
 from nexus3.skill import ServiceContainer, SkillRegistry
 from nexus3.skill.vcs import register_vcs_skills
 
@@ -242,6 +244,18 @@ async def _restore_unlocked(
         base_log_dir=shared.base_log_dir,
         log_streams=shared.log_streams,
         log_multiplexer=runtime.log_multiplexer,
+    )
+    provenance = getattr(saved, "provenance", "user")
+    parent_agent_id = provenance if provenance != "user" else None
+    logger.storage.set_metadata("agent_id", agent_id)
+    if parent_agent_id is not None:
+        logger.storage.set_metadata("parent_agent_id", parent_agent_id)
+    write_active_agent_session(
+        base_log_dir=shared.base_log_dir,
+        session_dir=logger.session_dir,
+        agent_id=agent_id,
+        parent_agent_id=parent_agent_id,
+        server_pid=os.getpid(),
     )
 
     system_prompt = saved.system_prompt

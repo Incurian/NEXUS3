@@ -1991,6 +1991,7 @@ def main() -> None:
                     log_dir=args.log_dir,
                     target=None if args.latest else args.target,
                     preset=args.preset,
+                    scope=args.scope,
                     follow=not args.once,
                     history=args.history,
                     poll_interval=args.poll_interval,

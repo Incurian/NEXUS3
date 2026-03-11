@@ -874,7 +874,9 @@ For simple Python entrypoints, direct interpreter invocation is usually more rel
 - `--raw-log`: Log raw API JSON to `raw.jsonl`
 - `nexus3 trace`: Follow the active session's execution trace in another terminal when the same log root is in use; otherwise fall back to the newest session
 - `nexus3 trace --latest`: Explicitly use the default trace selection (`active when available, otherwise latest`)
+- `nexus3 trace --scope subagents`: Follow the active child agents of the current REPL agent in the same log root
 - `nexus3 trace --latest --preset debug`: Follow the active session's `verbose.md` in real time when verbose diagnostics are enabled
+- `nexus3 trace /path/to/session --scope subagents --once`: Pin subagent trace to one parent session and print a snapshot
 - `nexus3 trace --latest --max-tool-lines 0`: Disable default execution-trace truncation for tool-call/result bodies
 
 ---

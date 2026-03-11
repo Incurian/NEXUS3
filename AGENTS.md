@@ -223,6 +223,32 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
+- Trace subagent scope complete locally (2026-03-11):
+  - executed
+    [TRACE-SUBAGENT-SCOPE-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-SUBAGENT-SCOPE-PLAN-2026-03-11.md)
+    for the “trace only the active child agents of the current REPL agent”
+    follow-up.
+  - local pending commit:
+    - added a shared `.active-agent-sessions.json` registry in the selected
+      log root, refreshed on pool create/restore/destroy
+    - pool agent session DBs now persist `agent_id` and `parent_agent_id`
+      metadata so trace can resolve pinned parent sessions without inferring
+      from directory names
+    - `nexus3 trace --scope subagents` now follows active child agents of the
+      current REPL agent by default and multiplexes execution/debug output
+      with per-agent labels
+    - explicit subagent trace targets stay pinned to the chosen parent
+      session instead of auto-retargeting
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/session/trace.py nexus3/cli/trace.py nexus3/cli/arg_parser.py nexus3/cli/repl.py nexus3/rpc/pool.py nexus3/rpc/pool_lifecycle.py nexus3/rpc/pool_restore.py tests/unit/session/test_trace.py tests/unit/cli/test_trace.py tests/security/test_concurrent_restore.py tests/unit/test_pool.py tests/unit/test_auto_restore.py README.md nexus3/cli/README.md nexus3/defaults/NEXUS-DEFAULT.md nexus3/session/README.md CLAUDE.md AGENTS.md docs/plans/README.md docs/plans/TRACE-SUBAGENT-SCOPE-PLAN-2026-03-11.md`
+    - `.venv/bin/mypy nexus3/session/trace.py nexus3/cli/trace.py nexus3/cli/arg_parser.py nexus3/cli/repl.py nexus3/rpc/pool.py nexus3/rpc/pool_lifecycle.py nexus3/rpc/pool_restore.py`
+    - `.venv/bin/pytest -q tests/security/test_concurrent_restore.py tests/unit/test_pool.py tests/unit/test_auto_restore.py tests/unit/session/test_trace.py tests/unit/cli/test_trace.py` (`120 passed`)
+    - `git diff --check`
+    - practical smoke:
+      - `/home/inc/repos/NEXUS3/.venv/bin/python -m nexus3 trace --log-dir /tmp/nexus3-trace-subagents-smoke --scope subagents --once --history 4`
+      - trace attached only `worker-a` and `worker-b` under active parent
+        `parent-agent`, prefixed output with `[worker-*]`, and ignored the
+        unrelated `worker-other` session
 - Trace active-session follow complete locally (2026-03-11):
   - executed
     [TRACE-ACTIVE-SESSION-FOLLOW-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-ACTIVE-SESSION-FOLLOW-PLAN-2026-03-11.md)

@@ -4,15 +4,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from nexus3.session.storage import EventRow, MessageRow
+from nexus3.session.storage import EventRow, MessageRow, SessionStorage
 from nexus3.session.trace import (
+    active_agent_sessions_path,
     active_trace_session_path,
     build_tool_records,
     clear_active_trace_session,
     format_tool_record_details,
+    read_active_agent_sessions,
     read_active_trace_session,
+    read_session_agent_metadata,
+    remove_active_agent_session,
     resolve_tool_record,
     tool_display_id,
+    write_active_agent_session,
     write_active_trace_session,
 )
 
@@ -203,3 +208,58 @@ def test_read_active_trace_session_ignores_malformed_or_outside_pointer(tmp_path
         encoding="utf-8",
     )
     assert read_active_trace_session(base_log_dir) is None
+
+
+def test_active_agent_session_registry_round_trips_and_removes(tmp_path: Path) -> None:
+    base_log_dir = tmp_path / "logs"
+    first = base_log_dir / "worker-1" / "2026-03-11_agent_a"
+    second = base_log_dir / "worker-2" / "2026-03-11_agent_b"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+    (first / "session.db").write_text("", encoding="utf-8")
+    (second / "session.db").write_text("", encoding="utf-8")
+
+    write_active_agent_session(
+        base_log_dir=base_log_dir,
+        session_dir=first,
+        agent_id="worker-1",
+        parent_agent_id="main",
+        server_pid=1111,
+    )
+    write_active_agent_session(
+        base_log_dir=base_log_dir,
+        session_dir=second,
+        agent_id="worker-2",
+        parent_agent_id="main",
+        server_pid=1111,
+    )
+
+    loaded = read_active_agent_sessions(base_log_dir)
+
+    assert [session.agent_id for session in loaded] == ["worker-1", "worker-2"]
+    assert loaded[0].parent_agent_id == "main"
+    assert loaded[1].server_pid == 1111
+
+    assert remove_active_agent_session(base_log_dir=base_log_dir, session_dir=first) is True
+    remaining = read_active_agent_sessions(base_log_dir)
+    assert [session.agent_id for session in remaining] == ["worker-2"]
+    assert remove_active_agent_session(base_log_dir=base_log_dir, session_dir=first) is False
+
+    assert remove_active_agent_session(base_log_dir=base_log_dir, session_dir=second) is True
+    assert not active_agent_sessions_path(base_log_dir).exists()
+
+
+def test_read_session_agent_metadata_returns_persisted_agent_identity(tmp_path: Path) -> None:
+    session_dir = tmp_path / "worker-1" / "2026-03-11_agent_a"
+    session_dir.mkdir(parents=True)
+    storage = SessionStorage(session_dir / "session.db")
+    try:
+        storage.set_metadata("agent_id", "worker-1")
+        storage.set_metadata("parent_agent_id", "main")
+    finally:
+        storage.close()
+
+    agent_id, parent_agent_id = read_session_agent_metadata(session_dir)
+
+    assert agent_id == "worker-1"
+    assert parent_agent_id == "main"

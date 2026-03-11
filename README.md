@@ -663,7 +663,7 @@ nexus3 [OPTIONS]
 |------|-------------|
 | `--serve [PORT]` | Run headless HTTP server (requires `NEXUS_DEV=1`) |
 | `--connect [URL]` | Connect to existing server (auto-discovers if no URL) |
-| `trace [TARGET] [--latest] [--max-tool-lines N]` | Follow execution/debug traces (active session by default, explicit target stays pinned) |
+| `trace [TARGET] [--latest] [--scope active\|subagents] [--max-tool-lines N]` | Follow execution/debug traces for the active session or its active child agents |
 | `--agent ID` | Agent to connect to (default: `main`, requires `--connect`) |
 | `--reload` | Auto-reload on code changes (serve mode only, requires watchfiles) |
 
@@ -2143,8 +2143,10 @@ nexus3 --log-verbose      # Debug output to verbose.md log file (long form)
 ```bash
 nexus3 trace                          # Follow active session in this log root
 nexus3 trace --latest                 # Same default selection explicitly
+nexus3 trace --scope subagents        # Follow active child agents of the current REPL agent
 nexus3 trace --latest --preset debug  # Follow active session verbose.md in real time
 nexus3 trace /path/to/session --once  # Print a snapshot and exit
+nexus3 trace /path/to/session --scope subagents --once  # Pin to one parent agent's active subagents
 nexus3 trace --latest --max-tool-lines 0  # Disable tool-body truncation
 ```
 

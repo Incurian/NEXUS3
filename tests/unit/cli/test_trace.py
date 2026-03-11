@@ -13,12 +13,14 @@ from nexus3.cli.arg_parser import parse_args
 from nexus3.cli.trace import (
     DEFAULT_MAX_TOOL_LINES,
     _resolve_follow_active_session_dir,
+    _select_active_subagent_sessions,
     build_execution_entries,
+    resolve_subagent_trace_binding,
     resolve_trace_session_binding,
     resolve_trace_session_dir,
 )
-from nexus3.session.storage import MessageRow
-from nexus3.session.trace import write_active_trace_session
+from nexus3.session.storage import MessageRow, SessionStorage
+from nexus3.session.trace import write_active_agent_session, write_active_trace_session
 
 
 def test_resolve_trace_session_dir_uses_latest_when_no_target(tmp_path: Path) -> None:
@@ -110,6 +112,20 @@ def test_parse_args_supports_trace_max_tool_lines(monkeypatch: pytest.MonkeyPatc
     assert args.max_tool_lines == 25
 
 
+def test_parse_args_supports_trace_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["nexus3", "trace", "--scope", "subagents", "--preset", "debug"],
+    )
+
+    args = parse_args()
+
+    assert args.command == "trace"
+    assert args.scope == "subagents"
+    assert args.preset == "debug"
+
+
 def test_resolve_follow_active_session_dir_keeps_current_without_pointer(tmp_path: Path) -> None:
     current = tmp_path / "current"
     current.mkdir()
@@ -146,6 +162,70 @@ def test_resolve_follow_active_session_dir_switches_when_pointer_changes(tmp_pat
     )
 
     assert resolved == active.resolve()
+
+
+def test_resolve_subagent_trace_binding_uses_active_parent_agent(tmp_path: Path) -> None:
+    active = tmp_path / "main" / "2026-03-11_parent"
+    active.mkdir(parents=True)
+    storage = SessionStorage(active / "session.db")
+    try:
+        storage.set_metadata("agent_id", "parent")
+    finally:
+        storage.close()
+
+    write_active_trace_session(
+        base_log_dir=tmp_path,
+        session_dir=active,
+        agent_id="parent",
+        server_instance_id="srv-1",
+        server_pid=2222,
+    )
+
+    binding = resolve_subagent_trace_binding(tmp_path)
+
+    assert binding.parent_session_dir == active.resolve()
+    assert binding.parent_agent_id == "parent"
+    assert binding.follow_active is True
+    assert binding.server_pid == 2222
+
+
+def test_select_active_subagent_sessions_filters_parent_and_server(tmp_path: Path) -> None:
+    first = tmp_path / "worker-1" / "2026-03-11_a"
+    second = tmp_path / "worker-2" / "2026-03-11_b"
+    other = tmp_path / "worker-3" / "2026-03-11_c"
+    for path in (first, second, other):
+        path.mkdir(parents=True)
+        (path / "session.db").write_text("", encoding="utf-8")
+
+    write_active_agent_session(
+        base_log_dir=tmp_path,
+        session_dir=first,
+        agent_id="worker-1",
+        parent_agent_id="parent",
+        server_pid=2222,
+    )
+    write_active_agent_session(
+        base_log_dir=tmp_path,
+        session_dir=second,
+        agent_id="worker-2",
+        parent_agent_id="parent",
+        server_pid=2222,
+    )
+    write_active_agent_session(
+        base_log_dir=tmp_path,
+        session_dir=other,
+        agent_id="worker-3",
+        parent_agent_id="other-parent",
+        server_pid=3333,
+    )
+
+    selected = _select_active_subagent_sessions(
+        base_log_dir=tmp_path,
+        parent_agent_id="parent",
+        server_pid=2222,
+    )
+
+    assert [session.agent_id for session in selected] == ["worker-1", "worker-2"]
 
 
 def test_build_execution_entries_renders_typed_message_previews_and_tool_blocks() -> None:

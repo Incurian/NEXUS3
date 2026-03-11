@@ -419,6 +419,11 @@ The shared log root may also contain `.active-session.json`, a small pointer
 used by `nexus3 trace` to follow the currently active REPL session by default
 when no explicit trace target is provided.
 
+When RPC pool agents are active, the same log root may also contain
+`.active-agent-sessions.json`, a small registry used by
+`nexus3 trace --scope subagents` to follow the active child agents of the
+current or explicitly targeted parent session.
+
 ### Properties
 
 | Property | Type | Description |

@@ -37,6 +37,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
+import os
 from collections.abc import MutableMapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -141,6 +142,7 @@ from nexus3.rpc.pool_visibility import (
 )
 from nexus3.session import LogConfig, LogStream, Session, SessionLogger
 from nexus3.session.persistence import SavedSession
+from nexus3.session.trace import write_active_agent_session
 from nexus3.skill import ServiceContainer, SkillRegistry
 from nexus3.skill.vcs import register_vcs_skills
 
@@ -580,12 +582,23 @@ class AgentPool:
             mode="agent",
         )
         logger = SessionLogger(log_config)
+        logger.storage.set_metadata("agent_id", effective_id)
+        if effective_config.parent_agent_id is not None:
+            logger.storage.set_metadata("parent_agent_id", effective_config.parent_agent_id)
 
         # Register raw logging callback with the multiplexer
         # The multiplexer routes logs to correct agent based on async context
         raw_callback = logger.get_raw_log_callback()
         if raw_callback is not None:
             self._log_multiplexer.register(effective_id, raw_callback)
+
+        write_active_agent_session(
+            base_log_dir=self._shared.base_log_dir,
+            session_dir=logger.session_dir,
+            agent_id=effective_id,
+            parent_agent_id=effective_config.parent_agent_id,
+            server_pid=os.getpid(),
+        )
 
         # Determine system prompt
         if effective_config.system_prompt is not None:
@@ -1116,6 +1129,7 @@ class AgentPool:
                 destroy_authorization_kernel=self._destroy_authorization_kernel,
                 capability_state=capability_state,
                 unregister_log_multiplexer_agent_fn=self._log_multiplexer.unregister,
+                base_log_dir=self._shared.base_log_dir,
                 agent_id=agent_id,
                 requester_id=requester_id,
                 admin_override=admin_override,

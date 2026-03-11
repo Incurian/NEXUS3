@@ -10,6 +10,7 @@ import asyncio
 from collections.abc import Awaitable, Callable, MutableMapping
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
 from nexus3.core.authorization_kernel import (
@@ -27,6 +28,7 @@ from nexus3.core.capabilities import (
     direct_rpc_scope_for_method,
 )
 from nexus3.core.permissions import AgentPermissions
+from nexus3.session.trace import remove_active_agent_session
 
 AgentT = TypeVar("AgentT", bound="AgentLike")
 DestroyUnlockedFn = Callable[[str, str | None, bool], Awaitable[bool]]
@@ -94,6 +96,10 @@ class DispatcherLike(Protocol):
 
 class LoggerLike(Protocol):
     """Minimal logger contract used by lifecycle helpers."""
+
+    @property
+    def session_dir(self) -> Path:
+        """Return the logger's session directory."""
 
     def close(self) -> None:
         """Flush and close logger resources."""
@@ -272,6 +278,7 @@ async def destroy_unlocked(
     destroy_authorization_kernel: AdapterAuthorizationKernel,
     capability_state: CapabilityLifecycleState,
     unregister_log_multiplexer_agent_fn: Callable[[str], None],
+    base_log_dir: Path,
     agent_id: str,
     requester_id: str | None = None,
     admin_override: bool = False,
@@ -314,6 +321,10 @@ async def destroy_unlocked(
     if clipboard_manager:
         clipboard_manager.close()
 
+    remove_active_agent_session(
+        base_log_dir=base_log_dir,
+        session_dir=agent.logger.session_dir,
+    )
     agent.logger.close()
     return True
 
