@@ -88,6 +88,7 @@ from nexus3.cli.repl_formatting import (
     _format_tool_call_trace_line,
     _format_tool_error_trace_line,
     _format_tool_halt_trace_line,
+    _format_tool_id_header_line,
     _format_tool_response_trace_line,
     _format_tool_result_trace_line,
     _format_turn_cancelled_status_line,
@@ -838,6 +839,10 @@ async def run_repl(
             _, params = _pending_tools[tool_id]
 
         # Print tool call line
+        spinner.print_untrusted(
+            _format_tool_id_header_line(safe_sink, tool_id),
+            style="bright_black",
+        )
         spinner.print_trusted(_format_tool_call_trace_line(safe_sink, name, params, tool_id))
 
         # Track start time and active state
@@ -873,6 +878,10 @@ async def run_repl(
         if success:
             # Success - show result summary
             result_preview = _summarize_tool_output(name, output)
+            spinner.print_untrusted(
+                _format_tool_id_header_line(safe_sink, tool_id),
+                style="bright_black",
+            )
             spinner.print_trusted(
                 _format_tool_result_trace_line(safe_sink, result_preview, duration_str, tool_id)
             )
@@ -902,6 +911,10 @@ async def run_repl(
         else:
             _had_errors = True
             # Error - show error message
+            spinner.print_untrusted(
+                _format_tool_id_header_line(safe_sink, tool_id),
+                style="bright_black",
+            )
             spinner.print_trusted(
                 _format_tool_error_trace_line(safe_sink, error, duration_str, tool_id)
             )
@@ -909,6 +922,10 @@ async def run_repl(
     def on_batch_halt() -> None:
         """Sequential batch halted - print halted for remaining pending tools."""
         for _tool_id, (name, params) in list(_pending_tools.items()):
+            spinner.print_untrusted(
+                _format_tool_id_header_line(safe_sink, _tool_id),
+                style="bright_black",
+            )
             spinner.print_trusted(_format_tool_halt_trace_line(safe_sink, name, params, _tool_id))
         _pending_tools.clear()
 
@@ -1932,6 +1949,7 @@ def main() -> None:
                     follow=not args.once,
                     history=args.history,
                     poll_interval=args.poll_interval,
+                    max_tool_lines=args.max_tool_lines,
                 )
             )
             raise SystemExit(exit_code)

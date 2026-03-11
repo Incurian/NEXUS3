@@ -663,7 +663,7 @@ nexus3 [OPTIONS]
 |------|-------------|
 | `--serve [PORT]` | Run headless HTTP server (requires `NEXUS_DEV=1`) |
 | `--connect [URL]` | Connect to existing server (auto-discovers if no URL) |
-| `trace [TARGET] [--latest]` | Follow persisted execution/debug traces in another terminal |
+| `trace [TARGET] [--latest] [--max-tool-lines N]` | Follow persisted execution/debug traces in another terminal |
 | `--agent ID` | Agent to connect to (default: `main`, requires `--connect`) |
 | `--reload` | Auto-reload on code changes (serve mode only, requires watchfiles) |
 
@@ -2144,6 +2144,7 @@ nexus3 --log-verbose      # Debug output to verbose.md log file (long form)
 nexus3 trace --latest                 # Follow latest session execution trace
 nexus3 trace --latest --preset debug  # Follow verbose.md in real time
 nexus3 trace /path/to/session --once  # Print a snapshot and exit
+nexus3 trace --latest --max-tool-lines 0  # Disable tool-body truncation
 ```
 
 **Check if server is running:**

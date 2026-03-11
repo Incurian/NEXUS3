@@ -24,39 +24,33 @@ def _sanitize_prompt_html_text(value: object) -> str:
     return html_escape(strip_terminal_escapes(str(value)), quote=False)
 
 
+def _format_tool_id_header_line(safe_sink: SafeSink, tool_id: str) -> str:
+    """Format the visible tool-id header line for REPL tool blocks."""
+    safe_tool_id = _sanitize_tool_trace_text(safe_sink, tool_display_id(tool_id))
+    return f"  [{safe_tool_id}]"
+
+
 def _format_tool_call_trace_line(
     safe_sink: SafeSink, name: str, params: str, tool_id: str | None = None
 ) -> str:
     """Format a tool call line while preserving trusted Rich wrapper markup."""
     safe_name = _sanitize_tool_trace_text(safe_sink, name)
-    safe_tool_id = (
-        _sanitize_tool_trace_text(safe_sink, tool_display_id(tool_id))
-        if tool_id
-        else None
-    )
-    id_prefix = f"[{safe_tool_id}] " if safe_tool_id else ""
     if params:
         safe_params = _sanitize_tool_trace_text(
             safe_sink, params, markup_already_escaped=True
         )
-        return f"  [cyan]●[/] {id_prefix}{safe_name}: {safe_params}"
-    return f"  [cyan]●[/] {id_prefix}{safe_name}"
+        return f"  [cyan]●[/] {safe_name}: {safe_params}"
+    return f"  [cyan]●[/] {safe_name}"
 
 
 def _format_tool_result_trace_line(
     safe_sink: SafeSink, result_preview: str, duration_str: str, tool_id: str | None = None
 ) -> str:
     """Format a tool success line while preserving trusted Rich wrapper markup."""
-    safe_tool_id = (
-        _sanitize_tool_trace_text(safe_sink, tool_display_id(tool_id))
-        if tool_id
-        else None
-    )
-    id_prefix = f"[{safe_tool_id}] " if safe_tool_id else ""
     if result_preview:
         safe_preview = _sanitize_tool_trace_text(safe_sink, result_preview)
-        return f"      [green]→[/] {id_prefix}{safe_preview}{duration_str}"
-    return f"      [green]→[/] {id_prefix}done{duration_str}"
+        return f"      [green]→[/] {safe_preview}{duration_str}"
+    return f"      [green]→[/] done{duration_str}"
 
 
 def _format_tool_response_trace_line(safe_sink: SafeSink, preview: str, ellipsis: str) -> str:
@@ -104,13 +98,7 @@ def _format_tool_error_trace_line(
     """Format a tool error line while preserving trusted Rich wrapper markup."""
     error_preview = error[:120] + ("..." if len(error) > 120 else "")
     safe_error = _sanitize_tool_trace_text(safe_sink, error_preview)
-    safe_tool_id = (
-        _sanitize_tool_trace_text(safe_sink, tool_display_id(tool_id))
-        if tool_id
-        else None
-    )
-    id_prefix = f"[{safe_tool_id}] " if safe_tool_id else ""
-    return f"      [red]→[/] [red]{id_prefix}{safe_error}[/]{duration_str}"
+    return f"      [red]→[/] [red]{safe_error}[/]{duration_str}"
 
 
 def _format_tool_halt_trace_line(
@@ -118,21 +106,15 @@ def _format_tool_halt_trace_line(
 ) -> str:
     """Format a halted tool line while preserving trusted Rich wrapper markup."""
     safe_name = _sanitize_tool_trace_text(safe_sink, name)
-    safe_tool_id = (
-        _sanitize_tool_trace_text(safe_sink, tool_display_id(tool_id))
-        if tool_id
-        else None
-    )
-    id_prefix = f"[{safe_tool_id}] " if safe_tool_id else ""
     if params:
         safe_params = _sanitize_tool_trace_text(
             safe_sink, params, markup_already_escaped=True
         )
         return (
-            f"  [dark_orange]●[/] {id_prefix}{safe_name}: {safe_params} "
+            f"  [dark_orange]●[/] {safe_name}: {safe_params} "
             "[dark_orange](halted)[/]"
         )
-    return f"  [dark_orange]●[/] {id_prefix}{safe_name} [dark_orange](halted)[/]"
+    return f"  [dark_orange]●[/] {safe_name} [dark_orange](halted)[/]"
 
 
 def _format_incoming_started_line(

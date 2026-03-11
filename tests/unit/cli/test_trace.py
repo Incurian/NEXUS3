@@ -10,7 +10,11 @@ from pathlib import Path
 import pytest
 
 from nexus3.cli.arg_parser import parse_args
-from nexus3.cli.trace import build_execution_entries, resolve_trace_session_dir
+from nexus3.cli.trace import (
+    DEFAULT_MAX_TOOL_LINES,
+    build_execution_entries,
+    resolve_trace_session_dir,
+)
 from nexus3.session.storage import MessageRow
 
 
@@ -64,7 +68,20 @@ def test_parse_args_supports_trace_latest_flag(monkeypatch: pytest.MonkeyPatch) 
     assert args.preset == "debug"
 
 
-def test_build_execution_entries_renders_message_previews_and_full_tool_blocks() -> None:
+def test_parse_args_supports_trace_max_tool_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["nexus3", "trace", "--max-tool-lines", "25"],
+    )
+
+    args = parse_args()
+
+    assert args.command == "trace"
+    assert args.max_tool_lines == 25
+
+
+def test_build_execution_entries_renders_typed_message_previews_and_tool_blocks() -> None:
     messages = [
         MessageRow(
             id=1,
@@ -119,11 +136,66 @@ def test_build_execution_entries_renders_message_previews_and_full_tool_blocks()
     timestamp_101 = datetime.fromtimestamp(101.0).strftime("%H:%M:%S")
     timestamp_102 = datetime.fromtimestamp(102.0).strftime("%H:%M:%S")
 
-    assert entries[0].lines == (f"[{timestamp_100}] USER: please inspect the repo",)
-    assert entries[1].lines[0] == f"[{timestamp_101}] TOOL CALL [abc12345] search_text"
-    assert '"path": "README.md"' in "\n".join(entries[1].lines)
-    assert entries[2].lines[0] == f"[{timestamp_102}] TOOL RESULT [abc12345] search_text"
-    assert entries[2].lines[1:] == ("match line 1", "match line 2")
+    assert entries[0].kind == "user"
+    assert entries[0].header == f"[{timestamp_100}] USER"
+    assert entries[0].body_lines == ("please inspect the repo",)
+    assert entries[1].kind == "tool_call"
+    assert entries[1].header == f"[{timestamp_101}] TOOL CALL [abc12345] search_text"
+    assert '"path": "README.md"' in "\n".join(entries[1].body_lines)
+    assert entries[2].kind == "tool_result"
+    assert entries[2].header == f"[{timestamp_102}] TOOL RESULT [abc12345] search_text"
+    assert entries[2].body_lines == ("match line 1", "match line 2")
+    assert entries[2].truncation_note is None
+
+
+def test_build_execution_entries_truncates_tool_result_bodies_by_default() -> None:
+    tool_output = "\n".join(f"line {i}" for i in range(DEFAULT_MAX_TOOL_LINES + 5))
+    messages = [
+        MessageRow(
+            id=1,
+            role="tool",
+            content=tool_output,
+            meta=None,
+            name="search_text",
+            tool_call_id="toolu_abc12345",
+            tool_calls=None,
+            tokens=None,
+            timestamp=102.0,
+            in_context=True,
+            summary_of=None,
+        ),
+    ]
+
+    entries = build_execution_entries(messages)
+
+    assert len(entries[0].body_lines) == DEFAULT_MAX_TOOL_LINES
+    assert entries[0].truncation_note == (
+        f"Tool result body truncated at {DEFAULT_MAX_TOOL_LINES} lines"
+    )
+
+
+def test_build_execution_entries_supports_unlimited_tool_bodies() -> None:
+    tool_output = "\n".join(f"line {i}" for i in range(DEFAULT_MAX_TOOL_LINES + 5))
+    messages = [
+        MessageRow(
+            id=1,
+            role="tool",
+            content=tool_output,
+            meta=None,
+            name="search_text",
+            tool_call_id="toolu_abc12345",
+            tool_calls=None,
+            tokens=None,
+            timestamp=102.0,
+            in_context=True,
+            summary_of=None,
+        ),
+    ]
+
+    entries = build_execution_entries(messages, max_tool_lines=0)
+
+    assert len(entries[0].body_lines) == DEFAULT_MAX_TOOL_LINES + 5
+    assert entries[0].truncation_note is None
 
 
 def test_resolve_trace_session_dir_errors_on_ambiguous_prefix(tmp_path: Path) -> None:

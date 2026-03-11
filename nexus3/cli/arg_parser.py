@@ -266,6 +266,12 @@ def parse_args() -> argparse.Namespace:
         help="Polling interval in seconds while following (default: 0.5)",
     )
     trace_parser.add_argument(
+        "--max-tool-lines",
+        type=int,
+        default=50,
+        help="Maximum tool-call/result body lines in execution trace (0 = unlimited, default: 50)",
+    )
+    trace_parser.add_argument(
         "--log-dir",
         type=Path,
         default=Path(".nexus3/logs"),

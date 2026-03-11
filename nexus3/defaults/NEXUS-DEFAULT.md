@@ -874,6 +874,7 @@ For simple Python entrypoints, direct interpreter invocation is usually more rel
 - `--raw-log`: Log raw API JSON to `raw.jsonl`
 - `nexus3 trace --latest`: Follow the latest session's execution trace in another terminal
 - `nexus3 trace --latest --preset debug`: Follow `verbose.md` in real time when verbose diagnostics are enabled
+- `nexus3 trace --latest --max-tool-lines 0`: Disable default execution-trace truncation for tool-call/result bodies
 
 ---
 

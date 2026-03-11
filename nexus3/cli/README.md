@@ -176,7 +176,7 @@ Defines CLI arguments using argparse with subparsers for `rpc` commands.
 |------|-------------|
 | `--serve [PORT]` | Run HTTP JSON-RPC server (requires `NEXUS_DEV=1`) |
 | `--connect [URL]` | Connect to server (no URL = discover mode) |
-| `trace [TARGET] [--latest]` | Follow persisted execution/debug traces |
+| `trace [TARGET] [--latest] [--max-tool-lines N]` | Follow persisted execution/debug traces |
 | `--agent ID` | Agent to connect to (default: main) |
 | `--scan PORTSPEC` | Additional ports to scan |
 | `-v, --verbose` | Verbose diagnostics (trace/log focused in REPL) |
@@ -546,11 +546,14 @@ Separate CLI surface for execution-first and debug-first live viewing.
 Current preset support:
 - `execution`: short user/assistant previews, full tool calls, full tool results
 - `debug`: tails `verbose.md` in real time for sessions started with `-v` or `-V`
+- execution trace truncates tool-call/result bodies at 50 lines by default;
+  pass `--max-tool-lines 0` for unlimited output
 
 Examples:
 - `nexus3 trace --latest`
 - `nexus3 trace --latest --preset debug`
 - `nexus3 trace /path/to/.nexus3/logs/<session-id> --once`
+- `nexus3 trace --latest --max-tool-lines 0`
 
 ---
 

@@ -223,6 +223,27 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
+- Trace presentation polish complete locally (2026-03-11):
+  - executed
+    [TRACE-PRESENTATION-POLISH-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-PRESENTATION-POLISH-PLAN-2026-03-11.md)
+    for the REPL/trace readability follow-up.
+  - local pending commit:
+    - audited current REPL tool-render paths and confirmed the main visible
+      tool-call/result/halt output is centralized in `nexus3/cli/repl.py`
+      callback rendering rather than split across multiple hidden callsites
+    - REPL tool IDs now render as dim header lines above tool call/result/error/
+      halt blocks instead of inline with the tool text
+    - execution trace now colors headers and body content by entry kind:
+      user, assistant, tool call, and tool result
+    - execution trace now truncates tool-call/result bodies at 50 lines by
+      default, with `--max-tool-lines 0` allowing unlimited output
+  - focused validation passed:
+    - `.venv/bin/ruff check nexus3/cli/editor_preview.py nexus3/session/trace.py nexus3/cli/trace.py nexus3/cli/confirmation_ui.py nexus3/cli/arg_parser.py nexus3/cli/repl.py nexus3/cli/repl_commands.py nexus3/cli/repl_formatting.py tests/unit/session/test_trace.py tests/unit/cli/test_trace.py tests/unit/test_repl_commands.py tests/unit/cli/test_repl_safe_sink.py README.md CLAUDE.md AGENTS.md nexus3/cli/README.md nexus3/defaults/NEXUS-DEFAULT.md docs/plans/README.md docs/plans/TRACE-PRESENTATION-POLISH-PLAN-2026-03-11.md`
+    - `.venv/bin/mypy nexus3/cli/editor_preview.py nexus3/session/trace.py nexus3/cli/trace.py nexus3/cli/confirmation_ui.py nexus3/cli/arg_parser.py nexus3/cli/repl.py nexus3/cli/repl_commands.py nexus3/cli/repl_formatting.py`
+    - `.venv/bin/pytest -q tests/unit/session/test_trace.py tests/unit/cli/test_trace.py tests/unit/test_repl_commands.py tests/unit/cli/test_repl_safe_sink.py` (`116 passed`)
+    - `git diff --check`
+    - practical smoke:
+      - `/home/inc/repos/NEXUS3/.venv/bin/python -m nexus3 trace --latest --once --history 2 --max-tool-lines 1`
 - Trace viewer and diagnostic routing v1 complete locally (2026-03-11):
   - executed
     [TRACE-VIEWER-AND-DIAGNOSTIC-ROUTING-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-VIEWER-AND-DIAGNOSTIC-ROUTING-PLAN-2026-03-11.md)

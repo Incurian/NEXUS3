@@ -42,6 +42,7 @@ from nexus3.cli.repl import (
     _format_tool_call_trace_line,
     _format_tool_error_trace_line,
     _format_tool_halt_trace_line,
+    _format_tool_id_header_line,
     _format_tool_response_trace_line,
     _format_tool_result_trace_line,
     _format_turn_cancelled_status_line,
@@ -98,7 +99,18 @@ def test_tool_call_trace_line_sanitizes_untrusted_name_and_params() -> None:
     assert "\x1b" not in line
 
 
-def test_tool_call_trace_line_includes_visible_tool_id() -> None:
+def test_tool_id_header_line_formats_visible_tool_id() -> None:
+    sink = _make_sink()
+
+    line = _format_tool_id_header_line(
+        sink,
+        tool_id="toolu_abc12345",
+    )
+
+    assert line == "  [abc12345]"
+
+
+def test_tool_call_trace_line_omits_inline_visible_tool_id() -> None:
     sink = _make_sink()
 
     line = _format_tool_call_trace_line(
@@ -108,7 +120,7 @@ def test_tool_call_trace_line_includes_visible_tool_id() -> None:
         tool_id="toolu_abc12345",
     )
 
-    assert line == "  [cyan]●[/] [abc12345] search_text: path=README.md"
+    assert line == "  [cyan]●[/] search_text: path=README.md"
 
 
 def test_sanitize_prompt_html_text_strips_terminal_escapes_and_escapes_html() -> None:
@@ -136,7 +148,7 @@ def test_tool_result_trace_line_sanitizes_preview_and_preserves_done_fallback() 
     assert done_line == "      [green]→[/] done"
 
 
-def test_tool_result_trace_line_includes_visible_tool_id() -> None:
+def test_tool_result_trace_line_omits_inline_visible_tool_id() -> None:
     sink = _make_sink()
 
     line = _format_tool_result_trace_line(
@@ -146,7 +158,7 @@ def test_tool_result_trace_line_includes_visible_tool_id() -> None:
         tool_id="toolu_abc12345",
     )
 
-    assert line == "      [green]→[/] [abc12345] 2 lines"
+    assert line == "      [green]→[/] 2 lines"
 
 
 def test_tool_response_trace_line_sanitizes_preview_with_wrapper_parity() -> None:
@@ -205,11 +217,13 @@ def test_tool_halt_trace_line_sanitizes_dynamic_fields_and_preserves_shapes() ->
         sink,
         name="[i]wait[/i]\x1b[31m",
         params="arg=\\[blue]x\\[/blue]\x1b[2J",
+        tool_id="toolu_abc12345",
     )
     without_params = _format_tool_halt_trace_line(
         sink,
         name="[i]wait[/i]\x1b[31m",
         params="",
+        tool_id="toolu_abc12345",
     )
 
     assert with_params == (

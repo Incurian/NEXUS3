@@ -14,6 +14,19 @@ from nexus3.session.storage import MessageRow, SessionStorage
 from nexus3.session.trace import tool_display_id
 
 TRACE_PRESETS = ("execution", "debug")
+DEFAULT_MAX_TOOL_LINES = 50
+_TRACE_HEADER_STYLES = {
+    "user": "bold bright_blue",
+    "assistant": "bold bright_magenta",
+    "tool_call": "bold bright_cyan",
+    "tool_result": "bold bright_green",
+}
+_TRACE_BODY_STYLES = {
+    "user": "blue",
+    "assistant": "magenta",
+    "tool_call": "cyan",
+    "tool_result": "green",
+}
 
 
 @dataclass(frozen=True)
@@ -22,7 +35,10 @@ class ExecutionTraceEntry:
 
     source_message_id: int
     timestamp: float
-    lines: tuple[str, ...]
+    kind: str
+    header: str
+    body_lines: tuple[str, ...] = ()
+    truncation_note: str | None = None
 
 
 def resolve_trace_session_dir(base_log_dir: Path, target: str | None = None) -> Path:
@@ -69,7 +85,23 @@ def resolve_trace_session_dir(base_log_dir: Path, target: str | None = None) -> 
     raise ValueError(f"Ambiguous session target '{target}'. Matches: {names}")
 
 
-def build_execution_entries(messages: list[MessageRow]) -> list[ExecutionTraceEntry]:
+def _truncate_tool_body(
+    lines: tuple[str, ...],
+    *,
+    max_tool_lines: int,
+    label: str,
+) -> tuple[tuple[str, ...], str | None]:
+    """Apply execution-trace truncation to tool-call/result bodies."""
+    if max_tool_lines == 0 or len(lines) <= max_tool_lines:
+        return lines, None
+    return lines[:max_tool_lines], f"{label} truncated at {max_tool_lines} lines"
+
+
+def build_execution_entries(
+    messages: list[MessageRow],
+    *,
+    max_tool_lines: int = DEFAULT_MAX_TOOL_LINES,
+) -> list[ExecutionTraceEntry]:
     """Build execution-trace entries from persisted session messages."""
     entries: list[ExecutionTraceEntry] = []
     for row in messages:
@@ -79,7 +111,9 @@ def build_execution_entries(messages: list[MessageRow]) -> list[ExecutionTraceEn
                 ExecutionTraceEntry(
                     source_message_id=row.id,
                     timestamp=row.timestamp,
-                    lines=(f"[{timestamp}] USER: {_preview_text(row.content)}",),
+                    kind="user",
+                    header=f"[{timestamp}] USER",
+                    body_lines=(_preview_text(row.content),),
                 )
             )
             continue
@@ -90,7 +124,9 @@ def build_execution_entries(messages: list[MessageRow]) -> list[ExecutionTraceEn
                     ExecutionTraceEntry(
                         source_message_id=row.id,
                         timestamp=row.timestamp,
-                        lines=(f"[{timestamp}] ASSISTANT: {_preview_text(row.content)}",),
+                        kind="assistant",
+                        header=f"[{timestamp}] ASSISTANT",
+                        body_lines=(_preview_text(row.content),),
                     )
                 )
             if row.tool_calls:
@@ -102,30 +138,45 @@ def build_execution_entries(messages: list[MessageRow]) -> list[ExecutionTraceEn
                         ensure_ascii=False,
                     )
                     args_lines = tuple(args_json.splitlines()) or ("{}",)
+                    args_lines, truncation_note = _truncate_tool_body(
+                        args_lines,
+                        max_tool_lines=max_tool_lines,
+                        label="Tool call body",
+                    )
                     entries.append(
                         ExecutionTraceEntry(
                             source_message_id=row.id,
                             timestamp=row.timestamp,
-                            lines=(
-                                f"[{timestamp}] TOOL CALL [{tool_display_id(tool_call['id'])}] "
-                                f"{tool_call['name']}",
-                                *args_lines,
+                            kind="tool_call",
+                            header=(
+                                f"[{timestamp}] TOOL CALL "
+                                f"[{tool_display_id(tool_call['id'])}] {tool_call['name']}"
                             ),
+                            body_lines=args_lines,
+                            truncation_note=truncation_note,
                         )
                     )
             continue
 
         if row.role == "tool" and row.tool_call_id:
             body_lines = tuple(row.content.splitlines()) or ("(empty result)",)
+            body_lines, truncation_note = _truncate_tool_body(
+                body_lines,
+                max_tool_lines=max_tool_lines,
+                label="Tool result body",
+            )
             name = row.name or "unknown"
             entries.append(
                 ExecutionTraceEntry(
                     source_message_id=row.id,
                     timestamp=row.timestamp,
-                    lines=(
-                        f"[{timestamp}] TOOL RESULT [{tool_display_id(row.tool_call_id)}] {name}",
-                        *body_lines,
+                    kind="tool_result",
+                    header=(
+                        f"[{timestamp}] TOOL RESULT "
+                        f"[{tool_display_id(row.tool_call_id)}] {name}"
                     ),
+                    body_lines=body_lines,
+                    truncation_note=truncation_note,
                 )
             )
 
@@ -140,6 +191,7 @@ async def run_trace(
     follow: bool,
     history: int,
     poll_interval: float,
+    max_tool_lines: int,
 ) -> int:
     """Run the trace viewer."""
     if preset not in TRACE_PRESETS:
@@ -152,6 +204,10 @@ async def run_trace(
         session_dir = resolve_trace_session_dir(log_dir, target)
     except (FileNotFoundError, ValueError) as e:
         console.print(f"[red]Error:[/] {safe_sink.sanitize_print_value(e)}")
+        return 1
+
+    if max_tool_lines < 0:
+        console.print("[red]Error:[/] --max-tool-lines must be >= 0")
         return 1
 
     console.print("[bold]NEXUS3 Trace[/]")
@@ -167,6 +223,7 @@ async def run_trace(
                 history=history,
                 poll_interval=poll_interval,
                 safe_sink=safe_sink,
+                max_tool_lines=max_tool_lines,
             )
         else:
             await _run_debug_trace(
@@ -190,10 +247,14 @@ async def _run_execution_trace(
     history: int,
     poll_interval: float,
     safe_sink: SafeSink,
+    max_tool_lines: int,
 ) -> None:
     storage = SessionStorage(session_dir / "session.db")
     try:
-        entries = build_execution_entries(storage.get_messages(in_context_only=False))
+        entries = build_execution_entries(
+            storage.get_messages(in_context_only=False),
+            max_tool_lines=max_tool_lines,
+        )
         for entry in entries[-history:]:
             _print_trace_entry(safe_sink, entry)
 
@@ -212,7 +273,10 @@ async def _run_execution_trace(
             if not new_rows:
                 continue
 
-            new_entries = build_execution_entries(new_rows)
+            new_entries = build_execution_entries(
+                new_rows,
+                max_tool_lines=max_tool_lines,
+            )
             for entry in new_entries:
                 _print_trace_entry(safe_sink, entry)
 
@@ -266,8 +330,11 @@ async def _run_debug_trace(
 
 
 def _print_trace_entry(safe_sink: SafeSink, entry: ExecutionTraceEntry) -> None:
-    for line in entry.lines:
-        safe_sink.print_untrusted(line)
+    safe_sink.print_untrusted(entry.header, style=_TRACE_HEADER_STYLES.get(entry.kind, "bold"))
+    for line in entry.body_lines:
+        safe_sink.print_untrusted(f"  {line}", style=_TRACE_BODY_STYLES.get(entry.kind))
+    if entry.truncation_note:
+        safe_sink.print_untrusted(f"  {entry.truncation_note}", style="dim")
     safe_sink.print_trusted("")
 
 

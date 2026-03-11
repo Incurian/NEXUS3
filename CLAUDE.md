@@ -916,7 +916,8 @@ For proper UTF-8 display, the console should use code page 65001. NEXUS3 warns i
 
 Use `nexus3 trace --latest` for execution-first live viewing, or
 `nexus3 trace --latest --preset debug` when running REPL sessions with `-v`
-or `-V`.
+or `-V`. Use `--max-tool-lines 0` if you want unbounded tool-call/result
+bodies in execution trace output.
 
 ### Server Logging
 
