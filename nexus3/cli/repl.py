@@ -771,7 +771,6 @@ async def run_repl(
     _active_tools: dict[str, str] = {}  # tool_id -> tool_name (for cancellation)
     _pending_tools: dict[str, tuple[str, str]] = {}  # tool_id -> (name, params) (for halt display)
     _had_errors = False  # Track if any errors occurred in turn
-    _stream_line_open = False  # Whether streaming has left the cursor mid-line
 
     # Thinking state
     _thinking_start: float | None = None
@@ -780,12 +779,11 @@ async def run_repl(
 
     def _reset_turn_state() -> None:
         """Reset all turn state for a new turn."""
-        nonlocal _had_errors, _thinking_start, _thinking_total, _thinking_printed, _stream_line_open
+        nonlocal _had_errors, _thinking_start, _thinking_total, _thinking_printed
         _tool_start_times.clear()
         _active_tools.clear()
         _pending_tools.clear()
         _had_errors = False
-        _stream_line_open = False
         _thinking_start = None
         _thinking_total = 0.0
         _thinking_printed = False
@@ -824,16 +822,7 @@ async def run_repl(
     # Batch callbacks for tool execution
     def on_batch_start(tool_calls: tuple[Any, ...]) -> None:
         """Initialize batch - print thinking, then track tools."""
-        nonlocal _stream_line_open
-
-        # Flush any buffered streaming text before tool output
-        spinner.flush_stream()
-
-        # If we've been streaming assistant text without a trailing newline,
-        # make sure tool output starts on a fresh line.
-        if _stream_line_open:
-            spinner.print_trusted("")
-            _stream_line_open = False
+        spinner.prepare_for_block_output()
 
         # Print any accumulated thinking BEFORE tool calls
         _print_thinking_if_needed()
@@ -847,14 +836,7 @@ async def run_repl(
 
     def on_tool_active(name: str, tool_id: str) -> None:
         """Tool started executing - print call line and track timing."""
-        nonlocal _stream_line_open
-
-        # Flush any buffered streaming text before tool output
-        spinner.flush_stream()
-
-        if _stream_line_open:
-            spinner.print_trusted("")
-            _stream_line_open = False
+        spinner.prepare_for_block_output()
 
         # Get params from pending (if available)
         params = ""
@@ -1745,7 +1727,7 @@ async def run_repl(
                 target_sess: Session = active_session,
                 agent_id: str = current_agent_id,
             ) -> None:
-                nonlocal _first_chunk_received, _stream_line_open
+                nonlocal _first_chunk_received
                 # Wrap in agent_context for correct raw log routing
                 with pool.log_multiplexer.agent_context(agent_id):
                     async for chunk in target_sess.send(inp):
@@ -1753,8 +1735,6 @@ async def run_repl(
                             _first_chunk_received = True
                             spinner.update("Responding...", Activity.RESPONDING)
                         spinner.print_streaming(chunk)
-                        if chunk:
-                            _stream_line_open = not chunk.endswith("\n")
 
             # Show spinner during streaming
             spinner.show("Waiting...", Activity.WAITING)
@@ -1775,19 +1755,11 @@ async def run_repl(
                         pass  # Cancelled by ESC
 
             except NexusError as e:
-                # Ensure the error prints on its own line if we were mid-stream.
-                if _stream_line_open:
-                    spinner.print_trusted("")
-                    _stream_line_open = False
+                spinner.prepare_for_block_output()
                 spinner.print_trusted(_format_repl_error_line(safe_sink, e.message))
                 spinner.print_trusted("")
                 _had_errors = True
             finally:
-                # Ensure the streamed response line is terminated before we
-                # stop the Live spinner (prevents messy wrapping / cursor state).
-                if _stream_line_open:
-                    spinner.print_trusted("")
-                    _stream_line_open = False
                 spinner.hide()
                 _current_live.reset(token)
 

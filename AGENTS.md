@@ -223,23 +223,35 @@ Branch:
 - `feat/repl-streaming-cleanup`
 
 Current milestone:
-- REPL streaming cleanup planning active (2026-03-11):
+- REPL streaming cleanup implementation active locally (2026-03-11):
   - created
     [REPL-STREAMING-CLEANUP-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/REPL-STREAMING-CLEANUP-PLAN-2026-03-11.md)
     for the streaming/spinner architecture cleanup pass.
-  - findings recorded in the plan:
-    - the codebase currently carries two incompatible display/streaming stacks:
-      active `Spinner`-based REPL flow and stale exported/documented
-      `StreamingDisplay` / `DisplayManager` paths
-    - streamed-line state is duplicated across REPL `_stream_line_open` logic
-      and spinner-owned buffering, making ordinary presentation changes fragile
-    - stream sanitization behavior is coupled to output transport, so styling
-      changes accidentally change trust/render semantics
-    - the theme layer is not the true source of REPL visual behavior because
-      styling is still split across display and REPL formatting modules
+  - local progress:
+    - `Spinner` now owns streamed-line state and explicit stream framing via
+      `prepare_for_block_output()` / `finish_stream()`, removing REPL-side
+      `_stream_line_open` bookkeeping from `nexus3/cli/repl.py`
+    - streamed assistant lines now use the canonical raw streaming path with
+      response styling applied at the spinner boundary instead of routing back
+      through the old Rich-print path that previously dropped lines
+    - `SafeSink` now exposes the transport split explicitly:
+      terminal-control stripping vs Rich-safe escaping
+    - `nexus3.display` package-root exports now expose only the active
+      spinner-centric surface; legacy display-stack modules remain direct-import
+      only during cleanup
+  - focused validation passed:
+    - `.venv/bin/pytest -q tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py` (`93 passed`)
+    - `.venv/bin/ruff check nexus3/display/safe_sink.py nexus3/display/spinner.py nexus3/display/theme.py nexus3/display/__init__.py nexus3/cli/repl.py nexus3/cli/repl_formatting.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py`
+    - `.venv/bin/mypy nexus3/display/safe_sink.py nexus3/display/spinner.py nexus3/display/theme.py nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
+    - follow-up validation:
+      - `.venv/bin/pytest -q tests/unit/test_display.py` (`84 passed`)
+      - `git diff --check`
+      - stdout-proxy smoke for styled streamed lines + tool-block boundary
+      - live spinner smoke completed without dropped lines or duplicate reset fragments
   - next gate:
-    - decide whether to delete or explicitly quarantine deprecated display
-      modules, then move streamed-line ownership fully behind `Spinner`
+    - branch is locally ready for commit; real visible color still needs
+      confirmation in a color-enabled terminal because this shell currently
+      reports `no_color=True`
 - Trace subagent scope complete locally (2026-03-11):
   - executed
     [TRACE-SUBAGENT-SCOPE-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-SUBAGENT-SCOPE-PLAN-2026-03-11.md)

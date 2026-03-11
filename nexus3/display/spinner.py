@@ -6,11 +6,14 @@ with all other output printed above it via console.print().
 
 from __future__ import annotations
 
+import sys
 import time
 from typing import Any
 
+from rich.color import ColorSystem
 from rich.console import Console
 from rich.live import Live
+from rich.style import Style
 from rich.text import Text
 
 from nexus3.display.console import get_console
@@ -61,6 +64,10 @@ class Spinner:
         self._live: Live | None = None
         self._start_time: float = 0.0
         self._stream_buffer: str = ""  # Buffer for incomplete lines
+        self._stream_line_open = False  # Whether visible stream output left cursor mid-line
+        self._stream_style: Style | None = None
+        if self.theme.response:
+            self._stream_style = Style.parse(self.theme.response)
 
     def show(self, text: str = "", activity: Activity = Activity.WAITING) -> None:
         """Start showing the spinner.
@@ -73,6 +80,7 @@ class Spinner:
         self.activity = activity
         self._start_time = time.monotonic()
         self._stream_buffer = ""  # Clear any stale buffer
+        self._stream_line_open = False
 
         if self._live is None:
             # IMPORTANT Rich.Live behaviors:
@@ -115,8 +123,7 @@ class Spinner:
 
     def hide(self) -> None:
         """Stop and hide the spinner."""
-        # Flush any remaining buffered stream content before hiding
-        self.flush_stream()
+        self.finish_stream()
         if self._live:
             self._live.stop()
             self._live = None
@@ -168,6 +175,37 @@ class Spinner:
         """
         self.print_trusted(*args, **kwargs)
 
+    def _render_stream_text(self, text: str) -> str:
+        """Apply configured response styling to raw streaming text."""
+        if not text or self._stream_style is None:
+            return text
+
+        no_color = getattr(self.console, "no_color", False)
+        if isinstance(no_color, bool) and no_color:
+            return text
+
+        color_system = getattr(self.console, "color_system", None)
+        if color_system is not None and not isinstance(color_system, ColorSystem):
+            color_system = ColorSystem.TRUECOLOR
+        legacy_windows = getattr(self.console, "legacy_windows", False)
+        if not isinstance(legacy_windows, bool):
+            legacy_windows = False
+        return self._stream_style.render(
+            text,
+            color_system=color_system,
+            legacy_windows=legacy_windows,
+        )
+
+    def _write_stream_text(self, text: str, *, newline: bool = False) -> None:
+        """Write already-sanitized streaming text through stdout above Live."""
+        if not text:
+            return
+        rendered = self._render_stream_text(text)
+        if newline:
+            rendered += "\n"
+        sys.stdout.write(rendered)
+        sys.stdout.flush()
+
     def print_streaming(self, chunk: str) -> None:
         """Print a streaming chunk (no newline, sanitized).
 
@@ -177,7 +215,6 @@ class Spinner:
         Args:
             chunk: Text chunk to print (will be sanitized).
         """
-        import sys
         sanitized = SafeSink.sanitize_stream_content(chunk)
         if not sanitized:
             return
@@ -188,20 +225,45 @@ class Spinner:
         # Print complete lines (those ending with newline)
         while "\n" in self._stream_buffer:
             line, self._stream_buffer = self._stream_buffer.split("\n", 1)
-            # Bypass Rich entirely - write directly to stdout
-            sys.stdout.write(line + "\n")
-            sys.stdout.flush()
+            self._write_stream_text(line, newline=True)
+            self._stream_line_open = False
 
-    def flush_stream(self) -> None:
+    def flush_stream(self, *, ensure_newline: bool = True) -> None:
         """Flush any remaining buffered streaming content.
 
         Call this when streaming ends to ensure partial lines are displayed.
         """
-        import sys
+        if not self._stream_buffer:
+            return
+
+        remaining = self._stream_buffer
+        self._stream_buffer = ""
+        if ensure_newline:
+            self._write_stream_text(remaining, newline=True)
+            self._stream_line_open = False
+            return
+
+        self._write_stream_text(remaining)
+        self._stream_line_open = True
+
+    def ensure_stream_line_break(self) -> None:
+        """Terminate the current visible stream line before non-stream output."""
         if self._stream_buffer:
-            sys.stdout.write(self._stream_buffer)
+            self.flush_stream(ensure_newline=True)
+            return
+
+        if self._stream_line_open:
+            sys.stdout.write("\n")
             sys.stdout.flush()
-            self._stream_buffer = ""
+            self._stream_line_open = False
+
+    def prepare_for_block_output(self) -> None:
+        """Flush streaming state so the next printed block starts on a fresh line."""
+        self.ensure_stream_line_break()
+
+    def finish_stream(self) -> None:
+        """Flush and terminate any in-progress streamed output."""
+        self.ensure_stream_line_break()
 
     def __rich__(self) -> Text:
         """Render the spinner for Rich.Live."""

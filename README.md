@@ -858,7 +858,7 @@ For REPL internals and UI components, see `nexus3/cli/README.md`. For RPC protoc
 | `skill/` | Skill protocol, SkillRegistry, ServiceContainer, 39 built-in + 21 GitLab skills |
 | `clipboard/` | Scoped clipboard system (agent/project/system), SQLite storage |
 | `patch/` | Unified diff parsing, validation, and application |
-| `display/` | DisplayManager, StreamingDisplay, InlinePrinter, SummaryBar, theme |
+| `display/` | Spinner-based REPL display, SafeSink boundaries, theming, plus quarantined legacy display helpers |
 | `cli/` | Unified REPL, lobby, whisper, HTTP server, client commands |
 | `rpc/` | JSON-RPC protocol, Dispatcher, GlobalDispatcher, AgentPool, auth |
 | `mcp/` | Model Context Protocol client, external tool integration |

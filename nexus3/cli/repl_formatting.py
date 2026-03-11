@@ -23,7 +23,7 @@ def _sanitize_tool_trace_text(
 ) -> str:
     """Sanitize tool trace text before interpolation into Rich wrappers."""
     if markup_already_escaped:
-        return safe_sink.sanitize_stream_content(value)
+        return safe_sink.sanitize_terminal_content(value)
     return safe_sink.sanitize_print_content(value)
 
 

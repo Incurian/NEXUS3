@@ -7,7 +7,7 @@ from typing import TextIO
 
 from rich.console import Console
 
-from nexus3.core.text_safety import sanitize_for_display, strip_terminal_escapes
+from nexus3.core.text_safety import escape_rich_markup, strip_terminal_escapes
 
 
 class SafeSink:
@@ -44,16 +44,26 @@ class SafeSink:
         stream.flush()
 
     @staticmethod
+    def sanitize_terminal_content(content: str) -> str:
+        """Strip terminal control sequences without applying render escaping."""
+        return strip_terminal_escapes(content)
+
+    @classmethod
+    def sanitize_rich_content(cls, content: str) -> str:
+        """Prepare untrusted text for Rich by stripping terminal control and escaping markup."""
+        return escape_rich_markup(cls.sanitize_terminal_content(content))
+
+    @staticmethod
     def sanitize_print_content(content: str) -> str:
         """Sanitize untrusted text for Rich-rendered output."""
-        return sanitize_for_display(content)
+        return SafeSink.sanitize_rich_content(content)
 
     @staticmethod
     def sanitize_print_value(value: object) -> str:
         """Sanitize an arbitrary value for Rich-rendered output."""
-        return sanitize_for_display(str(value))
+        return SafeSink.sanitize_rich_content(str(value))
 
     @staticmethod
     def sanitize_stream_content(chunk: str) -> str:
         """Sanitize untrusted text for raw stream writes."""
-        return strip_terminal_escapes(chunk)
+        return SafeSink.sanitize_terminal_content(chunk)

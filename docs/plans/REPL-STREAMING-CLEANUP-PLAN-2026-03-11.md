@@ -176,6 +176,90 @@ Likely docs:
 - `AGENTS.md`
 - `docs/plans/README.md`
 
+Implementation status (in progress):
+
+- `Spinner` now owns streamed-line state and explicit block-boundary framing
+  APIs; `repl.py` no longer mirrors `_stream_line_open`
+- streamed assistant styling now stays on the raw streaming path instead of
+  routing complete lines back through Rich printing
+- `SafeSink` now exposes the transport split explicitly:
+  terminal-control stripping vs Rich-safe escaping
+- `nexus3.display` package-root exports now quarantine the legacy display
+  stack from the active public surface
+
+## Interaction Inventory
+
+The cleanup must explicitly account for every REPL output path that currently
+interleaves with streamed assistant text or depends on streaming state:
+
+### Main turn streaming path
+
+- plain assistant streaming from `Session.send()` into `Spinner.print_streaming()`
+- first-chunk transition from `WAITING` to `RESPONDING`
+- partial assistant lines that do not end with `\n`
+- final stream flush on normal completion
+
+### Reasoning / thinking notifications
+
+- `on_reasoning(True)` switching the spinner into `THINKING`
+- `on_reasoning(False)` returning to `RESPONDING`
+- accumulated thought-duration summary printed before tool output or after turn
+
+### Tool lifecycle interleave
+
+- `on_batch_start()`
+- `on_tool_active()`
+- `on_batch_progress()` success path
+- `on_batch_progress()` error path
+- `on_batch_halt()`
+- `on_batch_complete()`
+- tool timing and active/pending bookkeeping used by ESC cancellation
+
+### Tool-output special cases
+
+- `nexus_send` response preview block
+- `mcp_*` result preview blocks
+- ordinary success summaries from `_summarize_tool_output(...)`
+- explicit tool-id header lines above call/result/error/halt blocks
+
+### Cancellation / interruption
+
+- ESC during plain assistant streaming
+- ESC while a tool is active
+- cancelled-tool persistence via `add_cancelled_tools(...)`
+- post-turn cancelled status line
+- newline/flush behavior when cancellation happens mid-line
+
+### Error paths
+
+- `NexusError` / provider error rendering after a partial streamed line
+- tool error rendering inside a batch
+- autosave error line printed after turn completion
+- toolbar error-state updates following a failed turn
+
+### Prompt / command interleave
+
+- slash commands handled at the prompt instead of inside the stream
+- slash-command result printing (`SUCCESS`, `ERROR`, `SWITCH_AGENT`,
+  `ENTER_WHISPER`, `QUIT`)
+- commands that synchronously prompt with `console.input("[y/n]: ")`
+- `KeyboardInterrupt` / `EOFError` behavior at the prompt
+
+### Agent-routing edge cases
+
+- whisper mode redirecting user messages to another agent session
+- session callback attach/detach on agent switch to avoid foreign-agent tool
+  output leaking into the active REPL
+- incoming RPC turn notifications interrupting the prompt with their own
+  spinner + start/end notification lines
+
+### End-of-turn framing
+
+- leading blank line before turn output
+- newline termination before spinner teardown
+- trailing blank line after streamed content
+- turn-completed status line for successful turns
+
 ## Testing Strategy
 
 Add or update focused coverage for:
@@ -186,6 +270,11 @@ Add or update focused coverage for:
   render transport
 - REPL formatting integration where assistant output, tool output, and errors
   interleave
+- incoming-turn notification behavior relative to prompt/stream state
+- slash-command and confirmation-prompt flows remaining outside the streaming
+  state machine
+- whisper/agent-switch callback routing so non-displayed sessions cannot
+  render tool output into the current REPL
 
 Validation should include:
 
@@ -196,6 +285,32 @@ Validation should include:
   - plain assistant streaming
   - assistant streaming followed by tool batches
   - cancellation/error mid-stream
+  - `nexus_send` tool preview + response preview
+  - MCP result preview interleave
+  - incoming RPC turn notification while idle at prompt
+  - whisper-mode send path
+  - slash-command prompt flows that call `console.input(...)`
+
+Validation completed so far:
+
+- `.venv/bin/pytest -q tests/unit/display/test_safe_sink.py
+  tests/unit/display/test_escape_sanitization.py
+  tests/unit/cli/test_repl_safe_sink.py tests/unit/test_display.py`
+  (`177 passed`)
+- `.venv/bin/ruff check nexus3/display/safe_sink.py nexus3/display/spinner.py
+  nexus3/display/theme.py nexus3/display/__init__.py nexus3/cli/repl.py
+  nexus3/cli/repl_formatting.py tests/unit/display/test_safe_sink.py
+  tests/unit/display/test_escape_sanitization.py
+  tests/unit/cli/test_repl_safe_sink.py tests/unit/test_display.py`
+- `.venv/bin/mypy nexus3/display/safe_sink.py nexus3/display/spinner.py
+  nexus3/display/theme.py nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
+- `git diff --check`
+- stdout-proxy smoke: styled streamed line + buffered partial line + tool block
+  ordering all rendered correctly through Rich's redirected stdout path
+- live spinner smoke: `Spinner.show()` / streamed lines / tool block / hide()
+  completed without dropped lines or duplicate reset fragments
+  - note: this shell has `console.no_color=True`, so the live smoke confirmed
+    framing/order correctness rather than visible magenta color
 
 ## Documentation Updates
 
@@ -210,8 +325,9 @@ When implementing:
 - [x] Create and index this plan.
 - [x] Record current review findings and cleanup direction.
 - [x] Update running status for the new branch/workstream.
-- [ ] Decide whether to delete or explicitly quarantine deprecated display modules.
-- [ ] Make spinner the single owner of streamed-line state.
-- [ ] Refactor stream sanitization/render responsibilities.
-- [ ] Revalidate REPL streaming/tool interleave behavior.
-- [ ] Sync docs after implementation.
+- [x] Decide whether to delete or explicitly quarantine deprecated display modules.
+- [x] Make spinner the single owner of streamed-line state.
+- [x] Refactor stream sanitization/render responsibilities.
+- [x] Preserve correct behavior for reasoning, tools, previews, commands, incoming turns, cancellation, and end-of-turn framing.
+- [x] Revalidate REPL streaming/tool interleave behavior.
+- [x] Sync docs after implementation.

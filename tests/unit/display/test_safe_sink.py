@@ -74,6 +74,18 @@ def test_write_trusted_preserves_terminal_sequences() -> None:
     assert stdout.getvalue() == "\x1b[31mtrusted\x1b[0m"
 
 
+def test_sanitize_terminal_content_strips_terminal_sequences_only() -> None:
+    safe_value = SafeSink.sanitize_terminal_content("\x1b[31m[bold]unsafe[/bold]\x1b[0m")
+
+    assert safe_value == "[bold]unsafe[/bold]"
+
+
+def test_sanitize_rich_content_strips_terminal_sequences_and_escapes_markup() -> None:
+    safe_value = SafeSink.sanitize_rich_content("\x1b[31m[bold]unsafe[/bold]\x1b[0m")
+
+    assert safe_value == r"\[bold]unsafe\[/bold]"
+
+
 def test_sanitize_print_value_sanitizes_arbitrary_object() -> None:
     class UnsafeValue:
         def __str__(self) -> str:

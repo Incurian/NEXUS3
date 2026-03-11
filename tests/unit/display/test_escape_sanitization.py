@@ -349,7 +349,38 @@ class TestSpinnerStreamingSanitization:
         finally:
             sys.stdout = original_stdout
 
-        assert mock_stdout.getvalue() == "safe red\n"
+        rendered = mock_stdout.getvalue()
+        assert "safe red\n" in ANSI_ESCAPE_PATTERN.sub("", rendered)
+        assert "\x1b[31m" not in rendered
+        assert rendered.startswith("\x1b[")
+        assert rendered.endswith("\x1b[0m\n")
+
+    def test_prepare_for_block_output_flushes_partial_line_with_newline(
+        self, mock_stdout: MockStdout
+    ) -> None:
+        spinner = Spinner(console=MagicMock(spec=Console), theme=Theme(response="magenta"))
+        original_stdout = sys.stdout
+        try:
+            sys.stdout = mock_stdout
+            spinner.print_streaming("partial")
+            spinner.prepare_for_block_output()
+            spinner.prepare_for_block_output()
+        finally:
+            sys.stdout = original_stdout
+
+        assert ANSI_ESCAPE_PATTERN.sub("", mock_stdout.getvalue()) == "partial\n"
+
+    def test_hide_finishes_buffered_partial_stream(self, mock_stdout: MockStdout) -> None:
+        spinner = Spinner(console=MagicMock(spec=Console), theme=Theme(response="magenta"))
+        original_stdout = sys.stdout
+        try:
+            sys.stdout = mock_stdout
+            spinner.print_streaming("tail")
+            spinner.hide()
+        finally:
+            sys.stdout = original_stdout
+
+        assert ANSI_ESCAPE_PATTERN.sub("", mock_stdout.getvalue()) == "tail\n"
 
     def test_rich_render_sanitizes_dynamic_status_text(self) -> None:
         spinner = Spinner(console=MagicMock(spec=Console), theme=Theme())

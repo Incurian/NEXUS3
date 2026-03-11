@@ -30,7 +30,7 @@ nexus3/
 ├── skill/          # Skill protocol, SkillRegistry, ServiceContainer, builtin skills
 ├── clipboard/      # Scoped clipboard system (agent/project/system), SQLite storage
 ├── patch/          # Unified diff parsing, validation, and application
-├── display/        # DisplayManager, StreamingDisplay, InlinePrinter, SummaryBar, theme
+├── display/        # Spinner-based REPL display, SafeSink boundaries, theme, legacy display helpers
 ├── cli/            # Unified REPL, lobby, whisper, HTTP server, client commands
 ├── rpc/            # JSON-RPC protocol, Dispatcher, GlobalDispatcher, AgentPool, auth
 ├── mcp/            # Model Context Protocol client, external tool integration

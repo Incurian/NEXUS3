@@ -1,15 +1,19 @@
 # nexus3/display
 
-Terminal display system for NEXUS3 providing animated spinners, inline printing with gumball indicators, streaming output, and consistent theming.
+Terminal display system for NEXUS3. The active REPL/runtime path is the
+spinner-based display in `spinner.py`; older Rich-native display-stack modules
+remain on direct module imports during cleanup, but are no longer re-exported
+from `nexus3.display`.
 
 ## Purpose
 
-This module provides a unified terminal UI with several key responsibilities:
+This module provides the active REPL terminal UI plus a small set of shared
+helpers:
 
 - **Spinner** - Animated spinner pinned to bottom with explicit trusted/untrusted print entrypoints
-- **Streaming display** - Rich.Live compatible display with tool batch tracking
 - **Inline printing** - Gumball status indicators with SafeSink trust-boundary sanitization
 - **Theming** - Customizable colors, styles, and gumball characters
+- **Legacy display stack** - Older `StreamingDisplay` / `DisplayManager` modules retained temporarily for cleanup/testing
 
 ---
 
@@ -21,7 +25,7 @@ from nexus3.display import (
     get_console,          # Get shared Console instance
     set_console,          # Set custom Console (for testing)
 
-    # Primary interface
+    # Canonical REPL interface
     Spinner,              # Animated spinner with Live rendering
 
     # Theme system
@@ -30,19 +34,14 @@ from nexus3.display import (
     Activity,             # Activity enum (IDLE, WAITING, THINKING, RESPONDING, TOOL_CALLING)
     load_theme,           # Load runtime theme
 
-    # Printing
+    # Supporting helper
     InlinePrinter,        # Scrolling output with gumballs
-
-    # Legacy (deprecated - use Spinner instead)
-    DisplayManager,       # Coordinator for printer, summary bar, cancellation
-    StreamingDisplay,     # Rich.Live compatible display with tool tracking
-    SummaryBar,           # Bottom-anchored status bar
-    SummarySegment,       # Segment protocol
-    ActivitySegment,      # Spinner segment
-    TaskCountSegment,     # Task counts
-    CancelHintSegment,    # Cancel hint
 )
 ```
+
+Legacy modules remain available via direct imports such as
+`nexus3.display.streaming` and `nexus3.display.manager`, but they are not part
+of the active REPL path and should not be used for new work.
 
 ---
 
@@ -75,8 +74,10 @@ Spinner(
 | `print_trusted(*args, **kwargs)` | Print trusted text above spinner without sanitization |
 | `print_untrusted(content, style?, end?)` | Print untrusted text above spinner with SafeSink sanitization |
 | `print(*args, **kwargs)` | Backward-compatible alias to `print_trusted(...)` |
-| `print_streaming(chunk)` | Buffer streaming text, print complete lines |
-| `flush_stream()` | Flush remaining buffer content |
+| `print_streaming(chunk)` | Buffer streaming text, render complete lines with response styling |
+| `flush_stream(ensure_newline=True)` | Flush remaining buffer content and, by default, terminate the stream line |
+| `prepare_for_block_output()` | Flush/terminate streamed text before tool/error/status blocks |
+| `finish_stream()` | Finalize any in-progress streamed output before teardown |
 
 **Properties:**
 
@@ -107,7 +108,7 @@ spinner.print_untrusted("Result: 42 lines")
 # Stream text (buffered until newline)
 spinner.print_streaming("Hello ")
 spinner.print_streaming("world\n")  # Prints when newline received
-spinner.flush_stream()  # Force flush any remaining buffer
+spinner.prepare_for_block_output()  # Flush/terminate any remaining partial line
 
 # Update spinner text and activity
 spinner.update("Processing...", activity=Activity.TOOL_CALLING)
@@ -124,7 +125,8 @@ spinner.hide()
 - Shows elapsed time after 1 second
 - Shows "ESC cancel" hint by default (configurable via `show_cancel_hint`)
 - `print_untrusted()` and spinner status text sanitize through `SafeSink` at the display boundary
-- Streaming output is sanitized via `strip_terminal_escapes()`
+- Streaming output strips terminal control sequences separately from Rich escaping
+- Streamed assistant lines use `Theme.response` styling on the raw streaming path
 - Activity-specific text in `__rich__` render: "Waiting..." / "Thinking..." / "Responding..." / custom text or "Running tools..." for TOOL_CALLING
 
 ---
@@ -219,7 +221,7 @@ class Theme:
     # Text styles (Rich style strings)
     thinking: str = "dim italic"
     thinking_collapsed: str = "dim"
-    response: str = ""
+    response: str = "magenta"
     error: str = "bold red"
     user_input: str = "bold"
 
@@ -305,7 +307,7 @@ printer.finish_streaming()  # Print newline
 
 ---
 
-### streaming.py - Streaming Display (Advanced)
+### streaming.py - Streaming Display (Legacy)
 
 Rich.Live compatible display that accumulates streamed content and tracks tool batch execution.
 
@@ -651,16 +653,17 @@ The Spinner uses Rich.Live internally. Key behaviors:
 ### Output Sanitization
 
 Display sanitization is trust-boundary based:
-- `SafeSink.print_untrusted(...)` sanitizes Rich-rendered dynamic text (`sanitize_for_display`)
-- `SafeSink.write_untrusted(...)` / streaming paths sanitize raw chunks (`strip_terminal_escapes()`)
+- `SafeSink.sanitize_terminal_content(...)` strips terminal control sequences without changing render escaping
+- `SafeSink.print_untrusted(...)` / `sanitize_rich_content(...)` sanitize Rich-rendered dynamic text
+- `SafeSink.write_untrusted(...)` / streaming paths sanitize raw chunks without interpreting Rich markup
 - Trusted wrappers/markup stay in `print_trusted(...)` callsites
 
 ### Streaming Buffer
 
 The Spinner buffers streaming output until complete lines are available:
 - Chunks are accumulated in `_stream_buffer`
-- When a newline is encountered, complete lines are printed via raw `sys.stdout.write()`
-- `flush_stream()` prints any remaining partial line when streaming ends
+- When a newline is encountered, complete lines are written above Live through stdout redirection with `Theme.response` styling applied
+- `prepare_for_block_output()` and `finish_stream()` terminate any remaining partial line before tool/error/status output or teardown
 
 ### Tool Batch Tracking
 
