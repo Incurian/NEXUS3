@@ -605,8 +605,8 @@ class Session:
 
         return usage["total"] > threshold
 
-    async def compact(self, force: bool = False) -> CompactionResult | None:
-        """Compact context by summarizing old messages.
+    async def compact_locked(self, force: bool = False) -> CompactionResult | None:
+        """Compact context while already holding the session turn slot.
 
         Args:
             force: If True, compact even if under threshold
@@ -673,3 +673,12 @@ class Session:
             original_token_count=original_tokens,
             new_token_count=new_usage["messages"],
         )
+
+    async def compact(self, force: bool = False) -> CompactionResult | None:
+        """Compact context by summarizing old messages.
+
+        External compaction requests serialize through the same shared turn slot
+        as send()/run_turn() so context mutation cannot overlap an active turn.
+        """
+        async with self.reserve_turn():
+            return await self.compact_locked(force=force)

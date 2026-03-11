@@ -325,9 +325,9 @@ Per-agent authorization is kernel-authoritative for `send`, `cancel`, `compact`,
 
 #### Features
 
-- Reserves the session's shared turn slot before `send` execution, so RPC
-  sends cannot overlap with direct REPL turns or `nexus_send` on the same
-  target session
+- RPC `send` and `compact` both serialize through the target session's shared
+  turn slot, so external requests cannot overlap with direct REPL turns,
+  `nexus_send`, or slash-command compaction on the same target session
 - Cancellation tokens for cooperative cancellation
 - Source attribution for message provenance
 - REPL notifications via `on_incoming_turn` hook, emitted only once the

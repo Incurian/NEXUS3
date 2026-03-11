@@ -115,9 +115,9 @@ async def send(
 ```
 
 This is the traditional callback-based API. Tool events are dispatched via callback functions. `send()` and `run_turn()` now share turn-entry preflight/reset through `turn_entry_runtime.prepare_turn_entry(...)` before streaming begins. Tool-loop callback adaptation is handled directly by `streaming_runtime.execute_tool_loop_streaming(...)`, which is wired to `tool_loop_events_runtime.execute_tool_loop_events(...)`. When tools are not active, `send()` delegates simple streaming to `simple_turn_runtime.execute_simple_send(...)`.
-`send()` and `run_turn()` also serialize through a shared per-session turn slot,
-so direct REPL turns, RPC sends, and `nexus_send` cannot overlap against the
-same session.
+`send()`, `run_turn()`, and external `compact()` also serialize through a
+shared per-session turn slot, so direct REPL turns, RPC sends, `nexus_send`,
+and slash/RPC compaction cannot overlap against the same session.
 The shared preflight currently does three important repair steps before the new
 user message is appended in context mode: it flushes any still-valid cancelled
 tool IDs into matching assistant tool batches, recompiles the existing context
@@ -158,8 +158,11 @@ async def compact(force: bool = False) -> CompactionResult | None:
     """Summarize old messages to reclaim context space."""
 ```
 
-Compaction uses a separate LLM call to summarize conversation history when token usage exceeds the configured threshold.
-The summary path delegates directly to `compaction_runtime.generate_summary(...)`.
+Compaction uses a separate LLM call to summarize conversation history when
+token usage exceeds the configured threshold. External calls to `compact()`
+reserve the shared session turn slot first; in-turn auto-compaction uses
+`compact_locked()` so it can run safely without re-entering that lock. The
+summary path delegates directly to `compaction_runtime.generate_summary(...)`.
 
 #### `add_cancelled_tools()` - Track cancelled tool calls
 

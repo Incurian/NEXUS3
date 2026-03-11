@@ -28,6 +28,7 @@ from nexus3.core.types import (
 )
 from nexus3.session.events import SessionCancelled
 from nexus3.session.session import Session
+from nexus3.session.tool_loop_events_runtime import execute_tool_loop_events
 from nexus3.skill.base import BaseSkill
 from nexus3.skill.registry import SkillRegistry
 from nexus3.skill.services import ServiceContainer
@@ -712,3 +713,99 @@ class TestSessionTurnSerialization:
         assert second == "second-ok"
         assert provider.inputs == ["first", "second"]
         assert provider.overlap_detected is False
+
+    @pytest.mark.asyncio
+    async def test_compact_waits_for_reserved_turn(self) -> None:
+        session = Session(provider=MockProviderCapturePreflight())
+
+        started = asyncio.Event()
+        finished = asyncio.Event()
+
+        async def fake_compact_locked(force: bool = False) -> None:
+            assert force is True
+            started.set()
+            finished.set()
+            return None
+
+        session.compact_locked = fake_compact_locked  # type: ignore[method-assign]
+
+        async with session.reserve_turn():
+            task = asyncio.create_task(session.compact(force=True))
+            await asyncio.sleep(0)
+            assert started.is_set() is False
+            assert task.done() is False
+
+        await task
+        assert started.is_set() is True
+        assert finished.is_set() is True
+
+
+class _ToolLoopCompactionProvider:
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+        dynamic_context: str | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        yield StreamComplete(
+            message=Message(role=Role.ASSISTANT, content="ok", tool_calls=())
+        )
+
+
+class _ToolLoopCompactionSession:
+    def __init__(self) -> None:
+        self.provider = _ToolLoopCompactionProvider()
+        self.context = ContextManager(config=ContextConfig(max_tokens=10000))
+        self.context.set_system_prompt("System prompt")
+        self.context.add_user_message("hello")
+        self._services: ServiceContainer | None = None
+        self._config: Any = None
+        self.max_tool_iterations = 1
+        self._last_iteration_count = 0
+        self._last_action_at = None
+        self._halted_at_iteration_limit = False
+        self.compact_locked_calls = 0
+        self._should_compact_calls = 0
+
+    def _should_compact(self) -> bool:
+        self._should_compact_calls += 1
+        return self._should_compact_calls == 1
+
+    async def compact(self, force: bool = False) -> None:
+        raise AssertionError("tool loop should use compact_locked() inside a turn")
+
+    async def compact_locked(self, force: bool = False) -> None:
+        assert force is False
+        self.compact_locked_calls += 1
+        return None
+
+    def _log_provider_preflight(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None,
+        dynamic_context: str | None,
+        *,
+        path: str,
+    ) -> None:
+        return None
+
+    def _log_event(self, event: Any) -> None:
+        return None
+
+
+class TestToolLoopCompaction:
+    @pytest.mark.asyncio
+    async def test_in_turn_compaction_uses_compact_locked(self) -> None:
+        session = _ToolLoopCompactionSession()
+
+        events = [
+            event
+            async for event in execute_tool_loop_events(
+                session,
+                execute_tools_parallel=lambda tool_calls: asyncio.sleep(0),
+                execute_single_tool=lambda tool_call: asyncio.sleep(0),
+            )
+        ]
+
+        assert session.compact_locked_calls == 1
+        assert any(event.__class__.__name__ == "SessionCompleted" for event in events)

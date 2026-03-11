@@ -47,6 +47,15 @@ ExecuteToolsParallel = Callable[[tuple[ToolCall, ...]], Awaitable[list[ToolResul
 ExecuteSingleTool = Callable[[ToolCall], Awaitable[ToolResult]]
 
 
+async def _compact_session(
+    session: _ToolLoopEventsSession,
+    *,
+    force: bool,
+) -> CompactionResult | None:
+    """Compact through the in-turn path when available."""
+    return await session.compact_locked(force=force)
+
+
 class _ToolLoopEventsSession(Protocol):
     provider: AsyncProvider
     context: ContextManager | None
@@ -60,6 +69,8 @@ class _ToolLoopEventsSession(Protocol):
     def _should_compact(self) -> bool: ...
 
     def compact(self, force: bool = False) -> Awaitable[CompactionResult | None]: ...
+
+    def compact_locked(self, force: bool = False) -> Awaitable[CompactionResult | None]: ...
 
     def _log_provider_preflight(
         self,
@@ -87,7 +98,7 @@ async def execute_tool_loop_events(
 
         # Check for compaction BEFORE build_messages() to avoid truncation
         if session._should_compact():
-            compact_result = await session.compact(force=False)
+            compact_result = await _compact_session(session, force=False)
             if compact_result:
                 saved = compact_result.original_token_count - compact_result.new_token_count
                 yield ContentChunk(
@@ -312,7 +323,7 @@ async def execute_tool_loop_events(
 
             # Check for auto-compaction after response
             if session._should_compact():
-                compact_result = await session.compact(force=False)
+                compact_result = await _compact_session(session, force=False)
                 if compact_result:
                     saved = compact_result.original_token_count - compact_result.new_token_count
                     yield ContentChunk(

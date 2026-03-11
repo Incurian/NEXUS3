@@ -194,6 +194,11 @@ Implementation status (in progress):
     REPL tool turn
   - `nexus_send` now rejects self-target to avoid deadlocking behind its own
     active turn
+- follow-up turn-mutation fix:
+  - external `compact()` now serializes through the same shared session turn
+    slot as `send()` / `run_turn()`
+  - in-turn auto-compaction now uses `compact_locked()` so tool-loop
+    compaction remains safe without re-entering that lock
 
 ## Interaction Inventory
 
@@ -252,6 +257,12 @@ interleaves with streamed assistant text or depends on streaming state:
   `ENTER_WHISPER`, `QUIT`)
 - commands that synchronously prompt with `console.input("[y/n]: ")`
 - `KeyboardInterrupt` / `EOFError` behavior at the prompt
+
+### Out-of-band session mutation
+
+- RPC `compact` while a REPL turn or tool batch is already active
+- slash-command `/compact` while external sends are queued
+- in-turn auto-compaction before provider calls and after final responses
 
 ### Agent-routing edge cases
 
