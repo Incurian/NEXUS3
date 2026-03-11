@@ -58,6 +58,7 @@ This index covers the architecture plans created during today's review/planning 
 - [TRACE-PRESENTATION-POLISH-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-PRESENTATION-POLISH-PLAN-2026-03-11.md)
 - [TRACE-ACTIVE-SESSION-FOLLOW-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-ACTIVE-SESSION-FOLLOW-PLAN-2026-03-11.md)
 - [TRACE-SUBAGENT-SCOPE-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-SUBAGENT-SCOPE-PLAN-2026-03-11.md)
+- [REPL-STREAMING-CLEANUP-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/REPL-STREAMING-CLEANUP-PLAN-2026-03-11.md)
 
 ## Path Format Plans (2026-03-11)
 

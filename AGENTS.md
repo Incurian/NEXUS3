@@ -220,9 +220,26 @@ Suggested next hardening if failure persists:
 ## Architecture Overhaul Running Status (2026-03-09)
 
 Branch:
-- `feat/arch-overhaul-execution`
+- `feat/repl-streaming-cleanup`
 
 Current milestone:
+- REPL streaming cleanup planning active (2026-03-11):
+  - created
+    [REPL-STREAMING-CLEANUP-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/REPL-STREAMING-CLEANUP-PLAN-2026-03-11.md)
+    for the streaming/spinner architecture cleanup pass.
+  - findings recorded in the plan:
+    - the codebase currently carries two incompatible display/streaming stacks:
+      active `Spinner`-based REPL flow and stale exported/documented
+      `StreamingDisplay` / `DisplayManager` paths
+    - streamed-line state is duplicated across REPL `_stream_line_open` logic
+      and spinner-owned buffering, making ordinary presentation changes fragile
+    - stream sanitization behavior is coupled to output transport, so styling
+      changes accidentally change trust/render semantics
+    - the theme layer is not the true source of REPL visual behavior because
+      styling is still split across display and REPL formatting modules
+  - next gate:
+    - decide whether to delete or explicitly quarantine deprecated display
+      modules, then move streamed-line ownership fully behind `Spinner`
 - Trace subagent scope complete locally (2026-03-11):
   - executed
     [TRACE-SUBAGENT-SCOPE-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/TRACE-SUBAGENT-SCOPE-PLAN-2026-03-11.md)
