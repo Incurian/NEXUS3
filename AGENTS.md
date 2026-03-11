@@ -221,6 +221,20 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
+- Search-tool follow-on planning active (2026-03-11):
+  - created:
+    - [SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md)
+    - [RIPGREP-AVAILABILITY-AND-DETERMINISM-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/RIPGREP-AVAILABILITY-AND-DETERMINISM-PLAN-2026-03-11.md)
+  - approved execution priorities from user:
+    1. improve built-in search ergonomics and prompt guidance, especially
+       `glob`
+    2. make ripgrep-backed directory search availability more deterministic
+       without immediately bundling binaries
+  - backlog-only follow-ups from the same discussion:
+    - investigate Python fallback regex-engine alternatives later rather than
+      mixing that into the current search-tool work
+    - treat fuzzy search as a separate later feature track; fuzzy path search
+      may be moderate, but fuzzy content search is a larger ranking/UX task
 - Shell tool redesign implementation active (2026-03-11):
   - created
     [EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md)
@@ -319,17 +333,32 @@ Current milestone:
 - `M4` implementation closeout complete: Plan E Phases 1-4 and Plan B Phases 1-4 are committed on this branch, and Plan G sink-boundary closure is complete.
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
+Historical naming note:
+- Current execution-tool names/behavior are `exec`, `shell_UNSAFE(shell=...)`,
+  and `run_python`.
+- Any references below to `bash`, `bash_safe`, or older `shell_UNSAFE`
+  behavior are archival checkpoint/discussion notes unless explicitly marked
+  as current status.
+
 Immediate tasks:
-- Shell tool redesign plan (2026-03-11):
-  - canonical next-work plan:
-    [EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md)
-  - preferred execution order from the new plan:
-    1. Phase 1: replace `bash_safe` / `bash` with canonical `exec` and the
-       explicit `program` + `args` contract.
-    2. Phase 2: replace tool-wide safe-exec allowances with command-specific
-       directory allowances.
-    3. Phase 3: add explicit `shell=` selection to `shell_UNSAFE`.
-    4. Phase 4/5: sync docs/tests and run full validation.
+- Search-tool follow-on planning (2026-03-11):
+  - canonical next-work plans:
+    - [SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md)
+    - [RIPGREP-AVAILABILITY-AND-DETERMINISM-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/RIPGREP-AVAILABILITY-AND-DETERMINISM-PLAN-2026-03-11.md)
+  - preferred execution order from the user-approved priorities:
+    1. execute the search-tool ergonomics/guidance plan first, with `glob`
+       improvements and explicit built-in search preference guidance
+    2. execute the ripgrep availability/determinism plan second, focusing on
+       explicit contract/config/runtime behavior rather than immediate binary
+       bundling
+  - backlog-only follow-ups from the same discussion:
+    - benchmark/evaluate Python fallback regex-engine alternatives only after
+      the first two search-tool slices land
+    - treat fuzzy search as a separate later feature track rather than mixing
+      it into the current glob/ripgrep work
+  - deferred naming/design question retained for later:
+    - whether built-in `grep` should eventually be renamed to something less
+      shell-priming (for example `search_text`)
 - Follow-on hardening execution plan (2026-03-10):
   - canonical next-work plan:
     [POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md)
@@ -867,6 +896,9 @@ Immediate tasks:
        (preferably an error or explicit “use read_file instead” guidance).
     4. Reconcile `edit_file` batch-mode docs with real behavior before keeping
        it as the preferred multi-edit recommendation.
+
+### Historical Shell Discussion (Pre-2026-03-11 Naming/Behavior)
+
 - Completed follow-on investigation checkpoint (2026-03-09, Windows Git
   Bash vs WSL command-routing audit; no code changes yet):
   - user reported a Windows-side transcript where an agent launched from Git

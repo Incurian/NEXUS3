@@ -45,6 +45,11 @@ This index covers the architecture plans created during today's review/planning 
 
 - [EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md)
 
+## Search Tool Follow-On Plans (2026-03-11)
+
+- [SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/SEARCH-TOOL-ERGONOMICS-AND-GUIDANCE-PLAN-2026-03-11.md)
+- [RIPGREP-AVAILABILITY-AND-DETERMINISM-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/RIPGREP-AVAILABILITY-AND-DETERMINISM-PLAN-2026-03-11.md)
+
 ## Related Review Docs
 
 - [Reviews Index (2026-03-02)](/home/inc/repos/NEXUS3/docs/reviews/README.md)
