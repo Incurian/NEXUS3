@@ -81,7 +81,7 @@ Skill (Protocol)
 |------------|---------|-----------------|
 | `FileSkill` | Path validation, symlink resolution, allowed_paths | read_file, write_file, edit_file, append_file, tail, file_info, list_directory, mkdir, copy_file, rename, regex_replace, glob, grep |
 | `NexusSkill` | Server URL building, API key discovery, client error handling | nexus_create, nexus_destroy, nexus_send, nexus_status, nexus_cancel, nexus_shutdown |
-| `ExecutionSkill` | Timeout enforcement, working dir resolution, output formatting | bash, run_python |
+| `ExecutionSkill` | Timeout enforcement, working dir resolution, output formatting | exec, shell_UNSAFE, run_python |
 | `FilteredCommandSkill` | Read-only command filtering, blocked pattern matching | git |
 
 #### Creating New Skills
@@ -468,8 +468,8 @@ instead of being silently dropped.
 | `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate UTF-8 files by extension with token estimation (`dry_run=True` by default; real writes generate an output file and skip invalid UTF-8 inputs) |
 | `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory (headings, classes, functions, keys). Directory mode is non-recursive, but `depth` controls nested symbols within each file and skips invalid UTF-8 files. Use `symbol` for filtered read on files, `file_type`/`language`/`parser` to override parser detection, `tokens` for estimates, and `diff` for change markers |
 | `git` | `command`, `cwd`? | Execute git commands (permission-filtered by level) |
-| `bash_safe` | `command`, `timeout`?, `cwd`? | Execute shell commands (shlex.split, no shell operators) |
-| `shell_UNSAFE` | `command`, `timeout`?, `cwd`? | Execute full shell (pipes work, injection-vulnerable; uses detected shell family on Windows when possible) |
+| `exec` | `program`, `args`?, `timeout`?, `cwd`? | Execute a program directly without shell interpretation |
+| `shell_UNSAFE` | `command`, `shell`?, `timeout`?, `cwd`? | Execute full shell syntax (pipes work, injection-vulnerable; `shell` selects auto/bash/gitbash/powershell/pwsh/cmd) |
 | `run_python` | `code`, `timeout`?, `cwd`? | Execute Python code |
 | `sleep` | `seconds`, `label`? | Pause execution (for testing) |
 | `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `allowed_write_paths`?, `model`?, `initial_message`?, `wait_for_initial_response`?, `port`? | Create agent (initial_message queued by default; wait flag only matters when `initial_message` is set) |

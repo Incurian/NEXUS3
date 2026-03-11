@@ -221,6 +221,42 @@ Branch:
 - `feat/arch-overhaul-execution`
 
 Current milestone:
+- Shell tool redesign implementation active (2026-03-11):
+  - created
+    [EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md)
+    for the next execution-tool contract cleanup.
+  - approved design decisions captured in the plan:
+    - canonical safe tool name becomes `exec` with no backward compatibility
+      for `bash` / `bash_safe`
+    - safe execution input becomes explicit `program` + `args` rather than a
+      shell-like `command` string
+    - `shell_UNSAFE` keeps string `command` and adds explicit
+      `shell=auto|bash|gitbash|powershell|pwsh|cmd`
+    - TRUSTED-mode safe-exec allowances become command-specific and
+      directory-scoped only; `shell_UNSAFE` remains per-use only
+    - `run_python` remains separate for now
+  - implementation progress:
+    - canonical `exec` runtime landed in `nexus3/skill/builtin/bash.py`
+      with explicit `program` + `args`
+    - command-scoped exec allowances landed across `core/allowances.py`,
+      `core/policy.py`, `session/enforcer.py`, `session/confirmation.py`,
+      and `session/single_tool_runtime.py`
+    - `shell_UNSAFE` now accepts
+      `shell=auto|bash|gitbash|powershell|pwsh|cmd`
+    - docs/test sync completed across README/module docs, permission UI docs,
+      provider fixtures, and execution-permission regression coverage
+    - validation passed:
+      - `.venv/bin/ruff check nexus3/ tests/`
+      - focused pytest execution slice (`360 passed`)
+      - full pytest (`4392 passed, 3 skipped, 21 warnings`)
+      - live RPC validation on port `9000`:
+        - trusted agent described `exec`, `shell_UNSAFE(shell=...)`, and
+          `run_python` with the new input shapes
+        - trusted `exec` attempt was denied pending confirmation, matching the
+          intended approval gate
+  - next gate: shell-tool redesign plan is complete locally; return to the
+    deferred post-architecture Windows live-validation closeout or new user
+    direction
 - Post-architecture hardening planning active (2026-03-10):
   - created
     [POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md)
@@ -284,6 +320,16 @@ Current milestone:
 - `M2` authorization/concurrency and strict-ingress closeout work is complete on this branch.
 
 Immediate tasks:
+- Shell tool redesign plan (2026-03-11):
+  - canonical next-work plan:
+    [EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md)
+  - preferred execution order from the new plan:
+    1. Phase 1: replace `bash_safe` / `bash` with canonical `exec` and the
+       explicit `program` + `args` contract.
+    2. Phase 2: replace tool-wide safe-exec allowances with command-specific
+       directory allowances.
+    3. Phase 3: add explicit `shell=` selection to `shell_UNSAFE`.
+    4. Phase 4/5: sync docs/tests and run full validation.
 - Follow-on hardening execution plan (2026-03-10):
   - canonical next-work plan:
     [POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/POST-ARCH-BUGFIX-HARDENING-PLAN-2026-03-10.md)

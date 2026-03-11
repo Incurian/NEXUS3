@@ -118,13 +118,9 @@ class AgentPermissions:
         """Add a directory to session allowances (for TRUSTED mode)."""
         self.session_allowances.add_directory(path)
 
-    def add_exec_cwd_allowance(self, tool_name: str, cwd: Path) -> None:
-        """Add an execution tool allowance for a specific directory."""
-        self.session_allowances.add_exec_directory(tool_name, cwd)
-
-    def add_exec_global_allowance(self, tool_name: str) -> None:
-        """Add an execution tool allowance globally (any directory)."""
-        self.session_allowances.add_exec_global(tool_name)
+    def add_exec_cwd_allowance(self, allowance_key: str, cwd: Path) -> None:
+        """Add a directory-scoped execution allowance."""
+        self.session_allowances.add_exec_directory(allowance_key, cwd)
 
     def can_grant(self, requested: AgentPermissions) -> bool:
         """Check if this agent can grant requested permissions to subagent.

@@ -8,7 +8,7 @@ import pytest
 
 from nexus3.core.permissions import PermissionLevel
 from nexus3.skill.builtin import bash as bash_mod
-from nexus3.skill.builtin.bash import BashSafeSkill, ShellUnsafeSkill
+from nexus3.skill.builtin.bash import ExecSkill, ShellUnsafeSkill
 from nexus3.skill.builtin.run_python import RunPythonSkill
 from nexus3.skill.services import ServiceContainer
 
@@ -32,8 +32,8 @@ def _make_services(
     return services
 
 
-class TestBashSafeWindowsBehavior:
-    """Windows behavior checks for bash_safe."""
+class TestExecWindowsBehavior:
+    """Windows behavior checks for exec."""
 
     @pytest.mark.asyncio
     async def test_source_is_parsed_like_normal_command(self, tmp_path: Path) -> None:
@@ -42,14 +42,15 @@ class TestBashSafeWindowsBehavior:
             allowed_paths=[tmp_path],
             cwd=tmp_path,
         )
-        skill = BashSafeSkill(services)
+        skill = ExecSkill(services)
 
-        async def raise_missing(_: str | None, __: list[str]) -> MagicMock:
+        async def raise_missing(_: str | None, __: str, ___: list[str]) -> MagicMock:
             raise FileNotFoundError(2, "The system cannot find the file specified")
 
         skill._create_process = raise_missing  # type: ignore[method-assign]
         result = await skill.execute(
-            command="source .venv/Scripts/activate",
+            program="source",
+            args=[".venv/Scripts/activate"],
             cwd=str(tmp_path),
         )
 
@@ -63,14 +64,14 @@ class TestBashSafeWindowsBehavior:
             allowed_paths=[tmp_path],
             cwd=tmp_path,
         )
-        skill = BashSafeSkill(services)
+        skill = ExecSkill(services)
 
-        async def raise_missing(_: str | None, __: list[str]) -> MagicMock:
+        async def raise_missing(_: str | None, __: str, ___: list[str]) -> MagicMock:
             raise FileNotFoundError(2, "The system cannot find the file specified")
 
         with patch("nexus3.skill.builtin.bash.sys.platform", "win32"):
             skill._create_process = raise_missing  # type: ignore[method-assign]
-            result = await skill.execute(command="missing_executable", cwd=str(tmp_path))
+            result = await skill.execute(program="missing_executable", cwd=str(tmp_path))
 
         assert result.error is not None
         assert "Failed to execute" in result.error
@@ -125,10 +126,10 @@ class TestShellUnsafeWindowsShellSelection:
             "nexus3.skill.builtin.bash.resolve_git_bash_executable",
             return_value=None,
         ):
-            result = await skill.execute(command="echo hello")
+            result = await skill.execute(command="echo hello", shell="gitbash")
 
         assert result.error is not None
-        assert "Git Bash shell could not be resolved safely on Windows" in result.error
+        assert "Shell 'gitbash' is not available on this Windows host" in result.error
 
     @pytest.mark.asyncio
     async def test_uses_powershell_when_psmodulepath_set(
@@ -157,7 +158,7 @@ class TestShellUnsafeWindowsShellSelection:
         assert args[5] == command
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_cmd_shell_when_no_markers(
+    async def test_uses_explicit_cmd_shell_on_windows(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -172,13 +173,30 @@ class TestShellUnsafeWindowsShellSelection:
         monkeypatch.setattr(bash_mod.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
 
         with patch(
-            "nexus3.skill.builtin.bash.asyncio.create_subprocess_shell",
+            "nexus3.skill.builtin.bash.asyncio.create_subprocess_exec",
             new=AsyncMock(return_value=MagicMock()),
-        ) as mock_shell:
-            await skill._create_process(work_dir=None, command=command)
+        ) as mock_exec:
+            await skill._create_process(work_dir=None, command=command, shell="cmd")
 
-        mock_shell.assert_awaited_once()
-        assert mock_shell.await_args.args[0] == command
+        mock_exec.assert_awaited_once()
+        args = mock_exec.await_args.args
+        assert args[:3] == ("cmd.exe", "/d", "/c")
+        assert args[3] == command
+
+    @pytest.mark.asyncio
+    async def test_rejects_bash_selector_on_windows(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        services = _make_services(permission_level=PermissionLevel.TRUSTED)
+        skill = ShellUnsafeSkill(services)
+
+        monkeypatch.setattr("nexus3.skill.builtin.bash.sys.platform", "win32")
+
+        result = await skill.execute(command="echo hello", shell="bash")
+
+        assert result.error is not None
+        assert "use 'gitbash'" in result.error
 
 
 class TestRunPythonConcurrencySafety:

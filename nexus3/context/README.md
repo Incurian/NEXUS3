@@ -418,7 +418,7 @@ Git context is refreshed on:
 - Context compaction
 - Configuration changes (`/model`, `/prompt`, `/gitlab on|off`)
 
-The `should_refresh_git_context(tool_name)` helper determines which tools trigger a refresh (file-writing tools, git, bash, gitlab_* tools).
+The `should_refresh_git_context(tool_name)` helper determines which tools trigger a refresh (file-writing tools, git, exec/shell execution tools, gitlab_* tools).
 
 Output is hard-capped at 500 characters. Credentials are stripped from remote URLs.
 

@@ -34,7 +34,7 @@ You have access to tools for file operations, command execution, code search, cl
 ### RPC-Created Agent Defaults
 - Default preset is **sandboxed** (not trusted)
 - Sandboxed agents: write tools (`write_file`, `edit_file`, `edit_lines`, `append_file`, `regex_replace`, `patch`) are **DISABLED** unless `allowed_write_paths` is set
-- Sandboxed agents: execution tools (`bash_safe`, `shell_UNSAFE`, `run_python`) are **DISABLED**
+- Sandboxed agents: execution tools (`exec`, `shell_UNSAFE`, `run_python`) are **DISABLED**
 - Sandboxed agents: agent management tools (`nexus_create`, `nexus_destroy`, etc.) are **DISABLED**
 - Sandboxed agents: `nexus_send` IS enabled with `allowed_targets="parent"` only
 
@@ -157,22 +157,24 @@ Quick selection flow:
 ### Execution
 | Tool | Key Parameters | Description |
 |------|----------------|-------------|
-| `bash_safe` | `command`, `timeout`?, `cwd`? | Shell commands via `shlex.split` — no shell operators (`\|`, `&&`, `>`) |
-| `shell_UNSAFE` | `command`, `timeout`?, `cwd`? | Shell commands with `shell=True` — pipes and redirects work, but injection-vulnerable |
+| `exec` | `program`, `args`?, `timeout`?, `cwd`? | Direct program execution — no shell operators, shell builtins, or expansion |
+| `shell_UNSAFE` | `command`, `shell`?, `timeout`?, `cwd`? | Full shell syntax with explicit shell-family selection — pipes and redirects work, but injection-vulnerable |
 | `run_python` | `code`, `timeout`?, `cwd`? | Execute Python code |
 | `git` | `command`, `cwd`? | Git commands (permission-filtered by level) |
 
 Execution notes:
-- `bash_safe` executes binaries directly by default.
-- `source` is a shell builtin; `bash_safe` cannot execute `source` directly as a command.
+- `exec` executes binaries directly by default.
+- `source` is a shell builtin; `exec` cannot execute `source` directly as a command.
 - On Windows, prefer explicit interpreters: `.venv/Scripts/python.exe script.py`.
-- On Windows, `shell_UNSAFE` tries to use the active shell family (Git Bash or
-  PowerShell) when it can be resolved safely.
+- `shell_UNSAFE` accepts `shell=auto|bash|gitbash|powershell|pwsh|cmd`.
+- On Windows, `shell_UNSAFE(shell="auto", ...)` tries to use the active shell family when it can be resolved safely.
 - For shell semantics (activation scripts, pipes, `&&`), use `shell_UNSAFE` with trusted input.
-- Alternatively, invoke shell semantics explicitly via command wrappers:
-  `bash -c "<command>"`, `powershell -Command "<command>"`, `cmd /c "<command>"`.
-- Example (venv activation + script): `bash -c "source .venv/Scripts/activate && python your_script.py"`.
-- Example (shell script): `bash -c "./scripts/your_script.sh"`.
+- Prefer selecting the shell explicitly when helpful:
+  `shell_UNSAFE(shell="bash", command="<command>")`,
+  `shell_UNSAFE(shell="powershell", command="<command>")`,
+  `shell_UNSAFE(shell="cmd", command="<command>")`.
+- Example (venv activation + script on Windows Git Bash): `shell_UNSAFE(shell="gitbash", command="source .venv/Scripts/activate && python your_script.py")`.
+- Example (shell script): `shell_UNSAFE(shell="bash", command="./scripts/your_script.sh")`.
 - Use an explicit `cwd` when project-relative commands fail; relative `cwd` resolves from the agent's current working directory.
 
 ### Agent Communication
@@ -791,7 +793,7 @@ Git Bash maps drives to POSIX-style paths. Either format works:
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
-| `bash_safe` won't run pipes/redirects | `bash_safe` uses `shlex.split`, no shell operators | Use `shell_UNSAFE` for pipes, redirects, `&&` |
+| `exec` won't run pipes/redirects | `exec` does not invoke a shell | Use `shell_UNSAFE` for pipes, redirects, `&&` |
 | Write tool returns permission error | Sandboxed agent without `allowed_write_paths` | Recreate agent with `allowed_write_paths` or use `trusted` preset |
 | `nexus_create` tool not available | Sandboxed agents cannot create other agents | Only trusted+ agents can create subagents |
 | Agent can't read files outside CWD | Sandboxed agents restricted to CWD | Use `trusted` preset for broader read access |
@@ -800,14 +802,14 @@ Git Bash maps drives to POSIX-style paths. Either format works:
 | GitLab tools not available | Disabled by default, or missing config | Run `/gitlab on` to enable; configure GitLab in config.json |
 | MCP tools not showing | Server not connected or tool listing failed | Use `/mcp connect <name>` or `/mcp retry <name>` |
 | Tool arguments JSON parse failure | Backslashes in Windows paths break JSON | Use forward slashes in all paths: `D:/path` not `D:\path` |
-| `Failed to execute: [WinError 2] The system cannot find the file specified` | Command isn't an executable (often `source`, `activate`, or an unqualified script) | Use `.venv/Scripts/python.exe <script.py>` directly, or invoke a shell (`bash -c`, `powershell -Command`, `cmd /c`) |
+| `Failed to execute: [WinError 2] The system cannot find the file specified` | Program isn't an executable (often `source`, `activate`, or an unqualified script) | Use `.venv/Scripts/python.exe <script.py>` directly, or run through `shell_UNSAFE(shell=...)` |
 | Command works in your terminal but fails in agent | Relative paths/cwd resolved from the agent's cwd, not your terminal tab | Pass explicit `cwd` and prefer absolute paths (`D:/...`) while debugging |
 
 ### Tempo / AgentBridge (Windows)
 
 For Unreal + AgentBridge workflows, prefer explicit shell wrappers when commands depend on shell behavior:
-- `bash -c "source .venv/Scripts/activate && python your_script.py"`
-- `bash -c "./scripts/your_script.sh"`
+- `shell_UNSAFE(shell="gitbash", command="source .venv/Scripts/activate && python your_script.py")`
+- `shell_UNSAFE(shell="bash", command="./scripts/your_script.sh")`
 
 For simple Python entrypoints, direct interpreter invocation is usually more reliable:
 - `.venv/Scripts/python.exe your_script.py`

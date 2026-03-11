@@ -68,7 +68,7 @@ def _make_registry_with_gitlab() -> MagicMock:
     specs = {name: MockSkillSpec() for name in gitlab_names}
     specs["read_file"] = MockSkillSpec()
     specs["write_file"] = MockSkillSpec()
-    specs["bash_safe"] = MockSkillSpec()
+    specs["exec"] = MockSkillSpec()
     registry._specs = specs
     registry.get_definitions_for_permissions.return_value = []
     return registry
@@ -326,7 +326,7 @@ class TestGitlabToggle:
         agent = MagicMock()
         agent.agent_id = "main"
         registry = MagicMock()
-        registry._specs = {"read_file": MockSkillSpec(), "bash_safe": MockSkillSpec()}
+        registry._specs = {"read_file": MockSkillSpec(), "exec": MockSkillSpec()}
         agent.registry = registry
         perms = AgentPermissions(
             base_preset="trusted",

@@ -258,11 +258,10 @@ async def confirm_tool_action(
         [3] Allow always in this directory
         [4] Deny
 
-    For execution operations (bash, run_python):
+    For execution operations (`exec`, `run_python`):
         [1] Allow once
         [2] Allow always in current directory
-        [3] Allow always (global)
-        [4] Deny
+        [3] Deny
 
     Args:
         tool_call: The tool call requiring confirmation.
@@ -279,8 +278,10 @@ async def confirm_tool_action(
     tool_name = tool_call.name
 
     # Determine tool type for appropriate prompting
-    is_exec_tool = tool_name in ("bash_safe", "shell_UNSAFE", "run_python")
+    is_exec_tool = tool_name in ("exec", "shell_UNSAFE", "run_python")
     is_shell_unsafe = tool_name == "shell_UNSAFE"  # Always requires per-use approval
+    is_direct_exec = tool_name == "exec"
+    is_run_python = tool_name == "run_python"
     is_nexus_tool = tool_name.startswith("nexus_")
     is_mcp_tool = tool_name.startswith("mcp_")
 
@@ -322,16 +323,41 @@ async def confirm_tool_action(
         elif is_exec_tool:
             # Use agent's cwd as default, not process cwd
             cwd = tool_call.arguments.get("cwd", str(agent_cwd))
-            command = tool_call.arguments.get("command", tool_call.arguments.get("code", ""))
-            preview = command[:100] + "..." if len(command) > 100 else command
-            sink.print_trusted("\n[yellow]Execute [/]", end="")
-            sink.print_untrusted(tool_name, end="")
-            sink.print_trusted("[yellow]?[/]")
-            sink.print_trusted("  [dim]Command:[/] ", end="")
-            sink.print_untrusted(preview)
-            sink.print_trusted("  [dim]Directory:[/] ", end="")
-            sink.print_untrusted(str(cwd))
-            lines_printed += 4  # empty + header + command + dir
+            if is_direct_exec:
+                program = str(tool_call.arguments.get("program", ""))
+                raw_args = tool_call.arguments.get("args", [])
+                if isinstance(raw_args, list):
+                    args_preview = " ".join(str(arg) for arg in raw_args)
+                else:
+                    args_preview = str(raw_args)
+                if len(args_preview) > 100:
+                    args_preview = args_preview[:100] + "..."
+                sink.print_trusted("\n[yellow]Execute [/]", end="")
+                sink.print_untrusted(tool_name, end="")
+                sink.print_trusted("[yellow]?[/]")
+                sink.print_trusted("  [dim]Program:[/] ", end="")
+                sink.print_untrusted(program)
+                sink.print_trusted("  [dim]Args:[/] ", end="")
+                sink.print_untrusted(args_preview or "[]")
+                sink.print_trusted("  [dim]Directory:[/] ", end="")
+                sink.print_untrusted(str(cwd))
+                lines_printed += 5  # empty + header + program + args + dir
+            else:
+                command = tool_call.arguments.get("command", tool_call.arguments.get("code", ""))
+                preview = command[:100] + "..." if len(command) > 100 else command
+                sink.print_trusted("\n[yellow]Execute [/]", end="")
+                sink.print_untrusted(tool_name, end="")
+                sink.print_trusted("[yellow]?[/]")
+                if is_shell_unsafe:
+                    shell_name = str(tool_call.arguments.get("shell", "auto"))
+                    sink.print_trusted("  [dim]Shell:[/] ", end="")
+                    sink.print_untrusted(shell_name)
+                    lines_printed += 1
+                sink.print_trusted("  [dim]Command:[/] ", end="")
+                sink.print_untrusted(preview)
+                sink.print_trusted("  [dim]Directory:[/] ", end="")
+                sink.print_untrusted(str(cwd))
+                lines_printed += 4  # empty + header + command + dir
         elif is_nexus_tool:
             # Nexus tools use agent_id instead of path
             agent_id = tool_call.arguments.get("agent_id", "unknown")
@@ -389,8 +415,13 @@ async def confirm_tool_action(
             console.print("  [dim](shell_UNSAFE requires approval each time)[/]")
             console.print("  [cyan]\\[p][/] [dim]View full details[/]")
             lines_printed += 4
-        elif is_exec_tool:
-            # bash_safe and run_python allow directory scope but not global
+        elif is_direct_exec:
+            console.print("  [cyan][1][/] Allow once")
+            console.print("  [cyan][2][/] Allow this command in this directory")
+            console.print("  [cyan][3][/] Deny")
+            console.print("  [cyan]\\[p][/] [dim]View full details[/]")
+            lines_printed += 4
+        elif is_run_python:
             console.print("  [cyan][1][/] Allow once")
             console.print("  [cyan][2][/] Allow always in this directory")
             console.print("  [cyan][3][/] Deny")
@@ -451,8 +482,8 @@ async def confirm_tool_action(
             else:
                 return ConfirmationResult.DENY
 
-        # bash_safe and run_python have 3 options: 1=allow once, 2=allow directory, 3=deny
-        if is_exec_tool:
+        # exec and run_python have 3 options: 1=allow once, 2=allow directory, 3=deny
+        if is_direct_exec or is_run_python:
             if response == "1":
                 return ConfirmationResult.ALLOW_ONCE
             elif response == "2":

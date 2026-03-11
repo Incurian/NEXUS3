@@ -20,6 +20,7 @@ from nexus3.core.authorization_kernel import (
     AuthorizationResource,
     AuthorizationResourceType,
 )
+from nexus3.core.executable_identity import resolve_executable_identity
 from nexus3.core.path_decision import PathDecisionEngine
 from nexus3.core.presets import ToolPermission  # noqa: F401 - needed for P2
 from nexus3.core.types import ToolResult
@@ -38,7 +39,7 @@ if TYPE_CHECKING:
 
 
 # Tools that have execution cwd parameter
-EXEC_TOOLS = frozenset({"bash", "bash_safe", "shell_UNSAFE", "run_python", "git"})
+EXEC_TOOLS = frozenset({"exec", "shell_UNSAFE", "run_python", "git"})
 
 # Tools that take agent_id as a target (for allowed_targets enforcement)
 AGENT_TARGET_TOOLS = frozenset({"nexus_send", "nexus_status", "nexus_cancel", "nexus_destroy"})
@@ -463,18 +464,35 @@ class PermissionEnforcer:
             return None
 
         cwd = tool_call.arguments.get("cwd")
-        if cwd:
-            # Use PathDecisionEngine for consistent resolution
-            if self._services:
-                engine = PathDecisionEngine.from_services(self._services, tool_name=tool_call.name)
-            else:
-                engine = PathDecisionEngine(cwd=Path.cwd())
+        if self._services:
+            engine = PathDecisionEngine.from_services(self._services, tool_name=tool_call.name)
+        else:
+            engine = PathDecisionEngine(cwd=Path.cwd())
 
-            decision = engine.check_cwd(cwd, tool_name=tool_call.name)
-            if decision.allowed and decision.resolved_path:
-                return decision.resolved_path
-
+        decision = engine.check_cwd(cwd if isinstance(cwd, str) else None, tool_name=tool_call.name)
+        if decision.allowed and decision.resolved_path:
+            return decision.resolved_path
         return None
+
+    def extract_exec_allowance_key(self, tool_call: ToolCall) -> str | None:
+        """Extract the execution allowance identity for a tool call."""
+        if tool_call.name == "run_python":
+            return "run_python"
+
+        if tool_call.name != "exec":
+            return None
+
+        program = tool_call.arguments.get("program")
+        if not isinstance(program, str) or not program.strip():
+            return None
+
+        try:
+            return resolve_executable_identity(
+                program,
+                cwd=self.extract_exec_cwd(tool_call),
+            )
+        except ValueError:
+            return None
 
     def requires_confirmation(
         self,
@@ -499,6 +517,7 @@ class PermissionEnforcer:
             return False
 
         exec_cwd = self.extract_exec_cwd(tool_call)
+        exec_allowance_key = self.extract_exec_allowance_key(tool_call)
 
         # Get write paths (what will actually be modified)
         write_paths = self._extract_write_paths(tool_call)
@@ -513,6 +532,7 @@ class PermissionEnforcer:
                 tool_call.name,
                 path=target_path,
                 exec_cwd=exec_cwd,
+                exec_allowance_key=exec_allowance_key,
                 session_allowances=permissions.session_allowances,
             )
 
@@ -522,6 +542,7 @@ class PermissionEnforcer:
                 tool_call.name,
                 path=write_path,
                 exec_cwd=exec_cwd,
+                exec_allowance_key=exec_allowance_key,
                 session_allowances=permissions.session_allowances,
             ):
                 return True

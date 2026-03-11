@@ -331,7 +331,7 @@ class TestValidationUniformity:
     @pytest.mark.parametrize(
         ("skill_name", "params"),
         [
-            ("bash_safe", {"command": "echo hello"}),
+            ("exec", {"program": "echo", "args": ["hello"]}),
             ("shell_UNSAFE", {"command": "echo hello"}),
             ("run_python", {"code": "print('hello')"}),
             ("git", {"command": "status"}),
@@ -442,14 +442,14 @@ class TestValidationWrapperApplication:
 
     def test_execution_skill_has_validation(self, tmp_path):
         """ExecutionSkill subclasses get validation wrapper from factory."""
-        from nexus3.skill.builtin.bash import bash_safe_factory
+        from nexus3.skill.builtin.bash import exec_factory
 
         services = ServiceContainer()
         services.set_cwd(str(tmp_path))
-        skill = bash_safe_factory(services)
+        skill = exec_factory(services)
 
         assert hasattr(skill, "execute")
-        assert skill.name == "bash_safe"
+        assert skill.name == "exec"
 
     def test_nexus_skill_has_validation(self, tmp_path):
         """NexusSkill subclasses get validation wrapper from factory."""

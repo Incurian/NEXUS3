@@ -30,8 +30,8 @@ instead of being silently dropped.
 | `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate UTF-8 files by extension with token estimation (`dry_run=True` by default; real writes generate an output file and skip invalid UTF-8 inputs) |
 | `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory; directory mode is non-recursive, `depth` controls nested symbols within each file, invalid UTF-8 directory entries are skipped, `symbol` returns a source excerpt for files only, `file_type`/`language`/`parser` can override parser detection for files, `recursive=true` fails closed, ambiguous symbol matches fail closed, and large directory output may truncate |
 | `git` | `command`, `cwd`? | Execute git commands (permission-filtered by level) |
-| `bash_safe` | `command`, `timeout`?, `cwd`? | Execute shell commands (`shlex.split`, no shell operators) |
-| `shell_UNSAFE` | `command`, `timeout`?, `cwd`? | Execute full shell with the detected shell family on Windows when possible (pipes work, injection-vulnerable) |
+| `exec` | `program`, `args`?, `timeout`?, `cwd`? | Execute a program directly with no shell interpretation (no pipes, redirects, or shell builtins) |
+| `shell_UNSAFE` | `command`, `shell`?, `timeout`?, `cwd`? | Execute full shell syntax with explicit shell-family selection (pipes work, injection-vulnerable) |
 | `run_python` | `code`, `timeout`?, `cwd`? | Execute Python code |
 | `sleep` | `seconds`, `label`? | Pause execution (for testing) |
 | `nexus_create` | `agent_id`, `preset`?, `disable_tools`?, `cwd`?, `allowed_write_paths`?, `model`?, `initial_message`?, `wait_for_initial_response`?, `port`? | Create agent (initial message queued by default; wait flag only matters when `initial_message` is set) |

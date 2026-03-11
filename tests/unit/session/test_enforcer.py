@@ -924,6 +924,123 @@ class TestConcatFilesPathExtractionAndChecks:
         assert write_paths == [expected]
 
 
+class TestExecAllowanceExtractionAndConfirmation:
+    """Tests for exec allowance-key and cwd extraction semantics."""
+
+    def _make_services(self, cwd: Path) -> MagicMock:
+        services = MagicMock()
+        services.get.return_value = "agent-1"
+        services.get_tool_allowed_paths.return_value = None
+        services.get_blocked_paths.return_value = []
+        services.get_cwd.return_value = cwd
+        return services
+
+    def _make_permissions(self, cwd: Path) -> AgentPermissions:
+        return AgentPermissions(
+            base_preset="trusted",
+            effective_policy=PermissionPolicy(
+                level=PermissionLevel.TRUSTED,
+                allowed_paths=None,
+                blocked_paths=[],
+                cwd=cwd,
+            ),
+            tool_permissions={
+                "exec": ToolPermission(enabled=True),
+                "shell_UNSAFE": ToolPermission(enabled=True),
+            },
+        )
+
+    def test_extract_exec_allowance_key_uses_program_identity(self, tmp_path: Path) -> None:
+        enforcer = PermissionEnforcer(services=self._make_services(tmp_path))
+        cwd = tmp_path / "workspace"
+        cwd.mkdir()
+        tool_call = ToolCall(
+            id="call-1",
+            name="exec",
+            arguments={
+                "program": "./scripts/tool.sh",
+                "args": ["--help"],
+                "cwd": str(cwd),
+            },
+        )
+
+        result = enforcer.extract_exec_allowance_key(tool_call)
+
+        assert result == str((cwd / "scripts" / "tool.sh").resolve(strict=False))
+
+    def test_extract_exec_allowance_key_is_command_scoped(self, tmp_path: Path) -> None:
+        cwd = tmp_path / "workspace"
+        cwd.mkdir()
+        services = self._make_services(tmp_path)
+        enforcer = PermissionEnforcer(services=services)
+        permissions = self._make_permissions(tmp_path)
+        allowed_program = cwd / "scripts" / "allowed.sh"
+        allowance_key = str(allowed_program.resolve(strict=False))
+        permissions.session_allowances.add_exec_directory(allowance_key, cwd)
+
+        allowed_call = ToolCall(
+            id="call-1",
+            name="exec",
+            arguments={
+                "program": "./scripts/allowed.sh",
+                "args": [],
+                "cwd": str(cwd),
+            },
+        )
+        denied_call = ToolCall(
+            id="call-2",
+            name="exec",
+            arguments={
+                "program": "./scripts/other.sh",
+                "args": [],
+                "cwd": str(cwd),
+            },
+        )
+
+        assert enforcer.requires_confirmation(allowed_call, permissions) is False
+        assert enforcer.requires_confirmation(denied_call, permissions) is True
+
+    def test_exec_allowances_remain_directory_scoped(self, tmp_path: Path) -> None:
+        base_cwd = tmp_path / "workspace"
+        base_cwd.mkdir()
+        other_cwd = tmp_path / "other-workspace"
+        other_cwd.mkdir()
+        services = self._make_services(tmp_path)
+        enforcer = PermissionEnforcer(services=services)
+        permissions = self._make_permissions(tmp_path)
+        allowance_key = str((base_cwd / "scripts" / "allowed.sh").resolve(strict=False))
+        permissions.session_allowances.add_exec_directory(allowance_key, base_cwd)
+
+        tool_call = ToolCall(
+            id="call-1",
+            name="exec",
+            arguments={
+                "program": "./scripts/allowed.sh",
+                "args": [],
+                "cwd": str(other_cwd),
+            },
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is True
+
+    def test_shell_unsafe_extracts_cwd_with_shell_selector(self, tmp_path: Path) -> None:
+        enforcer = PermissionEnforcer(services=self._make_services(tmp_path))
+        cwd = tmp_path / "workspace"
+        cwd.mkdir()
+        tool_call = ToolCall(
+            id="call-1",
+            name="shell_UNSAFE",
+            arguments={
+                "command": "echo hi",
+                "shell": "bash",
+                "cwd": str(cwd),
+            },
+        )
+
+        assert enforcer.extract_exec_cwd(tool_call) == cwd.resolve()
+        assert enforcer.extract_exec_allowance_key(tool_call) is None
+
+
 class TestCheckAllOrderingWithEnabledChecks:
     """Tests for check_all ordering between enabled and action checks."""
 

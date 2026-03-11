@@ -354,7 +354,7 @@ if perms.effective_policy.requires_confirmation("write_file", path=Path("/etc/pa
     print("Confirmation required")
 
 # Apply changes
-new_perms = perms.apply_delta(PermissionDelta(disable_tools=["bash_safe"]))
+new_perms = perms.apply_delta(PermissionDelta(disable_tools=["exec"]))
 
 # Check subagent permissions
 if perms.can_grant(requested_perms):
@@ -396,7 +396,7 @@ policy = PermissionPolicy.from_level("sandboxed")
 policy.can_read_path(Path("/project/file.txt"))  # True if in sandbox
 policy.can_write_path(Path("/etc/passwd"))  # False
 policy.can_network()  # False for SANDBOXED
-policy.allows_action("bash_safe")  # False for SANDBOXED
+policy.allows_action("exec")  # False for SANDBOXED
 policy.is_within_cwd(Path("/project/src/file.py"))  # True if within cwd
 
 # Serialization
@@ -412,8 +412,9 @@ policy.requires_confirmation(
 
 # Execution tools use exec_cwd= (shell_UNSAFE always requires confirmation)
 policy.requires_confirmation(
-    "bash_safe",
+    "exec",
     exec_cwd=Path("/project/scripts"),
+    exec_allowance_key="/usr/bin/grep",
     session_allowances=allowances
 )
 ```
@@ -464,7 +465,7 @@ presets = get_builtin_presets()
 sandboxed = presets["sandboxed"]
 
 # Sandboxed disables these tools
-assert sandboxed.tool_permissions["bash_safe"].enabled is False
+assert sandboxed.tool_permissions["exec"].enabled is False
 assert sandboxed.tool_permissions["nexus_create"].enabled is False
 
 # But nexus_send is enabled with parent-only restriction
@@ -487,7 +488,7 @@ Dynamic allowances for TRUSTED mode user decisions.
 **Allowance Categories:**
 
 - **Write allowances** - Per-file or per-directory for write operations
-- **Execution allowances** - Per-directory or global for bash/run_python
+- **Execution allowances** - Per-directory for command identities and `run_python`
 - **MCP allowances** - Per-server or per-tool MCP confirmations
 - **GitLab allowances** - Per-skill@instance for GitLab operations
 
@@ -506,13 +507,13 @@ allowances.is_write_allowed(Path("/project/build/index.js"))  # True
 
 # Add execution allowances
 allowances.add_exec_directory("run_python", Path("/project"))
-allowances.add_exec_global("bash_safe")  # Any directory
+allowances.add_exec_directory("/usr/bin/grep", Path("/project"))
 
 # Check execution access
 allowances.is_exec_allowed("run_python", cwd=Path("/project/scripts"))  # True
-allowances.is_exec_allowed("bash_safe", cwd=Path("/anywhere"))  # True (global)
+allowances.is_exec_allowed("/usr/bin/grep", cwd=Path("/project/scripts"))  # True
 
-# Directory-only check (ignores global allowances)
+# Directory-scoped check
 allowances.is_exec_directory_allowed("run_python", cwd=Path("/project/scripts"))  # True
 
 # MCP allowances
@@ -632,7 +633,7 @@ else:
 path = engine.check_access("/some/path").raise_if_denied()
 
 # Check cwd for subprocess
-cwd_decision = engine.check_cwd("/project/scripts", tool_name="bash")
+cwd_decision = engine.check_cwd("/project/scripts", tool_name="exec")
 
 # From ServiceContainer (per-agent paths)
 engine = PathDecisionEngine.from_services(services, tool_name="read_file")
@@ -671,7 +672,7 @@ if error:
     print(f"Error: {error}")
 
 # Resolve cwd for subprocess
-cwd_str, error = resolver.resolve_cwd("/project/scripts", tool_name="bash")
+cwd_str, error = resolver.resolve_cwd("/project/scripts", tool_name="exec")
 ```
 
 ---

@@ -1,6 +1,6 @@
 """Tests for P2.7: Defense-in-depth checks in high-risk execution tools.
 
-These tests verify that bash, shell_UNSAFE, and run_python skills internally
+These tests verify that exec, shell_UNSAFE, and run_python skills internally
 refuse to execute when the permission level is SANDBOXED, even if the skill
 was mistakenly registered for a sandboxed agent.
 
@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from nexus3.core.permissions import PermissionLevel
-from nexus3.skill.builtin.bash import BashSafeSkill, ShellUnsafeSkill
+from nexus3.skill.builtin.bash import ExecSkill, ShellUnsafeSkill
 from nexus3.skill.builtin.run_python import RunPythonSkill
 from nexus3.skill.services import ServiceContainer
 
@@ -40,16 +40,16 @@ def _make_services(
     return services
 
 
-class TestBashSafeDefenseInDepth:
-    """Tests for bash_safe defense-in-depth checks."""
+class TestExecDefenseInDepth:
+    """Tests for exec defense-in-depth checks."""
 
     @pytest.mark.asyncio
     async def test_sandboxed_refuses_execution(self) -> None:
-        """SANDBOXED permission level refuses bash_safe execution."""
+        """SANDBOXED permission level refuses exec execution."""
         services = _make_services(permission_level=PermissionLevel.SANDBOXED)
-        skill = BashSafeSkill(services)
+        skill = ExecSkill(services)
 
-        result = await skill.execute(command="echo hello")
+        result = await skill.execute(program="echo", args=["hello"])
 
         assert result.error is not None
         assert "SANDBOXED" in result.error
@@ -58,30 +58,30 @@ class TestBashSafeDefenseInDepth:
 
     @pytest.mark.asyncio
     async def test_trusted_allows_execution(self, tmp_path: Path) -> None:
-        """TRUSTED permission level allows bash_safe execution."""
+        """TRUSTED permission level allows exec execution."""
         services = _make_services(
             permission_level=PermissionLevel.TRUSTED,
             allowed_paths=[tmp_path],
             cwd=tmp_path,
         )
-        skill = BashSafeSkill(services)
+        skill = ExecSkill(services)
 
-        result = await skill.execute(command="echo hello", cwd=str(tmp_path))
+        result = await skill.execute(program="echo", args=["hello"], cwd=str(tmp_path))
 
         assert result.error is None or result.error == ""
         assert "hello" in result.output
 
     @pytest.mark.asyncio
     async def test_yolo_allows_execution(self, tmp_path: Path) -> None:
-        """YOLO permission level allows bash_safe execution."""
+        """YOLO permission level allows exec execution."""
         services = _make_services(
             permission_level=PermissionLevel.YOLO,
             allowed_paths=[tmp_path],
             cwd=tmp_path,
         )
-        skill = BashSafeSkill(services)
+        skill = ExecSkill(services)
 
-        result = await skill.execute(command="echo hello", cwd=str(tmp_path))
+        result = await skill.execute(program="echo", args=["hello"], cwd=str(tmp_path))
 
         assert result.error is None or result.error == ""
         assert "hello" in result.output
@@ -94,9 +94,9 @@ class TestBashSafeDefenseInDepth:
             allowed_paths=[tmp_path],
             cwd=tmp_path,
         )
-        skill = BashSafeSkill(services)
+        skill = ExecSkill(services)
 
-        result = await skill.execute(command="echo hello", cwd=str(tmp_path))
+        result = await skill.execute(program="echo", args=["hello"], cwd=str(tmp_path))
 
         # None means permission level not set - allow for backwards compat
         assert result.error is None or result.error == ""
@@ -219,9 +219,9 @@ class TestDefenseInDepthErrorMessages:
         """Error message includes the skill name for debugging."""
         services = _make_services(permission_level=PermissionLevel.SANDBOXED)
 
-        bash_skill = BashSafeSkill(services)
-        result = await bash_skill.execute(command="echo test")
-        assert "bash_safe" in result.error
+        exec_skill = ExecSkill(services)
+        result = await exec_skill.execute(program="echo", args=["test"])
+        assert "exec" in result.error
 
         shell_skill = ShellUnsafeSkill(services)
         result = await shell_skill.execute(command="echo test")
@@ -235,9 +235,9 @@ class TestDefenseInDepthErrorMessages:
     async def test_error_is_actionable(self) -> None:
         """Error message helps diagnose misconfiguration."""
         services = _make_services(permission_level=PermissionLevel.SANDBOXED)
-        skill = BashSafeSkill(services)
+        skill = ExecSkill(services)
 
-        result = await skill.execute(command="echo test")
+        result = await skill.execute(program="echo", args=["test"])
 
         # Should mention this is defense-in-depth (implies misconfiguration)
         assert "defense-in-depth" in result.error

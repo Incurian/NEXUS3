@@ -48,6 +48,8 @@ class _PermissionEnforcer(Protocol):
 
     def extract_exec_cwd(self, tool_call: ToolCall) -> Path | None: ...
 
+    def extract_exec_allowance_key(self, tool_call: ToolCall) -> str | None: ...
+
     def get_effective_timeout(
         self,
         tool_name: str,
@@ -93,6 +95,7 @@ async def execute_single_tool(
         # Fix 1.2: Get display path and ALL write paths for multi-path tools
         display_path, write_paths = enforcer.get_confirmation_context(tool_call)
         exec_cwd = enforcer.extract_exec_cwd(tool_call)
+        exec_allowance_key = enforcer.extract_exec_allowance_key(tool_call)
         agent_cwd = services.get_cwd() if services else Path.cwd()
 
         # Show confirmation for the write target (display_path)
@@ -104,10 +107,24 @@ async def execute_single_tool(
         # Fix 1.2: Apply allowance to ALL write paths (e.g., destination for copy_file)
         if permissions and write_paths:
             for write_path in write_paths:
-                confirmation.apply_result(permissions, result, tool_call, write_path, exec_cwd)
+                confirmation.apply_result(
+                    permissions,
+                    result,
+                    tool_call,
+                    write_path,
+                    exec_cwd,
+                    exec_allowance_key,
+                )
         elif permissions:
             # Fallback for tools without explicit write paths (e.g., exec tools)
-            confirmation.apply_result(permissions, result, tool_call, display_path, exec_cwd)
+            confirmation.apply_result(
+                permissions,
+                result,
+                tool_call,
+                display_path,
+                exec_cwd,
+                exec_allowance_key,
+            )
 
     # 3. Resolve skill
     skill, mcp_server_name = dispatcher.find_skill(tool_call)

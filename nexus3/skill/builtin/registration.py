@@ -1,7 +1,7 @@
 """Registration helpers for built-in skills."""
 
 from nexus3.skill.builtin.append_file import append_file_factory
-from nexus3.skill.builtin.bash import bash_safe_factory, shell_unsafe_factory
+from nexus3.skill.builtin.bash import exec_factory, shell_unsafe_factory
 from nexus3.skill.builtin.clipboard_copy import copy_factory, cut_factory
 from nexus3.skill.builtin.clipboard_export import clipboard_export_factory
 from nexus3.skill.builtin.clipboard_import import clipboard_import_factory
@@ -79,9 +79,9 @@ def register_builtin_skills(registry: SkillRegistry) -> None:
     registry.register("git", git_factory)
 
     # Execution (high-risk, disabled in SANDBOXED)
-    # bash_safe: shlex.split + subprocess_exec (no shell operators)
-    # shell_UNSAFE: shell=True (pipes, redirects work, but injection-vulnerable)
-    registry.register("bash_safe", bash_safe_factory)
+    # exec: direct subprocess execution (no shell operators)
+    # shell_UNSAFE: full shell execution (pipes, redirects, shell syntax)
+    registry.register("exec", exec_factory)
     registry.register("shell_UNSAFE", shell_unsafe_factory)
     registry.register("run_python", run_python_factory)
 

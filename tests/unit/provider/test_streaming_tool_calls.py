@@ -172,7 +172,7 @@ class TestToolCallIdNameSetOnce:
                                 {
                                     "index": 0,
                                     "id": "call_1",
-                                    "function": {"name": "bash", "arguments": ""},
+                                    "function": {"name": "exec", "arguments": ""},
                                 }
                             ]
                         }
@@ -186,7 +186,7 @@ class TestToolCallIdNameSetOnce:
                             "tool_calls": [
                                 {
                                     "index": 0,
-                                    "function": {"arguments": '{"com'},
+                                    "function": {"arguments": '{"program": '},
                                 }
                             ]
                         }
@@ -200,7 +200,7 @@ class TestToolCallIdNameSetOnce:
                             "tool_calls": [
                                 {
                                     "index": 0,
-                                    "function": {"arguments": 'mand": '},
+                                    "function": {"arguments": '"ls", '},
                                 }
                             ]
                         }
@@ -214,7 +214,7 @@ class TestToolCallIdNameSetOnce:
                             "tool_calls": [
                                 {
                                     "index": 0,
-                                    "function": {"arguments": '"ls -la"}'},
+                                    "function": {"arguments": '"args": ["-la"]}'},
                                 }
                             ]
                         }
@@ -232,7 +232,7 @@ class TestToolCallIdNameSetOnce:
             )
 
         # Arguments should be concatenated
-        assert tool_calls_by_index[0]["arguments"] == '{"command": "ls -la"}'
+        assert tool_calls_by_index[0]["arguments"] == '{"program": "ls", "args": ["-la"]}'
 
     @pytest.mark.asyncio
     async def test_tool_call_id_name_args_independent(self, provider: OpenRouterProvider) -> None:
@@ -359,8 +359,8 @@ class TestInvalidJsonArgumentsPreserved:
         tool_calls_by_index = {
             0: {
                 "id": "call_456",
-                "name": "bash",
-                "arguments": '{"command": unquoted}',  # Invalid JSON
+                "name": "exec",
+                "arguments": '{"program": unquoted}',  # Invalid JSON
             }
         }
 
@@ -370,7 +370,7 @@ class TestInvalidJsonArgumentsPreserved:
         tc = result.message.tool_calls[0]
         # Should have _raw_arguments with the original invalid JSON
         assert "_raw_arguments" in tc.arguments
-        assert tc.arguments["_raw_arguments"] == '{"command": unquoted}'
+        assert tc.arguments["_raw_arguments"] == '{"program": unquoted}'
 
     def test_valid_json_arguments_parsed_normally(self, provider: OpenRouterProvider) -> None:
         """Valid JSON arguments are parsed normally (sanity check)."""

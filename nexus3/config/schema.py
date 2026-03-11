@@ -252,7 +252,7 @@ class PermissionsConfig(BaseModel):
     destructive_tools: list[str] = [
         "write_file",
         "edit_file",
-        "bash_safe",
+        "exec",
         "shell_UNSAFE",
         "run_python",
         "nexus_destroy",

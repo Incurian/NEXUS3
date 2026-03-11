@@ -41,6 +41,10 @@ This index covers the architecture plans created during today's review/planning 
 - [DEPENDENCY-LICENSE-AND-TELEMETRY-AUDIT-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/DEPENDENCY-LICENSE-AND-TELEMETRY-AUDIT-PLAN-2026-03-10.md)
 - [RUFF-BACKLOG-CLOSEOUT-PLAN-2026-03-10.md](/home/inc/repos/NEXUS3/docs/plans/RUFF-BACKLOG-CLOSEOUT-PLAN-2026-03-10.md)
 
+## Shell Tool Redesign Plans (2026-03-11)
+
+- [EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/EXEC-AND-SHELL-TOOL-REDESIGN-PLAN-2026-03-11.md)
+
 ## Related Review Docs
 
 - [Reviews Index (2026-03-02)](/home/inc/repos/NEXUS3/docs/reviews/README.md)

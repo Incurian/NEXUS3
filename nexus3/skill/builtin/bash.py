@@ -1,13 +1,13 @@
-"""Shell execution skills for NEXUS3.
+"""Execution-oriented skills for NEXUS3.
 
 Two skills with different security models:
 
-- bash_safe: Uses shlex.split() + subprocess_exec (no shell interpretation)
+- exec: Direct subprocess execution (no shell interpretation)
   - Shell operators (|, &&, >, etc.) do NOT work
-  - Safe from injection attacks
-  - Recommended for most use cases
+  - Safer default for normal command execution
+  - Recommended when shell syntax is not required
 
-- shell_UNSAFE: Uses shell=True (full shell interpretation)
+- shell_UNSAFE: Full shell execution with explicit shell-family selection
   - Shell operators work (pipes, redirects, etc.)
   - VULNERABLE to injection if input is not trusted
   - Name is intentionally alarming to prompt careful consideration
@@ -23,7 +23,7 @@ level and refuse to execute in SANDBOXED mode, even if mistakenly registered.
 
 import asyncio
 import os
-import shlex
+import shutil
 import subprocess
 import sys
 from collections.abc import Awaitable, Callable
@@ -91,46 +91,36 @@ async def _execute_with_process_factory(
         return ToolResult(error=f"Error during execution: {e}")
 
 
-class BashSafeSkill(ExecutionSkill):
-    """Safe shell skill using subprocess_exec (no shell interpretation).
+class ExecSkill(ExecutionSkill):
+    """Direct process execution skill (no shell interpretation).
 
-    Commands are parsed with shlex.split() and executed directly without
-    a shell. This prevents injection attacks but means shell operators
-    like |, &&, >, $(), etc. do NOT work.
-
-    Use this skill for:
-    - Running single commands with arguments
-    - Cases where you don't need shell features
-    - Any situation where input might not be fully trusted
-
-    Examples that WORK:
-    - "ls -la /tmp"
-    - "git status"
-    - "python script.py --arg value"
-
-    Examples that DON'T work:
-    - "ls | grep foo" (pipe)
-    - "cd /tmp && ls" (chaining)
-    - "echo hello > file.txt" (redirect)
-    - "echo $HOME" (variable expansion)
+    `exec` launches the requested program and argument vector directly with
+    `subprocess_exec`. Shell operators like `|`, `&&`, `>`, `$()`, and glob
+    expansion do not work because no shell participates in execution.
     """
 
     @property
     def name(self) -> str:
-        return "bash_safe"
+        return "exec"
 
     @property
     def description(self) -> str:
-        return "Execute a command safely (no shell operators like | && >)"
+        return "Execute a program directly without shell interpretation"
 
     @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "command": {
+                "program": {
                     "type": "string",
-                    "description": "Command to execute (shell operators like | && > do NOT work)"
+                    "description": "Program or executable path to run directly"
+                },
+                "args": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Argument vector passed to the program (default: [])",
+                    "default": [],
                 },
                 "timeout": {
                     "type": "integer",
@@ -142,22 +132,26 @@ class BashSafeSkill(ExecutionSkill):
                     "description": "Working directory for command (default: current)"
                 }
             },
-            "required": ["command"],
+            "required": ["program"],
             "additionalProperties": False,
         }
 
     async def _create_process(
         self,
         work_dir: str | None,
+        program: str = "",
         args: list[str] | None = None,
     ) -> asyncio.subprocess.Process:
-        """Create subprocess without shell."""
+        """Create a subprocess without shell interpretation."""
+        if not program:
+            raise ValueError("Program is required")
         if args is None:
-            raise ValueError("Command arguments are required")
+            args = []
 
         # Platform-specific process group handling for clean timeout kills
         if sys.platform == "win32":
             return await asyncio.create_subprocess_exec(
+                program,
                 *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -170,6 +164,7 @@ class BashSafeSkill(ExecutionSkill):
             )
         else:
             return await asyncio.create_subprocess_exec(
+                program,
                 *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -180,50 +175,34 @@ class BashSafeSkill(ExecutionSkill):
 
     async def execute(
         self,
-        command: str = "",
+        program: str = "",
+        args: list[str] | None = None,
         timeout: int = 30,
         cwd: str | None = None,
         **kwargs: Any
     ) -> ToolResult:
-        """Execute command safely without shell interpretation."""
+        """Execute a program directly without shell interpretation."""
         # P2.7 SECURITY: Defense-in-depth permission check
         if error := _check_permission_level(self._services, self.name):
             return error
 
-        if not command or not command.strip():
-            return ToolResult(error="Command is required")
-
-        # Parse command with shlex
-        # Use non-POSIX mode on Windows to preserve backslash paths
-        # POSIX mode: C:\Users\foo → C:Usersfoo (backslash escapes)
-        # Non-POSIX: C:\Users\foo → C:\Users\foo (preserved)
-        try:
-            posix_mode = sys.platform != "win32"
-            args = shlex.split(command, posix=posix_mode)
-
-            # On Windows, posix=False preserves quotes in output which breaks
-            # downstream processing. Strip matching outer quotes.
-            if sys.platform == "win32":
-                args = [
-                    arg[1:-1] if len(arg) >= 2 and arg[0] in "\"'" and arg[-1] == arg[0] else arg
-                    for arg in args
-                ]
-        except ValueError as e:
-            return ToolResult(error=f"Invalid command syntax: {e}")
-
-        if not args:
-            return ToolResult(error="Empty command after parsing")
+        if not program or not program.strip():
+            return ToolResult(error="Program is required")
+        if args is None:
+            args = []
+        if not isinstance(args, list) or any(not isinstance(arg, str) for arg in args):
+            return ToolResult(error="'args' must be an array of strings")
 
         return await _execute_with_process_factory(
             skill=self,
             timeout=timeout,
             cwd=cwd,
-            timeout_message="Command timed out after {timeout}s",
-            process_factory=lambda work_dir: self._create_process(work_dir, args),
+            timeout_message="Process timed out after {timeout}s",
+            process_factory=lambda work_dir: self._create_process(work_dir, program.strip(), args),
         )
 
 class ShellUnsafeSkill(ExecutionSkill):
-    """UNSAFE shell skill using shell=True (full shell interpretation).
+    """UNSAFE shell skill using explicit shell execution.
 
     ⚠️  WARNING: This skill is vulnerable to shell injection attacks!
 
@@ -265,6 +244,12 @@ class ShellUnsafeSkill(ExecutionSkill):
                         " but UNSAFE with untrusted input)"
                     )
                 },
+                "shell": {
+                    "type": "string",
+                    "enum": ["auto", "bash", "gitbash", "powershell", "pwsh", "cmd"],
+                    "description": "Shell family to use (default: auto)",
+                    "default": "auto",
+                },
                 "timeout": {
                     "type": "integer",
                     "description": "Timeout in seconds (default: 30, max: 300)",
@@ -283,27 +268,38 @@ class ShellUnsafeSkill(ExecutionSkill):
         self,
         work_dir: str | None,
         command: str = "",
+        shell: str = "auto",
     ) -> asyncio.subprocess.Process:
-        """Create shell subprocess."""
+        """Create shell subprocess using the requested shell family."""
         if not command:
             raise ValueError("Command is required")
 
-        # Platform-specific process group handling for clean timeout kills.
-        # On Windows, route through the active shell family when detectable.
-        # This prevents cmd.exe fallback from breaking Git Bash / PowerShell syntax.
+        requested_shell = shell.strip().lower()
+        if requested_shell not in {"auto", "bash", "gitbash", "powershell", "pwsh", "cmd"}:
+            raise ValueError(f"Unsupported shell: {shell!r}")
+
         if sys.platform == "win32":
             env = get_safe_env(work_dir)
             creationflags = (
                 getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) |
                 getattr(subprocess, "CREATE_NO_WINDOW", 0)
             )
-            if os.environ.get("MSYSTEM"):
+            if requested_shell == "auto":
+                if os.environ.get("MSYSTEM"):
+                    requested_shell = "gitbash"
+                elif os.environ.get("PSModulePath"):
+                    requested_shell = "powershell"
+                else:
+                    requested_shell = "cmd"
+
+            if requested_shell == "gitbash":
                 bash_executable = resolve_git_bash_executable(env.get("PATH"))
                 if bash_executable is None:
                     raise OSError(
-                        "Git Bash shell could not be resolved safely on Windows"
+                        "Shell 'gitbash' is not available on this Windows host"
                     )
-                env["MSYSTEM"] = os.environ["MSYSTEM"]
+                if os.environ.get("MSYSTEM"):
+                    env["MSYSTEM"] = os.environ["MSYSTEM"]
                 return await asyncio.create_subprocess_exec(
                     bash_executable, "-lc", command,
                     stdout=asyncio.subprocess.PIPE,
@@ -312,7 +308,7 @@ class ShellUnsafeSkill(ExecutionSkill):
                     env=env,
                     creationflags=creationflags,
                 )
-            if os.environ.get("PSModulePath"):
+            if requested_shell == "powershell":
                 return await asyncio.create_subprocess_exec(
                     "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
                     "-Command", command,
@@ -322,27 +318,81 @@ class ShellUnsafeSkill(ExecutionSkill):
                     env=env,
                     creationflags=creationflags,
                 )
+            if requested_shell == "pwsh":
+                if shutil.which("pwsh", path=env.get("PATH")) is None:
+                    raise OSError("Shell 'pwsh' is not available on this Windows host")
+                return await asyncio.create_subprocess_exec(
+                    "pwsh", "-NoProfile", "-Command", command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=work_dir,
+                    env=env,
+                    creationflags=creationflags,
+                )
+            if requested_shell == "cmd":
+                return await asyncio.create_subprocess_exec(
+                    env.get("COMSPEC") or "cmd.exe", "/d", "/c", command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=work_dir,
+                    env=env,
+                    creationflags=creationflags,
+                )
+            if requested_shell == "bash":
+                raise OSError("Shell 'bash' is not supported on Windows; use 'gitbash'")
+            raise OSError(f"Unsupported shell on Windows: {shell!r}")
+
+        env = get_safe_env(work_dir)
+        if requested_shell == "auto":
             return await asyncio.create_subprocess_shell(
                 command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=work_dir,
                 env=env,
-                creationflags=creationflags,
+                start_new_session=True,
             )
-        else:
-            return await asyncio.create_subprocess_shell(
-                command,
+        if requested_shell == "bash":
+            if shutil.which("bash", path=env.get("PATH")) is None:
+                raise OSError("Shell 'bash' is not available on this host")
+            return await asyncio.create_subprocess_exec(
+                "bash", "-lc", command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=work_dir,
-                env=get_safe_env(work_dir),
+                env=env,
                 start_new_session=True,
             )
+        if requested_shell == "powershell":
+            if shutil.which("powershell", path=env.get("PATH")) is None:
+                raise OSError("Shell 'powershell' is not available on this host")
+            return await asyncio.create_subprocess_exec(
+                "powershell", "-NoProfile", "-Command", command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=work_dir,
+                env=env,
+                start_new_session=True,
+            )
+        if requested_shell == "pwsh":
+            if shutil.which("pwsh", path=env.get("PATH")) is None:
+                raise OSError("Shell 'pwsh' is not available on this host")
+            return await asyncio.create_subprocess_exec(
+                "pwsh", "-NoProfile", "-Command", command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=work_dir,
+                env=env,
+                start_new_session=True,
+            )
+        if requested_shell in {"gitbash", "cmd"}:
+            raise OSError(f"Shell '{requested_shell}' is only supported on Windows")
+        raise OSError(f"Unsupported shell: {shell!r}")
 
     async def execute(
         self,
         command: str = "",
+        shell: str = "auto",
         timeout: int = 30,
         cwd: str | None = None,
         **kwargs: Any
@@ -360,13 +410,10 @@ class ShellUnsafeSkill(ExecutionSkill):
             timeout=timeout,
             cwd=cwd,
             timeout_message="Command timed out after {timeout}s",
-            process_factory=lambda work_dir: self._create_process(work_dir, command),
+            process_factory=lambda work_dir: self._create_process(work_dir, command, shell),
         )
 
 
 # Factories for dependency injection
-bash_safe_factory = execution_skill_factory(BashSafeSkill)
+exec_factory = execution_skill_factory(ExecSkill)
 shell_unsafe_factory = execution_skill_factory(ShellUnsafeSkill)
-
-# Legacy alias for backwards compatibility during transition
-bash_factory = bash_safe_factory

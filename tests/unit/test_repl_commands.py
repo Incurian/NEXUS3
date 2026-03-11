@@ -33,6 +33,7 @@ from nexus3.cli.repl_commands import (
 )
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands.protocol import CommandContext, CommandResult
+from nexus3.core.executable_identity import resolve_executable_identity
 from nexus3.core.permissions import ToolPermission, resolve_preset
 
 # -----------------------------------------------------------------------------
@@ -743,6 +744,8 @@ class TestCmdPermissions:
 
         assert output.result == CommandResult.SUCCESS
         assert "Tool permissions:" in output.message
+        assert "exec: disabled" in output.message
+        assert "bash_safe" not in output.message
 
     @pytest.mark.asyncio
     async def test_list_tools_no_permissions(self, ctx_with_agent: CommandContext):
@@ -813,7 +816,10 @@ class TestCmdPermissions:
         perms.depth = 2
         allowed_file = agent_cwd / "allowed.txt"
         allowed_file.write_text("ok")
+        exec_tool = agent_cwd / "scripts" / "tool.sh"
+        exec_key = resolve_executable_identity(str(exec_tool), cwd=agent_cwd)
         perms.session_allowances.add_write_file(allowed_file)
+        perms.session_allowances.add_exec_directory(exec_key, agent_cwd)
         perms.session_allowances.add_exec_directory("run_python", agent_cwd)
         perms.session_allowances.add_mcp_tool("mcp_demo")
         agent.services.set_permissions(perms)
@@ -835,6 +841,9 @@ class TestCmdPermissions:
         assert live_perms.ceiling is perms.ceiling
         assert live_perms.session_allowances is not perms.session_allowances
         assert live_perms.session_allowances.is_write_allowed(allowed_file) is True
+        assert live_perms.session_allowances.is_exec_directory_allowed(
+            exec_key, agent_cwd
+        )
         assert live_perms.session_allowances.is_exec_directory_allowed(
             "run_python", agent_cwd
         )

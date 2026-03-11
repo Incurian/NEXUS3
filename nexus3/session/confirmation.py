@@ -54,6 +54,7 @@ class ConfirmationController:
         tool_call: ToolCall,
         target_path: Path | None,
         exec_cwd: Path | None,
+        exec_allowance_key: str | None = None,
     ) -> None:
         """Apply confirmation result to session allowances.
 
@@ -65,6 +66,7 @@ class ConfirmationController:
             tool_call: The tool call that was confirmed.
             target_path: Target path if applicable.
             exec_cwd: Execution cwd if applicable.
+            exec_allowance_key: Execution identity key for directory-scoped approvals.
         """
         if result == ConfirmationResult.DENY:
             return  # Nothing to update
@@ -79,10 +81,12 @@ class ConfirmationController:
             permissions.add_directory_allowance(target_path.parent)
 
         elif result == ConfirmationResult.ALLOW_EXEC_CWD and exec_cwd:
-            permissions.add_exec_cwd_allowance(tool_call.name, exec_cwd)
-
-        elif result == ConfirmationResult.ALLOW_EXEC_GLOBAL:
-            permissions.add_exec_global_allowance(tool_call.name)
+            allowance_key = exec_allowance_key
+            if allowance_key is None:
+                if tool_call.name == "exec":
+                    return
+                allowance_key = tool_call.name
+            permissions.add_exec_cwd_allowance(allowance_key, exec_cwd)
 
     @staticmethod
     def apply_mcp_result(

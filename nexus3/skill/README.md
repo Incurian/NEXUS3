@@ -71,7 +71,7 @@ nexus3/skill/
 │   ├── concat_files.py   # Find and concatenate files by extension
 │   ├── outline.py        # Structural file/directory outline (16 language parsers)
 │   ├── regex_replace.py  # Regex find/replace (line ending preservation)
-│   ├── bash.py           # Shell execution (safe + unsafe, CREATE_NO_WINDOW on Windows)
+│   ├── bash.py           # exec + shell_UNSAFE execution (CREATE_NO_WINDOW on Windows)
 │   ├── run_python.py     # Python code execution (CREATE_NO_WINDOW on Windows)
 │   ├── git.py            # Git version control (asyncio subprocess, CREATE_NO_WINDOW on Windows)
 │   ├── nexus_create.py   # Create agent
@@ -350,10 +350,6 @@ class MyExecSkill(ExecutionSkill):
     MAX_TIMEOUT = 300   # Override class defaults
     DEFAULT_TIMEOUT = 30
 
-    def __init__(self, services):
-        super().__init__(services)
-        self._command: str = ""
-
     @property
     def name(self) -> str:
         return "my_exec_skill"
@@ -367,16 +363,22 @@ class MyExecSkill(ExecutionSkill):
         return {
             "type": "object",
             "properties": {
-                "command": {"type": "string"},
+                "program": {"type": "string"},
+                "args": {"type": "array", "items": {"type": "string"}, "default": []},
                 "timeout": {"type": "integer", "default": 30},
                 "cwd": {"type": "string"}
             },
-            "required": ["command"]
+            "required": ["program"]
         }
 
-    async def _create_process(self, work_dir: str | None) -> asyncio.subprocess.Process:
+    async def _create_process(
+        self,
+        work_dir: str | None,
+        program: str,
+        args: list[str],
+    ) -> asyncio.subprocess.Process:
         return await asyncio.create_subprocess_exec(
-            "my_program", self._command,
+            program, *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=work_dir,
@@ -384,15 +386,22 @@ class MyExecSkill(ExecutionSkill):
         )
 
     async def execute(
-        self, command: str = "", timeout: int = 30, cwd: str | None = None, **kwargs
+        self,
+        program: str = "",
+        args: list[str] | None = None,
+        timeout: int = 30,
+        cwd: str | None = None,
+        **kwargs,
     ) -> ToolResult:
-        if not command:
-            return ToolResult(error="Command required")
+        if not program:
+            return ToolResult(error="Program required")
+        if args is None:
+            args = []
 
-        self._command = command
         return await self._execute_subprocess(
             timeout=timeout,
             cwd=cwd,
+            process_factory=lambda work_dir: self._create_process(work_dir, program, args),
             timeout_message="Timed out after {timeout}s"
         )
 
@@ -656,8 +665,8 @@ batch item fields.
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `bash_safe` | Safe command execution (shlex.split, no shell operators) | `command`, `timeout?`, `cwd?` |
-| `shell_UNSAFE` | Full shell execution (pipes work, injection-vulnerable; uses detected shell family on Windows when possible) | `command`, `timeout?`, `cwd?` |
+| `exec` | Direct process execution (no shell operators, redirects, or builtins) | `program`, `args?`, `timeout?`, `cwd?` |
+| `shell_UNSAFE` | Full shell execution (pipes work, injection-vulnerable; `shell` selects auto/bash/gitbash/powershell/pwsh/cmd) | `command`, `shell?`, `timeout?`, `cwd?` |
 | `run_python` | Execute Python code | `code`, `timeout?`, `cwd?` |
 
 ### Version Control
@@ -833,7 +842,7 @@ tool_permissions = {
 
 ### Defense-in-Depth
 
-Execution skills (`bash_safe`, `shell_UNSAFE`, `run_python`) internally check permission level:
+Execution skills (`exec`, `shell_UNSAFE`, `run_python`) internally check permission level:
 
 ```python
 # In execute():
@@ -916,7 +925,7 @@ else:
 ```
 
 Skills with CREATE_NO_WINDOW support:
-- `bash_safe`, `shell_UNSAFE`
+- `exec`, `shell_UNSAFE`
 - `run_python`
 - `git`
 - `grep` (for ripgrep subprocess)

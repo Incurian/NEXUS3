@@ -26,7 +26,7 @@ class TestShouldRefreshGitContext:
             assert should_refresh_git_context(tool) is True, f"{tool} should trigger refresh"
 
     def test_exec_tools(self):
-        for tool in ("bash_safe", "shell_UNSAFE", "run_python"):
+        for tool in ("exec", "shell_UNSAFE", "run_python"):
             assert should_refresh_git_context(tool) is True, f"{tool} should trigger refresh"
 
     def test_gitlab_prefix(self):

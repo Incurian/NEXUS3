@@ -20,7 +20,7 @@ class SessionAllowances:
 
     Categories:
     - Write allowances: Per-file or per-directory for write operations
-    - Execution allowances: Per-directory or global for execution tools (bash, run_python)
+    - Execution allowances: Per-directory for execution identities (`exec`, `run_python`)
     - MCP allowances: Servers where all tools are allowed without per-tool confirmation
 
     Note: Read operations are unrestricted in TRUSTED mode.
@@ -29,11 +29,8 @@ class SessionAllowances:
     write_files: set[Path] = field(default_factory=set)
     write_directories: set[Path] = field(default_factory=set)
 
-    # Execution tools allowed globally (any working directory)
-    exec_global: set[str] = field(default_factory=set)
-
-    # Execution tools allowed in specific directories only
-    # Maps tool_name -> set of allowed directories
+    # Execution identities allowed in specific directories only.
+    # Maps executable identity key -> set of allowed directories.
     exec_directories: dict[str, set[Path]] = field(default_factory=dict)
 
     # MCP servers where all tools are allowed (user chose "allow all" at connection)
@@ -63,37 +60,13 @@ class SessionAllowances:
 
         return False
 
-    def is_exec_allowed(self, tool_name: str, cwd: Path | None = None) -> bool:
-        """Check if execution tool is allowed.
+    def is_exec_allowed(self, allowance_key: str, cwd: Path | None = None) -> bool:
+        """Backwards-compatible alias for directory-scoped execution checks."""
+        return self.is_exec_directory_allowed(allowance_key, cwd)
 
-        Args:
-            tool_name: The tool (e.g., "bash_safe", "run_python")
-            cwd: Working directory for the execution (None = current directory)
-
-        Returns:
-            True if the tool is allowed globally or in the given directory.
-        """
-        # Check global allowance first
-        if tool_name in self.exec_global:
-            return True
-
-        # Check directory-specific allowance
-        return self.is_exec_directory_allowed(tool_name, cwd)
-
-    def is_exec_directory_allowed(self, tool_name: str, cwd: Path | None = None) -> bool:
-        """Check if execution tool is allowed in a specific directory.
-
-        Unlike is_exec_allowed, this does NOT check global allowances.
-        Used for tools like run_python where global allow is too permissive.
-
-        Args:
-            tool_name: The tool (e.g., "run_python")
-            cwd: Working directory for the execution (None = current directory)
-
-        Returns:
-            True if the tool is allowed in the given directory.
-        """
-        if tool_name not in self.exec_directories:
+    def is_exec_directory_allowed(self, allowance_key: str, cwd: Path | None = None) -> bool:
+        """Check if an execution identity is allowed in a specific directory."""
+        if allowance_key not in self.exec_directories:
             return False
 
         # Check if cwd is within any allowed directory
@@ -101,7 +74,7 @@ class SessionAllowances:
             cwd = Path.cwd()
         resolved_cwd = cwd.resolve()
 
-        for allowed_dir in self.exec_directories[tool_name]:
+        for allowed_dir in self.exec_directories[allowance_key]:
             try:
                 if resolved_cwd.is_relative_to(allowed_dir):
                     return True
@@ -118,26 +91,12 @@ class SessionAllowances:
         """Add a directory to the write allowance list."""
         self.write_directories.add(path.resolve())
 
-    def add_exec_global(self, tool_name: str) -> None:
-        """Allow execution tool globally (any directory)."""
-        self.exec_global.add(tool_name)
-        # Remove from directory-specific if present (global supersedes)
-        self.exec_directories.pop(tool_name, None)
+    def add_exec_directory(self, allowance_key: str, directory: Path) -> None:
+        """Allow an execution identity in a specific directory."""
+        if allowance_key not in self.exec_directories:
+            self.exec_directories[allowance_key] = set()
 
-    def add_exec_directory(self, tool_name: str, directory: Path) -> None:
-        """Allow execution tool in a specific directory.
-
-        If the tool is already globally allowed, this is a no-op.
-        Otherwise, adds the directory to the list of allowed directories.
-        """
-        # Don't add directory restriction if already globally allowed
-        if tool_name in self.exec_global:
-            return
-
-        if tool_name not in self.exec_directories:
-            self.exec_directories[tool_name] = set()
-
-        self.exec_directories[tool_name].add(directory.resolve())
+        self.exec_directories[allowance_key].add(directory.resolve())
 
     def is_mcp_server_allowed(self, server_name: str) -> bool:
         """Check if MCP server tools are allowed without per-tool confirmation."""
@@ -170,10 +129,9 @@ class SessionAllowances:
         return {
             "write_files": [str(p) for p in self.write_files],
             "write_directories": [str(p) for p in self.write_directories],
-            "exec_global": list(self.exec_global),
             "exec_directories": {
-                tool: [str(p) for p in dirs]
-                for tool, dirs in self.exec_directories.items()
+                key: [str(p) for p in dirs]
+                for key, dirs in self.exec_directories.items()
             },
             "mcp_servers": list(self.mcp_servers),
             "mcp_tools": list(self.mcp_tools),
@@ -186,10 +144,9 @@ class SessionAllowances:
         return cls(
             write_files={Path(p).resolve() for p in data.get("write_files", [])},
             write_directories={Path(p).resolve() for p in data.get("write_directories", [])},
-            exec_global=set(data.get("exec_global", [])),
             exec_directories={
-                tool: {Path(p).resolve() for p in dirs}
-                for tool, dirs in data.get("exec_directories", {}).items()
+                key: {Path(p).resolve() for p in dirs}
+                for key, dirs in data.get("exec_directories", {}).items()
             },
             mcp_servers=set(data.get("mcp_servers", [])),
             mcp_tools=set(data.get("mcp_tools", [])),

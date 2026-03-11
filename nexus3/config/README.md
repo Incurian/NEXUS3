@@ -281,7 +281,7 @@ Top-level permissions configuration.
 | `destructive_tools` | `list[str]` | See below | Tools that require confirmation |
 
 **Default Destructive Tools:**
-- `write_file`, `edit_file`, `bash_safe`, `shell_UNSAFE`, `run_python`, `nexus_destroy`, `nexus_shutdown`
+- `write_file`, `edit_file`, `exec`, `shell_UNSAFE`, `run_python`, `nexus_destroy`, `nexus_shutdown`
 
 ### `PermissionPresetConfig`
 
@@ -498,7 +498,7 @@ Configuration for a single GitLab instance.
         "tool_permissions": {
           "write_file": {"enabled": false},
           "edit_file": {"enabled": false},
-          "bash_safe": {"timeout": 10}
+          "exec": {"timeout": 10}
         }
       }
     }

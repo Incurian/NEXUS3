@@ -1,6 +1,6 @@
 """P0.3: Test that subprocess execution does not leak secret environment variables.
 
-This tests the security bug where bash and run_python skills passed the
+This tests the security bug where exec and run_python skills passed the
 full os.environ to subprocesses, potentially leaking API keys, tokens,
 and other secrets.
 
@@ -171,25 +171,25 @@ class TestIntegrationWithSkills:
         return mock
 
     @pytest.mark.asyncio
-    async def test_bash_safe_does_not_leak_env(
+    async def test_exec_does_not_leak_env(
         self, monkeypatch: pytest.MonkeyPatch, mock_services
     ) -> None:
-        """BashSafeSkill should not leak arbitrary env vars."""
+        """ExecSkill should not leak arbitrary env vars."""
         # Set a secret that should NOT appear in subprocess
         monkeypatch.setenv("SECRET_TEST_VAR", "super_secret_value")
 
         # Import here to get fresh imports with monkeypatched env
-        from nexus3.skill.builtin.bash import BashSafeSkill
+        from nexus3.skill.builtin.bash import ExecSkill
 
-        skill = BashSafeSkill(mock_services)
-        result = await skill.execute(command="env", timeout=5)
+        skill = ExecSkill(mock_services)
+        result = await skill.execute(program="env", timeout=5)
 
         # The output should NOT contain our secret
         assert "SECRET_TEST_VAR" not in (result.output or ""), (
-            "SECURITY BUG: Secret env var leaked to bash subprocess"
+            "SECURITY BUG: Secret env var leaked to exec subprocess"
         )
         assert "super_secret_value" not in (result.output or ""), (
-            "SECURITY BUG: Secret value leaked to bash subprocess"
+            "SECURITY BUG: Secret value leaked to exec subprocess"
         )
 
     @pytest.mark.asyncio

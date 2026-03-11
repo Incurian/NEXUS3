@@ -445,10 +445,23 @@ Allow write_file?
   [p] View full details
 ```
 
-**Execution operations** (bash_safe, run_python):
+**Execution operations** (`exec`) command-scoped approval:
 ```
-Execute bash_safe?
-  Command: ls -la
+Execute exec?
+  Program: ls
+  Args: -la
+  Directory: /home/user
+
+  [1] Allow once
+  [2] Allow this command in this directory
+  [3] Deny
+  [p] View full details
+```
+
+**Python execution** (`run_python`) directory-scoped approval:
+```
+Execute run_python?
+  Command: print("hello")
   Directory: /home/user
 
   [1] Allow once
@@ -460,6 +473,7 @@ Execute bash_safe?
 **shell_UNSAFE** (always requires per-use approval):
 ```
 Execute shell_UNSAFE?
+  Shell: bash
   Command: rm -rf temp/
 
   [1] Allow once

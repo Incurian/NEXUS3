@@ -650,7 +650,7 @@ class PermissionEnforcer:
 #### Module Constants
 
 ```python
-EXEC_TOOLS = frozenset({"bash", "bash_safe", "shell_UNSAFE", "run_python", "git"})
+EXEC_TOOLS = frozenset({"exec", "shell_UNSAFE", "run_python", "git"})
 AGENT_TARGET_TOOLS = frozenset({"nexus_send", "nexus_status", "nexus_cancel", "nexus_destroy"})
 PATH_TOOLS = frozenset({
     "read_file", "write_file", "edit_file", "edit_lines", "append_file", "tail",
@@ -705,7 +705,7 @@ class ConfirmationController:
         """Request user confirmation. Returns DENY if callback is None."""
 
     @staticmethod
-    def apply_result(permissions, result, tool_call, target_path, exec_cwd):
+    def apply_result(permissions, result, tool_call, target_path, exec_cwd, exec_allowance_key=None):
         """Apply confirmation result to session allowances."""
 
     @staticmethod
@@ -722,8 +722,8 @@ Confirmation results:
 - `ALLOW_ONCE` - Allow this once, no persistent allowance
 - `ALLOW_FILE` - Allow writes to this file (for MCP: allow specific tool; for GitLab: allow skill@instance)
 - `ALLOW_WRITE_DIRECTORY` - Allow writes to parent directory
-- `ALLOW_EXEC_CWD` - Allow exec tool in this directory
-- `ALLOW_EXEC_GLOBAL` - Allow exec tool everywhere (for MCP: allow all tools from server)
+- `ALLOW_EXEC_CWD` - Allow this exec identity in this directory
+- `ALLOW_EXEC_GLOBAL` - Reserved for MCP/GitLab server-level approvals, not `exec`
 
 ### Path Semantics
 

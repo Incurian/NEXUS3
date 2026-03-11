@@ -218,14 +218,14 @@ async def test_create_authoritative_delta_ceiling_denial_preserves_wording(
     parent_permissions = parent.services.get("permissions")
     assert parent_permissions is not None
     parent_permissions.depth = 0
-    parent_permissions.tool_permissions["bash_safe"] = ToolPermission(enabled=False)
+    parent_permissions.tool_permissions["exec"] = ToolPermission(enabled=False)
 
     with pytest.raises(PermissionError, match="Permission delta would exceed parent ceiling"):
         await pool.create(
             config=AgentConfig(
                 agent_id="child-delta-ceiling-deny",
                 preset="sandboxed",
-                delta=PermissionDelta(enable_tools=["bash_safe"]),
+                delta=PermissionDelta(enable_tools=["exec"]),
                 parent_agent_id="parent-agent",
             )
         )

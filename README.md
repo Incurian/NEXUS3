@@ -920,13 +920,13 @@ URL validation blocks access to:
 
 - Process group kills on timeout (no orphaned processes)
 - Environment sanitization (API keys not passed to subprocesses)
-- `bash_safe` uses `shlex.split()` (no shell injection)
+- `exec` runs a direct argv vector with no shell interpretation
 - `shell_UNSAFE` always requires confirmation (no "allow always" option)
 
 ### Sandboxed Agent Tool Restrictions
 
 SANDBOXED agents have these tools disabled:
-- **Execution**: `bash_safe`, `shell_UNSAFE`, `run_python`
+- **Execution**: `exec`, `shell_UNSAFE`, `run_python`
 - **Agent management**: `nexus_create`, `nexus_destroy`, `nexus_shutdown`, `nexus_cancel`, `nexus_status`
 - **Exception**: `nexus_send` is enabled but restricted to `allowed_targets="parent"` (can only message parent)
 
@@ -962,10 +962,22 @@ Allow write_file?
   [p] View full details
 ```
 
-**Execution** (`bash_safe`, `run_python`):
+**Execution** (`exec`) command-scoped approval:
 ```
-Execute bash_safe?
-  Command: make build
+Execute exec?
+  Program: make
+  Args: build
+
+  [1] Allow once
+  [2] Allow this command in this directory
+  [3] Deny
+  [p] View full details
+```
+
+**Python execution** (`run_python`) directory-scoped approval:
+```
+Execute run_python?
+  Command: print("hello")
 
   [1] Allow once
   [2] Allow always in this directory
@@ -976,6 +988,7 @@ Execute bash_safe?
 **Shell unsafe** (`shell_UNSAFE`) — no "allow always" options, always requires explicit approval:
 ```
 Execute shell_UNSAFE?
+  Shell: bash
   Command: curl ... | sh
 
   [1] Allow once
@@ -1002,7 +1015,8 @@ The `[p]` option opens full tool call details in a pager for review before decid
 
 - **File allowances**: Allow writes to a specific file
 - **Directory allowances**: Allow writes anywhere in a directory
-- **Execution allowances**: Allow a tool in a specific working directory
+- **Execution allowances**: Allow a specific exec identity or `run_python`
+  in a specific working directory
 - **MCP allowances**: Allow a specific tool or all tools from a server
 
 These are stored in `SessionAllowances`, checked before prompting, and saved/restored with sessions.
@@ -1304,13 +1318,13 @@ See [Security & Permissions](#security--permissions) for behavior details.
 {
   "permissions": {
     "default_preset": "sandboxed",
-    "destructive_tools": ["write_file", "edit_file", "bash_safe", "shell_UNSAFE", "run_python", "nexus_destroy", "nexus_shutdown"],
+    "destructive_tools": ["write_file", "edit_file", "exec", "shell_UNSAFE", "run_python", "nexus_destroy", "nexus_shutdown"],
     "presets": {
       "researcher": {
         "extends": "sandboxed",
         "description": "Read-only research agent",
         "tool_permissions": {
-          "bash_safe": {"timeout": 10}
+          "exec": {"timeout": 10}
         }
       }
     }
@@ -1430,20 +1444,23 @@ invalid UTF-8 files instead of mangling bytes.
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `bash_safe` | Execute command (no shell operators) | `command`, `timeout`, `cwd` |
-| `shell_UNSAFE` | Execute with full shell (pipes, redirects) | `command`, `timeout`, `cwd` |
+| `exec` | Execute program directly (no shell operators) | `program`, `args`, `timeout`, `cwd` |
+| `shell_UNSAFE` | Execute with full shell (pipes, redirects) | `command`, `shell`, `timeout`, `cwd` |
 | `run_python` | Execute Python code | `code`, `timeout`, `cwd` |
 
 **Safety notes:**
-- `bash_safe` uses `shlex.split()` — shell operators (`|`, `&&`, `>`) do NOT work
+- `exec` launches a program directly — shell operators (`|`, `&&`, `>`) and shell builtins do NOT work
+- Prefer `exec` when shell syntax is not required
 - Use `shell_UNSAFE` only when you need shell features AND trust the input
 - `shell_UNSAFE` always requires confirmation (no "allow always" option)
+- `shell_UNSAFE` accepts `shell=auto|bash|gitbash|powershell|pwsh|cmd`
 - On Windows, prefer explicit interpreter execution for project scripts:
   `.venv\Scripts\python.exe script.py` (or `.venv/Scripts/python.exe` in Git Bash)
-- On Windows, `shell_UNSAFE` tries to use the active shell family (Git Bash or
-  PowerShell) when it can be resolved safely.
-- If you need shell semantics from `bash_safe`, invoke a shell explicitly, for example:
-  `bash -c "source .venv/Scripts/activate && python script.py"`
+- On Windows, `shell_UNSAFE(shell="auto", ...)` tries to use the active shell family when it can be resolved safely.
+- If you need shell semantics, select the shell explicitly when helpful, for example:
+  `shell_UNSAFE(shell="bash", command="source .venv/Scripts/activate && python script.py")`
+- On Windows Git Bash, prefer:
+  `shell_UNSAFE(shell="gitbash", command="source .venv/Scripts/activate && python script.py")`
 - Default timeout: 30 seconds, max: 300 seconds
 
 ### Version Control
@@ -2009,13 +2026,15 @@ Windows uses `taskkill /T /F` for process tree termination. Some processes may n
 
 The command is not an executable (commonly `source`, activation scripts, or unqualified script names).
 Use `.venv\Scripts\python.exe <script.py>` directly, or invoke a shell explicitly:
-`bash -c "<command>"`, `powershell -Command "<command>"`, or `cmd /c "<command>"`.
+`shell_UNSAFE(shell="bash", command="<command>")`,
+`shell_UNSAFE(shell="powershell", command="<command>")`, or
+`shell_UNSAFE(shell="cmd", command="<command>")`.
 
 **Tempo/AgentBridge tip (Windows)**
 
 In Unreal + AgentBridge workflows, commands that previously worked in an interactive shell often need explicit shell invocation when run through tools:
-- `bash -c "source .venv/Scripts/activate && python your_script.py"`
-- `bash -c "./scripts/your_script.sh"`
+- `shell_UNSAFE(shell="gitbash", command="source .venv/Scripts/activate && python your_script.py")`
+- `shell_UNSAFE(shell="bash", command="./scripts/your_script.sh")`
 
 **Problem: Relative paths resolve unexpectedly**
 

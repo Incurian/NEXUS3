@@ -43,7 +43,7 @@ class ConfirmationResult(Enum):
     # For write operations (write_file, edit_file)
     ALLOW_FILE = "allow_file"  # Allow always for this specific file
     ALLOW_WRITE_DIRECTORY = "allow_write_directory"  # Allow writes in this directory
-    # For execution operations (bash, run_python)
+    # For execution operations (exec, run_python)
     ALLOW_EXEC_CWD = "allow_exec_cwd"  # Allow tool in current working directory
     ALLOW_EXEC_GLOBAL = "allow_exec_global"  # Allow tool globally (any directory)
 
@@ -74,7 +74,7 @@ DESTRUCTIVE_ACTIONS = frozenset(
         "copy_file",  # Fix 1.2: Can overwrite destination files
         "rename",  # Fix 1.2: Can overwrite destination files
         "mkdir",  # Fix 1.2: Creates directories
-        "bash_safe",
+        "exec",
         "shell_unsafe",  # Tool name is shell_UNSAFE but we check lowercase
         "run_python",
         "nexus_destroy",
@@ -107,7 +107,7 @@ NETWORK_ACTIONS = frozenset(
 # NOTE: Use lowercase - allows_action() lowercases before checking
 SANDBOXED_DISABLED_TOOLS = frozenset(
     {
-        "bash_safe",
+        "exec",
         "shell_unsafe",  # Tool name is shell_UNSAFE but we check lowercase
         "run_python",
         "nexus_send",
@@ -293,6 +293,7 @@ class PermissionPolicy:
         action: str,
         path: Path | None = None,
         exec_cwd: Path | None = None,
+        exec_allowance_key: str | None = None,
         session_allowances: SessionAllowances | None = None,
     ) -> bool:
         """Check if this action requires user confirmation.
@@ -302,9 +303,10 @@ class PermissionPolicy:
         SANDBOXED: Never requires confirmation (just enforces sandbox).
 
         Args:
-            action: The action to check (e.g., "write_file", "bash").
+            action: The action to check (e.g., "write_file", "exec").
             path: Optional path being accessed (for write operations).
-            exec_cwd: Working directory for execution tools (bash, run_python).
+            exec_cwd: Working directory for execution tools (exec, run_python).
+            exec_allowance_key: Command identity key for directory-scoped exec allowances.
             session_allowances: Dynamic allowances from user's "allow always" responses.
 
         Returns:
@@ -327,17 +329,18 @@ class PermissionPolicy:
             return False
 
         # For execution tools, check exec allowances
-        if action_lower in ("bash_safe", "shell_unsafe", "run_python"):
+        if action_lower in ("exec", "shell_unsafe", "run_python"):
             # shell_UNSAFE ALWAYS requires confirmation - no "allow always" option
             # This is intentional: the unsafe shell should never be auto-approved
             if action_lower == "shell_unsafe":
                 return True
 
-            # bash_safe and run_python only allow directory scope, not global
-            # (arbitrary command/code execution is risky, but directory-scoped is reasonable)
+            if action_lower == "exec" and not exec_allowance_key:
+                return True
+
             if session_allowances:
-                # Only check directory allowances, ignore global
-                if session_allowances.is_exec_directory_allowed(action_lower, exec_cwd):
+                allowance_key = exec_allowance_key or action_lower
+                if session_allowances.is_exec_directory_allowed(allowance_key, exec_cwd):
                     return False
             return True
 

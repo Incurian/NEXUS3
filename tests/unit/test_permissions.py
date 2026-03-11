@@ -456,7 +456,6 @@ class TestPermissionPolicyConfirmation:
         cwd = Path.cwd()
 
         # Even if we add exec allowances, shell_UNSAFE should still require confirmation
-        allowances.add_exec_global("shell_unsafe")
         allowances.add_exec_directory("shell_unsafe", cwd)
 
         # shell_UNSAFE should ALWAYS require confirmation (no allowances work)
@@ -469,48 +468,73 @@ class TestPermissionPolicyConfirmation:
             is True
         )
 
-    def test_exec_tools_directory_only_allowance(self):
-        """bash_safe and run_python allow directory scope but not global."""
+    def test_exec_allowance_is_command_specific_and_directory_scoped(self):
+        """exec allowances are keyed to a command identity within one directory."""
         from nexus3.core.allowances import SessionAllowances
 
         policy = PermissionPolicy.from_level("trusted")
         cwd = Path.cwd()
         other_dir = Path("/tmp")
+        grep_key = "/usr/bin/grep"
+        sed_key = "/usr/bin/sed"
 
-        for tool in ("bash_safe", "run_python"):
-            # Test 1: Global allowance should be IGNORED
-            allowances_global = SessionAllowances()
-            allowances_global.add_exec_global(tool)
-            assert (
-                policy.requires_confirmation(
-                    tool,
-                    exec_cwd=cwd,
-                    session_allowances=allowances_global,
-                )
-                is True
-            )  # Still requires confirmation!
+        allowances = SessionAllowances()
+        allowances.add_exec_directory(grep_key, cwd)
 
-            # Test 2: Directory allowance should work
-            allowances_dir = SessionAllowances()
-            allowances_dir.add_exec_directory(tool, cwd)
-            assert (
-                policy.requires_confirmation(
-                    tool,
-                    exec_cwd=cwd,
-                    session_allowances=allowances_dir,
-                )
-                is False
-            )  # Now allowed
-
-            # Test 3: Different directory should still require confirmation
-            assert (
-                policy.requires_confirmation(
-                    tool,
-                    exec_cwd=other_dir,
-                    session_allowances=allowances_dir,
-                )
-                is True
+        assert (
+            policy.requires_confirmation(
+                "exec",
+                exec_cwd=cwd,
+                exec_allowance_key=grep_key,
+                session_allowances=allowances,
             )
+            is False
+        )
+        assert (
+            policy.requires_confirmation(
+                "exec",
+                exec_cwd=cwd,
+                exec_allowance_key=sed_key,
+                session_allowances=allowances,
+            )
+            is True
+        )
+        assert (
+            policy.requires_confirmation(
+                "exec",
+                exec_cwd=other_dir,
+                exec_allowance_key=grep_key,
+                session_allowances=allowances,
+            )
+            is True
+        )
+
+    def test_run_python_allowance_remains_directory_scoped(self):
+        """run_python keeps directory-scoped allowances."""
+        from nexus3.core.allowances import SessionAllowances
+
+        policy = PermissionPolicy.from_level("trusted")
+        cwd = Path.cwd()
+        other_dir = Path("/tmp")
+        allowances = SessionAllowances()
+        allowances.add_exec_directory("run_python", cwd)
+
+        assert (
+            policy.requires_confirmation(
+                "run_python",
+                exec_cwd=cwd,
+                session_allowances=allowances,
+            )
+            is False
+        )
+        assert (
+            policy.requires_confirmation(
+                "run_python",
+                exec_cwd=other_dir,
+                session_allowances=allowances,
+            )
+            is True
+        )
 
 
 class TestPermissionPolicyAllowsAction:
@@ -562,10 +586,10 @@ class TestPermissionPolicyAllowsAction:
         """allows_action is case-insensitive."""
         policy = PermissionPolicy.from_level("sandboxed")
 
-        # bash_safe is in SANDBOXED_DISABLED_TOOLS
-        assert policy.allows_action("BASH_SAFE") is False
-        assert policy.allows_action("Bash_Safe") is False
-        assert policy.allows_action("bash_safe") is False
+        # exec is in SANDBOXED_DISABLED_TOOLS
+        assert policy.allows_action("EXEC") is False
+        assert policy.allows_action("Exec") is False
+        assert policy.allows_action("exec") is False
         # shell_UNSAFE is also in SANDBOXED_DISABLED_TOOLS
         assert policy.allows_action("SHELL_UNSAFE") is False
         assert policy.allows_action("shell_unsafe") is False
@@ -731,7 +755,7 @@ class TestSessionAllowancesFromDict:
 
         data = {
             "exec_directories": {
-                "bash_safe": ["./scripts", "../parent"],
+                "/usr/bin/grep": ["./scripts", "../parent"],
                 "run_python": ["./py"],
             }
         }
@@ -751,7 +775,7 @@ class TestSessionAllowancesFromDict:
         original = SessionAllowances()
         original.add_write_file(tmp_path / "file.txt")
         original.add_write_directory(tmp_path / "dir")
-        original.add_exec_directory("bash_safe", tmp_path / "scripts")
+        original.add_exec_directory("/usr/bin/grep", tmp_path / "scripts")
 
         # Roundtrip
         data = original.to_dict()

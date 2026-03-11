@@ -16,7 +16,7 @@ _GIT_TIMEOUT = 5
 # Tools whose execution should trigger a git context refresh
 _GIT_REFRESH_TOOLS = frozenset({
     "git",           # Any git command could change state
-    "bash_safe",     # Could run git commands
+    "exec",          # Could run git commands
     "shell_UNSAFE",  # Could run git commands
     "run_python",    # Could run git via subprocess
     "write_file",    # Changes working tree
