@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -294,6 +295,70 @@ class TestDispatcherBasics:
 
         assert cancel_response.result["cancelled"] is False
         assert cancel_response.result["reason"] == "not_found_or_completed"
+
+    @pytest.mark.asyncio
+    async def test_incoming_notification_waits_for_reserved_session_turn(self) -> None:
+        """Incoming-turn UI should not fire until the session turn slot is acquired."""
+
+        class GatedSession:
+            halted_at_iteration_limit = False
+
+            def __init__(self) -> None:
+                self._lock = asyncio.Lock()
+
+            @asynccontextmanager
+            async def reserve_turn(self) -> AsyncIterator[None]:
+                async with self._lock:
+                    yield
+
+            async def send_locked(
+                self,
+                user_input: str,
+                use_tools: bool = False,
+                cancel_token: Any = None,
+                user_meta: dict[str, Any] | None = None,
+            ) -> AsyncIterator[str]:
+                yield "ok"
+
+        session = GatedSession()
+        dispatcher = Dispatcher(session)
+        notifications: list[dict[str, Any]] = []
+
+        async def on_incoming(payload: dict[str, Any]) -> None:
+            notifications.append(payload)
+
+        dispatcher.on_incoming_turn = on_incoming
+
+        turn_held = asyncio.Event()
+        release_turn = asyncio.Event()
+
+        async def hold_turn() -> None:
+            async with session.reserve_turn():
+                turn_held.set()
+                await release_turn.wait()
+
+        hold_task = asyncio.create_task(hold_turn())
+        await turn_held.wait()
+
+        request = Request(
+            jsonrpc="2.0",
+            method="send",
+            params={"content": "hello", "source": "rpc"},
+            id=1,
+        )
+        dispatch_task = asyncio.create_task(dispatcher.dispatch(request))
+
+        await asyncio.sleep(0.05)
+        assert notifications == []
+
+        release_turn.set()
+        response = await dispatch_task
+        await hold_task
+
+        assert response is not None
+        assert response.error is None
+        assert response.result is not None
+        assert [payload["phase"] for payload in notifications] == ["started", "ended"]
 
 
 class TestRequestContextPropagation:

@@ -325,10 +325,13 @@ Per-agent authorization is kernel-authoritative for `send`, `cancel`, `compact`,
 
 #### Features
 
-- Turn locking (one request at a time per agent)
+- Reserves the session's shared turn slot before `send` execution, so RPC
+  sends cannot overlap with direct REPL turns or `nexus_send` on the same
+  target session
 - Cancellation tokens for cooperative cancellation
 - Source attribution for message provenance
-- REPL notifications via `on_incoming_turn` hook
+- REPL notifications via `on_incoming_turn` hook, emitted only once the
+  target session turn actually begins
 - YOLO safety: blocks RPC sends to YOLO agents when no REPL is connected
 
 ### Shared Infrastructure (`dispatch_core.py`)

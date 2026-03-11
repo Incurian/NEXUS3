@@ -67,6 +67,8 @@ class NexusSendSkill(NexusSkill):
 
         # Get caller's agent_id for source attribution (Phase 5b)
         sender_id = self._services.get("agent_id")  # May be None
+        if isinstance(sender_id, str) and sender_id == agent_id:
+            return ToolResult(error="nexus_send cannot target the current agent")
 
         async def send_and_format(client: Any) -> dict[str, Any]:
             """Send message and format response with halt warning if needed."""

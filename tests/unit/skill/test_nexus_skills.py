@@ -42,3 +42,20 @@ async def test_nexus_send_rejects_whitespace_only_content() -> None:
     assert not result.success
     assert result.error == "No content provided"
     send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_nexus_send_rejects_targeting_current_agent() -> None:
+    send = AsyncMock(return_value={"content": "ok"})
+
+    services = ServiceContainer()
+    services.register("agent_api", SimpleNamespace(send=send))
+    services.register("agent_id", "worker-1")
+    services.set_cwd("/workspace")
+    skill = NexusSendSkill(services)
+
+    result = await skill.execute(agent_id="worker-1", content="hello")
+
+    assert not result.success
+    assert result.error == "nexus_send cannot target the current agent"
+    send.assert_not_called()

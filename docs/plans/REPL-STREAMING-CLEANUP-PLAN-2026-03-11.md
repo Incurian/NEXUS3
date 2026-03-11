@@ -186,6 +186,14 @@ Implementation status (in progress):
   terminal-control stripping vs Rich-safe escaping
 - `nexus3.display` package-root exports now quarantine the legacy display
   stack from the active public surface
+- follow-up live-test regression fix:
+  - `Session.send()` / `Session.run_turn()` now serialize through a shared
+    per-session turn slot
+  - dispatcher incoming-turn notifications now wait until that turn slot is
+    actually acquired, so queued incoming RPC sends do not interrupt an active
+    REPL tool turn
+  - `nexus_send` now rejects self-target to avoid deadlocking behind its own
+    active turn
 
 ## Interaction Inventory
 
@@ -311,6 +319,14 @@ Validation completed so far:
   completed without dropped lines or duplicate reset fragments
   - note: this shell has `console.no_color=True`, so the live smoke confirmed
     framing/order correctness rather than visible magenta color
+- incoming-turn regression validation:
+  - `.venv/bin/pytest -q tests/unit/rpc/test_schema_ingress_wiring.py
+    tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py
+    tests/unit/session/test_session_cancellation.py
+    tests/unit/skill/test_nexus_skills.py tests/unit/display/test_safe_sink.py
+    tests/unit/display/test_escape_sanitization.py
+    tests/unit/cli/test_repl_safe_sink.py tests/unit/test_display.py`
+    (`323 passed`)
 
 ## Documentation Updates
 

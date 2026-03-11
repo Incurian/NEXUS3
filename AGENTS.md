@@ -239,6 +239,15 @@ Current milestone:
     - `nexus3.display` package-root exports now expose only the active
       spinner-centric surface; legacy display-stack modules remain direct-import
       only during cleanup
+    - follow-up fix for live testing regression:
+      - `Session.send()` / `Session.run_turn()` now serialize on a shared
+        per-session turn slot so direct REPL turns, RPC sends, and
+        `nexus_send` cannot overlap on the same session
+      - dispatcher incoming-turn notifications now fire only after that turn
+        slot is actually acquired, preventing queued incoming sends from
+        interrupting an already-running REPL tool turn
+      - `nexus_send` now fails closed on self-target instead of deadlocking
+        behind its own active turn
   - focused validation passed:
     - `.venv/bin/pytest -q tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py` (`93 passed`)
     - `.venv/bin/ruff check nexus3/display/safe_sink.py nexus3/display/spinner.py nexus3/display/theme.py nexus3/display/__init__.py nexus3/cli/repl.py nexus3/cli/repl_formatting.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py`
@@ -248,8 +257,12 @@ Current milestone:
       - `git diff --check`
       - stdout-proxy smoke for styled streamed lines + tool-block boundary
       - live spinner smoke completed without dropped lines or duplicate reset fragments
+      - `.venv/bin/pytest -q tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/session/test_session_cancellation.py tests/unit/skill/test_nexus_skills.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py tests/unit/test_display.py` (`323 passed`)
+      - `.venv/bin/ruff check nexus3/session/session.py nexus3/rpc/dispatcher.py nexus3/skill/builtin/nexus_send.py nexus3/display/safe_sink.py nexus3/display/spinner.py nexus3/display/theme.py nexus3/display/__init__.py nexus3/cli/repl.py nexus3/cli/repl_formatting.py tests/unit/rpc/test_schema_ingress_wiring.py tests/unit/test_agent_api.py tests/unit/test_rpc_dispatcher.py tests/unit/session/test_session_cancellation.py tests/unit/skill/test_nexus_skills.py tests/unit/display/test_safe_sink.py tests/unit/display/test_escape_sanitization.py tests/unit/cli/test_repl_safe_sink.py tests/unit/test_display.py`
+      - `.venv/bin/mypy nexus3/session/session.py nexus3/rpc/dispatcher.py nexus3/skill/builtin/nexus_send.py nexus3/display/safe_sink.py nexus3/display/spinner.py nexus3/display/theme.py nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
   - next gate:
-    - branch is locally ready for commit; real visible color still needs
+    - branch is locally ready for another live retest of incoming RPC /
+      `nexus_send` while a REPL tool turn is active; visible color still needs
       confirmation in a color-enabled terminal because this shell currently
       reports `no_color=True`
 - Trace subagent scope complete locally (2026-03-11):

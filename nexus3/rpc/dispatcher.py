@@ -6,6 +6,7 @@ import asyncio
 import logging
 import secrets
 from collections.abc import Callable, Coroutine
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError as PydanticValidationError
@@ -286,6 +287,39 @@ class Dispatcher:
         except Exception:
             logger.debug("incoming-turn hook failed", exc_info=True)
 
+    @asynccontextmanager
+    async def _reserve_session_turn(self) -> Any:
+        """Reserve the target session turn slot if it exposes one."""
+        reserve_turn = getattr(self._session, "reserve_turn", None)
+        if callable(reserve_turn):
+            async with reserve_turn():
+                yield
+            return
+
+        async with self._turn_lock:
+            yield
+
+    def _stream_session_send(
+        self,
+        content: str,
+        *,
+        cancel_token: CancellationToken,
+        user_meta: dict[str, str] | None,
+    ) -> Any:
+        """Return the appropriate session send iterator for the reserved turn."""
+        send_locked = getattr(self._session, "send_locked", None)
+        if callable(send_locked):
+            return send_locked(
+                content,
+                cancel_token=cancel_token,
+                user_meta=user_meta,
+            )
+        return self._session.send(
+            content,
+            cancel_token=cancel_token,
+            user_meta=user_meta,
+        )
+
     async def _handle_send(
         self,
         params: dict[str, Any],
@@ -410,7 +444,7 @@ class Dispatcher:
         self._active_requests[request_id] = token
 
         try:
-            async with self._turn_lock:
+            async with self._reserve_session_turn():
                 # Check cancellation before starting
                 if token.is_cancelled:
                     return {"cancelled": True, "request_id": request_id}
@@ -430,22 +464,19 @@ class Dispatcher:
 
                 chunks: list[str] = []
                 try:
+                    send_iter = self._stream_session_send(
+                        content,
+                        cancel_token=token,
+                        user_meta=user_meta,
+                    )
                     # Wrap in agent context for correct raw log routing
                     if self._log_multiplexer and self._agent_id:
                         with self._log_multiplexer.agent_context(self._agent_id):
-                            async for chunk in self._session.send(
-                                content,
-                                cancel_token=token,
-                                user_meta=user_meta,
-                            ):
+                            async for chunk in send_iter:
                                 token.raise_if_cancelled()
                                 chunks.append(chunk)
                     else:
-                        async for chunk in self._session.send(
-                            content,
-                            cancel_token=token,
-                            user_meta=user_meta,
-                        ):
+                        async for chunk in send_iter:
                             token.raise_if_cancelled()
                             chunks.append(chunk)
 

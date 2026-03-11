@@ -115,6 +115,9 @@ async def send(
 ```
 
 This is the traditional callback-based API. Tool events are dispatched via callback functions. `send()` and `run_turn()` now share turn-entry preflight/reset through `turn_entry_runtime.prepare_turn_entry(...)` before streaming begins. Tool-loop callback adaptation is handled directly by `streaming_runtime.execute_tool_loop_streaming(...)`, which is wired to `tool_loop_events_runtime.execute_tool_loop_events(...)`. When tools are not active, `send()` delegates simple streaming to `simple_turn_runtime.execute_simple_send(...)`.
+`send()` and `run_turn()` also serialize through a shared per-session turn slot,
+so direct REPL turns, RPC sends, and `nexus_send` cannot overlap against the
+same session.
 The shared preflight currently does three important repair steps before the new
 user message is appended in context mode: it flushes any still-valid cancelled
 tool IDs into matching assistant tool batches, recompiles the existing context
@@ -141,6 +144,8 @@ The newer event-based API yields `SessionEvent` objects, enabling cleaner UI dec
 Like `send()`, `run_turn()` enters through
 `turn_entry_runtime.prepare_turn_entry(...)` for shared context-mode
 preflight/reset handling.
+It shares the same per-session turn slot as `send()`, so callback-based and
+event-based turn entrypoints cannot run concurrently on one session.
 Internally this routes directly to
 `tool_loop_events_runtime.execute_tool_loop_events(...)`.
 When tools are not active, `run_turn()` delegates simple event streaming to

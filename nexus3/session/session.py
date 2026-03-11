@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -210,6 +211,7 @@ class Session:
 
         # Lazy-loaded compaction provider (uses different model if configured)
         self._compaction_provider: AsyncProvider | None = None
+        self._turn_lock = asyncio.Lock()
 
     def _log_event(self, event: "SessionEvent") -> None:
         """Dispatch event to logger (DB always, verbose.md optional)."""
@@ -355,6 +357,12 @@ class Session:
         """Timestamp of the last action taken by the agent (tool call or response)."""
         return self._last_action_at
 
+    @asynccontextmanager
+    async def reserve_turn(self) -> AsyncIterator[None]:
+        """Reserve the session for exactly one in-flight turn."""
+        async with self._turn_lock:
+            yield
+
     def _build_tool_execution_callables(
         self,
     ) -> tuple[
@@ -388,7 +396,7 @@ class Session:
 
         return execute_single_tool, execute_tools_parallel
 
-    async def send(
+    async def send_locked(
         self,
         user_input: str,
         use_tools: bool = False,
@@ -471,7 +479,24 @@ class Session:
             # Clear current logger after send completes
             clear_current_logger()
 
-    async def run_turn(
+    async def send(
+        self,
+        user_input: str,
+        use_tools: bool = False,
+        cancel_token: "CancellationToken | None" = None,
+        user_meta: dict[str, Any] | None = None,
+    ) -> AsyncIterator[str]:
+        """Send a message and stream the response."""
+        async with self.reserve_turn():
+            async for chunk in self.send_locked(
+                user_input,
+                use_tools=use_tools,
+                cancel_token=cancel_token,
+                user_meta=user_meta,
+            ):
+                yield chunk
+
+    async def run_turn_locked(
         self,
         user_input: str,
         use_tools: bool = False,
@@ -539,6 +564,23 @@ class Session:
         finally:
             # Clear current logger after turn completes
             clear_current_logger()
+
+    async def run_turn(
+        self,
+        user_input: str,
+        use_tools: bool = False,
+        cancel_token: "CancellationToken | None" = None,
+        user_meta: dict[str, Any] | None = None,
+    ) -> AsyncIterator[SessionEvent]:
+        """Send a message and yield events during processing."""
+        async with self.reserve_turn():
+            async for event in self.run_turn_locked(
+                user_input,
+                use_tools=use_tools,
+                cancel_token=cancel_token,
+                user_meta=user_meta,
+            ):
+                yield event
 
     # === Context Compaction ===
 

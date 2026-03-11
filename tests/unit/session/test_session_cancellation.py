@@ -657,3 +657,58 @@ class TestCompilerBackedPreflightNormalization:
             not (msg.role == Role.TOOL and msg.tool_call_id == "stale-tool-id")
             for msg in context.messages
         )
+
+
+class MockProviderDetectConcurrentTurns:
+    """Provider that records whether two Session.send() calls overlap."""
+
+    def __init__(self) -> None:
+        self.active_calls = 0
+        self.overlap_detected = False
+        self.inputs: list[str] = []
+
+    async def stream(
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None = None,
+        dynamic_context: str | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        user_text = messages[-1].content
+        self.inputs.append(user_text)
+        self.active_calls += 1
+        if self.active_calls > 1:
+            self.overlap_detected = True
+
+        try:
+            await asyncio.sleep(0.05)
+            yield ContentDelta(text=f"{user_text}-ok")
+            yield StreamComplete(
+                message=Message(role=Role.ASSISTANT, content=f"{user_text}-ok", tool_calls=())
+            )
+        finally:
+            self.active_calls -= 1
+
+
+class TestSessionTurnSerialization:
+    """Concurrent turn entrypoints should serialize on one session."""
+
+    @pytest.mark.asyncio
+    async def test_send_calls_do_not_overlap_on_same_session(self) -> None:
+        provider = MockProviderDetectConcurrentTurns()
+        session = Session(provider=provider)
+
+        async def collect(prompt: str) -> str:
+            chunks: list[str] = []
+            async for chunk in session.send(prompt):
+                chunks.append(chunk)
+            return "".join(chunks)
+
+        first, second = await asyncio.gather(
+            asyncio.create_task(collect("first")),
+            asyncio.create_task(collect("second")),
+        )
+
+        assert first == "first-ok"
+        assert second == "second-ok"
+        assert provider.inputs == ["first", "second"]
+        assert provider.overlap_detected is False
