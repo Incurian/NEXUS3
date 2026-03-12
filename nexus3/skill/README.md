@@ -698,7 +698,7 @@ Process guidance:
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
 | `exec` | Direct process execution (no shell operators, redirects, or builtins) | `program`, `args?`, `timeout?`, `cwd?` |
-| `shell_UNSAFE` | Full shell execution (pipes work, injection-vulnerable; `shell` selects auto/bash/gitbash/powershell/pwsh/cmd) | `command`, `shell?`, `timeout?`, `cwd?` |
+| `shell_UNSAFE` | Full shell execution (pipes work, injection-vulnerable; `shell` selects auto/bash/zsh/gitbash/powershell/pwsh/cmd) | `command`, `shell?`, `timeout?`, `cwd?` |
 | `run_python` | Execute Python code | `code`, `timeout?`, `cwd?` |
 
 ### Version Control

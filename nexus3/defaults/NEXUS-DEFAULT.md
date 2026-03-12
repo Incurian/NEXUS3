@@ -197,13 +197,16 @@ Execution notes:
 - `exec` executes binaries directly by default.
 - `source` is a shell builtin; `exec` cannot execute `source` directly as a command.
 - On Windows, prefer explicit interpreters: `.venv/Scripts/python.exe script.py`.
-- `shell_UNSAFE` accepts `shell=auto|bash|gitbash|powershell|pwsh|cmd`.
+- `shell_UNSAFE` accepts `shell=auto|bash|zsh|gitbash|powershell|pwsh|cmd`.
+- On macOS, `shell_UNSAFE(shell="auto", ...)` prefers a supported host shell from `$SHELL` when it can be resolved safely. This usually means zsh.
 - On Windows, `shell_UNSAFE(shell="auto", ...)` tries to use the active shell family when it can be resolved safely.
 - For shell semantics (activation scripts, pipes, `&&`), use `shell_UNSAFE` with trusted input.
 - Prefer selecting the shell explicitly when helpful:
   `shell_UNSAFE(shell="bash", command="<command>")`,
+  `shell_UNSAFE(shell="zsh", command="<command>")`,
   `shell_UNSAFE(shell="powershell", command="<command>")`,
   `shell_UNSAFE(shell="cmd", command="<command>")`.
+- Example (macOS zsh): `shell_UNSAFE(shell="zsh", command="source .venv/bin/activate && python your_script.py")`.
 - Example (venv activation + script on Windows Git Bash): `shell_UNSAFE(shell="gitbash", command="source .venv/Scripts/activate && python your_script.py")`.
 - Example (shell script): `shell_UNSAFE(shell="bash", command="./scripts/your_script.sh")`.
 - Use an explicit `cwd` when project-relative commands fail; relative `cwd` resolves from the agent's current working directory.

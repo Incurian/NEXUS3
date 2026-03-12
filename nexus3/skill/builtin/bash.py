@@ -27,6 +27,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from nexus3.core.permissions import PermissionLevel
@@ -37,6 +38,9 @@ from nexus3.skill.builtin.env import get_safe_env
 
 if TYPE_CHECKING:
     from nexus3.skill.services import ServiceContainer
+
+
+_POSIX_LOGIN_SHELLS = frozenset({"bash", "zsh", "sh", "dash", "ksh"})
 
 
 def _check_permission_level(services: "ServiceContainer", skill_name: str) -> ToolResult | None:
@@ -89,6 +93,59 @@ async def _execute_with_process_factory(
         return ToolResult(error=f"Failed to execute: {e}")
     except Exception as e:
         return ToolResult(error=f"Error during execution: {e}")
+
+
+def _resolve_unix_shell_program(
+    shell_name: str,
+    path_value: str | None,
+) -> str:
+    """Resolve an explicit Unix shell executable or raise a clear error."""
+    resolved = shutil.which(shell_name, path=path_value)
+    if resolved is None:
+        raise OSError(f"Shell '{shell_name}' is not available on this host")
+    return resolved
+
+
+def _preferred_unix_auto_shell(
+    env: dict[str, str],
+) -> tuple[str, list[str]] | None:
+    """Return an explicit host shell invocation for Unix auto mode when supported."""
+    if sys.platform == "darwin":
+        path_value = env.get("PATH")
+        candidates: list[str] = []
+
+        shell_env = env.get("SHELL", "").strip()
+        if shell_env:
+            candidates.append(shell_env)
+
+        candidates.extend(["/bin/zsh", "zsh"])
+
+        seen: set[str] = set()
+        for candidate in candidates:
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+
+            if os.path.isabs(candidate):
+                resolved = candidate if os.path.isfile(candidate) else None
+            else:
+                resolved = shutil.which(candidate, path=path_value)
+
+            if resolved is None:
+                continue
+
+            shell_name = Path(resolved).name.lower()
+            if shell_name in _POSIX_LOGIN_SHELLS:
+                return resolved, ["-lc"]
+            if shell_name == "fish":
+                return resolved, ["-l", "-c"]
+            if shell_name == "pwsh":
+                return resolved, ["-NoProfile", "-Command"]
+            if shell_name == "powershell":
+                return resolved, ["-NoProfile", "-Command"]
+
+        return None
+    return None
 
 
 class ExecSkill(ExecutionSkill):
@@ -246,7 +303,7 @@ class ShellUnsafeSkill(ExecutionSkill):
                 },
                 "shell": {
                     "type": "string",
-                    "enum": ["auto", "bash", "gitbash", "powershell", "pwsh", "cmd"],
+                    "enum": ["auto", "bash", "zsh", "gitbash", "powershell", "pwsh", "cmd"],
                     "description": "Shell family to use (default: auto)",
                     "default": "auto",
                 },
@@ -275,7 +332,7 @@ class ShellUnsafeSkill(ExecutionSkill):
             raise ValueError("Command is required")
 
         requested_shell = shell.strip().lower()
-        if requested_shell not in {"auto", "bash", "gitbash", "powershell", "pwsh", "cmd"}:
+        if requested_shell not in {"auto", "bash", "zsh", "gitbash", "powershell", "pwsh", "cmd"}:
             raise ValueError(f"Unsupported shell: {shell!r}")
 
         if sys.platform == "win32":
@@ -340,10 +397,25 @@ class ShellUnsafeSkill(ExecutionSkill):
                 )
             if requested_shell == "bash":
                 raise OSError("Shell 'bash' is not supported on Windows; use 'gitbash'")
+            if requested_shell == "zsh":
+                raise OSError("Shell 'zsh' is only supported on Unix-like hosts")
             raise OSError(f"Unsupported shell on Windows: {shell!r}")
 
         env = get_safe_env(work_dir)
         if requested_shell == "auto":
+            preferred = _preferred_unix_auto_shell(env)
+            if preferred is not None:
+                executable, shell_args = preferred
+                return await asyncio.create_subprocess_exec(
+                    executable,
+                    *shell_args,
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=work_dir,
+                    env=env,
+                    start_new_session=True,
+                )
             return await asyncio.create_subprocess_shell(
                 command,
                 stdout=asyncio.subprocess.PIPE,
@@ -352,11 +424,10 @@ class ShellUnsafeSkill(ExecutionSkill):
                 env=env,
                 start_new_session=True,
             )
-        if requested_shell == "bash":
-            if shutil.which("bash", path=env.get("PATH")) is None:
-                raise OSError("Shell 'bash' is not available on this host")
+        if requested_shell in {"bash", "zsh"}:
+            executable = _resolve_unix_shell_program(requested_shell, env.get("PATH"))
             return await asyncio.create_subprocess_exec(
-                "bash", "-lc", command,
+                executable, "-lc", command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=work_dir,

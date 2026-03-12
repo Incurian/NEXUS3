@@ -1540,12 +1540,17 @@ invalid UTF-8 files instead of mangling bytes.
 - Prefer `exec` when shell syntax is not required
 - Use `shell_UNSAFE` only when you need shell features AND trust the input
 - `shell_UNSAFE` always requires confirmation (no "allow always" option)
-- `shell_UNSAFE` accepts `shell=auto|bash|gitbash|powershell|pwsh|cmd`
+- `shell_UNSAFE` accepts `shell=auto|bash|zsh|gitbash|powershell|pwsh|cmd`
 - On Windows, prefer explicit interpreter execution for project scripts:
   `.venv\Scripts\python.exe script.py` (or `.venv/Scripts/python.exe` in Git Bash)
-- On Windows, `shell_UNSAFE(shell="auto", ...)` tries to use the active shell family when it can be resolved safely.
+- On macOS, `shell_UNSAFE(shell="auto", ...)` prefers a supported host shell
+  from `$SHELL` when it can be resolved safely. This usually means zsh.
+- On Windows, `shell_UNSAFE(shell="auto", ...)` tries to use the active shell
+  family when it can be resolved safely.
 - If you need shell semantics, select the shell explicitly when helpful, for example:
   `shell_UNSAFE(shell="bash", command="source .venv/Scripts/activate && python script.py")`
+- On macOS, prefer:
+  `shell_UNSAFE(shell="zsh", command="source .venv/bin/activate && python script.py")`
 - On Windows Git Bash, prefer:
   `shell_UNSAFE(shell="gitbash", command="source .venv/Scripts/activate && python script.py")`
 - Default timeout: 30 seconds, max: 300 seconds
@@ -2117,6 +2122,7 @@ Windows uses `taskkill /T /F` for process tree termination. Some processes may n
 The command is not an executable (commonly `source`, activation scripts, or unqualified script names).
 Use `.venv\Scripts\python.exe <script.py>` directly, or invoke a shell explicitly:
 `shell_UNSAFE(shell="bash", command="<command>")`,
+`shell_UNSAFE(shell="zsh", command="<command>")`,
 `shell_UNSAFE(shell="powershell", command="<command>")`, or
 `shell_UNSAFE(shell="cmd", command="<command>")`.
 

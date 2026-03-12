@@ -532,7 +532,7 @@ Allow MCP tool 'mcp_github_create_issue'?
 | `format_tool_params(arguments, max_length)` | Format args as truncated string |
 | `smart_truncate(value, max_length, preserve_ends)` | Smart string truncation |
 | `_open_in_editor(content, title)` | Open content in external editor for `[p]` popup |
-| `_get_system_editor()` | Detect editor (VISUAL/EDITOR env, notepad on WSL/Windows, less/cat fallback) |
+| `_get_system_editor()` | Detect editor (parsed `VISUAL`/`EDITOR`; TextEdit via `open` on macOS; notepad on WSL/Windows; pager fallback elsewhere) |
 
 #### Security Features
 

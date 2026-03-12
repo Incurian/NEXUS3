@@ -232,24 +232,39 @@ ad-hoc compatibility shim.
 
 ## Current Handoff
 
-### 2026-03-12 - AGENTS/CLAUDE handoff cleanup active locally
+### 2026-03-12 - macOS compatibility audit active locally
 
 - Branch: `master`
-- Baseline head: `d649f50` (`release: cut v1.0.0`)
+- Baseline head: `efe8811` (`packaging: fix public metadata`)
 - Active slice:
-  - reduce `AGENTS.md` to stable guidance plus a single current handoff block
-  - trim `CLAUDE.md` to mirrored general guidance with a pointer back to this
-    section
+  - complete Linux follow-on audit after the macOS compatibility slice
+  - preserve the cross-platform editor parsing fix
+  - scope host-shell-aware `shell_UNSAFE(auto)` back to macOS only so Linux
+    keeps prior generic-shell semantics under `auto`
 - Plan:
-  - [docs/plans/AGENTS-CLAUDE-HANDOFF-RESTRUCTURE-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/AGENTS-CLAUDE-HANDOFF-RESTRUCTURE-PLAN-2026-03-12.md)
-- Important current repo state:
-  - `origin/master` and tag `v1.0.0` point at `d649f50`
-  - [CHANGELOG.md](/home/inc/repos/NEXUS3/CHANGELOG.md) includes the release
-    note telling existing checkouts to rerun their install step because
-    `psutil` was added recently as a runtime dependency
+  - [docs/plans/MACOS-COMPATIBILITY-AUDIT-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/MACOS-COMPATIBILITY-AUDIT-PLAN-2026-03-12.md)
+  - [docs/plans/LINUX-COMPATIBILITY-AUDIT-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/LINUX-COMPATIBILITY-AUDIT-PLAN-2026-03-12.md)
+- Implemented locally:
+  - `nexus3/cli/editor_preview.py`
+    - parses `VISUAL` / `EDITOR` as real command vectors
+    - defaults to blocking TextEdit via `open` on macOS instead of pager-only
+      fallback
+  - `nexus3/skill/builtin/bash.py`
+    - adds explicit `shell="zsh"`
+    - makes macOS `shell="auto"` prefer a supported host shell from `$SHELL`
+      when it can be resolved safely, which covers the common macOS zsh case
+    - keeps Linux `shell="auto"` on the generic shell path to preserve
+      established behavior there
 - Focused validation passed:
-  - `wc -l AGENTS.md CLAUDE.md` -> `254 / 177`
-  - `.venv/bin/ruff check AGENTS.md CLAUDE.md docs/plans/README.md docs/plans/AGENTS-CLAUDE-HANDOFF-RESTRUCTURE-PLAN-2026-03-12.md`
+  - `.venv/bin/pytest -q tests/unit/cli/test_editor_preview.py tests/unit/skill/test_bash_unix_behavior.py tests/unit/skill/test_bash_windows_behavior.py tests/unit/test_repl_commands.py -k 'tool_opens_editor or test_'` (`84 passed`)
+  - `.venv/bin/ruff check nexus3/cli/editor_preview.py nexus3/skill/builtin/bash.py tests/unit/cli/test_editor_preview.py tests/unit/skill/test_bash_unix_behavior.py tests/unit/skill/test_bash_windows_behavior.py README.md nexus3/cli/README.md nexus3/skill/README.md nexus3/defaults/NEXUS-DEFAULT.md docs/plans/README.md docs/plans/MACOS-COMPATIBILITY-AUDIT-PLAN-2026-03-12.md docs/plans/LINUX-COMPATIBILITY-AUDIT-PLAN-2026-03-12.md AGENTS.md`
+  - `.venv/bin/mypy nexus3/cli/editor_preview.py nexus3/skill/builtin/bash.py`
   - `git diff --check`
+- Residual note:
+  - still no live macOS hardware validation
+  - path/security behavior on case-insensitive APFS volumes remains the main
+    unverified mac-specific risk
+  - no obvious Linux code-path defect surfaced in the follow-on sweep beyond
+    the now-contained `shell_UNSAFE(auto)` semantic change
 - Next gate:
-  - commit this cleanup slice
+  - user review or commit/push of the macOS/Linux compatibility slice
