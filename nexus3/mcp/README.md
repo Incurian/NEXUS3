@@ -494,8 +494,9 @@ result = await adapter.execute(owner="octocat", repo="hello-world")
   validation exceptions directly
 - Sanitizes MCP output via `sanitize_for_display()` for terminal safety
 - Converts `MCPToolResult` to NEXUS3 `ToolResult` with error handling
-- Successful `mcp_*` tool calls now surface bounded inline previews in the REPL
-  so returned text is visible without digging through logs
+- Successful `mcp_*` tool calls now use the same bounded inline REPL preview
+  block shown for other successful tools, so returned text is visible without
+  digging through logs
 - Provides formatted error messages for timeout and transport errors
 
 ### MCPClient (`client.py`)

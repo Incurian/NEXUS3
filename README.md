@@ -68,9 +68,9 @@ System prompts (`NEXUS.md`) and config files load from multiple directory layers
 ### MCP Integration
 
 Connect external tools via the Model Context Protocol. Supports stdio and HTTP transports, with environment variable sanitization, graceful degradation on connection failure, and lazy reconnection. MCP tools integrate into the same permission system as built-in skills.
-Successful MCP tool calls now surface a bounded inline preview in the REPL so
+Successful tool calls now surface a bounded inline preview in the REPL so
 returned data is visible without opening logs; long results are truncated by
-default.
+default. MCP tools use the same standard preview path.
 
 ---
 

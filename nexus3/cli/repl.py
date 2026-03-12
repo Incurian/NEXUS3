@@ -29,6 +29,7 @@ Architecture in unified mode:
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -66,7 +67,6 @@ from nexus3.cli.repl_formatting import (
     _format_incoming_response_sent_line,
     _format_incoming_started_line,
     _format_invalid_port_spec_line,
-    _format_mcp_result_preview_lines,
     _format_plain_message_line,
     _format_port_in_use_by_other_service_line,
     _format_provider_initialization_failed_line,
@@ -90,7 +90,7 @@ from nexus3.cli.repl_formatting import (
     _format_tool_error_trace_line,
     _format_tool_halt_trace_line,
     _format_tool_id_header_line,
-    _format_tool_response_trace_line,
+    _format_tool_result_preview_lines,
     _format_tool_result_trace_line,
     _format_turn_cancelled_status_line,
     _format_turn_completed_status_line,
@@ -168,9 +168,8 @@ load_dotenv()
 
 # NOTE: parse_args() is imported from nexus3.cli.arg_parser
 
-_TOOL_OUTPUT_SUMMARY_MAX_CHARS = 60
-_MCP_RESULT_PREVIEW_MAX_LINES = 6
-_MCP_RESULT_PREVIEW_MAX_CHARS = 600
+_TOOL_RESULT_PREVIEW_MAX_LINES = 6
+_TOOL_RESULT_PREVIEW_MAX_CHARS = 600
 
 
 def _count_tool_output_lines(output: str) -> int:
@@ -180,25 +179,43 @@ def _count_tool_output_lines(output: str) -> int:
     return output.count("\n") + (1 if not output.endswith("\n") else 0)
 
 
-def _summarize_tool_output(name: str, output: str) -> str:
-    """Create a brief summary of tool output."""
+def _summarize_tool_output(output: str) -> str:
+    """Create a compact metadata summary of tool output."""
     if not output:
         return ""
 
-    if name == "read_file" or name.startswith("mcp_"):
-        lines = _count_tool_output_lines(output)
-        size_kb = len(output) / 1024
-        if size_kb >= 1:
-            return f"{lines} lines, {size_kb:.1f}KB"
-        return f"{lines} lines"
+    lines = _count_tool_output_lines(output)
+    line_label = "line" if lines == 1 else "lines"
+    size_kb = len(output) / 1024
+    if size_kb >= 1:
+        return f"{lines} {line_label}, {size_kb:.1f}KB"
+    return f"{lines} {line_label}"
 
-    first_line = output.split("\n")[0].strip()[:_TOOL_OUTPUT_SUMMARY_MAX_CHARS]
-    if first_line:
-        original_first_line = output.split("\n")[0]
-        if len(original_first_line) > _TOOL_OUTPUT_SUMMARY_MAX_CHARS:
-            return first_line + "..."
-        return first_line
-    return ""
+
+def _extract_nexus_send_response_content(output: str) -> str | None:
+    """Extract human-visible response content from a nexus_send tool result."""
+    try:
+        parsed = json.loads(output)
+    except json.JSONDecodeError:
+        return None
+
+    content = parsed.get("content")
+    if isinstance(content, str) and content:
+        return content
+    return None
+
+
+def _get_tool_result_preview(name: str, output: str) -> tuple[str, str] | None:
+    """Select the preview label and content for a successful tool result block."""
+    if not output:
+        return None
+
+    if name == "nexus_send":
+        response_content = _extract_nexus_send_response_content(output)
+        if response_content:
+            return ("Response", response_content)
+
+    return ("Result preview", output)
 
 
 async def run_repl(
@@ -865,7 +882,6 @@ async def run_repl(
 
     def on_batch_progress(name: str, tool_id: str, success: bool, error: str, output: str) -> None:
         """Tool completed - print result line with duration."""
-        import json as _json
         nonlocal _had_errors
 
         # Calculate duration
@@ -882,7 +898,9 @@ async def run_repl(
 
         if success:
             # Success - show result summary
-            result_preview = _summarize_tool_output(name, output)
+            preview_block = _get_tool_result_preview(name, output)
+            preview_output = preview_block[1] if preview_block else ""
+            result_preview = _summarize_tool_output(preview_output)
             spinner.print_untrusted(
                 _format_tool_id_header_line(safe_sink, tool_id, indent=6),
                 style="bright_black",
@@ -891,26 +909,14 @@ async def run_repl(
                 _format_tool_result_trace_line(safe_sink, result_preview, duration_str, tool_id)
             )
 
-            # Special handling for nexus_send - show response content
-            if name == "nexus_send" and output:
-                try:
-                    parsed = _json.loads(output)
-                    content = parsed.get("content", "")
-                    if content:
-                        preview = " ".join(content.split())[:100]
-                        ellipsis = "..." if len(content) > 100 else ""
-                        spinner.print_trusted(
-                            _format_tool_response_trace_line(safe_sink, preview, ellipsis)
-                        )
-                except (_json.JSONDecodeError, KeyError):
-                    pass
-
-            if name.startswith("mcp_") and output:
-                for line in _format_mcp_result_preview_lines(
+            if preview_block:
+                preview_label, preview_text = preview_block
+                for line in _format_tool_result_preview_lines(
                     safe_sink,
-                    output,
-                    max_lines=_MCP_RESULT_PREVIEW_MAX_LINES,
-                    max_chars=_MCP_RESULT_PREVIEW_MAX_CHARS,
+                    preview_text,
+                    label=preview_label,
+                    max_lines=_TOOL_RESULT_PREVIEW_MAX_LINES,
+                    max_chars=_TOOL_RESULT_PREVIEW_MAX_CHARS,
                 ):
                     spinner.print_trusted(line)
         else:

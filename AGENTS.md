@@ -223,6 +223,30 @@ Branch:
 - `feat/repl-streaming-cleanup`
 
 Current milestone:
+- REPL tool-result preview standardization active locally (2026-03-12):
+  - created
+    [REPL-TOOL-RESULT-PREVIEW-STANDARDIZATION-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/REPL-TOOL-RESULT-PREVIEW-STANDARDIZATION-PLAN-2026-03-12.md)
+    for the follow-up that makes the MCP-style inline preview block the
+    standard success rendering for all REPL tools.
+  - local progress:
+    - successful tool results now route through one generic bounded preview
+      block formatter instead of an `mcp_*`-only special case in
+      `nexus3/cli/repl.py`
+    - success summary lines now stay metadata-focused (`N line(s)` plus size
+      when large) so the new preview block carries the visible content without
+      duplicating the first output line
+    - `nexus_send` keeps a structured preview by reusing the same block shape
+      with parsed response content instead of raw JSON when available
+    - focused REPL formatting coverage now exercises generic preview blocks and
+      the `nexus_send` preview-selection path directly
+  - focused validation passed:
+    - `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py`
+      (`37 passed`)
+    - `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py tests/unit/cli/test_repl_safe_sink.py README.md nexus3/cli/README.md nexus3/defaults/NEXUS-DEFAULT.md nexus3/mcp/README.md CLAUDE.md AGENTS.md docs/plans/README.md docs/plans/REPL-TOOL-RESULT-PREVIEW-STANDARDIZATION-PLAN-2026-03-12.md`
+    - `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
+    - `git diff --check`
+  - next gate:
+    - do a quick live REPL sanity check for read-only tools plus `nexus_send`
 - REPL streaming cleanup implementation active locally (2026-03-11):
   - created
     [REPL-STREAMING-CLEANUP-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/REPL-STREAMING-CLEANUP-PLAN-2026-03-11.md)
@@ -559,12 +583,11 @@ Current milestone:
     [MCP-RESULT-VISIBILITY-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/MCP-RESULT-VISIBILITY-PLAN-2026-03-11.md)
     for default-on bounded inline MCP result previews in the REPL.
   - shipped behavior:
-    - successful `mcp_*` tool calls now show a sanitized inline preview block
-      in the normal REPL tool trace
-    - longer MCP results stay collapsed by default and render an explicit
-      truncation note instead of dumping full payloads into the terminal
-    - MCP success summary lines now use line/size summaries so the preview
-      block carries the visible content instead of duplicating the first line
+    - this slice originally introduced the bounded inline preview block for
+      successful `mcp_*` tool calls in the normal REPL tool trace
+    - later follow-up work on `feat/repl-streaming-cleanup` generalized that
+      same preview shape to all successful tools while keeping the same
+      truncation model
   - validation:
     - `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py tests/unit/cli/test_repl_safe_sink.py README.md CLAUDE.md nexus3/defaults/NEXUS-DEFAULT.md nexus3/cli/README.md nexus3/mcp/README.md docs/plans/README.md docs/plans/MCP-RESULT-VISIBILITY-PLAN-2026-03-11.md AGENTS.md`
     - `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_formatting.py`

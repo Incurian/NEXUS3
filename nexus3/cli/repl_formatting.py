@@ -76,23 +76,15 @@ def _format_tool_result_trace_line(
     )
 
 
-def _format_tool_response_trace_line(safe_sink: SafeSink, preview: str, ellipsis: str) -> str:
-    """Format nexus_send response preview line with SafeSink sanitization."""
-    safe_preview = _sanitize_tool_trace_text(safe_sink, preview)
-    return (
-        f"      [{_TOOL_RESULT_HEADER_STYLE}]↳ Response:[/] "
-        f"[{_TOOL_RESULT_BODY_STYLE}]{safe_preview}{ellipsis}[/]"
-    )
-
-
-def _format_mcp_result_preview_lines(
+def _format_tool_result_preview_lines(
     safe_sink: SafeSink,
     output: str,
     *,
+    label: str = "Result preview",
     max_lines: int,
     max_chars: int,
 ) -> list[str]:
-    """Format a bounded inline MCP result preview block."""
+    """Format a bounded inline tool result preview block."""
     trimmed = output.strip("\n")
     if not trimmed:
         return []
@@ -105,7 +97,8 @@ def _format_mcp_result_preview_lines(
         lines = lines[:max_lines]
         truncated = True
 
-    formatted = [f"      [{_TOOL_RESULT_HEADER_STYLE}]↳ MCP result preview:[/]"]
+    safe_label = _sanitize_tool_trace_text(safe_sink, label)
+    formatted = [f"      [{_TOOL_RESULT_HEADER_STYLE}]↳ {safe_label}:[/]"]
     for line in lines:
         safe_line = _sanitize_tool_trace_text(safe_sink, line)
         formatted.append(f"        [{_TOOL_RESULT_BODY_STYLE}]{safe_line}[/]")

@@ -203,8 +203,9 @@ across both global and `/agent/{id}` RPC routes. `create_agent` follow-up
     runtime level
   - raw `{}` MCP schemas are explicitly covered as a no-arg contract at
     runtime, matching the provider-safe outbound shape
-  - successful `mcp_*` tool calls now surface bounded inline previews in the
-    REPL by default, with long outputs truncated instead of dumped wholesale
+  - successful REPL tool calls now surface bounded inline previews by default,
+    with long outputs truncated instead of dumped wholesale; `mcp_*` results
+    use the same standard path
 
 #### Component Sharing
 

@@ -19,7 +19,6 @@ from nexus3.cli.repl import (
     _format_incoming_response_sent_line,
     _format_incoming_started_line,
     _format_invalid_port_spec_line,
-    _format_mcp_result_preview_lines,
     _format_plain_message_line,
     _format_port_in_use_by_other_service_line,
     _format_provider_initialization_failed_line,
@@ -43,7 +42,7 @@ from nexus3.cli.repl import (
     _format_tool_error_trace_line,
     _format_tool_halt_trace_line,
     _format_tool_id_header_line,
-    _format_tool_response_trace_line,
+    _format_tool_result_preview_lines,
     _format_tool_result_trace_line,
     _format_turn_cancelled_status_line,
     _format_turn_completed_status_line,
@@ -51,6 +50,7 @@ from nexus3.cli.repl import (
     _format_warning_message_line,
     _format_whisper_mode_line,
     _format_whisper_return_line,
+    _get_tool_result_preview,
     _sanitize_prompt_html_text,
     _summarize_tool_output,
 )
@@ -181,34 +181,37 @@ def test_tool_result_trace_line_omits_inline_visible_tool_id() -> None:
     assert line == "      [bold bright_green]→[/] [#2c7a4b]2 lines[/]"
 
 
-def test_tool_response_trace_line_sanitizes_preview_with_wrapper_parity() -> None:
+def test_tool_result_preview_lines_support_custom_response_label() -> None:
     sink = _make_sink()
 
-    line = _format_tool_response_trace_line(
+    lines = _format_tool_result_preview_lines(
         sink,
-        preview="[cyan]reply[/cyan]\x1b[2J",
-        ellipsis="...",
-    )
-
-    assert (
-        line
-        == "      [bold bright_green]↳ Response:[/] [#2c7a4b]\\[cyan]reply\\[/cyan]...[/]"
-    )
-    assert "\x1b" not in line
-
-
-def test_mcp_result_preview_lines_sanitize_and_truncate_preview_block() -> None:
-    sink = _make_sink()
-
-    lines = _format_mcp_result_preview_lines(
-        sink,
-        output="[cyan]line1[/cyan]\x1b[31m\nline2\nline3",
+        output="[cyan]reply[/cyan]\x1b[2J",
+        label="Response",
         max_lines=2,
         max_chars=200,
     )
 
     assert lines == [
-        "      [bold bright_green]↳ MCP result preview:[/]",
+        "      [bold bright_green]↳ Response:[/]",
+        "        [#2c7a4b]\\[cyan]reply\\[/cyan][/]",
+    ]
+    assert all("\x1b" not in line for line in lines)
+
+
+def test_tool_result_preview_lines_sanitize_and_truncate_preview_block() -> None:
+    sink = _make_sink()
+
+    lines = _format_tool_result_preview_lines(
+        sink,
+        output="[cyan]line1[/cyan]\x1b[31m\nline2\nline3",
+        label="Result preview",
+        max_lines=2,
+        max_chars=200,
+    )
+
+    assert lines == [
+        "      [bold bright_green]↳ Result preview:[/]",
         "        [#2c7a4b]\\[cyan]line1\\[/cyan][/]",
         "        [#2c7a4b]line2[/]",
         "      [dim]↳ Preview truncated at 2 lines / 200 chars[/]",
@@ -216,10 +219,23 @@ def test_mcp_result_preview_lines_sanitize_and_truncate_preview_block() -> None:
     assert all("\x1b" not in line for line in lines)
 
 
-def test_summarize_tool_output_uses_line_count_summary_for_mcp_tools() -> None:
-    summary = _summarize_tool_output("mcp_test_echo", "alpha\nbeta\n")
+def test_summarize_tool_output_uses_line_count_summary_for_all_tools() -> None:
+    multi_line_summary = _summarize_tool_output("alpha\nbeta\n")
+    single_line_summary = _summarize_tool_output("alpha")
 
-    assert summary == "2 lines"
+    assert multi_line_summary == "2 lines"
+    assert single_line_summary == "1 line"
+
+
+def test_get_tool_result_preview_uses_response_content_for_nexus_send() -> None:
+    preview = _get_tool_result_preview(
+        "nexus_send",
+        '{"content":"[cyan]reply[/cyan]\\u001b[2J\\nnext"}',
+    )
+    fallback_preview = _get_tool_result_preview("read_file", "alpha\nbeta\n")
+
+    assert preview == ("Response", "[cyan]reply[/cyan]\x1b[2J\nnext")
+    assert fallback_preview == ("Result preview", "alpha\nbeta\n")
 
 
 def test_tool_error_trace_line_truncates_and_sanitizes_error_text() -> None:
