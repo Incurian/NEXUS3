@@ -118,4 +118,11 @@ Validation completed:
 
 Merge status:
 
-- fast-forwarded into `master` at `355fd89`
+- merged into `master` on 2026-03-12
+- package-level `README.md` coverage now matches the implemented `nexus3/`
+  package layout except for intentionally deferred `nexus3/ide`
+- current-facing claims in `README.md`, `AGENTS.md`,
+  `nexus3/defaults/NEXUS-DEFAULT.md`, `CLAUDE.md`, and affected module readmes
+  were reconciled against current code and REPL/RPC behavior
+- the REPL/RPC idle-activity sync is validated and committed alongside the doc
+  audit so the user-visible docs describe the shipped branch state
