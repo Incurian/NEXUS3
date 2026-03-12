@@ -223,11 +223,11 @@ Branch:
 - `feat/repl-streaming-cleanup`
 
 Current milestone:
-- Docs completeness/correctness audit active locally (2026-03-12):
+- Docs completeness/correctness audit complete locally (2026-03-12):
   - created
     [DOCS-COMPLETENESS-AND-CORRECTNESS-AUDIT-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/DOCS-COMPLETENESS-AND-CORRECTNESS-AUDIT-PLAN-2026-03-12.md)
     for merge-prep coverage and top-level claim verification.
-  - local progress:
+  - completed locally in `9ed530c` (`repl/rpc/docs: sync idle activity and audit readmes`):
     - missing package readmes added for:
       `nexus3/`, `nexus3/skill/builtin/`, `nexus3/skill/vcs/gitlab/`, and
       `nexus3/mcp/test_server/`
@@ -238,6 +238,12 @@ Current milestone:
       - `README.md`, `CLAUDE.md`, `nexus3/defaults/NEXUS-DEFAULT.md`, and
         `nexus3/session/README.md` session-resume wording/file trees that
         incorrectly implied `last-session.json` is only written on REPL exit
+      - `README.md` `/agent NAME` wording now reflects prompt-before-create,
+        and `/create` syntax now shows the real explicit preset flags instead
+        of a fake generic `--preset`
+      - `nexus3/defaults/NEXUS-DEFAULT.md` subagent examples now respect
+        ceiling enforcement instead of telling agents to create trusted
+        children they cannot actually create
       - `nexus3/display/README.md` example import that still implied
         `StreamingDisplay` was re-exported from `nexus3.display`
     - package-level README coverage now matches the implemented `nexus3/`
@@ -249,8 +255,8 @@ Current milestone:
     - `.venv/bin/mypy nexus3/rpc/http.py nexus3/cli/repl.py`
     - `git diff --check`
   - next gate:
-    - commit the remaining idle-activity + docs-audit work, push the branch,
-      then merge into `master`
+    - push `9ed530c`, merge `feat/repl-streaming-cleanup` into `master`, and
+      push `master`
 - REPL/RPC idle activity sync active locally (2026-03-12):
   - created
     [REPL-RPC-IDLE-ACTIVITY-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/REPL-RPC-IDLE-ACTIVITY-PLAN-2026-03-12.md)
