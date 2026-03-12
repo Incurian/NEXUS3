@@ -247,30 +247,43 @@ ad-hoc compatibility shim.
   - `scripts/maintenance/project_hard_rename.py`
     - reads a JSON rename spec
     - scans tracked files via `git ls-files`
-    - plans path/content rewrites for `nexus3`, `.nexus3`, `nexus_*`,
-      `NEXUS.md`, `NEXUS-DEFAULT.md`, `NEXUS3_API_KEY`, and `x-nexus-*`
+    - plans path/content rewrites for package/file surfaces and the mixed-case
+      runtime namespace:
+      `nexus3`, `.nexus3`, `nexus_*`, `nexus-`, `Nexus*`, `get_nexus_*`,
+      generic `NEXUS_*`, `NEXUS.md`, `NEXUS-DEFAULT.md`, `NEXUS3_API_KEY`,
+      `NEXUS_DEV`, `NEXUS_SERVER`, `x-nexus-*`, `X-Nexus-*`, and `nxk_`
+    - rejects specs that still contain the legacy `nexus` marker or leave a
+      rename surface unchanged
     - stays dry-run by default and refuses execute mode on a dirty tracked
       worktree unless `--allow-dirty`
+    - stages path moves through a temp directory, preserves raw line endings,
+      and rejects tracked or untracked destination collisions plus
+      symlink-shaped or non-directory destination paths before execute mode
     - can emit a JSON manifest for review before the actual rename
 - `tests/unit/test_project_hard_rename_script.py`
   - covers valid spec loading
-  - rejects unchanged current-name specs
-  - verifies representative path/content rewrite planning
+  - rejects legacy-brand specs
+  - verifies representative path/content rewrite planning across mixed-case and
+    runtime symbols
+  - rejects tracked destination collisions
+  - rejects untracked destination collisions
+  - rejects symlink-shaped and non-directory destination paths
+  - verifies CRLF preservation for rewritten tracked files
   - verifies manifest summary counts
 - Focused validation passed:
-  - `.venv/bin/pytest -q tests/unit/test_project_hard_rename_script.py` (`4 passed`)
+  - `.venv/bin/pytest -q tests/unit/test_project_hard_rename_script.py` (`9 passed`)
   - `.venv/bin/ruff check scripts/maintenance/project_hard_rename.py tests/unit/test_project_hard_rename_script.py docs/plans/PROJECT-HARD-RENAME-PLAN-2026-03-12.md docs/plans/README.md AGENTS.md`
   - `.venv/bin/mypy scripts/maintenance/project_hard_rename.py`
   - `.venv/bin/python scripts/maintenance/project_hard_rename.py --print-spec-template`
   - `.venv/bin/python scripts/maintenance/project_hard_rename.py --spec <temp-spec> --manifest /tmp/nexus-rename-manifest.json`
-    - dry-run planned `556` tracked-file rewrites
+    - dry-run planned `559` tracked-file rewrites
     - `265` path renames
-    - `541` content rewrites
+    - `544` content rewrites
   - `git diff --check`
 - Residual note:
   - the helper intentionally does not rewrite untracked local state or every
-    bare-word `nexus`/`NEXUS` prose occurrence
+    historical/example occurrence in tracked docs and validation artifacts
   - the eventual rename still needs a manual residual sweep and packaging/live
     validation after the scripted pass
 - Next gate:
-  - run focused validation on the helper and review the plan/script output
+  - rerun external review on the hardened helper and address any remaining gaps

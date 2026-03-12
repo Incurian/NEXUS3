@@ -4,8 +4,9 @@
 
 This plan prepares a full hard rename of NEXUS3 once the replacement name is
 chosen. The target is a deliberate breaking rename across the package, CLI,
-user-state directories, RPC namespace, built-in nexus tool family, prompt
-filenames, documentation, tests, and release metadata.
+user-state directories, RPC namespace, built-in nexus tool family, mixed-case
+public Python symbols, prompt filenames, documentation, tests, and release
+metadata.
 
 Because there are no public users to preserve, the plan assumes a flag-day
 rename rather than a compatibility alias period. The implementation here does
@@ -19,7 +20,17 @@ Current planning-slice validation:
 - `.venv/bin/mypy scripts/maintenance/project_hard_rename.py`
 - `.venv/bin/python scripts/maintenance/project_hard_rename.py --print-spec-template`
 - `.venv/bin/python scripts/maintenance/project_hard_rename.py --spec <temp-spec> --manifest /tmp/nexus-rename-manifest.json`
+- helper execute-path validation via focused pytest fixtures:
+  - destination collision rejection
+  - symlink-shaped and non-directory destination-path rejection
+  - CRLF preservation during in-place rewrite
 - `git diff --check`
+
+Current dry-run snapshot against the placeholder `orbit` spec:
+
+- planned tracked-file rewrites: `559`
+- path renames: `265`
+- content rewrites: `544`
 
 ## Scope
 
@@ -57,6 +68,9 @@ The rename should replace, not alias, the current public/runtime surfaces:
 - config/log directory: `.nexus3`
 - env/header namespace: `NEXUS3_*`, `x-nexus-*`
 - built-in agent-management tools: `nexus_*`
+- mixed-case public/runtime symbols and generic `NEXUS_*` internal constants
+  like `NexusClient`, `NexusSkill`, `NexusError`, `get_nexus_dir`,
+  `NEXUS_DEV`, `NEXUS_SERVER`, `NEXUS_DIR_NAME`, and `nxk_`
 - shipped prompt filenames: `NEXUS.md`, `NEXUS-DEFAULT.md`
 
 Keeping old aliases would make the transition easier, but it would also leave
@@ -81,19 +95,29 @@ surfaces and only mutates files when `--execute` is passed.
 
 ### Structured surfaces are automated; prose residuals still need a sweep
 
-The script handles deterministic rename surfaces well:
+The script now handles deterministic rename surfaces for both package/file
+strings and the common mixed-case/public symbol layer:
 
 - `nexus3` package/import/CLI references
 - `.nexus3`
 - `NEXUS3_API_KEY`
+- `NEXUS_DEV`
+- `NEXUS_SERVER` / `nexus_server`
+- generic `NEXUS_*` internal constants/templates
 - `x-nexus-*`
+- `X-Nexus-*`
 - `nexus_*`
+- `nexus-` compounds
+- `get_nexus_*`
+- `Nexus*` public symbols
+- `nxk_`
 - `NEXUS.md` / `NEXUS-DEFAULT.md`
 
 It does not attempt an unrestricted bare-word rewrite for every occurrence of
-`nexus`/`NEXUS` in prose. Those residual cases need a human audit after the
-scripted pass because some are historical, some are example data, and some are
-compound terms like `nexus-mcp-server`.
+legacy text in prose/history/example content. Those residual cases still need a
+human audit after the scripted pass because some are historical or example
+data, and the repo contains tracked validation artifacts that intentionally
+record old command lines.
 
 ## Implementation Details
 
@@ -115,9 +139,15 @@ The current blast radius breaks down into these primary buckets:
 
 3. Runtime protocol namespace
    - `NEXUS3_API_KEY`
+   - `NEXUS_DEV`
+   - `NEXUS_SERVER` / `nexus_server`
+   - generic `NEXUS_*` constants/templates
    - `x-nexus-agent`
    - `x-nexus-capability`
+   - `X-Nexus-Agent`
+   - `X-Nexus-Capability`
    - logger names like `nexus3.server`
+   - token prefix `nxk_`
 
 4. Agent/tool namespace
    - `nexus_create`
@@ -132,7 +162,14 @@ The current blast radius breaks down into these primary buckets:
    - `NEXUS.md`
    - `NEXUS-DEFAULT.md`
 
-6. Docs/tests/repo naming
+6. Mixed-case public/internal Python symbols
+   - `NexusClient`
+   - `NexusSkill`
+   - `nexus_skill_factory`
+   - `NexusError`
+   - `get_nexus_dir`
+
+7. Docs/tests/repo naming
    - root README and module READMEs
    - plan/review docs
    - `AGENTS_NEXUS3*.md`
@@ -154,13 +191,19 @@ Current contract:
 - defaults to dry-run planning
 - can emit a JSON manifest for review
 - never touches untracked files
+- stages path moves through a temp directory but is not fully transactional if
+  a later filesystem operation fails mid-run
 
 Current assumptions:
 
 - the future package/import/CLI/distribution root is one shared lowercase name
-- the future prompt filename stem is provided separately
-- the future builtin tool/header stem is provided separately
+- the future brand stem is provided as lowercase, TitleCase, and uppercase
+- prompt filenames use the bare uppercase brand stem
 - repo slug can differ from the display name for URL/path rewrites
+- API keys get a new explicit prefix rather than keeping `nxk_`
+- execute mode refuses both tracked and untracked destination collisions before
+  mutating the tree, including symlink-shaped or non-directory destination
+  paths
 
 Suggested spec shape:
 
@@ -168,22 +211,31 @@ Suggested spec shape:
 {
   "root_lower": "orbit",
   "root_upper": "ORBIT",
+  "brand_lower": "orbit",
+  "brand_title": "Orbit",
+  "brand_upper": "ORBIT",
   "repo_slug": "ORBIT",
   "dot_dir_name": ".orbit",
-  "prompt_stem": "ORBIT",
-  "tool_stem": "orbit",
-  "header_stem": "orbit"
+  "api_key_prefix": "orb_"
 }
 ```
+
+The helper now validates that every rename surface actually changes and rejects
+spec values that still contain the legacy `nexus` marker.
 
 ### Manual follow-up after the scripted pass
 
 Even with the helper, the final hard rename still needs a short manual closure:
 
-1. run residual searches for prose/history/example strings:
-   - `rg -n '\bnexus\b|\bNEXUS\b|nexus-'`
+1. run residual searches for prose/history/example strings and any missed
+   branded symbols:
+   - `rg -n 'NEXUS3|nexus3|\.nexus3|NEXUS3_API_KEY|python -m nexus3|import nexus3|from nexus3|nexus3\.server|nexus3_current_agent_id' .`
+   - `rg -n 'NEXUS_|NEXUS\.md|NEXUS-DEFAULT\.md|X-Nexus-|x-nexus-|get_nexus_|nxk_' .`
+   - `rg -n 'Nexus|nexus_|\bnexus\b|nexus-' AGENTS.md CLAUDE.md README.md docs nexus3 tests pyproject.toml`
 2. rename the GitHub repo/remotes if desired
-3. decide whether to rename local developer state directories manually
+3. migrate or consciously discard local developer state directories manually
+   because persisted state under `~/.nexus3/` and project `./.nexus3/`
+   otherwise remains under the old namespace
 4. rebuild packaging artifacts and smoke-install under the new name
 5. verify Windows shell wrappers, install snippets, and `pipx` guidance
 6. run a live REPL/RPC sanity pass under the new command name
@@ -193,6 +245,8 @@ Even with the helper, the final hard rename still needs a short manual closure:
 Before the actual rename:
 
 - unit-test the helper’s path/content rewrite planning
+- unit-test collision rejection against pre-existing tracked destination paths
+- unit-test line-ending preservation for rewritten tracked files
 - run the helper in dry-run mode with a sample spec and inspect the manifest
 - confirm the manifest excludes untracked local state
 
@@ -215,6 +269,8 @@ During the eventual rename:
 - [x] Create a full hard-rename plan doc.
 - [x] Add a tracked-files-only dry-run helper script.
 - [x] Add focused unit coverage for the helper script.
+- [x] Expand the helper to cover mixed-case/public runtime symbols and safer
+  execute semantics.
 - [ ] Choose the final new name spec.
 - [ ] Run helper dry-run and inspect manifest.
 - [ ] Execute the scripted rename on a clean tracked worktree.
@@ -230,6 +286,12 @@ Completed in this planning slice:
 - index it from [docs/plans/README.md](/home/inc/repos/NEXUS3/docs/plans/README.md)
 - record the current handoff in [AGENTS.md](/home/inc/repos/NEXUS3/AGENTS.md)
 - validate the helper with focused unit/static checks and a real dry-run
+- harden the helper after external review:
+  - mixed-case/public symbol coverage
+  - stricter spec validation
+  - tracked/untracked destination collision rejection
+  - symlink-shaped and non-directory destination-path rejection
+  - raw newline preservation during writes
 
 Required during the actual rename:
 
