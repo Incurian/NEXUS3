@@ -107,7 +107,7 @@ Validation should be proportional to touched files:
 - [x] Audit module README completeness and fix coverage gaps.
 - [x] Audit high-level claim correctness and fix stale statements.
 - [x] Run focused validation.
-- [ ] Prepare merge-ready summary for `master`.
+- [x] Prepare merge-ready summary for `master`.
 
 Validation completed:
 
@@ -115,3 +115,13 @@ Validation completed:
 - `.venv/bin/ruff check nexus3/rpc/http.py nexus3/cli/repl.py tests/unit/test_http_pipeline_layers.py README.md AGENTS.md CLAUDE.md docs/plans/README.md docs/plans/REPL-RPC-IDLE-ACTIVITY-PLAN-2026-03-12.md docs/plans/DOCS-COMPLETENESS-AND-CORRECTNESS-AUDIT-PLAN-2026-03-12.md nexus3/README.md nexus3/cli/README.md nexus3/defaults/NEXUS-DEFAULT.md nexus3/display/README.md nexus3/mcp/README.md nexus3/mcp/test_server/README.md nexus3/rpc/README.md nexus3/session/README.md nexus3/skill/README.md nexus3/skill/builtin/README.md nexus3/skill/vcs/README.md nexus3/skill/vcs/gitlab/README.md`
 - `.venv/bin/mypy nexus3/rpc/http.py nexus3/cli/repl.py`
 - `git diff --check`
+
+Merge-ready summary:
+
+- package-level `README.md` coverage now matches the implemented `nexus3/`
+  package layout except for intentionally deferred `nexus3/ide`
+- current-facing claims in `README.md`, `AGENTS.md`,
+  `nexus3/defaults/NEXUS-DEFAULT.md`, `CLAUDE.md`, and affected module readmes
+  were reconciled against current code and REPL/RPC behavior
+- the REPL/RPC idle-activity sync is validated and committed alongside the doc
+  audit so the user-visible docs describe the shipped branch state

@@ -255,8 +255,7 @@ Current milestone:
     - `.venv/bin/mypy nexus3/rpc/http.py nexus3/cli/repl.py`
     - `git diff --check`
   - next gate:
-    - push `9ed530c`, merge `feat/repl-streaming-cleanup` into `master`, and
-      push `master`
+    - merge the final status-sync commit into `master`, then push `master`
 - REPL/RPC idle activity sync active locally (2026-03-12):
   - created
     [REPL-RPC-IDLE-ACTIVITY-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/REPL-RPC-IDLE-ACTIVITY-PLAN-2026-03-12.md)
