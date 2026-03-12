@@ -223,6 +223,27 @@ Branch:
 - `master`
 
 Current milestone:
+- Release v1.0.0 active locally (2026-03-12):
+  - created
+    [RELEASE-V1.0.0-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/RELEASE-V1.0.0-PLAN-2026-03-12.md)
+    for the first stable release/tag pass.
+  - local progress:
+    - canonical version surfaces identified in `pyproject.toml`,
+      `nexus3/__init__.py`, `nexus3/cli/repl.py`, and the README quick-start
+      example
+    - top-level `CHANGELOG.md` added as the canonical release-notes location
+      with a `v1.0.0` entry
+    - the release note explicitly tells existing checkouts to rerun their
+      install command because `psutil` was added recently as a runtime
+      dependency
+    - packaging metadata is being aligned with a first stable release rather
+      than a beta snapshot
+  - focused validation passed:
+    - `.venv/bin/python -c "import nexus3; print(nexus3.__version__)"` (`1.0.0`)
+    - `.venv/bin/ruff check pyproject.toml README.md CHANGELOG.md AGENTS.md docs/plans/README.md docs/plans/RELEASE-V1.0.0-PLAN-2026-03-12.md nexus3/__init__.py nexus3/cli/repl.py`
+    - `git diff --check`
+  - next gate:
+    - commit the release metadata, tag `v1.0.0`, and push both
 - Docs completeness/correctness audit merged into master (2026-03-12):
   - created
     [DOCS-COMPLETENESS-AND-CORRECTNESS-AUDIT-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/DOCS-COMPLETENESS-AND-CORRECTNESS-AUDIT-PLAN-2026-03-12.md)
