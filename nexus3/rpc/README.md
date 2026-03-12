@@ -189,8 +189,12 @@ async def run_http_server(
     max_concurrent: int = 32,
     idle_timeout: float | None = None,
     started_event: asyncio.Event | None = None,
+    activity_tracker: ServerActivityTracker | None = None,
 ) -> None
 ```
+
+`activity_tracker` lets other in-process surfaces, such as the direct REPL
+path, refresh the same idle timer used for HTTP traffic.
 
 ### Constants
 

@@ -39,11 +39,15 @@ nexus3/skill/vcs/
 ├── config.py           # GitLabConfig, GitLabInstance dataclasses
 └── gitlab/             # GitLab skill implementations
     ├── __init__.py     # register_gitlab_skills() function
+    ├── README.md       # GitLab package overview
     ├── base.py         # GitLabSkill base class
     ├── client.py       # Async HTTP client (httpx-based)
     ├── permissions.py  # Permission checks and confirmation logic
     └── <skill>.py      # 21 individual skill files
 ```
+
+For the concrete GitLab subpackage surface, see
+[`gitlab/README.md`](/home/inc/repos/NEXUS3/nexus3/skill/vcs/gitlab/README.md).
 
 ---
 

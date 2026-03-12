@@ -54,6 +54,21 @@ class TestAuthenticateRequest:
         assert error is None
         assert status == 0
 
+
+class TestServerActivityTracker:
+    """Tests for shared server idle-activity tracking."""
+
+    def test_idle_duration_and_touch_use_monotonic_clock(self) -> None:
+        from nexus3.rpc.http import ServerActivityTracker
+
+        ticks = iter([100.0, 105.0, 110.0, 111.5])
+
+        tracker = ServerActivityTracker(clock=lambda: next(ticks))
+
+        assert tracker.idle_duration() == 5.0
+        tracker.touch()
+        assert tracker.idle_duration() == 1.5
+
     def test_missing_auth_header_fails(self) -> None:
         """When api_key is set but no auth header, returns 401."""
         from nexus3.rpc.http import HttpRequest, _authenticate_request

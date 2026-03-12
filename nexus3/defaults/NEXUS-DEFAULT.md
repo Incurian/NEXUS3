@@ -44,8 +44,8 @@ You have access to tools for file operations, host process inspection/management
 # Enable writes to a specific directory
 nexus_create(agent_id="worker", cwd="/project", allowed_write_paths=["/project/output"])
 
-# Full read access (trusted)
-nexus_create(agent_id="researcher", preset="trusted")
+# If a task truly needs broader read access, ask the user or your parent to
+# create a trusted agent. Agents can only create sandboxed subagents.
 ```
 
 For permission internals and path validation, see `nexus3/core/README.md`.
@@ -500,14 +500,14 @@ Don't create subagents for simple tasks you can do yourself in a few tool calls.
 
 **Choose the right preset and permissions:**
 ```
-# Read-only researcher (safest, good for exploration)
-nexus_create(agent_id="researcher", preset="trusted", cwd="/project")
+# Read-only researcher within the current project
+nexus_create(agent_id="researcher", cwd="/project")
 
 # Writer with scoped access
 nexus_create(agent_id="writer", cwd="/project", allowed_write_paths=["/project/src"])
 
-# Fire-and-forget with initial message
-nexus_create(agent_id="scout", preset="trusted", cwd="/project", initial_message="Find all usages of SessionLogger and summarize how it works")
+# Fire-and-forget scout within the same project
+nexus_create(agent_id="scout", cwd="/project", initial_message="Find all usages of SessionLogger and summarize how it works")
 ```
 
 **Give focused, specific tasks.** A subagent works best with a clear objective:
@@ -530,8 +530,8 @@ nexus_send("researcher", "Look at the RPC code and tell me about it")
 
 **Coordinator pattern** — you manage multiple specialists:
 ```
-nexus_create(agent_id="reader", preset="trusted", cwd="/project", initial_message="Read src/auth/ and summarize the authentication flow")
-nexus_create(agent_id="tester", preset="trusted", cwd="/project", initial_message="Read tests/auth/ and list what's tested and what's missing")
+nexus_create(agent_id="reader", cwd="/project", initial_message="Read src/auth/ and summarize the authentication flow")
+nexus_create(agent_id="tester", cwd="/project", initial_message="Read tests/auth/ and list what's tested and what's missing")
 
 # ... wait for both, then synthesize their findings
 nexus_status("reader")
@@ -559,7 +559,7 @@ nexus_send("worker", "Analyze the CSV files in this directory and send me a summ
 - **Overloading a single agent** — sending a massive multi-part task instead of breaking it into focused messages
 - **Destroying agents prematurely** — if you might need their context later, keep them around
 - **Not checking status** — sending follow-up messages while the agent is still processing the first one
-- **Using sandboxed when you need trusted** — if the agent needs to read files outside its CWD, it needs `preset="trusted"`
+- **Forgetting ceiling enforcement** — if a subtask needs broader read access than a sandboxed subagent can get from its `cwd`, ask the user or your parent to create a trusted agent for that work
 - **Expecting to create trusted subagents** — agents can only create sandboxed subagents (ceiling enforcement). Only the user can create trusted agents via the REPL or RPC CLI
 
 ---
@@ -588,7 +588,7 @@ When a user is interacting with you through the REPL, these commands are availab
 |---------|-------------|
 | `/agent [name]` | Show current agent or switch to another |
 | `/list` | List all active agents |
-| `/create <name> [--preset] [--model]` | Create agent without switching |
+| `/create <name> [--yolo\|--trusted\|--sandboxed] [--model <alias>]` | Create agent without switching |
 | `/destroy <name>` | Remove active agent |
 | `/send <agent> <msg>` | One-shot message to another agent |
 | `/status [agent] [-a]` | Get agent status |
@@ -623,7 +623,8 @@ For CLI and REPL internals, see `nexus3/cli/README.md`.
 
 Sessions persist conversation history, model choice, permissions, and working directory.
 
-- **Auto-save on exit**: Current session saved to `~/.nexus3/last-session.json` for `--resume`
+- **Auto-save for resume**: The current displayed session is kept in
+  `~/.nexus3/last-session.json` during REPL use so `--resume` can recover it
 - **Named sessions**: Save with `/save myname`, resume with `nexus3 --session myname`
 - **Clone/fork**: Use `/clone <src> <dest>` to fork a conversation
 - **Temp sessions**: Named `.1`, `.2`, etc. — use `/save` to give them a permanent name
@@ -695,7 +696,7 @@ For MCP configuration details, see `nexus3/mcp/README.md`.
 ├── mcp.json                   # MCP servers
 ├── rpc.token                  # Auto-generated RPC auth token
 ├── sessions/                  # Saved sessions
-└── last-session.json          # For --resume
+└── last-session.json          # Updated for --resume during REPL use
 
 .nexus3/                       # Project-local (this project)
 ├── config.json                # Project settings (overrides global)

@@ -699,11 +699,11 @@ Available when running interactively.
 | Command | Description |
 |---------|-------------|
 | `/agent` | Show current agent detailed status |
-| `/agent NAME` | Switch to agent (creates if needed) |
+| `/agent NAME` | Switch to agent (prompts to create if missing) |
 | `/agent NAME --yolo\|--trusted\|--sandboxed` | Create agent with preset and switch |
 | `/agent NAME --model ALIAS` | Create agent with specific model |
 | `/list` | List all active agents |
-| `/create NAME [--preset] [--model]` | Create agent without switching |
+| `/create NAME [--yolo\|--trusted\|--sandboxed] [--model ALIAS]` | Create agent without switching |
 | `/destroy NAME` | Remove agent from pool |
 | `/send AGENT MESSAGE` | One-shot message to agent |
 | `/status [AGENT] [--tools] [--tokens] [-a]` | Get agent status (`-a` for all details) |
@@ -858,7 +858,7 @@ For REPL internals and UI components, see `nexus3/cli/README.md`. For RPC protoc
 | `provider/` | AsyncProvider protocol, multi-provider support, prompt caching, retry logic |
 | `context/` | ContextManager, ContextLoader, TokenCounter, compaction |
 | `session/` | Session coordinator, persistence, SessionManager, SQLite logging |
-| `skill/` | Skill protocol, SkillRegistry, ServiceContainer, 39 built-in + 21 GitLab skills |
+| `skill/` | Skill protocol, SkillRegistry, ServiceContainer, 43 built-in + 21 GitLab skills |
 | `clipboard/` | Scoped clipboard system (agent/project/system), SQLite storage |
 | `patch/` | Unified diff parsing, validation, and application |
 | `display/` | Spinner-based REPL display, SafeSink boundaries, theming, plus quarantined legacy display helpers |
@@ -1083,7 +1083,7 @@ If `~/.nexus3/config.json` exists, it's used as the base. If not, the shipped de
 ├── rpc.token                       # RPC auth token (default port)
 ├── rpc-{port}.token                # RPC auth token (non-default ports)
 ├── sessions/                       # Saved sessions
-├── last-session.json               # Auto-saved for --resume
+├── last-session.json               # Updated for --resume during REPL use
 ├── last-session-name               # Name of last session
 └── logs/                           # Logs
     └── server.log                  # Server lifecycle events
@@ -1867,7 +1867,7 @@ Sessions use schema version 1 with backwards-compatible field defaults.
 ~/.nexus3/
 ├── sessions/                 # Named session files
 │   └── myproject.json        # Saved via /save
-├── last-session.json         # Auto-saved for --resume
+├── last-session.json         # Updated for --resume during REPL use
 └── last-session-name         # Name of last session
 
 .nexus3/logs/{session-id}/    # Session logs
@@ -2023,7 +2023,10 @@ YOLO agents can only receive messages when the REPL is actively connected to the
 
 **Problem: `--resume` says "No last session found"**
 
-The last session file (`~/.nexus3/last-session.json`) is created on REPL exit. If the previous session crashed or was force-killed, no file exists. Start a new session with `--fresh`.
+The last-session pointer (`~/.nexus3/last-session.json`) is updated during REPL
+use, not only on exit. If no session has been saved yet, or the pointer file
+was removed/corrupted, `--resume` has nothing to load. Start a new session with
+`--fresh` or use `--session NAME` for a named save.
 
 **Problem: Session won't save with `/save`**
 
@@ -2126,6 +2129,9 @@ Pass explicit `cwd` and prefer absolute paths (native Windows: `D:/...`) when tr
 **Problem: Server dies with false idle timeout**
 
 Fixed in recent versions. Uses `time.monotonic()` instead of `time.time()` to avoid clock sync issues.
+In unified REPL mode, direct REPL activity now also refreshes the embedded
+server idle timer, so long in-process turns do not look idle just because no
+HTTP request arrived.
 
 Monitor with:
 ```bash

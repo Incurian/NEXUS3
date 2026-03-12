@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -120,6 +121,22 @@ MAX_HEADER_NAME_LEN = 1024  # Max header name length (bytes)
 MAX_HEADER_VALUE_LEN = 8192  # Max header value length (bytes)
 MAX_TOTAL_HEADERS_SIZE = 32 * 1024  # 32KB total header size limit
 MAX_REQUEST_LINE_LEN = 8192  # Max request line length
+
+
+class ServerActivityTracker:
+    """Track recent server activity for idle-timeout decisions."""
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._last_activity = clock()
+
+    def touch(self) -> None:
+        """Record fresh activity using the configured monotonic clock."""
+        self._last_activity = self._clock()
+
+    def idle_duration(self) -> float:
+        """Return the elapsed idle duration in seconds."""
+        return self._clock() - self._last_activity
 
 
 @dataclass
@@ -644,6 +661,7 @@ async def run_http_server(
     max_concurrent: int = 32,
     idle_timeout: float | None = None,
     started_event: asyncio.Event | None = None,
+    activity_tracker: ServerActivityTracker | None = None,
 ) -> None:
     """Run the HTTP server for JSON-RPC requests with path-based routing.
 
@@ -678,6 +696,9 @@ async def run_http_server(
                       bound to the port and is listening. Useful for callers to know
                       when the server is ready (e.g., to write token files only after
                       bind success).
+        activity_tracker: Optional shared activity tracker. When provided, both
+                      HTTP traffic and external callers (for example the direct
+                      REPL path) can refresh the same idle timeout state.
     """
     # Security: Force localhost binding
     if host not in ("127.0.0.1", "localhost", "::1"):
@@ -690,14 +711,13 @@ async def run_http_server(
 
     # Track last activity time for idle timeout using monotonic clock
     # (immune to wall clock jumps from NTP sync, WSL time sync, suspend/resume)
-    last_activity = time.monotonic()
+    tracker = activity_tracker or ServerActivityTracker()
 
     async def client_handler(
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
     ) -> None:
-        nonlocal last_activity
-        last_activity = time.monotonic()  # Reset idle timer on each connection
+        tracker.touch()  # Reset idle timer on each connection
 
         # Use try/finally to ensure writer is always closed (fixes connection leak)
         try:
@@ -738,7 +758,7 @@ async def run_http_server(
         while not pool.should_shutdown and not global_dispatcher.shutdown_requested:
             # Check idle timeout
             if idle_timeout is not None:
-                idle_duration = time.monotonic() - last_activity
+                idle_duration = tracker.idle_duration()
                 if idle_duration > idle_timeout:
                     logger.info(
                         "Idle timeout reached (%.0fs without RPC activity), shutting down",

@@ -62,12 +62,16 @@ nexus3/mcp/
 +-- error_formatter.py    # User-friendly error message formatting
 +-- test_server/          # Development/testing MCP server
     +-- __init__.py
+    +-- README.md         # Test server package overview
     +-- __main__.py       # Entry point: python -m nexus3.mcp.test_server
     +-- server.py         # Stdio-based test server
     +-- http_server.py    # HTTP-based test server
     +-- definitions.py    # Shared tool/resource/prompt definitions
     +-- paginating_server.py  # Server for testing cursor pagination
 ```
+
+For the development/test harness package itself, see
+[`test_server/README.md`](/home/inc/repos/NEXUS3/nexus3/mcp/test_server/README.md).
 
 ---
 

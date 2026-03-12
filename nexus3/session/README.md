@@ -275,7 +275,7 @@ Handles disk persistence of sessions in `~/.nexus3/sessions/`.
 ~/.nexus3/
 ├── sessions/
 │   └── {name}.json      # Named sessions (saved via /save)
-├── last-session.json    # Auto-saved on exit (for --resume)
+├── last-session.json    # Updated for --resume during REPL use
 └── last-session-name    # Name of last session
 ```
 

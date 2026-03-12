@@ -394,8 +394,9 @@ class StreamingDisplay:
 **Usage:**
 
 ```python
-from nexus3.display import StreamingDisplay, Activity
+from nexus3.display import Activity
 from nexus3.display.streaming import ToolState
+from nexus3.display.streaming import StreamingDisplay
 from rich.live import Live
 
 display = StreamingDisplay(load_theme())

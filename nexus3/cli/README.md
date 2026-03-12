@@ -248,7 +248,7 @@ Slash command implementations for the interactive REPL.
 | `/whisper <agent>` | Enter whisper mode |
 | `/over` | Exit whisper mode |
 | `/list` | List all active agents |
-| `/create <name> [--preset] [--model]` | Create without switching |
+| `/create <name> [--yolo\|--trusted\|--sandboxed] [--model <alias>]` | Create without switching |
 | `/destroy <name>` | Remove agent from pool |
 | `/send <agent> <msg>` | One-shot message to another agent |
 | `/status [agent] [--tools] [--tokens] [-a]` | Get status |
@@ -868,7 +868,8 @@ nexus3 --init-global-force  # Overwrite existing
 
 5. **Output Trust Boundaries**: CLI surfaces route dynamic text through `SafeSink` untrusted entrypoints and keep static wrappers in trusted entrypoints
 
-6. **Idle Timeout**: Embedded server auto-shuts down after 30 minutes of no RPC activity (WSL-safe monotonic clock)
+6. **Idle Timeout**: Embedded server auto-shuts down after 30 minutes of no
+   RPC or direct REPL activity (WSL-safe monotonic clock)
 
 7. **Input Validation**: Agent IDs validated via `validate_agent_id()` to prevent path traversal
 

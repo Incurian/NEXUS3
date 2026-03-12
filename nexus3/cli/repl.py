@@ -131,7 +131,7 @@ from nexus3.rpc.bootstrap import (
 from nexus3.rpc.detection import DetectionResult
 from nexus3.rpc.discovery import discover_servers, discover_token_ports, parse_port_spec
 from nexus3.rpc.dispatcher import Dispatcher
-from nexus3.rpc.http import run_http_server
+from nexus3.rpc.http import ServerActivityTracker, run_http_server
 from nexus3.rpc.pool import Agent, AgentConfig, generate_temp_id
 from nexus3.session import LogStream, Session, SessionManager
 from nexus3.session.persistence import (
@@ -680,6 +680,7 @@ async def run_repl(
     # Start HTTP server as a background task with started_event for safe token lifecycle
     # Idle timeout: 30 min (1800s) - server auto-shuts down if no RPC activity
     # This ensures servers don't linger after user walks away
+    server_activity = ServerActivityTracker()
     started_event = asyncio.Event()
     http_task = asyncio.create_task(
         run_http_server(
@@ -687,6 +688,7 @@ async def run_repl(
             session_manager=session_manager,
             idle_timeout=1800.0,
             started_event=started_event,
+            activity_tracker=server_activity,
         ),
         name="http_server",
     )
@@ -836,6 +838,10 @@ async def run_repl(
             display_duration = max(1, int(_thinking_total))
             spinner.print_trusted(_format_thought_duration_line(safe_sink, display_duration))
 
+    def _mark_server_activity() -> None:
+        """Refresh embedded RPC idle state while the direct REPL path is active."""
+        server_activity.touch()
+
     # =============================================================
     # Session callbacks - print immediately to scrollback
     # =============================================================
@@ -843,11 +849,12 @@ async def run_repl(
     # Callback when tool call is detected in stream (early detection, no print)
     def on_tool_call(name: str, tool_id: str) -> None:
         # Just track for potential cancellation - no display update needed
-        pass
+        _mark_server_activity()
 
     # Callback when reasoning state changes
     def on_reasoning(is_reasoning: bool) -> None:
         nonlocal _thinking_start, _thinking_total
+        _mark_server_activity()
         if is_reasoning:
             _thinking_start = _time.monotonic()
             spinner.update("Thinking...", Activity.THINKING)
@@ -860,6 +867,7 @@ async def run_repl(
     # Batch callbacks for tool execution
     def on_batch_start(tool_calls: tuple[Any, ...]) -> None:
         """Initialize batch - print thinking, then track tools."""
+        _mark_server_activity()
         spinner.prepare_for_block_output()
 
         # Print any accumulated thinking BEFORE tool calls
@@ -874,6 +882,7 @@ async def run_repl(
 
     def on_tool_active(name: str, tool_id: str) -> None:
         """Tool started executing - print call line and track timing."""
+        _mark_server_activity()
         spinner.prepare_for_block_output()
 
         # Get params from pending (if available)
@@ -904,6 +913,7 @@ async def run_repl(
     def on_batch_progress(name: str, tool_id: str, success: bool, error: str, output: str) -> None:
         """Tool completed - print result line with duration."""
         nonlocal _had_errors
+        _mark_server_activity()
 
         # Calculate duration
         duration = 0.0
@@ -953,6 +963,7 @@ async def run_repl(
 
     def on_batch_halt() -> None:
         """Sequential batch halted - print halted for remaining pending tools."""
+        _mark_server_activity()
         for _tool_id, (name, params) in list(_pending_tools.items()):
             spinner.print_untrusted(
                 _format_tool_id_header_line(safe_sink, _tool_id),
@@ -963,6 +974,7 @@ async def run_repl(
 
     def on_batch_complete() -> None:
         """Batch finished - transition spinner to waiting for next response."""
+        _mark_server_activity()
         spinner.update(activity=Activity.WAITING)
 
     # =============================================================
@@ -1498,6 +1510,8 @@ async def run_repl(
             if not user_input.strip():
                 continue
 
+            _mark_server_activity()
+
             # Track whisper state before handling command (for /over visual)
             was_whisper = whisper.is_active()
 
@@ -1777,9 +1791,11 @@ async def run_repl(
                 agent_id: str = current_agent_id,
             ) -> None:
                 nonlocal _first_chunk_received
+                _mark_server_activity()
                 # Wrap in agent_context for correct raw log routing
                 with pool.log_multiplexer.agent_context(agent_id):
                     async for chunk in target_sess.send(inp):
+                        _mark_server_activity()
                         if not _first_chunk_received:
                             _first_chunk_received = True
                             spinner.update("Responding...", Activity.RESPONDING)

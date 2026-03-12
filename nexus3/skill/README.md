@@ -53,6 +53,7 @@ nexus3/skill/
 ├── errors.py             # Skill-specific error classes
 ├── builtin/              # Built-in skill implementations
 │   ├── __init__.py       # Builtin exports
+│   ├── README.md         # Built-in skill package overview
 │   ├── registration.py   # register_builtin_skills() function
 │   ├── env.py            # Environment sanitization helpers
 │   ├── read_file.py      # File reading skill
@@ -98,11 +99,17 @@ nexus3/skill/
     ├── config.py         # GitLabConfig, GitLabInstance dataclasses
     └── gitlab/           # GitLab skill implementations (21 skills)
         ├── __init__.py   # register_gitlab_skills() function
+        ├── README.md     # GitLab package overview
         ├── base.py       # GitLabSkill base class
         ├── client.py     # Async HTTP client (httpx-based)
         ├── permissions.py # Permission checks and confirmation logic
         └── <skill>.py    # Individual skill files (repo, issue, mr, etc.)
 ```
+
+See [`builtin/README.md`](/home/inc/repos/NEXUS3/nexus3/skill/builtin/README.md)
+for the concrete built-in package surface, and
+[`vcs/gitlab/README.md`](/home/inc/repos/NEXUS3/nexus3/skill/vcs/gitlab/README.md)
+for the GitLab subpackage.
 
 ---
 

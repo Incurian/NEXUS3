@@ -223,6 +223,62 @@ Branch:
 - `feat/repl-streaming-cleanup`
 
 Current milestone:
+- Docs completeness/correctness audit active locally (2026-03-12):
+  - created
+    [DOCS-COMPLETENESS-AND-CORRECTNESS-AUDIT-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/DOCS-COMPLETENESS-AND-CORRECTNESS-AUDIT-PLAN-2026-03-12.md)
+    for merge-prep coverage and top-level claim verification.
+  - local progress:
+    - missing package readmes added for:
+      `nexus3/`, `nexus3/skill/builtin/`, `nexus3/skill/vcs/gitlab/`, and
+      `nexus3/mcp/test_server/`
+    - parent module docs now point to the new nested readmes so package
+      coverage is discoverable instead of just technically present
+    - current-facing claim fixes landed for:
+      - `README.md` skill-count architecture row (`43 built-in + 21 GitLab`)
+      - `README.md`, `CLAUDE.md`, `nexus3/defaults/NEXUS-DEFAULT.md`, and
+        `nexus3/session/README.md` session-resume wording/file trees that
+        incorrectly implied `last-session.json` is only written on REPL exit
+      - `nexus3/display/README.md` example import that still implied
+        `StreamingDisplay` was re-exported from `nexus3.display`
+    - package-level README coverage now matches the implemented `nexus3/`
+      package layout except for intentionally deferred `nexus3/ide`
+  - focused validation passed:
+    - `.venv/bin/pytest -q tests/unit/test_http_pipeline_layers.py tests/unit/cli/test_repl_safe_sink.py`
+      (`60 passed`)
+    - `.venv/bin/ruff check nexus3/rpc/http.py nexus3/cli/repl.py tests/unit/test_http_pipeline_layers.py README.md AGENTS.md CLAUDE.md docs/plans/README.md docs/plans/REPL-RPC-IDLE-ACTIVITY-PLAN-2026-03-12.md docs/plans/DOCS-COMPLETENESS-AND-CORRECTNESS-AUDIT-PLAN-2026-03-12.md nexus3/README.md nexus3/cli/README.md nexus3/defaults/NEXUS-DEFAULT.md nexus3/display/README.md nexus3/mcp/README.md nexus3/mcp/test_server/README.md nexus3/rpc/README.md nexus3/session/README.md nexus3/skill/README.md nexus3/skill/builtin/README.md nexus3/skill/vcs/README.md nexus3/skill/vcs/gitlab/README.md`
+    - `.venv/bin/mypy nexus3/rpc/http.py nexus3/cli/repl.py`
+    - `git diff --check`
+  - next gate:
+    - commit the remaining idle-activity + docs-audit work, push the branch,
+      then merge into `master`
+- REPL/RPC idle activity sync active locally (2026-03-12):
+  - created
+    [REPL-RPC-IDLE-ACTIVITY-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/REPL-RPC-IDLE-ACTIVITY-PLAN-2026-03-12.md)
+    for the follow-up that keeps the embedded RPC server alive while the REPL
+    is actively being used.
+  - local progress:
+    - `nexus3.rpc.http` now exposes a shared `ServerActivityTracker`, and
+      `run_http_server(...)` can use that shared tracker instead of counting
+      only incoming HTTP connections
+    - the unified REPL now touches that tracker on user input, direct streamed
+      content, reasoning transitions, and tool lifecycle callbacks, so long
+      direct turns no longer appear idle to the embedded server
+    - in-process subagents and `nexus_send` remain unaffected by token
+      rotation because they do not route through HTTP auth
+    - fresh external `nexus3 rpc ...` / `NexusClient.with_auto_auth()` calls
+      continue to discover the current token file per invocation; only
+      long-lived external clients that cache an old token remain a later
+      reconnect problem
+    - focused RPC coverage now exercises the shared activity tracker directly
+  - focused validation passed:
+    - `.venv/bin/pytest -q tests/unit/test_http_pipeline_layers.py tests/unit/cli/test_repl_safe_sink.py`
+      (`60 passed`)
+    - `.venv/bin/ruff check nexus3/rpc/http.py nexus3/cli/repl.py tests/unit/test_http_pipeline_layers.py README.md nexus3/cli/README.md nexus3/rpc/README.md CLAUDE.md AGENTS.md docs/plans/README.md docs/plans/REPL-RPC-IDLE-ACTIVITY-PLAN-2026-03-12.md`
+    - `.venv/bin/mypy nexus3/rpc/http.py nexus3/cli/repl.py`
+    - `git diff --check`
+  - next gate:
+    - decide separately whether next-activity auto-restart of the embedded
+      server is worth implementing later
 - REPL recent-history pull active locally (2026-03-12):
   - created
     [REPL-RECENT-HISTORY-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/REPL-RECENT-HISTORY-PLAN-2026-03-12.md)

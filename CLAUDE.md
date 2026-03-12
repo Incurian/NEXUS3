@@ -208,6 +208,8 @@ across both global and `/agent/{id}` RPC routes. `create_agent` follow-up
     use the same standard path
   - when the REPL attaches to an existing session context, it now shows a dim
     recent-history block with the last couple of visible conversation messages
+  - direct REPL activity now refreshes the embedded RPC server idle timer, so
+    long in-process turns do not let the HTTP server auto-stop mid-session
 
 #### Component Sharing
 
@@ -328,13 +330,14 @@ Sessions are JSON files with schema version 1:
 ~/.nexus3/
 ├── sessions/           # Named sessions
 │   └── {name}.json     # Saved via /save
-├── last-session.json   # Auto-saved on exit (for --resume)
+├── last-session.json   # Updated for --resume during REPL use
 └── last-session-name   # Name of last session
 ```
 
 ### Key Behaviors
 
-- **Auto-save on exit**: Current session saved to `last-session.json` for `--resume`
+- **Auto-save for resume**: Current displayed session is kept in
+  `last-session.json` during REPL use so `--resume` can recover it
 - **Temp sessions**: Named `.1`, `.2`, etc. Cannot be saved with `/save` without providing a name
 - **Model persistence**: Model alias saved and restored (e.g., switch to haiku, save, resume → still haiku)
 - **Permission restoration**: Preset and disabled tools restored from saved session
@@ -902,7 +905,7 @@ For proper UTF-8 display, the console should use code page 65001. NEXUS3 warns i
 ├── rpc.token        # Auto-generated RPC token (default port)
 ├── rpc-{port}.token # Port-specific RPC tokens
 ├── sessions/        # Saved session files (JSON)
-├── last-session.json  # Auto-saved for --resume
+├── last-session.json  # Updated for --resume during REPL use
 ├── last-session-name  # Name of last session
 └── logs/
     └── server.log   # Server lifecycle events (rotating, 5MB x 3 files)
