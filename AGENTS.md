@@ -220,10 +220,10 @@ Suggested next hardening if failure persists:
 ## Architecture Overhaul Running Status (2026-03-09)
 
 Branch:
-- `feat/repl-streaming-cleanup`
+- `master`
 
 Current milestone:
-- Docs completeness/correctness audit complete locally (2026-03-12):
+- Docs completeness/correctness audit merged into master (2026-03-12):
   - created
     [DOCS-COMPLETENESS-AND-CORRECTNESS-AUDIT-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/DOCS-COMPLETENESS-AND-CORRECTNESS-AUDIT-PLAN-2026-03-12.md)
     for merge-prep coverage and top-level claim verification.
@@ -255,8 +255,8 @@ Current milestone:
     - `.venv/bin/mypy nexus3/rpc/http.py nexus3/cli/repl.py`
     - `git diff --check`
   - next gate:
-    - push `9ed530c`, merge `feat/repl-streaming-cleanup` into `master`, and
-      push `master`
+    - watch for any follow-up doc drift or live-behavior corrections and
+      branch from `master` if another cleanup slice is needed
 - REPL/RPC idle activity sync active locally (2026-03-12):
   - created
     [REPL-RPC-IDLE-ACTIVITY-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/REPL-RPC-IDLE-ACTIVITY-PLAN-2026-03-12.md)
