@@ -48,6 +48,9 @@ Connect multiple LLM providers simultaneously — OpenRouter, Anthropic, OpenAI,
 ### Interactive REPL
 
 A streaming terminal interface with a session lobby, whisper mode for directing input to specific agents, and commands for managing agents, permissions, models, and configuration on the fly. Save, resume, and clone sessions with full state restoration — messages, model choice, permissions, working directory, and session-scoped allowances.
+When the REPL attaches to an existing session context, it now shows a small dim
+recent-history block so the last couple of conversation messages are visible
+immediately.
 
 ### Context Compaction
 

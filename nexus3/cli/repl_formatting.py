@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from html import escape as html_escape
 from pathlib import Path
 
 from nexus3.cli.trace_palette import trace_body_style, trace_header_style
 from nexus3.core.text_safety import strip_terminal_escapes
+from nexus3.core.types import Message, Role
 from nexus3.display.safe_sink import SafeSink
 from nexus3.session.trace import tool_display_id
 
@@ -107,6 +109,58 @@ def _format_tool_result_preview_lines(
         formatted.append(
             f"      [dim]↳ Preview truncated at {max_lines} lines / {max_chars} chars[/]"
         )
+
+    return formatted
+
+
+def _format_recent_history_lines(
+    safe_sink: SafeSink,
+    messages: Sequence[Message],
+    *,
+    max_messages: int,
+    max_lines: int,
+    max_chars: int,
+) -> list[str]:
+    """Format a dim recent-history block from the latest conversation messages."""
+    recent_messages: list[Message] = []
+    for message in messages:
+        if message.role not in (Role.USER, Role.ASSISTANT):
+            continue
+        if not message.content.strip():
+            continue
+        recent_messages.append(message)
+
+    if max_messages > 0:
+        recent_messages = recent_messages[-max_messages:]
+
+    if not recent_messages:
+        return []
+
+    formatted = ["[dim]Recent history:[/]"]
+    for message in recent_messages:
+        role_label = "User" if message.role == Role.USER else "Assistant"
+        trimmed = message.content.strip("\n")
+        clipped = trimmed[:max_chars]
+        lines = clipped.splitlines() or [clipped]
+        truncated = len(trimmed) > max_chars
+
+        if len(lines) > max_lines:
+            lines = lines[:max_lines]
+            truncated = True
+
+        first_line = _sanitize_tool_trace_text(safe_sink, lines[0])
+        formatted.append(f"[dim]  {role_label}: {first_line}[/]")
+
+        for line in lines[1:]:
+            safe_line = _sanitize_tool_trace_text(safe_sink, line)
+            formatted.append(f"[dim]    {safe_line}[/]")
+
+        if truncated:
+            formatted.append(
+                "[dim]"
+                f"    ↳ History truncated at {max_lines} lines / {max_chars} chars"
+                "[/]"
+            )
 
     return formatted
 

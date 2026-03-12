@@ -70,6 +70,7 @@ from nexus3.cli.repl_formatting import (
     _format_plain_message_line,
     _format_port_in_use_by_other_service_line,
     _format_provider_initialization_failed_line,
+    _format_recent_history_lines,
     _format_red_message_line,
     _format_reload_detected_changes_line,
     _format_reload_starting_line,
@@ -116,7 +117,7 @@ from nexus3.core.encoding import configure_stdio
 from nexus3.core.errors import NexusError, ProviderError
 from nexus3.core.paths import display_path
 from nexus3.core.permissions import ConfirmationResult, PermissionLevel
-from nexus3.core.types import ToolCall
+from nexus3.core.types import Message, ToolCall
 from nexus3.core.validation import ValidationError, validate_agent_id
 from nexus3.display import Activity, Spinner, get_console
 from nexus3.display.safe_sink import SafeSink
@@ -170,6 +171,9 @@ load_dotenv()
 
 _TOOL_RESULT_PREVIEW_MAX_LINES = 6
 _TOOL_RESULT_PREVIEW_MAX_CHARS = 600
+_REPL_RECENT_HISTORY_MESSAGES = 2
+_REPL_RECENT_HISTORY_MAX_LINES = 4
+_REPL_RECENT_HISTORY_MAX_CHARS = 400
 
 
 def _count_tool_output_lines(output: str) -> int:
@@ -216,6 +220,23 @@ def _get_tool_result_preview(name: str, output: str) -> tuple[str, str] | None:
             return ("Response", response_content)
 
     return ("Result preview", output)
+
+
+def _print_recent_history(safe_sink: SafeSink, messages: list[Message]) -> None:
+    """Print a dim recent-history block for the latest visible conversation messages."""
+    lines = _format_recent_history_lines(
+        safe_sink,
+        messages,
+        max_messages=_REPL_RECENT_HISTORY_MESSAGES,
+        max_lines=_REPL_RECENT_HISTORY_MAX_LINES,
+        max_chars=_REPL_RECENT_HISTORY_MAX_CHARS,
+    )
+    if not lines:
+        return
+
+    for line in lines:
+        safe_sink.print_trusted(line)
+    safe_sink.print_trusted("")
 
 
 async def run_repl(
@@ -1160,6 +1181,7 @@ async def run_repl(
     for line in get_git_bash_input_warning_lines(include_cancel_hint=True):
         console.print(line, style="dim")
 
+    _print_recent_history(safe_sink, main_agent.context.messages)
     console.print(get_main_repl_command_hint(), style="dim")
     console.print("")
 
@@ -1518,6 +1540,7 @@ async def run_repl(
                                     _format_switched_agent_line(safe_sink, current_agent_id),
                                     style="dim cyan",
                                 )
+                            _print_recent_history(safe_sink, new_agent.context.messages)
                         else:
                             console.print(
                                 _format_repl_error_line(safe_sink, f"Agent not found: {new_id}")
@@ -1526,6 +1549,14 @@ async def run_repl(
                         console.print(
                             _format_whisper_mode_line(safe_sink, output.whisper_target)
                         )
+                        target_id = output.whisper_target
+                        if target_id is not None:
+                            whisper_target_agent = pool.get(target_id)
+                            if whisper_target_agent is not None:
+                                _print_recent_history(
+                                    safe_sink,
+                                    whisper_target_agent.context.messages,
+                                )
                     elif output.result == CmdResult.ERROR:
                         # Check for prompt actions that need user confirmation
                         action = output.data.get("action") if output.data else None
@@ -1592,6 +1623,10 @@ async def run_repl(
                                             ),
                                             style="dim cyan",
                                         )
+                                        _print_recent_history(
+                                            safe_sink,
+                                            new_agent.context.messages,
+                                        )
                                 except Exception as e:
                                     console.print(
                                         _format_repl_error_line(
@@ -1657,6 +1692,10 @@ async def run_repl(
                                             ),
                                             style="dim cyan",
                                         )
+                                        _print_recent_history(
+                                            safe_sink,
+                                            new_agent.context.messages,
+                                        )
                                     else:  # prompt_create_whisper
                                         whisper.enter(
                                             agent_name_to_create, current_agent_id
@@ -1665,6 +1704,10 @@ async def run_repl(
                                             _format_whisper_mode_line(
                                                 safe_sink, agent_name_to_create
                                             )
+                                        )
+                                        _print_recent_history(
+                                            safe_sink,
+                                            new_agent.context.messages,
                                         )
                                 except Exception as e:
                                     console.print(

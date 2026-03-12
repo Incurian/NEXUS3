@@ -206,6 +206,8 @@ across both global and `/agent/{id}` RPC routes. `create_agent` follow-up
   - successful REPL tool calls now surface bounded inline previews by default,
     with long outputs truncated instead of dumped wholesale; `mcp_*` results
     use the same standard path
+  - when the REPL attaches to an existing session context, it now shows a dim
+    recent-history block with the last couple of visible conversation messages
 
 #### Component Sharing
 

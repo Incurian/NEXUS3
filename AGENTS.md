@@ -223,6 +223,29 @@ Branch:
 - `feat/repl-streaming-cleanup`
 
 Current milestone:
+- REPL recent-history pull active locally (2026-03-12):
+  - created
+    [REPL-RECENT-HISTORY-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/REPL-RECENT-HISTORY-PLAN-2026-03-12.md)
+    for a small REPL UX slice that mirrors trace’s startup history pull.
+  - local progress:
+    - the REPL now builds a dim `Recent history` block from the last two
+      non-empty user/assistant messages, with bounded multiline previews and
+      explicit truncation notes
+    - that block is shown when the REPL attaches to an existing session
+      context:
+      startup, agent switch, restore, whisper attach, and whisper return
+    - tool-only records stay out of this block so it remains a lightweight
+      conversation refresher rather than a second execution trace
+    - focused formatting coverage now exercises recent-history selection,
+      sanitization, and truncation directly
+  - focused validation passed:
+    - `.venv/bin/pytest -q tests/unit/cli/test_repl_safe_sink.py`
+      (`39 passed`)
+    - `.venv/bin/ruff check nexus3/cli/repl.py nexus3/cli/repl_formatting.py tests/unit/cli/test_repl_safe_sink.py README.md nexus3/cli/README.md CLAUDE.md AGENTS.md docs/plans/README.md docs/plans/REPL-RECENT-HISTORY-PLAN-2026-03-12.md`
+    - `.venv/bin/mypy nexus3/cli/repl.py nexus3/cli/repl_formatting.py`
+    - `git diff --check`
+  - next gate:
+    - do a quick live REPL sanity check on startup + `/agent` + `/whisper`
 - REPL tool-result preview standardization active locally (2026-03-12):
   - created
     [REPL-TOOL-RESULT-PREVIEW-STANDARDIZATION-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/REPL-TOOL-RESULT-PREVIEW-STANDARDIZATION-PLAN-2026-03-12.md)

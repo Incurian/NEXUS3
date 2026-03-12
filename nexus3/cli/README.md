@@ -126,6 +126,8 @@ async def run_repl(
 - **Incoming Turn Notifications**: RPC messages interrupt prompt and show spinner
 - **Tool Result Previews**: Successful tool calls show bounded inline return
   previews by default, with truncation for longer results
+- **Recent History Pull**: On startup and agent attach/switch points, the REPL
+  shows a dim preview of the last couple of conversation messages
 - **Token Toolbar**: Bottom toolbar shows token usage and ready/error state
 - **Auto-Save**: Saves session after each interaction for resume capability
 

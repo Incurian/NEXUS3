@@ -63,6 +63,7 @@ This index covers the architecture plans created during today's review/planning 
 ## REPL UX Plans (2026-03-12)
 
 - [REPL-TOOL-RESULT-PREVIEW-STANDARDIZATION-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/REPL-TOOL-RESULT-PREVIEW-STANDARDIZATION-PLAN-2026-03-12.md)
+- [REPL-RECENT-HISTORY-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/REPL-RECENT-HISTORY-PLAN-2026-03-12.md)
 
 ## Path Format Plans (2026-03-11)
 

@@ -22,6 +22,7 @@ from nexus3.cli.repl import (
     _format_plain_message_line,
     _format_port_in_use_by_other_service_line,
     _format_provider_initialization_failed_line,
+    _format_recent_history_lines,
     _format_red_message_line,
     _format_reload_detected_changes_line,
     _format_reload_starting_line,
@@ -55,6 +56,7 @@ from nexus3.cli.repl import (
     _summarize_tool_output,
 )
 from nexus3.cli.repl_commands import print_yolo_warning
+from nexus3.core.types import Message, Role
 from nexus3.display.safe_sink import SafeSink
 
 
@@ -236,6 +238,55 @@ def test_get_tool_result_preview_uses_response_content_for_nexus_send() -> None:
 
     assert preview == ("Response", "[cyan]reply[/cyan]\x1b[2J\nnext")
     assert fallback_preview == ("Result preview", "alpha\nbeta\n")
+
+
+def test_recent_history_lines_keep_last_non_empty_user_and_assistant_messages() -> None:
+    sink = _make_sink()
+
+    lines = _format_recent_history_lines(
+        sink,
+        [
+            Message(role=Role.USER, content="older"),
+            Message(role=Role.TOOL, content="tool output", tool_call_id="toolu_123"),
+            Message(role=Role.ASSISTANT, content="assistant reply"),
+            Message(role=Role.USER, content=""),
+            Message(role=Role.USER, content="latest user"),
+        ],
+        max_messages=2,
+        max_lines=4,
+        max_chars=400,
+    )
+
+    assert lines == [
+        "[dim]Recent history:[/]",
+        "[dim]  Assistant: assistant reply[/]",
+        "[dim]  User: latest user[/]",
+    ]
+
+
+def test_recent_history_lines_sanitize_and_truncate_multiline_messages() -> None:
+    sink = _make_sink()
+
+    lines = _format_recent_history_lines(
+        sink,
+        [
+            Message(
+                role=Role.ASSISTANT,
+                content="[cyan]line1[/cyan]\x1b[31m\nline2\nline3",
+            )
+        ],
+        max_messages=1,
+        max_lines=2,
+        max_chars=200,
+    )
+
+    assert lines == [
+        "[dim]Recent history:[/]",
+        "[dim]  Assistant: \\[cyan]line1\\[/cyan][/]",
+        "[dim]    line2[/]",
+        "[dim]    ↳ History truncated at 2 lines / 200 chars[/]",
+    ]
+    assert all("\x1b" not in line for line in lines)
 
 
 def test_tool_error_trace_line_truncates_and_sanitizes_error_text() -> None:
