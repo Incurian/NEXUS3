@@ -232,39 +232,45 @@ ad-hoc compatibility shim.
 
 ## Current Handoff
 
-### 2026-03-12 - macOS compatibility audit active locally
+### 2026-03-12 - hard rename planning and helper script
 
 - Branch: `master`
-- Baseline head: `efe8811` (`packaging: fix public metadata`)
+- Baseline head: `11782e2` (`platform: audit macos and linux shell behavior`)
 - Active slice:
-  - complete Linux follow-on audit after the macOS compatibility slice
-  - preserve the cross-platform editor parsing fix
-  - scope host-shell-aware `shell_UNSAFE(auto)` back to macOS only so Linux
-    keeps prior generic-shell semantics under `auto`
+  - plan a full flag-day rename away from the NEXUS/NEXUS3 namespace
+  - avoid compatibility aliases because there are no public users yet
+  - add a tracked-files-only helper script so the future rename can be run as
+    one controlled repo rewrite after the new name is chosen
 - Plan:
-  - [docs/plans/MACOS-COMPATIBILITY-AUDIT-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/MACOS-COMPATIBILITY-AUDIT-PLAN-2026-03-12.md)
-  - [docs/plans/LINUX-COMPATIBILITY-AUDIT-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/LINUX-COMPATIBILITY-AUDIT-PLAN-2026-03-12.md)
+  - [docs/plans/PROJECT-HARD-RENAME-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/PROJECT-HARD-RENAME-PLAN-2026-03-12.md)
 - Implemented locally:
-  - `nexus3/cli/editor_preview.py`
-    - parses `VISUAL` / `EDITOR` as real command vectors
-    - defaults to blocking TextEdit via `open` on macOS instead of pager-only
-      fallback
-  - `nexus3/skill/builtin/bash.py`
-    - adds explicit `shell="zsh"`
-    - makes macOS `shell="auto"` prefer a supported host shell from `$SHELL`
-      when it can be resolved safely, which covers the common macOS zsh case
-    - keeps Linux `shell="auto"` on the generic shell path to preserve
-      established behavior there
+  - `scripts/maintenance/project_hard_rename.py`
+    - reads a JSON rename spec
+    - scans tracked files via `git ls-files`
+    - plans path/content rewrites for `nexus3`, `.nexus3`, `nexus_*`,
+      `NEXUS.md`, `NEXUS-DEFAULT.md`, `NEXUS3_API_KEY`, and `x-nexus-*`
+    - stays dry-run by default and refuses execute mode on a dirty tracked
+      worktree unless `--allow-dirty`
+    - can emit a JSON manifest for review before the actual rename
+- `tests/unit/test_project_hard_rename_script.py`
+  - covers valid spec loading
+  - rejects unchanged current-name specs
+  - verifies representative path/content rewrite planning
+  - verifies manifest summary counts
 - Focused validation passed:
-  - `.venv/bin/pytest -q tests/unit/cli/test_editor_preview.py tests/unit/skill/test_bash_unix_behavior.py tests/unit/skill/test_bash_windows_behavior.py tests/unit/test_repl_commands.py -k 'tool_opens_editor or test_'` (`84 passed`)
-  - `.venv/bin/ruff check nexus3/cli/editor_preview.py nexus3/skill/builtin/bash.py tests/unit/cli/test_editor_preview.py tests/unit/skill/test_bash_unix_behavior.py tests/unit/skill/test_bash_windows_behavior.py README.md nexus3/cli/README.md nexus3/skill/README.md nexus3/defaults/NEXUS-DEFAULT.md docs/plans/README.md docs/plans/MACOS-COMPATIBILITY-AUDIT-PLAN-2026-03-12.md docs/plans/LINUX-COMPATIBILITY-AUDIT-PLAN-2026-03-12.md AGENTS.md`
-  - `.venv/bin/mypy nexus3/cli/editor_preview.py nexus3/skill/builtin/bash.py`
+  - `.venv/bin/pytest -q tests/unit/test_project_hard_rename_script.py` (`4 passed`)
+  - `.venv/bin/ruff check scripts/maintenance/project_hard_rename.py tests/unit/test_project_hard_rename_script.py docs/plans/PROJECT-HARD-RENAME-PLAN-2026-03-12.md docs/plans/README.md AGENTS.md`
+  - `.venv/bin/mypy scripts/maintenance/project_hard_rename.py`
+  - `.venv/bin/python scripts/maintenance/project_hard_rename.py --print-spec-template`
+  - `.venv/bin/python scripts/maintenance/project_hard_rename.py --spec <temp-spec> --manifest /tmp/nexus-rename-manifest.json`
+    - dry-run planned `556` tracked-file rewrites
+    - `265` path renames
+    - `541` content rewrites
   - `git diff --check`
 - Residual note:
-  - still no live macOS hardware validation
-  - path/security behavior on case-insensitive APFS volumes remains the main
-    unverified mac-specific risk
-  - no obvious Linux code-path defect surfaced in the follow-on sweep beyond
-    the now-contained `shell_UNSAFE(auto)` semantic change
+  - the helper intentionally does not rewrite untracked local state or every
+    bare-word `nexus`/`NEXUS` prose occurrence
+  - the eventual rename still needs a manual residual sweep and packaging/live
+    validation after the scripted pass
 - Next gate:
-  - user review or commit/push of the macOS/Linux compatibility slice
+  - run focused validation on the helper and review the plan/script output

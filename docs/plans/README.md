@@ -70,6 +70,7 @@ This index covers the architecture plans created during today's review/planning 
 - [DOCS-COMPLETENESS-AND-CORRECTNESS-AUDIT-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/DOCS-COMPLETENESS-AND-CORRECTNESS-AUDIT-PLAN-2026-03-12.md)
 - [RELEASE-V1.0.0-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/RELEASE-V1.0.0-PLAN-2026-03-12.md)
 - [AGENTS-CLAUDE-HANDOFF-RESTRUCTURE-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/AGENTS-CLAUDE-HANDOFF-RESTRUCTURE-PLAN-2026-03-12.md)
+- [PROJECT-HARD-RENAME-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/PROJECT-HARD-RENAME-PLAN-2026-03-12.md)
 
 ## Path Format Plans (2026-03-11)
 
