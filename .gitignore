@@ -53,3 +53,7 @@ reviews/
 
 # Local planning docs
 DISPLAY-*.md
+
+# Local diagnostics and editor builds
+err/
+editors/

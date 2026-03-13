@@ -21,7 +21,7 @@ class TestMainHelpCompleteness:
         # Session management
         "save", "clone", "rename", "delete",
         # Configuration
-        "cwd", "model", "permissions", "prompt", "compact",
+        "cwd", "model", "permissions", "prompt", "compact", "tool", "tools",
         # MCP
         "mcp",
         # GitLab
@@ -177,6 +177,8 @@ class TestCommandImplementationExists:
         "clear": "cmd_clear",
         "quit": "cmd_quit",
         "compact": "cmd_compact",
+        "tool": "cmd_tool",
+        "tools": "cmd_tools",
         "model": "cmd_model",
         "mcp": "cmd_mcp",
         "init": "cmd_init",

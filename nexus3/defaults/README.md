@@ -4,19 +4,24 @@
 
 The `nexus3/defaults/` directory contains the **shipped default configuration and system prompts** that NEXUS3 uses. These files serve as:
 
-1. **System documentation** (`NEXUS-DEFAULT.md`) - Always loaded, provides tool docs, permissions, limits
+1. **System documentation** (`NEXUS-DEFAULT.md`) - Always loaded, provides tool docs, a built-in coding-agent operating playbook, permissions, and limits
 2. **User prompt template** (`NEXUS.md`) - Copied to `~/.nexus3/` on init, user can customize
-3. **Default configuration** (`config.json`) - Fallback when no user config exists
-4. **Reference implementation** showing all available configuration options
+3. **Project AGENTS template** (`AGENTS.md`) - Copied to `~/.nexus3/AGENTS.md` on global init and reused by local `/init`
+4. **Default configuration** (`config.json`) - Fallback when no user config exists
+5. **Reference implementation** showing all available configuration options
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `__init__.py` | Package marker (docstring only, no exports) |
-| `NEXUS-DEFAULT.md` | System defaults prompt (tools, permissions, limits) - always loaded |
+| `NEXUS-DEFAULT.md` | System defaults prompt (tools, operating playbook, permissions, limits) - always loaded |
 | `NEXUS.md` | User prompt template - copied to ~/.nexus3/ on init |
+| `AGENTS.md` | Project AGENTS template - copied to ~/.nexus3/AGENTS.md on global init and used by local /init |
 | `config.json` | Default LLM providers, models, and settings |
+
+`AGENTS.md` in this module is a local-project template source, not part of the
+global runtime prompt-loading chain.
 
 ## Split Context Design
 
@@ -24,7 +29,7 @@ NEXUS3 uses a two-file prompt system to separate auto-updating system documentat
 
 | File | Location | Purpose | Updates |
 |------|----------|---------|---------|
-| `NEXUS-DEFAULT.md` | Package only | Tool docs, permissions, limits | Auto-updates with package upgrades |
+| `NEXUS-DEFAULT.md` | Package only | Tool docs, operating playbook, permissions, limits | Auto-updates with package upgrades |
 | `NEXUS.md` | User's ~/.nexus3/ | Custom instructions | Preserved across upgrades |
 
 This ensures:
@@ -84,7 +89,7 @@ def _load_global_layer(self) -> list[ContextLayer]:
     global_dir = self._get_global_dir()  # ~/.nexus3/
     defaults_dir = self._get_defaults_dir()  # nexus3/defaults/
 
-    # 1. Always load NEXUS-DEFAULT.md from package (system docs/tools)
+    # 1. Always load NEXUS-DEFAULT.md from package (system docs/operating playbook)
     pkg_default = defaults_dir / "NEXUS-DEFAULT.md"
     if pkg_default.is_file():
         layer = ContextLayer(name="system-defaults", path=defaults_dir)
@@ -341,12 +346,13 @@ Example MCP server definitions (for testing):
 
 ### NEXUS-DEFAULT.md (System Defaults)
 
-The `NEXUS-DEFAULT.md` file is **always loaded** and provides system-level documentation:
+The `NEXUS-DEFAULT.md` file is **always loaded** and provides system-level documentation and a full default coding-agent operating playbook:
 
 | Section | Content |
 |---------|---------|
 | Introduction | Agent identity and capabilities |
 | Principles | Behavioral guidelines (be direct, use tools, respect boundaries) |
+| Coding Agent Operating Playbook | Cross-project reasoning, communication, planning, validation, review, subagent guidance, decision rules, and failure-mode avoidance |
 | Permission System | YOLO/TRUSTED/SANDBOXED levels, ceiling enforcement, RPC defaults |
 | Available Tools | Complete tool reference with parameters (file, exec, agent, clipboard, utility) |
 | Clipboard System | Scopes, permissions, usage patterns |
@@ -366,7 +372,7 @@ The `NEXUS-DEFAULT.md` file is **always loaded** and provides system-level docum
 | Troubleshooting | Common issues table, debug flags |
 | Self-Knowledge | Tips for NEXUS3 agents working on NEXUS3 codebase |
 
-This file auto-updates when NEXUS3 is upgraded, ensuring agents always have current tool documentation.
+This file auto-updates when NEXUS3 is upgraded, ensuring agents always have current tool documentation and the current built-in operating playbook.
 
 ### NEXUS.md (User Template)
 
@@ -406,6 +412,14 @@ if default_nexus.exists():
     _safe_write_text(
         global_dir / "NEXUS.md",
         default_nexus.read_text(encoding="utf-8"),
+    )
+
+# Copy AGENTS.md for future local /init runs
+default_agents = defaults_dir / "AGENTS.md"
+if default_agents.exists():
+    _safe_write_text(
+        global_dir / "AGENTS.md",
+        default_agents.read_text(encoding="utf-8"),
     )
 
 # Copy config.json
@@ -451,14 +465,14 @@ To override defaults without modifying package files:
 
 ```bash
 nexus3 --init-global  # Creates ~/.nexus3/ with copies of defaults
-# Then edit ~/.nexus3/config.json and ~/.nexus3/NEXUS.md
+# Then edit ~/.nexus3/config.json, ~/.nexus3/NEXUS.md, and ~/.nexus3/AGENTS.md
 ```
 
-### Project Overrides (`.nexus3/`)
+### Project Overrides (`./` + `./.nexus3/`)
 
 ```bash
 # In REPL:
-/init  # Creates ./.nexus3/ with templates
+/init  # Creates ./AGENTS.md from ~/.nexus3/AGENTS.md (or packaged fallback)
 
 # Or manually:
 mkdir -p .nexus3

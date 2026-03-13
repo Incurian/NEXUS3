@@ -302,7 +302,7 @@ Slash command implementations for the interactive REPL.
 
 | Command | Description |
 |---------|-------------|
-| `/init [FILENAME]` | Create `.nexus3/` with AGENTS.md (default) or specified .md file |
+| `/init [FILENAME]` | Create a root instruction file (`AGENTS.md` by default) plus project `.nexus3/` config files |
 | `/init --force` | Overwrite existing config |
 | `/init --global` | Initialize `~/.nexus3/` instead |
 
@@ -688,19 +688,25 @@ Initialize configuration directories with security protections.
 
 ```python
 def init_global(force: bool = False) -> tuple[bool, str]
-def init_local(cwd: Path | None = None, force: bool = False) -> tuple[bool, str]
+def init_local(
+    cwd: Path | None = None,
+    force: bool = False,
+    filename: str = "AGENTS.md",
+) -> tuple[bool, str]
 ```
 
 #### Global Init (`~/.nexus3/`)
 
 - Copies `NEXUS.md` from defaults
+- Copies `AGENTS.md` from defaults as the user-editable local-init template
 - Copies `config.json` from defaults
 - Creates empty `mcp.json`
 - Creates `sessions/` directory
 
-#### Local Init (`./.nexus3/`)
+#### Local Init (`./` + `./.nexus3/`)
 
-- Creates `NEXUS.md` template
+- Creates the requested instruction file in the project root (`AGENTS.md` by default)
+- For `AGENTS.md`, copies `~/.nexus3/AGENTS.md` when present, otherwise falls back to the packaged default template
 - Creates `config.json` template
 - Creates empty `mcp.json`
 
@@ -847,9 +853,9 @@ nexus3 --init-global
 nexus3 --init-global-force  # Overwrite existing
 
 # Initialize project config (from REPL)
-> /init                  # Creates AGENTS.md (default)
-> /init NEXUS.md         # Creates NEXUS.md
-> /init CLAUDE.md        # Creates CLAUDE.md
+> /init                  # Creates ./AGENTS.md plus ./.nexus3/ config files
+> /init NEXUS.md         # Creates ./NEXUS.md plus ./.nexus3/ config files
+> /init CLAUDE.md        # Creates ./CLAUDE.md plus ./.nexus3/ config files
 > /init --force
 > /init --global
 ```

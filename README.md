@@ -260,9 +260,11 @@ Windows (cmd/PowerShell):
 nexus3 --init-global
 ```
 
-This creates `~/.nexus3/` with default `config.json`, `NEXUS.md`, and `mcp.json`. `~` resolves to your home directory on all platforms (e.g., `/home/user` on Linux, `C:\Users\YourName` on Windows).
+This creates `~/.nexus3/` with default `config.json`, `NEXUS.md`, `AGENTS.md`, and `mcp.json`. `~` resolves to your home directory on all platforms (e.g., `/home/user` on Linux, `C:\Users\YourName` on Windows).
 
-After initialization, edit `~/.nexus3/NEXUS.md` to add personal instructions that apply to all your agents — coding style preferences, common project conventions, or any context you want every agent to have. See [Context Configuration](#context-configuration) for how NEXUS.md files work across layers.
+This also seeds `~/.nexus3/AGENTS.md`, which local `/init` uses as the default project `AGENTS.md` template.
+
+After initialization, edit `~/.nexus3/NEXUS.md` to add personal instructions that apply to all your agents — coding style preferences, common project conventions, or any context you want every agent to have. Edit `~/.nexus3/AGENTS.md` if you want to customize the default project-level `AGENTS.md` that `/init` creates. See [Context Configuration](#context-configuration) for how NEXUS.md files work across layers.
 
 ### Path Setup (If `nexus3` Command Not Found)
 
@@ -591,7 +593,7 @@ you> /help
 
 ### Project Setup
 
-To give agents project-specific context, run `/init` from within the REPL (or `nexus3 --init-global` for global config). This creates a `.nexus3/` directory with a `NEXUS.md` you can edit with any text editor:
+To give agents project-specific context, run `/init` from within the REPL (or `nexus3 --init-global` for global config). This creates `./AGENTS.md` by default from `~/.nexus3/AGENTS.md` when available, with a packaged fallback, and stores project `config.json` and `mcp.json` under `./.nexus3/`:
 
 ```markdown
 # Project Instructions
@@ -1228,7 +1230,7 @@ Cache metrics are logged at DEBUG level (visible with `-v` flag). See [Provider 
 
 NEXUS3 uses a split system prompt design:
 
-- **`NEXUS-DEFAULT.md`** — Baked into the package (`nexus3/defaults/`). Contains tool documentation, permission system reference, troubleshooting, and system knowledge. Auto-updates with package upgrades. Users never need to edit this.
+- **`NEXUS-DEFAULT.md`** — Baked into the package (`nexus3/defaults/`). Contains tool documentation, permission system reference, troubleshooting, a full built-in coding-agent operating playbook, and system knowledge. Auto-updates with package upgrades. Users never need to edit this.
 - **`NEXUS.md`** — User-customizable. Contains custom instructions, project context, and preferences. Preserved across upgrades.
 
 This split means users get new tool documentation automatically while their custom instructions remain untouched.
@@ -1238,7 +1240,7 @@ This split means users get new tool documentation automatically while their cust
 NEXUS.md files are loaded from multiple directories and **concatenated** (not overridden) with labeled section headers showing their source. Every layer's instructions are included, so project-specific instructions add to global ones:
 
 ```
-0. nexus3/defaults/NEXUS-DEFAULT.md      # Package — tool docs, permissions (auto-updates)
+0. nexus3/defaults/NEXUS-DEFAULT.md      # Package — tool docs, operating playbook, permissions (auto-updates)
 1. ~/.nexus3/NEXUS.md                    # Global — your personal defaults
 2. ../../.nexus3/NEXUS.md                # Ancestor — org or workspace level
 3. ../.nexus3/NEXUS.md                   # Ancestor — parent project
@@ -1257,13 +1259,13 @@ NEXUS.md files are loaded from multiple directories and **concatenated** (not ov
 
 ```bash
 # From within the REPL
-/init                    # Creates .nexus3/ with AGENTS.md (default)
-/init NEXUS.md           # Creates .nexus3/ with NEXUS.md
-/init CLAUDE.md          # Creates .nexus3/ with CLAUDE.md
+/init                    # Creates ./AGENTS.md plus ./.nexus3/ config files
+/init NEXUS.md           # Creates ./NEXUS.md plus ./.nexus3/ config files
+/init CLAUDE.md          # Creates ./CLAUDE.md plus ./.nexus3/ config files
 
 # Or manually
 mkdir -p .nexus3
-# Then create .nexus3/AGENTS.md with your project instructions
+# Then create ./AGENTS.md with your project instructions
 ```
 
 Subagents created with a `cwd` parameter automatically pick up the NEXUS.md from their working directory.

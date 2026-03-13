@@ -118,12 +118,52 @@ class TestInitGlobalSymlinkDefense:
 
         assert success is True
         assert nexus_dir.exists()
+        assert (nexus_dir / "AGENTS.md").exists()
         assert (nexus_dir / "NEXUS.md").exists()
         assert not (nexus_dir / "NEXUS.md").is_symlink()
+
+    def test_refuses_symlink_in_agents_md(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """init_global should refuse if AGENTS.md is a symlink."""
+        from nexus3.cli.init_commands import init_global
+
+        nexus_dir = tmp_path / ".nexus3"
+        monkeypatch.setattr(
+            "nexus3.cli.init_commands.get_nexus_dir",
+            lambda: nexus_dir,
+        )
+        nexus_dir.mkdir()
+
+        target = tmp_path / "target.txt"
+        target.write_text("sensitive")
+        (nexus_dir / "AGENTS.md").symlink_to(target)
+
+        success, msg = init_global(force=True)
+
+        assert success is False
+        assert "security error" in msg.lower()
+        assert "symlink" in msg.lower()
+        assert target.read_text() == "sensitive"
 
 
 class TestInitLocalSymlinkDefense:
     """Test init_local refuses symlinks."""
+
+    def test_refuses_symlinked_local_config_dir(self, tmp_path: Path) -> None:
+        """init_local should refuse if .nexus3 itself is a symlink."""
+        from nexus3.cli.init_commands import init_local
+
+        real_dir = tmp_path / "real-config-dir"
+        real_dir.mkdir()
+        (tmp_path / ".nexus3").symlink_to(real_dir)
+
+        success, msg = init_local(cwd=tmp_path, force=True)
+
+        assert success is False
+        assert "security error" in msg.lower()
+        assert not (tmp_path / "AGENTS.md").exists()
+        assert not (real_dir / "config.json").exists()
 
     def test_refuses_symlink_in_config_json(self, tmp_path: Path) -> None:
         """init_local should refuse if config.json is a symlink."""
@@ -141,27 +181,23 @@ class TestInitLocalSymlinkDefense:
         # init_local with force should fail on the symlink
         success, msg = init_local(cwd=tmp_path, force=True)
 
-        # Should fail on NEXUS.md first (or config.json depending on order)
+        # It will write AGENTS.md first, then fail on the symlinked config.json.
         # The important thing is it fails and doesn't overwrite
         if not success:
             assert "security error" in msg.lower() or "symlink" in msg.lower()
 
         # Even if it passes other files, symlink target must not be modified
-        # Actually with force=True it will try to write NEXUS.md first, which will work
-        # Then fail on config.json which is the symlink
+        # Actually with force=True it will write AGENTS.md first, which will work,
+        # then fail on config.json which is the symlink.
 
     def test_refuses_symlink_in_instruction_file(self, tmp_path: Path) -> None:
         """init_local should refuse if the instruction file is a symlink."""
         from nexus3.cli.init_commands import init_local
 
-        # Create the .nexus3 directory
-        nexus_dir = tmp_path / ".nexus3"
-        nexus_dir.mkdir()
-
         # Create target file and symlink at AGENTS.md location (default)
         target = tmp_path / "target.txt"
         target.write_text("sensitive")
-        (nexus_dir / "AGENTS.md").symlink_to(target)
+        (tmp_path / "AGENTS.md").symlink_to(target)
 
         # init_local with force should fail
         success, msg = init_local(cwd=tmp_path, force=True)
@@ -181,7 +217,7 @@ class TestInitLocalSymlinkDefense:
         assert success is True
         nexus_dir = tmp_path / ".nexus3"
         assert nexus_dir.exists()
-        assert (nexus_dir / "AGENTS.md").exists()
+        assert (tmp_path / "AGENTS.md").exists()
         assert (nexus_dir / "config.json").exists()
         assert (nexus_dir / "mcp.json").exists()
 
@@ -237,10 +273,10 @@ class TestSymlinkAttackScenarios:
         # User runs /init --force
         success, msg = init_local(cwd=tmp_path, force=True)
 
-        # Should fail when it hits the symlink (NEXUS.md and config.json first)
+        # Should fail when it hits the symlink (AGENTS.md and config.json first)
         # But even partial success should not corrupt SSH key
-        # Actually NEXUS.md will be written first (succeeds), then config.json (succeeds),
-        # then mcp.json (fails on symlink)
+        # Actually AGENTS.md will be written first (succeeds), then config.json
+        # (succeeds), then mcp.json (fails on symlink)
 
         # The important thing: SSH key must not be corrupted
         assert ssh_key.read_text() == "-----BEGIN RSA PRIVATE KEY-----\nSECRET"

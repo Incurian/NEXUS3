@@ -246,7 +246,7 @@ GitLab:
   /gitlab test [name] Test connection to a GitLab instance
 
 Initialization:
-  /init               Create .nexus3/ in current directory with templates
+  /init               Create AGENTS.md in current directory and .nexus3/ templates
   /init --force       Overwrite existing config files
   /init --global      Initialize ~/.nexus3/ instead of local
 
@@ -682,15 +682,15 @@ Flags:
   --global, -g  Initialize ~/.nexus3/ instead of local ./.nexus3/
 
 Examples:
-  /init                           # Create ./.nexus3/ with AGENTS.md
-  /init NEXUS.md                  # Create ./.nexus3/ with NEXUS.md
-  /init CLAUDE.md                 # Create ./.nexus3/ with CLAUDE.md
+  /init                           # Create ./AGENTS.md plus ./.nexus3/ config files
+  /init NEXUS.md                  # Create ./NEXUS.md plus ./.nexus3/ config files
+  /init CLAUDE.md                 # Create ./CLAUDE.md plus ./.nexus3/ config files
   /init --force                   # Overwrite existing local config
-  /init --global                  # Initialize ~/.nexus3/ (always NEXUS.md)
+  /init --global                  # Initialize ~/.nexus3/ (creates NEXUS.md and AGENTS.md)
 
 Created files (local):
+  ./AGENTS.md      # Project instruction file (uses ~/.nexus3/AGENTS.md when available)
   ./.nexus3/
-  ├── AGENTS.md    # Project instruction file (or specified filename)
   ├── config.json  # Project configuration
   └── mcp.json     # Project MCP servers""",
 
@@ -2429,9 +2429,9 @@ async def cmd_init(ctx: CommandContext, args: str | None) -> CommandOutput:
     """Initialize project configuration directory.
 
     Usage:
-        /init                - Create .nexus3/ with AGENTS.md (default)
-        /init NEXUS.md       - Create .nexus3/ with NEXUS.md
-        /init CLAUDE.md      - Create .nexus3/ with CLAUDE.md
+        /init                - Create ./AGENTS.md and .nexus3/ config files
+        /init NEXUS.md       - Create ./NEXUS.md and .nexus3/ config files
+        /init CLAUDE.md      - Create ./CLAUDE.md and .nexus3/ config files
         /init --force        - Overwrite existing files
         /init --global       - Initialize ~/.nexus3/ instead
     """
