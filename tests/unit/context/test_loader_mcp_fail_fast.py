@@ -38,7 +38,10 @@ def test_mcp_servers_wrong_top_level_type_fails_fast(tmp_path: Path) -> None:
         loader.load()
 
     message = str(exc_info.value)
-    assert "'servers' must be a list of server config objects" in message
+    assert (
+        "'servers' must be an object mapping server names or a list "
+        "of server config objects" in message
+    )
     assert "got str" in message
     assert str(mcp_path) in message
     assert exc_info.value.context is not None

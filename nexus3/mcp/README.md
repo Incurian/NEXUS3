@@ -10,6 +10,14 @@ The `nexus3.mcp` module provides a secure, client-side implementation of the **M
 
 **MCP Specification:** [2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25)
 
+If you want to build a simple Python MCP server that works with NEXUS3, start
+with
+[`docs/references/MCP-SERVER-PYTHON-101.md`](/home/inc/repos/NEXUS3/docs/references/MCP-SERVER-PYTHON-101.md).
+For resources, prompts, and how those surfaces behave in NEXUS3, continue with
+[`docs/references/MCP-SERVER-PYTHON-202.md`](/home/inc/repos/NEXUS3/docs/references/MCP-SERVER-PYTHON-202.md).
+Checked-in example projects live under
+[`docs/references/mcp-python-examples/`](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/README.md).
+
 ### Key Capabilities
 
 - **Multi-transport support:** Connect to MCP servers via stdio (subprocess) or HTTP
@@ -72,6 +80,10 @@ nexus3/mcp/
 
 For the development/test harness package itself, see
 [`test_server/README.md`](/home/inc/repos/NEXUS3/nexus3/mcp/test_server/README.md).
+For a beginner server-building tutorial, see
+[`docs/references/MCP-SERVER-PYTHON-101.md`](/home/inc/repos/NEXUS3/docs/references/MCP-SERVER-PYTHON-101.md).
+For the follow-on capability guide, see
+[`docs/references/MCP-SERVER-PYTHON-202.md`](/home/inc/repos/NEXUS3/docs/references/MCP-SERVER-PYTHON-202.md).
 
 ---
 

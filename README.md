@@ -1830,6 +1830,12 @@ MCP servers only receive safe environment variables by default (PATH, HOME, USER
 - Use `/mcp retry <server>` to manually retry tool listing after fixing configuration issues
 
 For detailed MCP configuration and protocol coverage, see `nexus3/mcp/README.md`.
+If you want to build your own Python MCP server for NEXUS3, start with
+[`docs/references/MCP-SERVER-PYTHON-101.md`](/home/inc/repos/NEXUS3/docs/references/MCP-SERVER-PYTHON-101.md).
+For resources, prompts, and the next capability layer, continue with
+[`docs/references/MCP-SERVER-PYTHON-202.md`](/home/inc/repos/NEXUS3/docs/references/MCP-SERVER-PYTHON-202.md).
+Checked-in runnable example folders live under
+[`docs/references/mcp-python-examples/`](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/README.md).
 
 ---
 

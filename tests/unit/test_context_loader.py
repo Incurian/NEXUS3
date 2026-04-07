@@ -358,6 +358,38 @@ class TestContextLoader:
         assert server_by_name["my-server"].command == ["node", "server.js"]
         assert server_by_name["another-server"].url == "http://localhost:3000"
 
+    def test_mcp_servers_object_format(self, tmp_path: Path) -> None:
+        """Test project mcp.json accepts servers as an object mapping."""
+        local_dir = tmp_path / "project" / ".nexus3"
+        local_dir.mkdir(parents=True)
+        (local_dir / "mcp.json").write_text(json.dumps({
+            "servers": {
+                "my-server": {
+                    "command": ["node", "server.js"],
+                },
+                "another-server": {
+                    "url": "http://localhost:3000",
+                }
+            }
+        }))
+
+        loader = ContextLoader(
+            cwd=tmp_path / "project",
+            context_config=ContextConfig(ancestor_depth=0),
+        )
+        loader._get_global_dir = lambda: tmp_path / "nonexistent"  # type: ignore
+        loader._get_defaults_dir = lambda: tmp_path / "nonexistent"  # type: ignore
+
+        context = loader.load()
+
+        assert len(context.mcp_servers) == 2
+        names = {s.config.name for s in context.mcp_servers}
+        assert names == {"my-server", "another-server"}
+
+        server_by_name = {s.config.name: s.config for s in context.mcp_servers}
+        assert server_by_name["my-server"].command == ["node", "server.js"]
+        assert server_by_name["another-server"].url == "http://localhost:3000"
+
     def test_mcp_mixed_formats_override(self, tmp_path: Path) -> None:
         """Test official format in local overrides NEXUS3 format in global."""
         global_dir = tmp_path / "global" / ".nexus3"

@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 from nexus3.cli.editor_preview import open_in_editor
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands.protocol import CommandContext, CommandOutput, CommandResult
+from nexus3.config.schema import MCPServerConfig
 from nexus3.core.authorization_kernel import (
     AdapterAuthorizationKernel,
     AuthorizationAction,
@@ -108,6 +109,32 @@ _PERMISSION_MUTATION_AUTHORIZATION_KERNEL = AdapterAuthorizationKernel(
     adapters=(_PermissionMutationAuthorizationAdapter(),),
     default_allow=False,
 )
+
+
+def _get_configured_mcp_servers(shared: Any) -> list[MCPServerConfig]:
+    """Return MCP server configs from config.json and layered mcp.json.
+
+    `config.json` and `mcp.json` are both supported configuration surfaces.
+    When the same server name appears in both places, prefer the layered
+    `mcp.json` entry because it is the recommended/project-local override path.
+    """
+    servers_by_name: dict[str, MCPServerConfig] = {}
+
+    config_servers = getattr(shared.config, "mcp_servers", None)
+    if isinstance(config_servers, list):
+        for server in config_servers:
+            if isinstance(server, MCPServerConfig):
+                servers_by_name[server.name] = server
+
+    base_context = getattr(shared, "base_context", None)
+    context_servers = getattr(base_context, "mcp_servers", None)
+    if isinstance(context_servers, list):
+        for server_with_origin in context_servers:
+            server_config = getattr(server_with_origin, "config", None)
+            if isinstance(server_config, MCPServerConfig):
+                servers_by_name[server_config.name] = server_config
+
+    return list(servers_by_name.values())
 
 
 def print_yolo_warning(console: Any, on_switch: bool = False) -> None:
@@ -1971,8 +1998,8 @@ async def cmd_mcp(
     if shared is None:
         return CommandOutput.error("Pool shared components not available")
 
-    config = shared.config
     registry = shared.mcp_registry
+    configured_servers = _get_configured_mcp_servers(shared)
 
     # Parse subcommand and flags
     all_parts = (args or "").strip().split()
@@ -1991,9 +2018,9 @@ async def cmd_mcp(
         lines.append("")
 
         # Configured servers
-        if config.mcp_servers:
+        if configured_servers:
             lines.append("Configured:")
-            for srv_cfg in config.mcp_servers:
+            for srv_cfg in configured_servers:
                 # Check if connected AND visible to this agent
                 server = registry.get(srv_cfg.name, agent_id=current_agent_id)
                 if server is not None:
@@ -2036,15 +2063,13 @@ async def cmd_mcp(
         name = parts[1]
 
         # Find in config
-        srv_cfg = next(
-            (c for c in config.mcp_servers if c.name == name),
-            None,
-        )
+        srv_cfg = next((c for c in configured_servers if c.name == name), None)
 
         if srv_cfg is None:
             return CommandOutput.error(
                 f"MCP server '{name}' not found in config.\n"
-                f"Add it to config.json under 'mcp_servers'."
+                "Add it to .nexus3/mcp.json (or ~/.nexus3/mcp.json) or "
+                "config.json under 'mcp_servers'."
             )
 
         if not srv_cfg.enabled:

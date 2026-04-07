@@ -460,9 +460,10 @@ Source: {source_path}
 
         Later layers override earlier layers with same name.
 
-        Supports two MCP config formats:
+        Supports MCP config formats:
         - Official (Claude Desktop): {"mcpServers": {"name": {...config...}}}
-        - NEXUS3: {"servers": [{"name": "...", ...config...}]}
+        - NEXUS3 list form: {"servers": [{"name": "...", ...config...}]}
+        - NEXUS3 object form: {"servers": {"name": {...config...}}}
 
         Args:
             layers: All context layers in order.
@@ -481,7 +482,7 @@ Source: {source_path}
             sources.mcp_sources.append(mcp_path)
 
             # Support both official ("mcpServers" with dict) and NEXUS3
-            # ("servers" with array) keys.
+            # ("servers" with dict or array) keys.
             #
             # Preserve prior fallback behavior:
             # - non-empty mcpServers takes precedence
@@ -519,7 +520,33 @@ Source: {source_path}
                 # Official format: {"mcpServers": {"test": {...}}}
                 server_items = list(servers_data.items())
             elif container_key == "servers":
-                if not isinstance(servers_data, list):
+                if isinstance(servers_data, dict):
+                    if not servers_data:
+                        continue
+                    # Object form: {"servers": {"test": {...}}}
+                    server_items = list(servers_data.items())
+                elif isinstance(servers_data, list):
+                    if not servers_data:
+                        continue
+                    # List form: {"servers": [{"name": "test", ...}]}
+                    server_items = []
+                    for i, server_entry in enumerate(servers_data):
+                        if not isinstance(server_entry, dict):
+                            context = MCPErrorContext(
+                                server_name=f"servers[{i}]",
+                                source_path=mcp_path,
+                                source_layer=layer.name,
+                            )
+                            raise MCPConfigError(
+                                f"Invalid MCP config in {mcp_path}: "
+                                f"'servers[{i}]' must be an object, "
+                                f"got {type(server_entry).__name__}",
+                                context=context,
+                            )
+                        server_items.append(
+                            (server_entry.get("name", f"unnamed-{i}"), server_entry)
+                        )
+                else:
                     context = MCPErrorContext(
                         server_name=container_key,
                         source_path=mcp_path,
@@ -527,29 +554,10 @@ Source: {source_path}
                     )
                     raise MCPConfigError(
                         f"Invalid MCP config in {mcp_path}: "
-                        f"'{container_key}' must be a list of server config objects, "
+                        f"'{container_key}' must be an object mapping server names "
+                        f"or a list of server config objects, "
                         f"got {type(servers_data).__name__}",
                         context=context,
-                    )
-                if not servers_data:
-                    continue
-                # NEXUS3 format: {"servers": [{"name": "test", ...}]}
-                server_items = []
-                for i, server_entry in enumerate(servers_data):
-                    if not isinstance(server_entry, dict):
-                        context = MCPErrorContext(
-                            server_name=f"servers[{i}]",
-                            source_path=mcp_path,
-                            source_layer=layer.name,
-                        )
-                        raise MCPConfigError(
-                            f"Invalid MCP config in {mcp_path}: "
-                            f"'servers[{i}]' must be an object, "
-                            f"got {type(server_entry).__name__}",
-                            context=context,
-                        )
-                    server_items.append(
-                        (server_entry.get("name", f"unnamed-{i}"), server_entry)
                     )
             else:
                 continue

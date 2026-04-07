@@ -35,3 +35,9 @@ python -m nexus3.mcp.test_server.paginating_server
 
 For MCP client/runtime documentation, see
 [`nexus3/mcp/README.md`](/home/inc/repos/NEXUS3/nexus3/mcp/README.md).
+For a beginner write-your-own-server tutorial, see
+[`docs/references/MCP-SERVER-PYTHON-101.md`](/home/inc/repos/NEXUS3/docs/references/MCP-SERVER-PYTHON-101.md).
+For resources/prompts and the broader MCP capability surface, see
+[`docs/references/MCP-SERVER-PYTHON-202.md`](/home/inc/repos/NEXUS3/docs/references/MCP-SERVER-PYTHON-202.md).
+For checked-in runnable example folders, see
+[`docs/references/mcp-python-examples/`](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/README.md).

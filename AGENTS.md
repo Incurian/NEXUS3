@@ -66,6 +66,14 @@ Detailed references live in companion files to keep this document concise:
 - `AGENTS_NEXUS3CONFIGOPS.md`: configuration reference, provider setup,
   GitLab/clipboard config, design/SOP/testing workflows, and deferred work
   tracker
+- `docs/references/TOOL-SURFACE-DESIGN-GUIDELINES.md`: lessons from the
+  2026-04 tool-syntax simplification work and rules for future tool design
+- `docs/references/MCP-SERVER-PYTHON-101.md`: beginner tutorial for building
+  Python MCP tool servers that work with NEXUS3 over stdio or HTTP
+- `docs/references/MCP-SERVER-PYTHON-202.md`: follow-on guide for MCP
+  resources, prompts, and how additional MCP capabilities surface in NEXUS3
+- `docs/references/mcp-python-examples/`: checked-in example projects with
+  server code and `.nexus3/mcp.json` for the 101/202 MCP docs
 
 ## Current Workstream (2026-03-02)
 
@@ -232,38 +240,51 @@ ad-hoc compatibility shim.
 
 ## Current Handoff
 
-### 2026-04-07 - v1.1.0 release bump
+### 2026-04-07 - MCP Python docs audit and runnable examples
 
 - Branch: `master`
-- Baseline head: `ffc6aa1` (`Simplify remaining tool contracts`)
+- Baseline head: `98a6f32` (`Release v1.1.0`)
 - Active slice:
-  - cut the next minor release as `v1.1.0`
-  - align the canonical package version, CLI banner, README release text, and
-    changelog with the merged tool-surface/provider hardening work
-  - tag the release commit so git history matches the published version
+  - audit the new Python MCP docs against the actual NEXUS implementation
+  - make the checked-in example folders runnable end to end
+  - ensure the example `mcp.json` files teach real config fields with
+    observable behavior
 - Plans/docs:
-  - [docs/plans/RELEASE-V1.1.0-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/RELEASE-V1.1.0-PLAN-2026-04-07.md)
-  - [CHANGELOG.md](/home/inc/repos/NEXUS3/CHANGELOG.md)
-  - [README.md](/home/inc/repos/NEXUS3/README.md)
+  - [docs/plans/MCP-SERVER-PYTHON-101-DOC-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/MCP-SERVER-PYTHON-101-DOC-PLAN-2026-04-07.md)
+  - [docs/plans/MCP-SERVER-PYTHON-202-DOC-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/MCP-SERVER-PYTHON-202-DOC-PLAN-2026-04-07.md)
+  - [docs/references/MCP-SERVER-PYTHON-101.md](/home/inc/repos/NEXUS3/docs/references/MCP-SERVER-PYTHON-101.md)
+  - [docs/references/MCP-SERVER-PYTHON-202.md](/home/inc/repos/NEXUS3/docs/references/MCP-SERVER-PYTHON-202.md)
+  - [docs/references/mcp-python-examples/README.md](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/README.md)
 - Implemented locally:
-  - bumped canonical version metadata to `1.1.0` in:
-    - `pyproject.toml`
-    - `nexus3/__init__.py`
-  - updated user-visible version strings in:
-    - `nexus3/cli/repl.py`
-    - `README.md`
-  - added a top-level `v1.1.0` changelog entry summarizing:
-    - provider/tool-call normalization and interrupted-stream hardening
-    - patch-tool robustness improvements
-    - edit-tool syntax simplification and follow-on tool-surface cleanup
-  - indexed the release plan in `docs/plans/README.md`
+  - `/mcp` REPL commands now merge configured servers from both
+    `config.json` and layered `mcp.json`
+  - `ContextLoader` now accepts the documented `mcp.json` object form:
+    - `{"servers": {"name": {...}}}`
+    - list form and `mcpServers` remain supported
+  - 101/202 docs now explain transport vs capabilities, `mcp.json` fields,
+    merge behavior, and the low-friction `/mcp connect ... --allow-all --private`
+    tutorial path
+  - checked-in example servers now make config fields observable:
+    - `101-stdio`: `args`, `env`, and `cwd` change the greeting behavior
+    - `101-http`: audited and moved to port `8765` to avoid the common
+      NEXUS `--serve 9000` workflow
+    - `202-capabilities`: `args`, `env`, and `cwd` affect tool/resource/prompt
+      output
+  - linked the MCP docs from the top-level README, MCP module docs, test
+    server README, AGENTS, and CLAUDE
 - Validation status:
-  - focused release validation passed:
-    - `.venv/bin/python -c "import nexus3; print(nexus3.__version__)"` (`1.1.0`)
-    - `.venv/bin/ruff check pyproject.toml README.md CHANGELOG.md AGENTS.md docs/plans/README.md docs/plans/RELEASE-V1.1.0-PLAN-2026-04-07.md nexus3/__init__.py nexus3/cli/repl.py`
+  - focused tests passed:
+    - `.venv/bin/pytest -q tests/unit/test_repl_commands.py tests/unit/test_context_loader.py tests/unit/context/test_loader_mcp_fail_fast.py` (`112 passed`)
+  - example code validation passed:
+    - `.venv/bin/python -m py_compile docs/references/mcp-python-examples/101-stdio/hello_stdio_server.py docs/references/mcp-python-examples/101-http/hello_http_server.py docs/references/mcp-python-examples/202-capabilities/capability_server.py`
+    - `.venv/bin/ruff check nexus3/cli/repl_commands.py nexus3/context/loader.py tests/unit/test_repl_commands.py tests/unit/test_context_loader.py tests/unit/context/test_loader_mcp_fail_fast.py docs/references/mcp-python-examples/101-stdio/hello_stdio_server.py docs/references/mcp-python-examples/101-http/hello_http_server.py docs/references/mcp-python-examples/202-capabilities/capability_server.py`
+  - end-to-end example audit passed:
+    - stdio example connected, exposed tools, and returned the configured greeting
+    - HTTP example connected and returned expected tool results
+    - capabilities example exposed tools/resources/prompts and reflected config
+      values in outputs
+  - hygiene passed:
     - `git diff --check`
-  - pending commit/tag/push
 - Next gate:
-  - run focused validation
-  - commit the release bump
-  - create and push the `v1.1.0` tag
+  - commit locally
+  - push only when requested

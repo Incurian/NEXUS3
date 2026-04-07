@@ -64,6 +64,9 @@ Detailed references live in companion files:
 - `AGENTS_NEXUS3SKILLSCAT.md`
 - `AGENTS_NEXUS3CTXSEC.md`
 - `AGENTS_NEXUS3CONFIGOPS.md`
+- `docs/references/TOOL-SURFACE-DESIGN-GUIDELINES.md`
+- `docs/references/MCP-SERVER-PYTHON-101.md`
+- `docs/references/MCP-SERVER-PYTHON-202.md`
 
 The current review/remediation baseline starts from:
 

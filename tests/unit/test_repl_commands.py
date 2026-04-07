@@ -13,8 +13,9 @@ Tests for REPL-specific command handlers:
 
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -25,6 +26,7 @@ from nexus3.cli.repl_commands import (
     cmd_compact,
     cmd_cwd,
     cmd_help,
+    cmd_mcp,
     cmd_over,
     cmd_permissions,
     cmd_prompt,
@@ -35,6 +37,7 @@ from nexus3.cli.repl_commands import (
 )
 from nexus3.cli.whisper import WhisperMode
 from nexus3.commands.protocol import CommandContext, CommandResult
+from nexus3.config.schema import MCPServerConfig
 from nexus3.core.executable_identity import resolve_executable_identity
 from nexus3.core.permissions import ToolPermission, resolve_preset
 from nexus3.session.storage import EventRow, MessageRow
@@ -372,6 +375,124 @@ class TestToolInspectionCommands:
 
         assert output.result == CommandResult.ERROR
         assert "No current agent" in output.message
+
+
+class TestCmdMcp:
+    def _attach_shared(
+        self,
+        ctx: CommandContext,
+        *,
+        config_servers: list[MCPServerConfig] | None = None,
+        context_servers: list[MCPServerConfig] | None = None,
+        registry: Any | None = None,
+    ) -> Any:
+        shared = SimpleNamespace(
+            config=SimpleNamespace(mcp_servers=config_servers or []),
+            base_context=SimpleNamespace(
+                mcp_servers=[
+                    SimpleNamespace(config=server) for server in (context_servers or [])
+                ]
+            ),
+            mcp_registry=registry if registry is not None else MagicMock(),
+        )
+        ctx.pool._shared = shared
+        return shared
+
+    @pytest.mark.asyncio
+    async def test_mcp_list_includes_servers_from_mcp_json(
+        self,
+        ctx_with_agent: CommandContext,
+    ) -> None:
+        server_cfg = MCPServerConfig(
+            name="hello_stdio",
+            command=["python", "hello_stdio_server.py"],
+        )
+        registry = MagicMock()
+        registry.check_connections = AsyncMock(return_value=[])
+        registry.get.side_effect = lambda name, agent_id=None: None
+        registry.list_servers.return_value = []
+
+        self._attach_shared(
+            ctx_with_agent,
+            context_servers=[server_cfg],
+            registry=registry,
+        )
+
+        output = await cmd_mcp(ctx_with_agent, None)
+
+        assert output.result == CommandResult.SUCCESS
+        assert "hello_stdio [disconnected]" in output.message
+
+    @pytest.mark.asyncio
+    async def test_mcp_connect_uses_server_from_mcp_json(
+        self,
+        ctx_with_agent: CommandContext,
+    ) -> None:
+        server_cfg = MCPServerConfig(
+            name="hello_stdio",
+            command=["python", "hello_stdio_server.py"],
+        )
+        server = SimpleNamespace(
+            skills=[SimpleNamespace(original_name="hello")],
+            shared=False,
+            owner_agent_id="main",
+            is_visible_to=lambda agent_id: True,
+        )
+        registry = MagicMock()
+        registry.get.side_effect = lambda name, agent_id=None: None
+        registry.connect = AsyncMock(return_value=server)
+
+        self._attach_shared(
+            ctx_with_agent,
+            context_servers=[server_cfg],
+            registry=registry,
+        )
+
+        output = await cmd_mcp(ctx_with_agent, "connect hello_stdio --allow-all --private")
+
+        assert output.result == CommandResult.SUCCESS
+        connect_args = registry.connect.await_args.args
+        used_config = connect_args[0]
+        assert used_config.name == "hello_stdio"
+        assert used_config.command == ["python", "hello_stdio_server.py"]
+
+    @pytest.mark.asyncio
+    async def test_mcp_json_overrides_config_json_for_duplicate_server_name(
+        self,
+        ctx_with_agent: CommandContext,
+    ) -> None:
+        config_server = MCPServerConfig(
+            name="demo",
+            command=["python", "config_version.py"],
+        )
+        context_server = MCPServerConfig(
+            name="demo",
+            command=["python", "mcp_version.py"],
+        )
+        server = SimpleNamespace(
+            skills=[SimpleNamespace(original_name="hello")],
+            shared=False,
+            owner_agent_id="main",
+            is_visible_to=lambda agent_id: True,
+        )
+        registry = MagicMock()
+        registry.get.side_effect = lambda name, agent_id=None: None
+        registry.connect = AsyncMock(return_value=server)
+
+        self._attach_shared(
+            ctx_with_agent,
+            config_servers=[config_server],
+            context_servers=[context_server],
+            registry=registry,
+        )
+
+        output = await cmd_mcp(ctx_with_agent, "connect demo --allow-all --private")
+
+        assert output.result == CommandResult.SUCCESS
+        connect_args = registry.connect.await_args.args
+        used_config = connect_args[0]
+        assert used_config.name == "demo"
+        assert used_config.command == ["python", "mcp_version.py"]
 
 
 class TestCmdAgentSwitch:
