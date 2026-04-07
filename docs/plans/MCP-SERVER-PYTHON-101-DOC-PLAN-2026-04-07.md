@@ -143,3 +143,7 @@ Validation completed:
     confirming that `nexus3 --fresh` uses embedded RPC port `8765`
   - added `tests/integration/test_mcp_python_examples.py` to smoke test the
     checked-in 101 examples against the real MCP client
+  - added explicit prerequisites and first-failure troubleshooting notes to the
+    example-bundle README, the per-example 101 READMEs, and the mirrored 101
+    guide copies so the first successful connection path is easier to recover
+    when interpreter/path/protocol mistakes happen

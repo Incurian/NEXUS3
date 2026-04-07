@@ -41,3 +41,11 @@ Important transport lesson:
   default embedded RPC port `8765`
 
 If you change the port in the server, keep `.nexus3/mcp.json` in sync.
+
+If it fails:
+
+- keep the `python3 hello_http_server.py` terminal open while NEXUS connects
+- make sure the server URL in `.nexus3/mcp.json` still matches the server's
+  host, port, and `/mcp` path
+- if you changed the port, avoid `8765` unless you also changed NEXUS's own
+  embedded RPC port

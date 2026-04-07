@@ -240,15 +240,17 @@ ad-hoc compatibility shim.
 
 ## Current Handoff
 
-### 2026-04-07 - MCP Python docs audit and runnable examples
+### 2026-04-07 - MCP Python docs didactic audit and capability inspection
 
 - Branch: `master`
-- Baseline head: `98a6f32` (`Release v1.1.0`)
+- Baseline head: `6bd96f1`
 - Active slice:
   - audit the new Python MCP docs against the actual NEXUS implementation
-  - make the checked-in example folders runnable end to end
-  - ensure the example `mcp.json` files teach real config fields with
-    observable behavior
+  - keep the checked-in example folders runnable end to end
+  - tighten the teaching path so the example bundle is both beginner-friendly
+    and NEXUS-specific
+  - make the resource/prompt story concrete instead of stopping at REPL
+    discovery lists
 - Plans/docs:
   - [docs/plans/MCP-SERVER-PYTHON-101-DOC-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/MCP-SERVER-PYTHON-101-DOC-PLAN-2026-04-07.md)
   - [docs/plans/MCP-SERVER-PYTHON-202-DOC-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/MCP-SERVER-PYTHON-202-DOC-PLAN-2026-04-07.md)
@@ -267,6 +269,9 @@ ad-hoc compatibility shim.
   - the example-bundle README and per-example READMEs now teach a clearer
     progression, recommend `nexus3 --fresh`, and call out NEXUS-specific
     constraints explicitly
+  - the example-bundle README and mirrored 101 guide copies now include
+    prerequisites plus first-failure troubleshooting for interpreter/path,
+    stdout-vs-stderr, reconnect, and HTTP URL drift issues
   - checked-in example servers now make config fields observable:
     - `101-stdio`: `args`, `env`, and `cwd` change the greeting behavior, and
       the checked-in config now uses `python3`
@@ -276,22 +281,38 @@ ad-hoc compatibility shim.
       output, and the checked-in config now uses `python3`
   - added `tests/integration/test_mcp_python_examples.py` so the checked-in
     examples are smoke-tested against the real MCP client
+  - added
+    [inspect_capabilities.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py)
+    so the 202 bundle now demonstrates:
+    - `tools/list`
+    - `resources/list`
+    - `prompts/list`
+    - `resources/read`
+    - `prompts/get`
+    through NEXUS's Python MCP client using the checked-in example config
+  - the canonical 202 guide and mirrored bundle copy now point readers at the
+    runnable helper and explain the current REPL/client boundary explicitly
   - linked the MCP docs from the top-level README, MCP module docs, test
     server README, AGENTS, and CLAUDE
 - Validation status:
   - focused tests passed:
     - `.venv/bin/pytest -q tests/unit/test_repl_commands.py tests/unit/test_context_loader.py tests/unit/context/test_loader_mcp_fail_fast.py` (`112 passed`)
   - example code validation passed:
-    - `.venv/bin/python -m py_compile docs/references/mcp-python-examples/101-stdio/hello_stdio_server.py docs/references/mcp-python-examples/101-http/hello_http_server.py docs/references/mcp-python-examples/202-capabilities/capability_server.py`
+    - `.venv/bin/python -m py_compile docs/references/mcp-python-examples/101-stdio/hello_stdio_server.py docs/references/mcp-python-examples/101-http/hello_http_server.py docs/references/mcp-python-examples/202-capabilities/capability_server.py docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py`
     - `.venv/bin/ruff check nexus3/cli/repl_commands.py nexus3/context/loader.py tests/unit/test_repl_commands.py tests/unit/test_context_loader.py tests/unit/context/test_loader_mcp_fail_fast.py docs/references/mcp-python-examples/101-stdio/hello_stdio_server.py docs/references/mcp-python-examples/101-http/hello_http_server.py docs/references/mcp-python-examples/202-capabilities/capability_server.py`
+    - `.venv/bin/ruff check docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py tests/integration/test_mcp_python_examples.py`
   - example smoke tests passed:
-    - `.venv/bin/pytest -q tests/integration/test_mcp_python_examples.py` (`3 passed`)
+    - `.venv/bin/pytest -q tests/integration/test_mcp_python_examples.py` (`4 passed`)
+  - direct helper validation passed:
+    - `.venv/bin/python docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py`
   - end-to-end example audit passed:
     - stdio example connected, exposed tools, and returned the configured greeting
     - HTTP example connected from the documented two-terminal flow and returned
       expected tool results without colliding with NEXUS's embedded RPC server
     - capabilities example exposed tools/resources/prompts and reflected config
       values in outputs
+    - capability helper exercised `resources/read` and `prompts/get` with the
+      same client/transport layer NEXUS uses internally
   - hygiene passed:
     - `git diff --check`
 - Next gate:

@@ -128,3 +128,9 @@ Validation completed:
     explain the NEXUS-specific distinction between tools vs resources/prompts
   - added `tests/integration/test_mcp_python_examples.py` to smoke test the
     capabilities example against the real MCP client
+  - added `docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py`
+    so the example bundle now demonstrates `resources/read` and `prompts/get`
+    through NEXUS's Python MCP client instead of stopping at REPL discovery
+  - updated the canonical 202 guide and the mirrored example-bundle copy to
+    document the REPL-vs-client boundary explicitly and point readers at the
+    runnable helper

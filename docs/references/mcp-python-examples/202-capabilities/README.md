@@ -9,6 +9,7 @@ NEXUS treats each surface.
 Files:
 
 - [capability_server.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/capability_server.py)
+- [inspect_capabilities.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py)
 - [mcp.json](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/.nexus3/mcp.json)
 
 This example's `mcp.json` shows the fuller stdio-oriented config surface:
@@ -68,3 +69,26 @@ Important NEXUS behavior:
 - the current REPL gives you discovery commands for resources/prompts; the
   companion 202 guide shows the underlying `resources/read` and `prompts/get`
   methods that the MCP client layer uses
+
+Optional deeper check:
+
+1. `cd /home/inc/repos/NEXUS3`
+2. `.venv/bin/python docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py`
+
+That helper launches the checked-in capability example through NEXUS's Python
+MCP client and proves all of these in one pass:
+
+- `tools/list`
+- `resources/list`
+- `prompts/list`
+- `resources/read` for `config://app/settings` and `docs://customer-table`
+- `prompts/get` for `customer_summary`
+
+If it fails:
+
+- make sure `python3` in `.nexus3/mcp.json` is the interpreter that exists on
+  your machine
+- remember that resources/prompts showing up in `/mcp` but not as normal agent
+  tools is expected NEXUS behavior
+- if you want the agent to call resource/prompt-backed behavior directly, add a
+  tool wrapper around it

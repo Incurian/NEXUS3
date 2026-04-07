@@ -69,3 +69,11 @@ Good next tweaks:
 - change `EXAMPLE_GREETING_STYLE` from `friendly` to `formal`
 - edit [greeting_suffix.txt](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-stdio/greeting_suffix.txt)
 - disconnect and reconnect after changes so NEXUS restarts the server
+
+If it fails:
+
+- make sure `python3` in `.nexus3/mcp.json` is the interpreter that exists on
+  your machine
+- keep JSON-RPC on stdout only; if you add debug prints, send them to stderr
+- after changing tool definitions or config, reconnect so NEXUS relaunches the
+  stdio subprocess

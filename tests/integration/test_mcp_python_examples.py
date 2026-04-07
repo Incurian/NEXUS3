@@ -172,3 +172,28 @@ class TestMCPPythonExamples:
         assert prompt.messages[0].get_text().endswith(
             "This example is running in the development environment."
         )
+
+    @pytest.mark.asyncio
+    async def test_202_capabilities_inspector_script(self) -> None:
+        """The optional helper script exercises reads and prompts through Nexus's client."""
+        script_path = EXAMPLES_DIR / "202-capabilities" / "inspect_capabilities.py"
+
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            str(script_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+
+        assert process.returncode == 0, stderr.decode(errors="replace")
+
+        output = stdout.decode(errors="replace")
+        assert "Tools: add, get_customer_count" in output
+        assert "Resources: config://app/settings, docs://customer-table" in output
+        assert "Prompts: customer_summary, schema_explainer" in output
+        assert "Tool call: Current customer count: 128" in output
+        assert "Settings mode: demo" in output
+        assert "Settings environment: development" in output
+        assert "Schema heading: # customer table" in output
+        assert "Prompt preview: Write a concise customer-facing update for Acme." in output

@@ -153,6 +153,7 @@ server shell from the 101 guide.
 Checked-in files for this example:
 
 - [capability_server.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/capability_server.py)
+- [inspect_capabilities.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py)
 - [mcp.json](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/.nexus3/mcp.json)
 
 ### Step 1: Create `capability_server.py`
@@ -530,6 +531,40 @@ Today that distinction is also visible in the REPL surface:
   command
 - direct reads and prompt fetches still happen through the MCP client layer
   with `resources/read` and `prompts/get`
+
+## Optional: exercise `resources/read` and `prompts/get` directly
+
+If you want to go beyond REPL discovery and verify the underlying capability
+calls through NEXUS's own Python MCP client, the checked-in example bundle
+includes a helper script:
+
+```text
+.venv/bin/python docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py
+```
+
+Run that from the repo root. It loads the checked-in capability example
+configuration, launches the stdio server through the same transport/client
+layer NEXUS uses, and demonstrates:
+
+- `tools/list`
+- `resources/list`
+- `prompts/list`
+- `resources/read`
+- `prompts/get`
+
+The core pattern is:
+
+```python
+async with MCPClient(transport) as client:
+    settings = await client.read_resource("config://app/settings")
+    prompt = await client.get_prompt(
+        "customer_summary",
+        {"customer_name": "Acme", "status": "green"},
+    )
+```
+
+That is the NEXUS-specific bridge between "the REPL can list this surface" and
+"the underlying MCP client can fetch it."
 
 ## When resources are the right design
 

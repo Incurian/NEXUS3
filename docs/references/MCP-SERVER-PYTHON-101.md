@@ -423,6 +423,17 @@ For stdio servers:
 
 If you print logs to stdout, you will corrupt the protocol stream.
 
+## First-failure checklist
+
+- If a stdio server fails immediately, first confirm that the interpreter path
+  in `mcp.json` exists on your machine.
+- If a stdio server starts but NEXUS cannot speak MCP to it, check for stray
+  stdout logging. MCP JSON-RPC belongs on stdout; human logs belong on stderr.
+- If an HTTP server fails to connect, keep the server process running and make
+  sure the `url` in `mcp.json` still matches the host, port, and path.
+- After changing tools or config, reconnect the server or use `/mcp retry` so
+  NEXUS refreshes what it sees.
+
 ## Example 2: Minimal HTTP server
 
 Checked-in files for this example:

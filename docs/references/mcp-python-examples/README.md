@@ -8,6 +8,13 @@ Use them when you want two things at once:
 - a NEXUS-specific reference for what `mcp.json`, `/mcp connect`, and MCP
   capability surfaces actually look like in practice
 
+## What You Need
+
+- a working `python3` on your `PATH` for the checked-in example servers
+- a runnable `nexus3` CLI for the REPL walkthroughs
+- this repo checkout plus `.venv` if you want to use the optional
+  Nexus-client inspection helper in the 202 example
+
 ## Recommended order
 
 1. Start with
@@ -19,7 +26,8 @@ Use them when you want two things at once:
 3. Finish with
    [202-capabilities](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/README.md).
    It adds resources and prompts so you can see how NEXUS treats each MCP
-   surface differently.
+   surface differently, and it includes an optional deeper check that exercises
+   `resources/read` and `prompts/get` through NEXUS's own Python MCP client.
 
 ## What Is In Each Example
 
@@ -52,6 +60,9 @@ session that was started in a different directory with different MCP config.
 - Only MCP tools become callable agent tools in NEXUS. Resources and prompts
   remain MCP-native surfaces that you inspect separately with `/mcp resources`
   and `/mcp prompts`.
+- The current REPL is a discovery surface for resources and prompts. If you
+  want to exercise `resources/read` or `prompts/get` directly, use the optional
+  helper in the 202 example from the repo checkout.
 
 ## Companion Guides
 
