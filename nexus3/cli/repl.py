@@ -1128,7 +1128,7 @@ async def run_repl(
     _set_incoming_hook(main_agent.dispatcher)
 
     # Print welcome message
-    console.print("[bold]NEXUS3 v1.0.0[/bold]")
+    console.print("[bold]NEXUS3 v1.1.0[/bold]")
     console.print(
         _format_repl_startup_metadata_line(safe_sink, "Agent", current_agent_id),
         style="dim",

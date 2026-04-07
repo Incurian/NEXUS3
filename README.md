@@ -2,7 +2,7 @@
 
 **Run structured teams of AI agents from your terminal.**
 
-Current release: `v1.0.0`. See
+Current release: `v1.1.0`. See
 [`CHANGELOG.md`](https://github.com/Incurian/NEXUS3/blob/master/CHANGELOG.md).
 
 Most AI coding tools give you one agent in one conversation. NEXUS3 gives you a pool of agents — each with its own model, permissions, conversation context, and working directory — managed through a single terminal session or programmatic API. A layered permission system controls what each agent can access, with security defaults that prevent privilege escalation between agents. Sessions persist across restarts, and automatic context compaction keeps long-running conversations from hitting token limits.
@@ -573,7 +573,7 @@ Once in the REPL:
 ```
 $ nexus3 --fresh
 
-NEXUS3 v1.0.0 - Type /help for commands
+NEXUS3 v1.1.0 - Type /help for commands
 
 you> Hello! What can you do?
 

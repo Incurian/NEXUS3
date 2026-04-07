@@ -232,98 +232,38 @@ ad-hoc compatibility shim.
 
 ## Current Handoff
 
-### 2026-04-07 - remaining tool surface audit and simplification
+### 2026-04-07 - v1.1.0 release bump
 
-- Branch: `edit-tool-syntax-investigation`
-- Baseline head: `dc2085f` (`Handle streaming body interruptions gracefully`)
+- Branch: `master`
+- Baseline head: `ffc6aa1` (`Simplify remaining tool contracts`)
 - Active slice:
-  - audit the remaining built-in tool surfaces for weak-model failure modes
-  - remove the remaining overloaded public shapes and public alias teaching
-  - keep compatibility only at the single-tool runtime boundary
+  - cut the next minor release as `v1.1.0`
+  - align the canonical package version, CLI banner, README release text, and
+    changelog with the merged tool-surface/provider hardening work
+  - tag the release commit so git history matches the published version
 - Plans/docs:
-  - [docs/plans/EDIT-FILE-SYNTAX-SIMPLIFICATION-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/EDIT-FILE-SYNTAX-SIMPLIFICATION-PLAN-2026-04-07.md)
-  - [docs/plans/TOOL-SURFACE-AUDIT-AND-SIMPLIFICATION-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/TOOL-SURFACE-AUDIT-AND-SIMPLIFICATION-PLAN-2026-04-07.md)
-  - [nexus3/defaults/NEXUS-DEFAULT.md](/home/inc/repos/NEXUS3/nexus3/defaults/NEXUS-DEFAULT.md)
-  - [AGENTS_NEXUS3SKILLSCAT.md](/home/inc/repos/NEXUS3/AGENTS_NEXUS3SKILLSCAT.md)
+  - [docs/plans/RELEASE-V1.1.0-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/RELEASE-V1.1.0-PLAN-2026-04-07.md)
+  - [CHANGELOG.md](/home/inc/repos/NEXUS3/CHANGELOG.md)
+  - [README.md](/home/inc/repos/NEXUS3/README.md)
 - Implemented locally:
-  - `nexus3/skill/builtin/edit_lines.py`
-    - `edit_lines` is now single-range only
-    - new `edit_lines_batch` exposes the atomic multi-range contract
-    - shared helpers preserve UTF-8, line-ending, and EOF-newline behavior
-  - `nexus3/skill/builtin/patch.py`
-    - `patch` is now inline-diff only
-    - new `patch_from_file` exposes the diff-file contract
-    - direct execution compatibility remains available underneath the public schema
-  - `nexus3/skill/builtin/read_file.py`
-    - public schema now teaches only canonical `offset` / `limit`
-    - alias resolution remains in `_resolve_line_window(...)`
-  - `nexus3/skill/builtin/outline.py`
-    - public schema now teaches only canonical `parser`
-    - parser-alias resolution remains in `_resolve_parser_override(...)`
-    - user-facing guidance now points to `parser=` instead of legacy alias names
-  - `nexus3/session/single_tool_runtime.py`
-    - legacy `edit_lines(edits=[...])` calls normalize to `edit_lines_batch`
-    - legacy `patch(target=...)` and `patch(diff_file=...)` normalize onto
-      canonical `path` / `patch_from_file`
-    - legacy `read_file(start_line/end_line)` and
-      `outline(file_type/language)` normalize before validation
-    - conflicting alias/canonical mixes fail closed through explicit
-      `compat_validation_error`
-  - registration / permission / confirmation wiring updated for the new tool names:
-    - `nexus3/skill/builtin/registration.py`
-    - `nexus3/session/path_semantics.py`
-    - `nexus3/session/enforcer.py`
-    - `nexus3/core/policy.py`
-    - `nexus3/commands/core.py`
-    - `nexus3/rpc/global_dispatcher.py`
-    - `nexus3/context/git_context.py`
-    - `nexus3/cli/confirmation_ui.py`
-  - prompt/docs guidance updated to teach only the canonical public shapes:
-    - `nexus3/defaults/NEXUS-DEFAULT.md`
+  - bumped canonical version metadata to `1.1.0` in:
+    - `pyproject.toml`
+    - `nexus3/__init__.py`
+  - updated user-visible version strings in:
+    - `nexus3/cli/repl.py`
     - `README.md`
-    - `nexus3/config/README.md`
-    - `nexus3/skill/README.md`
-    - `nexus3/skill/builtin/README.md`
-    - `nexus3/session/README.md`
-    - `AGENTS_NEXUS3SKILLSCAT.md`
-    - `docs/plans/README.md`
-  - config defaults/docs now align with the live destructive write/edit surface:
-    - `nexus3/config/schema.py`
-    - `nexus3/config/README.md`
-  - focused regressions added/updated:
-    - `tests/unit/skill/test_edit_lines.py`
-    - `tests/unit/skill/test_patch.py`
-    - `tests/unit/session/test_single_tool_runtime.py`
-    - `tests/unit/skill/test_skill_validation.py`
-    - `tests/unit/test_skill_enhancements.py`
-    - `tests/unit/skill/test_outline.py`
-    - `tests/integration/test_file_editing_skills.py`
-    - `tests/security/test_multipath_confirmation.py`
-    - `tests/unit/session/test_enforcer.py`
-    - `tests/unit/test_permissions.py`
-    - `tests/unit/test_global_dispatcher.py`
-    - `tests/unit/test_git_context.py`
-- Validation passed:
-  - `.venv/bin/pytest -q tests/unit/skill/test_edit_lines.py tests/unit/skill/test_patch.py tests/unit/session/test_single_tool_runtime.py tests/unit/skill/test_skill_validation.py tests/unit/test_skill_enhancements.py tests/unit/skill/test_outline.py tests/security/test_multipath_confirmation.py tests/unit/session/test_enforcer.py tests/integration/test_file_editing_skills.py tests/unit/test_permissions.py tests/unit/test_global_dispatcher.py tests/unit/test_git_context.py` (`602 passed`)
-  - `.venv/bin/ruff check nexus3/skill/builtin/edit_file.py nexus3/skill/builtin/edit_lines.py nexus3/skill/builtin/append_file.py nexus3/skill/builtin/patch.py nexus3/skill/builtin/read_file.py nexus3/skill/builtin/outline.py nexus3/session/single_tool_runtime.py nexus3/session/path_semantics.py nexus3/session/enforcer.py nexus3/core/policy.py nexus3/commands/core.py nexus3/rpc/global_dispatcher.py nexus3/context/git_context.py nexus3/config/schema.py tests/unit/skill/test_edit_file.py tests/unit/skill/test_edit_lines.py tests/unit/skill/test_patch.py tests/unit/skill/test_outline.py tests/unit/test_skill_enhancements.py tests/unit/session/test_single_tool_runtime.py tests/unit/skill/test_skill_validation.py tests/integration/test_file_editing_skills.py tests/security/test_multipath_confirmation.py tests/unit/session/test_enforcer.py tests/unit/test_permissions.py tests/unit/test_global_dispatcher.py tests/unit/test_git_context.py`
-  - `.venv/bin/mypy nexus3/skill/builtin/edit_file.py nexus3/skill/builtin/edit_lines.py nexus3/skill/builtin/append_file.py nexus3/skill/builtin/patch.py nexus3/skill/builtin/read_file.py nexus3/skill/builtin/outline.py nexus3/session/single_tool_runtime.py nexus3/session/path_semantics.py nexus3/session/enforcer.py nexus3/core/policy.py nexus3/commands/core.py nexus3/rpc/global_dispatcher.py nexus3/context/git_context.py nexus3/config/schema.py`
-  - `.venv/bin/pytest tests/ -q` (`4570 passed, 3 skipped, 22 warnings`)
-  - live RPC validation on port `9000` using:
-    - `NEXUS_DEV=1 .venv/bin/nexus3 --serve 9000`
-    - `.venv/bin/nexus3 rpc detect --port 9000`
-    - `.venv/bin/nexus3 rpc create test-agent --port 9000`
-    - `.venv/bin/nexus3 rpc send test-agent "describe your permissions and what you can do" --port 9000`
-    - `.venv/bin/nexus3 rpc destroy test-agent --port 9000`
-    - `.venv/bin/nexus3 rpc list --port 9000`
-    - destroy/list cleanup needed one brief follow-up poll before the list was empty
-  - `git diff --check`
-- Residual audit conclusion:
-  - the remaining action/mode-dispatched families (`clipboard_tag`, `paste`,
-    GitLab tools) and `get_process` still look acceptable because they keep one
-    stable top-level object shape with explicit discriminators
-  - the concrete failure pattern was overloaded or alias-rich public schemas,
-    not every multi-mode tool
+  - added a top-level `v1.1.0` changelog entry summarizing:
+    - provider/tool-call normalization and interrupted-stream hardening
+    - patch-tool robustness improvements
+    - edit-tool syntax simplification and follow-on tool-surface cleanup
+  - indexed the release plan in `docs/plans/README.md`
+- Validation status:
+  - focused release validation passed:
+    - `.venv/bin/python -c "import nexus3; print(nexus3.__version__)"` (`1.1.0`)
+    - `.venv/bin/ruff check pyproject.toml README.md CHANGELOG.md AGENTS.md docs/plans/README.md docs/plans/RELEASE-V1.1.0-PLAN-2026-04-07.md nexus3/__init__.py nexus3/cli/repl.py`
+    - `git diff --check`
+  - pending commit/tag/push
 - Next gate:
-  - capture fresh weak-model traces against the simplified prompt/tool surface
-    and only split additional families if those traces show a specific failure
-    mode
+  - run focused validation
+  - commit the release bump
+  - create and push the `v1.1.0` tag

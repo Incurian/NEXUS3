@@ -1,6 +1,6 @@
 [project]
 name = "nexus3"
-version = "1.0.0"
+version = "1.1.0"
 description = "A secure, multi-agent CLI framework for AI-powered software engineering"
 readme = "README.md"
 license = {text = "MIT"}

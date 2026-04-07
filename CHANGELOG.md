@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.1.0 - 2026-04-07
+
+Second stable NEXUS3 release.
+
+Highlights:
+
+- normalized tool-call payload handling across OpenAI-compatible and
+  Anthropic-compatible provider paths, including malformed-argument diagnostics
+  and interrupted-stream handling
+- hardened the patch pipeline so fuzzy dry-runs match real apply behavior and
+  malformed hunks fail earlier with targeted guidance
+- simplified file-editing tool contracts by splitting overloaded public shapes
+  into single-purpose tools like `edit_file_batch`, `edit_lines_batch`, and
+  `patch_from_file`
+- aligned prompt guidance, tool descriptions, permission defaults, and docs
+  with the simplified tool surface so weaker models see one canonical schema
+  per tool
+
 ## v1.0.0 - 2026-03-12
 
 First stable NEXUS3 release.

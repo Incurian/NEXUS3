@@ -94,6 +94,10 @@ This index covers the architecture plans created during today's review/planning 
 - [EDIT-FILE-SYNTAX-SIMPLIFICATION-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/EDIT-FILE-SYNTAX-SIMPLIFICATION-PLAN-2026-04-07.md)
 - [TOOL-SURFACE-AUDIT-AND-SIMPLIFICATION-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/TOOL-SURFACE-AUDIT-AND-SIMPLIFICATION-PLAN-2026-04-07.md)
 
+## Release Plan (2026-04-07)
+
+- [RELEASE-V1.1.0-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/RELEASE-V1.1.0-PLAN-2026-04-07.md)
+
 ## Process Tool Plans (2026-03-11)
 
 - [PROCESS-INSPECTION-AND-KILL-TOOLS-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/PROCESS-INSPECTION-AND-KILL-TOOLS-PLAN-2026-03-11.md)
