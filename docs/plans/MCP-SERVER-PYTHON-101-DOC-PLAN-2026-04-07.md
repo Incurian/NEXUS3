@@ -134,3 +134,12 @@ Validation completed:
 - `.venv/bin/python -m py_compile docs/references/mcp-python-examples/101-stdio/hello_stdio_server.py docs/references/mcp-python-examples/101-http/hello_http_server.py`
 - `.venv/bin/ruff check docs/references/mcp-python-examples/101-stdio/hello_stdio_server.py docs/references/mcp-python-examples/101-http/hello_http_server.py`
 - `git diff --check`
+- Follow-up audit fixes:
+  - refreshed the example-bundle README and per-example READMEs to teach a
+    clearer learning path and recommend `nexus3 --fresh`
+  - changed the checked-in stdio configs to use `python3` as the default
+    interpreter
+  - moved the checked-in HTTP example from port `8765` to `9876` after
+    confirming that `nexus3 --fresh` uses embedded RPC port `8765`
+  - added `tests/integration/test_mcp_python_examples.py` to smoke test the
+    checked-in 101 examples against the real MCP client

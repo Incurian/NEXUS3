@@ -42,6 +42,8 @@ Thumbs.db
 
 # NEXUS3 session logs
 .nexus3/
+!docs/references/mcp-python-examples/**/.nexus3/
+!docs/references/mcp-python-examples/**/.nexus3/mcp.json
 
 # Claude Code
 .claude/

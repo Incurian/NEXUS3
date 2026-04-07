@@ -264,12 +264,18 @@ ad-hoc compatibility shim.
   - 101/202 docs now explain transport vs capabilities, `mcp.json` fields,
     merge behavior, and the low-friction `/mcp connect ... --allow-all --private`
     tutorial path
+  - the example-bundle README and per-example READMEs now teach a clearer
+    progression, recommend `nexus3 --fresh`, and call out NEXUS-specific
+    constraints explicitly
   - checked-in example servers now make config fields observable:
-    - `101-stdio`: `args`, `env`, and `cwd` change the greeting behavior
-    - `101-http`: audited and moved to port `8765` to avoid the common
-      NEXUS `--serve 9000` workflow
+    - `101-stdio`: `args`, `env`, and `cwd` change the greeting behavior, and
+      the checked-in config now uses `python3`
+    - `101-http`: audited and moved to port `9876` after confirming that
+      `nexus3 --fresh` binds the embedded RPC server on `8765`
     - `202-capabilities`: `args`, `env`, and `cwd` affect tool/resource/prompt
-      output
+      output, and the checked-in config now uses `python3`
+  - added `tests/integration/test_mcp_python_examples.py` so the checked-in
+    examples are smoke-tested against the real MCP client
   - linked the MCP docs from the top-level README, MCP module docs, test
     server README, AGENTS, and CLAUDE
 - Validation status:
@@ -278,9 +284,12 @@ ad-hoc compatibility shim.
   - example code validation passed:
     - `.venv/bin/python -m py_compile docs/references/mcp-python-examples/101-stdio/hello_stdio_server.py docs/references/mcp-python-examples/101-http/hello_http_server.py docs/references/mcp-python-examples/202-capabilities/capability_server.py`
     - `.venv/bin/ruff check nexus3/cli/repl_commands.py nexus3/context/loader.py tests/unit/test_repl_commands.py tests/unit/test_context_loader.py tests/unit/context/test_loader_mcp_fail_fast.py docs/references/mcp-python-examples/101-stdio/hello_stdio_server.py docs/references/mcp-python-examples/101-http/hello_http_server.py docs/references/mcp-python-examples/202-capabilities/capability_server.py`
+  - example smoke tests passed:
+    - `.venv/bin/pytest -q tests/integration/test_mcp_python_examples.py` (`3 passed`)
   - end-to-end example audit passed:
     - stdio example connected, exposed tools, and returned the configured greeting
-    - HTTP example connected and returned expected tool results
+    - HTTP example connected from the documented two-terminal flow and returned
+      expected tool results without colliding with NEXUS's embedded RPC server
     - capabilities example exposed tools/resources/prompts and reflected config
       values in outputs
   - hygiene passed:

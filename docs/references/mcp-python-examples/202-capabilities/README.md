@@ -1,5 +1,11 @@
 # 202 Capabilities Example
 
+Do this after the 101 examples.
+
+This example shows the next step after a tools-only server: one Python server
+that exposes tools, resources, and prompts together so you can see exactly how
+NEXUS treats each surface.
+
 Files:
 
 - [capability_server.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/capability_server.py)
@@ -21,18 +27,20 @@ The checked-in server uses those values in real behavior:
   the settings resource
 - `customer_table.md` is read relative to `cwd`
 
-If `python` is not on your `PATH`, replace it in `.nexus3/mcp.json` with the
-interpreter path that exists on your machine.
+The checked-in config uses `python3`. If that is not available on your machine,
+replace it in `.nexus3/mcp.json` with the interpreter path that exists on your
+machine.
 
 Run it:
 
 1. `cd /home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities`
-2. `nexus3`
+2. `nexus3 --fresh`
 3. In the REPL:
    - `/mcp connect capability_demo --allow-all --private`
    - `/mcp tools capability_demo`
    - `/mcp resources capability_demo`
    - `/mcp prompts capability_demo`
+4. Ask the agent: `Use the customer count tool.`
 
 Omit the flags if you want to walk through the consent/share prompts manually.
 
@@ -41,3 +49,22 @@ Expected:
 - tools become callable NEXUS tools
 - resources remain readable MCP resources
 - prompts remain fetchable MCP prompts
+
+What to look for specifically:
+
+- `/mcp tools capability_demo` should show the two callable tools
+- `/mcp resources capability_demo` should show `config://app/settings` and
+  `docs://customer-table`
+- `/mcp prompts capability_demo` should show `customer_summary` and
+  `schema_explainer`
+- the customer count tool should report `128`, proving that `args` reached the
+  server
+
+Important NEXUS behavior:
+
+- only the tools become normal agent-callable NEXUS tools
+- resources and prompts stay in the MCP connection and are not automatically
+  converted into agent tools
+- the current REPL gives you discovery commands for resources/prompts; the
+  companion 202 guide shows the underlying `resources/read` and `prompts/get`
+  methods that the MCP client layer uses

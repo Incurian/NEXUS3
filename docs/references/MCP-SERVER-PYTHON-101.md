@@ -61,12 +61,16 @@ Practical rule:
 NEXUS accepts both of these command styles:
 
 ```json
-{"command": ["python", "hello_stdio_server.py"]}
-{"command": "python", "args": ["hello_stdio_server.py"]}
+{"command": ["python3", "hello_stdio_server.py"]}
+{"command": "python3", "args": ["hello_stdio_server.py"]}
 ```
 
 The checked-in stdio example intentionally uses the second form so you can see
 `args` in a real config file.
+
+The docs use `python3` as the default because it is the stronger default on
+Linux, macOS, and WSL. If your interpreter lives elsewhere, use the absolute
+interpreter path that exists on your machine.
 
 Checked-in example projects live under
 [docs/references/mcp-python-examples/](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/README.md):
@@ -107,7 +111,7 @@ If your MCP server is configured in NEXUS3 as:
 {
   "servers": {
     "hello_stdio": {
-      "command": ["python", "hello_stdio_server.py"]
+      "command": ["python3", "hello_stdio_server.py"]
     }
   }
 }
@@ -302,7 +306,7 @@ Project-local example:
 {
   "servers": {
     "hello_stdio": {
-      "command": "python",
+      "command": "python3",
       "args": ["hello_stdio_server.py", "--greeting-prefix", "Howdy"],
       "cwd": ".",
       "env": {
@@ -329,14 +333,19 @@ Notes:
 - In this checked-in example, `cwd: "."` works because the instructions have
   you start NEXUS from the example directory. In reusable project configs,
   prefer an absolute path.
-- If your interpreter is not on `PATH`, use an absolute interpreter path.
+- If `python3` is not on your `PATH`, use an absolute interpreter path.
 
 ### Step 3: Start NEXUS3 and connect the server
 
-In the REPL:
+From the example directory, start a fresh NEXUS session:
 
 ```text
-/mcp
+nexus3 --fresh
+```
+
+Then in the REPL:
+
+```text
 /mcp connect hello_stdio --allow-all --private
 /mcp tools hello_stdio
 ```
@@ -578,7 +587,7 @@ class MCPHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     host = "127.0.0.1"
-    port = 8765
+    port = 9876
     server = ThreadingHTTPServer((host, port), MCPHandler)
     print(f"MCP HTTP server listening on http://{host}:{port}/mcp", file=sys.stderr)
     server.serve_forever()
@@ -593,7 +602,7 @@ if __name__ == "__main__":
 In another terminal:
 
 ```bash
-python hello_http_server.py
+python3 hello_http_server.py
 ```
 
 ### Step 3: Add it to `.nexus3/mcp.json`
@@ -602,7 +611,7 @@ python hello_http_server.py
 {
   "servers": {
     "hello_http": {
-      "url": "http://127.0.0.1:8765/mcp",
+      "url": "http://127.0.0.1:9876/mcp",
       "enabled": true
     }
   }
@@ -612,6 +621,9 @@ python hello_http_server.py
 For HTTP servers, `url` is the important transport field. `command`, `args`,
 `cwd`, `env`, and `env_passthrough` are stdio-oriented settings and usually do
 not belong on an HTTP entry.
+
+This example uses port `9876` so it does not collide with NEXUS3's own default
+embedded RPC port `8765`.
 
 ### Step 4: Connect it from NEXUS3
 
@@ -648,17 +660,17 @@ You can send a single MCP request by piping JSON into the process:
 ```bash
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"manual-test","version":"1.0.0"}}}' \
-  | python hello_stdio_server.py
+  | python3 hello_stdio_server.py
 ```
 
 ### Test the HTTP server directly
 
 ```bash
 curl \
-  -X POST http://127.0.0.1:8765/mcp \
+  -X POST http://127.0.0.1:9876/mcp \
   -H 'Content-Type: application/json' \
   -H 'MCP-Protocol-Version: 2025-11-25' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"manual-test","version":"1.0.0"}}}'
 ```
 
 ## Practical rules for NEXUS3 compatibility
@@ -709,7 +721,7 @@ Example:
 {
   "servers": {
     "my_server": {
-      "command": ["python", "my_server.py"],
+      "command": ["python3", "my_server.py"],
       "env_passthrough": ["MY_API_KEY"],
       "env": {"LOG_LEVEL": "debug"}
     }

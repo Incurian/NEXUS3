@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "hello_stdio": {
+      "command": "python3",
+      "args": ["hello_stdio_server.py", "--greeting-prefix", "Howdy"],
+      "cwd": ".",
+      "env": {
+        "EXAMPLE_GREETING_STYLE": "friendly"
+      },
+      "env_passthrough": ["USER"],
+      "enabled": true,
+      "fail_if_no_tools": true
+    }
+  }
+}

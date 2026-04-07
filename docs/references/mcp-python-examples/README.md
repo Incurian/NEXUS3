@@ -1,20 +1,66 @@
 # MCP Python Example Projects
 
-These are checked-in example folders that match the MCP Python 101/202 docs.
+These folders are the hands-on companion to the Python MCP guides for NEXUS3.
+
+Use them when you want two things at once:
+
+- a gentle, runnable first example
+- a NEXUS-specific reference for what `mcp.json`, `/mcp connect`, and MCP
+  capability surfaces actually look like in practice
+
+## Recommended order
+
+1. Start with
+   [101-stdio](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-stdio/README.md).
+   It is the smallest local server and the easiest path to a first success.
+2. Then try
+   [101-http](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-http/README.md).
+   It keeps the same tool surface but changes the transport to HTTP.
+3. Finish with
+   [202-capabilities](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/README.md).
+   It adds resources and prompts so you can see how NEXUS treats each MCP
+   surface differently.
+
+## What Is In Each Example
 
 Each example is a small standalone project:
 
 - the server code lives at the top level
-- the NEXUS MCP config lives in `./.nexus3/mcp.json`
+- the NEXUS MCP config lives in the hidden directory `./.nexus3/mcp.json`
+- the folder is meant to be launched directly, not copied piecemeal
 
-That means you can usually:
+That means the normal workflow is:
 
-1. `cd` into one of these example folders
-2. run `nexus3`
-3. connect the configured MCP server from the REPL
+1. `cd` into one example directory
+2. start a clean REPL with `nexus3 --fresh`
+3. connect the configured server from the REPL
+4. inspect the exposed tools, resources, or prompts
 
-Available examples:
+Using `--fresh` matters for tutorials because it avoids confusion from an older
+session that was started in a different directory with different MCP config.
 
-- [101-stdio](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-stdio/README.md)
-- [101-http](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-http/README.md)
-- [202-capabilities](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/README.md)
+## NEXUS-Specific Notes
+
+- These examples assume you start NEXUS from the example directory itself.
+  The local `./.nexus3/mcp.json` file is then the active project-local MCP
+  layer.
+- The stdio examples use `cwd: "."` on purpose so you can see how relative
+  files like `greeting_suffix.txt` and `customer_table.md` resolve.
+- The stdio examples default to `python3`, which is a stronger default for
+  Linux, macOS, and WSL. If your interpreter lives somewhere else, replace the
+  command in `mcp.json` with the interpreter path that exists on your machine.
+- Only MCP tools become callable agent tools in NEXUS. Resources and prompts
+  remain MCP-native surfaces that you inspect separately with `/mcp resources`
+  and `/mcp prompts`.
+
+## Companion Guides
+
+The full walkthrough docs are mirrored alongside these examples so the example
+bundle is self-contained:
+
+- [MCP-SERVER-PYTHON-101.md](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/MCP-SERVER-PYTHON-101.md)
+- [MCP-SERVER-PYTHON-202.md](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/MCP-SERVER-PYTHON-202.md)
+- [TOOL-SURFACE-DESIGN-GUIDELINES.md](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/TOOL-SURFACE-DESIGN-GUIDELINES.md)
+
+If you are already reading the main repo docs, the canonical copies also live
+under [docs/references/](/home/inc/repos/NEXUS3/docs/references/).

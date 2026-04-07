@@ -1,0 +1,16 @@
+{
+  "servers": {
+    "capability_demo": {
+      "command": "python3",
+      "args": ["capability_server.py", "--customer-count", "128"],
+      "cwd": ".",
+      "env": {
+        "CAPABILITY_EXAMPLE_MODE": "demo",
+        "CAPABILITY_ENVIRONMENT": "development"
+      },
+      "env_passthrough": ["USER"],
+      "enabled": true,
+      "fail_if_no_tools": true
+    }
+  }
+}

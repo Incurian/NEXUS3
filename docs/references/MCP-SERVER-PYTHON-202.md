@@ -443,7 +443,7 @@ fields are actually visible in behavior:
 {
   "servers": {
     "capability_demo": {
-      "command": "python",
+      "command": "python3",
       "args": ["capability_server.py", "--customer-count", "128"],
       "cwd": ".",
       "env": {
@@ -468,8 +468,16 @@ Why these fields are here:
   in real projects.
 - In the checked-in example, those values are observable through the tool
   output and resource contents, not just stored in config.
+- If `python3` is not on your `PATH`, use the absolute interpreter path that
+  exists on your machine.
 
 ### Step 3: Connect it from NEXUS3
+
+From the example directory, start a fresh NEXUS session:
+
+```text
+nexus3 --fresh
+```
 
 In the REPL:
 
@@ -514,6 +522,14 @@ That means:
 - the MCP client layer can read those resources and prompts
 - but the agent does not automatically get a tool named after each resource or
   prompt
+
+Today that distinction is also visible in the REPL surface:
+
+- the REPL has discovery commands for resources and prompts
+- it does not currently add a dedicated `/mcp read-resource` or `/mcp get-prompt`
+  command
+- direct reads and prompt fetches still happen through the MCP client layer
+  with `resources/read` and `prompts/get`
 
 ## When resources are the right design
 

@@ -147,7 +147,7 @@ class MCPHandler(BaseHTTPRequestHandler):
 
 def main() -> None:
     host = "127.0.0.1"
-    port = 8765
+    port = 9876
     server = ThreadingHTTPServer((host, port), MCPHandler)
     print(f"MCP HTTP server listening on http://{host}:{port}/mcp", file=sys.stderr)
     server.serve_forever()

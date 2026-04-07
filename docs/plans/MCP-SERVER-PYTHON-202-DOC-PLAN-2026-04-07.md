@@ -123,3 +123,8 @@ Validation completed:
 - `.venv/bin/python -m py_compile docs/references/mcp-python-examples/202-capabilities/capability_server.py`
 - `.venv/bin/ruff check docs/references/mcp-python-examples/202-capabilities/capability_server.py`
 - `git diff --check`
+- Follow-up audit fixes:
+  - expanded the example-bundle README and `202-capabilities/README.md` to
+    explain the NEXUS-specific distinction between tools vs resources/prompts
+  - added `tests/integration/test_mcp_python_examples.py` to smoke test the
+    capabilities example against the real MCP client
