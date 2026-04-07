@@ -240,102 +240,60 @@ ad-hoc compatibility shim.
 
 ## Current Handoff
 
-### 2026-04-07 - MCP Python docs didactic audit final polish
+### 2026-04-07 - README surface refresh
 
 - Branch: `master`
-- Baseline head: `6bd96f1`
+- Baseline head: `3672e56`
 - Active slice:
-  - finish the didactic audit of the Python MCP example bundle against the
-    actual NEXUS CLI and MCP client behavior
-  - remove machine-specific walkthrough assumptions that make the examples
-    brittle outside this checkout
-  - keep the canonical docs and mirrored example-bundle copies in sync
+  - refresh the repo root README and module/package READMEs against the
+    current codebase
+  - expand thin package docs so the local README surface is actually usable
+  - fix concrete stale command/config/export claims without code changes
 - Plans/docs:
-  - [docs/plans/MCP-SERVER-PYTHON-101-DOC-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/MCP-SERVER-PYTHON-101-DOC-PLAN-2026-04-07.md)
-  - [docs/plans/MCP-SERVER-PYTHON-202-DOC-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/MCP-SERVER-PYTHON-202-DOC-PLAN-2026-04-07.md)
-  - [docs/references/MCP-SERVER-PYTHON-101.md](/home/inc/repos/NEXUS3/docs/references/MCP-SERVER-PYTHON-101.md)
-  - [docs/references/MCP-SERVER-PYTHON-202.md](/home/inc/repos/NEXUS3/docs/references/MCP-SERVER-PYTHON-202.md)
-  - [docs/references/mcp-python-examples/README.md](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/README.md)
+  - [docs/plans/README-REFRESH-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/README-REFRESH-PLAN-2026-04-07.md)
+  - [docs/plans/README.md](/home/inc/repos/NEXUS3/docs/plans/README.md)
+  - [README.md](/home/inc/repos/NEXUS3/README.md)
+  - [nexus3/README.md](/home/inc/repos/NEXUS3/nexus3/README.md)
 - Implemented locally:
-  - `/mcp` REPL commands now merge configured servers from both
-    `config.json` and layered `mcp.json`
-  - `ContextLoader` now accepts the documented `mcp.json` object form:
+  - root README now documents `rpc` and `trace` as first-class subcommands
+    instead of treating `trace` like a flag bucket
+  - root README now includes the missing `/gitlab test [NAME]` REPL command
+    and the current `mcp.json` shape support:
     - `{"servers": {"name": {...}}}`
-    - list form and `mcpServers` remain supported
-  - 101/202 docs now explain transport vs capabilities, `mcp.json` fields,
-    merge behavior, and the low-friction `/mcp connect ... --allow-all --private`
-    tutorial path
-  - the example-bundle README and per-example READMEs now teach a clearer
-    progression, recommend `nexus3 --fresh`, and call out NEXUS-specific
-    constraints explicitly
-  - the example-bundle README and mirrored 101 guide copies now include
-    prerequisites plus first-failure troubleshooting for interpreter/path,
-    stdout-vs-stderr, reconnect, and HTTP URL drift issues
-  - checked-in example servers now make config fields observable:
-    - `101-stdio`: `args`, `env`, and `cwd` change the greeting behavior, and
-      the checked-in config now uses `python3`
-    - `101-http`: audited and moved to port `9876` after confirming that
-      `nexus3 --fresh` binds the embedded RPC server on `8765`
-    - `202-capabilities`: `args`, `env`, and `cwd` affect tool/resource/prompt
-      output, and the checked-in config now uses `python3`
-  - added `tests/integration/test_mcp_python_examples.py` so the checked-in
-    examples are smoke-tested against the real MCP client
-  - added
-    [inspect_capabilities.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py)
-    so the 202 bundle now demonstrates:
-    - `tools/list`
-    - `resources/list`
-    - `prompts/list`
-    - `resources/read`
-    - `prompts/get`
-    through NEXUS's Python MCP client using the checked-in example config
-  - the canonical 202 guide and mirrored bundle copy now point readers at the
-    runnable helper and explain the current REPL/client boundary explicitly
-  - linked the MCP docs from the top-level README, MCP module docs, test
-    server README, AGENTS, and CLAUDE
-  - final doc polish from live validation:
-    - replaced machine-specific shell paths with `<repo-root>` placeholders
-    - documented the repo-local `<repo-root>/.venv/bin/nexus3` fallback for
-      walkthroughs started from example directories
-    - clarified that extra `/mcp` entries may appear from layered config and
-      are not part of the example flow
-    - clarified that the toy servers satisfy
-      `notifications/initialized` by ignoring no-id notifications unless they
-      need custom behavior
-    - clarified that the HTTP 101 example is intentionally stateless and that
-      the 202 helper must run from the repo root or equivalent `PYTHONPATH`
-    - kept the mirrored example-bundle 101/202 guide copies identical to the
-      canonical docs
+    - `{"servers": [{"name": "name", ...}]}`
+    - `{"mcpServers": {"name": {...}}}`
+  - package/module README refresh landed for:
+    - `nexus3/README.md`
+    - `nexus3/cli/README.md`
+    - `nexus3/context/README.md`
+    - `nexus3/core/README.md`
+    - `nexus3/provider/README.md`
+    - `nexus3/skill/builtin/README.md`
+    - `nexus3/skill/vcs/README.md`
+    - `nexus3/skill/vcs/gitlab/README.md`
+    - `nexus3/mcp/test_server/README.md`
+  - stale documentation claims corrected:
+    - root architecture table now says `skill/` has 46 built-in skills and up
+      to 21 GitLab skills
+    - root README no longer hardcodes the old `3400+` test count
+    - root README explicitly preserves `nexus3/ide` as the only intentional
+      no-README package
+    - context README now documents all supported MCP config shapes and loader
+      precedence
+    - core README export block now includes the direct-RPC capability helpers
+      re-exported by `nexus3.core`
+    - provider README now covers inbound tool-call normalization in
+      `tool_call_formats.py`
+    - VCS READMEs now point at the real config schema location instead of a
+      nonexistent local `config.py`
 - Validation status:
-  - focused tests passed:
-    - `.venv/bin/pytest -q tests/unit/test_repl_commands.py tests/unit/test_context_loader.py tests/unit/context/test_loader_mcp_fail_fast.py` (`112 passed`)
-  - example code validation passed:
-    - `.venv/bin/python -m py_compile docs/references/mcp-python-examples/101-stdio/hello_stdio_server.py docs/references/mcp-python-examples/101-http/hello_http_server.py docs/references/mcp-python-examples/202-capabilities/capability_server.py docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py`
-    - `.venv/bin/ruff check nexus3/cli/repl_commands.py nexus3/context/loader.py tests/unit/test_repl_commands.py tests/unit/test_context_loader.py tests/unit/context/test_loader_mcp_fail_fast.py docs/references/mcp-python-examples/101-stdio/hello_stdio_server.py docs/references/mcp-python-examples/101-http/hello_http_server.py docs/references/mcp-python-examples/202-capabilities/capability_server.py`
-    - `.venv/bin/ruff check docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py tests/integration/test_mcp_python_examples.py`
-  - example smoke tests passed:
-    - `.venv/bin/pytest -q tests/integration/test_mcp_python_examples.py` (`4 passed`)
-  - direct helper validation passed:
-    - `.venv/bin/python docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py`
-    - rerun after final doc edits: `.venv/bin/python docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py`
-  - end-to-end example audit passed:
-    - stdio example connected, exposed tools, and returned the configured greeting
-    - HTTP example connected from the documented two-terminal flow and returned
-      expected tool results without colliding with NEXUS's embedded RPC server
-    - capabilities example exposed tools/resources/prompts and reflected config
-      values in outputs
-    - capability helper exercised `resources/read` and `prompts/get` with the
-      same client/transport layer NEXUS uses internally
-    - final live CLI verification after doc polish:
-      - `/home/inc/repos/NEXUS3/.venv/bin/nexus3 --fresh` from
-        `101-stdio/` connected `hello_stdio` and listed `mcp_hello_stdio_hello`
-        plus `mcp_hello_stdio_add`
-      - `/home/inc/repos/NEXUS3/.venv/bin/nexus3 --fresh` from
-        `202-capabilities/` connected `capability_demo` and listed the
-        documented resources and prompts
-  - example smoke tests passed after final doc edits:
-    - `.venv/bin/pytest -q tests/integration/test_mcp_python_examples.py` (`4 passed`)
   - hygiene passed:
     - `git diff --check`
+    - `git diff --no-index --check -- /dev/null docs/plans/README-REFRESH-PLAN-2026-04-07.md` (clean; exits `1` because the plan file is new)
+  - stale-claim audit passed:
+    - `rg -n "44 built-in|3400\\+|Two MCP config formats are supported|nexus3/skill/vcs/config.py" README.md nexus3 -g 'README.md'` (no matches)
+  - presence checks passed:
+    - `rg -n "nexus3 rpc <SUBCOMMAND>|nexus3 trace \\[TARGET\\] \\[FLAGS\\]|/gitlab test|DIRECT_RPC_SCOPE_BY_METHOD|Three MCP config shapes are supported" README.md nexus3/context/README.md nexus3/core/README.md` (expected matches present)
+    - `.venv/bin/python - <<'PY' ...` verified no implemented `nexus3/` package with Python files is missing a `README.md` (`missing []`)
 - Next gate:
-  - push only when requested
+  - commit and push the docs refresh

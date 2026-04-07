@@ -135,15 +135,24 @@ subagent_prompt = loader.load_for_subagent(parent_context=context)
 
 #### MCP Config Formats
 
-Two MCP config formats are supported:
+Three MCP config shapes are supported:
 
 ```json
 // Official (Claude Desktop) format
 {"mcpServers": {"test": {"command": "...", "args": [...]}}}
 
-// NEXUS3 format
+// NEXUS3 list form
 {"servers": [{"name": "test", "command": "...", "args": [...]}]}
+
+// NEXUS3 object form
+{"servers": {"test": {"command": "...", "args": [...]}}}
 ```
+
+Loader precedence is:
+
+1. non-empty `mcpServers`
+2. `servers` object/list
+3. empty `mcpServers` falls back to `servers`
 
 #### System Information
 

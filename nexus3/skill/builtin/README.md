@@ -9,7 +9,19 @@ This package contains the concrete implementations behind
 [`registration.py`](/home/inc/repos/NEXUS3/nexus3/skill/builtin/registration.py).
 The current public registration surface is **46 core built-in skills**.
 
-High-level categories:
+## Package Structure
+
+Core files:
+
+- [`__init__.py`](/home/inc/repos/NEXUS3/nexus3/skill/builtin/__init__.py)
+  - small compatibility export surface for built-in registration and selected
+    `nexus_*` factories
+- [`registration.py`](/home/inc/repos/NEXUS3/nexus3/skill/builtin/registration.py)
+  - canonical built-in registration order and names
+- [`env.py`](/home/inc/repos/NEXUS3/nexus3/skill/builtin/env.py)
+  - shared environment sanitization helpers for execution-oriented skills
+
+Implementation groups:
 
 - File read/search: `read_file`, `tail`, `file_info`, `list_directory`,
   `glob`, `search_text`, `concat_files`, `outline`
@@ -27,17 +39,38 @@ High-level categories:
   `clipboard_import`
 - Utility: `sleep`
 
-Testing-only note:
+## Registration Notes
+
+- `register_builtin_skills(registry)` is the source of truth for the public
+  built-in tool surface
+- the package includes implementation files that are not part of the default
+  registration set when they exist only for tests or helper reuse
+- permission filtering happens above the package at registry/permissions
+  boundaries, so registration here is broader than what every agent will see
+
+## Public Exports
+
+[`__init__.py`](/home/inc/repos/NEXUS3/nexus3/skill/builtin/__init__.py)
+currently re-exports:
+
+- `register_builtin_skills`
+- `nexus_send_factory`
+- `nexus_cancel_factory`
+- `nexus_status_factory`
+- `nexus_shutdown_factory`
+
+## Testing-Only Note
 
 - [`echo.py`](/home/inc/repos/NEXUS3/nexus3/skill/builtin/echo.py) exists for
   harness/testing use but is not registered by default
 
-Supporting files:
+## Related Docs
 
-- [`registration.py`](/home/inc/repos/NEXUS3/nexus3/skill/builtin/registration.py)
-  - canonical built-in skill registration surface
-- [`env.py`](/home/inc/repos/NEXUS3/nexus3/skill/builtin/env.py)
-  - shared environment sanitization helpers for execution-oriented skills
-
-For the full public contract and parameter reference, see
-[`nexus3/skill/README.md`](/home/inc/repos/NEXUS3/nexus3/skill/README.md).
+- Full tool contract and parameter reference:
+  [`nexus3/skill/README.md`](/home/inc/repos/NEXUS3/nexus3/skill/README.md)
+- Clipboard-backed skill behavior:
+  [`nexus3/clipboard/README.md`](/home/inc/repos/NEXUS3/nexus3/clipboard/README.md)
+- Unified diff support used by `patch` and `patch_from_file`:
+  [`nexus3/patch/README.md`](/home/inc/repos/NEXUS3/nexus3/patch/README.md)
+- Session/runtime permission enforcement for tool execution:
+  [`nexus3/session/README.md`](/home/inc/repos/NEXUS3/nexus3/session/README.md)

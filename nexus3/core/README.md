@@ -1,6 +1,9 @@
 # nexus3/core
 
-Foundational types, interfaces, security utilities, and permission system for NEXUS3. This module provides the core building blocks used throughout the framework with minimal external dependencies (stdlib + jsonschema + rich).
+Foundational types, interfaces, security utilities, and permission system for
+NEXUS3. This module provides the core building blocks used throughout the
+framework with a deliberately small dependency surface (`jsonschema`,
+`psutil`, and `rich` outside the standard library).
 
 ## Purpose
 
@@ -14,8 +17,12 @@ The core module serves as the foundation for NEXUS3, providing:
 - **Permission system** - Multi-level access control (YOLO/TRUSTED/SANDBOXED) with per-tool overrides
 - **Request context** - Immutable per-request metadata for authorization and tracing
 - **Path security** - Sandboxing, symlink defense, and authoritative path decision engine
+- **Filesystem gateway** - Shared per-entry authorization helpers for multi-file skills
 - **URL validation** - SSRF protection with blocked IP ranges
+- **External tool resolution** - Deterministic discovery for optional host tools such as ripgrep
+- **Executable identity normalization** - Stable command identities for execution allowances
 - **Input validation** - Agent ID, tool name, and argument validation
+- **Process inspection** - Safe process listing, filtering, redacted previews, and termination helpers
 - **Secret redaction** - Pattern-based detection and removal of sensitive data
 - **Secure I/O** - Atomic file operations with proper permissions
 - **Text safety** - Terminal escape sequence and Rich markup sanitization
@@ -46,6 +53,9 @@ from nexus3.core import (
     # === Capability Tokens ===
     CapabilityClaims,  # Typed capability claim set
     CapabilitySigner,  # Issue/verify signed capability tokens
+    DIRECT_RPC_SCOPE_BY_METHOD,        # Direct in-process RPC method -> scope map
+    DIRECT_RPC_ALL_SCOPES,             # Tuple of all supported direct RPC scopes
+    direct_rpc_scope_for_method,       # Resolve direct RPC scope for a method
     InMemoryCapabilityRevocationStore,  # In-memory revocation set
     InMemoryCapabilityReplayStore,      # In-memory replay detector
     generate_capability_secret,         # URL-safe signing secret generator
@@ -838,6 +848,29 @@ On Unix, this is `0` (no-op), making it safe to use unconditionally.
 
 ---
 
+### process_tools.py - Process Inspection Helpers
+
+Shared helpers for the process-oriented built-in skills.
+
+| Export | Description |
+|--------|-------------|
+| `normalize_process_limit()` | Validate and clamp list-process limits |
+| `normalize_process_offset()` | Validate list-process offsets |
+| `normalize_kill_timeout()` | Validate graceful termination timeout values |
+| `format_command_preview()` | Redact and truncate process command lines for safe display |
+| `matches_process_query()` | Apply exact / contains / regex filtering against name and command text |
+| `build_port_map()` | Best-effort PID-to-port lookup for network-aware filtering |
+| `summarize_process_info()` | Convert raw `psutil` data into stable list output |
+| `get_process_filter_view()` | Return a lightweight process view used during filtering |
+| `get_process_details()` | Return the detailed payload used by `get_process` |
+| `terminate_pid()` | Terminate a PID with protected-process checks and timeout handling |
+
+These helpers centralize the psutil-dependent logic used by
+`list_processes`, `get_process`, and `kill_process` so the skill layer can stay
+focused on parameter handling and permission flow.
+
+---
+
 ### cancel.py - Cancellation Support
 
 Cooperative cancellation for async operations.
@@ -917,6 +950,22 @@ Global paths and file I/O limits.
 
 ---
 
+### external_tools.py - Optional Host Tool Resolution
+
+Utilities for resolving optional external executables without scattering
+host-dependent lookup logic.
+
+| Export | Description |
+|--------|-------------|
+| `ExternalToolResolution` | Frozen result describing executable path, source, and failure reason |
+| `resolve_ripgrep()` | Resolve `rg` from config or `PATH` for search-tool acceleration |
+
+`resolve_ripgrep()` keeps host-tool discovery explicit and explainable: callers
+can distinguish "configured path missing" from "not on PATH" instead of
+silently falling back.
+
+---
+
 ### redaction.py - Secret Redaction
 
 Pattern-based secret detection and redaction.
@@ -986,6 +1035,34 @@ try:
 except SymlinkError:
     print("Refusing to write through symlink")
 ```
+
+---
+
+### filesystem_access.py - Multi-File Authorization Gateway
+
+Shared path-authorization wrapper for skills that need to evaluate many paths.
+
+| Export | Description |
+|--------|-------------|
+| `FilesystemAccessGateway` | ServiceContainer-aware wrapper around `PathDecisionEngine` for repeated path checks |
+
+```python
+from pathlib import Path
+
+from nexus3.core.filesystem_access import FilesystemAccessGateway
+
+gateway = FilesystemAccessGateway(services, tool_name="glob")
+authorized = list(
+    gateway.iter_authorized_paths(
+        [Path("src"), Path("../outside")],
+        must_exist=True,
+        return_resolved=True,
+    )
+)
+```
+
+This keeps multi-file tools consistent with the same service-derived path
+policy used by single-path resolution.
 
 ---
 
@@ -1080,6 +1157,25 @@ if not is_utf8:
 
 ---
 
+### executable_identity.py - Command Identity Normalization
+
+Helpers for turning execution requests into stable session-allowance keys.
+
+| Export | Description |
+|--------|-------------|
+| `resolve_executable_identity()` | Normalize a command identity from a path-like or PATH-resolved program value |
+
+The helper prefers:
+
+1. path-like program values resolved against the effective cwd
+2. `PATH` lookup for bare program names
+3. normalized fallback text when resolution is not possible
+
+This prevents execution allowances from drifting based on superficial path
+spelling differences.
+
+---
+
 ### utils.py - Shared Utilities
 
 Common operations used across modules.
@@ -1149,7 +1245,7 @@ StreamComplete(Message)
 ## Dependencies
 
 - **Stdlib**: asyncio, collections.abc, ctypes (Windows only), dataclasses, enum, errno, functools, ipaddress, logging, os, pathlib, re, signal, socket, stat, subprocess, sys, tempfile, unicodedata
-- **PyPI**: jsonschema (validation), rich (markup escaping)
+- **PyPI**: jsonschema (validation), psutil (process inspection/termination helpers), rich (markup escaping)
 
 ---
 

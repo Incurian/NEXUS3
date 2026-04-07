@@ -1,150 +1,85 @@
-# nexus3.skill.vcs - Version Control System Integrations
+# nexus3.skill.vcs - Version Control Service Integrations
 
-**Updated: 2026-01-31**
-
-VCS skills provide integration with external version control platforms. Currently supports GitLab, with GitHub planned for future.
-
----
-
-## Table of Contents
-
-1. [Overview](#overview)
-2. [Directory Structure](#directory-structure)
-3. [Security Model](#security-model)
-4. [GitLab Integration](#gitlab-integration)
-5. [Configuration](#configuration)
-6. [Registration](#registration)
-
----
+Version-control platform integrations for NEXUS3. The package currently
+registers GitLab skills when configuration and permissions allow it, while
+leaving a narrow extension point for future providers such as GitHub.
 
 ## Overview
 
-VCS skills enable NEXUS3 agents to interact with external version control platforms for:
+This package is intentionally small. It does not implement VCS behavior
+directly; instead it owns the top-level registration gate that decides whether
+provider-specific VCS skills should appear for the current agent.
 
-- Repository management
-- Issue and merge request workflows
-- CI/CD pipeline operations
-- Project configuration
+Current behavior:
 
-All VCS skills require TRUSTED+ permissions and pre-configured instances. SANDBOXED agents cannot access external VCS providers.
+- only GitLab is implemented today
+- VCS skills are hidden from `SANDBOXED` agents
+- registration is config-driven; no arbitrary ad-hoc VCS endpoints are exposed
+- destructive actions use the same confirmation and allowance model as other
+  security-sensitive tool families
 
----
+## Package Structure
 
-## Directory Structure
-
-```
+```text
 nexus3/skill/vcs/
-├── README.md           # This file
-├── __init__.py         # register_vcs_skills() entry point
-├── config.py           # GitLabConfig, GitLabInstance dataclasses
-└── gitlab/             # GitLab skill implementations
-    ├── __init__.py     # register_gitlab_skills() function
-    ├── README.md       # GitLab package overview
-    ├── base.py         # GitLabSkill base class
-    ├── client.py       # Async HTTP client (httpx-based)
-    ├── permissions.py  # Permission checks and confirmation logic
-    └── <skill>.py      # 21 individual skill files
+├── README.md        # This file
+├── __init__.py      # register_vcs_skills(...) entry point
+└── gitlab/          # Concrete GitLab skill package
+    ├── __init__.py  # register_gitlab_skills(...)
+    ├── base.py      # Shared GitLabSkill base class
+    ├── client.py    # Async GitLab HTTP client
+    ├── permissions.py
+    └── <skill>.py   # Individual GitLab skill implementations
 ```
 
-For the concrete GitLab subpackage surface, see
-[`gitlab/README.md`](/home/inc/repos/NEXUS3/nexus3/skill/vcs/gitlab/README.md).
+There is intentionally no local `config.py` in this package. GitLab config
+models live in the main config schema under
+[`nexus3/config/README.md`](/home/inc/repos/NEXUS3/nexus3/config/README.md)
+and [`nexus3/config/schema.py`](/home/inc/repos/NEXUS3/nexus3/config/schema.py).
 
----
+## Visibility And Safety
 
-## Security Model
+| Requirement | Behavior |
+|-------------|----------|
+| Pre-configured instances only | Skills are registered only for configured GitLab instances from `config.json` |
+| `TRUSTED` or `YOLO` required | `SANDBOXED` agents never get GitLab skills |
+| Read-only actions | Allowed without confirmation |
+| Destructive actions in `TRUSTED` | Require confirmation unless a matching session allowance already exists |
+| Session allowances | Persist the approved `skill@instance` pair for the session |
+| SSRF protection | All GitLab HTTP traffic uses URL validation and controlled instance configuration |
 
-| Requirement | Description |
-|-------------|-------------|
-| Pre-configured instances | No arbitrary server connections; instances must be in config.json |
-| TRUSTED+ required | SANDBOXED agents cannot use VCS skills |
-| Confirmation prompts | Destructive actions require confirmation in TRUSTED mode |
-| Session allowances | Once confirmed, skill@instance pairs are stored for session |
-| SSRF protection | URL validation on all requests, no redirect following |
+The package-level gate delegates the detailed confirmation logic to
+[`gitlab/permissions.py`](/home/inc/repos/NEXUS3/nexus3/skill/vcs/gitlab/permissions.py).
 
-### Permission Levels
+## GitLab Surface
 
-| Level | VCS Access |
-|-------|------------|
-| YOLO | Full access, no confirmations |
-| TRUSTED | Full access, confirmations for destructive actions |
-| SANDBOXED | No VCS access (network blocked) |
+When GitLab is visible and configured, the package registers **21 GitLab
+skills**:
 
----
+- Foundation: `gitlab_repo`, `gitlab_issue`, `gitlab_mr`, `gitlab_label`,
+  `gitlab_branch`, `gitlab_tag`
+- Project management: `gitlab_epic`, `gitlab_iteration`,
+  `gitlab_milestone`, `gitlab_board`, `gitlab_time`
+- Code review: `gitlab_approval`, `gitlab_draft`, `gitlab_discussion`
+- CI/CD: `gitlab_pipeline`, `gitlab_job`, `gitlab_artifact`,
+  `gitlab_variable`
+- Configuration: `gitlab_deploy_key`, `gitlab_deploy_token`,
+  `gitlab_feature_flag`
 
-## GitLab Integration
+The shared GitLab runtime lives under
+[`gitlab/README.md`](/home/inc/repos/NEXUS3/nexus3/skill/vcs/gitlab/README.md),
+with common behavior centered in:
 
-### Skills (21 total)
-
-| Phase | Skills | Description |
-|-------|--------|-------------|
-| Foundation | `gitlab_repo`, `gitlab_issue`, `gitlab_mr`, `gitlab_label`, `gitlab_branch`, `gitlab_tag` | Core repository operations |
-| Project Management | `gitlab_epic`, `gitlab_iteration`, `gitlab_milestone`, `gitlab_board`, `gitlab_time` | Planning and tracking |
-| Code Review | `gitlab_approval`, `gitlab_draft`, `gitlab_discussion` | MR review workflows |
-| CI/CD | `gitlab_pipeline`, `gitlab_job`, `gitlab_artifact`, `gitlab_variable` | Build and deployment |
-| Config | `gitlab_deploy_key`, `gitlab_deploy_token`, `gitlab_feature_flag` | Project configuration |
-
-### Base Class
-
-`GitLabSkill` in `base.py` provides shared infrastructure:
-
-```python
-class GitLabSkill(BaseSkill):
-    """
-    Base class for all GitLab skills.
-
-    Provides:
-    - Instance resolution (which GitLab to connect to)
-    - Client management (lazy initialization, caching)
-    - Project resolution from git remote
-    - Standard error handling
-    """
-```
-
-Key methods:
-- `_resolve_instance()` - Select GitLab instance by name or auto-detect from git remote
-- `_get_client()` - Get or create cached HTTP client for instance
-- `_resolve_project()` - Resolve project path from parameter or git remote
-- `_prime_remote_context()` - Preload git-remote autodetection off the event loop
-  for async execution paths
-- `_execute_impl()` - Override in subclasses to implement skill logic
-- `_resolve_user_ids()` - Resolve usernames (including `"me"`) to numeric user IDs
-- `_resolve_me_username()` - Resolve `"me"` to a username string for list filters
-
-### HTTP Client
-
-`GitLabClient` in `client.py` provides async HTTP operations:
-
-- Native async with httpx (no python-gitlab dependency)
-- SSRF protection via URL validation
-- Automatic retry with exponential backoff
-- Rate limit handling (429 responses)
-- Pagination support for list endpoints
-- Shared raw helpers for text (`get_raw()`) and binary (`get_bytes()`) endpoints
-- Connection pooling and lazy initialization
-- User ID lookup with caching (`lookup_user()`, `lookup_users()`)
-
-### Action Pattern
-
-Skills use action-based dispatch:
-
-```python
-async def _execute_impl(self, client: GitLabClient, **kwargs) -> ToolResult:
-    action = kwargs.get("action", "list")
-    match action:
-        case "list":
-            return await self._list(client, **kwargs)
-        case "get":
-            return await self._get(client, **kwargs)
-        case "create":
-            return await self._create(client, **kwargs)
-        # ...
-```
-
----
+- [`base.py`](/home/inc/repos/NEXUS3/nexus3/skill/vcs/gitlab/base.py) for
+  instance resolution, project autodetection, and client caching
+- [`client.py`](/home/inc/repos/NEXUS3/nexus3/skill/vcs/gitlab/client.py) for
+  async HTTP operations, retries, pagination, and raw/text helpers
+- [`permissions.py`](/home/inc/repos/NEXUS3/nexus3/skill/vcs/gitlab/permissions.py)
+  for visibility and confirmation rules
 
 ## Configuration
 
-GitLab configuration in `config.json`:
+GitLab configuration lives in the root config schema:
 
 ```json
 {
@@ -155,11 +90,6 @@ GitLab configuration in `config.json`:
         "token_env": "GITLAB_TOKEN",
         "username": "your-username",
         "email": "you@example.com"
-      },
-      "internal": {
-        "url": "https://gitlab.internal.company.com",
-        "token": "glpat-xxxxxxxxxxxx",
-        "username": "your-internal-username"
       }
     },
     "default_instance": "gitlab"
@@ -167,72 +97,54 @@ GitLab configuration in `config.json`:
 }
 ```
 
-### Config Classes
+Important config behavior:
 
-| Class | Description |
-|-------|-------------|
-| `GitLabInstance` | Single instance config (url, token/token_env, username, email, user_id) |
-| `GitLabConfig` | Collection of instances with default selection |
+- each instance uses either `token` or `token_env`
+- `default_instance` must refer to a configured instance name
+- skill execution can auto-detect the instance and project from the current git
+  remote when the request omits them
 
-Token resolution order:
-1. Direct `token` value in config
-2. Environment variable from `token_env`
-3. None (triggers authentication error)
-
----
+For the authoritative config fields, see
+[`nexus3/config/README.md`](/home/inc/repos/NEXUS3/nexus3/config/README.md)
+and the `GitLabConfig` / `GitLabInstanceConfig` models in
+[`nexus3/config/schema.py`](/home/inc/repos/NEXUS3/nexus3/config/schema.py).
 
 ## Registration
 
-VCS skills are registered via `register_vcs_skills()` in `__init__.py`:
+Top-level registration happens in
+[`__init__.py`](/home/inc/repos/NEXUS3/nexus3/skill/vcs/__init__.py):
 
 ```python
-from nexus3.skill.vcs import register_vcs_skills
-
-# Called by session setup
-count = register_vcs_skills(registry, services, permissions)
+count = register_vcs_skills(
+    registry,
+    services,
+    permissions,
+    gitlab_visible=None,
+)
 ```
 
-Registration is conditional:
-1. Check if GitLab config exists in services
-2. Check if permission level is TRUSTED+
-3. If both pass, register all 21 GitLab skill factories
+Current registration rules:
 
-Skills are registered as factories that capture the GitLab config:
+- return `0` when no GitLab instances are configured
+- return `0` when the current agent cannot use GitLab
+- otherwise defer to `register_gitlab_skills(...)` and return the number of
+  registered GitLab skill factories
 
-```python
-def make_factory(skill_class):
-    def factory(svc: ServiceContainer):
-        config = svc.get_gitlab_config()
-        if not config:
-            raise ValueError("GitLab not configured")
-        skill = skill_class(svc, config)
-        _wrap_with_validation(skill)
-        return skill
-    return factory
-```
+The optional `gitlab_visible` override is used by higher-level runtime wiring
+that needs to compute or restore agent state without re-deriving visibility in
+multiple places.
 
----
+## Future Providers
 
-## Future: GitHub Integration
+`register_vcs_skills(...)` keeps a commented placeholder for future GitHub
+registration, but no GitHub package ships today. The current public VCS surface
+is GitLab-only.
 
-GitHub skills are planned but not yet implemented. The structure will mirror GitLab:
+## Related Docs
 
-```
-nexus3/skill/vcs/
-├── github/
-│   ├── __init__.py     # register_github_skills()
-│   ├── base.py         # GitHubSkill base class
-│   ├── client.py       # GitHub API client (or gh CLI wrapper)
-│   └── <skill>.py      # Individual skills
-└── config.py           # Add GitHubConfig, GitHubInstance
-```
-
-The `register_vcs_skills()` function already has placeholder logic for GitHub:
-
-```python
-# GitHub skills (future)
-# github_config = services.get_github_config()
-# if github_config and github_config.instances:
-#     from nexus3.skill.vcs.github import register_github_skills
-#     count += register_github_skills(registry, services, permissions)
-```
+- GitLab package details:
+  [`nexus3/skill/vcs/gitlab/README.md`](/home/inc/repos/NEXUS3/nexus3/skill/vcs/gitlab/README.md)
+- Skill-system overview:
+  [`nexus3/skill/README.md`](/home/inc/repos/NEXUS3/nexus3/skill/README.md)
+- Config reference:
+  [`nexus3/config/README.md`](/home/inc/repos/NEXUS3/nexus3/config/README.md)

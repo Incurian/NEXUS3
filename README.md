@@ -658,6 +658,8 @@ Destroyed agent 'researcher'
 
 ```
 nexus3 [OPTIONS]
+nexus3 rpc <SUBCOMMAND> [ARGS]
+nexus3 trace [TARGET] [FLAGS]
 ```
 
 #### Session Modes (Mutually Exclusive)
@@ -669,13 +671,29 @@ nexus3 [OPTIONS]
 | `--resume` | Resume last session automatically |
 | `--session NAME` | Load specific saved session by name |
 
-#### Server Modes
+#### Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `rpc <subcommand>` | Run JSON-RPC client commands against an existing NEXUS3 server |
+| `trace [TARGET] [flags]` | Follow execution/debug traces for the active session or its active child agents |
+
+Trace-specific flags:
+
+- `--preset execution|debug` - Choose execution view or raw debug-log view
+- `--scope active|subagents` - Follow the selected session or its active child agents
+- `--once` - Print one snapshot and exit
+- `--history N` - Show recent history before follow mode
+- `--poll-interval SEC` - Follow-loop poll interval
+- `--max-tool-lines N` - Cap execution-trace tool body output (`0` = unlimited)
+- `--log-dir PATH` - Read traces from a non-default log root
+
+#### Server And Connection Modes
 
 | Flag | Description |
 |------|-------------|
 | `--serve [PORT]` | Run headless HTTP server (requires `NEXUS_DEV=1`) |
 | `--connect [URL]` | Connect to existing server (auto-discovers if no URL) |
-| `trace [TARGET] [--latest] [--scope active\|subagents] [--max-tool-lines N]` | Follow execution/debug traces for the active session or its active child agents |
 | `--agent ID` | Agent to connect to (default: `main`, requires `--connect`) |
 | `--reload` | Auto-reload on code changes (serve mode only, requires watchfiles) |
 
@@ -752,6 +770,7 @@ Available when running interactively.
 | `/init [FILENAME] [--force] [--global]` | Initialize project config (default: AGENTS.md) |
 | `/gitlab` | Show GitLab status and configured instances |
 | `/gitlab on\|off` | Enable/disable GitLab tools for this session |
+| `/gitlab test [NAME]` | Test connectivity to a configured GitLab instance |
 
 #### MCP (External Tools)
 
@@ -867,7 +886,7 @@ For REPL internals and UI components, see `nexus3/cli/README.md`. For RPC protoc
 | `provider/` | AsyncProvider protocol, multi-provider support, prompt caching, retry logic |
 | `context/` | ContextManager, ContextLoader, TokenCounter, compaction |
 | `session/` | Session coordinator, persistence, SessionManager, SQLite logging |
-| `skill/` | Skill protocol, SkillRegistry, ServiceContainer, 44 built-in + 21 GitLab skills |
+| `skill/` | Skill protocol, SkillRegistry, ServiceContainer, 46 built-in skills, and up to 21 GitLab skills |
 | `clipboard/` | Scoped clipboard system (agent/project/system), SQLite storage |
 | `patch/` | Unified diff parsing, validation, and application |
 | `display/` | Spinner-based REPL display, SafeSink boundaries, theming, plus quarantined legacy display helpers |
@@ -877,7 +896,9 @@ For REPL internals and UI components, see `nexus3/cli/README.md`. For RPC protoc
 | `commands/` | Unified command infrastructure for CLI and REPL |
 | `defaults/` | Default configuration and system prompts |
 
-Each module has its own `README.md` with detailed documentation.
+Each implemented module listed above has its own `README.md` with detailed
+documentation. `nexus3/ide` remains intentionally deferred and does not yet
+ship a module README.
 
 ---
 
@@ -1343,14 +1364,17 @@ MCP servers can be configured in two places:
 - **`mcp.json`** (standalone file in `~/.nexus3/` or `.nexus3/`) — recommended
 - **`mcp_servers`** array in `config.json` — alternative
 
-When using `mcp.json`, two key formats are supported:
+When using `mcp.json`, three shapes are supported:
 
 ```json
 {"servers": {"name": {...}}}
+{"servers": [{"name": "name", "...": "..."}]}
 {"mcpServers": {"name": {...}}}
 ```
 
-The `mcpServers` format is compatible with Claude Desktop configs.
+The `mcpServers` format is compatible with Claude Desktop configs. When both
+keys are present, a non-empty `mcpServers` object takes precedence; an empty
+`mcpServers` object falls back to `servers`.
 
 Per-server options:
 
@@ -1734,7 +1758,8 @@ Create `mcp.json` in `~/.nexus3/` (global) or `.nexus3/` (project).
 
 ### Example Configuration
 
-**mcp.json** uses `"servers"` (NEXUS3 format) or `"mcpServers"` (official/Claude Desktop format):
+**mcp.json** accepts NEXUS3 `"servers"` object/list formats plus
+`"mcpServers"` (official/Claude Desktop format):
 
 ```json
 {
@@ -1771,6 +1796,19 @@ Create `mcp.json` in `~/.nexus3/` (global) or `.nexus3/` (project).
       "env": {"GITHUB_TOKEN": "..."}
     }
   }
+}
+```
+
+**List-form NEXUS3 format:**
+
+```json
+{
+  "servers": [
+    {
+      "name": "test-server",
+      "command": [".venv/bin/python", "-m", "nexus3.mcp.test_server"]
+    }
+  ]
 }
 ```
 
@@ -2232,7 +2270,7 @@ nexus3 --raw-log          # Log raw API JSON to raw.jsonl
 ### Running Tests
 
 ```bash
-# All tests (3400+)
+# Full test suite
 .venv/bin/pytest tests/ -v
 
 # Specific categories

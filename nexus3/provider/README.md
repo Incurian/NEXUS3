@@ -27,6 +27,7 @@ nexus3/provider/
 ├── openai_compat.py   # OpenAICompatProvider for OpenAI-format APIs
 ├── anthropic.py       # AnthropicProvider for native Anthropic API
 ├── tool_schema.py     # Provider-safe tool schema normalization helpers
+├── tool_call_formats.py  # Inbound tool-call payload normalization helpers
 └── azure.py           # AzureOpenAIProvider extending OpenAI-compat
 ```
 
@@ -469,6 +470,28 @@ coerced to `{}`.
 **Headers:**
 - `x-api-key: {api_key}`
 - `anthropic-version: 2023-06-01`
+
+---
+
+## Tool Call Normalization
+
+Inbound tool-call payloads are normalized through
+[`tool_call_formats.py`](/home/inc/repos/NEXUS3/nexus3/provider/tool_call_formats.py)
+before they re-enter the runtime tool loop.
+
+Key behaviors:
+
+- accept already-structured object payloads directly
+- normalize JSON-string argument objects when providers serialize arguments as
+  text
+- accept compatible Python-style dict/kwargs/call-expression fallbacks for
+  provider compatibility shims
+- preserve malformed or unresolved payloads as raw argument metadata so the
+  runtime can fail closed instead of silently inventing arguments
+
+Outbound tool definitions continue to flow through
+[`tool_schema.py`](/home/inc/repos/NEXUS3/nexus3/provider/tool_schema.py), so
+schema strictness and inbound normalization remain separate concerns.
 
 ---
 

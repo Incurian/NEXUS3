@@ -99,6 +99,10 @@ This index covers the architecture plans created during today's review/planning 
 - [MCP-SERVER-PYTHON-101-DOC-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/MCP-SERVER-PYTHON-101-DOC-PLAN-2026-04-07.md)
 - [MCP-SERVER-PYTHON-202-DOC-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/MCP-SERVER-PYTHON-202-DOC-PLAN-2026-04-07.md)
 
+## README Refresh Plan (2026-04-07)
+
+- [README-REFRESH-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/README-REFRESH-PLAN-2026-04-07.md)
+
 ## Release Plan (2026-04-07)
 
 - [RELEASE-V1.1.0-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/RELEASE-V1.1.0-PLAN-2026-04-07.md)

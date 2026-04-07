@@ -40,6 +40,7 @@ nexus3/cli/
 ├── repl_formatting.py   # SafeSink-backed REPL formatting/sanitization helpers
 ├── repl_runtime.py      # REPL runtime and client-discovery helpers
 ├── repl_reload.py       # REPL reload/watchfiles helper
+├── editor_preview.py    # External editor / pager preview helpers for REPL-only flows
 ├── serve.py             # Headless HTTP server mode
 ├── arg_parser.py        # CLI argument parsing with subparsers
 ├── client_commands.py   # RPC CLI command handlers
@@ -49,6 +50,7 @@ nexus3/cli/
 ├── confirmation_ui.py   # Tool action confirmation dialogs
 ├── prompt_support.py    # Prompt-session helpers for shell-specific behavior
 ├── keys.py              # Keyboard input handling (ESC detection / fallback pause loop)
+├── trace_palette.py     # Shared Rich color palette for trace-style output
 ├── whisper.py           # Whisper mode state management
 ├── live_state.py        # Shared Rich Live context
 └── init_commands.py     # Configuration initialization
@@ -571,6 +573,22 @@ Examples:
 
 ---
 
+### `trace_palette.py` - Trace Styling Helpers
+
+Shared style lookup helpers for trace-oriented output surfaces.
+
+| Export | Description |
+|--------|-------------|
+| `TRACE_HEADER_STYLES` | Canonical Rich header styles keyed by trace entry kind |
+| `TRACE_BODY_STYLES` | Canonical body styles keyed by trace entry kind |
+| `trace_header_style(kind)` | Resolve a header style with a safe fallback |
+| `trace_body_style(kind)` | Resolve an optional body style for an entry kind |
+
+This keeps `trace.py` and related trace-formatting call sites aligned on the
+same visual vocabulary instead of hard-coding colors in multiple places.
+
+---
+
 ### `prompt_support.py` - Prompt Backend Helpers
 
 Shared prompt-toolkit helpers for shell-specific REPL behavior.
@@ -585,6 +603,26 @@ This module is the CLI-side entrypoint for the current fail-closed Git Bash
 behavior: standalone Git Bash keeps the REPL usable, but startup guidance now
 avoids promising live ESC cancellation and points users to `/cancel` and
 `C-X C-E` when prompt-toolkit's editor fallback is enabled.
+
+---
+
+### `editor_preview.py` - External Editor Preview Helpers
+
+REPL-only helpers for opening large tool details in an external editor or
+pager.
+
+| Function | Description |
+|----------|-------------|
+| `get_system_editor()` | Resolve an editor/pager command from `VISUAL`, `EDITOR`, or platform defaults |
+| `open_in_editor(content, title)` | Write a temporary UTF-8 preview file and open it in the resolved editor |
+| `is_wsl()` | Detect WSL so Windows editor fallbacks can be handled safely |
+
+Behavior notes:
+
+- prefers configured editor commands when available
+- falls back to `notepad.exe` on Windows/WSL or pager-style commands on Unix
+- prepends pager navigation hints when the selected command is pager-like
+- writes temp files under `~/.nexus3/temp/` and removes them after use
 
 ---
 
