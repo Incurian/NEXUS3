@@ -7,6 +7,7 @@ dependency-injected helpers for incremental integration.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable, MutableMapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -32,6 +33,7 @@ from nexus3.session.trace import remove_active_agent_session
 
 AgentT = TypeVar("AgentT", bound="AgentLike")
 DestroyUnlockedFn = Callable[[str, str | None, bool], Awaitable[bool]]
+logger = logging.getLogger(__name__)
 
 
 class _DestroyAuthorizationAdapter:
@@ -278,7 +280,7 @@ async def destroy_unlocked(
     destroy_authorization_kernel: AdapterAuthorizationKernel,
     capability_state: CapabilityLifecycleState,
     unregister_log_multiplexer_agent_fn: Callable[[str], None],
-    base_log_dir: Path,
+    base_log_dir: Path | None,
     agent_id: str,
     requester_id: str | None = None,
     admin_override: bool = False,
@@ -321,12 +323,40 @@ async def destroy_unlocked(
     if clipboard_manager:
         clipboard_manager.close()
 
-    remove_active_agent_session(
+    _remove_active_agent_session_if_possible(
         base_log_dir=base_log_dir,
-        session_dir=agent.logger.session_dir,
+        logger_obj=agent.logger,
     )
     agent.logger.close()
     return True
+
+
+def _remove_active_agent_session_if_possible(
+    *,
+    base_log_dir: Path | None,
+    logger_obj: Any,
+) -> bool:
+    """Best-effort removal of active-agent session registry entries.
+
+    Destroy semantics should not depend on shared trace-registry state being
+    wired in. Real pools pass `base_log_dir`, but partial test doubles or
+    early-failure teardown paths may not have a shared log root or a logger
+    exposing `session_dir`.
+    """
+    if base_log_dir is None:
+        return False
+
+    session_dir = getattr(logger_obj, "session_dir", None)
+    if not isinstance(session_dir, Path):
+        logger.debug(
+            "Skipping active-agent session cleanup because logger has no Path session_dir"
+        )
+        return False
+
+    return remove_active_agent_session(
+        base_log_dir=base_log_dir,
+        session_dir=session_dir,
+    )
 
 
 async def destroy(

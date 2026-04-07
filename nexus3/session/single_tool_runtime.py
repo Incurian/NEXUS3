@@ -85,12 +85,34 @@ async def execute_single_tool(
             "This is a programming error - all Sessions should have permissions."
         )
 
-    # 1. Permission checks (enabled, action allowed, path restrictions)
+    # 1. Resolve skill
+    skill, mcp_server_name = dispatcher.find_skill(tool_call)
+
+    # 2. Unknown skill check
+    if not skill:
+        runtime_logger.debug("Unknown skill requested: %s", tool_call.name)
+        return ToolResult(error=f"Unknown skill: {tool_call.name}")
+
+    # 3. Check for malformed/truncated/unresolved tool-call arguments
+    raw = tool_call.raw_arguments
+    if tool_call.has_unresolved_arguments and raw is not None:
+        preview = raw[:200] + "..." if len(raw) > 200 else raw
+        source = f" ({tool_call.source_format})" if tool_call.source_format else ""
+        detail = tool_call.normalization_error or "Unable to normalize tool arguments"
+        return ToolResult(
+            error=(
+                f"Tool call for {tool_call.name}{source} had unresolved arguments. "
+                f"{detail}. Raw text: {preview}\n"
+                f"Please retry the tool call with valid, complete object-shaped arguments."
+            )
+        )
+
+    # 4. Permission checks (enabled, action allowed, path restrictions)
     error = enforcer.check_all(tool_call, permissions)
     if error:
         return error
 
-    # 2. Check if confirmation needed
+    # 5. Check if confirmation needed
     if enforcer.requires_confirmation(tool_call, permissions):
         # Fix 1.2: Get display path and ALL write paths for multi-path tools
         display_path, write_paths = enforcer.get_confirmation_context(tool_call)
@@ -126,10 +148,7 @@ async def execute_single_tool(
                 exec_allowance_key,
             )
 
-    # 3. Resolve skill
-    skill, mcp_server_name = dispatcher.find_skill(tool_call)
-
-    # 4. MCP permission check and confirmation (if MCP skill)
+    # 6. MCP permission check and confirmation (if MCP skill)
     if mcp_server_name and permissions:
         error = await handle_mcp_permissions_runtime(
             tool_call=tool_call,
@@ -144,7 +163,7 @@ async def execute_single_tool(
         if error:
             return error
 
-    # 4b. GitLab permission check and confirmation (if GitLab skill)
+    # 6b. GitLab permission check and confirmation (if GitLab skill)
     if tool_call.name.startswith("gitlab_") and permissions:
         error = await handle_gitlab_permissions_runtime(
             tool_call=tool_call,
@@ -157,21 +176,6 @@ async def execute_single_tool(
         )
         if error:
             return error
-
-    # 5. Unknown skill check
-    if not skill:
-        runtime_logger.debug("Unknown skill requested: %s", tool_call.name)
-        return ToolResult(error=f"Unknown skill: {tool_call.name}")
-
-    # 6. Check for malformed/truncated tool call JSON
-    if "_raw_arguments" in tool_call.arguments:
-        raw = tool_call.arguments["_raw_arguments"]
-        preview = raw[:200] + "..." if len(raw) > 200 else raw
-        return ToolResult(
-            error=f"Tool call for {tool_call.name} had malformed JSON arguments "
-            f"(likely truncated response). Raw text: {preview}\n"
-            f"Please retry the tool call with valid, complete JSON."
-        )
 
     # 7. Validate arguments
     try:

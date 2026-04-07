@@ -63,6 +63,7 @@ class TestToolCallSerialization:
             id="tc_001",
             name="complex_tool",
             arguments={"nested": {"key": "value"}, "list": [1, 2, 3]},
+            meta={"source_format": "openai_chat", "argument_format": "json_object"},
         )
         data = serialize_tool_call(original)
         restored = deserialize_tool_call(data)
@@ -70,6 +71,26 @@ class TestToolCallSerialization:
         assert restored.id == original.id
         assert restored.name == original.name
         assert restored.arguments == original.arguments
+        assert restored.meta == original.meta
+
+    def test_serialize_tool_call_with_meta(self):
+        """Serialize ToolCall parser metadata for round-trip diagnostics."""
+        tc = ToolCall(
+            id="call_meta",
+            name="read_file",
+            arguments={"_raw_arguments": "path=/tmp/demo.txt"},
+            meta={
+                "source_format": "openai_responses_stream",
+                "argument_format": "raw_text",
+                "raw_arguments": "path=/tmp/demo.txt",
+                "arguments_unresolved": True,
+            },
+        )
+
+        data = serialize_tool_call(tc)
+
+        assert data["meta"]["source_format"] == "openai_responses_stream"
+        assert data["meta"]["arguments_unresolved"] is True
 
     def test_deserialize_tool_call_empty_arguments(self):
         """Handle missing arguments field."""

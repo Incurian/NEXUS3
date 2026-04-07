@@ -311,6 +311,26 @@ combinator-heavy schemas are coerced to provider-safe object-shaped schemas.
 This keeps external tool contracts provider-compatible without mutating the
 local skill contract.
 
+**Inbound Tool-Call Normalization:**
+
+NEXUS3 now normalizes a broader set of inbound tool-call payloads before they
+reach the session runtime. The execution boundary remains object/dict-shaped,
+but the provider layer can accept and normalize:
+
+- OpenAI chat-completions tool calls with JSON-string `function.arguments`
+- already-parsed object arguments from OpenAI-compatible servers
+- Anthropic `tool_use.input` objects
+- OpenAI Responses API `output[*]` function-call items
+- Gemini-style object `args` when surfaced through compatible gateways
+- Pythonic/vLLM-style literal argument strings when they can be parsed
+  losslessly (`{'path': 'x'}`, `path='x'`, `read_file(path='x')`)
+
+When inbound arguments cannot be normalized safely into an object, NEXUS3
+preserves the raw payload in `ToolCall.meta["raw_arguments"]` (and legacy
+`arguments["_raw_arguments"]` for compatibility), records source/format
+metadata, and fails closed at execution time with an explicit retry error
+instead of guessing.
+
 **Extended Thinking/Reasoning:**
 When `reasoning=True`, adds `{"reasoning": {"effort": "high"}}` to request body (supported by Grok via OpenRouter).
 
@@ -320,6 +340,11 @@ data: {"choices": [{"delta": {"content": "Hello"}}]}
 data: {"choices": [{"delta": {"tool_calls": [...]}}]}
 data: [DONE]
 ```
+
+OpenAI-compatible streaming also recognizes Responses API-style event families
+such as `response.output_item.*`, `response.function_call_arguments.*`, and
+`response.output_text.*` when they appear on the wire instead of chat
+completion deltas.
 
 ### AzureOpenAIProvider
 
@@ -428,6 +453,10 @@ shape.
 - `content_block_stop` - Block finished
 - `message_delta` - Message-level updates (stop_reason)
 - `message_stop` - Message complete
+
+Malformed Anthropic `input_json_delta` payloads are preserved as raw argument
+metadata and fail closed later in the runtime rather than being silently
+coerced to `{}`.
 
 **Headers:**
 - `x-api-key: {api_key}`

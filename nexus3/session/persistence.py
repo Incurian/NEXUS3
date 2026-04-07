@@ -152,11 +152,14 @@ def serialize_tool_call(tc: ToolCall) -> dict[str, Any]:
     Returns:
         Dictionary representation suitable for JSON.
     """
-    return {
+    data = {
         "id": tc.id,
         "name": tc.name,
         "arguments": tc.arguments,
     }
+    if tc.meta:
+        data["meta"] = tc.meta
+    return data
 
 
 def deserialize_tool_call(data: dict[str, Any]) -> ToolCall:
@@ -172,6 +175,7 @@ def deserialize_tool_call(data: dict[str, Any]) -> ToolCall:
         id=data["id"],
         name=data["name"],
         arguments=data.get("arguments", {}),
+        meta=data.get("meta", {}),
     )
 
 

@@ -12,6 +12,7 @@ import pytest
 
 from nexus3.config.schema import ProviderConfig
 from nexus3.provider import OpenRouterProvider
+from nexus3.provider.tool_call_formats import StreamingToolCallAccumulator
 
 
 class TestToolCallIdNameSetOnce:
@@ -32,22 +33,26 @@ class TestToolCallIdNameSetOnce:
         self,
         provider: OpenRouterProvider,
         event: dict[str, object],
-        tool_calls_by_index: dict[int, dict[str, str]],
+        tool_calls_by_index: dict[int, StreamingToolCallAccumulator],
         seen_tool_indices: set[int],
+        stream_key_to_index: dict[int | str, int],
     ) -> None:
         """Drain the async generator for a single streaming event."""
         async for _ in provider._process_stream_event(
             event,
+            None,
             tool_calls_by_index,
             seen_tool_indices,
+            stream_key_to_index,
         ):
             pass
 
     @pytest.mark.asyncio
     async def test_tool_call_id_set_once(self, provider: OpenRouterProvider) -> None:
         """Tool call id is not duplicated if sent twice in deltas."""
-        tool_calls_by_index: dict[int, dict[str, str]] = {}
+        tool_calls_by_index: dict[int, StreamingToolCallAccumulator] = {}
         seen_tool_indices: set[int] = set()
+        stream_key_to_index: dict[int | str, int] = {}
 
         # First delta with id
         event1 = {
@@ -89,22 +94,25 @@ class TestToolCallIdNameSetOnce:
             event1,
             tool_calls_by_index,
             seen_tool_indices,
+            stream_key_to_index,
         )
         await self._consume_stream_event(
             provider,
             event2,
             tool_calls_by_index,
             seen_tool_indices,
+            stream_key_to_index,
         )
 
         # ID should be set once, not "call_abc123call_abc123"
-        assert tool_calls_by_index[0]["id"] == "call_abc123"
+        assert tool_calls_by_index[0].id == "call_abc123"
 
     @pytest.mark.asyncio
     async def test_tool_call_name_set_once(self, provider: OpenRouterProvider) -> None:
         """Tool call name is not duplicated if sent twice in deltas."""
-        tool_calls_by_index: dict[int, dict[str, str]] = {}
+        tool_calls_by_index: dict[int, StreamingToolCallAccumulator] = {}
         seen_tool_indices: set[int] = set()
+        stream_key_to_index: dict[int | str, int] = {}
 
         # First delta with name
         event1 = {
@@ -145,22 +153,25 @@ class TestToolCallIdNameSetOnce:
             event1,
             tool_calls_by_index,
             seen_tool_indices,
+            stream_key_to_index,
         )
         await self._consume_stream_event(
             provider,
             event2,
             tool_calls_by_index,
             seen_tool_indices,
+            stream_key_to_index,
         )
 
         # Name should be set once, not "read_fileread_file"
-        assert tool_calls_by_index[0]["name"] == "read_file"
+        assert tool_calls_by_index[0].name == "read_file"
 
     @pytest.mark.asyncio
     async def test_tool_call_arguments_accumulated(self, provider: OpenRouterProvider) -> None:
         """Tool call arguments ARE accumulated incrementally (this is correct)."""
-        tool_calls_by_index: dict[int, dict[str, str]] = {}
+        tool_calls_by_index: dict[int, StreamingToolCallAccumulator] = {}
         seen_tool_indices: set[int] = set()
+        stream_key_to_index: dict[int | str, int] = {}
 
         # Arguments come in chunks during streaming
         events = [
@@ -229,16 +240,18 @@ class TestToolCallIdNameSetOnce:
                 event,
                 tool_calls_by_index,
                 seen_tool_indices,
+                stream_key_to_index,
             )
 
         # Arguments should be concatenated
-        assert tool_calls_by_index[0]["arguments"] == '{"program": "ls", "args": ["-la"]}'
+        assert tool_calls_by_index[0].argument_text == '{"program": "ls", "args": ["-la"]}'
 
     @pytest.mark.asyncio
     async def test_tool_call_id_name_args_independent(self, provider: OpenRouterProvider) -> None:
         """Verify that id/name set-once doesn't affect argument accumulation."""
-        tool_calls_by_index: dict[int, dict[str, str]] = {}
+        tool_calls_by_index: dict[int, StreamingToolCallAccumulator] = {}
         seen_tool_indices: set[int] = set()
+        stream_key_to_index: dict[int | str, int] = {}
 
         # Real-world pattern: first chunk has id+name, subsequent have arguments
         events = [
@@ -313,13 +326,14 @@ class TestToolCallIdNameSetOnce:
                 event,
                 tool_calls_by_index,
                 seen_tool_indices,
+                stream_key_to_index,
             )
 
         # ID and name set once (not duplicated)
-        assert tool_calls_by_index[0]["id"] == "call_abc"
-        assert tool_calls_by_index[0]["name"] == "write_file"
+        assert tool_calls_by_index[0].id == "call_abc"
+        assert tool_calls_by_index[0].name == "write_file"
         # Arguments accumulated
-        assert tool_calls_by_index[0]["arguments"] == '{"path": "/tmp/test", "content": "hello"}'
+        assert tool_calls_by_index[0].argument_text == '{"path": "/tmp/test", "content": "hello"}'
 
 
 class TestInvalidJsonArgumentsPreserved:
@@ -357,11 +371,12 @@ class TestInvalidJsonArgumentsPreserved:
     def test_invalid_json_arguments_preserved_streaming(self, provider: OpenRouterProvider) -> None:
         """Invalid JSON in streaming response preserves raw arguments."""
         tool_calls_by_index = {
-            0: {
-                "id": "call_456",
-                "name": "exec",
-                "arguments": '{"program": unquoted}',  # Invalid JSON
-            }
+            0: StreamingToolCallAccumulator(
+                source_format="openai_chat_stream",
+                id="call_456",
+                name="exec",
+                _string_fragments=['{"program": unquoted}'],
+            )
         }
 
         result = provider._build_stream_complete("", tool_calls_by_index)
@@ -393,11 +408,11 @@ class TestInvalidJsonArgumentsPreserved:
     def test_empty_arguments_default_to_empty_dict(self, provider: OpenRouterProvider) -> None:
         """Empty arguments string results in empty dict (not error)."""
         tool_calls_by_index = {
-            0: {
-                "id": "call_empty",
-                "name": "no_args_tool",
-                "arguments": "",  # Empty
-            }
+            0: StreamingToolCallAccumulator(
+                source_format="openai_chat_stream",
+                id="call_empty",
+                name="no_args_tool",
+            )
         }
 
         result = provider._build_stream_complete("", tool_calls_by_index)
@@ -413,12 +428,12 @@ class TestInvalidJsonArgumentsPreserved:
             {"id": "call_log_test", "function": {"name": "test", "arguments": "broken json {"}}
         ]
 
-        with caplog.at_level(logging.WARNING, logger="nexus3.provider.openai_compat"):
+        with caplog.at_level(logging.WARNING, logger="nexus3.provider.tool_call_formats"):
             provider._parse_tool_calls(tool_calls_data)
 
         # Should have logged a warning about the invalid JSON
         assert any(
-            "Failed to parse tool arguments JSON" in record.message
+            "Failed to parse tool arguments" in record.message
             for record in caplog.records
         )
         # Warning should contain truncated JSON (%.100s format)
@@ -429,15 +444,20 @@ class TestInvalidJsonArgumentsPreserved:
     ) -> None:
         """Invalid JSON in streaming logs a warning."""
         tool_calls_by_index = {
-            0: {"id": "call_stream_log", "name": "test", "arguments": "not valid { json"}
+            0: StreamingToolCallAccumulator(
+                source_format="openai_chat_stream",
+                id="call_stream_log",
+                name="test",
+                _string_fragments=["not valid { json"],
+            )
         }
 
-        with caplog.at_level(logging.WARNING, logger="nexus3.provider.openai_compat"):
+        with caplog.at_level(logging.WARNING, logger="nexus3.provider.tool_call_formats"):
             provider._build_stream_complete("", tool_calls_by_index)
 
         # Should have logged a warning
         assert any(
-            "Failed to parse tool arguments JSON" in record.message
+            "Failed to parse tool arguments" in record.message
             for record in caplog.records
         )
 
@@ -445,11 +465,12 @@ class TestInvalidJsonArgumentsPreserved:
         """Truncated JSON (incomplete streaming) is preserved."""
         # Simulate truncated stream - JSON was cut off
         tool_calls_by_index = {
-            0: {
-                "id": "call_truncated",
-                "name": "write_file",
-                "arguments": '{"path": "/tmp/test", "content": "hello',  # Missing closing
-            }
+            0: StreamingToolCallAccumulator(
+                source_format="openai_chat_stream",
+                id="call_truncated",
+                name="write_file",
+                _string_fragments=['{"path": "/tmp/test", "content": "hello'],
+            )
         }
 
         result = provider._build_stream_complete("", tool_calls_by_index)
@@ -468,7 +489,7 @@ class TestInvalidJsonArgumentsPreserved:
             {"id": "call_long", "function": {"name": "test", "arguments": long_invalid_json}}
         ]
 
-        with caplog.at_level(logging.WARNING, logger="nexus3.provider.openai_compat"):
+        with caplog.at_level(logging.WARNING, logger="nexus3.provider.tool_call_formats"):
             result = provider._parse_tool_calls(tool_calls_data)
 
         # Full raw should be preserved in result

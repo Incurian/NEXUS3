@@ -17,6 +17,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -33,6 +34,12 @@ from nexus3.core.types import (
     ToolCallStarted,
 )
 from nexus3.provider.base import BaseProvider
+from nexus3.provider.tool_call_formats import (
+    StreamingToolCallAccumulator,
+    parse_anthropic_content_blocks,
+    parse_openai_chat_tool_calls,
+    parse_responses_output_items,
+)
 from nexus3.provider.tool_schema import normalize_tool_parameters_for_provider
 
 if TYPE_CHECKING:
@@ -40,6 +47,21 @@ if TYPE_CHECKING:
     from nexus3.core.interfaces import RawLogCallback
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _ResponsesStreamState:
+    """Streaming state for Responses API text-deduplication."""
+
+    seen_text_deltas: set[tuple[str, int | str | None, int | str | None, int | str | None]] = (
+        field(default_factory=set)
+    )
+    emitted_text_blocks: set[
+        tuple[str, int | str | None, int | str | None, int | str | None]
+    ] = field(default_factory=set)
+    seen_message_content: set[tuple[str, int | str | None, int | str | None]] = field(
+        default_factory=set
+    )
 
 
 def _normalize_tools_for_openai(
@@ -266,24 +288,46 @@ class OpenAICompatProvider(BaseProvider):
         Returns:
             Tuple of ToolCall objects.
         """
-        result: list[ToolCall] = []
-        for tc in tool_calls_data:
-            func = tc.get("function", {})
-            arguments_str = func.get("arguments", "{}")
-            try:
-                arguments = json.loads(arguments_str)
-            except json.JSONDecodeError:
-                logger.warning("Failed to parse tool arguments JSON: %.100s", arguments_str)
-                arguments = {"_raw_arguments": arguments_str}
+        return parse_openai_chat_tool_calls(tool_calls_data)
 
-            result.append(
-                ToolCall(
-                    id=tc.get("id", ""),
-                    name=func.get("name", ""),
-                    arguments=arguments,
-                )
-            )
-        return tuple(result)
+    def _new_responses_stream_state(self) -> _ResponsesStreamState:
+        """Create per-stream state for Responses API SSE parsing."""
+        return _ResponsesStreamState()
+
+    def _stream_key_part(self, value: Any) -> int | str | None:
+        """Normalize a stream key fragment into a hashable identifier."""
+        if value is None:
+            return None
+        if isinstance(value, (int, str)):
+            return value
+        return str(value)
+
+    def _responses_message_key(
+        self,
+        event_data: dict[str, Any],
+        item: dict[str, Any] | None = None,
+    ) -> tuple[str, int | str | None, int | str | None]:
+        """Build a stable key for one Responses API message item."""
+        item_id = event_data.get("item_id")
+        if item_id is None and isinstance(item, dict):
+            item_id = item.get("id")
+        return (
+            "message",
+            self._stream_key_part(event_data.get("output_index")),
+            self._stream_key_part(item_id),
+        )
+
+    def _responses_text_block_key(
+        self,
+        event_data: dict[str, Any],
+    ) -> tuple[str, int | str | None, int | str | None, int | str | None]:
+        """Build a stable key for one Responses API output_text block."""
+        return (
+            "text",
+            self._stream_key_part(event_data.get("output_index")),
+            self._stream_key_part(event_data.get("item_id")),
+            self._stream_key_part(event_data.get("content_index")),
+        )
 
     def _parse_response(self, data: dict[str, Any]) -> Message:
         """Parse OpenAI-format response to Message.
@@ -300,22 +344,45 @@ class OpenAICompatProvider(BaseProvider):
         from nexus3.core.errors import ProviderError
 
         try:
-            choice = data["choices"][0]
-            msg = choice["message"]
-            content = msg.get("content") or ""
+            content = ""
+            tool_calls: tuple[ToolCall, ...] = ()
 
-            # Log reasoning content if present (not stored in Message, but useful for debugging)
-            reasoning = msg.get("reasoning_content") or msg.get("reasoning")
-            if reasoning:
-                logger.debug(
-                    "Non-streaming response includes reasoning (%d chars, content=%d chars)",
-                    len(reasoning), len(content),
+            if "choices" in data and data["choices"]:
+                choice = data["choices"][0]
+                msg = choice["message"]
+                content_field = msg.get("content")
+                if isinstance(content_field, list):
+                    content, content_tool_calls = parse_anthropic_content_blocks(
+                        content_field,
+                        source_format="openai_chat_content_blocks",
+                    )
+                    if content_tool_calls:
+                        tool_calls = content_tool_calls
+                else:
+                    content = content_field or ""
+
+                # Log reasoning content if present (not stored in Message, but useful for debugging)
+                reasoning = msg.get("reasoning_content") or msg.get("reasoning")
+                if reasoning:
+                    logger.debug(
+                        "Non-streaming response includes reasoning (%d chars, content=%d chars)",
+                        len(reasoning), len(content),
+                    )
+
+                if "tool_calls" in msg and msg["tool_calls"]:
+                    tool_calls = self._parse_tool_calls(msg["tool_calls"])
+
+            elif isinstance(data.get("output"), list):
+                content, tool_calls = parse_responses_output_items(data["output"])
+
+            elif isinstance(data.get("content"), list):
+                content, tool_calls = parse_anthropic_content_blocks(
+                    data["content"],
+                    source_format="openai_compat_content_blocks",
                 )
 
-            # Parse tool calls if present
-            tool_calls: tuple[ToolCall, ...] = ()
-            if "tool_calls" in msg and msg["tool_calls"]:
-                tool_calls = self._parse_tool_calls(msg["tool_calls"])
+            else:
+                raise KeyError("choices/output/content")
 
             # Log cache metrics if present (backwards compatible)
             usage = data.get("usage", {})
@@ -330,7 +397,7 @@ class OpenAICompatProvider(BaseProvider):
                 tool_calls=tool_calls,
             )
 
-        except (KeyError, IndexError) as e:
+        except (KeyError, IndexError, TypeError) as e:
             raise ProviderError(f"Failed to parse API response: {e}") from e
 
     async def _parse_stream(
@@ -347,8 +414,9 @@ class OpenAICompatProvider(BaseProvider):
         """
         # Accumulators
         accumulated_content = ""
-        tool_calls_by_index: dict[int, dict[str, str]] = {}
+        tool_calls_by_index: dict[int, StreamingToolCallAccumulator] = {}
         seen_tool_indices: set[int] = set()
+        stream_key_to_index: dict[int | str, int] = {}
 
         # Diagnostic tracking
         event_count = 0
@@ -357,6 +425,8 @@ class OpenAICompatProvider(BaseProvider):
         stream_start = time.monotonic()
 
         buffer = ""
+        current_event_type: str | None = None
+        responses_state = self._new_responses_stream_state()
 
         async for chunk in response.aiter_text():
             buffer += chunk
@@ -366,8 +436,15 @@ class OpenAICompatProvider(BaseProvider):
                 line, buffer = buffer.split("\n", 1)
                 line = line.strip()
 
-                # Skip empty lines and comments
-                if not line or line.startswith(":"):
+                if not line:
+                    current_event_type = None
+                    continue
+
+                if line.startswith(":"):
+                    continue
+
+                if line.startswith("event:"):
+                    current_event_type = line[6:].removeprefix(" ")
                     continue
 
                 # Handle data lines (SSE spec: space after colon is optional)
@@ -406,8 +483,11 @@ class OpenAICompatProvider(BaseProvider):
                         # Process the event
                         async for event in self._process_stream_event(
                             event_data,
+                            current_event_type,
                             tool_calls_by_index,
                             seen_tool_indices,
+                            stream_key_to_index,
+                            responses_state,
                         ):
                             if isinstance(event, ContentDelta):
                                 accumulated_content += event.text
@@ -439,8 +519,11 @@ class OpenAICompatProvider(BaseProvider):
 
                         async for event in self._process_stream_event(
                             event_data,
+                            current_event_type,
                             tool_calls_by_index,
                             seen_tool_indices,
+                            stream_key_to_index,
+                            responses_state,
                         ):
                             if isinstance(event, ContentDelta):
                                 accumulated_content += event.text
@@ -462,7 +545,7 @@ class OpenAICompatProvider(BaseProvider):
         response: httpx.Response,
         event_count: int,
         content: str,
-        tool_calls_by_index: dict[int, dict[str, str]],
+        tool_calls_by_index: dict[int, StreamingToolCallAccumulator],
         received_done: bool,
         finish_reason: str | None,
         stream_start: float,
@@ -511,73 +594,252 @@ class OpenAICompatProvider(BaseProvider):
     async def _process_stream_event(
         self,
         event_data: dict[str, Any],
-        tool_calls_by_index: dict[int, dict[str, str]],
+        event_type: str | None,
+        tool_calls_by_index: dict[int, StreamingToolCallAccumulator],
         seen_tool_indices: set[int],
+        stream_key_to_index: dict[int | str, int],
+        responses_state: _ResponsesStreamState | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """Process a single SSE event, yielding appropriate StreamEvents.
 
         Args:
             event_data: Parsed JSON from SSE event.
+            event_type: Optional event name from the SSE envelope.
             tool_calls_by_index: Tool call accumulator dict.
             seen_tool_indices: Set of tool indices we've already notified about.
+            stream_key_to_index: Stable output-item/tool-call key mapping.
 
         Yields:
             ContentDelta for content, ReasoningDelta for thinking,
             ToolCallStarted for new tool calls.
         """
         choices = event_data.get("choices", [])
-        if not choices:
+        if choices:
+            delta = choices[0].get("delta", {})
+
+            # Handle reasoning delta (multiple field names across providers)
+            # - "reasoning_content": DeepSeek, vLLM, Azure AI Factory
+            # - "reasoning": Grok/xAI, OpenRouter
+            reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+            if reasoning:
+                yield ReasoningDelta(text=reasoning)
+
+            # Handle content delta
+            content = delta.get("content")
+            if content:
+                yield ContentDelta(text=content)
+
+            # Handle tool call deltas
+            tc_deltas = delta.get("tool_calls", [])
+            for tc_delta in tc_deltas:
+                index = tc_delta.get("index", 0)
+
+                if index not in tool_calls_by_index:
+                    tool_calls_by_index[index] = StreamingToolCallAccumulator(
+                        source_format="openai_chat_stream",
+                    )
+
+                acc = tool_calls_by_index[index]
+
+                if tc_delta.get("id") and not acc.id:
+                    acc.id = tc_delta["id"]
+
+                func = tc_delta.get("function", {})
+                if func.get("name") and not acc.name:
+                    acc.name = func["name"]
+                if "arguments" in func:
+                    acc.add_payload(func["arguments"])
+
+                if index not in seen_tool_indices and acc.id and acc.name:
+                    seen_tool_indices.add(index)
+                    yield ToolCallStarted(
+                        index=index,
+                        id=acc.id,
+                        name=acc.name,
+                    )
             return
 
-        delta = choices[0].get("delta", {})
+        detected_type = str(event_data.get("type") or event_type or "")
+        if not detected_type:
+            return
 
-        # Handle reasoning delta (multiple field names across providers)
-        # - "reasoning_content": DeepSeek, vLLM, Azure AI Factory
-        # - "reasoning": Grok/xAI, OpenRouter
-        reasoning = delta.get("reasoning_content") or delta.get("reasoning")
-        if reasoning:
-            yield ReasoningDelta(text=reasoning)
+        if responses_state is None:
+            responses_state = self._new_responses_stream_state()
 
-        # Handle content delta
-        content = delta.get("content")
-        if content:
-            yield ContentDelta(text=content)
+        async for event in self._process_responses_stream_event(
+            event_data,
+            detected_type,
+            tool_calls_by_index,
+            seen_tool_indices,
+            stream_key_to_index,
+            responses_state,
+        ):
+            yield event
 
-        # Handle tool call deltas
-        tc_deltas = delta.get("tool_calls", [])
-        for tc_delta in tc_deltas:
-            index = tc_delta.get("index", 0)
+    def _ensure_stream_accumulator(
+        self,
+        *keys: int | str | None,
+        source_format: str,
+        tool_calls_by_index: dict[int, StreamingToolCallAccumulator],
+        stream_key_to_index: dict[int | str, int],
+    ) -> tuple[int, StreamingToolCallAccumulator]:
+        """Return the stable stream index and accumulator for tool-call aliases."""
+        normalized_keys = [
+            normalized
+            for key in keys
+            if (normalized := self._stream_key_part(key)) is not None
+        ]
+        for key in normalized_keys:
+            if key in stream_key_to_index:
+                index = stream_key_to_index[key]
+                for alias in normalized_keys:
+                    stream_key_to_index[alias] = index
+                return index, tool_calls_by_index[index]
 
-            # Initialize accumulator for new tool call
-            if index not in tool_calls_by_index:
-                tool_calls_by_index[index] = {"id": "", "name": "", "arguments": ""}
+        index = len(tool_calls_by_index)
+        tool_calls_by_index[index] = StreamingToolCallAccumulator(
+            source_format=source_format,
+        )
+        for alias in normalized_keys:
+            stream_key_to_index[alias] = index
+        return index, tool_calls_by_index[index]
 
-            acc = tool_calls_by_index[index]
-
-            # Set id/name once (they should not be concatenated across deltas)
-            if tc_delta.get("id") and not acc["id"]:
-                acc["id"] = tc_delta["id"]
-
-            func = tc_delta.get("function", {})
-            if func.get("name") and not acc["name"]:
-                acc["name"] = func["name"]
-            # Arguments ARE accumulated incrementally (correct for streaming)
-            if func.get("arguments"):
-                acc["arguments"] += func["arguments"]
-
-            # Yield ToolCallStarted once per tool call (when we have id and name)
-            if index not in seen_tool_indices and acc["id"] and acc["name"]:
-                seen_tool_indices.add(index)
-                yield ToolCallStarted(
-                    index=index,
-                    id=acc["id"],
-                    name=acc["name"],
+    async def _process_responses_stream_event(
+        self,
+        event_data: dict[str, Any],
+        detected_type: str,
+        tool_calls_by_index: dict[int, StreamingToolCallAccumulator],
+        seen_tool_indices: set[int],
+        stream_key_to_index: dict[int | str, int],
+        responses_state: _ResponsesStreamState,
+    ) -> AsyncIterator[StreamEvent]:
+        """Process Responses API-style SSE events."""
+        if detected_type.endswith("output_text.delta"):
+            text = event_data.get("delta")
+            if isinstance(text, str) and text:
+                responses_state.seen_text_deltas.add(
+                    self._responses_text_block_key(event_data)
                 )
+                responses_state.seen_message_content.add(
+                    self._responses_message_key(event_data)
+                )
+                yield ContentDelta(text=text)
+            return
+
+        if detected_type.endswith("output_text.done"):
+            text_key = self._responses_text_block_key(event_data)
+            if (
+                text_key in responses_state.seen_text_deltas
+                or text_key in responses_state.emitted_text_blocks
+            ):
+                return
+            text = event_data.get("text")
+            if isinstance(text, str) and text:
+                responses_state.emitted_text_blocks.add(text_key)
+                responses_state.seen_message_content.add(
+                    self._responses_message_key(event_data)
+                )
+                yield ContentDelta(text=text)
+            return
+
+        if (
+            detected_type.endswith("output_item.added")
+            or detected_type.endswith("output_item.done")
+        ):
+            item = event_data.get("item") or event_data.get("output_item")
+            if not isinstance(item, dict):
+                return
+
+            item_type = str(item.get("type", ""))
+            if item_type == "message":
+                message_key = self._responses_message_key(event_data, item)
+                if message_key in responses_state.seen_message_content:
+                    return
+                content, _ = parse_responses_output_items([item])
+                if content:
+                    responses_state.seen_message_content.add(message_key)
+                    yield ContentDelta(text=content)
+                return
+
+            if item_type not in {"function_call", "custom_tool_call", "tool_call"}:
+                return
+
+            index, acc = self._ensure_stream_accumulator(
+                event_data.get("output_index"),
+                event_data.get("item_id"),
+                item.get("call_id"),
+                item.get("id"),
+                source_format="openai_responses_stream",
+                tool_calls_by_index=tool_calls_by_index,
+                stream_key_to_index=stream_key_to_index,
+            )
+
+            if item.get("call_id") and not acc.id:
+                acc.id = str(item["call_id"])
+            elif item.get("id") and not acc.id:
+                acc.id = str(item["id"])
+
+            if item.get("name") and not acc.name:
+                acc.name = str(item["name"])
+
+            for payload_key in ("arguments", "input", "args"):
+                if payload_key in item:
+                    acc.replace_payload(item[payload_key])
+                    break
+
+            if index not in seen_tool_indices and acc.id and acc.name:
+                seen_tool_indices.add(index)
+                yield ToolCallStarted(index=index, id=acc.id, name=acc.name)
+            return
+
+        if detected_type.endswith("function_call_arguments.delta") or detected_type.endswith(
+            "function_call_arguments.done"
+        ):
+            index, acc = self._ensure_stream_accumulator(
+                event_data.get("output_index"),
+                event_data.get("item_id"),
+                event_data.get("call_id"),
+                event_data.get("id"),
+                source_format="openai_responses_stream",
+                tool_calls_by_index=tool_calls_by_index,
+                stream_key_to_index=stream_key_to_index,
+            )
+
+            if event_data.get("call_id") and not acc.id:
+                acc.id = str(event_data["call_id"])
+            if event_data.get("name") and not acc.name:
+                acc.name = str(event_data["name"])
+
+            if detected_type.endswith("function_call_arguments.done"):
+                full_payload_key = next(
+                    (
+                        payload_key
+                        for payload_key in ("arguments", "input", "args")
+                        if payload_key in event_data
+                    ),
+                    None,
+                )
+                if full_payload_key is not None:
+                    acc.replace_payload(event_data[full_payload_key])
+                else:
+                    for payload_key in ("delta", "arguments_delta", "partial_json"):
+                        if payload_key in event_data:
+                            acc.add_payload(event_data[payload_key])
+                            break
+            else:
+                for payload_key in ("delta", "arguments_delta", "partial_json"):
+                    if payload_key in event_data:
+                        acc.add_payload(event_data[payload_key])
+                        break
+
+            if index not in seen_tool_indices and acc.id and acc.name:
+                seen_tool_indices.add(index)
+                yield ToolCallStarted(index=index, id=acc.id, name=acc.name)
 
     def _build_stream_complete(
         self,
         content: str,
-        tool_calls_by_index: dict[int, dict[str, str]],
+        tool_calls_by_index: dict[int, StreamingToolCallAccumulator],
     ) -> StreamComplete:
         """Build the final StreamComplete event.
 
@@ -588,23 +850,10 @@ class OpenAICompatProvider(BaseProvider):
         Returns:
             StreamComplete with the final Message.
         """
-        # Parse accumulated tool calls
-        tool_calls: list[ToolCall] = []
-        for index in sorted(tool_calls_by_index.keys()):
-            tc = tool_calls_by_index[index]
-            try:
-                arguments = json.loads(tc["arguments"]) if tc["arguments"] else {}
-            except json.JSONDecodeError:
-                logger.warning("Failed to parse tool arguments JSON: %.100s", tc["arguments"])
-                arguments = {"_raw_arguments": tc["arguments"]}
-
-            tool_calls.append(
-                ToolCall(
-                    id=tc["id"],
-                    name=tc["name"],
-                    arguments=arguments,
-                )
-            )
+        tool_calls = [
+            tool_calls_by_index[index].build_tool_call()
+            for index in sorted(tool_calls_by_index.keys())
+        ]
 
         message = Message(
             role=Role.ASSISTANT,

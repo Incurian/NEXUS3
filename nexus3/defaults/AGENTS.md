@@ -188,6 +188,7 @@ lowest stable layer rather than adding another ad-hoc compatibility shim.
   previous block in the same edit so only the latest handoff remains here.
 - Each handoff should include: branch, active slice, relevant plans or docs,
   recent commits or baseline head, validation status, and next gate.
+- Additionally, keep the planning documents updated as you go.
 - When disconnected or compacted, resume from `## Current Handoff` first, then
   reconcile referenced plan checklists before new edits.
 - When spawning Codex subagents, explicitly instruct them to avoid escalated or

@@ -16,6 +16,7 @@ from time import time
 import pytest
 
 from nexus3.core.types import Role, ToolCall, ToolResult
+from nexus3.session.events import ToolBatchStarted
 from nexus3.session.logging import SessionLogger
 from nexus3.session.markdown import MarkdownWriter, RawWriter
 from nexus3.session.storage import (
@@ -1092,7 +1093,15 @@ class TestSessionLoggingIntegration:
         logger.log_user("Read the file test.txt")
 
         tool_calls = [
-            ToolCall(id="call_001", name="read_file", arguments={"path": "test.txt"})
+            ToolCall(
+                id="call_001",
+                name="read_file",
+                arguments={"path": "test.txt"},
+                meta={
+                    "source_format": "openai_responses_stream",
+                    "argument_format": "object",
+                },
+            )
         ]
         logger.log_assistant("Let me read that file.", tool_calls=tool_calls)
 
@@ -1109,8 +1118,47 @@ class TestSessionLoggingIntegration:
         assert messages[1].role == Role.ASSISTANT
         assert len(messages[1].tool_calls) == 1
         assert messages[1].tool_calls[0].id == "call_001"
+        assert messages[1].tool_calls[0].meta == {
+            "source_format": "openai_responses_stream",
+            "argument_format": "object",
+        }
 
         assert messages[2].role == Role.TOOL
         assert messages[2].tool_call_id == "call_001"
+
+        logger.close()
+
+    def test_log_session_event_preserves_tool_call_meta(self, tmp_path):
+        """Session events should retain ToolCall metadata in SQLite."""
+        config = LogConfig(base_dir=tmp_path, streams=LogStream.CONTEXT)
+        logger = SessionLogger(config)
+
+        logger.log_session_event(
+            ToolBatchStarted(
+                tool_calls=(
+                    ToolCall(
+                        id="call_meta",
+                        name="read_file",
+                        arguments={"_raw_arguments": "path=/tmp/demo.txt"},
+                        meta={
+                            "source_format": "openai_responses_stream",
+                            "argument_format": "raw_text",
+                            "raw_arguments": "path=/tmp/demo.txt",
+                            "arguments_unresolved": True,
+                        },
+                    ),
+                )
+            )
+        )
+
+        event = logger.storage.get_events("toolbatchstarted")[0]
+
+        assert event.data is not None
+        assert event.data["tool_calls"][0]["meta"] == {
+            "source_format": "openai_responses_stream",
+            "argument_format": "raw_text",
+            "raw_arguments": "path=/tmp/demo.txt",
+            "arguments_unresolved": True,
+        }
 
         logger.close()

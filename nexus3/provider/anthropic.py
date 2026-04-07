@@ -32,6 +32,10 @@ from nexus3.core.types import (
     ToolCallStarted,
 )
 from nexus3.provider.base import BaseProvider
+from nexus3.provider.tool_call_formats import (
+    build_tool_call,
+    parse_anthropic_content_blocks,
+)
 from nexus3.provider.tool_schema import normalize_tool_parameters_for_provider
 
 if TYPE_CHECKING:
@@ -357,22 +361,7 @@ class AnthropicProvider(BaseProvider):
         from nexus3.core.errors import ProviderError
 
         try:
-            content_blocks = data.get("content", [])
-            text_parts: list[str] = []
-            tool_calls: list[ToolCall] = []
-
-            for block in content_blocks:
-                block_type = block.get("type")
-                if block_type == "text":
-                    text_parts.append(block.get("text", ""))
-                elif block_type == "tool_use":
-                    tool_calls.append(
-                        ToolCall(
-                            id=block.get("id", ""),
-                            name=block.get("name", ""),
-                            arguments=block.get("input", {}),
-                        )
-                    )
+            content, tool_calls = parse_anthropic_content_blocks(data.get("content", []))
 
             # Log cache metrics if present (backwards compatible)
             usage = data.get("usage", {})
@@ -383,8 +372,8 @@ class AnthropicProvider(BaseProvider):
 
             return Message(
                 role=Role.ASSISTANT,
-                content="".join(text_parts),
-                tool_calls=tuple(tool_calls),
+                content=content,
+                tool_calls=tool_calls,
             )
 
         except (KeyError, TypeError) as e:
@@ -505,20 +494,12 @@ class AnthropicProvider(BaseProvider):
                             # Content block finished
                             if current_tool is not None:
                                 # Parse accumulated JSON input
-                                try:
-                                    input_data = (
-                                        json.loads(current_tool["input"])
-                                        if current_tool["input"]
-                                        else {}
-                                    )
-                                except json.JSONDecodeError:
-                                    input_data = {}
-
                                 tool_calls.append(
-                                    ToolCall(
-                                        id=current_tool["id"],
+                                    build_tool_call(
+                                        call_id=current_tool["id"],
                                         name=current_tool["name"],
-                                        arguments=input_data,
+                                        payload=current_tool["input"],
+                                        source_format="anthropic_stream",
                                     )
                                 )
                                 current_tool = None

@@ -138,11 +138,12 @@ class SessionLogger:
         tool_calls_data: list[dict[str, Any]] | None = None
         if tool_calls:
             tool_calls_data = [
-                {
+                _json_safe_dict({
                     "id": tc.id,
                     "name": tc.name,
                     "arguments": tc.arguments,
-                }
+                    **({"meta": tc.meta} if tc.meta else {}),
+                })
                 for tc in tool_calls
             ]
 
@@ -273,7 +274,12 @@ class SessionLogger:
         data = asdict(event)
         if 'tool_calls' in data:
             data['tool_calls'] = [
-                {'id': tc['id'], 'name': tc['name'], 'arguments': _json_safe_dict(tc['arguments'])}
+                _json_safe_dict({
+                    'id': tc['id'],
+                    'name': tc['name'],
+                    'arguments': tc['arguments'],
+                    **({'meta': tc['meta']} if tc.get('meta') else {}),
+                })
                 for tc in data['tool_calls']
             ]
         safe_data = _json_safe_dict(data)
@@ -323,6 +329,7 @@ class SessionLogger:
                         id=tc["id"],
                         name=tc["name"],
                         arguments=tc["arguments"],
+                        meta=tc.get("meta", {}),
                     )
                     for tc in row.tool_calls
                 )

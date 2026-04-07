@@ -1123,13 +1123,14 @@ class AgentPool:
             issued_token_ids_by_issuer=self._issued_capability_token_ids_by_issuer,
             default_ttl_seconds=self._direct_capability_ttl_seconds,
         )
+        shared = getattr(self, "_shared", None)
         async with self._lock:
             return await destroy_unlocked_runtime(
                 agents=cast(MutableMapping[str, Any], self._agents),
                 destroy_authorization_kernel=self._destroy_authorization_kernel,
                 capability_state=capability_state,
                 unregister_log_multiplexer_agent_fn=self._log_multiplexer.unregister,
-                base_log_dir=self._shared.base_log_dir,
+                base_log_dir=getattr(shared, "base_log_dir", None),
                 agent_id=agent_id,
                 requester_id=requester_id,
                 admin_override=admin_override,

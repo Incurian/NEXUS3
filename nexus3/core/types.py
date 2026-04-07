@@ -27,11 +27,54 @@ class ToolCall:
         id: Unique identifier for this tool call.
         name: Name of the tool to execute.
         arguments: Arguments to pass to the tool.
+        meta: Optional parser/source metadata for diagnostics.
     """
 
     id: str
     name: str
     arguments: dict[str, Any]
+    meta: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def raw_arguments(self) -> str | None:
+        """Return preserved raw argument text when normalization failed."""
+        raw_meta = self.meta.get("raw_arguments")
+        if isinstance(raw_meta, str):
+            return raw_meta
+
+        if isinstance(self.arguments, dict):
+            raw_legacy = self.arguments.get("_raw_arguments")
+            if isinstance(raw_legacy, str):
+                return raw_legacy
+
+        return None
+
+    @property
+    def source_format(self) -> str | None:
+        """Return the detected upstream tool-call format when known."""
+        value = self.meta.get("source_format")
+        return value if isinstance(value, str) else None
+
+    @property
+    def argument_format(self) -> str | None:
+        """Return the detected argument payload format when known."""
+        value = self.meta.get("argument_format")
+        return value if isinstance(value, str) else None
+
+    @property
+    def normalization_error(self) -> str | None:
+        """Return normalization error text when argument parsing failed."""
+        value = self.meta.get("normalization_error")
+        return value if isinstance(value, str) else None
+
+    @property
+    def has_unresolved_arguments(self) -> bool:
+        """Return True when the tool-call arguments could not be normalized."""
+        unresolved = self.meta.get("arguments_unresolved")
+        if isinstance(unresolved, bool):
+            return unresolved
+
+        return self.raw_arguments is not None
 
 
 @dataclass(frozen=True)

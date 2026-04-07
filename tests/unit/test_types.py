@@ -31,6 +31,27 @@ class TestToolCall:
         assert tc.id == "call_123"
         assert tc.name == "read_file"
         assert tc.arguments == {"path": "/tmp/test.txt"}
+        assert tc.meta == {}
+
+    def test_toolcall_raw_argument_helpers(self):
+        """ToolCall exposes helper properties for parser metadata."""
+        tc = ToolCall(
+            id="call_raw",
+            name="read_file",
+            arguments={"_raw_arguments": "path=/tmp/demo.txt"},
+            meta={
+                "source_format": "openai_responses_stream",
+                "argument_format": "raw_text",
+                "raw_arguments": "path=/tmp/demo.txt",
+                "normalization_error": "Unable to normalize tool arguments to an object",
+                "arguments_unresolved": True,
+            },
+        )
+        assert tc.raw_arguments == "path=/tmp/demo.txt"
+        assert tc.source_format == "openai_responses_stream"
+        assert tc.argument_format == "raw_text"
+        assert tc.normalization_error == "Unable to normalize tool arguments to an object"
+        assert tc.has_unresolved_arguments is True
 
     def test_toolcall_is_frozen(self):
         """ToolCall is immutable (frozen)."""
