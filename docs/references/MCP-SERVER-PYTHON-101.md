@@ -41,6 +41,10 @@ If you are building your first server, start with **stdio**.
 
 All checked-in example servers in this guide use only the Python standard
 library. You do not need an extra MCP package just to run them.
+That is intentional: this guide is about the NEXUS integration surface, not a
+survey of the wider Python MCP SDK/framework ecosystem. For production servers,
+you may prefer an SDK or framework, but the transport and capability behavior
+described here is the NEXUS-specific part to carry forward.
 
 ## What Goes In `mcp.json`
 

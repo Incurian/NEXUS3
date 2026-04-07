@@ -8,6 +8,11 @@ Use them when you want two things at once:
 - a NEXUS-specific reference for what `mcp.json`, `/mcp connect`, and MCP
   capability surfaces actually look like in practice
 
+They are comprehensive for NEXUS's MCP integration path, not for the broader
+Python MCP SDK/framework ecosystem. The examples intentionally hand-roll the
+protocol with the Python standard library so the NEXUS-specific transport,
+config, and REPL behavior stays visible.
+
 ## What You Need
 
 - a working `python3` on your `PATH` for the checked-in example servers
