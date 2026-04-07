@@ -9,14 +9,11 @@ NEXUS treats each surface.
 The server script uses only the Python standard library. The optional
 inspection helper is the only part that imports NEXUS modules from this repo.
 
-In shell commands below, replace `<repo-root>` with the path to your NEXUS3
-checkout.
-
 Files:
 
-- [capability_server.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/capability_server.py)
-- [inspect_capabilities.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py)
-- [mcp.json](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/.nexus3/mcp.json)
+- [capability_server.py](./capability_server.py)
+- [inspect_capabilities.py](./inspect_capabilities.py)
+- [mcp.json](./.nexus3/mcp.json)
 
 This example's `mcp.json` shows the fuller stdio-oriented config surface:
 
@@ -38,23 +35,23 @@ The checked-in server uses those values in real behavior:
 host variable. The example keeps tool/resource outputs stable, so it does not
 echo your `USER` value into the tutorial output.
 
-The checked-in config uses `python3`. If that is not available on your machine,
-replace it in `.nexus3/mcp.json` with the interpreter path that exists on your
-machine.
+The checked-in config uses `python3`. If that is not available in your
+environment, replace it in `.nexus3/mcp.json` with the interpreter path you
+want NEXUS to launch.
 
 Run it:
 
-1. `cd <repo-root>/docs/references/mcp-python-examples/202-capabilities`
-2. `nexus3 --fresh`
-3. In the REPL:
+1. From this directory, start a clean REPL: `nexus3 --fresh`
+2. In the REPL:
    - `/mcp connect capability_demo --allow-all --private`
    - `/mcp tools capability_demo`
    - `/mcp resources capability_demo`
    - `/mcp prompts capability_demo`
-4. Ask the agent: `Use the customer count tool.`
+3. Ask the agent: `Use the customer count tool.`
 
-If `nexus3` is not on your `PATH`, run `<repo-root>/.venv/bin/nexus3 --fresh`
-instead.
+If `nexus3` is not on your `PATH` but you are using the NEXUS3 source tree,
+activate that virtualenv first or run `../../../../.venv/bin/nexus3 --fresh`
+from this directory.
 
 Omit the flags if you want to walk through the consent/share prompts manually.
 
@@ -90,8 +87,9 @@ Important NEXUS behavior:
 
 Optional deeper check:
 
-1. `cd <repo-root>`
-2. `.venv/bin/python docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py`
+1. From this directory: `python ./inspect_capabilities.py`
+2. If you are using the NEXUS3 source tree without an activated virtualenv,
+   run `../../../../.venv/bin/python ./inspect_capabilities.py` instead
 
 That helper launches the checked-in capability example through NEXUS's Python
 MCP client and proves all of these in one pass:
@@ -102,14 +100,13 @@ MCP client and proves all of these in one pass:
 - `resources/read` for `config://app/settings` and `docs://customer-table`
 - `prompts/get` for `customer_summary`
 
-If you already activated the repo virtualenv, plain `python ...` is also fine.
-Run the helper from the repo root or otherwise keep the repo root on
-`PYTHONPATH`, because it imports `nexus3.*` modules from this checkout.
+The helper discovers the NEXUS3 source tree from its own file location, so it
+does not require a specific working directory.
 
 If it fails:
 
-- make sure `python3` in `.nexus3/mcp.json` is the interpreter that exists on
-  your machine
+- make sure `python3` in `.nexus3/mcp.json` is the interpreter you expect
+  NEXUS to launch
 - remember that resources/prompts showing up in `/mcp` but not as normal agent
   tools is expected NEXUS behavior
 - if you want the agent to call resource/prompt-backed behavior directly, add a

@@ -13,13 +13,10 @@ usually trip people up:
 
 The server script uses only the Python standard library.
 
-In shell commands below, replace `<repo-root>` with the path to your NEXUS3
-checkout.
-
 Files:
 
-- [hello_stdio_server.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-stdio/hello_stdio_server.py)
-- [mcp.json](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-stdio/.nexus3/mcp.json)
+- [hello_stdio_server.py](./hello_stdio_server.py)
+- [mcp.json](./.nexus3/mcp.json)
 
 This example's `mcp.json` intentionally shows more than the bare minimum:
 
@@ -40,21 +37,21 @@ The checked-in server actually uses those config knobs:
 host variable. The tutorial keeps tool output deterministic, so it does not
 echo your `USER` value back in the greeting.
 
-The checked-in config uses `python3`. If that is not available on your machine,
-replace it in `.nexus3/mcp.json` with the interpreter path that exists on your
-machine.
+The checked-in config uses `python3`. If that is not available in your
+environment, replace it in `.nexus3/mcp.json` with the interpreter path you
+want NEXUS to launch.
 
 Run it:
 
-1. `cd <repo-root>/docs/references/mcp-python-examples/101-stdio`
-2. `nexus3 --fresh`
-3. In the REPL:
+1. From this directory, start a clean REPL: `nexus3 --fresh`
+2. In the REPL:
    - `/mcp connect hello_stdio --allow-all --private`
    - `/mcp tools hello_stdio`
-4. Ask the agent: `Use the hello tool to greet Alice.`
+3. Ask the agent: `Use the hello tool to greet Alice.`
 
-If `nexus3` is not on your `PATH`, run `<repo-root>/.venv/bin/nexus3 --fresh`
-instead.
+If `nexus3` is not on your `PATH` but you are using the NEXUS3 source tree,
+activate that virtualenv first or run `../../../../.venv/bin/nexus3 --fresh`
+from this directory.
 
 Omit the flags if you want to walk through the consent/share prompts manually.
 
@@ -84,16 +81,16 @@ Good next tweaks:
 
 - change `--greeting-prefix` in `.nexus3/mcp.json`
 - change `EXAMPLE_GREETING_STYLE` from `friendly` to `formal`
-- edit [greeting_suffix.txt](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-stdio/greeting_suffix.txt)
+- edit [greeting_suffix.txt](./greeting_suffix.txt)
 - disconnect and reconnect after changes so NEXUS restarts the server
 
 If it fails:
 
-- if you are running from this repo checkout and `nexus3` is not on your
-  `PATH`, use `<repo-root>/.venv/bin/nexus3` or activate the repo virtualenv
-  first
-- make sure `python3` in `.nexus3/mcp.json` is the interpreter that exists on
-  your machine
+- if `nexus3` is not on your `PATH` and you are using the NEXUS3 source tree,
+  use `../../../../.venv/bin/nexus3` from this directory or activate the
+  source-tree virtualenv first
+- make sure `python3` in `.nexus3/mcp.json` is the interpreter you expect
+  NEXUS to launch
 - keep JSON-RPC on stdout only; if you add debug prints, send them to stderr
 - after changing tool definitions or config, reconnect so NEXUS relaunches the
   stdio subprocess

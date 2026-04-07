@@ -77,16 +77,13 @@ The checked-in stdio example intentionally uses the second form so you can see
 
 The docs use `python3` as the default because it is the stronger default on
 Linux, macOS, and WSL. If your interpreter lives elsewhere, use the absolute
-interpreter path that exists on your machine.
+interpreter path available in your environment.
 
 Checked-in example projects live under
-[docs/references/mcp-python-examples/](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/README.md):
+[mcp-python-examples/](./README.md):
 
-- [101-stdio](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-stdio/README.md)
-- [101-http](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-http/README.md)
-
-In shell commands below, replace `<repo-root>` with the path to your NEXUS3
-checkout.
+- [101-stdio](./101-stdio/README.md)
+- [101-http](./101-http/README.md)
 
 ## The Smallest Useful MCP Server
 
@@ -153,14 +150,14 @@ Important:
   `/mcp resources` and `/mcp prompts`
 
 For that next layer, see
-[MCP-SERVER-PYTHON-202.md](/home/inc/repos/NEXUS3/docs/references/MCP-SERVER-PYTHON-202.md).
+[MCP-SERVER-PYTHON-202.md](./MCP-SERVER-PYTHON-202.md).
 
 ## Example 1: Minimal stdio server
 
 Checked-in files for this example:
 
-- [hello_stdio_server.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-stdio/hello_stdio_server.py)
-- [mcp.json](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-stdio/.nexus3/mcp.json)
+- [hello_stdio_server.py](./101-stdio/hello_stdio_server.py)
+- [mcp.json](./101-stdio/.nexus3/mcp.json)
 
 ### Step 1: Create `hello_stdio_server.py`
 
@@ -358,10 +355,11 @@ From the example directory, start a fresh NEXUS session:
 nexus3 --fresh
 ```
 
-If `nexus3` is not on your `PATH`, use the repo-local executable instead:
+If `nexus3` is not on your `PATH` and you are working from the NEXUS3 source
+tree, activate that virtualenv first or use:
 
 ```text
-<repo-root>/.venv/bin/nexus3 --fresh
+../../../../.venv/bin/nexus3 --fresh
 ```
 
 If you run `/mcp` first and see additional configured servers, that is normal.
@@ -451,7 +449,7 @@ If you print logs to stdout, you will corrupt the protocol stream.
 ## First-failure checklist
 
 - If a stdio server fails immediately, first confirm that the interpreter path
-  in `mcp.json` exists on your machine.
+  in `mcp.json` is the one you expect NEXUS to launch.
 - If a stdio server starts but NEXUS cannot speak MCP to it, check for stray
   stdout logging. MCP JSON-RPC belongs on stdout; human logs belong on stderr.
 - If an HTTP server fails to connect, keep the server process running and make
@@ -463,8 +461,8 @@ If you print logs to stdout, you will corrupt the protocol stream.
 
 Checked-in files for this example:
 
-- [hello_http_server.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-http/hello_http_server.py)
-- [mcp.json](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-http/.nexus3/mcp.json)
+- [hello_http_server.py](./101-http/hello_http_server.py)
+- [mcp.json](./101-http/.nexus3/mcp.json)
 
 This example uses only the Python standard library.
 
@@ -674,10 +672,11 @@ have one running:
 nexus3 --fresh
 ```
 
-If `nexus3` is not on your `PATH`, use:
+If `nexus3` is not on your `PATH` and you are working from the NEXUS3 source
+tree, activate that virtualenv first or use:
 
 ```text
-<repo-root>/.venv/bin/nexus3 --fresh
+../../../../.venv/bin/nexus3 --fresh
 ```
 
 In the REPL:
@@ -803,9 +802,9 @@ Choose **HTTP** when:
 
 After the 101 path, the best repo references are:
 
-- [nexus3/mcp/README.md](/home/inc/repos/NEXUS3/nexus3/mcp/README.md)
-- [nexus3/mcp/test_server/server.py](/home/inc/repos/NEXUS3/nexus3/mcp/test_server/server.py)
-- [nexus3/mcp/test_server/http_server.py](/home/inc/repos/NEXUS3/nexus3/mcp/test_server/http_server.py)
-- [nexus3/mcp/test_server/definitions.py](/home/inc/repos/NEXUS3/nexus3/mcp/test_server/definitions.py)
+- [nexus3/mcp/README.md](../../../nexus3/mcp/README.md)
+- [nexus3/mcp/test_server/server.py](../../../nexus3/mcp/test_server/server.py)
+- [nexus3/mcp/test_server/http_server.py](../../../nexus3/mcp/test_server/http_server.py)
+- [nexus3/mcp/test_server/definitions.py](../../../nexus3/mcp/test_server/definitions.py)
 
 Those files show the same ideas in the repo's own test harness.

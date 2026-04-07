@@ -18,26 +18,23 @@ config, and REPL behavior stays visible.
 - a working `python3` on your `PATH` for the checked-in example servers
 - a runnable `nexus3` CLI for the REPL walkthroughs:
   - if `nexus3` is already on your `PATH`, use that
-  - if you are running from this repo checkout, use `<repo-root>/.venv/bin/nexus3`
-    or activate the repo virtualenv before you `cd` into an example directory
-- this repo checkout plus `.venv` if you want to use the optional
-  Nexus-client inspection helper in the 202 example
+  - if you are working from the NEXUS3 source tree, activate that virtualenv
+    before you `cd` into an example directory
+- a NEXUS3 source tree plus `.venv` if you want to use the optional
+  NEXUS-client inspection helper in the 202 example
 - no extra Python MCP package is required for the checked-in example servers;
   they use only the Python standard library
-
-In shell commands below, replace `<repo-root>` with the path to your NEXUS3
-checkout.
 
 ## Recommended order
 
 1. Start with
-   [101-stdio](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-stdio/README.md).
+   [101-stdio](./101-stdio/README.md).
    It is the smallest local server and the easiest path to a first success.
 2. Then try
-   [101-http](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-http/README.md).
+   [101-http](./101-http/README.md).
    It keeps the same tool surface but changes the transport to HTTP.
 3. Finish with
-   [202-capabilities](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/README.md).
+   [202-capabilities](./202-capabilities/README.md).
    It adds resources and prompts so you can see how NEXUS treats each MCP
    surface differently, and it includes an optional deeper check that exercises
    `resources/read` and `prompts/get` through NEXUS's own Python MCP client.
@@ -53,10 +50,12 @@ Each example is a small standalone project:
 That means the normal workflow is:
 
 1. `cd` into one example directory
-2. start a clean REPL with `nexus3 --fresh` or
-   `<repo-root>/.venv/bin/nexus3 --fresh`
+2. start a clean REPL with `nexus3 --fresh`
 3. connect the configured server from the REPL
 4. inspect the exposed tools, resources, or prompts
+
+If you are using the NEXUS3 source tree rather than an installed `nexus3`
+command, activate that virtualenv first.
 
 Using `--fresh` matters for tutorials because it avoids confusion from an older
 session that was started in a different directory with different MCP config.
@@ -75,22 +74,23 @@ bundle, the example-specific server names are `hello_stdio`, `hello_http`, and
   files like `greeting_suffix.txt` and `customer_table.md` resolve.
 - The stdio examples default to `python3`, which is a stronger default for
   Linux, macOS, and WSL. If your interpreter lives somewhere else, replace the
-  command in `mcp.json` with the interpreter path that exists on your machine.
+  command in `mcp.json` with the interpreter path available in your
+  environment.
 - Only MCP tools become callable agent tools in NEXUS. Resources and prompts
   remain MCP-native surfaces that you inspect separately with `/mcp resources`
   and `/mcp prompts`.
 - The current REPL is a discovery surface for resources and prompts. If you
   want to exercise `resources/read` or `prompts/get` directly, use the optional
-  helper in the 202 example from the repo checkout.
+  helper in the 202 example from a NEXUS3 source tree.
 
 ## Companion Guides
 
 The full walkthrough docs are mirrored alongside these examples so the example
 bundle is self-contained:
 
-- [MCP-SERVER-PYTHON-101.md](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/MCP-SERVER-PYTHON-101.md)
-- [MCP-SERVER-PYTHON-202.md](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/MCP-SERVER-PYTHON-202.md)
-- [TOOL-SURFACE-DESIGN-GUIDELINES.md](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/TOOL-SURFACE-DESIGN-GUIDELINES.md)
+- [MCP-SERVER-PYTHON-101.md](./MCP-SERVER-PYTHON-101.md)
+- [MCP-SERVER-PYTHON-202.md](./MCP-SERVER-PYTHON-202.md)
+- [TOOL-SURFACE-DESIGN-GUIDELINES.md](./TOOL-SURFACE-DESIGN-GUIDELINES.md)
 
 If you are already reading the main repo docs, the canonical copies also live
-under [docs/references/](/home/inc/repos/NEXUS3/docs/references/).
+under [docs/references/](../).

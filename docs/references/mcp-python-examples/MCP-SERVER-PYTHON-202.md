@@ -1,7 +1,7 @@
 # MCP Server Python 202 For NEXUS3
 
 This guide picks up where
-[MCP-SERVER-PYTHON-101.md](/home/inc/repos/NEXUS3/docs/references/MCP-SERVER-PYTHON-101.md)
+[MCP-SERVER-PYTHON-101.md](./MCP-SERVER-PYTHON-101.md)
 leaves off.
 
 The 101 guide taught:
@@ -148,9 +148,6 @@ Merge behavior matters too:
 - if both keys exist in the same file and `mcpServers` is non-empty, NEXUS uses
   `mcpServers`.
 
-In shell commands below, replace `<repo-root>` with the path to your NEXUS3
-checkout.
-
 ## Full Example: One Python server with tools, resources, and prompts
 
 This example uses **stdio** because it keeps the capability example focused.
@@ -159,9 +156,9 @@ server shell from the 101 guide.
 
 Checked-in files for this example:
 
-- [capability_server.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/capability_server.py)
-- [inspect_capabilities.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py)
-- [mcp.json](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/.nexus3/mcp.json)
+- [capability_server.py](./202-capabilities/capability_server.py)
+- [inspect_capabilities.py](./202-capabilities/inspect_capabilities.py)
+- [mcp.json](./202-capabilities/.nexus3/mcp.json)
 
 ### Step 1: Create `capability_server.py`
 
@@ -478,8 +475,8 @@ Why these fields are here:
   output and resource contents, not just stored in config.
 - `env_passthrough` is included for realism, but the tutorial keeps outputs
   deterministic instead of echoing host-specific values like `USER`.
-- If `python3` is not on your `PATH`, use the absolute interpreter path that
-  exists on your machine.
+- If `python3` is not on your `PATH`, use the absolute interpreter path
+  available in your environment.
 
 ### Step 3: Connect it from NEXUS3
 
@@ -489,10 +486,11 @@ From the example directory, start a fresh NEXUS session:
 nexus3 --fresh
 ```
 
-If `nexus3` is not on your `PATH`, use the repo-local executable instead:
+If `nexus3` is not on your `PATH` and you are working from the NEXUS3 source
+tree, activate that virtualenv first or use:
 
 ```text
-<repo-root>/.venv/bin/nexus3 --fresh
+../../../../.venv/bin/nexus3 --fresh
 ```
 
 If you run `/mcp` first and see additional configured servers, that is normal.
@@ -558,12 +556,19 @@ calls through NEXUS's own Python MCP client, the checked-in example bundle
 includes a helper script:
 
 ```text
-.venv/bin/python docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py
+python ./inspect_capabilities.py
 ```
 
-Run that from the repo root. It loads the checked-in capability example
-configuration, launches the stdio server through the same transport/client
-layer NEXUS uses, and demonstrates:
+Run that from the `202-capabilities/` example directory. If you are using the
+NEXUS3 source tree without an activated virtualenv, use:
+
+```text
+../../../../.venv/bin/python ./inspect_capabilities.py
+```
+
+The helper discovers the NEXUS3 source tree from its own file location,
+launches the stdio server through the same transport/client layer NEXUS uses,
+and demonstrates:
 
 - `tools/list`
 - `resources/list`
@@ -571,9 +576,8 @@ layer NEXUS uses, and demonstrates:
 - `resources/read`
 - `prompts/get`
 
-If you already activated the repo virtualenv, plain `python ...` is also fine.
-Run the helper from the repo root or otherwise keep the repo root on
-`PYTHONPATH`, because it imports `nexus3.*` modules from this checkout.
+If you already activated the source-tree virtualenv, plain `python ...` is
+fine. The helper does not require a specific working directory.
 
 The core pattern is:
 
@@ -713,8 +717,8 @@ over HTTP:
 
 ## Related docs
 
-- [MCP-SERVER-PYTHON-101.md](/home/inc/repos/NEXUS3/docs/references/MCP-SERVER-PYTHON-101.md)
-- [README.md](/home/inc/repos/NEXUS3/nexus3/mcp/README.md)
-- [server.py](/home/inc/repos/NEXUS3/nexus3/mcp/test_server/server.py)
-- [http_server.py](/home/inc/repos/NEXUS3/nexus3/mcp/test_server/http_server.py)
-- [definitions.py](/home/inc/repos/NEXUS3/nexus3/mcp/test_server/definitions.py)
+- [MCP-SERVER-PYTHON-101.md](./MCP-SERVER-PYTHON-101.md)
+- [README.md](../../../nexus3/mcp/README.md)
+- [server.py](../../../nexus3/mcp/test_server/server.py)
+- [http_server.py](../../../nexus3/mcp/test_server/http_server.py)
+- [definitions.py](../../../nexus3/mcp/test_server/definitions.py)
