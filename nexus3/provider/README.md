@@ -323,13 +323,17 @@ but the provider layer can accept and normalize:
 - OpenAI Responses API `output[*]` function-call items
 - Gemini-style object `args` when surfaced through compatible gateways
 - Pythonic/vLLM-style literal argument strings when they can be parsed
-  losslessly (`{'path': 'x'}`, `path='x'`, `read_file(path='x')`)
+  losslessly (`{'path': 'x'}`, `path='x'`, `read_file(path='x')`); the
+  speculative parser suppresses Python invalid-escape warnings so raw
+  backslash-heavy tool payloads do not leak interpreter warnings during
+  normalization
 
 When inbound arguments cannot be normalized safely into an object, NEXUS3
 preserves the raw payload in `ToolCall.meta["raw_arguments"]` (and legacy
 `arguments["_raw_arguments"]` for compatibility), records source/format
-metadata, and fails closed at execution time with an explicit retry error
-instead of guessing.
+metadata, reports malformed JSON-like payloads with a specific parse diagnostic,
+and fails closed at execution time with an explicit retry error instead of
+guessing.
 
 **Extended Thinking/Reasoning:**
 When `reasoning=True`, adds `{"reasoning": {"effort": "high"}}` to request body (supported by Grok via OpenRouter).

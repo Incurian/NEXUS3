@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import json
 import logging
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -54,11 +55,51 @@ def _build_unresolved_meta(
     }
 
 
+def _parse_python_expression(raw: str) -> ast.Expression | None:
+    """Parse a speculative Python expression without leaking escape warnings."""
+    try:
+        with warnings.catch_warnings():
+            # These probes are compatibility fallbacks for provider payloads,
+            # not user-authored Python source, so invalid-escape warnings should
+            # not leak into runtime output when we are only testing parse shape.
+            warnings.filterwarnings(
+                "ignore",
+                message=r"invalid escape sequence.*",
+                category=DeprecationWarning,
+            )
+            warnings.filterwarnings(
+                "ignore",
+                message=r"invalid escape sequence.*",
+                category=SyntaxWarning,
+            )
+            return ast.parse(raw, mode="eval")
+    except SyntaxError:
+        return None
+
+
+def _looks_like_structured_payload(raw: str) -> bool:
+    """Return True when a raw string appears to start as JSON-like structure."""
+    stripped = raw.lstrip()
+    return stripped.startswith("{") or stripped.startswith("[")
+
+
+def _format_json_normalization_error(error: json.JSONDecodeError) -> str:
+    """Return a concise user-facing parse failure for malformed JSON-ish input."""
+    return (
+        "Malformed JSON-like tool arguments: "
+        f"{error.msg} (line {error.lineno}, column {error.colno})"
+    )
+
+
 def _normalize_python_dict_literal(raw: str) -> dict[str, Any] | None:
     """Parse a Python dict literal safely."""
+    expr = _parse_python_expression(raw)
+    if expr is None:
+        return None
+
     try:
-        parsed = ast.literal_eval(raw)
-    except (ValueError, SyntaxError):
+        parsed = ast.literal_eval(expr.body)
+    except (TypeError, ValueError, SyntaxError):
         return None
 
     return _string_key_dict_or_none(parsed)
@@ -66,9 +107,8 @@ def _normalize_python_dict_literal(raw: str) -> dict[str, Any] | None:
 
 def _normalize_python_kwargs(raw: str) -> dict[str, Any] | None:
     """Parse raw keyword arguments like `path='x', limit=5` safely."""
-    try:
-        expr = ast.parse(f"_nexus_kwargs({raw})", mode="eval")
-    except SyntaxError:
+    expr = _parse_python_expression(f"_nexus_kwargs({raw})")
+    if expr is None:
         return None
 
     if not isinstance(expr.body, ast.Call):
@@ -82,7 +122,7 @@ def _normalize_python_kwargs(raw: str) -> dict[str, Any] | None:
             return None
         try:
             kwargs[kw.arg] = ast.literal_eval(kw.value)
-        except (ValueError, SyntaxError):
+        except (TypeError, ValueError, SyntaxError):
             return None
 
     return kwargs
@@ -90,9 +130,8 @@ def _normalize_python_kwargs(raw: str) -> dict[str, Any] | None:
 
 def _normalize_python_call_expression(raw: str, tool_name: str) -> dict[str, Any] | None:
     """Parse a Pythonic call expression like `read_file(path='x')` safely."""
-    try:
-        expr = ast.parse(raw, mode="eval")
-    except SyntaxError:
+    expr = _parse_python_expression(raw)
+    if expr is None:
         return None
 
     call = expr.body
@@ -111,7 +150,7 @@ def _normalize_python_call_expression(raw: str, tool_name: str) -> dict[str, Any
             return None
         try:
             kwargs[kw.arg] = ast.literal_eval(kw.value)
-        except (ValueError, SyntaxError):
+        except (TypeError, ValueError, SyntaxError):
             return None
 
     return kwargs
@@ -143,10 +182,12 @@ def normalize_tool_arguments(
                 "argument_format": "empty",
             }
 
+        json_error: json.JSONDecodeError | None = None
         try:
             json_parsed = json.loads(payload)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
             json_parsed = _UNSET
+            json_error = exc
 
         if json_parsed is not _UNSET:
             mapping = _string_key_dict_or_none(json_parsed)
@@ -188,6 +229,16 @@ def normalize_tool_arguments(
             }
 
         raw = _stringify_payload(payload)
+        if json_error is not None and _looks_like_structured_payload(payload):
+            logger.warning("Failed to normalize malformed JSON-like tool arguments: %.100s", raw)
+            meta = _build_unresolved_meta(
+                source_format=source_format,
+                argument_format="json_malformed",
+                raw_arguments=raw,
+                normalization_error=_format_json_normalization_error(json_error),
+            )
+            return {"_raw_arguments": raw}, meta
+
         logger.warning("Failed to parse tool arguments into an object: %.100s", raw)
         meta = _build_unresolved_meta(
             source_format=source_format,

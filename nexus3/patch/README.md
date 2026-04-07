@@ -263,6 +263,11 @@ skill-level compatibility behaviors on top of this module:
 - `diff_file` is read as UTF-8 text before parsing
 - single-file hunk-only diffs (`@@ ... @@` without `---`/`+++`) are wrapped
   with synthetic file headers when `path`/`target` is provided
+- `dry_run=True` evaluates the selected `strict` / `tolerant` / `fuzzy` apply
+  mode in memory, so dry-run success/failure matches the real apply path
+- malformed non-empty hunk lines that are missing the required unified-diff
+  prefix fail early with a targeted skill-level guidance error; bare empty
+  lines inside hunks are still auto-treated as blank context for compatibility
 
 See the skill's parameters for full options including `diff_file` for loading patches from disk.
 

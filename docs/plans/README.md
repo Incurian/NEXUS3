@@ -85,6 +85,10 @@ This index covers the architecture plans created during today's review/planning 
 - [TOOL-CALL-FORMAT-DETECTION-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/TOOL-CALL-FORMAT-DETECTION-PLAN-2026-04-07.md)
 - [TOOL-CALL-FORMAT-NORMALIZATION-IMPLEMENTATION-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/TOOL-CALL-FORMAT-NORMALIZATION-IMPLEMENTATION-PLAN-2026-04-07.md)
 
+## Patch Tool Follow-On Plan (2026-04-07)
+
+- [PATCH-TOOL-ROBUSTNESS-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/PATCH-TOOL-ROBUSTNESS-PLAN-2026-04-07.md)
+
 ## Process Tool Plans (2026-03-11)
 
 - [PROCESS-INSPECTION-AND-KILL-TOOLS-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/PROCESS-INSPECTION-AND-KILL-TOOLS-PLAN-2026-03-11.md)

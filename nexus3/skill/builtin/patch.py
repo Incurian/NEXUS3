@@ -7,6 +7,7 @@ Supports inline diffs or reading from .diff/.patch files.
 
 import asyncio
 import os
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -30,6 +31,9 @@ from nexus3.skill.argument_normalization import normalize_empty_optional_string
 from nexus3.skill.base import FileSkill, file_skill_factory
 
 HunkLinePrefix = Literal[" ", "-", "+"]
+_VALID_HUNK_HEADER_RE = re.compile(
+    r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$"
+)
 
 
 class PatchSkill(FileSkill):
@@ -66,7 +70,8 @@ class PatchSkill(FileSkill):
             "Apply a unified diff to a file (strict/tolerant/fuzzy modes). "
             "Use for complex multi-line changes and diff-driven refactors. "
             "Prefer path= for the target file; target= remains a compatibility alias. "
-            "Use dry_run=True to validate before applying and mode='fuzzy' for drifted code. "
+            "Use dry_run=True to validate before applying; dry runs follow the selected "
+            "strict/tolerant/fuzzy matching behavior. Use mode='fuzzy' for drifted code. "
             "Diff lines must be prefixed: ' ' context, '-' removal, '+' addition. "
             "When path/target is provided, single-file hunk-only diffs "
             "(`@@ ... @@` without `---`/`+++`) are normalized automatically."
@@ -137,7 +142,10 @@ class PatchSkill(FileSkill):
                 "dry_run": {
                     "type": "boolean",
                     "default": False,
-                    "description": "Validate and report without applying changes",
+                    "description": (
+                        "Validate and report without applying changes. "
+                        "Dry runs use the selected strict/tolerant/fuzzy matching mode."
+                    ),
                 },
             },
             "description": (
@@ -240,6 +248,10 @@ class PatchSkill(FileSkill):
             diff_content = diff  # type: ignore[assignment]
 
         original_diff_content = diff_content
+        malformed_hunk_error = self._detect_malformed_hunk_line(original_diff_content)
+        if malformed_hunk_error is not None:
+            return ToolResult(error=malformed_hunk_error)
+
         diff_content, normalization_note = self._normalize_hunk_only_diff(
             diff_content,
             target_path,
@@ -314,11 +326,25 @@ class PatchSkill(FileSkill):
         if validation_result.fixed_patch is not None:
             patch_to_apply_v2 = self._convert_patch_v1_to_v2(validation_result.fixed_patch)
 
-        # For dry_run, return validation result
+        # For dry_run, simulate the selected apply mode in memory.
         if dry_run:
+            if not validation_result.valid and validation_result.fixed_patch is None:
+                if apply_mode == ApplyMode.STRICT:
+                    return self._format_dry_run_validation_failure(
+                        validation_result,
+                        result_prefix,
+                    )
+
+            dry_run_apply_result = apply_patch_byte_strict(
+                raw_bytes,
+                patch_to_apply_v2,
+                mode=apply_mode,
+                fuzzy_threshold=fuzzy_threshold,
+            )
             return self._format_dry_run_result(
                 validation_result,
-                matching_patch,
+                dry_run_apply_result,
+                patch_to_apply_v2,
                 result_prefix,
             )
 
@@ -492,30 +518,49 @@ class PatchSkill(FileSkill):
     def _format_dry_run_result(
         self,
         validation_result: Any,
+        apply_result: Any,
         patch_file: PatchFileV2,
         warning_prefix: str,
     ) -> ToolResult:
         """Format the dry run result message."""
-        hunk_count = len(patch_file.hunks)
-
-        if validation_result.valid or validation_result.fixed_patch is not None:
+        if apply_result.success:
+            hunk_count = len(apply_result.applied_hunks)
             output = f"{warning_prefix}Dry run - no changes made:\n"
             output += f"  {patch_file.path}: {hunk_count} hunk(s) would apply"
 
-            if validation_result.warnings:
+            dry_run_warnings: list[str] = list(validation_result.warnings)
+            dry_run_warnings.extend(
+                self._normalize_dry_run_warning(warning)
+                for warning in apply_result.warnings
+            )
+            if dry_run_warnings:
                 output += "\n  Warnings:"
-                for warning in validation_result.warnings:
+                for warning in dry_run_warnings:
                     output += f"\n    - {warning}"
 
             if validation_result.fixed_patch is not None:
                 output += "\n  Note: Patch would be auto-corrected before applying"
 
             return ToolResult(output=output)
-        else:
-            error = f"{warning_prefix}Dry run - patch would fail:\n"
+
+        error = f"{warning_prefix}Dry run - patch would fail:\n"
+        for hunk_idx, reason in apply_result.failed_hunks:
+            error += f"  Hunk {hunk_idx + 1} failed: {reason}\n"
+        if not apply_result.failed_hunks:
             for err in validation_result.errors:
                 error += f"  - {err}\n"
-            return ToolResult(error=error.rstrip())
+        return ToolResult(error=error.rstrip())
+
+    def _format_dry_run_validation_failure(
+        self,
+        validation_result: Any,
+        warning_prefix: str,
+    ) -> ToolResult:
+        """Format a strict-mode dry-run validation failure."""
+        error = f"{warning_prefix}Dry run - patch would fail:\n"
+        for err in validation_result.errors:
+            error += f"  - {err}\n"
+        return ToolResult(error=error.rstrip())
 
     def _format_validation_failure(
         self,
@@ -565,6 +610,10 @@ class PatchSkill(FileSkill):
 
         return ToolResult(output=output)
 
+    def _normalize_dry_run_warning(self, warning: str) -> str:
+        """Rewrite apply-path warnings into dry-run phrasing."""
+        return warning.replace(" applied ", " would apply ", 1)
+
     def _resolve_target_argument(self, *, path: str, target: str) -> tuple[str, Path, bool]:
         """Resolve preferred `path` / legacy `target` arguments to one file path."""
         if path and target:
@@ -603,6 +652,51 @@ class PatchSkill(FileSkill):
         )
         note = f"Note: normalized hunk-only diff using target path '{diff_path}'.\n"
         return wrapped, note
+
+    def _detect_malformed_hunk_line(self, diff_content: str) -> str | None:
+        """Return a targeted error for non-empty hunk lines missing diff prefixes."""
+        lines = diff_content.splitlines()
+        in_hunk = False
+
+        for idx, raw_line in enumerate(lines):
+            line = raw_line.lstrip("\ufeff")
+            next_line = (
+                lines[idx + 1].lstrip("\ufeff")
+                if idx + 1 < len(lines)
+                else ""
+            )
+
+            if _VALID_HUNK_HEADER_RE.match(line):
+                in_hunk = True
+                continue
+
+            if not in_hunk:
+                continue
+
+            if line.startswith("diff --git"):
+                in_hunk = False
+                continue
+
+            if line.startswith("--- ") and next_line.startswith("+++ "):
+                in_hunk = False
+                continue
+
+            if line.startswith("\\ No newline at end of file"):
+                continue
+
+            if line == "":
+                continue
+
+            if line[0] in " -+":
+                continue
+
+            return (
+                f"Malformed unified diff hunk at line {idx + 1}: non-empty hunk lines "
+                "must start with ' ' (context), '-' (removal), or '+' (addition). "
+                f"Offending line: {raw_line!r}"
+            )
+
+        return None
 
     def _looks_like_hunk_only_diff(self, diff_content: str) -> bool:
         """Return True for bare `@@` hunks without file headers."""

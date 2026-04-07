@@ -232,58 +232,72 @@ ad-hoc compatibility shim.
 
 ## Current Handoff
 
-### 2026-03-12 - hard rename planning and helper script
+### 2026-04-07 - patch tool robustness and raw-argument hardening
 
-- Branch: `master`
-- Baseline head: `11782e2` (`platform: audit macos and linux shell behavior`)
+- Branch: `tool-call-format-autodetect`
+- Baseline head: `bd4c013` (`Normalize tool call formats and harden teardown`)
 - Active slice:
-  - plan a full flag-day rename away from the NEXUS/NEXUS3 namespace
-  - avoid compatibility aliases because there are no public users yet
-  - add a tracked-files-only helper script so the future rename can be run as
-    one controlled repo rewrite after the new name is chosen
-- Plan:
-  - [docs/plans/PROJECT-HARD-RENAME-PLAN-2026-03-12.md](/home/inc/repos/NEXUS3/docs/plans/PROJECT-HARD-RENAME-PLAN-2026-03-12.md)
+  - align `patch(..., dry_run=True)` with the real selected apply mode so
+    `mode="fuzzy"` dry runs do not report false failures
+  - fail fast on malformed non-empty hunk lines that are missing the required
+    unified-diff prefixes instead of letting the parser silently skip them and
+    surface misleading context/removal mismatches later
+  - suppress speculative Python parser invalid-escape warnings while probing
+    raw tool-call payloads for Pythonic compatibility shapes
+  - report malformed JSON-like tool-call payloads with specific diagnostics
+    while still failing closed on unresolved arguments
+- Plans:
+  - [docs/plans/PATCH-TOOL-ROBUSTNESS-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/PATCH-TOOL-ROBUSTNESS-PLAN-2026-04-07.md)
+  - [docs/plans/TOOL-CALL-FORMAT-DETECTION-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/TOOL-CALL-FORMAT-DETECTION-PLAN-2026-04-07.md)
+  - [docs/plans/TOOL-CALL-FORMAT-NORMALIZATION-IMPLEMENTATION-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/TOOL-CALL-FORMAT-NORMALIZATION-IMPLEMENTATION-PLAN-2026-04-07.md)
 - Implemented locally:
-  - `scripts/maintenance/project_hard_rename.py`
-    - reads a JSON rename spec
-    - scans tracked files via `git ls-files`
-    - plans path/content rewrites for package/file surfaces and the mixed-case
-      runtime namespace:
-      `nexus3`, `.nexus3`, `nexus_*`, `nexus-`, `Nexus*`, `get_nexus_*`,
-      generic `NEXUS_*`, `NEXUS.md`, `NEXUS-DEFAULT.md`, `NEXUS3_API_KEY`,
-      `NEXUS_DEV`, `NEXUS_SERVER`, `x-nexus-*`, `X-Nexus-*`, and `nxk_`
-    - rejects specs that still contain the legacy `nexus` marker or leave a
-      rename surface unchanged
-    - stays dry-run by default and refuses execute mode on a dirty tracked
-      worktree unless `--allow-dirty`
-    - stages path moves through a temp directory, preserves raw line endings,
-      and rejects tracked or untracked destination collisions plus
-      symlink-shaped or non-directory destination paths before execute mode
-    - can emit a JSON manifest for review before the actual rename
-- `tests/unit/test_project_hard_rename_script.py`
-  - covers valid spec loading
-  - rejects legacy-brand specs
-  - verifies representative path/content rewrite planning across mixed-case and
-    runtime symbols
-  - rejects tracked destination collisions
-  - rejects untracked destination collisions
-  - rejects symlink-shaped and non-directory destination paths
-  - verifies CRLF preservation for rewritten tracked files
-  - verifies manifest summary counts
-- Focused validation passed:
-  - `.venv/bin/pytest -q tests/unit/test_project_hard_rename_script.py` (`9 passed`)
-  - `.venv/bin/ruff check scripts/maintenance/project_hard_rename.py tests/unit/test_project_hard_rename_script.py docs/plans/PROJECT-HARD-RENAME-PLAN-2026-03-12.md docs/plans/README.md AGENTS.md`
-  - `.venv/bin/mypy scripts/maintenance/project_hard_rename.py`
-  - `.venv/bin/python scripts/maintenance/project_hard_rename.py --print-spec-template`
-  - `.venv/bin/python scripts/maintenance/project_hard_rename.py --spec <temp-spec> --manifest /tmp/nexus-rename-manifest.json`
-    - dry-run planned `559` tracked-file rewrites
-    - `265` path renames
-    - `544` content rewrites
+  - `nexus3/skill/builtin/patch.py`
+    - `dry_run` now executes the selected byte-strict apply mode in memory
+      after validation/fixups instead of returning validator-only results
+    - strict-mode dry runs still fail closed on unrecoverable validation
+      errors, but tolerant/fuzzy dry runs now reflect actual apply success and
+      warnings
+    - adds a targeted malformed-hunk preflight for non-empty hunk body lines
+      that are missing `" "`, `"+"`, or `"-"` prefixes
+  - `tests/unit/skill/test_patch.py`
+    - covers fuzzy dry-run parity with the real apply path
+    - covers the new malformed non-empty context-prefix guidance
+  - `nexus3/provider/tool_call_formats.py`
+    - routes speculative Python literal/kwargs/call-expression parsing through
+      a warning-safe AST helper so invalid-escape warnings do not leak when raw
+      tool arguments contain backslashes
+    - distinguishes malformed JSON-like payloads from generic raw text and
+      preserves line/column parse diagnostics in `ToolCall.meta`
+  - `tests/unit/provider/test_tool_call_formats.py`
+    - covers warning-free normalization for Pythonic arguments containing
+      backslash-heavy strings
+    - covers malformed JSON-like `edit_file` payloads staying unresolved with
+      explicit diagnostics
+  - docs:
+    - `nexus3/patch/README.md`
+    - `nexus3/provider/README.md`
+    - `nexus3/skill/README.md`
+    - `docs/plans/README.md`
+    - `docs/plans/PATCH-TOOL-ROBUSTNESS-PLAN-2026-04-07.md`
+- Validation passed:
+  - `.venv/bin/pytest -q tests/unit/skill/test_patch.py tests/unit/patch/test_parser.py tests/unit/patch/test_applier.py tests/unit/patch/test_validator.py tests/unit/patch/test_byte_strict_apply_phase2.py tests/integration/test_file_editing_skills.py -q`
+  - `.venv/bin/pytest -q tests/unit/provider/test_tool_call_formats.py tests/unit/provider/test_streaming_tool_calls.py`
+    - `29 passed`
+  - `.venv/bin/pytest -q tests/unit/provider`
+    - `118 passed`
+  - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py`
+  - `.venv/bin/ruff check nexus3/provider/tool_call_formats.py tests/unit/provider/test_tool_call_formats.py nexus3/provider/README.md`
+  - `.venv/bin/mypy nexus3/skill/builtin/patch.py`
+  - `.venv/bin/mypy nexus3/provider/tool_call_formats.py`
+  - `.venv/bin/pytest tests/ -v`
+    - `4537 passed, 3 skipped, 22 warnings`
   - `git diff --check`
 - Residual note:
-  - the helper intentionally does not rewrite untracked local state or every
-    historical/example occurrence in tracked docs and validation artifacts
-  - the eventual rename still needs a manual residual sweep and packaging/live
-    validation after the scripted pass
+  - `.codex` is now ignored in `.gitignore`; existing local Codex state
+    remains intentionally untouched
+  - malformed/raw tool-call payloads still fail closed at execution time; the
+    provider layer only improves warning suppression and diagnostics, not the
+    acceptance boundary for invalid arguments
 - Next gate:
-  - rerun external review on the hardened helper and address any remaining gaps
+  - review the combined patch/provider hardening diff, then commit/push this
+    slice if accepted

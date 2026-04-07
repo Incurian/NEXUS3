@@ -343,6 +343,35 @@ class TestDryRun(TestPatchSkill):
         assert test_file.read_text() == original_content
 
     @pytest.mark.asyncio
+    async def test_dry_run_uses_fuzzy_apply_semantics(self, skill, tmp_path):
+        """Dry-run should reflect fuzzy-mode success instead of validator-only failure."""
+        test_file = tmp_path / "fuzzy.py"
+        original_content = "extra1\nextra2\nline1\nline2\nline3\n"
+        test_file.write_text(original_content)
+
+        diff = """--- a/fuzzy.py
++++ b/fuzzy.py
+@@ -1,3 +1,3 @@
+ line1
+-line2
++LINE2
+ line3
+"""
+        result = await skill.execute(
+            target=str(test_file),
+            diff=diff,
+            mode="fuzzy",
+            fuzzy_threshold=0.8,
+            dry_run=True,
+        )
+
+        assert result.success
+        assert "Dry run" in result.output
+        assert "would apply" in result.output
+        assert "fuzzy match" in result.output.lower()
+        assert test_file.read_text() == original_content
+
+    @pytest.mark.asyncio
     async def test_dry_run_with_invalid_patch(self, skill, test_file):
         """Test dry run reports errors for invalid patches."""
         diff = """--- a/test.py
@@ -766,6 +795,27 @@ class TestPatchValidation(TestPatchSkill):
 
         assert not result.success
         assert "No patch hunks found" in result.error or "No hunks found" in result.error
+
+    @pytest.mark.asyncio
+    async def test_missing_nonempty_context_prefix_gets_targeted_error(self, skill, tmp_path):
+        """Non-empty hunk lines without unified-diff prefixes should fail clearly."""
+        test_file = tmp_path / "bad-prefix.py"
+        original_content = "line1\nline2\nline3\n"
+        test_file.write_text(original_content)
+
+        diff = """@@ -1,3 +1,3 @@
+line1
+-line2
++LINE2
+line3
+"""
+        result = await skill.execute(path=str(test_file), diff=diff)
+
+        assert not result.success
+        assert "Malformed unified diff hunk" in result.error
+        assert "non-empty hunk lines must start" in result.error
+        assert "line1" in result.error
+        assert test_file.read_text() == original_content
 
 
 class TestEdgeCases(TestPatchSkill):

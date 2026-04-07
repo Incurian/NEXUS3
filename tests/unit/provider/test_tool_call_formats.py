@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import warnings
 
 import pytest
 
@@ -77,6 +78,52 @@ def test_openai_tool_call_accepts_pythonic_arguments(
     assert tool_calls[0].argument_format == expected_format
 
 
+@pytest.mark.parametrize(
+    ("raw_arguments", "expected_format", "expected_arguments"),
+    [
+        (
+            r"{'path': 'foo\/bar.txt', 'old_string': 'a\ b'}",
+            "python_dict",
+            {"path": r"foo\/bar.txt", "old_string": r"a\ b"},
+        ),
+        (
+            r"path='foo\/bar.txt', old_string='a\ b'",
+            "python_kwargs",
+            {"path": r"foo\/bar.txt", "old_string": r"a\ b"},
+        ),
+        (
+            r"edit_file(path='foo\/bar.txt', old_string='a\ b')",
+            "python_call",
+            {"path": r"foo\/bar.txt", "old_string": r"a\ b"},
+        ),
+    ],
+)
+def test_openai_pythonic_argument_normalization_suppresses_invalid_escape_warnings(
+    provider: OpenRouterProvider,
+    raw_arguments: str,
+    expected_format: str,
+    expected_arguments: dict[str, object],
+) -> None:
+    """Speculative Python parsing should not leak invalid-escape warnings."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        tool_calls = provider._parse_tool_calls(
+            [
+                {
+                    "id": "call_pythonic_backslash",
+                    "function": {
+                        "name": "edit_file",
+                        "arguments": raw_arguments,
+                    },
+                }
+            ]
+        )
+
+    assert tool_calls[0].arguments == expected_arguments
+    assert tool_calls[0].argument_format == expected_format
+    assert caught == []
+
+
 def test_openai_tool_call_python_call_mismatch_fails_closed(
     provider: OpenRouterProvider,
 ) -> None:
@@ -95,6 +142,41 @@ def test_openai_tool_call_python_call_mismatch_fails_closed(
 
     assert tool_calls[0].has_unresolved_arguments is True
     assert tool_calls[0].raw_arguments == "write_file(path='/tmp/a.txt')"
+
+
+def test_openai_malformed_json_like_edit_file_arguments_fail_closed_without_warnings(
+    provider: OpenRouterProvider,
+) -> None:
+    """Malformed object-like `edit_file` payloads should stay unresolved quietly."""
+    raw_arguments = (
+        r'{"edits": [{"new_string": "<|\/\nold\ marker<|\"|", '
+        r'"old_string": "<|\/\nold\ marker<|\"|", "replace_all": true} '
+        r'{"new_string": "second"}], "path": '
+        r'"Plugins/GameFeatures/AIFC/Source/AIFCRuntime/Public/AIFCSmoothingComponent.h"}'
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        tool_calls = provider._parse_tool_calls(
+            [
+                {
+                    "id": "call_malformed_edit_file",
+                    "function": {
+                        "name": "edit_file",
+                        "arguments": raw_arguments,
+                    },
+                }
+            ]
+        )
+
+    tool_call = tool_calls[0]
+
+    assert tool_call.has_unresolved_arguments is True
+    assert tool_call.raw_arguments == raw_arguments
+    assert tool_call.argument_format == "json_malformed"
+    assert tool_call.normalization_error is not None
+    assert "Malformed JSON-like tool arguments" in tool_call.normalization_error
+    assert caught == []
 
 
 def test_responses_api_non_streaming_is_detected(provider: OpenRouterProvider) -> None:
