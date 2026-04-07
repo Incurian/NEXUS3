@@ -232,7 +232,7 @@ ad-hoc compatibility shim.
 
 ## Current Handoff
 
-### 2026-04-07 - patch tool robustness and raw-argument hardening
+### 2026-04-07 - patch, raw-argument, and stream interruption hardening
 
 - Branch: `tool-call-format-autodetect`
 - Baseline head: `bd4c013` (`Normalize tool call formats and harden teardown`)
@@ -246,6 +246,9 @@ ad-hoc compatibility shim.
     raw tool-call payloads for Pythonic compatibility shapes
   - report malformed JSON-like tool-call payloads with specific diagnostics
     while still failing closed on unresolved arguments
+  - convert mid-stream `httpx`/`httpcore` transport failures into typed
+    `ProviderError` exceptions so REPL sessions show a normal error instead of
+    an unhandled traceback when providers close chunked streams early
 - Plans:
   - [docs/plans/PATCH-TOOL-ROBUSTNESS-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/PATCH-TOOL-ROBUSTNESS-PLAN-2026-04-07.md)
   - [docs/plans/TOOL-CALL-FORMAT-DETECTION-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/TOOL-CALL-FORMAT-DETECTION-PLAN-2026-04-07.md)
@@ -268,11 +271,19 @@ ad-hoc compatibility shim.
       tool arguments contain backslashes
     - distinguishes malformed JSON-like payloads from generic raw text and
       preserves line/column parse diagnostics in `ToolCall.meta`
+  - `nexus3/provider/base.py`
+    - wraps streaming body transport/protocol failures raised during
+      `_parse_stream(...)` as typed `ProviderError` exceptions
+    - distinguishes failures before first event from interruptions after
+      partial streamed output, and logs a provider-side warning for both
   - `tests/unit/provider/test_tool_call_formats.py`
     - covers warning-free normalization for Pythonic arguments containing
       backslash-heavy strings
     - covers malformed JSON-like `edit_file` payloads staying unresolved with
       explicit diagnostics
+  - `tests/unit/provider/test_keepalive_recovery.py`
+    - covers graceful `ProviderError` wrapping for streaming body failures both
+      before first event and after partial streamed output
   - docs:
     - `nexus3/patch/README.md`
     - `nexus3/provider/README.md`
@@ -284,13 +295,15 @@ ad-hoc compatibility shim.
   - `.venv/bin/pytest -q tests/unit/provider/test_tool_call_formats.py tests/unit/provider/test_streaming_tool_calls.py`
     - `29 passed`
   - `.venv/bin/pytest -q tests/unit/provider`
-    - `118 passed`
+    - `121 passed`
   - `.venv/bin/ruff check nexus3/skill/builtin/patch.py tests/unit/skill/test_patch.py`
   - `.venv/bin/ruff check nexus3/provider/tool_call_formats.py tests/unit/provider/test_tool_call_formats.py nexus3/provider/README.md`
+  - `.venv/bin/ruff check nexus3/provider/base.py nexus3/provider/README.md tests/unit/provider/test_keepalive_recovery.py`
   - `.venv/bin/mypy nexus3/skill/builtin/patch.py`
   - `.venv/bin/mypy nexus3/provider/tool_call_formats.py`
+  - `.venv/bin/mypy nexus3/provider/base.py tests/unit/provider/test_keepalive_recovery.py`
   - `.venv/bin/pytest tests/ -v`
-    - `4537 passed, 3 skipped, 22 warnings`
+    - `4539 passed, 3 skipped, 22 warnings`
   - `git diff --check`
 - Residual note:
   - `.codex` is now ignored in `.gitignore`; existing local Codex state

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -10,6 +11,7 @@ import pytest
 
 from nexus3.config.schema import ProviderConfig
 from nexus3.core.errors import ProviderError
+from nexus3.core.types import ContentDelta, Message, Role
 from nexus3.provider import OpenRouterProvider
 
 
@@ -110,6 +112,95 @@ class TestKeepAliveRecovery:
 
         assert mock_client.post.call_count == 1
         mock_aclose.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_stream_body_error_before_first_event_raises_provider_error(self) -> None:
+        """Streaming body transport failures surface as typed provider errors."""
+        provider = _make_provider(max_retries=1)
+        response = MagicMock()
+
+        async def make_streaming_request(
+            url: str, body: dict[str, object]
+        ) -> AsyncIterator[MagicMock]:
+            yield response
+
+        async def parse_stream(
+            stream_response: object,
+        ) -> AsyncIterator[object]:
+            assert stream_response is response
+            if stream_response is None:
+                yield ContentDelta(text="")
+            raise httpx.RemoteProtocolError(
+                "peer closed connection without sending complete message body "
+                "(incomplete chunked read)"
+            )
+
+        with (
+            patch.object(
+                provider,
+                "_build_endpoint",
+                return_value="https://test.example.com/v1/chat/completions",
+            ),
+            patch.object(
+                provider,
+                "_build_request_body",
+                return_value={"model": "test-model", "stream": True},
+            ),
+            patch.object(provider, "_make_streaming_request", side_effect=make_streaming_request),
+            patch.object(provider, "_parse_stream", side_effect=parse_stream),
+        ):
+            with pytest.raises(
+                ProviderError,
+                match="Streaming response failed before any data was received",
+            ):
+                async for _ in provider.stream(
+                    [Message(role=Role.USER, content="hello")],
+                ):
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_stream_body_error_after_partial_output_raises_provider_error(self) -> None:
+        """Mid-stream body transport failures mention partial streamed output."""
+        provider = _make_provider(max_retries=1)
+        response = MagicMock()
+
+        async def make_streaming_request(
+            url: str, body: dict[str, object]
+        ) -> AsyncIterator[MagicMock]:
+            yield response
+
+        async def parse_stream(
+            stream_response: object,
+        ) -> AsyncIterator[object]:
+            assert stream_response is response
+            yield ContentDelta(text="partial")
+            raise httpx.RemoteProtocolError(
+                "peer closed connection without sending complete message body "
+                "(incomplete chunked read)"
+            )
+
+        with (
+            patch.object(
+                provider,
+                "_build_endpoint",
+                return_value="https://test.example.com/v1/chat/completions",
+            ),
+            patch.object(
+                provider,
+                "_build_request_body",
+                return_value={"model": "test-model", "stream": True},
+            ),
+            patch.object(provider, "_make_streaming_request", side_effect=make_streaming_request),
+            patch.object(provider, "_parse_stream", side_effect=parse_stream),
+        ):
+            stream = provider.stream([Message(role=Role.USER, content="hello")])
+            first = await anext(stream)
+            assert first == ContentDelta(text="partial")
+            with pytest.raises(
+                ProviderError,
+                match="Partial output may have been displayed; retry the request",
+            ):
+                await anext(stream)
 
     @pytest.mark.asyncio
     async def test_max_retries_zero_keeps_stale_recovery_disabled(self) -> None:

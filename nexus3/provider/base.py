@@ -753,5 +753,26 @@ class BaseProvider(ABC):
         )
 
         async for response in self._make_streaming_request(url, body):
-            async for event in self._parse_stream(response):
-                yield event
+            emitted_any_event = False
+            try:
+                async for event in self._parse_stream(response):
+                    emitted_any_event = True
+                    yield event
+                return
+            except httpx.HTTPError as e:
+                logger.warning(
+                    "Streaming response interrupted while reading body "
+                    "(provider=%s, emitted_any_event=%s): %s",
+                    self.__class__.__name__,
+                    emitted_any_event,
+                    e,
+                )
+                if emitted_any_event:
+                    raise ProviderError(
+                        "Streaming response was interrupted before completion: "
+                        f"{e}. Partial output may have been displayed; retry the request."
+                    ) from e
+                raise ProviderError(
+                    "Streaming response failed before any data was received: "
+                    f"{e}. Please retry the request."
+                ) from e

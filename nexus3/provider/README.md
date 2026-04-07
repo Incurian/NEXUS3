@@ -262,6 +262,10 @@ config = ProviderConfig(
   `BaseProvider` closes the cached client and retries using the normal retry loop.
 - Recovery remains bounded by configured `max_retries`; `max_retries=0`
   remains fail-fast.
+- If a transport/protocol error occurs while reading an already-open streaming
+  response body, `BaseProvider.stream()` converts it into a typed
+  `ProviderError` instead of leaking a raw traceback. When partial stream
+  content was already emitted, the error explicitly tells the caller to retry.
 - `scripts/diagnose-empty-stream.sh` Step 10 now emits
   `10-keepalive-evidence.json` with fresh-vs-reused metrics and derived flags.
 
