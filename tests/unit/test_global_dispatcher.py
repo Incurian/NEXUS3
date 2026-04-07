@@ -277,10 +277,13 @@ async def test_global_create_agent_sandboxed_without_allowed_write_paths_disable
     for tool_name in (
         "write_file",
         "edit_file",
+        "edit_file_batch",
         "edit_lines",
+        "edit_lines_batch",
         "append_file",
         "regex_replace",
         "patch",
+        "patch_from_file",
         "mkdir",
         "copy_file",
         "rename",

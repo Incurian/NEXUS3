@@ -69,6 +69,13 @@ class TestToolPathSemantics:
         assert semantics.write_keys == ("path",)
         assert semantics.display_key == "path"
 
+    def test_edit_file_batch_semantics(self) -> None:
+        """edit_file_batch has path as both read and write."""
+        semantics = get_semantics("edit_file_batch")
+        assert semantics.read_keys == ("path",)
+        assert semantics.write_keys == ("path",)
+        assert semantics.display_key == "path"
+
     def test_edit_lines_semantics_registered(self) -> None:
         """edit_lines has explicit path semantics for confirmation handling."""
         assert TOOL_PATH_SEMANTICS["edit_lines"] == ToolPathSemantics(
@@ -78,6 +85,15 @@ class TestToolPathSemantics:
         )
         assert get_semantics("edit_lines") == TOOL_PATH_SEMANTICS["edit_lines"]
 
+    def test_edit_lines_batch_semantics_registered(self) -> None:
+        """edit_lines_batch has explicit path semantics for confirmation handling."""
+        assert TOOL_PATH_SEMANTICS["edit_lines_batch"] == ToolPathSemantics(
+            read_keys=("path",),
+            write_keys=("path",),
+            display_key="path",
+        )
+        assert get_semantics("edit_lines_batch") == TOOL_PATH_SEMANTICS["edit_lines_batch"]
+
     def test_patch_semantics_registered(self) -> None:
         """patch prefers path while accepting target as a compatibility alias."""
         assert TOOL_PATH_SEMANTICS["patch"] == ToolPathSemantics(
@@ -86,6 +102,15 @@ class TestToolPathSemantics:
             display_key="path",
         )
         assert get_semantics("patch") == TOOL_PATH_SEMANTICS["patch"]
+
+    def test_patch_from_file_semantics_registered(self) -> None:
+        """patch_from_file keeps the same path semantics as patch."""
+        assert TOOL_PATH_SEMANTICS["patch_from_file"] == ToolPathSemantics(
+            read_keys=("path", "target", "diff_file"),
+            write_keys=("path", "target"),
+            display_key="path",
+        )
+        assert get_semantics("patch_from_file") == TOOL_PATH_SEMANTICS["patch_from_file"]
 
     def test_clipboard_tool_semantics_registered(self) -> None:
         """Clipboard file tools have explicit read/write semantics."""
@@ -173,6 +198,12 @@ class TestExtractWritePaths:
         paths = extract_write_paths("edit_lines", args)
         assert paths == [Path("/some/file.txt")]
 
+    def test_edit_lines_batch_returns_path(self) -> None:
+        """edit_lines_batch returns the path it will modify."""
+        args = {"path": "/some/file.txt", "edits": [{"start_line": 2, "new_content": "updated"}]}
+        paths = extract_write_paths("edit_lines_batch", args)
+        assert paths == [Path("/some/file.txt")]
+
     def test_patch_returns_target(self) -> None:
         """patch returns the preferred path argument, not diff_file."""
         args = {
@@ -189,6 +220,15 @@ class TestExtractWritePaths:
             "diff_file": "/repo/changes.diff",
         }
         paths = extract_write_paths("patch", args)
+        assert paths == [Path("/repo/src/file.py")]
+
+    def test_patch_from_file_returns_target(self) -> None:
+        """patch_from_file returns the preferred path argument, not diff_file."""
+        args = {
+            "path": "/repo/src/file.py",
+            "diff_file": "/repo/changes.diff",
+        }
+        paths = extract_write_paths("patch_from_file", args)
         assert paths == [Path("/repo/src/file.py")]
 
     def test_gitlab_artifact_returns_output_path(self) -> None:
@@ -263,6 +303,12 @@ class TestExtractDisplayPath:
         path = extract_display_path("edit_lines", args)
         assert path == Path("/some/file.txt")
 
+    def test_edit_lines_batch_shows_path(self) -> None:
+        """edit_lines_batch displays the file path being modified."""
+        args = {"path": "/some/file.txt", "edits": [{"start_line": 3, "new_content": "x"}]}
+        path = extract_display_path("edit_lines_batch", args)
+        assert path == Path("/some/file.txt")
+
     def test_patch_shows_path(self) -> None:
         """patch displays the preferred path argument."""
         args = {
@@ -279,6 +325,15 @@ class TestExtractDisplayPath:
             "diff": "--- a/src/file.py\n+++ b/src/file.py\n",
         }
         path = extract_display_path("patch", args)
+        assert path == Path("/repo/src/file.py")
+
+    def test_patch_from_file_shows_path(self) -> None:
+        """patch_from_file displays the preferred path argument."""
+        args = {
+            "path": "/repo/src/file.py",
+            "diff_file": "/repo/changes.diff",
+        }
+        path = extract_display_path("patch_from_file", args)
         assert path == Path("/repo/src/file.py")
 
     def test_gitlab_artifact_shows_output_path(self) -> None:
@@ -310,6 +365,15 @@ class TestExtractToolPaths:
             "diff_file": "/repo/changes.diff",
         }
         paths = extract_tool_paths("patch", args)
+        assert paths == [Path("/repo/src/file.py"), Path("/repo/changes.diff")]
+
+    def test_patch_from_file_paths_include_diff_file_and_write_target(self) -> None:
+        """patch_from_file permission checks should see both diff input and target."""
+        args = {
+            "path": "/repo/src/file.py",
+            "diff_file": "/repo/changes.diff",
+        }
+        paths = extract_tool_paths("patch_from_file", args)
         assert paths == [Path("/repo/src/file.py"), Path("/repo/changes.diff")]
 
     def test_gitlab_artifact_paths_include_output_path(self) -> None:
@@ -492,6 +556,27 @@ class TestEnforcerRequiresConfirmation:
 
         assert enforcer.requires_confirmation(tool_call, permissions) is True
 
+    def test_edit_lines_batch_checks_path_outside_cwd(self, tmp_path: Path) -> None:
+        """edit_lines_batch requires confirmation for TRUSTED writes outside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="edit_lines_batch",
+            arguments={
+                "path": str(outside / "notes.txt"),
+                "edits": [{"start_line": 1, "new_content": "updated"}],
+            },
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is True
+
     def test_patch_no_confirm_target_in_cwd(self, tmp_path: Path) -> None:
         """patch stays auto-approved for TRUSTED targets inside cwd."""
         cwd = tmp_path / "cwd"
@@ -527,6 +612,27 @@ class TestEnforcerRequiresConfirmation:
             arguments={
                 "target": str(outside / "notes.txt"),
                 "diff": "--- a/notes.txt\n+++ b/notes.txt\n",
+            },
+        )
+
+        assert enforcer.requires_confirmation(tool_call, permissions) is True
+
+    def test_patch_from_file_checks_target_outside_cwd(self, tmp_path: Path) -> None:
+        """patch_from_file requires confirmation for TRUSTED targets outside cwd."""
+        cwd = tmp_path / "cwd"
+        cwd.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
+
+        permissions = self._make_trusted_permissions(cwd)
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="patch_from_file",
+            arguments={
+                "path": str(outside / "notes.txt"),
+                "diff_file": str(cwd / "changes.diff"),
             },
         )
 
@@ -787,6 +893,24 @@ class TestEnforcerGetConfirmationContext:
         assert display_path == Path("/some/file.txt")
         assert write_paths == [Path("/some/file.txt")]
 
+    def test_edit_lines_batch_context(self) -> None:
+        """edit_lines_batch context returns path for both display and writes."""
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="edit_lines_batch",
+            arguments={
+                "path": "/some/file.txt",
+                "edits": [{"start_line": 10, "new_content": "replacement"}],
+            },
+        )
+
+        display_path, write_paths = enforcer.get_confirmation_context(tool_call)
+
+        assert display_path == Path("/some/file.txt")
+        assert write_paths == [Path("/some/file.txt")]
+
     def test_patch_context(self) -> None:
         """patch context returns target for both display and writes."""
         enforcer = PermissionEnforcer()
@@ -797,6 +921,24 @@ class TestEnforcerGetConfirmationContext:
             arguments={
                 "target": "/repo/src/file.py",
                 "diff": "--- a/src/file.py\n+++ b/src/file.py\n",
+            },
+        )
+
+        display_path, write_paths = enforcer.get_confirmation_context(tool_call)
+
+        assert display_path == Path("/repo/src/file.py")
+        assert write_paths == [Path("/repo/src/file.py")]
+
+    def test_patch_from_file_context(self) -> None:
+        """patch_from_file context returns target for both display and writes."""
+        enforcer = PermissionEnforcer()
+
+        tool_call = ToolCall(
+            id="1",
+            name="patch_from_file",
+            arguments={
+                "path": "/repo/src/file.py",
+                "diff_file": "/repo/changes.diff",
             },
         )
 

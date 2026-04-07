@@ -391,7 +391,7 @@ class NexusClient:
             cwd: Working directory / sandbox root for the agent. For SANDBOXED
                 preset, this becomes the only allowed path. Must be within
                 parent's allowed paths.
-            allowed_write_paths: List of paths where write_file/edit_file are
+            allowed_write_paths: List of paths where file write/edit tools are
                 allowed. For SANDBOXED agents, defaults to empty (read-only).
                 Must be within cwd and parent's allowed paths.
             model: Model name/alias to use (from config.models or full model ID).

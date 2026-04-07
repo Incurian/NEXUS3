@@ -7,14 +7,15 @@ Built-in skill implementations shipped with NEXUS3.
 This package contains the concrete implementations behind
 `register_builtin_skills(...)` in
 [`registration.py`](/home/inc/repos/NEXUS3/nexus3/skill/builtin/registration.py).
-The current public registration surface is **43 core built-in skills**.
+The current public registration surface is **46 core built-in skills**.
 
 High-level categories:
 
 - File read/search: `read_file`, `tail`, `file_info`, `list_directory`,
   `glob`, `search_text`, `concat_files`, `outline`
-- File write/edit: `write_file`, `edit_file`, `edit_lines`, `append_file`,
-  `regex_replace`, `patch`, `copy_file`, `mkdir`, `rename`
+- File write/edit: `write_file`, `edit_file`, `edit_file_batch`,
+  `edit_lines`, `edit_lines_batch`, `append_file`, `regex_replace`, `patch`,
+  `patch_from_file`, `copy_file`, `mkdir`, `rename`
 - Host processes: `list_processes`, `get_process`, `kill_process`
 - Execution: `exec`, `shell_UNSAFE`, `run_python`
 - Version control: `git`

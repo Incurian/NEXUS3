@@ -40,7 +40,7 @@ class ConfirmationResult(Enum):
 
     DENY = "deny"
     ALLOW_ONCE = "allow_once"
-    # For write operations (write_file, edit_file)
+    # For file/path write operations (write_file/edit_*/patch/etc.)
     ALLOW_FILE = "allow_file"  # Allow always for this specific file
     ALLOW_WRITE_DIRECTORY = "allow_write_directory"  # Allow writes in this directory
     # For execution operations (exec, run_python)
@@ -62,10 +62,13 @@ DESTRUCTIVE_ACTIONS = frozenset(
         # Specific tool names
         "write_file",
         "edit_file",
+        "edit_file_batch",
         "edit_lines",
+        "edit_lines_batch",
         "append_file",
         "regex_replace",
         "patch",
+        "patch_from_file",
         "cut",
         "paste",
         "clipboard_export",
@@ -348,7 +351,7 @@ class PermissionPolicy:
                     return False
             return True
 
-        # For path-based tools (write_file, edit_file), check path allowances
+        # For path-based file write/edit tools, check path allowances
         if path is not None:
             # Within CWD - no confirmation needed
             if self.is_within_cwd(path):

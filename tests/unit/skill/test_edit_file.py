@@ -1,8 +1,8 @@
-"""Tests for edit_file skill with batched edit support."""
+"""Tests for exact-string file edit skills."""
 
 import pytest
 
-from nexus3.skill.builtin.edit_file import edit_file_factory
+from nexus3.skill.builtin.edit_file import edit_file_batch_factory, edit_file_factory
 from nexus3.skill.services import ServiceContainer
 
 
@@ -18,8 +18,13 @@ class TestEditFileSkill:
 
     @pytest.fixture
     def skill(self, services):
-        """Create edit_file skill instance."""
+        """Create single-edit skill instance."""
         return edit_file_factory(services)
+
+    @pytest.fixture
+    def batch_skill(self, services):
+        """Create batch-edit skill instance."""
+        return edit_file_batch_factory(services)
 
     @pytest.fixture
     def test_file(self, tmp_path):
@@ -41,6 +46,13 @@ def bar():
 
 class TestSingleEdit(TestEditFileSkill):
     """Tests for single-edit mode (existing functionality)."""
+
+    def test_single_edit_schema_is_single_purpose(self, skill):
+        """Public edit_file schema should expose only the single-edit shape."""
+        params = skill.parameters
+
+        assert params["required"] == ["path", "old_string", "new_string"]
+        assert "edits" not in params["properties"]
 
     @pytest.mark.asyncio
     async def test_string_replace_success(self, skill, test_file):
@@ -118,12 +130,21 @@ class TestSingleEdit(TestEditFileSkill):
 
 
 class TestBatchEdit(TestEditFileSkill):
-    """Tests for batch edit mode (new functionality)."""
+    """Tests for atomic batch exact-string replacement."""
+
+    def test_batch_schema_is_batch_only(self, batch_skill):
+        """Public edit_file_batch schema should expose only the batch shape."""
+        params = batch_skill.parameters
+
+        assert params["required"] == ["path", "edits"]
+        assert "old_string" not in params["properties"]
+        assert "new_string" not in params["properties"]
+        assert "replace_all" not in params["properties"]
 
     @pytest.mark.asyncio
-    async def test_batch_success(self, skill, test_file):
+    async def test_batch_success(self, batch_skill, test_file):
         """Test multiple edits in one call."""
-        result = await skill.execute(
+        result = await batch_skill.execute(
             path=str(test_file),
             edits=[
                 {"old_string": "import os", "new_string": "import os\nimport sys"},
@@ -141,11 +162,11 @@ class TestBatchEdit(TestEditFileSkill):
         assert "def foo() -> None:" in content
 
     @pytest.mark.asyncio
-    async def test_batch_rollback(self, skill, test_file):
+    async def test_batch_rollback(self, batch_skill, test_file):
         """Test that no changes are made if any edit fails."""
         original_content = test_file.read_text()
 
-        result = await skill.execute(
+        result = await batch_skill.execute(
             path=str(test_file),
             edits=[
                 {"old_string": "import os", "new_string": "import os\nimport sys"},
@@ -163,7 +184,7 @@ class TestBatchEdit(TestEditFileSkill):
         assert test_file.read_text() == original_content
 
     @pytest.mark.asyncio
-    async def test_batch_order_matters(self, skill, tmp_path):
+    async def test_batch_order_matters(self, batch_skill, tmp_path):
         """Test that edits are applied sequentially - first edit changes what second targets."""
         test_file = tmp_path / "order_test.py"
         test_file.write_text("foo = 1\nbar = foo\n")
@@ -177,7 +198,7 @@ class TestBatchEdit(TestEditFileSkill):
         # Edit 2: "foo = 2" -> "foo = 3" (only exists after edit 1)
         # This should fail because edit 2's old_string doesn't exist in original content
 
-        result = await skill.execute(
+        result = await batch_skill.execute(
             path=str(test_file),
             edits=[
                 {"old_string": "foo = 1", "new_string": "foo = 2"},
@@ -191,13 +212,13 @@ class TestBatchEdit(TestEditFileSkill):
         assert "not found" in result.error
 
     @pytest.mark.asyncio
-    async def test_batch_order_applies_sequentially(self, skill, tmp_path):
+    async def test_batch_order_applies_sequentially(self, batch_skill, tmp_path):
         """Test that valid edits are applied in order on in-memory content."""
         test_file = tmp_path / "sequential_test.py"
         test_file.write_text("A = 1\nB = 2\nC = 3\n")
 
         # All edits exist in original, applied sequentially
-        result = await skill.execute(
+        result = await batch_skill.execute(
             path=str(test_file),
             edits=[
                 {"old_string": "A = 1", "new_string": "A = 10"},
@@ -213,13 +234,13 @@ class TestBatchEdit(TestEditFileSkill):
         assert "C = 30" in content
 
     @pytest.mark.asyncio
-    async def test_batch_fails_when_earlier_edit_consumes_later_target(self, skill, tmp_path):
+    async def test_batch_fails_when_earlier_edit_consumes_later_target(self, batch_skill, tmp_path):
         """Later edits must still match after earlier in-memory replacements."""
         test_file = tmp_path / "consumed_target.py"
         original_content = "value = 1\n"
         test_file.write_text(original_content)
 
-        result = await skill.execute(
+        result = await batch_skill.execute(
             path=str(test_file),
             edits=[
                 {"old_string": "value = 1", "new_string": "value = 2"},
@@ -232,57 +253,46 @@ class TestBatchEdit(TestEditFileSkill):
         assert test_file.read_text() == original_content
 
     @pytest.mark.asyncio
-    async def test_batch_mutual_exclusion(self, skill, test_file):
-        """Test that edits array cannot be mixed with single-edit params."""
-        result = await skill.execute(
+    async def test_batch_rejects_legacy_top_level_single_edit_fields(self, batch_skill, test_file):
+        """Batch tool should fail closed on the old mixed top-level shape."""
+        result = await batch_skill.execute(
             path=str(test_file),
             old_string="import os",
-            edits=[
-                {"old_string": "def foo():", "new_string": "def foo() -> None:"}
-            ]
-        )
-
-        assert not result.success
-        assert "Cannot use 'edits' array" in result.error
-        assert "old_string" in result.error
-
-    @pytest.mark.asyncio
-    async def test_batch_allows_empty_placeholder_single_edit_fields(self, skill, test_file):
-        """Empty-string placeholders should not trip batch-mode mutual exclusion."""
-        result = await skill.execute(
-            path=str(test_file),
-            old_string="",
-            new_string="",
             edits=[
                 {"old_string": "def foo():", "new_string": "def foo() -> None:"}
             ],
         )
 
-        assert result.success
-        assert "Applied 1 edit" in result.output
-        assert "def foo() -> None:" in test_file.read_text()
+        assert not result.success
+        assert "old_string" in result.error
+        assert (
+            "unexpected" in result.error.lower() or "additional properties" in result.error.lower()
+        )
 
     @pytest.mark.asyncio
-    async def test_batch_mutual_exclusion_new_string(self, skill, test_file):
-        """Test that edits array cannot be mixed with new_string param."""
-        result = await skill.execute(
+    async def test_batch_rejects_legacy_top_level_replace_all(self, batch_skill, test_file):
+        """Batch replace_all is per-item, not a top-level argument."""
+        result = await batch_skill.execute(
             path=str(test_file),
-            new_string="replacement",
+            replace_all=True,
             edits=[
                 {"old_string": "def foo():", "new_string": "def foo() -> None:"}
-            ]
+            ],
         )
 
         assert not result.success
-        assert "Cannot use 'edits' array" in result.error
+        assert "replace_all" in result.error
+        assert (
+            "unexpected" in result.error.lower() or "additional properties" in result.error.lower()
+        )
 
     @pytest.mark.asyncio
-    async def test_batch_replace_all(self, skill, tmp_path):
+    async def test_batch_replace_all(self, batch_skill, tmp_path):
         """Test that individual edits can use replace_all."""
         test_file = tmp_path / "replace_all_test.py"
         test_file.write_text("foo = 1\nfoo = 2\nbar = 3\n")
 
-        result = await skill.execute(
+        result = await batch_skill.execute(
             path=str(test_file),
             edits=[
                 {"old_string": "foo", "new_string": "baz", "replace_all": True}
@@ -297,12 +307,12 @@ class TestBatchEdit(TestEditFileSkill):
         assert content.count("foo") == 0
 
     @pytest.mark.asyncio
-    async def test_batch_ambiguous_without_replace_all(self, skill, tmp_path):
+    async def test_batch_ambiguous_without_replace_all(self, batch_skill, tmp_path):
         """Test that ambiguous edits without replace_all fail validation."""
         test_file = tmp_path / "ambiguous_test.py"
         test_file.write_text("foo = 1\nfoo = 2\nbar = 3\n")
 
-        result = await skill.execute(
+        result = await batch_skill.execute(
             path=str(test_file),
             edits=[
                 {"old_string": "foo", "new_string": "baz"}  # No replace_all
@@ -314,21 +324,21 @@ class TestBatchEdit(TestEditFileSkill):
         assert "replace_all" in result.error
 
     @pytest.mark.asyncio
-    async def test_batch_empty_edits_array(self, skill, test_file):
-        """Test that empty edits array requires old_string."""
-        # With empty edits, batch_mode is False, so old_string is required
-        result = await skill.execute(
+    async def test_batch_empty_edits_array(self, batch_skill, test_file):
+        """Empty batch arrays should fail at schema validation."""
+        result = await batch_skill.execute(
             path=str(test_file),
-            edits=[]
+            edits=[],
         )
 
         assert not result.success
-        assert "old_string is required" in result.error
+        assert "edits" in result.error
+        assert "non-empty" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_batch_line_numbers_in_output(self, skill, test_file):
+    async def test_batch_line_numbers_in_output(self, batch_skill, test_file):
         """Test that line numbers reference original file positions."""
-        result = await skill.execute(
+        result = await batch_skill.execute(
             path=str(test_file),
             edits=[
                 {"old_string": "import os", "new_string": "import os\nimport sys"},
@@ -343,12 +353,12 @@ class TestBatchEdit(TestEditFileSkill):
         assert "line 7" in result.output
 
     @pytest.mark.asyncio
-    async def test_batch_preserves_line_endings(self, skill, tmp_path):
+    async def test_batch_preserves_line_endings(self, batch_skill, tmp_path):
         """Test that CRLF line endings are preserved in batch mode."""
         test_file = tmp_path / "crlf.py"
         test_file.write_bytes(b"import os\r\ndef foo():\r\n    pass\r\n")
 
-        result = await skill.execute(
+        result = await batch_skill.execute(
             path=str(test_file),
             edits=[
                 {"old_string": "def foo():", "new_string": "def foo() -> None:"}
@@ -361,9 +371,9 @@ class TestBatchEdit(TestEditFileSkill):
         assert b"def foo() -> None:\r\n" in content
 
     @pytest.mark.asyncio
-    async def test_batch_three_edits(self, skill, test_file):
+    async def test_batch_three_edits(self, batch_skill, test_file):
         """Test multiple edits with various patterns."""
-        result = await skill.execute(
+        result = await batch_skill.execute(
             path=str(test_file),
             edits=[
                 {"old_string": "import os", "new_string": "import os\nimport sys"},
@@ -381,9 +391,9 @@ class TestBatchEdit(TestEditFileSkill):
         assert "y = 200" in content
 
     @pytest.mark.asyncio
-    async def test_batch_empty_old_string(self, skill, test_file):
+    async def test_batch_empty_old_string(self, batch_skill, test_file):
         """Test that empty old_string in batch edit fails."""
-        result = await skill.execute(
+        result = await batch_skill.execute(
             path=str(test_file),
             edits=[
                 {"old_string": "", "new_string": "something"}
@@ -395,12 +405,12 @@ class TestBatchEdit(TestEditFileSkill):
         assert "non-empty" in result.error
 
     @pytest.mark.asyncio
-    async def test_batch_edit_with_empty_new_string(self, skill, tmp_path):
+    async def test_batch_edit_with_empty_new_string(self, batch_skill, tmp_path):
         """Test that edits can delete text by using empty new_string."""
         test_file = tmp_path / "delete_test.py"
         test_file.write_text("# TODO: remove this\nkeep this\n")
 
-        result = await skill.execute(
+        result = await batch_skill.execute(
             path=str(test_file),
             edits=[
                 {"old_string": "# TODO: remove this\n", "new_string": ""}

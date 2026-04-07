@@ -681,9 +681,10 @@ class PermissionEnforcer:
 EXEC_TOOLS = frozenset({"exec", "shell_UNSAFE", "run_python", "git"})
 AGENT_TARGET_TOOLS = frozenset({"nexus_send", "nexus_status", "nexus_cancel", "nexus_destroy"})
 PATH_TOOLS = frozenset({
-    "read_file", "write_file", "edit_file", "edit_lines", "append_file", "tail",
-    "file_info", "list_directory", "mkdir", "copy_file", "rename",
-    "regex_replace", "patch", "glob", "search_text", "copy", "cut", "paste",
+    "read_file", "write_file", "edit_file", "edit_file_batch", "edit_lines",
+    "edit_lines_batch", "append_file", "tail", "file_info", "list_directory",
+    "mkdir", "copy_file", "rename", "regex_replace", "patch",
+    "patch_from_file", "glob", "search_text", "copy", "cut", "paste",
     "clipboard_export", "clipboard_import", "clipboard_update", "concat_files",
 })
 ```
@@ -697,9 +698,13 @@ Permission checks (in order):
 Path semantics are still determined by `PathDecisionEngine` (including blocked
 paths and per-tool path resolution), while final allow/deny is enforced
 through authorization-kernel evaluation. Path extraction is semantics-driven,
-so alias-based tool surfaces such as `patch(path=...)` and the compatibility
-alias `patch(target=...)` are gated the same way during confirmation and
-permission checks.
+so compatibility shapes such as `patch(target=...)` and
+`patch(diff_file=...)` are gated the same way during confirmation and
+permission checks. The single-tool runtime also normalizes legacy
+`edit_file(edits=[...])`, `edit_lines(edits=[...])`,
+`read_file(start_line=..., end_line=...)`, and
+`outline(file_type=...|language=...)` calls onto the dedicated canonical
+contracts before validation and execution.
 Session-level MCP/GitLab level gates run through `permission_runtime.py` helpers
 invoked through single-tool runtime wiring, and remain kernel-authoritative
 `TOOL_EXECUTE` decisions before confirmation/allowance handling.
@@ -782,10 +787,13 @@ Registered semantics:
 | `write_file` | - | `path` | `path` |
 | `mkdir` | - | `path` | `path` |
 | `edit_file` | `path` | `path` | `path` |
+| `edit_file_batch` | `path` | `path` | `path` |
 | `edit_lines` | `path` | `path` | `path` |
+| `edit_lines_batch` | `path` | `path` | `path` |
 | `append_file` | `path` | `path` | `path` |
 | `regex_replace` | `path` | `path` | `path` |
 | `patch` | `path`, `target`, `diff_file` | `path`, `target` | `path` |
+| `patch_from_file` | `path`, `target`, `diff_file` | `path`, `target` | `path` |
 | `copy` | `source` | - | - |
 | `cut` | `source` | `source` | `source` |
 | `paste` | `target` | `target` | `target` |

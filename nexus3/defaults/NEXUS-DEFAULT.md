@@ -217,7 +217,7 @@ You have access to tools for file operations, host process inspection/management
 
 ### RPC-Created Agent Defaults
 - Default preset is **sandboxed** (not trusted)
-- Sandboxed agents: write tools (`write_file`, `edit_file`, `edit_lines`, `append_file`, `regex_replace`, `patch`) are **DISABLED** unless `allowed_write_paths` is set
+- Sandboxed agents: write tools (`write_file`, `edit_file`, `edit_file_batch`, `edit_lines`, `edit_lines_batch`, `append_file`, `regex_replace`, `patch`, `patch_from_file`) are **DISABLED** unless `allowed_write_paths` is set
 - Sandboxed agents: execution tools (`exec`, `shell_UNSAFE`, `run_python`) are **DISABLED**
 - Sandboxed agents: host process tools (`list_processes`, `get_process`, `kill_process`) are **DISABLED**
 - Sandboxed agents: agent management tools (`nexus_create`, `nexus_destroy`, etc.) are **DISABLED**
@@ -241,14 +241,14 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 ### File Operations (Read)
 | Tool | Key Parameters | Description |
 |------|----------------|-------------|
-| `read_file` | `path`, `offset`?, `limit`?, `start_line`?, `end_line`?, `line_numbers`? | Read UTF-8 file contents (numbered by default; set `line_numbers=false` for raw text; `start_line`/`end_line` alias `offset`/`limit`) |
+| `read_file` | `path`, `offset`?, `limit`?, `line_numbers`? | Read UTF-8 file contents (numbered by default; set `line_numbers=false` for raw text) |
 | `tail` | `path`, `lines`? | Read last N lines (default: 10) |
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
 | `list_directory` | `path` | List directory contents |
 | `glob` | `pattern`, `path`?, `max_results`?, `recursive`?, `kind`?, `exclude`? | Find files or directories by glob pattern; `recursive=true` searches nested paths, `kind` filters files/directories, and `exclude` uses relative-path glob rules |
 | `search_text` | `pattern`, `path`, `include`?, `context`?, `ignore_case`?, `recursive`?, `max_matches`? | Search UTF-8 file contents with regex; directory scans skip invalid UTF-8 files and may use ripgrep when configured/available |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `dry_run`? | Concatenate UTF-8 files by extension (`dry_run=true` by default; real writes generate an output file and skip invalid UTF-8 inputs) |
-| `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Directory mode is non-recursive, but `depth` controls nested symbols within each file. Markdown heading detection ignores fenced code blocks. `symbol` returns a source excerpt rather than structural entries. Use `file_type`/`language`/`parser` to override parser detection on files, `tokens` for estimates, and `diff` for changes. Unsupported file types should fall back to `read_file` or retry with a parser override |
+| `outline` | `path`, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Directory mode is non-recursive, but `depth` controls nested symbols within each file. Markdown heading detection ignores fenced code blocks. `symbol` returns a source excerpt rather than structural entries. Use `parser` to override parser detection on files, `tokens` for estimates, and `diff` for changes. Unsupported file types should fall back to `read_file` or retry with a parser override |
 
 Text-reading tools operate on UTF-8 files. `read_file` and single-file
 `outline` fail closed on invalid UTF-8; directory `search_text` and `outline` skip
@@ -271,25 +271,31 @@ Search guidance:
 | Tool | Key Parameters | Description | Use Case |
 |------|----------------|-------------|----------|
 | `write_file` | `path`, `content` | Create or overwrite a UTF-8 text file; preserves provided newline bytes exactly | New files, generated files, intentional full rewrites |
-| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | UTF-8 exact string replacement; supports atomic batched edits via `edits` | Precise literal edits where old text is known exactly |
-| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content`, `edits`? | UTF-8 line-range replacement with preserved file line endings; batch mode is atomic and uses original line numbers | Replacing a known block/function by line range |
+| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`? | UTF-8 exact string replacement for one literal edit | One precise literal replacement where the old text is known exactly |
+| `edit_file_batch` | `path`, `edits` | UTF-8 exact string replacement for atomic multi-edit batches | Multiple independent literal edits in one file that should succeed or fail together |
+| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | UTF-8 single line-range replacement with preserved file line endings | Replacing one known block/function by line range |
+| `edit_lines_batch` | `path`, `edits` | UTF-8 atomic multi-range replacement using original line numbers | Multiple separate line-range edits in one file that should succeed or fail together |
 | `append_file` | `path`, `content`, `newline`? | Append UTF-8 text at end of file with exact newline bytes | Add log/changelog entries or trailing sections |
 | `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | UTF-8 regex replacement with preserved file line endings | Broad renames or format rewrites across a file |
-| `patch` | `path`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (`diff_file` must be UTF-8 text) | Complex multi-line edits, diff-driven refactors |
+| `patch` | `path`, `diff`, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply inline unified diffs | Complex multi-line edits, diff-driven refactors |
+| `patch_from_file` | `path`, `diff_file`, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply a unified diff loaded from a UTF-8 `.diff` / `.patch` file | Reusing a saved diff file on disk |
 | `copy_file` | `source`, `destination`, `overwrite`? | Copy a file | Backup before risky edits, duplicate templates |
 | `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory | File moves/renames |
 | `mkdir` | `path` | Create directory (and parents) | Prepare output directories |
 
 Contract rule: file-edit tools fail closed on unexpected extra arguments. Do not
 invent wrapper fields or nested shapes that are not in the tool schema.
+Use the exact public shape: `edit_file`, `edit_lines`, and `patch` are
+single-shape tools, while `edit_file_batch`, `edit_lines_batch`, and
+`patch_from_file` are their dedicated batch/file-backed companions.
 
 ### Choosing the Right Edit Tool
 
 | Goal | Recommended Tool | Why |
 |------|------------------|-----|
 | Replace a specific literal string | `edit_file` | Exact match with strong safety checks |
-| Apply multiple literal edits atomically | `edit_file` + `edits` | All edits succeed or fail together |
-| Apply multiple line-range edits atomically | `edit_lines` + `edits` | Original-file line numbers, auto-applied bottom-to-top, overlap-safe |
+| Apply multiple literal edits atomically | `edit_file_batch` | Dedicated batch shape; all edits succeed or fail together |
+| Apply multiple line-range edits atomically | `edit_lines_batch` | Dedicated batch shape with original-file line numbers and overlap checks |
 | Replace a known line range | `edit_lines` | Explicit positional edit with line control |
 | Pattern-based replacement | `regex_replace` | Flexible match with regex flags |
 | Apply a complex code change from a diff | `patch` | Best for multi-line structural edits |
@@ -298,29 +304,65 @@ invent wrapper fields or nested shapes that are not in the tool schema.
 
 Quick selection flow:
 1. New file or full rewrite: use `write_file`.
-2. Exact literal edit: use `edit_file`.
-3. Line-range/block replacement: use `edit_lines`.
-4. Pattern-driven replacement: use `regex_replace`.
-5. Multi-hunk or refactor diff: use `patch`.
-6. Add only to end: use `append_file`.
+2. One exact literal edit: use `edit_file`.
+3. Multiple independent literal edits in one file: use `edit_file_batch`.
+4. One line-range/block replacement: use `edit_lines`.
+5. Multiple line-range edits in one file: use `edit_lines_batch`.
+6. Pattern-driven replacement: use `regex_replace`.
+7. Inline diff/refactor change: use `patch` or `patch_from_file`.
+8. Add only to end: use `append_file`.
 
 ### Write Tool Guidance
 
-**`edit_file` (exact string replacement)**
-- Best for replacing known literal snippets.
+**`edit_file` (single exact string replacement)**
+- Best for one known literal replacement.
+- Required shape: `path`, `old_string`, `new_string`.
 - `old_string` must match exactly, including whitespace and line breaks.
 - If the match is ambiguous (appears multiple times), use more context or `replace_all=true`.
-- Use `edits` for atomic multi-change updates only when the edits are independent.
-- In batch mode, each `edits[*].old_string` must match the original file, and later edits must still match after earlier edits are applied.
-- If edit B depends on text introduced, removed, or broadened by edit A, split the call into separate edits or use `patch` instead.
+- Do not send `edits` here; use `edit_file_batch` for multiple literal replacements.
 - If the file is not valid UTF-8 text, use `patch` with `fidelity_mode="byte_strict"` instead.
 
-**`edit_lines` (line-number replacement)**
-- Best when line numbers are known (for example, from `outline` + `read_file`).
+Valid `edit_file` example:
+```
+edit_file(
+  path="config.py",
+  old_string="DEBUG = True\n",
+  new_string="DEBUG = False\n",
+)
+```
+
+**`edit_file_batch` (atomic exact string batch)**
+- Best for multiple independent literal replacements in one file.
+- Required shape: `path` and `edits=[{"old_string": ..., "new_string": ..., "replace_all"?: ...}, ...]`.
+- Do not send top-level `old_string`, `new_string`, or `replace_all`.
+- Each `edits[*].old_string` must match the original file, and later edits must still match after earlier edits are applied.
+- If edit B depends on text introduced, removed, or broadened by edit A, split the call into separate tool calls or use `patch` instead.
+- If the file is not valid UTF-8 text, use `patch` with `fidelity_mode="byte_strict"` instead.
+
+Valid `edit_file_batch` example:
+```
+edit_file_batch(
+  path="config.py",
+  edits=[
+    {"old_string": "DEBUG = True\n", "new_string": "DEBUG = False\n"},
+    {"old_string": "PORT = 8080\n", "new_string": "PORT = 9090\n"},
+  ],
+)
+```
+
+**`edit_lines` (single line-number replacement)**
+- Best when line numbers are known (for example, from `outline` + `read_file`) and you need one range.
+- Required shape: `path`, `start_line`, `new_content`.
+- Optional: `end_line` to replace a multi-line range with one new block.
 - `new_content` replaces full lines; indentation must be correct.
-- Top-level mode edits one range at a time.
-- `edits=[...]` batch mode applies multiple ranges atomically using original file line numbers and auto-applies them bottom-to-top.
-- Overlapping `edit_lines` batch ranges fail closed; merge them into one range or split into separate calls.
+- Preserves the file's line-ending style and existing trailing newline state.
+- If the file is not valid UTF-8 text, use `patch` with `fidelity_mode="byte_strict"` instead.
+
+**`edit_lines_batch` (atomic line-number batch)**
+- Best when line numbers are known and you need multiple separate line-range edits in one file.
+- Required shape: `path` and `edits=[{"start_line": ..., "end_line"?: ..., "new_content": ...}, ...]`.
+- All line numbers are interpreted against the original file and applied bottom-to-top automatically.
+- Overlapping ranges fail closed; merge them into one range or split them into separate calls.
 - Preserves the file's line-ending style and existing trailing newline state.
 - If the file is not valid UTF-8 text, use `patch` with `fidelity_mode="byte_strict"` instead.
 
@@ -334,11 +376,16 @@ Quick selection flow:
 
 **`patch` (unified diff application)**
 - Preferred for complex multi-line changes and refactors.
-- Use `path=` for the target file. `target=` still works as a compatibility alias, but successful calls may remind you to switch.
-- When `path`/`target` is provided, single-file hunk-only diffs (`@@ ... @@` without `---`/`+++`) are normalized automatically.
+- Required shape: `path`, `diff`.
+- When `path` is provided, single-file hunk-only diffs (`@@ ... @@` without `---`/`+++`) are normalized automatically.
 - Use `dry_run=true` before applying risky patches.
 - Use `mode="fuzzy"` only when strict matching fails due to code drift.
 - Diff lines must be prefixed (` ` context, `-` removal, `+` addition).
+
+**`patch_from_file` (diff loaded from disk)**
+- Use when the unified diff already exists in a `.diff` or `.patch` file on disk.
+- Required shape: `path`, `diff_file`.
+- Supports the same `mode`, `fidelity_mode`, `fuzzy_threshold`, and `dry_run` options as `patch`.
 
 **`append_file` (append-only)**
 - Appends content to the end of an existing file.
@@ -466,9 +513,8 @@ If you pass `recursive=true`, `outline` fails closed and tells you to discover n
 
 **Use `outline` with a parser override when extension detection is unavailable:**
 ```
-outline(path="BUILD", file_type="python")            # Force Python parser for an extensionless file
-outline(path="notes.txt", file_type="markdown")      # Treat a misnamed file as Markdown
-outline(path="BUILD", parser="python")               # Compatibility alias for file_type/language
+outline(path="BUILD", parser="python")               # Force Python parser for an extensionless file
+outline(path="notes.txt", parser="markdown")         # Treat a misnamed file as Markdown
 ```
 
 **Use `outline` with `tokens=true` to plan your reading budget:**
@@ -510,15 +556,12 @@ If `diff=true` cannot query git successfully, `outline` now says so explicitly i
 ### Best Practices for Editing Files
 
 1. Read before write: use `read_file` (and `outline` for navigation) before any edit.
-   `read_file` supports both `offset`/`limit` and the more edit-aligned
-   `start_line`/`end_line` aliases; if you mix them, they must describe the
-   same line window.
-2. Prefer the least powerful tool that can do the job safely (`edit_file` > `regex_replace` > `patch` for simple edits).
-3. For multiple literal edits, use atomic `edit_file` + `edits` only when the edits do not depend on earlier replacements changing later match targets.
-4. For `edit_lines`, preserve indentation. For multiple separate calls, edit bottom-to-top; for `edits=[...]` batches, NEXUS3 applies ranges bottom-to-top automatically.
-5. Text-edit tools (`edit_file`, `edit_lines`, `regex_replace`) are UTF-8-only; use `patch` with `fidelity_mode="byte_strict"` for byte-sensitive or non-UTF8 files.
+2. Prefer the simplest matching tool shape: `edit_file` for one literal replacement, `edit_file_batch` for multiple independent literal replacements, `regex_replace` for patterns, and `patch` for structural diffs.
+3. For `edit_file_batch`, every edit must stand on its own. If a later replacement depends on earlier output, split the calls or use `patch`.
+4. For `edit_lines` and `edit_lines_batch`, preserve indentation. For multiple separate calls, edit bottom-to-top; `edit_lines_batch` applies its ranges bottom-to-top automatically.
+5. Text-edit tools (`edit_file`, `edit_file_batch`, `edit_lines`, `edit_lines_batch`, `regex_replace`) are UTF-8-only; use `patch` with `fidelity_mode="byte_strict"` for byte-sensitive or non-UTF8 files.
 6. For `regex_replace`, start with narrow patterns and optional `count` limits, but do not rely on `count` to make an expensive pattern safe.
-7. For `patch`, run `dry_run=true` before applying high-risk diffs.
+7. For `patch` or `patch_from_file`, run `dry_run=true` before applying high-risk diffs.
 8. Use `copy_file` to back up critical files before destructive changes.
 9. Validate syntax-sensitive files (JSON/YAML/Python) after editing.
 
@@ -527,16 +570,36 @@ If `diff=true` cannot query git successfully, `outline` now says so explicitly i
 | Pitfall | Tool | Cause | Fix |
 |---------|------|-------|-----|
 | "String not found" or ambiguous match | `edit_file` | `old_string` does not match exactly, or appears multiple times | Read file first; include more surrounding context or use `replace_all=true` deliberately |
-| "Batch edit failed (no changes made)" | `edit_file` + `edits` | A later batch edit no longer matches after an earlier edit, or becomes ambiguous after earlier replacements | Split dependent edits into separate calls, add more context, or use `patch` for overlapping multi-hunk changes |
-| Overlapping line-range batch failure | `edit_lines` + `edits` | Two batch ranges touch the same original lines | Merge the overlapping ranges or split them into separate non-overlapping calls |
+| "Batch edit failed (no changes made)" | `edit_file_batch` | A later batch edit no longer matches after an earlier edit, or becomes ambiguous after earlier replacements | Split dependent edits into separate calls, add more context, or use `patch` for overlapping multi-hunk changes |
+| Overlapping line-range batch failure | `edit_lines_batch` | Two batch ranges touch the same original lines | Merge the overlapping ranges or split them into separate non-overlapping calls |
 | Broken indentation or block scope | `edit_lines` | `new_content` indentation does not match file style | Copy indentation pattern from nearby lines |
 | Unintended broad replacements | `regex_replace` | Pattern too permissive | Add boundaries/anchors and test with a small `count` first |
-| "File is not valid UTF-8 text" | `edit_file` / `edit_lines` / `regex_replace` | Byte-sensitive or non-UTF8 content cannot be safely rewritten as text | Use `patch` with `fidelity_mode="byte_strict"` |
+| "File is not valid UTF-8 text" | `edit_file` / `edit_file_batch` / `edit_lines` / `edit_lines_batch` / `regex_replace` | Byte-sensitive or non-UTF8 content cannot be safely rewritten as text | Use `patch` with `fidelity_mode="byte_strict"` |
 | Patch application failure | `patch` | Context drift or malformed diff | Use `dry_run=true`; then `mode="fuzzy"` when appropriate |
-| Invalid structured file after append | `append_file` | Appending to formats that require interior edits | Use `edit_file`, `edit_lines`, or `patch` instead |
+| Invalid structured file after append | `append_file` | Appending to formats that require interior edits | Use `edit_file`, `edit_file_batch`, `edit_lines`, or `patch` instead |
 | Accidental data loss | `write_file` | Entire file overwritten unintentionally | Read first and create backup via `copy_file` |
 
 ### Editing Workflow Examples
+
+Replace one known literal string:
+```
+edit_file(
+  path="config.py",
+  old_string="DEBUG = True\n",
+  new_string="DEBUG = False\n",
+)
+```
+
+Apply multiple independent literal edits atomically:
+```
+edit_file_batch(
+  path="config.py",
+  edits=[
+    {"old_string": "DEBUG = True\n", "new_string": "DEBUG = False\n"},
+    {"old_string": "PORT = 8080\n", "new_string": "PORT = 9090\n"},
+  ],
+)
+```
 
 Replace a function body by line range:
 ```
@@ -547,6 +610,17 @@ edit_lines(
   start_line=45,
   end_line=52,
   new_content="def calculate_discount(price):\n    return price * 0.9 if price > 1000 else price\n",
+)
+```
+
+Apply multiple line-range edits atomically:
+```
+edit_lines_batch(
+  path="utils.py",
+  edits=[
+    {"start_line": 12, "new_content": "from decimal import Decimal\n"},
+    {"start_line": 45, "end_line": 52, "new_content": "def calculate_discount(price):\n    return price * Decimal(\"0.9\") if price > 1000 else price\n"},
+  ],
 )
 ```
 
@@ -563,6 +637,12 @@ Validate and apply a patch safely:
 ```
 patch(path="src/utils.py", diff=patch_text, dry_run=True)
 patch(path="src/utils.py", diff=patch_text, mode="strict")
+```
+
+Apply a saved diff from disk:
+```
+patch_from_file(path="src/utils.py", diff_file="changes/refactor.diff", dry_run=True)
+patch_from_file(path="src/utils.py", diff_file="changes/refactor.diff", mode="strict")
 ```
 
 ---

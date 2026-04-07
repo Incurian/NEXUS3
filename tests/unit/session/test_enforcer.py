@@ -842,7 +842,10 @@ class TestPatchPathExtractionAndChecks:
                 blocked_paths=[],
                 cwd=Path("/sandbox"),
             ),
-            tool_permissions={"patch": ToolPermission(enabled=True)},
+            tool_permissions={
+                "patch": ToolPermission(enabled=True),
+                "patch_from_file": ToolPermission(enabled=True),
+            },
         )
 
     def test_extract_target_paths_includes_patch_alias_and_diff_file(self) -> None:
@@ -878,6 +881,22 @@ class TestPatchPathExtractionAndChecks:
         assert result is not None
         assert result.error is not None
         assert "Tool 'patch' cannot access path '/outside/file.py'" in result.error
+
+    def test_extract_target_paths_for_patch_from_file(self) -> None:
+        enforcer = PermissionEnforcer()
+        tool_call = ToolCall(
+            id="call-2",
+            name="patch_from_file",
+            arguments={
+                "path": "/sandbox/file.py",
+                "diff_file": "/sandbox/changes.diff",
+            },
+        )
+
+        assert enforcer.extract_target_paths(tool_call) == [
+            Path("/sandbox/file.py"),
+            Path("/sandbox/changes.diff"),
+        ]
 
 
 class TestConcatFilesPathExtractionAndChecks:

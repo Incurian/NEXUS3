@@ -39,13 +39,24 @@ TOOL_PATH_SEMANTICS: dict[str, ToolPathSemantics] = {
     "mkdir": ToolPathSemantics(write_keys=("path",), display_key="path"),
     # Read+write tools (modify existing files)
     "edit_file": ToolPathSemantics(read_keys=("path",), write_keys=("path",), display_key="path"),
+    "edit_file_batch": ToolPathSemantics(
+        read_keys=("path",), write_keys=("path",), display_key="path"
+    ),
     "edit_lines": ToolPathSemantics(read_keys=("path",), write_keys=("path",), display_key="path"),
+    "edit_lines_batch": ToolPathSemantics(
+        read_keys=("path",), write_keys=("path",), display_key="path"
+    ),
     "append_file": ToolPathSemantics(read_keys=("path",), write_keys=("path",), display_key="path"),
     "regex_replace": ToolPathSemantics(
         read_keys=("path",), write_keys=("path",), display_key="path"
     ),
     "patch": ToolPathSemantics(
         read_keys=("path", "target", "diff_file"), write_keys=("path", "target"), display_key="path"
+    ),
+    "patch_from_file": ToolPathSemantics(
+        read_keys=("path", "target", "diff_file"),
+        write_keys=("path", "target"),
+        display_key="path",
     ),
     "copy": ToolPathSemantics(read_keys=("source",)),
     "cut": ToolPathSemantics(read_keys=("source",), write_keys=("source",), display_key="source"),

@@ -65,7 +65,7 @@ A three-tier clipboard system (agent, project, system) lets agents store, retrie
 
 ### 60+ Built-in Skills
 
-43 core skills covering file operations, host process inspection/termination, shell execution, git, unified diff patching, and inter-agent communication. 21 GitLab integration skills for issues, merge requests, pipelines, epics, approvals, time tracking, draft reviews, and more. Skills are permission-aware — what's available depends on the agent's preset, and file skills enforce per-tool path restrictions.
+46 core skills covering file operations, host process inspection/termination, shell execution, git, unified diff patching, and inter-agent communication. 21 GitLab integration skills for issues, merge requests, pipelines, epics, approvals, time tracking, draft reviews, and more. Skills are permission-aware — what's available depends on the agent's preset, and file skills enforce per-tool path restrictions.
 
 ### Layered Configuration
 
@@ -867,7 +867,7 @@ For REPL internals and UI components, see `nexus3/cli/README.md`. For RPC protoc
 | `provider/` | AsyncProvider protocol, multi-provider support, prompt caching, retry logic |
 | `context/` | ContextManager, ContextLoader, TokenCounter, compaction |
 | `session/` | Session coordinator, persistence, SessionManager, SQLite logging |
-| `skill/` | Skill protocol, SkillRegistry, ServiceContainer, 43 built-in + 21 GitLab skills |
+| `skill/` | Skill protocol, SkillRegistry, ServiceContainer, 44 built-in + 21 GitLab skills |
 | `clipboard/` | Scoped clipboard system (agent/project/system), SQLite storage |
 | `patch/` | Unified diff parsing, validation, and application |
 | `display/` | Spinner-based REPL display, SafeSink boundaries, theming, plus quarantined legacy display helpers |
@@ -967,7 +967,7 @@ nexus3 rpc create worker --cwd /project --write-path /project/output
 
 In TRUSTED mode, destructive operations prompt for confirmation. The available options depend on the tool type:
 
-**File writes** (`write_file`, `edit_file`, `append_file`, etc.):
+**File/path writes** (`write_file`, `edit_file`, `edit_file_batch`, `edit_lines`, `edit_lines_batch`, `append_file`, `regex_replace`, `patch`, `patch_from_file`, etc.):
 ```
 Allow write_file?
   Path: /etc/hosts
@@ -1374,12 +1374,24 @@ See [Security & Permissions](#security--permissions) for behavior details.
 {
   "permissions": {
     "default_preset": "sandboxed",
-    "destructive_tools": ["write_file", "edit_file", "exec", "shell_UNSAFE", "run_python", "kill_process", "nexus_destroy", "nexus_shutdown"],
+    "destructive_tools": ["write_file", "edit_file", "edit_file_batch", "edit_lines", "edit_lines_batch", "append_file", "regex_replace", "patch", "patch_from_file", "copy_file", "rename", "mkdir", "exec", "shell_UNSAFE", "run_python", "kill_process", "nexus_destroy", "nexus_shutdown"],
     "presets": {
       "researcher": {
         "extends": "sandboxed",
-        "description": "Read-only research agent",
+        "description": "Restricted project research agent",
         "tool_permissions": {
+          "write_file": {"enabled": false},
+          "edit_file": {"enabled": false},
+          "edit_file_batch": {"enabled": false},
+          "edit_lines": {"enabled": false},
+          "edit_lines_batch": {"enabled": false},
+          "append_file": {"enabled": false},
+          "regex_replace": {"enabled": false},
+          "patch": {"enabled": false},
+          "patch_from_file": {"enabled": false},
+          "copy_file": {"enabled": false},
+          "rename": {"enabled": false},
+          "mkdir": {"enabled": false},
           "exec": {"timeout": 10}
         }
       }
@@ -1463,20 +1475,20 @@ For configuration loading internals and validation, see `nexus3/config/README.md
 
 ## Built-in Skills
 
-NEXUS3 includes 43 built-in skills organized by category, plus 21 GitLab integration skills (see [GitLab Integration](#gitlab-integration)).
+NEXUS3 includes 46 built-in skills organized by category, plus 21 GitLab integration skills (see [GitLab Integration](#gitlab-integration)).
 
 ### File Operations (Read)
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `read_file` | Read UTF-8 file contents | `path`, `offset`, `limit`, `start_line`, `end_line`, `line_numbers` |
+| `read_file` | Read UTF-8 file contents | `path`, `offset`, `limit`, `line_numbers` |
 | `tail` | Read last N lines | `path`, `lines` (default: 10) |
 | `file_info` | Get file metadata | `path` |
 | `list_directory` | List directory contents | `path`, `all`, `long` |
 | `glob` | Find files or directories by pattern | `pattern`, `path`, `max_results`, `recursive`, `kind`, `exclude` |
 | `search_text` | Search UTF-8 file contents | `pattern`, `path`, `include`, `context`, `recursive`, `ignore_case`, `max_matches` |
 | `concat_files` | Concatenate UTF-8 files by extension (`dry_run=true` by default; `dry_run=false` writes a generated output file and skips invalid UTF-8 inputs) | `extensions`, `path`, `exclude`, `lines`, `max_total`, `format`, `sort`, `gitignore`, `dry_run` |
-| `outline` | Structural outline of UTF-8 file/directory (non-recursive for directories; markdown ignores fenced code blocks) | `path`, `file_type`, `language`, `parser`, `depth`, `preview`, `signatures`, `line_numbers`, `tokens`, `symbol`, `diff`, `recursive` |
+| `outline` | Structural outline of UTF-8 file/directory (non-recursive for directories; markdown ignores fenced code blocks) | `path`, `parser`, `depth`, `preview`, `signatures`, `line_numbers`, `tokens`, `symbol`, `diff`, `recursive` |
 
 Text-reading tools operate on UTF-8 files. `read_file` and single-file
 `outline` fail closed on invalid UTF-8; directory `search_text` and `outline` skip
@@ -1498,11 +1510,14 @@ invalid UTF-8 files instead of mangling bytes.
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
 | `write_file` | Write/create file | `path`, `content` |
-| `edit_file` | Exact string replacement (single or batched) | `path`, `old_string`, `new_string`, `replace_all`, `edits` |
-| `edit_lines` | Line-based replacement (single or batched) | `path`, `start_line`, `end_line`, `new_content`, `edits` |
+| `edit_file` | Exact string replacement (single edit) | `path`, `old_string`, `new_string`, `replace_all` |
+| `edit_file_batch` | Exact string replacement (atomic batch) | `path`, `edits` |
+| `edit_lines` | Line-based replacement (single range) | `path`, `start_line`, `end_line`, `new_content` |
+| `edit_lines_batch` | Line-based replacement (atomic batch) | `path`, `edits` |
 | `append_file` | Append to file | `path`, `content`, `newline` |
 | `regex_replace` | Regex find/replace | `path`, `pattern`, `replacement`, `count`, `ignore_case`, `multiline`, `dotall` |
-| `patch` | Apply unified diffs (`diff_file` must be UTF-8 text) | `path`, `diff`, `diff_file`, `mode`, `fidelity_mode`, `fuzzy_threshold`, `dry_run` |
+| `patch` | Apply inline unified diffs | `path`, `diff`, `mode`, `fidelity_mode`, `fuzzy_threshold`, `dry_run` |
+| `patch_from_file` | Apply a unified diff from a UTF-8 `.diff` / `.patch` file | `path`, `diff_file`, `mode`, `fidelity_mode`, `fuzzy_threshold`, `dry_run` |
 | `copy_file` | Copy file | `source`, `destination`, `overwrite` |
 | `mkdir` | Create directory | `path` |
 | `rename` | Move/rename file | `source`, `destination`, `overwrite` |

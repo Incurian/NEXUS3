@@ -438,7 +438,7 @@ async def confirm_tool_action(
 
 #### Confirmation Menus by Tool Type
 
-**Write operations** (write_file, edit_file):
+**File/path write operations** (`write_file`, `edit_file`, `edit_file_batch`, `edit_lines`, `edit_lines_batch`, `append_file`, `regex_replace`, `patch`, `patch_from_file`, etc.):
 ```
 Allow write_file?
   Path: /path/to/file.py

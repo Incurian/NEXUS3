@@ -1,9 +1,4 @@
-"""Patch skill for applying unified diffs.
-
-This skill provides the ability to apply unified diff patches to files,
-with validation and multiple matching modes (strict, tolerant, fuzzy).
-Supports inline diffs or reading from .diff/.patch files.
-"""
+"""Patch skills for applying unified diffs."""
 
 import asyncio
 import os
@@ -39,7 +34,10 @@ _VALID_HUNK_HEADER_RE = re.compile(
 class PatchSkill(FileSkill):
     """Apply unified diffs to files with validation and multiple matching modes.
 
-    Supports inline diffs or reading from .diff/.patch files.
+    The public `patch` tool is inline-diff only. Shared execution helpers still
+    support compatibility normalization used by `patch_from_file` and the
+    single-tool runtime.
+
     Validates patches before applying and can auto-fix common LLM errors.
 
     Example usage:
@@ -54,7 +52,7 @@ class PatchSkill(FileSkill):
         \"\"\")
 
         # Apply from .diff file
-        patch(path="src/foo.py", diff_file="changes.diff")
+        patch_from_file(path="src/foo.py", diff_file="changes.diff")
 
         # Use fuzzy matching for drifted code
         patch(path="src/foo.py", diff="...", mode="fuzzy")
@@ -67,14 +65,15 @@ class PatchSkill(FileSkill):
     @property
     def description(self) -> str:
         return (
-            "Apply a unified diff to a file (strict/tolerant/fuzzy modes). "
+            "Apply an inline unified diff to one file (strict/tolerant/fuzzy modes). "
+            "Required: path and diff. "
             "Use for complex multi-line changes and diff-driven refactors. "
-            "Prefer path= for the target file; target= remains a compatibility alias. "
             "Use dry_run=True to validate before applying; dry runs follow the selected "
             "strict/tolerant/fuzzy matching behavior. Use mode='fuzzy' for drifted code. "
             "Diff lines must be prefixed: ' ' context, '-' removal, '+' addition. "
-            "When path/target is provided, single-file hunk-only diffs "
-            "(`@@ ... @@` without `---`/`+++`) are normalized automatically."
+            "When path is provided, single-file hunk-only diffs "
+            "(`@@ ... @@` without `---`/`+++`) are normalized automatically. "
+            "For diff files on disk use patch_from_file."
         )
 
     @property
@@ -84,32 +83,14 @@ class PatchSkill(FileSkill):
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": (
-                        "Target file to patch (preferred). "
-                        "Use this for consistency with other file-editing tools."
-                    ),
-                },
-                "target": {
-                    "type": "string",
-                    "description": (
-                        "Compatibility alias for path. "
-                        "Prefer 'path' for new tool calls."
-                    ),
+                    "description": "Target file to patch",
                 },
                 "diff": {
                     "type": "string",
                     "description": (
                         "Unified diff content (inline). "
-                        "Use either diff or diff_file, not both. "
-                        "When path/target is provided, single-file hunk-only diffs "
+                        "When path is provided, single-file hunk-only diffs "
                         "without file headers are normalized automatically."
-                    ),
-                },
-                "diff_file": {
-                    "type": "string",
-                    "description": (
-                        "Path to .diff/.patch file to read. "
-                        "Use either diff or diff_file, not both."
                     ),
                 },
                 "mode": {
@@ -148,11 +129,7 @@ class PatchSkill(FileSkill):
                     ),
                 },
             },
-            "description": (
-                "Provide exactly one file selector via 'path' (preferred) or "
-                "'target' (compatibility alias). Runtime validation rejects "
-                "missing selectors or conflicting values."
-            ),
+            "required": ["path", "diff"],
             "additionalProperties": False,
         }
 
@@ -731,5 +708,101 @@ class PatchSkill(FileSkill):
         return normalized or target_path.name
 
 
+class PatchFromFileSkill(PatchSkill):
+    """Load a diff file from disk and apply it to one target file."""
+
+    @property
+    def name(self) -> str:
+        return "patch_from_file"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Apply a unified diff from a UTF-8 .diff/.patch file to one file "
+            "(strict/tolerant/fuzzy modes). Required: path and diff_file. "
+            "Use dry_run=True to validate before applying; dry runs follow the "
+            "selected strict/tolerant/fuzzy matching behavior."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Target file to patch",
+                },
+                "diff_file": {
+                    "type": "string",
+                    "description": "Path to a UTF-8 .diff/.patch file to read",
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["strict", "tolerant", "fuzzy"],
+                    "default": "strict",
+                    "description": (
+                        "Matching strictness: "
+                        "strict=exact, tolerant=ignore whitespace, "
+                        "fuzzy=similarity-based"
+                    ),
+                },
+                "fidelity_mode": {
+                    "type": "string",
+                    "enum": ["legacy", "byte_strict"],
+                    "default": "byte_strict",
+                    "description": (
+                        "Patch fidelity engine: "
+                        "byte_strict=AST-v2 parser with byte-fidelity apply path (default). "
+                        "legacy is retired and rejected."
+                    ),
+                },
+                "fuzzy_threshold": {
+                    "type": "number",
+                    "minimum": 0.5,
+                    "maximum": 1.0,
+                    "default": 0.8,
+                    "description": "Similarity threshold for fuzzy mode (0.5-1.0)",
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": (
+                        "Validate and report without applying changes. "
+                        "Dry runs use the selected strict/tolerant/fuzzy matching mode."
+                    ),
+                },
+            },
+            "required": ["path", "diff_file"],
+            "additionalProperties": False,
+        }
+
+    async def execute(
+        self,
+        path: str = "",
+        target: str = "",
+        diff: str | None = None,
+        diff_file: str | None = None,
+        mode: str = "strict",
+        fidelity_mode: str = "byte_strict",
+        fuzzy_threshold: float = 0.8,
+        dry_run: bool = False,
+        **kwargs: Any,
+    ) -> ToolResult:
+        """Apply a unified diff loaded from disk."""
+        return await super().execute(
+            path=path,
+            target=target,
+            diff=diff,
+            diff_file=diff_file,
+            mode=mode,
+            fidelity_mode=fidelity_mode,
+            fuzzy_threshold=fuzzy_threshold,
+            dry_run=dry_run,
+            **kwargs,
+        )
+
+
 # Factory for dependency injection
 patch_factory = file_skill_factory(PatchSkill)
+patch_from_file_factory = file_skill_factory(PatchFromFileSkill)

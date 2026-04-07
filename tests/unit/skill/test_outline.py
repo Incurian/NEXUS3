@@ -22,6 +22,7 @@ from nexus3.skill.builtin.outline import (
     _get_diff_ranges,
     _get_preview,
     _read_file_lines,
+    _resolve_parser_override,
     outline_factory,
     parse_c_cpp,
     parse_css,
@@ -1289,6 +1290,14 @@ class TestGetDiffFiles:
 
 
 class TestOutlineSkill:
+    def test_public_schema_exposes_canonical_parser_only(self, skill):
+        """outline should teach only the canonical parser override in public schema."""
+        params = skill.parameters
+
+        assert "parser" in params["properties"]
+        assert "file_type" not in params["properties"]
+        assert "language" not in params["properties"]
+
     @pytest.mark.asyncio
     async def test_empty_path(self, skill):
         result = await skill.execute(path="")
@@ -1309,23 +1318,17 @@ class TestOutlineSkill:
         assert not result.success
         assert "No outline parser" in result.error
         assert "Use read_file for raw contents" in result.error
-        assert "file_type='python'" in result.error
+        assert "parser='python'" in result.error
 
-    @pytest.mark.asyncio
-    async def test_file_type_override_for_extensionless_file(self, skill, tmp_path):
-        f = tmp_path / "BUILD"
-        f.write_text("def run_task():\n    return 1\n")
-        result = await skill.execute(path=str(f), file_type="python")
-        assert result.success
-        assert "function: def run_task()" in result.output
+    def test_file_type_alias_resolves_to_parser(self):
+        parser_key, error = _resolve_parser_override("python", "", "")
+        assert error is None
+        assert parser_key == "python"
 
-    @pytest.mark.asyncio
-    async def test_language_alias_for_file_type(self, skill, tmp_path):
-        f = tmp_path / "CONFIG"
-        f.write_text('{"name": "demo"}')
-        result = await skill.execute(path=str(f), language="json")
-        assert result.success
-        assert "key: name" in result.output
+    def test_language_alias_resolves_to_parser(self):
+        parser_key, error = _resolve_parser_override("", "json", "")
+        assert error is None
+        assert parser_key == "json"
 
     @pytest.mark.asyncio
     async def test_parser_alias_for_file_type(self, skill, tmp_path):
@@ -1344,38 +1347,24 @@ class TestOutlineSkill:
         assert "unexpected" in result.error.lower()
         assert "filetype" in result.error
 
-    @pytest.mark.asyncio
-    async def test_invalid_file_type_returns_error(self, skill, tmp_path):
-        f = tmp_path / "data.txt"
-        f.write_text("hello\n")
-        result = await skill.execute(path=str(f), file_type="excel")
-        assert not result.success
-        assert "Unsupported outline file_type" in result.error
-        assert "python" in result.error
+    def test_invalid_file_type_returns_error(self):
+        parser_key, error = _resolve_parser_override("excel", "", "")
+        assert parser_key is None
+        assert error is not None
+        assert "Unsupported outline file_type" in error
+        assert "python" in error
 
-    @pytest.mark.asyncio
-    async def test_mismatched_file_type_and_language_error(self, skill, tmp_path):
-        f = tmp_path / "module.txt"
-        f.write_text("def run_task():\n    return 1\n")
-        result = await skill.execute(
-            path=str(f),
-            file_type="python",
-            language="markdown",
-        )
-        assert not result.success
-        assert "must resolve to the same parser" in result.error
+    def test_mismatched_file_type_and_language_error(self):
+        parser_key, error = _resolve_parser_override("python", "markdown", "")
+        assert parser_key is None
+        assert error is not None
+        assert "must resolve to the same parser" in error
 
-    @pytest.mark.asyncio
-    async def test_mismatched_parser_alias_error(self, skill, tmp_path):
-        f = tmp_path / "module.txt"
-        f.write_text("def run_task():\n    return 1\n")
-        result = await skill.execute(
-            path=str(f),
-            file_type="python",
-            parser="markdown",
-        )
-        assert not result.success
-        assert "must resolve to the same parser" in result.error
+    def test_mismatched_parser_alias_error(self):
+        parser_key, error = _resolve_parser_override("python", "", "markdown")
+        assert parser_key is None
+        assert error is not None
+        assert "must resolve to the same parser" in error
 
     @pytest.mark.asyncio
     async def test_python_file(self, skill, tmp_path):
@@ -1568,7 +1557,7 @@ class TestOutlineSkill:
 
     @pytest.mark.asyncio
     async def test_directory_rejects_file_type_override(self, skill, tmp_path):
-        result = await skill.execute(path=str(tmp_path), file_type="python")
+        result = await skill.execute(path=str(tmp_path), parser="python")
         assert not result.success
         assert "only supported for files" in result.error
 

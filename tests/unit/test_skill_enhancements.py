@@ -14,7 +14,11 @@ from nexus3.core.external_tools import ExternalToolResolution
 from nexus3.skill.builtin import grep as grep_module
 from nexus3.skill.builtin.glob_search import GlobSkill, glob_factory
 from nexus3.skill.builtin.grep import SearchTextSkill, search_text_factory
-from nexus3.skill.builtin.read_file import ReadFileSkill, read_file_factory
+from nexus3.skill.builtin.read_file import (
+    ReadFileSkill,
+    _resolve_line_window,
+    read_file_factory,
+)
 from nexus3.skill.services import ServiceContainer
 
 
@@ -72,6 +76,15 @@ class TestReadFileOffsetLimit:
         file.write_text(content)
         return file
 
+    def test_public_schema_exposes_canonical_window_only(self, skill: ReadFileSkill) -> None:
+        """read_file should teach only offset/limit in the public schema."""
+        params = skill.parameters
+
+        assert "offset" in params["properties"]
+        assert "limit" in params["properties"]
+        assert "start_line" not in params["properties"]
+        assert "end_line" not in params["properties"]
+
     @pytest.mark.asyncio
     async def test_default_reads_entire_file(self, skill: ReadFileSkill, test_file: Path) -> None:
         """Default behavior reads entire file with line numbers (P2.5 streaming)."""
@@ -112,80 +125,28 @@ class TestReadFileOffsetLimit:
         assert "2: Line 2" not in result.output
         assert "5: Line 5" not in result.output
 
-    @pytest.mark.asyncio
-    async def test_start_line_end_line_aliases(
-        self,
-        skill: ReadFileSkill,
-        test_file: Path,
-    ) -> None:
-        """start_line/end_line aliases map to the same read window."""
-        result = await skill.execute(path=str(test_file), start_line=3, end_line=4)
+    def test_line_window_aliases_resolve_to_canonical_offset_limit(self) -> None:
+        """Compatibility aliases should normalize to the canonical read window."""
+        assert _resolve_line_window(None, None, 3, 4) == (3, 2)
 
-        assert not result.error
-        assert "3: Line 3" in result.output
-        assert "4: Line 4" in result.output
-        assert "2: Line 2" not in result.output
-        assert "5: Line 5" not in result.output
+    def test_matching_alias_and_canonical_windows_are_accepted(self) -> None:
+        """Mixed canonical and alias params are valid when they describe one window."""
+        assert _resolve_line_window(3, 2, 3, 4) == (3, 2)
 
-    @pytest.mark.asyncio
-    async def test_alias_and_canonical_params_can_match(
-        self,
-        skill: ReadFileSkill,
-        test_file: Path,
-    ) -> None:
-        """Mixed canonical and alias params are accepted when they describe the same window."""
-        result = await skill.execute(
-            path=str(test_file),
-            offset=3,
-            start_line=3,
-            limit=2,
-            end_line=4,
-        )
-
-        assert not result.error
-        assert "3: Line 3" in result.output
-        assert "4: Line 4" in result.output
-
-    @pytest.mark.asyncio
-    async def test_conflicting_offset_and_start_line_rejected(
-        self,
-        skill: ReadFileSkill,
-        test_file: Path,
-    ) -> None:
+    def test_conflicting_offset_and_start_line_rejected(self) -> None:
         """Mixed canonical/alias params fail closed when they disagree on the start."""
-        result = await skill.execute(path=str(test_file), offset=2, start_line=3)
+        with pytest.raises(ValueError, match="offset and start_line"):
+            _resolve_line_window(2, None, 3, None)
 
-        assert result.error is not None
-        assert "offset and start_line" in result.error
-
-    @pytest.mark.asyncio
-    async def test_conflicting_limit_and_end_line_rejected(
-        self,
-        skill: ReadFileSkill,
-        test_file: Path,
-    ) -> None:
+    def test_conflicting_limit_and_end_line_rejected(self) -> None:
         """Mixed canonical/alias params fail closed when they disagree on the range."""
-        result = await skill.execute(
-            path=str(test_file),
-            offset=3,
-            limit=2,
-            end_line=5,
-        )
+        with pytest.raises(ValueError, match="limit and end_line"):
+            _resolve_line_window(3, 2, None, 5)
 
-        assert result.error is not None
-        assert "limit and end_line" in result.error
-
-    @pytest.mark.asyncio
-    async def test_end_line_before_start_line_rejected(
-        self,
-        skill: ReadFileSkill,
-        test_file: Path,
-    ) -> None:
+    def test_end_line_before_start_line_rejected(self) -> None:
         """end_line must not precede the effective start line."""
-        result = await skill.execute(path=str(test_file), start_line=4, end_line=3)
-
-        assert result.error is not None
-        assert "end_line" in result.error
+        with pytest.raises(ValueError, match="end_line"):
+            _resolve_line_window(None, None, 4, 3)
 
     @pytest.mark.asyncio
     async def test_offset_beyond_file_returns_empty(

@@ -331,7 +331,23 @@ async def cmd_status(
             if not tool_perm.enabled:
                 disabled_tools.append(tool_name)
             # Check write tools for per-tool allowed_paths
-            if tool_name in ("write_file", "edit_file") and tool_perm.allowed_paths:
+            if (
+                tool_name in (
+                    "write_file",
+                    "edit_file",
+                    "edit_file_batch",
+                    "edit_lines",
+                    "edit_lines_batch",
+                    "append_file",
+                    "regex_replace",
+                    "patch",
+                    "patch_from_file",
+                    "copy_file",
+                    "rename",
+                    "mkdir",
+                )
+                and tool_perm.allowed_paths
+            ):
                 for p in tool_perm.allowed_paths:
                     p_str = str(p)
                     if p_str not in write_paths:

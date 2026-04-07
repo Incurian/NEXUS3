@@ -176,7 +176,9 @@ async def confirm_tool_action(
     This callback is invoked by Session when a tool requires user confirmation
     (based on permission level). It shows different options based on tool type:
 
-    For write operations (write_file, edit_file):
+    For file/path write operations (`write_file`, `edit_file`, `edit_file_batch`,
+    `edit_lines`, `edit_lines_batch`, `append_file`, `regex_replace`, `patch`,
+    `patch_from_file`, etc.):
         [1] Allow once
         [2] Allow always for this file
         [3] Allow always in this directory
@@ -334,6 +336,29 @@ async def confirm_tool_action(
                 sink.print_untrusted(new, end="")
                 sink.print_trusted('"')
                 lines_printed += 1
+            elif tool_name == "edit_file_batch" and "edits" in tool_call.arguments:
+                raw_edits = tool_call.arguments.get("edits")
+                if isinstance(raw_edits, list):
+                    sink.print_trusted("  [dim]Edits:[/] ", end="")
+                    sink.print_untrusted(f"{len(raw_edits)} atomic literal replacement(s)")
+                    lines_printed += 1
+                    if raw_edits:
+                        first = raw_edits[0]
+                        if isinstance(first, dict):
+                            old = str(first.get("old_string", ""))[:60].replace("\n", "\\n")
+                            new = str(first.get("new_string", ""))[:60].replace("\n", "\\n")
+                            sink.print_trusted('  [dim]First:[/] "', end="")
+                            sink.print_untrusted(old, end="")
+                            sink.print_trusted('" -> "', end="")
+                            sink.print_untrusted(new, end="")
+                            sink.print_trusted('"')
+                            lines_printed += 1
+            elif tool_name == "edit_lines_batch" and "edits" in tool_call.arguments:
+                raw_edits = tool_call.arguments.get("edits")
+                if isinstance(raw_edits, list):
+                    sink.print_trusted("  [dim]Edits:[/] ", end="")
+                    sink.print_untrusted(f"{len(raw_edits)} atomic line-range replacement(s)")
+                    lines_printed += 1
 
         # Show options based on tool type
         console.print()

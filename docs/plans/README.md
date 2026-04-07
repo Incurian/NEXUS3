@@ -89,6 +89,11 @@ This index covers the architecture plans created during today's review/planning 
 
 - [PATCH-TOOL-ROBUSTNESS-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/PATCH-TOOL-ROBUSTNESS-PLAN-2026-04-07.md)
 
+## Edit Tool Ergonomics Plan (2026-04-07)
+
+- [EDIT-FILE-SYNTAX-SIMPLIFICATION-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/EDIT-FILE-SYNTAX-SIMPLIFICATION-PLAN-2026-04-07.md)
+- [TOOL-SURFACE-AUDIT-AND-SIMPLIFICATION-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/TOOL-SURFACE-AUDIT-AND-SIMPLIFICATION-PLAN-2026-04-07.md)
+
 ## Process Tool Plans (2026-03-11)
 
 - [PROCESS-INSPECTION-AND-KILL-TOOLS-PLAN-2026-03-11.md](/home/inc/repos/NEXUS3/docs/plans/PROCESS-INSPECTION-AND-KILL-TOOLS-PLAN-2026-03-11.md)

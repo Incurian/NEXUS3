@@ -35,8 +35,8 @@ class RegexReplaceSkill(FileSkill):
     best-effort local wait window.
     Supports backreferences in replacement strings (\\1, \\2, \\g<name>).
 
-    This is separate from edit_file to keep APIs clean:
-    - edit_file: Exact string replacement (simple, fast)
+    This is separate from the exact-string edit tools to keep APIs clean:
+    - edit_file / edit_file_batch: Exact string replacement (simple, fast)
     - regex_replace: Pattern matching (powerful, needs safety guards)
 
     Inherits path validation from FileSkill.
@@ -53,7 +53,7 @@ class RegexReplaceSkill(FileSkill):
             "Use for pattern-driven edits and broad renames where exact string "
             "replacement is insufficient. "
             "IMPORTANT: Use specific patterns to avoid unintended matches; "
-            "use edit_file for simple literal replacements."
+            "use edit_file or edit_file_batch for literal replacements."
         )
 
     @property

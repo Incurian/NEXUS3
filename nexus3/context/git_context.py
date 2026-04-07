@@ -21,12 +21,15 @@ _GIT_REFRESH_TOOLS = frozenset({
     "run_python",    # Could run git via subprocess
     "write_file",    # Changes working tree
     "edit_file",     # Changes working tree
+    "edit_file_batch",  # Changes working tree
     "edit_lines",    # Changes working tree
+    "edit_lines_batch",  # Changes working tree
     "append_file",   # Changes working tree
     "rename",        # Changes working tree
     "copy_file",     # Changes working tree
     "regex_replace", # Changes working tree
     "patch",         # Changes working tree
+    "patch_from_file",  # Changes working tree
     "mkdir",         # Changes working tree
 })
 

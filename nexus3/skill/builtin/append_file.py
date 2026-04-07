@@ -63,7 +63,9 @@ class AppendFileSkill(FileSkill):
         return (
             "Append content to the end of a file. "
             "Use for adding new trailing content (logs/changelog entries, footer blocks). "
-            "IMPORTANT: Do not use for in-place edits; use edit_file/edit_lines/patch instead."
+            "IMPORTANT: Do not use for in-place edits; use edit_file, "
+            "edit_file_batch, edit_lines, edit_lines_batch, patch, or "
+            "patch_from_file instead."
         )
 
     @property

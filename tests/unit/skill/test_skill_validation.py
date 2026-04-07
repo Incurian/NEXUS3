@@ -104,6 +104,21 @@ class TestValidationUniformity:
                 ),
             ),
             (
+                "edit_file_batch",
+                lambda tmp_path: (
+                    _create_file(tmp_path / "edit-batch.txt", "alpha\nbeta\n")
+                    or {
+                        "path": str(tmp_path / "edit-batch.txt"),
+                        "edits": [
+                            {
+                                "old_string": "alpha",
+                                "new_string": "ALPHA",
+                            }
+                        ],
+                    }
+                ),
+            ),
+            (
                 "edit_lines",
                 lambda tmp_path: (
                     _create_file(tmp_path / "lines.txt", "one\ntwo\nthree\n")
@@ -111,6 +126,21 @@ class TestValidationUniformity:
                         "path": str(tmp_path / "lines.txt"),
                         "start_line": 2,
                         "new_content": "TWO\n",
+                    }
+                ),
+            ),
+            (
+                "edit_lines_batch",
+                lambda tmp_path: (
+                    _create_file(tmp_path / "lines-batch.txt", "one\ntwo\nthree\n")
+                    or {
+                        "path": str(tmp_path / "lines-batch.txt"),
+                        "edits": [
+                            {
+                                "start_line": 2,
+                                "new_content": "TWO\n",
+                            }
+                        ],
                     }
                 ),
             ),
@@ -139,6 +169,20 @@ class TestValidationUniformity:
                     or {
                         "path": str(tmp_path / "patch.txt"),
                         "diff": ("--- a/patch.txt\n+++ b/patch.txt\n@@ -1 +1 @@\n-old\n+new\n"),
+                    }
+                ),
+            ),
+            (
+                "patch_from_file",
+                lambda tmp_path: (
+                    _create_file(tmp_path / "patch-file.txt", "old\n")
+                    or _create_file(
+                        tmp_path / "patch-file.diff",
+                        "--- a/patch-file.txt\n+++ b/patch-file.txt\n@@ -1 +1 @@\n-old\n+new\n",
+                    )
+                    or {
+                        "path": str(tmp_path / "patch-file.txt"),
+                        "diff_file": str(tmp_path / "patch-file.diff"),
                     }
                 ),
             ),
@@ -247,11 +291,11 @@ class TestValidationUniformity:
         )
 
     @pytest.mark.asyncio
-    async def test_edit_file_rejects_unknown_batch_item_fields(
+    async def test_edit_file_batch_rejects_unknown_batch_item_fields(
         self, registry_with_skills, tmp_path
     ):
-        """edit_file should reject unexpected keys inside batch edit items."""
-        edit_skill = registry_with_skills.get("edit_file")
+        """edit_file_batch should reject unexpected keys inside batch edit items."""
+        edit_skill = registry_with_skills.get("edit_file_batch")
         test_file = tmp_path / "edit-batch.txt"
         test_file.write_text("alpha\nbeta\n")
 
@@ -273,11 +317,11 @@ class TestValidationUniformity:
         )
 
     @pytest.mark.asyncio
-    async def test_edit_lines_rejects_unknown_batch_item_fields(
+    async def test_edit_lines_batch_rejects_unknown_batch_item_fields(
         self, registry_with_skills, tmp_path
     ):
-        """edit_lines should reject unexpected keys inside batch edit items."""
-        edit_skill = registry_with_skills.get("edit_lines")
+        """edit_lines_batch should reject unexpected keys inside batch edit items."""
+        edit_skill = registry_with_skills.get("edit_lines_batch")
         test_file = tmp_path / "lines-batch.txt"
         test_file.write_text("one\ntwo\nthree\n")
 

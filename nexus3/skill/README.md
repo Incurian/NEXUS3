@@ -58,7 +58,7 @@ nexus3/skill/
 │   ├── env.py            # Environment sanitization helpers
 │   ├── read_file.py      # File reading skill
 │   ├── write_file.py     # File writing skill
-│   ├── edit_file.py      # String replacement editing (single or batched, line ending preservation)
+│   ├── edit_file.py      # Exact string replacement skills (single + batch, line ending preservation)
 │   ├── edit_lines.py     # Line-based editing skill (line ending preservation)
 │   ├── append_file.py    # File appending skill (line ending preservation)
 │   ├── tail.py           # Read last N lines
@@ -631,20 +631,20 @@ definitions = registry.get_definitions_for_permissions(agent_permissions)
 
 ## Built-in Skills
 
-NEXUS3 includes 43 core built-in skills plus 21 GitLab skills (when configured), organized by category:
+NEXUS3 includes 46 core built-in skills plus 21 GitLab skills (when configured), organized by category:
 
 ### File Operations (Read-Only)
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `read_file` | Read UTF-8 file contents with streaming/size limits | `path`, `offset?`, `limit?`, `start_line?`, `end_line?`, `line_numbers?` |
+| `read_file` | Read UTF-8 file contents with streaming/size limits | `path`, `offset?`, `limit?`, `line_numbers?` |
 | `tail` | Read last N lines efficiently | `path`, `lines?` (default: 10) |
 | `file_info` | Get file/directory metadata (Unix perms or Windows RHSA) | `path` |
 | `list_directory` | List directory contents | `path?`, `all?`, `long?` |
 | `glob` | Find files or directories by glob pattern; `recursive=true` searches nested paths, `kind` filters files/directories, and `exclude` uses relative-path glob rules | `pattern`, `path?`, `max_results?`, `recursive?`, `kind?`, `exclude?` |
 | `search_text` | Search UTF-8 file contents (regex); unrestricted directory scans use ripgrep when configured/available, and directory scans skip invalid UTF-8 files | `pattern`, `path`, `recursive?`, `ignore_case?`, `max_matches?`, `include?`, `context?` |
 | `concat_files` | Find and concatenate UTF-8 files by extension with token estimation (`dry_run=true` by default; real writes generate an output file and skip invalid UTF-8 inputs) | `extensions`, `path?`, `exclude?`, `lines?`, `max_total?`, `format?`, `sort?`, `gitignore?`, `dry_run?` |
-| `outline` | Structural outline of UTF-8 file/directory (headings, classes, functions, keys; non-recursive for directories, markdown ignores fenced code blocks, `symbol` returns source excerpt) | `path`, `file_type?`, `language?`, `parser?`, `depth?`, `preview?`, `signatures?`, `line_numbers?`, `tokens?`, `symbol?`, `diff?`, `recursive?` |
+| `outline` | Structural outline of UTF-8 file/directory (headings, classes, functions, keys; non-recursive for directories, markdown ignores fenced code blocks, `symbol` returns source excerpt) | `path`, `parser?`, `depth?`, `preview?`, `signatures?`, `line_numbers?`, `tokens?`, `symbol?`, `diff?`, `recursive?` |
 
 Fixed-schema read/search/listing tools fail closed on unexpected extra
 top-level arguments.
@@ -660,18 +660,22 @@ composition or exact external CLI semantics are required.
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
 | `write_file` | Write/create UTF-8 text file (atomic write, exact newline bytes) | `path`, `content` |
-| `edit_file` | UTF-8 exact string replacement, single or batched; batch edits fail closed if earlier edits invalidate later targets (preserves line endings) | `path`, `old_string`, `new_string`, `edits?`, `replace_all?` |
-| `edit_lines` | UTF-8 line-based replacement, single or batched (preserves line endings and EOF newline state; batch mode uses original line numbers and rejects overlaps) | `path`, `start_line`, `end_line?`, `new_content`, `edits?` |
+| `edit_file` | UTF-8 exact string replacement for one literal edit (preserves line endings) | `path`, `old_string`, `new_string`, `replace_all?` |
+| `edit_file_batch` | UTF-8 exact string replacement for atomic multi-edit batches; later edits must still match after earlier edits (preserves line endings) | `path`, `edits` |
+| `edit_lines` | UTF-8 line-based replacement for one explicit range (preserves line endings and EOF newline state) | `path`, `start_line`, `end_line?`, `new_content` |
+| `edit_lines_batch` | UTF-8 atomic multi-range line replacement using original-file line numbers (preserves line endings and EOF newline state; rejects overlaps) | `path`, `edits` |
 | `append_file` | Append UTF-8 text with true append mode (exact newline bytes) | `path`, `content`, `newline?` |
 | `regex_replace` | UTF-8 pattern-based replace (`count >= 0`, preserves line endings) | `path`, `pattern`, `replacement`, `count?`, `ignore_case?`, `multiline?`, `dotall?` |
-| `patch` | Apply unified diffs with validation (canonical `path`, exact-path matching, ambiguity fail-closed, hunk-only single-file diffs auto-normalized, dry-run follows the selected matching mode, and malformed non-empty hunk lines fail with targeted guidance; `target` remains a compatibility alias, and `diff_file` must be UTF-8 text) | `path`, `diff?`, `diff_file?`, `mode?`, `fidelity_mode? (byte_strict only; legacy rejected)`, `fuzzy_threshold?`, `dry_run?` |
+| `patch` | Apply inline unified diffs with validation (exact-path matching, ambiguity fail-closed, hunk-only single-file diffs auto-normalized, dry-run follows the selected matching mode, and malformed non-empty hunk lines fail with targeted guidance) | `path`, `diff`, `mode?`, `fidelity_mode? (byte_strict only; legacy rejected)`, `fuzzy_threshold?`, `dry_run?` |
+| `patch_from_file` | Apply a unified diff loaded from a UTF-8 `.diff` / `.patch` file with the same validation and matching controls as `patch` | `path`, `diff_file`, `mode?`, `fidelity_mode? (byte_strict only; legacy rejected)`, `fuzzy_threshold?`, `dry_run?` |
 | `copy_file` | Copy file with metadata | `source`, `destination`, `overwrite?` |
 | `mkdir` | Create directory (and parents) | `path` |
 | `rename` | Rename/move file or directory | `source`, `destination`, `overwrite?` |
 
 File-edit contract rule: unexpected extra arguments fail closed instead of
 being silently dropped. Use only documented top-level parameters and documented
-batch item fields.
+batch item fields. Public docs teach only canonical tool shapes; compatibility
+aliases are normalized at runtime and intentionally omitted from this table.
 
 ### Host Processes
 
@@ -789,7 +793,7 @@ from nexus3.skill.builtin.registration import register_builtin_skills
 from nexus3.skill.vcs import register_vcs_skills
 
 registry = SkillRegistry(services)
-register_builtin_skills(registry)  # Registers 43 core skills
+register_builtin_skills(registry)  # Registers 46 core skills
 
 # VCS skills are registered separately (requires config + TRUSTED+ permissions)
 count = register_vcs_skills(registry, services, permissions)  # Up to 21 GitLab skills
@@ -1103,7 +1107,7 @@ async def main():
 
     # Create registry and register skills
     registry = SkillRegistry(services)
-    register_builtin_skills(registry)  # 43 core skills
+    register_builtin_skills(registry)  # 46 core skills
 
     # Register VCS skills if configured (requires gitlab_config in services)
     # vcs_count = register_vcs_skills(registry, services, permissions)

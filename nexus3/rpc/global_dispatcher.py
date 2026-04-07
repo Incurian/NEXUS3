@@ -395,10 +395,13 @@ class GlobalDispatcher:
         WRITE_FILE_TOOLS = (
             "write_file",
             "edit_file",
+            "edit_file_batch",
             "edit_lines",
+            "edit_lines_batch",
             "append_file",
             "regex_replace",
             "patch",
+            "patch_from_file",
             "mkdir",
         )
         MIXED_FILE_TOOLS = ("copy_file", "rename")  # Read source, write destination

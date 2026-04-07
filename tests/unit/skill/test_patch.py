@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from nexus3.skill.builtin.patch import patch_factory
+from nexus3.skill.builtin.patch import patch_factory, patch_from_file_factory
 from nexus3.skill.services import ServiceContainer
 
 _FIXTURE_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "arch_baseline"
@@ -24,6 +24,11 @@ class TestPatchSkill:
     def skill(self, services):
         """Create patch skill instance."""
         return patch_factory(services)
+
+    @pytest.fixture
+    def diff_file_skill(self, services):
+        """Create patch_from_file skill instance."""
+        return patch_from_file_factory(services)
 
     @pytest.fixture
     def test_file(self, tmp_path):
@@ -48,11 +53,23 @@ class TestInlineDiff(TestPatchSkill):
 
         assert params["type"] == "object"
         assert "path" in params["properties"]
-        assert "target" in params["properties"]
+        assert "diff" in params["properties"]
+        assert "target" not in params["properties"]
+        assert "diff_file" not in params["properties"]
         assert "anyOf" not in params
         assert "oneOf" not in params
         assert "allOf" not in params
         assert "not" not in params
+
+    def test_patch_from_file_schema_is_single_purpose(self, diff_file_skill):
+        """patch_from_file should expose only the diff-file shape."""
+        params = diff_file_skill.parameters
+
+        assert params["required"] == ["path", "diff_file"]
+        assert "path" in params["properties"]
+        assert "diff_file" in params["properties"]
+        assert "diff" not in params["properties"]
+        assert "target" not in params["properties"]
 
     @pytest.mark.asyncio
     async def test_patch_inline_diff(self, skill, test_file):
@@ -76,10 +93,7 @@ class TestInlineDiff(TestPatchSkill):
             " \n"  # blank line needs space prefix
             " def main():\n"
         )
-        result = await skill.execute(
-            target=str(test_file),
-            diff=diff,
-        )
+        result = await skill.execute(path=str(test_file), diff=diff)
 
         assert result.success
         assert "1 hunk(s) applied" in result.output
@@ -100,7 +114,7 @@ class TestInlineDiff(TestPatchSkill):
 -line2
  line3
 """
-        result = await skill.execute(target=str(test_file), diff=diff)
+        result = await skill.execute(path=str(test_file), diff=diff)
 
         assert result.success
         content = test_file.read_text()
@@ -125,8 +139,8 @@ class TestInlineDiff(TestPatchSkill):
         assert test_file.read_text() == "new content\n"
 
     @pytest.mark.asyncio
-    async def test_patch_target_alias_reports_prefer_path_note(self, skill, tmp_path):
-        """Successful target= calls should nudge callers toward path=."""
+    async def test_patch_public_schema_rejects_target_alias(self, skill, tmp_path):
+        """The public patch contract now requires path= instead of target=."""
         test_file = tmp_path / "target-alias.py"
         test_file.write_text("old content\n")
 
@@ -138,31 +152,8 @@ class TestInlineDiff(TestPatchSkill):
 """
         result = await skill.execute(target=str(test_file), diff=diff)
 
-        assert result.success
-        assert "prefer 'path='" in result.output
-        assert test_file.read_text() == "new content\n"
-
-    @pytest.mark.asyncio
-    async def test_patch_ignores_empty_placeholder_alias_and_diff_file(self, skill, tmp_path):
-        """Empty-string placeholders should be treated as omitted."""
-        test_file = tmp_path / "placeholder.py"
-        test_file.write_text("old content\n")
-
-        diff = """--- a/placeholder.py
-+++ b/placeholder.py
-@@ -1 +1 @@
--old content
-+new content
-"""
-        result = await skill.execute(
-            path=str(test_file),
-            target="",
-            diff=diff,
-            diff_file="",
-        )
-
-        assert result.success
-        assert test_file.read_text() == "new content\n"
+        assert not result.success
+        assert "path" in result.error
 
     @pytest.mark.asyncio
     async def test_patch_hunk_only_diff_is_auto_wrapped(self, skill, tmp_path):
@@ -249,7 +240,7 @@ three
             "     pass\n"
             "+    return None\n"
         )
-        result = await skill.execute(target=str(test_file), diff=diff)
+        result = await skill.execute(path=str(test_file), diff=diff)
 
         assert result.success
         assert "2 hunk(s) applied" in result.output
@@ -263,7 +254,7 @@ class TestDiffFile(TestPatchSkill):
     """Tests for loading and applying .diff file."""
 
     @pytest.mark.asyncio
-    async def test_patch_from_file(self, skill, tmp_path):
+    async def test_patch_from_file(self, diff_file_skill, tmp_path):
         """Test loading and applying .diff file."""
         test_file = tmp_path / "target.py"
         test_file.write_text("old content\n")
@@ -276,19 +267,16 @@ class TestDiffFile(TestPatchSkill):
 +new content
 """)
 
-        result = await skill.execute(
-            target=str(test_file),
-            diff_file=str(diff_file),
-        )
+        result = await diff_file_skill.execute(path=str(test_file), diff_file=str(diff_file))
 
         assert result.success
         assert test_file.read_text() == "new content\n"
 
     @pytest.mark.asyncio
-    async def test_diff_file_not_found(self, skill, test_file, tmp_path):
+    async def test_diff_file_not_found(self, diff_file_skill, test_file, tmp_path):
         """Test error when diff file doesn't exist."""
-        result = await skill.execute(
-            target=str(test_file),
+        result = await diff_file_skill.execute(
+            path=str(test_file),
             diff_file=str(tmp_path / "nonexistent.diff"),
         )
 
@@ -296,13 +284,18 @@ class TestDiffFile(TestPatchSkill):
         assert "not found" in result.error.lower()
 
     @pytest.mark.asyncio
-    async def test_diff_file_invalid_utf8_rejected(self, skill, test_file, tmp_path):
+    async def test_diff_file_invalid_utf8_rejected(
+        self,
+        diff_file_skill,
+        test_file,
+        tmp_path,
+    ):
         """Invalid UTF-8 diff files should fail closed before parsing."""
         diff_file = tmp_path / "bad.diff"
         diff_file.write_bytes(b"\xff\xfe@@ -1 +1 @@\n")
 
-        result = await skill.execute(
-            target=str(test_file),
+        result = await diff_file_skill.execute(
+            path=str(test_file),
             diff_file=str(diff_file),
         )
 
@@ -329,11 +322,7 @@ class TestDryRun(TestPatchSkill):
             " \n"  # blank line needs space prefix
             " def main():\n"
         )
-        result = await skill.execute(
-            target=str(test_file),
-            diff=diff,
-            dry_run=True,
-        )
+        result = await skill.execute(path=str(test_file), diff=diff, dry_run=True)
 
         assert result.success
         assert "Dry run" in result.output
@@ -358,7 +347,7 @@ class TestDryRun(TestPatchSkill):
  line3
 """
         result = await skill.execute(
-            target=str(test_file),
+            path=str(test_file),
             diff=diff,
             mode="fuzzy",
             fuzzy_threshold=0.8,
@@ -383,11 +372,7 @@ class TestDryRun(TestPatchSkill):
  def main():
      print("hello")
 """
-        result = await skill.execute(
-            target=str(test_file),
-            diff=diff,
-            dry_run=True,
-        )
+        result = await skill.execute(path=str(test_file), diff=diff, dry_run=True)
 
         assert not result.success
         assert "Dry run" in result.error
@@ -398,28 +383,36 @@ class TestParameterValidation(TestPatchSkill):
     """Tests for parameter validation."""
 
     @pytest.mark.asyncio
-    async def test_patch_mutual_exclusion(self, skill, test_file):
-        """Test error when both diff and diff_file provided."""
-        result = await skill.execute(
-            target=str(test_file),
+    async def test_patch_from_file_rejects_inline_diff_argument(
+        self,
+        diff_file_skill,
+        test_file,
+        tmp_path,
+    ):
+        """patch_from_file should fail closed on the inline-diff shape."""
+        diff_file = tmp_path / "some.diff"
+        diff_file.write_text("--- a/test.py\n+++ b/test.py\n")
+
+        result = await diff_file_skill.execute(
+            path=str(test_file),
             diff="some diff",
-            diff_file="some/path.diff",
+            diff_file=str(diff_file),
         )
 
         assert not result.success
-        assert "Cannot provide both" in result.error
+        assert "diff" in result.error
 
     @pytest.mark.asyncio
     async def test_patch_missing_diff(self, skill, test_file):
         """Test error when neither diff nor diff_file provided."""
-        result = await skill.execute(target=str(test_file))
+        result = await skill.execute(path=str(test_file))
 
         assert not result.success
         assert "Must provide either" in result.error or "diff" in result.error
 
     @pytest.mark.asyncio
     async def test_patch_missing_diff_with_path_alias(self, skill, test_file):
-        """Missing diff validation should work with path= too."""
+        """Missing diff validation should work with the canonical path shape."""
         result = await skill.execute(path=str(test_file))
 
         assert not result.success
@@ -429,7 +422,7 @@ class TestParameterValidation(TestPatchSkill):
     async def test_patch_target_not_found(self, skill, tmp_path):
         """Test error when target file doesn't exist."""
         result = await skill.execute(
-            target=str(tmp_path / "nonexistent.py"),
+            path=str(tmp_path / "nonexistent.py"),
             diff="""--- a/nonexistent.py
 +++ b/nonexistent.py
 @@ -1 +1 @@
@@ -452,7 +445,7 @@ class TestParameterValidation(TestPatchSkill):
 +def created():
 +    return 1
 """
-        result = await skill.execute(target=str(target_file), diff=diff)
+        result = await skill.execute(path=str(target_file), diff=diff)
 
         assert result.success
         assert target_file.read_text() == "def created():\n    return 1\n"
@@ -460,14 +453,14 @@ class TestParameterValidation(TestPatchSkill):
     @pytest.mark.asyncio
     async def test_patch_empty_target(self, skill):
         """Test error when target is empty."""
-        result = await skill.execute(target="", diff="some diff")
+        result = await skill.execute(path="", diff="some diff")
 
         assert not result.success
         assert "No path provided" in result.error
 
     @pytest.mark.asyncio
-    async def test_patch_path_and_target_mismatch_fails(self, skill, tmp_path):
-        """path and target must agree when both are provided."""
+    async def test_patch_rejects_target_alias_even_when_path_present(self, skill, tmp_path):
+        """Unexpected target should fail closed in the public patch schema."""
         first = tmp_path / "first.py"
         second = tmp_path / "second.py"
         first.write_text("old\n")
@@ -486,7 +479,7 @@ class TestParameterValidation(TestPatchSkill):
         )
 
         assert not result.success
-        assert "Cannot provide both 'path' and 'target' with different values." == result.error
+        assert "target" in result.error
 
 
 class TestFuzzyMode(TestPatchSkill):
@@ -508,7 +501,7 @@ class TestFuzzyMode(TestPatchSkill):
  line3
 """
         result = await skill.execute(
-            target=str(test_file),
+            path=str(test_file),
             diff=diff,
             mode="fuzzy",
             fuzzy_threshold=0.8,
@@ -533,7 +526,7 @@ class TestFuzzyMode(TestPatchSkill):
  line3
 """
         result = await skill.execute(
-            target=str(test_file),
+            path=str(test_file),
             diff=diff,
             mode="tolerant",
         )
@@ -564,7 +557,7 @@ class TestMultiFileDiff(TestPatchSkill):
 -old content
 +new content
 """
-        result = await skill.execute(target=str(target), diff=diff)
+        result = await skill.execute(path=str(target), diff=diff)
 
         assert result.success
         assert "2 files" in result.output
@@ -589,7 +582,7 @@ class TestMultiFileDiff(TestPatchSkill):
 -shared old
 +exact match
 """
-        result = await skill.execute(target=str(target), diff=diff)
+        result = await skill.execute(path=str(target), diff=diff)
 
         assert result.success
         assert target.read_text() == "exact match\n"
@@ -612,7 +605,7 @@ class TestMultiFileDiff(TestPatchSkill):
 -shared old
 +pkg b update
 """
-        result = await skill.execute(target=str(target), diff=diff)
+        result = await skill.execute(path=str(target), diff=diff)
 
         assert not result.success
         assert "ambig" in result.error.lower()
@@ -631,7 +624,7 @@ class TestMultiFileDiff(TestPatchSkill):
 -old
 +new
 """
-        result = await skill.execute(target=str(target), diff=diff)
+        result = await skill.execute(path=str(target), diff=diff)
 
         assert not result.success
         assert "No hunks found for target file" in result.error
@@ -654,7 +647,7 @@ class TestLineEndingPreservation(TestPatchSkill):
 +new line
  line2
 """
-        result = await skill.execute(target=str(test_file), diff=diff)
+        result = await skill.execute(path=str(test_file), diff=diff)
 
         assert result.success
         content = test_file.read_bytes()
@@ -675,7 +668,7 @@ class TestLineEndingPreservation(TestPatchSkill):
 +new line
  line2
 """
-        result = await skill.execute(target=str(test_file), diff=diff)
+        result = await skill.execute(path=str(test_file), diff=diff)
 
         assert result.success
         content = test_file.read_bytes()
@@ -699,7 +692,7 @@ class TestFidelityModeMigration(TestPatchSkill):
         )
 
         result = await skill.execute(
-            target=str(target_file),
+            path=str(target_file),
             diff=diff_content,
             fidelity_mode="byte_strict",
         )
@@ -718,7 +711,7 @@ class TestFidelityModeMigration(TestPatchSkill):
         )
 
         result = await skill.execute(
-            target=str(target_file),
+            path=str(target_file),
             diff=diff_content,
             fidelity_mode="not_a_mode",
         )
@@ -736,7 +729,7 @@ class TestFidelityModeMigration(TestPatchSkill):
             encoding="utf-8"
         )
 
-        await skill.execute(target=str(target_file), diff=diff_content)
+        await skill.execute(path=str(target_file), diff=diff_content)
 
         assert target_file.read_bytes() == b"alpha\r\nBETA\ngamma\r\n"
 
@@ -750,7 +743,7 @@ class TestFidelityModeMigration(TestPatchSkill):
         )
 
         result = await skill.execute(
-            target=str(target_file),
+            path=str(target_file),
             diff=diff_content,
             fidelity_mode="legacy",
         )
@@ -777,7 +770,7 @@ class TestPatchValidation(TestPatchSkill):
 +new line
 """
         result = await skill.execute(
-            target=str(test_file),
+            path=str(test_file),
             diff=diff,
             mode="strict",
         )
@@ -789,7 +782,7 @@ class TestPatchValidation(TestPatchSkill):
     async def test_empty_diff_content(self, skill, test_file):
         """Test error when diff content has no hunks."""
         result = await skill.execute(
-            target=str(test_file),
+            path=str(test_file),
             diff="not a valid diff",
         )
 
@@ -833,7 +826,7 @@ class TestEdgeCases(TestPatchSkill):
 -old
 +new
 """
-        result = await skill.execute(target=str(test_file), diff=diff)
+        result = await skill.execute(path=str(test_file), diff=diff)
 
         assert result.success
         assert test_file.read_text() == "new\n"
@@ -852,7 +845,7 @@ class TestEdgeCases(TestPatchSkill):
 +line3
 +line4
 """
-        result = await skill.execute(target=str(test_file), diff=diff)
+        result = await skill.execute(path=str(test_file), diff=diff)
 
         assert result.success
         content = test_file.read_text()
@@ -873,7 +866,7 @@ index abc123..def456 100644
 -old
 +new
 """
-        result = await skill.execute(target=str(test_file), diff=diff)
+        result = await skill.execute(path=str(test_file), diff=diff)
 
         assert result.success
         assert test_file.read_text() == "new\n"

@@ -128,7 +128,10 @@ class ReadFileSkill(FileSkill):
 
     @property
     def description(self) -> str:
-        return "Read the contents of a file"
+        return (
+            "Read UTF-8 file contents with optional offset/limit paging. "
+            "Use offset and limit as the canonical line-window parameters."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -144,25 +147,9 @@ class ReadFileSkill(FileSkill):
                     "description": "Line number to start reading from (1-indexed, default: 1)",
                     "minimum": 1,
                 },
-                "start_line": {
-                    "type": "integer",
-                    "description": (
-                        "Compatibility alias for offset. First line to read "
-                        "(1-indexed, default: 1)."
-                    ),
-                    "minimum": 1,
-                },
                 "limit": {
                     "type": "integer",
                     "description": "Maximum number of lines to read (default: 10000)"
-                },
-                "end_line": {
-                    "type": "integer",
-                    "description": (
-                        "Compatibility alias for offset+limit. Last line to read "
-                        "(inclusive)."
-                    ),
-                    "minimum": 1,
                 },
                 "line_numbers": {
                     "type": "boolean",

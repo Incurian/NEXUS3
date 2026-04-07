@@ -1495,8 +1495,7 @@ class OutlineSkill(FileSkill):
             "Use line numbers in output to target read_file for details. "
             "Pass a directory to get a non-recursive per-file top-level map. "
             "Use symbol='ClassName' to read a specific symbol's body. "
-            "Use file_type='python' or parser='python' when extension detection "
-            "is unavailable. "
+            "Use parser='python' when extension detection is unavailable. "
             "Use tokens=true for token estimates, diff=true for change markers."
         )
 
@@ -1509,27 +1508,12 @@ class OutlineSkill(FileSkill):
                     "type": "string",
                     "description": "Path to the file or directory to outline",
                 },
-                "file_type": {
+                "parser": {
                     "type": "string",
                     "description": (
                         "Optional parser override for files when extension detection "
                         "is unavailable (for example: python, markdown, json). "
                         "Not used for directories."
-                    ),
-                },
-                "language": {
-                    "type": "string",
-                    "description": (
-                        "Compatibility alias for file_type. If both are provided, "
-                        "they must resolve to the same parser."
-                    ),
-                },
-                "parser": {
-                    "type": "string",
-                    "description": (
-                        "Compatibility alias for file_type/language. If multiple "
-                        "parser hints are provided, they must resolve to the same "
-                        "parser."
                     ),
                 },
                 "depth": {
@@ -1652,7 +1636,7 @@ class OutlineSkill(FileSkill):
                 if file_type or language or parser:
                     return ToolResult(
                         error=(
-                            "outline(file_type=...) is only supported for files. "
+                            "outline(parser=...) is only supported for files. "
                             "Directory mode auto-detects per-file parsers."
                         )
                     )
@@ -1687,14 +1671,14 @@ class OutlineSkill(FileSkill):
                 return ToolResult(
                     error=(
                         f"No outline parser for file type: {p.suffix or p.name}\n"
-                        "Use read_file for raw contents, or pass file_type='python', "
-                        "language='python', or parser='python' to force a parse.\n"
+                        "Use read_file for raw contents, or pass parser='python' "
+                        "to force a parse.\n"
                         f"Supported values: {', '.join(_supported_parser_keys())}"
                     )
                 )
 
-            parser = PARSERS.get(parser_key)
-            if parser is None:
+            parser_fn = PARSERS.get(parser_key)
+            if parser_fn is None:
                 return ToolResult(
                     error=(
                         f"No outline parser for language: {parser_key}\n"
@@ -1707,7 +1691,7 @@ class OutlineSkill(FileSkill):
 
             # Parse
             max_depth = depth if depth is not None else 999
-            entries = parser(lines, max_depth, signatures, preview)
+            entries = parser_fn(lines, max_depth, signatures, preview)
 
             if not entries:
                 return ToolResult(output=f"(No outline entries found in {p.name})")

@@ -300,8 +300,10 @@ Top-level permissions configuration.
 | `destructive_tools` | `list[str]` | See below | Tools that require confirmation |
 
 **Default Destructive Tools:**
-- `write_file`, `edit_file`, `exec`, `shell_UNSAFE`, `run_python`,
-  `kill_process`, `nexus_destroy`, `nexus_shutdown`
+- `write_file`, `edit_file`, `edit_file_batch`, `edit_lines`, `edit_lines_batch`,
+  `append_file`, `regex_replace`, `patch`, `patch_from_file`, `copy_file`,
+  `rename`, `mkdir`, `exec`, `shell_UNSAFE`, `run_python`, `kill_process`,
+  `nexus_destroy`, `nexus_shutdown`
 
 ### `PermissionPresetConfig`
 
@@ -513,11 +515,21 @@ Configuration for a single GitLab instance.
     "presets": {
       "researcher": {
         "extends": "sandboxed",
-        "description": "Read-only research agent",
+        "description": "Restricted project research agent",
         "allowed_paths": ["~/projects"],
         "tool_permissions": {
           "write_file": {"enabled": false},
           "edit_file": {"enabled": false},
+          "edit_file_batch": {"enabled": false},
+          "edit_lines": {"enabled": false},
+          "edit_lines_batch": {"enabled": false},
+          "append_file": {"enabled": false},
+          "regex_replace": {"enabled": false},
+          "patch": {"enabled": false},
+          "patch_from_file": {"enabled": false},
+          "copy_file": {"enabled": false},
+          "rename": {"enabled": false},
+          "mkdir": {"enabled": false},
           "exec": {"timeout": 10}
         }
       }

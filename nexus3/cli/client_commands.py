@@ -374,7 +374,7 @@ async def cmd_create(
         api_key: Optional API key.
         preset: Permission preset (default: sandboxed for RPC mode).
         cwd: Working directory / sandbox root for the agent.
-        allowed_write_paths: Paths where write_file/edit_file are allowed.
+        allowed_write_paths: Paths where file write/edit tools are allowed.
         model: Model name/alias to use (from config.models or full model ID).
         message: Initial message to send to the agent immediately after creation.
             The agent will process this and the response will be in the result.

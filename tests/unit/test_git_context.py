@@ -21,8 +21,20 @@ class TestShouldRefreshGitContext:
         assert should_refresh_git_context("git") is True
 
     def test_file_write_tools(self):
-        for tool in ("write_file", "edit_file", "edit_lines", "append_file",
-                      "rename", "copy_file", "regex_replace", "patch", "mkdir"):
+        for tool in (
+            "write_file",
+            "edit_file",
+            "edit_file_batch",
+            "edit_lines",
+            "edit_lines_batch",
+            "append_file",
+            "rename",
+            "copy_file",
+            "regex_replace",
+            "patch",
+            "patch_from_file",
+            "mkdir",
+        ):
             assert should_refresh_git_context(tool) is True, f"{tool} should trigger refresh"
 
     def test_exec_tools(self):

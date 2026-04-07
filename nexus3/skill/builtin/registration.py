@@ -17,8 +17,8 @@ from nexus3.skill.builtin.clipboard_search import clipboard_search_factory
 from nexus3.skill.builtin.clipboard_tag import clipboard_tag_factory
 from nexus3.skill.builtin.concat_files import concat_files_factory
 from nexus3.skill.builtin.copy_file import copy_file_factory
-from nexus3.skill.builtin.edit_file import edit_file_factory
-from nexus3.skill.builtin.edit_lines import edit_lines_factory
+from nexus3.skill.builtin.edit_file import edit_file_batch_factory, edit_file_factory
+from nexus3.skill.builtin.edit_lines import edit_lines_batch_factory, edit_lines_factory
 from nexus3.skill.builtin.file_info import file_info_factory
 from nexus3.skill.builtin.git import git_factory
 from nexus3.skill.builtin.glob_search import glob_factory
@@ -33,7 +33,7 @@ from nexus3.skill.builtin.nexus_send import nexus_send_factory
 from nexus3.skill.builtin.nexus_shutdown import nexus_shutdown_factory
 from nexus3.skill.builtin.nexus_status import nexus_status_factory
 from nexus3.skill.builtin.outline import outline_factory
-from nexus3.skill.builtin.patch import patch_factory
+from nexus3.skill.builtin.patch import patch_factory, patch_from_file_factory
 from nexus3.skill.builtin.processes import get_process_factory, list_processes_factory
 from nexus3.skill.builtin.read_file import read_file_factory
 from nexus3.skill.builtin.regex_replace import regex_replace_factory
@@ -71,10 +71,13 @@ def register_builtin_skills(registry: SkillRegistry) -> None:
     # File operations (destructive)
     registry.register("write_file", write_file_factory)
     registry.register("edit_file", edit_file_factory)
+    registry.register("edit_file_batch", edit_file_batch_factory)
     registry.register("edit_lines", edit_lines_factory)
+    registry.register("edit_lines_batch", edit_lines_batch_factory)
     registry.register("append_file", append_file_factory)
     registry.register("regex_replace", regex_replace_factory)
     registry.register("patch", patch_factory)
+    registry.register("patch_from_file", patch_from_file_factory)
     registry.register("copy_file", copy_file_factory)
     registry.register("mkdir", mkdir_factory)
     registry.register("rename", rename_factory)

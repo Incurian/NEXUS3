@@ -1,215 +1,57 @@
-"""Edit file skill for making targeted edits to files."""
+"""Exact-string file editing skills."""
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 from nexus3.core.errors import PathSecurityError
 from nexus3.core.paths import atomic_write_bytes, detect_line_ending
 from nexus3.core.types import ToolResult
-from nexus3.skill.argument_normalization import normalize_empty_optional_string
 from nexus3.skill.base import FileSkill, file_skill_factory
 
 
-class EditFileSkill(FileSkill):
-    """Skill that makes targeted edits to files using string replacement.
+class _ExactStringEditSkill(FileSkill):
+    """Shared helpers for exact-string file editing skills."""
 
-    Finds and replaces text in files. The old_string must be unique in the
-    file unless replace_all=true. This is safer than line-based editing
-    because it doesn't depend on line numbers.
-
-    Supports batched edits via the `edits` parameter for multiple string
-    replacements in a single atomic operation.
-
-    For line-based editing, use the edit_lines skill instead.
-
-    Inherits path validation from FileSkill.
-    """
-
-    @property
-    def name(self) -> str:
-        return "edit_file"
-
-    @property
-    def description(self) -> str:
-        return (
-            "Edit a file using exact string replacement. "
-            "Use for literal find/replace and atomic multi-edit batches via 'edits'. "
-            "IMPORTANT: every old_string must match exactly (including whitespace/newlines), "
-            "and in batch mode later edits must still match after earlier edits. "
-            "Use edit_lines for line-number edits and regex_replace for pattern-based edits."
-        )
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path to the file to edit"
-                },
-                "old_string": {
-                    "type": "string",
-                    "description": (
-                        "Text to find and replace "
-                        "(must be unique in file unless replace_all=true)"
-                    )
-                },
-                "new_string": {
-                    "type": "string",
-                    "description": "Replacement text"
-                },
-                "replace_all": {
-                    "type": "boolean",
-                    "description": (
-                        "Replace all occurrences (default: false, requires unique match)"
-                    ),
-                    "default": False
-                },
-                "edits": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "old_string": {
-                                "type": "string",
-                                "minLength": 1,
-                                "description": (
-                                    "Exact literal text to find "
-                                    "(including whitespace/newlines)"
-                                )
-                            },
-                            "new_string": {
-                                "type": "string",
-                                "description": "Replacement text"
-                            },
-                            "replace_all": {
-                                "type": "boolean",
-                                "default": False,
-                                "description": "Replace all occurrences"
-                            }
-                        },
-                        "required": ["old_string", "new_string"],
-                        "additionalProperties": False,
-                    },
-                    "description": (
-                        "Atomic array of exact string replacements (all-or-none). "
-                        "Each edit must match the original file, and later edits "
-                        "must still match after earlier edits are applied. Split "
-                        "dependent or overlapping edits into separate calls. "
-                        "Cannot be used with old_string/new_string."
-                    )
-                }
-            },
-            "required": ["path"],
-            "additionalProperties": False,
-        }
-
-    async def execute(
-        self,
-        path: str = "",
-        old_string: str | None = None,
-        new_string: str | None = None,
-        replace_all: bool = False,
-        edits: list[dict[str, Any]] | None = None,
-        **kwargs: Any
-    ) -> ToolResult:
-        """Edit the file using string replacement.
-
-        Args:
-            path: File to edit
-            old_string: Text to find (single edit mode)
-            new_string: Replacement text (single edit mode)
-            replace_all: Replace all occurrences (single edit mode)
-            edits: Array of string replacements (batch mode)
+    async def _load_text_file(self, path: str) -> tuple[Path, str, str]:
+        """Load a UTF-8 text file and normalize line endings for processing.
 
         Returns:
-            ToolResult with success message or error
+            Tuple of (validated_path, normalized_content, original_line_ending)
         """
-        # Detect batch mode
-        batch_mode = edits is not None and len(edits) > 0
-
-        # Some tool-callers send empty-string placeholders for omitted single-edit
-        # fields when using batch mode. Normalize those optional string placeholders
-        # centrally instead of handling each field ad hoc.
-        if batch_mode and not replace_all:
-            old_string = normalize_empty_optional_string(old_string)
-            new_string = normalize_empty_optional_string(new_string)
-
-        if batch_mode:
-            # Cannot mix with single-edit params
-            if old_string is not None or new_string is not None:
-                return ToolResult(
-                    error="Cannot use 'edits' array with single-edit parameters "
-                    "(old_string/new_string)"
-                )
-        else:
-            # Single edit mode requires old_string
-            if old_string is None:
-                return ToolResult(error="old_string is required")
+        p = self._validate_path(path)
 
         try:
-            # Validate path (resolves symlinks, checks allowed_paths if set)
-            p = self._validate_path(path)
+            content_bytes = await asyncio.to_thread(p.read_bytes)
+            raw_content = content_bytes.decode("utf-8")
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(path) from exc
+        except PermissionError as exc:
+            raise PermissionError(path) from exc
+        except UnicodeDecodeError as exc:
+            raise UnicodeDecodeError(
+                exc.encoding,
+                exc.object,
+                exc.start,
+                exc.end,
+                exc.reason,
+            ) from exc
 
-            # Read current content (binary to preserve line endings)
-            try:
-                content_bytes = await asyncio.to_thread(p.read_bytes)
-                raw_content = content_bytes.decode("utf-8")
-                original_line_ending = detect_line_ending(raw_content)
-                # Normalize to LF for processing
-                content = raw_content.replace('\r\n', '\n').replace('\r', '\n')
-            except FileNotFoundError:
-                return ToolResult(error=f"File not found: {path}")
-            except PermissionError:
-                return ToolResult(error=f"Permission denied: {path}")
-            except UnicodeDecodeError:
-                return ToolResult(
-                    error=(
-                        f"File is not valid UTF-8 text: {path}. "
-                        "Use patch with fidelity_mode='byte_strict' for byte-sensitive edits."
-                    )
-                )
+        original_line_ending = detect_line_ending(raw_content)
+        content = raw_content.replace("\r\n", "\n").replace("\r", "\n")
+        return p, content, original_line_ending
 
-            if batch_mode:
-                # Batch edit mode
-                result = self._batch_replace(content, edits)  # type: ignore[arg-type]
-            else:
-                # Single edit mode
-                result = self._string_replace(
-                    content, old_string, new_string or "", replace_all
-                )
-
-            if result.error:
-                return result
-
-            # Convert line endings back to original and write as binary
-            # For batch mode, result.output is the new content
-            # For single mode with success message, we need to get the actual content
-            if batch_mode:
-                output_content = result._new_content  # type: ignore[attr-defined]
-            else:
-                output_content = result.output
-
-            if original_line_ending != '\n':
-                output_content = output_content.replace('\n', original_line_ending)
-            await asyncio.to_thread(atomic_write_bytes, p, output_content.encode('utf-8'))
-
-            # For batch mode, result.output already has the success message
-            if batch_mode:
-                return ToolResult(output=result.output)
-
-            # Return success message (not the content) for single edit
-            if replace_all:
-                count = content.count(old_string)  # type: ignore[arg-type]
-                return ToolResult(output=f"Replaced {count} occurrence(s) in {path}")
-            else:
-                return ToolResult(output=f"Replaced text in {path}")
-
-        except (PathSecurityError, ValueError) as e:
-            return ToolResult(error=str(e))
-        except Exception as e:
-            return ToolResult(error=f"Error editing file: {e}")
+    async def _write_text_file(
+        self,
+        path: Path,
+        content: str,
+        original_line_ending: str,
+    ) -> None:
+        """Persist content while preserving the file's original line endings."""
+        output_content = content
+        if original_line_ending != "\n":
+            output_content = output_content.replace("\n", original_line_ending)
+        await asyncio.to_thread(atomic_write_bytes, path, output_content.encode("utf-8"))
 
     def _string_replace(
         self,
@@ -266,8 +108,8 @@ class EditFileSkill(FileSkill):
     def _batch_replace(
         self,
         content: str,
-        edits: list[dict[str, Any]]
-    ) -> ToolResult:
+        edits: list[dict[str, Any]],
+    ) -> tuple[str, str] | ToolResult:
         """Apply multiple string replacements atomically.
 
         Validates all edits first, then applies sequentially.
@@ -280,8 +122,7 @@ class EditFileSkill(FileSkill):
             edits: List of edit dictionaries with old_string, new_string, replace_all
 
         Returns:
-            ToolResult with success message or error. On success, the result
-            has a _new_content attribute with the modified content.
+            `(new_content, success_message)` or a ToolResult error.
         """
         if not edits:
             return ToolResult(error="edits array cannot be empty")
@@ -382,12 +223,209 @@ class EditFileSkill(FileSkill):
                     f"  {info['index']}. Replaced \"{truncated}\" (line {info['line_num']})"
                 )
 
-        # Create result with embedded content for the caller
-        result = ToolResult(output=f"Applied {len(edits)} edits:\n" + "\n".join(lines))
-        # Attach the new content as a private attribute for the execute method
-        object.__setattr__(result, '_new_content', new_content)
-        return result
+        return new_content, f"Applied {len(edits)} edits:\n" + "\n".join(lines)
+
+
+class EditFileSkill(_ExactStringEditSkill):
+    """Skill for a single exact-string replacement in a UTF-8 file."""
+
+    @property
+    def name(self) -> str:
+        return "edit_file"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Replace one exact literal string in a UTF-8 file. "
+            "Required: path, old_string, new_string. "
+            "Use only for a single literal replacement where old_string is already known exactly. "
+            "old_string must match exactly, including whitespace and newlines. "
+            "If it appears multiple times, add more context or set replace_all=true. "
+            "For multiple literal replacements use edit_file_batch. "
+            "Use edit_lines or edit_lines_batch for line-number edits, and "
+            "regex_replace for pattern-based edits."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the UTF-8 text file to edit",
+                },
+                "old_string": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": (
+                        "Exact literal text to replace. Must match the file exactly, "
+                        "including whitespace and line breaks."
+                    ),
+                },
+                "new_string": {
+                    "type": "string",
+                    "description": (
+                        "Replacement text. Use an empty string to delete the matched text."
+                    ),
+                },
+                "replace_all": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": (
+                        "Replace all matches instead of requiring one unique match."
+                    ),
+                },
+            },
+            "required": ["path", "old_string", "new_string"],
+            "additionalProperties": False,
+        }
+
+    async def execute(
+        self,
+        path: str = "",
+        old_string: str | None = None,
+        new_string: str | None = None,
+        replace_all: bool = False,
+        **kwargs: Any,
+    ) -> ToolResult:
+        """Replace one exact string match in a file."""
+        try:
+            p, content, original_line_ending = await self._load_text_file(path)
+            result = self._string_replace(content, old_string, new_string or "", replace_all)
+            if result.error:
+                return result
+
+            await self._write_text_file(p, result.output, original_line_ending)
+
+            if replace_all:
+                count = content.count(old_string)  # type: ignore[arg-type]
+                return ToolResult(output=f"Replaced {count} occurrence(s) in {path}")
+
+            return ToolResult(output=f"Replaced text in {path}")
+        except FileNotFoundError:
+            return ToolResult(error=f"File not found: {path}")
+        except PermissionError:
+            return ToolResult(error=f"Permission denied: {path}")
+        except UnicodeDecodeError:
+            return ToolResult(
+                error=(
+                    f"File is not valid UTF-8 text: {path}. "
+                    "Use patch with fidelity_mode='byte_strict' for byte-sensitive edits."
+                )
+            )
+        except (PathSecurityError, ValueError) as e:
+            return ToolResult(error=str(e))
+        except Exception as e:
+            return ToolResult(error=f"Error editing file: {e}")
+
+
+class EditFileBatchSkill(_ExactStringEditSkill):
+    """Skill for atomic batches of exact-string replacements in a UTF-8 file."""
+
+    @property
+    def name(self) -> str:
+        return "edit_file_batch"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Apply multiple exact literal replacements atomically in one UTF-8 file. "
+            "Required: path and edits=[{old_string, new_string, replace_all?}, ...]. "
+            "Use only when multiple literal replacements should succeed or fail together. "
+            "Do not send top-level old_string, new_string, or replace_all. "
+            "Each edit must match the original file, and later edits must still match "
+            "after earlier edits are applied. Split dependent edits into separate calls "
+            "or use patch for structural multi-hunk changes."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the UTF-8 text file to edit",
+                },
+                "edits": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "old_string": {
+                                "type": "string",
+                                "minLength": 1,
+                                "description": (
+                                    "Exact literal text to replace in this edit. "
+                                    "Must match the file exactly, including whitespace "
+                                    "and line breaks."
+                                ),
+                            },
+                            "new_string": {
+                                "type": "string",
+                                "description": (
+                                    "Replacement text for this edit. Use an empty string "
+                                    "to delete the matched text."
+                                ),
+                            },
+                            "replace_all": {
+                                "type": "boolean",
+                                "default": False,
+                                "description": (
+                                    "Replace all matches for this edit instead of "
+                                    "requiring one unique match."
+                                ),
+                            },
+                        },
+                        "required": ["old_string", "new_string"],
+                        "additionalProperties": False,
+                    },
+                    "description": (
+                        "Atomic array of exact literal replacements. All edits are "
+                        "validated first, then applied sequentially in one all-or-none "
+                        "update."
+                    ),
+                },
+            },
+            "required": ["path", "edits"],
+            "additionalProperties": False,
+        }
+
+    async def execute(
+        self,
+        path: str = "",
+        edits: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> ToolResult:
+        """Apply an atomic batch of exact string replacements."""
+        try:
+            p, content, original_line_ending = await self._load_text_file(path)
+            batch_result = self._batch_replace(content, edits or [])
+            if isinstance(batch_result, ToolResult):
+                return batch_result
+
+            new_content, success_message = batch_result
+            await self._write_text_file(p, new_content, original_line_ending)
+            return ToolResult(output=success_message)
+        except FileNotFoundError:
+            return ToolResult(error=f"File not found: {path}")
+        except PermissionError:
+            return ToolResult(error=f"Permission denied: {path}")
+        except UnicodeDecodeError:
+            return ToolResult(
+                error=(
+                    f"File is not valid UTF-8 text: {path}. "
+                    "Use patch with fidelity_mode='byte_strict' for byte-sensitive edits."
+                )
+            )
+        except (PathSecurityError, ValueError) as e:
+            return ToolResult(error=str(e))
+        except Exception as e:
+            return ToolResult(error=f"Error editing file: {e}")
 
 
 # Factory for dependency injection
 edit_file_factory = file_skill_factory(EditFileSkill)
+edit_file_batch_factory = file_skill_factory(EditFileBatchSkill)

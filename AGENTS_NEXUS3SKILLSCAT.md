@@ -7,20 +7,25 @@ Derived from `CLAUDE.md` Built-in Skills section, adapted for Codex usage.
 Contract rule for the fixed-schema file-edit, read/search/listing, and
 clipboard wrapper/info families: unexpected extra arguments now fail closed
 instead of being silently dropped.
+This catalog intentionally teaches only canonical public tool shapes; runtime
+compatibility aliases are omitted unless they are part of the public contract.
 
 ## Built-in Skills
 
 | Skill | Parameters | Description |
 |-------|------------|-------------|
-| `read_file` | `path`, `offset`?, `limit`?, `start_line`?, `end_line`?, `line_numbers`? | Read UTF-8 file contents (numbered by default; raw mode available with `line_numbers=false`; invalid UTF-8 fails closed; `start_line`/`end_line` are compatibility aliases for `offset`/`limit`) |
+| `read_file` | `path`, `offset`?, `limit`?, `line_numbers`? | Read UTF-8 file contents (numbered by default; raw mode available with `line_numbers=false`; invalid UTF-8 fails closed) |
 | `tail` | `path`, `lines`? | Read last N lines of a UTF-8 text file (default: 10; invalid UTF-8 is rejected) |
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
 | `write_file` | `path`, `content` | Write/create UTF-8 text files (exact newline bytes; read file first) |
-| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`?, `edits`? | UTF-8 exact string replacement; batch edits are atomic and later edits must still match after earlier edits (read file first) |
-| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content`, `edits`? | Replace UTF-8 lines by number; `edits` batches are atomic, use original line numbers, and reject overlaps |
+| `edit_file` | `path`, `old_string`, `new_string`, `replace_all`? | UTF-8 exact string replacement for one literal edit (read file first) |
+| `edit_file_batch` | `path`, `edits` | UTF-8 exact string replacement for atomic multi-edit batches; later edits must still match after earlier edits (read file first) |
+| `edit_lines` | `path`, `start_line`, `end_line`?, `new_content` | Replace one UTF-8 line range by number |
+| `edit_lines_batch` | `path`, `edits` | Replace multiple UTF-8 line ranges atomically using original line numbers and overlap checks |
 | `append_file` | `path`, `content`, `newline`? | Append UTF-8 text to a file (exact newline bytes; read file first) |
 | `regex_replace` | `path`, `pattern`, `replacement`, `count`?, `ignore_case`?, `multiline`?, `dotall`? | UTF-8 pattern-based find/replace (`count >= 0`; read file first) |
-| `patch` | `path`, `diff`?, `diff_file`?, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply unified diffs (strict/tolerant/fuzzy modes; `target` remains a compatibility alias, hunk-only single-file diffs auto-normalize when the target is known, and `diff_file` must be UTF-8 text) |
+| `patch` | `path`, `diff`, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply inline unified diffs (strict/tolerant/fuzzy modes; hunk-only single-file diffs auto-normalize when the target is known) |
+| `patch_from_file` | `path`, `diff_file`, `mode`?, `fidelity_mode`?, `fuzzy_threshold`?, `dry_run`? | Apply a unified diff from a UTF-8 `.diff` / `.patch` file |
 | `copy_file` | `source`, `destination`, `overwrite`? | Copy a file to a new location |
 | `mkdir` | `path` | Create directory (and parents) |
 | `rename` | `source`, `destination`, `overwrite`? | Rename or move file/directory |
@@ -28,7 +33,7 @@ instead of being silently dropped.
 | `glob` | `pattern`, `path`?, `max_results`?, `recursive`?, `kind`?, `exclude`? | Find files or directories by glob pattern; `recursive=true` searches nested paths, `kind` filters files/directories, and `exclude` uses relative-path glob rules |
 | `search_text` | `pattern`, `path`, `recursive`?, `ignore_case`?, `max_matches`?, `include`?, `context`? | Search UTF-8 file contents with file filter and context lines; unrestricted directory scans may use ripgrep when configured/available, single-file invalid UTF-8 fails closed, and directory scans skip invalid UTF-8 files |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `lines`?, `max_total`?, `format`?, `sort`?, `gitignore`?, `dry_run`? | Concatenate UTF-8 files by extension with token estimation (`dry_run=True` by default; real writes generate an output file and skip invalid UTF-8 inputs) |
-| `outline` | `path`, `file_type`?, `language`?, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory; directory mode is non-recursive, `depth` controls nested symbols within each file, markdown heading detection ignores fenced code blocks, invalid UTF-8 directory entries are skipped, `symbol` returns a source excerpt for files only, `file_type`/`language`/`parser` can override parser detection for files, `recursive=true` fails closed, ambiguous symbol matches fail closed, and large directory output may truncate |
+| `outline` | `path`, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory; directory mode is non-recursive, `depth` controls nested symbols within each file, markdown heading detection ignores fenced code blocks, invalid UTF-8 directory entries are skipped, `symbol` returns a source excerpt for files only, `parser` can override parser detection for files, `recursive=true` fails closed, ambiguous symbol matches fail closed, and large directory output may truncate |
 | `list_processes` | `query`?, `match`?, `user`?, `port`?, `limit`?, `offset`? | List running processes with paginated results, exact/contains/regex discovery, and redacted command previews |
 | `get_process` | `pid`?, `query`?, `match`?, `user`?, `port`? | Inspect one running process by exact PID or a unique query match; `port=0` is treated as omitted |
 | `kill_process` | `pid`, `tree`?, `force`?, `timeout_seconds`? | Terminate a running process by explicit PID; tree termination defaults on, graceful-first unless `force=true` |

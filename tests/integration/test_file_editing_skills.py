@@ -1,8 +1,8 @@
-"""Integration tests for file editing skills (edit_lines, edit_file, patch).
+"""Integration tests for file editing skills (edit_lines, edit_file, edit_file_batch, patch).
 
 These tests verify:
 1. edit_lines uses atomic writes (temp file + rename)
-2. batch edit_file rolls back completely on failure
+2. edit_file_batch rolls back completely on failure
 3. patch skill applies inline diffs correctly
 4. patch skill loads patches from .diff files
 5. patch skill respects allowed_paths permissions
@@ -20,9 +20,9 @@ from nexus3.core.permissions import (
     PermissionLevel,
     PermissionPolicy,
 )
-from nexus3.skill.builtin.edit_file import edit_file_factory
-from nexus3.skill.builtin.edit_lines import edit_lines_factory
-from nexus3.skill.builtin.patch import patch_factory
+from nexus3.skill.builtin.edit_file import edit_file_batch_factory, edit_file_factory
+from nexus3.skill.builtin.edit_lines import edit_lines_batch_factory, edit_lines_factory
+from nexus3.skill.builtin.patch import patch_factory, patch_from_file_factory
 from nexus3.skill.services import ServiceContainer
 
 
@@ -194,7 +194,7 @@ line 5
 """
         test_file.write_text(original_content)
 
-        skill = edit_lines_factory(services)
+        skill = edit_lines_batch_factory(services)
 
         result = await skill.execute(
             path=str(test_file),
@@ -217,7 +217,7 @@ line 5
         test_file = temp_dir / "batch_crlf.txt"
         test_file.write_bytes(b"line 1\r\nline 2\r\nline 3\r\nline 4\r\n")
 
-        skill = edit_lines_factory(services)
+        skill = edit_lines_batch_factory(services)
 
         result = await skill.execute(
             path=str(test_file),
@@ -236,7 +236,7 @@ line 5
 
 
 class TestBatchEditAtomicRollback:
-    """P5.2: Tests for batch edit_file atomic rollback on failure."""
+    """P5.2: Tests for edit_file_batch atomic rollback on failure."""
 
     @pytest.mark.asyncio
     async def test_batch_edit_atomic_rollback(
@@ -257,7 +257,7 @@ def bar():
 """
         test_file.write_text(original_content)
 
-        skill = edit_file_factory(services)
+        skill = edit_file_batch_factory(services)
 
         # Attempt batch edit where second edit will fail (string doesn't exist)
         result = await skill.execute(
@@ -294,7 +294,7 @@ def bar():
 """
         test_file.write_text(original_content)
 
-        skill = edit_file_factory(services)
+        skill = edit_file_batch_factory(services)
 
         # Batch edit with two valid edits
         result = await skill.execute(
@@ -330,7 +330,7 @@ def bar():
 """
         test_file.write_text(original_content)
 
-        skill = edit_file_factory(services)
+        skill = edit_file_batch_factory(services)
 
         # This should fail - "hello" appears twice
         result = await skill.execute(
@@ -356,7 +356,7 @@ def bar():
         original_content = "value = 1\n"
         test_file.write_text(original_content)
 
-        skill = edit_file_factory(services)
+        skill = edit_file_batch_factory(services)
 
         result = await skill.execute(
             path=str(test_file),
@@ -400,10 +400,7 @@ class TestPatchInlineDiffIntegration:
             "     print(\"Hello\")\n"
         )
 
-        result = await skill.execute(
-            target=str(test_file),
-            diff=diff_content,
-        )
+        result = await skill.execute(path=str(test_file), diff=diff_content)
 
         assert result.success, f"Expected success, got error: {result.error}"
         assert "Applied patch" in result.output
@@ -439,10 +436,7 @@ class TestPatchInlineDiffIntegration:
      return 42
 """
 
-        result = await skill.execute(
-            target=str(test_file),
-            diff=diff_content,
-        )
+        result = await skill.execute(path=str(test_file), diff=diff_content)
 
         assert result.success, f"Expected success, got error: {result.error}"
 
@@ -471,11 +465,7 @@ line 2
  line 2
 """
 
-        result = await skill.execute(
-            target=str(test_file),
-            diff=diff_content,
-            dry_run=True,
-        )
+        result = await skill.execute(path=str(test_file), diff=diff_content, dry_run=True)
 
         assert result.success
         assert "Dry run" in result.output
@@ -532,13 +522,10 @@ class TestPatchFromDiffFile:
 """
         diff_file.write_text(diff_content)
 
-        skill = patch_factory(services)
+        skill = patch_from_file_factory(services)
 
         # Apply patch using diff_file parameter
-        result = await skill.execute(
-            target=str(target_file),
-            diff_file=str(diff_file),
-        )
+        result = await skill.execute(path=str(target_file), diff_file=str(diff_file))
 
         assert result.success, f"Expected success, got error: {result.error}"
 
@@ -556,10 +543,10 @@ class TestPatchFromDiffFile:
         target_file = temp_dir / "target.py"
         target_file.write_text("content")
 
-        skill = patch_factory(services)
+        skill = patch_from_file_factory(services)
 
         result = await skill.execute(
-            target=str(target_file),
+            path=str(target_file),
             diff_file=str(temp_dir / "nonexistent.diff"),
         )
 
@@ -577,16 +564,16 @@ class TestPatchFromDiffFile:
         diff_file = temp_dir / "changes.diff"
         diff_file.write_text("--- a/target.py\n+++ b/target.py\n")
 
-        skill = patch_factory(services)
+        skill = patch_from_file_factory(services)
 
         result = await skill.execute(
-            target=str(target_file),
+            path=str(target_file),
             diff="some inline diff",
             diff_file=str(diff_file),
         )
 
         assert not result.success
-        assert "Cannot provide both" in result.error
+        assert "diff" in result.error
 
 
 class TestPatchPermissionEnforcement:
@@ -622,10 +609,7 @@ class TestPatchPermissionEnforcement:
 """
 
         # Attempt to patch file outside allowed_paths
-        result = await skill.execute(
-            target=str(outside_file),
-            diff=diff_content,
-        )
+        result = await skill.execute(path=str(outside_file), diff=diff_content)
 
         # Should fail with permission error
         assert not result.success
@@ -656,7 +640,7 @@ class TestPatchPermissionEnforcement:
 """
 
         result = await skill.execute(
-            target=str(allowed_file),
+            path=str(allowed_file),
             diff=diff_content,
         )
 
@@ -683,10 +667,10 @@ class TestPatchPermissionEnforcement:
 +modified
 """)
 
-        skill = patch_factory(restricted_services)
+        skill = patch_from_file_factory(restricted_services)
 
         result = await skill.execute(
-            target=str(target_file),
+            path=str(target_file),
             diff_file=str(outside_diff),
         )
 
