@@ -6,6 +6,12 @@ This example shows the next step after a tools-only server: one Python server
 that exposes tools, resources, and prompts together so you can see exactly how
 NEXUS treats each surface.
 
+The server script uses only the Python standard library. The optional
+inspection helper is the only part that imports NEXUS modules from this repo.
+
+In shell commands below, replace `<repo-root>` with the path to your NEXUS3
+checkout.
+
 Files:
 
 - [capability_server.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities/capability_server.py)
@@ -28,13 +34,17 @@ The checked-in server uses those values in real behavior:
   the settings resource
 - `customer_table.md` is read relative to `cwd`
 
+`env_passthrough` is included to show the safe opt-in pattern for forwarding a
+host variable. The example keeps tool/resource outputs stable, so it does not
+echo your `USER` value into the tutorial output.
+
 The checked-in config uses `python3`. If that is not available on your machine,
 replace it in `.nexus3/mcp.json` with the interpreter path that exists on your
 machine.
 
 Run it:
 
-1. `cd /home/inc/repos/NEXUS3/docs/references/mcp-python-examples/202-capabilities`
+1. `cd <repo-root>/docs/references/mcp-python-examples/202-capabilities`
 2. `nexus3 --fresh`
 3. In the REPL:
    - `/mcp connect capability_demo --allow-all --private`
@@ -43,7 +53,13 @@ Run it:
    - `/mcp prompts capability_demo`
 4. Ask the agent: `Use the customer count tool.`
 
+If `nexus3` is not on your `PATH`, run `<repo-root>/.venv/bin/nexus3 --fresh`
+instead.
+
 Omit the flags if you want to walk through the consent/share prompts manually.
+
+If `/mcp` shows extra configured servers from global or ancestor config, ignore
+them. This walkthrough only depends on `capability_demo`.
 
 Expected:
 
@@ -53,6 +69,8 @@ Expected:
 
 What to look for specifically:
 
+- `/mcp connect capability_demo --allow-all --private` should report
+  `Connected to 'capability_demo' (allow-all, private)`
 - `/mcp tools capability_demo` should show the two callable tools
 - `/mcp resources capability_demo` should show `config://app/settings` and
   `docs://customer-table`
@@ -72,7 +90,7 @@ Important NEXUS behavior:
 
 Optional deeper check:
 
-1. `cd /home/inc/repos/NEXUS3`
+1. `cd <repo-root>`
 2. `.venv/bin/python docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py`
 
 That helper launches the checked-in capability example through NEXUS's Python
@@ -83,6 +101,10 @@ MCP client and proves all of these in one pass:
 - `prompts/list`
 - `resources/read` for `config://app/settings` and `docs://customer-table`
 - `prompts/get` for `customer_summary`
+
+If you already activated the repo virtualenv, plain `python ...` is also fine.
+Run the helper from the repo root or otherwise keep the repo root on
+`PYTHONPATH`, because it imports `nexus3.*` modules from this checkout.
 
 If it fails:
 

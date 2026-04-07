@@ -39,6 +39,9 @@ For practical MCP server integration, NEXUS3 supports two transport styles:
 
 If you are building your first server, start with **stdio**.
 
+All checked-in example servers in this guide use only the Python standard
+library. You do not need an extra MCP package just to run them.
+
 ## What Goes In `mcp.json`
 
 For a beginner server, the important `mcp.json` fields are:
@@ -78,6 +81,9 @@ Checked-in example projects live under
 - [101-stdio](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-stdio/README.md)
 - [101-http](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-http/README.md)
 
+In shell commands below, replace `<repo-root>` with the path to your NEXUS3
+checkout.
+
 ## The Smallest Useful MCP Server
 
 For a **tools-only** server, the minimal method surface NEXUS3 needs is:
@@ -90,6 +96,11 @@ For a **tools-only** server, the minimal method surface NEXUS3 needs is:
 Recommended but optional for a 101 server:
 
 - `ping`
+
+In the toy servers below, `notifications/initialized` does not need a separate
+branch. It arrives as a notification with no `id`, so the generic
+"ignore notifications" path is enough unless your server actually wants to
+react to it.
 
 You do **not** need `resources/list`, `resources/read`, `prompts/list`, or
 `prompts/get` just to expose tools in NEXUS3.
@@ -343,6 +354,16 @@ From the example directory, start a fresh NEXUS session:
 nexus3 --fresh
 ```
 
+If `nexus3` is not on your `PATH`, use the repo-local executable instead:
+
+```text
+<repo-root>/.venv/bin/nexus3 --fresh
+```
+
+If you run `/mcp` first and see additional configured servers, that is normal.
+NEXUS merges global, ancestor, and local MCP config layers; this walkthrough
+only depends on `hello_stdio`.
+
 Then in the REPL:
 
 ```text
@@ -442,6 +463,10 @@ Checked-in files for this example:
 - [mcp.json](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-http/.nexus3/mcp.json)
 
 This example uses only the Python standard library.
+
+It is also deliberately stateless: it never returns `mcp-session-id`. NEXUS
+only starts sending that header after a server provides one, so you do not
+need session handling in a first local HTTP example.
 
 ### Step 1: Create `hello_http_server.py`
 
@@ -610,7 +635,7 @@ if __name__ == "__main__":
 
 ### Step 2: Start the server
 
-In another terminal:
+From the example directory, in another terminal:
 
 ```bash
 python3 hello_http_server.py
@@ -637,6 +662,19 @@ This example uses port `9876` so it does not collide with NEXUS3's own default
 embedded RPC port `8765`.
 
 ### Step 4: Connect it from NEXUS3
+
+From the example directory, start a fresh NEXUS session if you do not already
+have one running:
+
+```text
+nexus3 --fresh
+```
+
+If `nexus3` is not on your `PATH`, use:
+
+```text
+<repo-root>/.venv/bin/nexus3 --fresh
+```
 
 In the REPL:
 

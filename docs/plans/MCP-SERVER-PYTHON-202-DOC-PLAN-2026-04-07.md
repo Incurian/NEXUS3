@@ -134,3 +134,10 @@ Validation completed:
   - updated the canonical 202 guide and the mirrored example-bundle copy to
     document the REPL-vs-client boundary explicitly and point readers at the
     runnable helper
+  - replaced machine-specific shell paths with `<repo-root>` placeholders and
+    documented the repo-local `<repo-root>/.venv/bin/nexus3` /
+    `.venv/bin/python` fallbacks for readers running from a source checkout
+  - clarified live-validated NEXUS behavior that often confuses new readers:
+    layered MCP config can make `/mcp` show extra configured servers, and
+    resources/prompts remain discoverable MCP surfaces rather than callable
+    agent tools even when they list correctly in the REPL

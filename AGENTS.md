@@ -240,17 +240,16 @@ ad-hoc compatibility shim.
 
 ## Current Handoff
 
-### 2026-04-07 - MCP Python docs didactic audit and capability inspection
+### 2026-04-07 - MCP Python docs didactic audit final polish
 
 - Branch: `master`
 - Baseline head: `6bd96f1`
 - Active slice:
-  - audit the new Python MCP docs against the actual NEXUS implementation
-  - keep the checked-in example folders runnable end to end
-  - tighten the teaching path so the example bundle is both beginner-friendly
-    and NEXUS-specific
-  - make the resource/prompt story concrete instead of stopping at REPL
-    discovery lists
+  - finish the didactic audit of the Python MCP example bundle against the
+    actual NEXUS CLI and MCP client behavior
+  - remove machine-specific walkthrough assumptions that make the examples
+    brittle outside this checkout
+  - keep the canonical docs and mirrored example-bundle copies in sync
 - Plans/docs:
   - [docs/plans/MCP-SERVER-PYTHON-101-DOC-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/MCP-SERVER-PYTHON-101-DOC-PLAN-2026-04-07.md)
   - [docs/plans/MCP-SERVER-PYTHON-202-DOC-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/MCP-SERVER-PYTHON-202-DOC-PLAN-2026-04-07.md)
@@ -294,6 +293,19 @@ ad-hoc compatibility shim.
     runnable helper and explain the current REPL/client boundary explicitly
   - linked the MCP docs from the top-level README, MCP module docs, test
     server README, AGENTS, and CLAUDE
+  - final doc polish from live validation:
+    - replaced machine-specific shell paths with `<repo-root>` placeholders
+    - documented the repo-local `<repo-root>/.venv/bin/nexus3` fallback for
+      walkthroughs started from example directories
+    - clarified that extra `/mcp` entries may appear from layered config and
+      are not part of the example flow
+    - clarified that the toy servers satisfy
+      `notifications/initialized` by ignoring no-id notifications unless they
+      need custom behavior
+    - clarified that the HTTP 101 example is intentionally stateless and that
+      the 202 helper must run from the repo root or equivalent `PYTHONPATH`
+    - kept the mirrored example-bundle 101/202 guide copies identical to the
+      canonical docs
 - Validation status:
   - focused tests passed:
     - `.venv/bin/pytest -q tests/unit/test_repl_commands.py tests/unit/test_context_loader.py tests/unit/context/test_loader_mcp_fail_fast.py` (`112 passed`)
@@ -305,6 +317,7 @@ ad-hoc compatibility shim.
     - `.venv/bin/pytest -q tests/integration/test_mcp_python_examples.py` (`4 passed`)
   - direct helper validation passed:
     - `.venv/bin/python docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py`
+    - rerun after final doc edits: `.venv/bin/python docs/references/mcp-python-examples/202-capabilities/inspect_capabilities.py`
   - end-to-end example audit passed:
     - stdio example connected, exposed tools, and returned the configured greeting
     - HTTP example connected from the documented two-terminal flow and returned
@@ -313,8 +326,16 @@ ad-hoc compatibility shim.
       values in outputs
     - capability helper exercised `resources/read` and `prompts/get` with the
       same client/transport layer NEXUS uses internally
+    - final live CLI verification after doc polish:
+      - `/home/inc/repos/NEXUS3/.venv/bin/nexus3 --fresh` from
+        `101-stdio/` connected `hello_stdio` and listed `mcp_hello_stdio_hello`
+        plus `mcp_hello_stdio_add`
+      - `/home/inc/repos/NEXUS3/.venv/bin/nexus3 --fresh` from
+        `202-capabilities/` connected `capability_demo` and listed the
+        documented resources and prompts
+  - example smoke tests passed after final doc edits:
+    - `.venv/bin/pytest -q tests/integration/test_mcp_python_examples.py` (`4 passed`)
   - hygiene passed:
     - `git diff --check`
 - Next gate:
-  - commit locally
   - push only when requested

@@ -11,6 +11,11 @@ usually trip people up:
 - how an MCP tool named `hello` becomes the NEXUS tool
   `mcp_hello_stdio_hello`
 
+The server script uses only the Python standard library.
+
+In shell commands below, replace `<repo-root>` with the path to your NEXUS3
+checkout.
+
 Files:
 
 - [hello_stdio_server.py](/home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-stdio/hello_stdio_server.py)
@@ -31,20 +36,30 @@ The checked-in server actually uses those config knobs:
 - `EXAMPLE_GREETING_STYLE` in `env` changes the greeting style
 - `greeting_suffix.txt` is read relative to `cwd`
 
+`env_passthrough` is included to show the safe opt-in pattern for forwarding a
+host variable. The tutorial keeps tool output deterministic, so it does not
+echo your `USER` value back in the greeting.
+
 The checked-in config uses `python3`. If that is not available on your machine,
 replace it in `.nexus3/mcp.json` with the interpreter path that exists on your
 machine.
 
 Run it:
 
-1. `cd /home/inc/repos/NEXUS3/docs/references/mcp-python-examples/101-stdio`
+1. `cd <repo-root>/docs/references/mcp-python-examples/101-stdio`
 2. `nexus3 --fresh`
 3. In the REPL:
    - `/mcp connect hello_stdio --allow-all --private`
    - `/mcp tools hello_stdio`
 4. Ask the agent: `Use the hello tool to greet Alice.`
 
+If `nexus3` is not on your `PATH`, run `<repo-root>/.venv/bin/nexus3 --fresh`
+instead.
+
 Omit the flags if you want to walk through the consent/share prompts manually.
+
+If `/mcp` shows extra configured servers from global or ancestor config, ignore
+them. This walkthrough only depends on `hello_stdio`.
 
 Expected MCP tools:
 
@@ -53,6 +68,8 @@ Expected MCP tools:
 
 Expected greeting behavior:
 
+- `/mcp connect hello_stdio --allow-all --private` should report
+  `Connected to 'hello_stdio' (allow-all, private)`
 - the greeting should include the configured prefix `Howdy`
 - the greeting should include the suffix from `greeting_suffix.txt`
 - the full response should read `Howdy, Alice! Welcome from the stdio example.`
@@ -72,6 +89,9 @@ Good next tweaks:
 
 If it fails:
 
+- if you are running from this repo checkout and `nexus3` is not on your
+  `PATH`, use `<repo-root>/.venv/bin/nexus3` or activate the repo virtualenv
+  first
 - make sure `python3` in `.nexus3/mcp.json` is the interpreter that exists on
   your machine
 - keep JSON-RPC on stdout only; if you add debug prints, send them to stderr

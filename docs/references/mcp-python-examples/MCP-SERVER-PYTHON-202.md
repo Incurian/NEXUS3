@@ -108,6 +108,10 @@ Optional but useful:
 
 - `ping`
 
+As in the 101 guide, `notifications/initialized` does not need a dedicated
+branch in these toy servers. A generic "ignore messages without an `id`"
+branch is enough unless your server wants to react to that notification.
+
 ## `mcp.json` In Practice
 
 The 101 guide showed the smallest working config. Here is the fuller surface
@@ -143,6 +147,9 @@ Merge behavior matters too:
 - both `servers` and `mcpServers` are accepted.
 - if both keys exist in the same file and `mcpServers` is non-empty, NEXUS uses
   `mcpServers`.
+
+In shell commands below, replace `<repo-root>` with the path to your NEXUS3
+checkout.
 
 ## Full Example: One Python server with tools, resources, and prompts
 
@@ -469,6 +476,8 @@ Why these fields are here:
   in real projects.
 - In the checked-in example, those values are observable through the tool
   output and resource contents, not just stored in config.
+- `env_passthrough` is included for realism, but the tutorial keeps outputs
+  deterministic instead of echoing host-specific values like `USER`.
 - If `python3` is not on your `PATH`, use the absolute interpreter path that
   exists on your machine.
 
@@ -479,6 +488,16 @@ From the example directory, start a fresh NEXUS session:
 ```text
 nexus3 --fresh
 ```
+
+If `nexus3` is not on your `PATH`, use the repo-local executable instead:
+
+```text
+<repo-root>/.venv/bin/nexus3 --fresh
+```
+
+If you run `/mcp` first and see additional configured servers, that is normal.
+NEXUS merges global, ancestor, and local MCP config layers; this walkthrough
+only depends on `capability_demo`.
 
 In the REPL:
 
@@ -551,6 +570,10 @@ layer NEXUS uses, and demonstrates:
 - `prompts/list`
 - `resources/read`
 - `prompts/get`
+
+If you already activated the repo virtualenv, plain `python ...` is also fine.
+Run the helper from the repo root or otherwise keep the repo root on
+`PYTHONPATH`, because it imports `nexus3.*` modules from this checkout.
 
 The core pattern is:
 

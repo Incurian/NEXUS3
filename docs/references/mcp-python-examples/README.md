@@ -11,9 +11,17 @@ Use them when you want two things at once:
 ## What You Need
 
 - a working `python3` on your `PATH` for the checked-in example servers
-- a runnable `nexus3` CLI for the REPL walkthroughs
+- a runnable `nexus3` CLI for the REPL walkthroughs:
+  - if `nexus3` is already on your `PATH`, use that
+  - if you are running from this repo checkout, use `<repo-root>/.venv/bin/nexus3`
+    or activate the repo virtualenv before you `cd` into an example directory
 - this repo checkout plus `.venv` if you want to use the optional
   Nexus-client inspection helper in the 202 example
+- no extra Python MCP package is required for the checked-in example servers;
+  they use only the Python standard library
+
+In shell commands below, replace `<repo-root>` with the path to your NEXUS3
+checkout.
 
 ## Recommended order
 
@@ -40,12 +48,18 @@ Each example is a small standalone project:
 That means the normal workflow is:
 
 1. `cd` into one example directory
-2. start a clean REPL with `nexus3 --fresh`
+2. start a clean REPL with `nexus3 --fresh` or
+   `<repo-root>/.venv/bin/nexus3 --fresh`
 3. connect the configured server from the REPL
 4. inspect the exposed tools, resources, or prompts
 
 Using `--fresh` matters for tutorials because it avoids confusion from an older
 session that was started in a different directory with different MCP config.
+
+If you run `/mcp` first and see extra configured servers, that is normal.
+NEXUS merges MCP config from global, ancestor, and local layers. For this
+bundle, the example-specific server names are `hello_stdio`, `hello_http`, and
+`capability_demo`.
 
 ## NEXUS-Specific Notes
 

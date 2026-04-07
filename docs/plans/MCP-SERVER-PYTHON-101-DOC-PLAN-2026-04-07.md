@@ -147,3 +147,10 @@ Validation completed:
     example-bundle README, the per-example 101 READMEs, and the mirrored 101
     guide copies so the first successful connection path is easier to recover
     when interpreter/path/protocol mistakes happen
+  - replaced machine-specific shell paths with `<repo-root>` placeholders and
+    documented the repo-local `<repo-root>/.venv/bin/nexus3` fallback for
+    readers who are running the examples from a source checkout
+  - clarified two easy points of confusion from live validation:
+    layered MCP config can make `/mcp` show extra configured servers, and the
+    toy servers satisfy `notifications/initialized` by ignoring no-id
+    notifications rather than branching on that method name
