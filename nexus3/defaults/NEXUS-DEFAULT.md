@@ -241,12 +241,12 @@ For permission internals and path validation, see `nexus3/core/README.md`.
 ### File Operations (Read)
 | Tool | Key Parameters | Description |
 |------|----------------|-------------|
-| `read_file` | `path`, `offset`?, `limit`?, `line_numbers`? | Read UTF-8 file contents (numbered by default; set `line_numbers=false` for raw text) |
+| `read_file` | `path`, `offset`?, `limit`?, `line_numbers`? | Read UTF-8 file contents (numbered by default; set `line_numbers=false` for raw text). Partial reads report the returned line window and continuation offset |
 | `tail` | `path`, `lines`? | Read last N lines (default: 10) |
 | `file_info` | `path` | Get file/directory metadata (size, mtime, permissions) |
 | `list_directory` | `path` | List directory contents |
 | `glob` | `pattern`, `path`?, `max_results`?, `recursive`?, `kind`?, `exclude`? | Find files or directories by glob pattern; `recursive=true` searches nested paths, `kind` filters files/directories, and `exclude` uses relative-path glob rules |
-| `search_text` | `pattern`, `path`, `include`?, `context`?, `ignore_case`?, `recursive`?, `max_matches`? | Search UTF-8 file contents with regex; directory scans skip invalid UTF-8 files and may use ripgrep when configured/available |
+| `search_text` | `pattern`, `path`, `include`?, `context`?, `ignore_case`?, `recursive`?, `max_matches`? | Search UTF-8 file contents with regex; directory scans skip invalid UTF-8 files and may use ripgrep when configured/available without inheriting hidden/gitignored-file blind spots |
 | `concat_files` | `extensions`, `path`?, `exclude`?, `dry_run`? | Concatenate UTF-8 files by extension (`dry_run=true` by default; real writes generate an output file and skip invalid UTF-8 inputs) |
 | `outline` | `path`, `parser`?, `depth`?, `preview`?, `signatures`?, `line_numbers`?, `tokens`?, `symbol`?, `diff`?, `recursive`? | Structural outline of UTF-8 file/directory. Supports: Python, JS/TS, Rust, Go, C/C++, JSON, YAML, TOML, Markdown, HTML, CSS, SQL, Makefile, Dockerfile. Directory mode is non-recursive, but `depth` controls nested symbols within each file. Markdown heading detection ignores fenced code blocks. `symbol` returns a source excerpt rather than structural entries. Use `parser` to override parser detection on files, `tokens` for estimates, and `diff` for changes. Unsupported file types should fall back to `read_file` or retry with a parser override |
 
@@ -260,9 +260,12 @@ Search guidance:
 - Prefer built-in `search_text` for content search instead of shell `grep` / `rg`
   unless you specifically need shell composition or exact external CLI
   behavior.
+- `search_text(include=...)` accepts a single glob, brace expansion like
+  `*.{js,ts}`, or a comma-separated list like `*.h, *.cpp`.
 - `glob` still accepts `**` patterns, but `recursive=true` is the clearer way
   to request nested traversal.
-- `search_text` may use ripgrep for unrestricted directory scans when available.
+- `search_text` may use ripgrep for unrestricted directory scans when available,
+  but the built-in contract still searches hidden and gitignored project files.
   `search.ripgrep_path` can pin the executable, and `search.require_ripgrep`
   can make directory search_text fail closed instead of silently using the Python
   fallback.

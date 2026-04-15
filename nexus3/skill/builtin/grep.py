@@ -46,13 +46,67 @@ EXCLUDED_DIRS = frozenset(
 MAX_CONCURRENT_SEARCHES = 10
 
 
+def _split_top_level_include_patterns(include: str) -> list[str]:
+    """Split a comma-separated include string, ignoring commas inside braces."""
+    parts: list[str] = []
+    current: list[str] = []
+    brace_depth = 0
+
+    for char in include:
+        if char == "{":
+            brace_depth += 1
+        elif char == "}":
+            brace_depth -= 1
+            if brace_depth < 0:
+                raise ValueError(
+                    "Invalid include filter: unmatched '}' in include pattern"
+                )
+
+        if char == "," and brace_depth == 0:
+            parts.append("".join(current).strip())
+            current = []
+            continue
+
+        current.append(char)
+
+    if brace_depth != 0:
+        raise ValueError("Invalid include filter: unmatched '{' in include pattern")
+
+    parts.append("".join(current).strip())
+    return parts
+
+
 def _expand_include_patterns(include: str) -> list[str]:
-    """Expand include patterns, including simple brace expansion."""
-    if "{" in include and "}" in include:
-        prefix, rest = include.split("{", 1)
-        options, suffix = rest.split("}", 1)
-        return [prefix + opt + suffix for opt in options.split(",")]
-    return [include]
+    """Expand include patterns, including brace expansion and CSV-style lists."""
+    expanded: list[str] = []
+
+    for segment in _split_top_level_include_patterns(include):
+        if not segment:
+            raise ValueError(
+                "Invalid include filter: empty pattern in comma-separated include list"
+            )
+
+        if "{" in segment or "}" in segment:
+            if segment.count("{") != 1 or segment.count("}") != 1:
+                raise ValueError(
+                    "Invalid include filter: only simple one-level brace expansion is supported"
+                )
+            prefix, rest = segment.split("{", 1)
+            options, suffix = rest.split("}", 1)
+            expanded_options = [option.strip() for option in options.split(",")]
+            if not all(expanded_options):
+                raise ValueError(
+                    "Invalid include filter: empty option in brace expansion"
+                )
+            expanded.extend(prefix + option + suffix for option in expanded_options)
+            continue
+
+        expanded.append(segment)
+
+    if not expanded:
+        raise ValueError("Invalid include filter: include pattern cannot be empty")
+
+    return expanded
 
 
 def _matches_include_pattern(file_path: Path, include: str | None) -> bool:
@@ -270,6 +324,14 @@ def _format_skip_counts(
     return f" ({joined})", f", {joined}"
 
 
+def _build_ripgrep_exclude_globs() -> list[str]:
+    """Build negated ripgrep globs that mirror Python fallback exclusions."""
+    globs: list[str] = []
+    for pattern in sorted(EXCLUDED_DIRS):
+        globs.append(f"!**/{pattern}/**")
+    return globs
+
+
 async def _search_with_ripgrep(
     rg_executable: str,
     search_path: Path,
@@ -309,6 +371,9 @@ async def _search_with_ripgrep(
 
     # Build ripgrep command
     cmd = [rg_executable, "--json"]
+    # Align fast-path semantics with the built-in tool contract rather than
+    # raw ripgrep defaults, which otherwise skip hidden and gitignored files.
+    cmd.extend(["--hidden", "--no-ignore"])
 
     # Map parameters to rg flags
     if ignore_case:
@@ -324,14 +389,10 @@ async def _search_with_ripgrep(
 
     # Handle include patterns
     if include:
-        # Handle brace expansion like '*.{js,ts}'
-        if "{" in include and "}" in include:
-            prefix, rest = include.split("{", 1)
-            options, suffix = rest.split("}", 1)
-            for opt in options.split(","):
-                cmd.extend(["-g", prefix + opt + suffix])
-        else:
-            cmd.extend(["-g", include])
+        for include_pattern in _expand_include_patterns(include):
+            cmd.extend(["-g", include_pattern])
+    for exclude_glob in _build_ripgrep_exclude_globs():
+        cmd.extend(["-g", exclude_glob])
 
     cmd.append(pattern)
     cmd.append(str(search_path))
@@ -506,7 +567,10 @@ class SearchTextSkill(FileSkill):
                 },
                 "include": {
                     "type": "string",
-                    "description": "Only search files matching pattern (e.g., '*.py', '*.{js,ts}')",
+                    "description": (
+                        "Only search files matching pattern "
+                        "(e.g., '*.py', '*.{js,ts}', '*.h, *.cpp')"
+                    ),
                 },
                 "context": {
                     "type": "integer",
@@ -545,6 +609,11 @@ class SearchTextSkill(FileSkill):
         """
         # Note: 'pattern' and 'path' required by schema
         try:
+            if include is not None:
+                # Validate include syntax up front so malformed comma/braced
+                # filters fail clearly instead of silently matching nothing.
+                _expand_include_patterns(include)
+
             # Validate path (resolves symlinks, checks allowed_paths if set)
             search_path = self._validate_path(path)
             is_file, is_dir = await asyncio.to_thread(_check_path_type, search_path)

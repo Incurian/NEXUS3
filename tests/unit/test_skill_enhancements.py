@@ -113,6 +113,21 @@ class TestReadFileOffsetLimit:
         assert "2: Line 2" in result.output
         assert "3: Line 3" in result.output
         assert "4: Line 4" not in result.output
+        assert "continue with offset=4" in result.output
+
+    @pytest.mark.asyncio
+    async def test_limit_at_eof_does_not_claim_more_content(
+        self,
+        skill: ReadFileSkill,
+        test_file: Path,
+    ) -> None:
+        """Exact-EOF windows should not be mislabeled as truncated."""
+        result = await skill.execute(path=str(test_file), limit=10)
+
+        assert not result.error
+        assert "10: Line 10" in result.output
+        assert "more content remains" not in result.output
+        assert "continue with offset=" not in result.output
 
     @pytest.mark.asyncio
     async def test_offset_and_limit_combined(self, skill: ReadFileSkill, test_file: Path) -> None:
@@ -124,6 +139,8 @@ class TestReadFileOffsetLimit:
         assert "4: Line 4" in result.output
         assert "2: Line 2" not in result.output
         assert "5: Line 5" not in result.output
+        assert "read_file returned lines 3-4" in result.output
+        assert "continue with offset=5" in result.output
 
     def test_line_window_aliases_resolve_to_canonical_offset_limit(self) -> None:
         """Compatibility aliases should normalize to the canonical read window."""
@@ -458,6 +475,46 @@ class TestGrepIncludeContext:
         assert "app.ts" in result.output or "util.js" in result.output
         # Should not find in .py
         assert "code.py" not in result.output
+
+    @pytest.mark.asyncio
+    async def test_include_comma_separated_list(
+        self,
+        skill: SearchTextSkill,
+        test_dir: Path,
+    ) -> None:
+        """Include supports comma-separated glob lists like '*.h, *.cpp'."""
+        header_file = test_dir / "types.h"
+        header_file.write_text("hello from header\n")
+        cpp_file = test_dir / "main.cpp"
+        cpp_file.write_text("hello from cpp\n")
+
+        result = await skill.execute(
+            pattern="hello",
+            path=str(test_dir),
+            include="*.h, *.cpp",
+        )
+
+        assert not result.error
+        assert "types.h" in result.output
+        assert "main.cpp" in result.output
+        assert "code.py" not in result.output
+        assert "readme.txt" not in result.output
+
+    @pytest.mark.asyncio
+    async def test_include_invalid_comma_list_errors_clearly(
+        self,
+        skill: SearchTextSkill,
+        test_dir: Path,
+    ) -> None:
+        """Malformed include lists should fail clearly instead of matching nothing."""
+        result = await skill.execute(
+            pattern="hello",
+            path=str(test_dir),
+            include="*.h, ,*.cpp",
+        )
+
+        assert result.error is not None
+        assert "Invalid include filter" in result.error
 
     @pytest.mark.asyncio
     async def test_context_shows_surrounding_lines(

@@ -103,6 +103,10 @@ This index covers the architecture plans created during today's review/planning 
 
 - [README-REFRESH-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/README-REFRESH-PLAN-2026-04-07.md)
 
+## Search/Read Contract Hardening Plan (2026-04-15)
+
+- [SEARCH-AND-READ-FILE-CONTRACT-HARDENING-PLAN-2026-04-15.md](/home/inc/repos/NEXUS3/docs/plans/SEARCH-AND-READ-FILE-CONTRACT-HARDENING-PLAN-2026-04-15.md)
+
 ## Release Plan (2026-04-07)
 
 - [RELEASE-V1.1.0-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/RELEASE-V1.1.0-PLAN-2026-04-07.md)

@@ -637,12 +637,12 @@ NEXUS3 includes 46 core built-in skills plus 21 GitLab skills (when configured),
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `read_file` | Read UTF-8 file contents with streaming/size limits | `path`, `offset?`, `limit?`, `line_numbers?` |
+| `read_file` | Read UTF-8 file contents with streaming/size limits; partial reads report the returned line window and continuation offset | `path`, `offset?`, `limit?`, `line_numbers?` |
 | `tail` | Read last N lines efficiently | `path`, `lines?` (default: 10) |
 | `file_info` | Get file/directory metadata (Unix perms or Windows RHSA) | `path` |
 | `list_directory` | List directory contents | `path?`, `all?`, `long?` |
 | `glob` | Find files or directories by glob pattern; `recursive=true` searches nested paths, `kind` filters files/directories, and `exclude` uses relative-path glob rules | `pattern`, `path?`, `max_results?`, `recursive?`, `kind?`, `exclude?` |
-| `search_text` | Search UTF-8 file contents (regex); unrestricted directory scans use ripgrep when configured/available, and directory scans skip invalid UTF-8 files | `pattern`, `path`, `recursive?`, `ignore_case?`, `max_matches?`, `include?`, `context?` |
+| `search_text` | Search UTF-8 file contents (regex); unrestricted directory scans may use ripgrep while still searching hidden/gitignored project files, and directory scans skip invalid UTF-8 files | `pattern`, `path`, `recursive?`, `ignore_case?`, `max_matches?`, `include?`, `context?` |
 | `concat_files` | Find and concatenate UTF-8 files by extension with token estimation (`dry_run=true` by default; real writes generate an output file and skip invalid UTF-8 inputs) | `extensions`, `path?`, `exclude?`, `lines?`, `max_total?`, `format?`, `sort?`, `gitignore?`, `dry_run?` |
 | `outline` | Structural outline of UTF-8 file/directory (headings, classes, functions, keys; non-recursive for directories, markdown ignores fenced code blocks, `symbol` returns source excerpt) | `path`, `parser?`, `depth?`, `preview?`, `signatures?`, `line_numbers?`, `tokens?`, `symbol?`, `diff?`, `recursive?` |
 
@@ -654,6 +654,8 @@ invalid UTF-8 files instead of mangling bytes.
 Prefer built-in `glob` for path discovery and built-in `search_text` for content
 search instead of shell `find`, `Get-ChildItem`, `grep`, or `rg` unless shell
 composition or exact external CLI semantics are required.
+`search_text(include=...)` accepts a single glob, brace expansion like
+`*.{js,ts}`, or a comma-separated list like `*.h, *.cpp`.
 
 ### File Operations (Destructive)
 

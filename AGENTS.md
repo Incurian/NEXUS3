@@ -240,60 +240,74 @@ ad-hoc compatibility shim.
 
 ## Current Handoff
 
-### 2026-04-07 - README surface refresh
+### 2026-04-15 - search/read tool hardening
 
 - Branch: `master`
-- Baseline head: `3672e56`
+- Baseline head: `f2a5cc6`
 - Active slice:
-  - refresh the repo root README and module/package READMEs against the
-    current codebase
-  - expand thin package docs so the local README surface is actually usable
-  - fix concrete stale command/config/export claims without code changes
+  - harden `search_text` fast-path behavior so unrestricted searches do not
+    silently miss hidden or gitignored project files
+  - harden `search_text(include=...)` so comma-separated lists like
+    `*.h, *.cpp` work and malformed include strings fail clearly
+  - make `read_file` partial reads explicitly report the returned line window
+    and continuation offset
+  - continue investigating whether the earlier user-observed search miss was a
+    separate failure mode beyond the confirmed ripgrep blind spot
 - Plans/docs:
-  - [docs/plans/README-REFRESH-PLAN-2026-04-07.md](/home/inc/repos/NEXUS3/docs/plans/README-REFRESH-PLAN-2026-04-07.md)
+  - [docs/plans/SEARCH-AND-READ-FILE-CONTRACT-HARDENING-PLAN-2026-04-15.md](/home/inc/repos/NEXUS3/docs/plans/SEARCH-AND-READ-FILE-CONTRACT-HARDENING-PLAN-2026-04-15.md)
   - [docs/plans/README.md](/home/inc/repos/NEXUS3/docs/plans/README.md)
   - [README.md](/home/inc/repos/NEXUS3/README.md)
-  - [nexus3/README.md](/home/inc/repos/NEXUS3/nexus3/README.md)
+  - [nexus3/skill/README.md](/home/inc/repos/NEXUS3/nexus3/skill/README.md)
+  - [nexus3/defaults/NEXUS-DEFAULT.md](/home/inc/repos/NEXUS3/nexus3/defaults/NEXUS-DEFAULT.md)
 - Implemented locally:
-  - root README now documents `rpc` and `trace` as first-class subcommands
-    instead of treating `trace` like a flag bucket
-  - root README now includes the missing `/gitlab test [NAME]` REPL command
-    and the current `mcp.json` shape support:
-    - `{"servers": {"name": {...}}}`
-    - `{"servers": [{"name": "name", ...}]}`
-    - `{"mcpServers": {"name": {...}}}`
-  - package/module README refresh landed for:
-    - `nexus3/README.md`
-    - `nexus3/cli/README.md`
-    - `nexus3/context/README.md`
-    - `nexus3/core/README.md`
-    - `nexus3/provider/README.md`
-    - `nexus3/skill/builtin/README.md`
-    - `nexus3/skill/vcs/README.md`
-    - `nexus3/skill/vcs/gitlab/README.md`
-    - `nexus3/mcp/test_server/README.md`
-  - stale documentation claims corrected:
-    - root architecture table now says `skill/` has 46 built-in skills and up
-      to 21 GitLab skills
-    - root README no longer hardcodes the old `3400+` test count
-    - root README explicitly preserves `nexus3/ide` as the only intentional
-      no-README package
-    - context README now documents all supported MCP config shapes and loader
-      precedence
-    - core README export block now includes the direct-RPC capability helpers
-      re-exported by `nexus3.core`
-    - provider README now covers inbound tool-call normalization in
-      `tool_call_formats.py`
-    - VCS READMEs now point at the real config schema location instead of a
-      nonexistent local `config.py`
+  - `nexus3/skill/builtin/grep.py`
+    - ripgrep fast path now adds `--hidden` and `--no-ignore`
+    - ripgrep invocation now applies explicit exclusion globs that mirror the
+      Python fallback's heavyweight-directory skips (`.git`, `node_modules`,
+      `.venv`, `.nexus3`, etc.)
+    - `include` parsing now accepts comma-separated glob lists in addition to
+      single globs and brace expansion
+    - malformed include strings now return explicit `Invalid include filter`
+      errors instead of silently matching nothing
+  - `nexus3/skill/builtin/read_file.py`
+    - read windows now track the last returned line and next continuation
+      offset
+    - partial reads now append explicit continuation text instead of a generic
+      truncation footer
+    - exact-EOF windows no longer falsely report truncation when `limit`
+      happens to land on the last line
+  - regression coverage added in:
+    - `tests/unit/skill/test_grep_parallel.py`
+    - `tests/unit/test_skill_enhancements.py`
+  - prompt/docs updated so the user-facing contract now says:
+    - `search_text` does not inherit hidden/gitignored-file blind spots just
+      because ripgrep is available
+    - `read_file` partial reads report the continuation offset
 - Validation status:
-  - hygiene passed:
+  - confirmed pre-patch reproduction:
+    - plain `rg --json needle <dir>` matched a normal file but skipped a
+      hidden file and a `.gitignore`d file in the same tree
+  - focused validation passed:
+    - `.venv/bin/pytest -q tests/unit/test_skill_enhancements.py` (`39 passed`)
+    - `.venv/bin/pytest -q tests/unit/skill/test_grep_parallel.py` (`14 passed`)
+    - `.venv/bin/ruff check nexus3/skill/builtin/grep.py nexus3/skill/builtin/read_file.py tests/unit/test_skill_enhancements.py tests/unit/skill/test_grep_parallel.py`
+    - `.venv/bin/mypy nexus3/skill/builtin/grep.py nexus3/skill/builtin/read_file.py`
+    - include follow-up:
+      - `.venv/bin/pytest -q tests/unit/test_skill_enhancements.py`
+        (`41 passed`)
+      - `.venv/bin/pytest -q tests/unit/skill/test_grep_parallel.py`
+        (`15 passed`)
+      - `.venv/bin/ruff check nexus3/skill/builtin/grep.py tests/unit/test_skill_enhancements.py tests/unit/skill/test_grep_parallel.py README.md nexus3/skill/README.md nexus3/defaults/NEXUS-DEFAULT.md`
+      - `.venv/bin/mypy nexus3/skill/builtin/grep.py`
     - `git diff --check`
-    - `git diff --no-index --check -- /dev/null docs/plans/README-REFRESH-PLAN-2026-04-07.md` (clean; exits `1` because the plan file is new)
-  - stale-claim audit passed:
-    - `rg -n "44 built-in|3400\\+|Two MCP config formats are supported|nexus3/skill/vcs/config.py" README.md nexus3 -g 'README.md'` (no matches)
-  - presence checks passed:
-    - `rg -n "nexus3 rpc <SUBCOMMAND>|nexus3 trace \\[TARGET\\] \\[FLAGS\\]|/gitlab test|DIRECT_RPC_SCOPE_BY_METHOD|Three MCP config shapes are supported" README.md nexus3/context/README.md nexus3/core/README.md` (expected matches present)
-    - `.venv/bin/python - <<'PY' ...` verified no implemented `nexus3/` package with Python files is missing a `README.md` (`missing []`)
+  - live validation:
+    - attempted and currently blocked in the Codex sandbox
+    - `nexus3 --serve 9000` logged `OSError: could not bind on any address out
+      of [('127.0.0.1', 9000)]`
+    - a retry on port `9011` exited before becoming reachable, so the standard
+      RPC smoke path could not be completed here
 - Next gate:
-  - commit and push the docs refresh
+  - decide whether to keep/commit the confirmed hardening slice as-is
+  - if the earlier user-observed search miss still appears, capture one
+    concrete failing `pattern` + `path` pair or a trace snippet and investigate
+    that exact case next

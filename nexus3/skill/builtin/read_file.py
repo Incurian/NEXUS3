@@ -5,13 +5,25 @@ P2.5 SECURITY: Implements streaming reads with size limits to prevent memory DoS
 
 import asyncio
 import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from nexus3.core.constants import MAX_FILE_SIZE_BYTES, MAX_OUTPUT_BYTES, MAX_READ_LINES
 from nexus3.core.errors import PathSecurityError
 from nexus3.core.types import ToolResult
 from nexus3.skill.base import FileSkill, file_skill_factory
+
+
+@dataclass(frozen=True)
+class _ReadWindow:
+    """Metadata for a streamed read_file window."""
+
+    lines: list[str]
+    truncated: bool
+    last_line_number: int | None
+    next_offset: int | None
+    truncation_reason: Literal["line_limit", "byte_limit"] | None
 
 
 def _stream_read_lines(
@@ -20,7 +32,7 @@ def _stream_read_lines(
     limit: int | None = None,
     max_bytes: int = MAX_OUTPUT_BYTES,
     line_numbers: bool = True,
-) -> tuple[list[str], bool]:
+) -> _ReadWindow:
     """Stream-read lines from a file with limits.
 
     P2.5 SECURITY: Reads line-by-line to avoid loading entire file into memory.
@@ -33,13 +45,16 @@ def _stream_read_lines(
         line_numbers: Whether to prefix each line with its original line number
 
     Returns:
-        Tuple of (lines with line numbers, was_truncated)
+        Read window details, including continuation metadata when truncated.
     """
     effective_limit = limit if limit is not None else MAX_READ_LINES
     lines: list[str] = []
     total_bytes = 0
     line_num = 0
     truncated = False
+    last_line_number: int | None = None
+    next_offset: int | None = None
+    truncation_reason: Literal["line_limit", "byte_limit"] | None = None
     start_idx = offset - 1  # Convert to 0-indexed
 
     with open(filepath, encoding="utf-8") as f:
@@ -59,17 +74,30 @@ def _stream_read_lines(
             line_bytes = len(rendered_line.encode("utf-8"))
             if total_bytes + line_bytes > max_bytes:
                 truncated = True
+                next_offset = line_num
+                truncation_reason = "byte_limit"
                 break
 
             lines.append(rendered_line)
             total_bytes += line_bytes
+            last_line_number = line_num
 
             # Check line limit
             if len(lines) >= effective_limit:
-                truncated = True
+                peek = f.readline()
+                if peek:
+                    truncated = True
+                    next_offset = line_num + 1
+                    truncation_reason = "line_limit"
                 break
 
-    return lines, truncated
+    return _ReadWindow(
+        lines=lines,
+        truncated=truncated,
+        last_line_number=last_line_number,
+        next_offset=next_offset,
+        truncation_reason=truncation_reason,
+    )
 
 
 def _resolve_line_window(
@@ -207,7 +235,7 @@ class ReadFileSkill(FileSkill):
                 )
 
             # P2.5 SECURITY: Stream-read with limits
-            lines, truncated = await asyncio.to_thread(
+            window = await asyncio.to_thread(
                 _stream_read_lines,
                 p,
                 effective_offset,
@@ -216,15 +244,41 @@ class ReadFileSkill(FileSkill):
                 line_numbers,
             )
 
-            if not lines:
+            if not window.lines:
+                if window.truncated and window.truncation_reason == "byte_limit":
+                    return ToolResult(
+                        output=(
+                            f"(Unable to return line {effective_offset}: the rendered output "
+                            "for that line exceeds the read_file output limit. "
+                            "Retry with a later offset or use a narrower read.)"
+                        )
+                    )
                 return ToolResult(
                     output=f"(File is empty or offset {effective_offset}"
                     " is beyond end of file)"
                 )
 
-            content = "".join(lines)
-            if truncated:
-                content += f"\n[... truncated at {len(lines)} lines / {len(content)} bytes ...]"
+            content = "".join(window.lines)
+            if window.truncated and window.last_line_number is not None:
+                line_window = f"{effective_offset}-{window.last_line_number}"
+                if (
+                    window.truncation_reason == "byte_limit"
+                    and window.next_offset is not None
+                ):
+                    content += (
+                        "\n"
+                        f"[read_file returned lines {line_window}; output limit reached "
+                        f"before line {window.next_offset}; continue with offset="
+                        f"{window.next_offset}]"
+                    )
+                elif window.next_offset is not None:
+                    content += (
+                        "\n"
+                        f"[read_file returned lines {line_window}; more content remains; "
+                        f"continue with offset={window.next_offset}]"
+                    )
+                else:
+                    content += f"\n[read_file returned lines {line_window}; more content remains]"
 
             return ToolResult(output=content)
 

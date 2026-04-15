@@ -259,3 +259,95 @@ class TestRipgrepJsonHandling:
         assert files_searched == 1
         assert files_skipped_size == 0
         assert invalid_utf8 == 1
+
+    @pytest.mark.asyncio
+    async def test_invocation_includes_hidden_no_ignore_and_exclusion_globs(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Fast-path search should not silently inherit ripgrep's hidden/ignore skips."""
+        captured: dict[str, tuple[str, ...]] = {}
+
+        class _FakeProcess:
+            async def communicate(self) -> tuple[bytes, bytes]:
+                summary_line = json.dumps(
+                    {
+                        "type": "summary",
+                        "data": {"stats": {"searches": 0}},
+                    }
+                ).encode("utf-8")
+                return summary_line + b"\n", b""
+
+        async def _fake_create_subprocess_exec(*args, **kwargs):
+            captured["args"] = tuple(str(arg) for arg in args)
+            return _FakeProcess()
+
+        monkeypatch.setattr(
+            grep_module.asyncio,
+            "create_subprocess_exec",
+            _fake_create_subprocess_exec,
+        )
+
+        await _search_with_ripgrep(
+            "rg",
+            tmp_path,
+            "needle",
+            recursive=True,
+            ignore_case=False,
+            max_matches=100,
+            include="*.py",
+            context=0,
+        )
+
+        args = captured["args"]
+        assert "--hidden" in args
+        assert "--no-ignore" in args
+        assert "*.py" in args
+        assert "!**/.git/**" in args
+        assert "!**/node_modules/**" in args
+        assert "!**/.nexus3/**" in args
+
+    @pytest.mark.asyncio
+    async def test_invocation_expands_comma_separated_include_list(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Fast-path search should expand CSV include lists into separate globs."""
+        captured: dict[str, tuple[str, ...]] = {}
+
+        class _FakeProcess:
+            async def communicate(self) -> tuple[bytes, bytes]:
+                summary_line = json.dumps(
+                    {
+                        "type": "summary",
+                        "data": {"stats": {"searches": 0}},
+                    }
+                ).encode("utf-8")
+                return summary_line + b"\n", b""
+
+        async def _fake_create_subprocess_exec(*args, **kwargs):
+            captured["args"] = tuple(str(arg) for arg in args)
+            return _FakeProcess()
+
+        monkeypatch.setattr(
+            grep_module.asyncio,
+            "create_subprocess_exec",
+            _fake_create_subprocess_exec,
+        )
+
+        await _search_with_ripgrep(
+            "rg",
+            tmp_path,
+            "needle",
+            recursive=True,
+            ignore_case=False,
+            max_matches=100,
+            include="*.h, *.cpp",
+            context=0,
+        )
+
+        args = captured["args"]
+        assert "*.h" in args
+        assert "*.cpp" in args

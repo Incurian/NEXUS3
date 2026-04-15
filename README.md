@@ -1505,12 +1505,12 @@ NEXUS3 includes 46 built-in skills organized by category, plus 21 GitLab integra
 
 | Skill | Description | Key Parameters |
 |-------|-------------|----------------|
-| `read_file` | Read UTF-8 file contents | `path`, `offset`, `limit`, `line_numbers` |
+| `read_file` | Read UTF-8 file contents; partial reads report the returned line window and continuation offset | `path`, `offset`, `limit`, `line_numbers` |
 | `tail` | Read last N lines | `path`, `lines` (default: 10) |
 | `file_info` | Get file metadata | `path` |
 | `list_directory` | List directory contents | `path`, `all`, `long` |
 | `glob` | Find files or directories by pattern | `pattern`, `path`, `max_results`, `recursive`, `kind`, `exclude` |
-| `search_text` | Search UTF-8 file contents | `pattern`, `path`, `include`, `context`, `recursive`, `ignore_case`, `max_matches` |
+| `search_text` | Search UTF-8 file contents, including hidden/gitignored project files while still skipping explicit heavy directories | `pattern`, `path`, `include`, `context`, `recursive`, `ignore_case`, `max_matches` |
 | `concat_files` | Concatenate UTF-8 files by extension (`dry_run=true` by default; `dry_run=false` writes a generated output file and skips invalid UTF-8 inputs) | `extensions`, `path`, `exclude`, `lines`, `max_total`, `format`, `sort`, `gitignore`, `dry_run` |
 | `outline` | Structural outline of UTF-8 file/directory (non-recursive for directories; markdown ignores fenced code blocks) | `path`, `parser`, `depth`, `preview`, `signatures`, `line_numbers`, `tokens`, `symbol`, `diff`, `recursive` |
 
@@ -1523,11 +1523,15 @@ invalid UTF-8 files instead of mangling bytes.
   PowerShell `Get-ChildItem`.
 - Prefer built-in `search_text` for content search instead of shell `grep` / `rg`
   unless you actually need shell composition or exact external CLI behavior.
+- `search_text(include=...)` accepts a single glob, brace expansion like
+  `*.{js,ts}`, or a comma-separated list like `*.h, *.cpp`.
 - `glob` still honors `**` patterns, but `recursive=true` is the clearer
   contract for nested traversal.
-- Unrestricted directory `search_text` may use ripgrep when available. Configure
-  `search.ripgrep_path` to pin the executable or `search.require_ripgrep=true`
-  to fail closed when the fast path cannot be used.
+- Unrestricted directory `search_text` may use ripgrep when available, but the
+  built-in contract still searches hidden and gitignored project files rather
+  than inheriting ripgrep's default blind spots. Configure `search.ripgrep_path`
+  to pin the executable or `search.require_ripgrep=true` to fail closed when
+  the fast path cannot be used.
 
 ### File Operations (Write)
 
